@@ -3,12 +3,12 @@
 import asyncio
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+import functools
 import inspect
 import logging
 import sys
 from typing import Any
 
-import anyio
 import click
 from colorama import init
 import typer
@@ -34,6 +34,16 @@ from .shared.configuration import Configuration, load_config
 from .shared.constants import COMMAND_DESCRIPTIONS, MAIN_REPO_ALIASES
 
 COPY_MAX_ARGS = 2
+
+
+def async_command(func):
+    """Decorator to run async command functions with asyncio.run()."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        return asyncio.run(func(*args, **kwargs))
+
+    return wrapper
 
 
 def show_help() -> None:
@@ -96,7 +106,6 @@ def show_help() -> None:
 
 
 app = typer.Typer(add_completion=False, context_settings={"ignore_unknown_options": True, "allow_extra_args": True})
-_CTX_OPTION = typer.Option(None, hidden=True)
 
 
 @app.callback(invoke_without_command=True)
@@ -117,19 +126,20 @@ def _root(
     if ctx.invoked_subcommand is None:
         if ctx.args:
             config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=effective_verbose)
-            anyio.run(
-                _async_sh_main,
-                ShellDispatchContext(
-                    daemon_client=daemon_client,
-                    formatter=formatter,
-                    config=config,
-                    plugin_manager=plugin_manager,
-                    ctx=ctx,
-                ),
-                list(ctx.args) if ctx.args is not None else [],
+            asyncio.run(
+                _async_sh_main(
+                    ShellDispatchContext(
+                        daemon_client=daemon_client,
+                        formatter=formatter,
+                        config=config,
+                        plugin_manager=plugin_manager,
+                        ctx=ctx,
+                    ),
+                    list(ctx.args) if ctx.args is not None else [],
+                )
             )
         else:
-            anyio.run(_async_main, effective_verbose)
+            asyncio.run(_async_main(effective_verbose))
 
 
 def _create_cli_dependencies(verbose: bool = False):
@@ -274,117 +284,24 @@ async def _async_sh_main(dispatch_ctx: ShellDispatchContext, filtered_args):
     await handle_navigate_to_worktree(config, cmd)
 
 
-@app.command("create")
-def cmd_create(
-    name: str = typer.Argument(..., help="New worktree name"),
-    from_branch: str | None = typer.Option(None, "--from-branch", "-b", help="Base branch to create from"),
-    from_worktree: str | None = typer.Option(None, "--from-worktree", "-w", help="Hydrate from existing worktree"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-    ctx: typer.Context = _CTX_OPTION,
-):
-    """Create a new worktree.
-
-    Examples:
-      wt create foo -b release/2025-09-29
-      wt create foo -w dev
-    """
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, _daemon_client, _plugin_manager = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(
-        handle_create_worktree(
-            config,
-            name,
-            CreateWorktreeOptions(
-                from_default=from_worktree is None,
-                from_branch=from_branch,
-                from_worktree=from_worktree,
-                confirm=not yes,
-            ),
-        )
-    )
-
-
-@app.command("ls")
-def cmd_ls(ctx: typer.Context):
-    """List all worktrees."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(handle_list_worktrees(daemon_client, formatter))
-
-
-@app.command("status")
-def cmd_status(ctx: typer.Context, name: str | None = typer.Argument(None)):
-    """Show status for all worktrees or a single worktree."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, formatter, daemon_client, _ = _create_cli_dependencies(verbose=verbose)
-    if name:
-        asyncio.run(handle_status_single(daemon_client, formatter, name))
-    else:
-        asyncio.run(handle_status(daemon_client, formatter))
-
-
-@app.command("cp")
-def cmd_cp(ctx: typer.Context, source: str = typer.Argument(...), dest: str | None = typer.Argument(None)):
-    """Copy current or named worktree to a new worktree."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, *_ = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(handle_copy_worktree(config, source, dest))
-
-
-@app.command("rm")
-def cmd_rm(
-    ctx: typer.Context,
-    name: str = typer.Argument(...),
-    force: bool = typer.Option(False, "--force", help="Force removal without confirmation"),
-):
-    """Remove a worktree."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, *_ = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(handle_remove_worktree(config, name, force))
-
-
-@app.command("path")
-def cmd_path(
-    ctx: typer.Context, worktree: str | None = typer.Argument(None), subpath: str | None = typer.Argument(None)
-):
-    """Resolve a path under a worktree (or the current one)."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, *_ = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(handle_path_command(config, worktree, subpath))
-
-
-@app.command("kill-daemon")
-def cmd_kill(ctx: typer.Context):
-    """Stop the wt daemon and clean up its files."""
-    verbose = bool((ctx.obj or {}).get("verbose", False))
-    config, *_ = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(handle_kill_daemon(config))
-
-
-@app.command("help")
-def cmd_help():
-    """Show extended wt help with examples."""
-    show_help()
-
-
 @app.command(
     "sh",
     context_settings={"ignore_unknown_options": True, "allow_extra_args": True, "help_option_names": ["-h", "--help"]},
 )
-def cmd_sh(ctx: typer.Context):
-    """Compatibility dispatcher for shell function and legacy tests.
+@async_command
+async def cmd_sh(ctx: typer.Context):
+    """Primary dispatcher for shell function integration.
 
-    Interprets arbitrary arguments using the internal sh-style dispatcher.
+    All wt commands go through the shell wrapper which calls 'python -m wt.cli sh <args>'.
+    This enables shell operations like cd that can only be executed by the parent shell.
     """
     verbose = bool((ctx.obj or {}).get("verbose", False))
     config, formatter, daemon_client, plugin_manager = _create_cli_dependencies(verbose=verbose)
-    asyncio.run(
-        _async_sh_main(
-            ShellDispatchContext(
-                daemon_client=daemon_client, formatter=formatter, config=config, plugin_manager=plugin_manager, ctx=ctx
-            ),
-            (list(ctx.args) if ctx.args is not None else []),
-        )
+    await _async_sh_main(
+        ShellDispatchContext(
+            daemon_client=daemon_client, formatter=formatter, config=config, plugin_manager=plugin_manager, ctx=ctx
+        ),
+        (list(ctx.args) if ctx.args is not None else []),
     )
 
 

@@ -1,14 +1,12 @@
-{% macro scope_block(scope_text, static_action, ambiguity_tail) %}
-Scope (freeform):
-- {{ scope_text }}
+{% macro scope_block(files, static_action, ambiguity_tail) %}
+Review the following files:
+{% for file in files %}
+- {{ file }}
+{% endfor %}
 
-Scope interpretation rules:
-- The scope may describe either:
-  1) a Git diff range (e.g., "between merge-base with master and 2 commits before HEAD"), or
-  2) a static set of files/paths
-- If it's a diff description: resolve to a concrete diff range, enumerate files and hunks, and use `git diff --unified=0` for references.
-- If it's a static file set: {{ static_action }} only those files.
-- On ambiguity, choose the most conservative interpretation, state the resolved scope, and {{ ambiguity_tail }}
+Constraints:
+- {{ static_action | capitalize }} only the files listed above.
+- {{ ambiguity_tail }}
 {% endmacro %}
 
 {% macro constraints_read_only() %}

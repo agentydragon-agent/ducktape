@@ -27,25 +27,25 @@ class DictLiteralFinder(ast.NodeVisitor):
         self.current_function: str | None = None
         self.current_class: str | None = None
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         old_func = self.current_function
         self.current_function = node.name
         self.generic_visit(node)
         self.current_function = old_func
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         old_func = self.current_function
         self.current_function = node.name
         self.generic_visit(node)
         self.current_function = old_func
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         old_class = self.current_class
         self.current_class = node.name
         self.generic_visit(node)
         self.current_class = old_class
 
-    def visit_Dict(self, node: ast.Dict) -> None:  # noqa: N802
+    def visit_Dict(self, node: ast.Dict) -> None:
         # Check if any keys are string literals
         string_keys = []
         for key in node.keys:
@@ -79,7 +79,7 @@ class PydanticModelAnalyzer(ast.NodeVisitor):
     def __init__(self):
         self.models: list[dict[str, Any]] = []
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         # Check if inherits from BaseModel
         inherits_basemodel = False
         for base in node.bases:

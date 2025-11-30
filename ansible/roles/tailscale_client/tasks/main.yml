@@ -50,7 +50,9 @@
 - name: Auto-generate headscale auth key (optional)
   ansible.builtin.shell: |
     set -o pipefail
-    sg headscale -c 'headscale preauthkeys create --user {{ headscale_register_user }} --ephemeral --expiration 1h --output json | jq -r ".key"'
+    sg headscale -c 'headscale preauthkeys create \
+      --user {{ headscale_register_user }} --ephemeral \
+      --expiration 1h --output json | jq -r ".key"'
   args:
     executable: /bin/bash
   delegate_to: "{{ headscale_delegate_host }}"
@@ -155,7 +157,9 @@
 
 - name: Auto-register machine key with headscale (if auto-register enabled)
   ansible.builtin.shell: |
-    sg headscale -c 'headscale nodes register --user {{ headscale_register_user }} --key {{ tailscale_client_up.stderr | regex_search("mkey:[a-f0-9]+") }}'
+    sg headscale -c 'headscale nodes register \
+      --user {{ headscale_register_user }} \
+      --key {{ tailscale_client_up.stderr | regex_search("mkey:[a-f0-9]+") }}'
   delegate_to: "{{ headscale_delegate_host }}"
   vars:
     ansible_user: root

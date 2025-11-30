@@ -1,6 +1,5 @@
 """
 Patch utilities:
-- apply_unified_patch: single-file unified diff applied to a string (using our multi-file applier under the hood)
 - apply_patch_auto: dispatch OpenAI patch envelope vs multi-file unified diff and apply via IO callbacks
 """
 
@@ -18,28 +17,6 @@ from adgn.util.unified_patch import apply_unified_diff, normalize_single_file_un
 
 # Canonical error message when patches must modify exactly one file
 SINGLE_FILE_REQUIRED_ERR = "patch must modify exactly one file"
-
-
-def apply_unified_patch(original: str, patch_text: str) -> str:
-    """Apply a single-file unified diff patch to original and return the result.
-
-    For multi-file patches, use apply_patch_auto with IO callbacks.
-    """
-    written: dict[str, str] = {}
-
-    def _open_fn(_path: str) -> str:
-        return original
-
-    def _write_fn(path: str, content: str) -> None:
-        written[path] = content
-
-    def _remove_fn(path: str) -> None:
-        written[path] = ""
-
-    apply_unified_diff(patch_text, _open_fn, _write_fn, _remove_fn)
-    if not written:
-        return original
-    return next(iter(written.values()))
 
 
 def apply_patch_auto(

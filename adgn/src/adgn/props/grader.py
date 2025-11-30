@@ -9,22 +9,112 @@ submit_result.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated
+import logging
+from typing import TYPE_CHECKING, Annotated, cast
+from uuid import UUID, uuid4
 
-from fastmcp import FastMCP
+from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
+from sqlalchemy.orm import Session
 
+from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
+from adgn.agent.reducer import GateUntil
 from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.types import ReasoningSummary
+from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic import CriticSubmitPayload
-from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
+from adgn.props.db import get_session
+from adgn.props.db.models import Critique, GraderRun as DBGraderRun
+from adgn.props.docker_env import properties_docker_spec
+from adgn.props.ids import FalsePositiveID, InputIssueID, SpecimenSlug, TruePositiveID
 from adgn.props.models.issue import Occurrence
+from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
-from adgn.props.specimens.registry import SpecimenRecord
+from adgn.props.specimens.hydrated import HydratedSpecimen
+
+# Avoid circular imports:
+# - prompts.builder imports from here
+if TYPE_CHECKING:
+    pass
+
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Constants
+# =============================================================================
+
+RATIO_SUM_TOLERANCE = 0.01  # Allow ±0.01 deviation from 1.0
+
+
+# =============================================================================
+# Helper Functions
+# =============================================================================
+
+
+def _get_required_critique(session: Session, critique_id: UUID) -> Critique:
+    """Fetch critique from DB or raise ToolError."""
+    if (critique := session.get(Critique, critique_id)) is None:
+        raise ToolError(f"Critique {critique_id} not found in database")
+    return critique
+
+
+# =============================================================================
+# Grader Run Models
+# =============================================================================
+
+
+class GraderInput(BaseModel):
+    """Input for a grader run (critique + specimen → metrics)."""
+
+    specimen_slug: SpecimenSlug = Field(description="Specimen being graded")
+    critique_id: UUID = Field(description="Database ID of critique to grade")
+    prompt_optimization_run_id: UUID | None = Field(
+        default=None, description="Optional link to prompt optimization session"
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class GraderOutput(BaseModel):
+    """Grader run output: metrics and detailed coverage."""
+
+    grade: GradeSubmitInput = Field(description="Full grading result with detailed coverage and metrics")
+
+    model_config = ConfigDict(extra="forbid")
+
+    @property
+    def recall(self) -> float:
+        """Binary recall (0-1) from the grading result."""
+        return self.grade.recall
+
+    @property
+    def coverage_recall(self) -> float | None:
+        """Fractional recall from recall credits (0-1), if computed."""
+        total_canonical_tps = len(self.grade.canonical_tp_coverage)
+        if total_canonical_tps == 0:
+            return None
+        # Sum recall credits, clamping each canonical's total credit to 1.0
+        total_credit = sum(min(1.0, cov.recall_credit) for cov in self.grade.canonical_tp_coverage.values())
+        return total_credit / total_canonical_tps
+
+
+# =============================================================================
+# Grader Submit Models
+# =============================================================================
 
 # Type alias for validation (0.0-1.0 range)
 RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -43,29 +133,36 @@ class CritiqueInputIssue(BaseModel):
 
 @dataclass(frozen=True)
 class GradeValidationContext:
-    """Validation context with prefixed IDs.
+    """Validation context: allowed IDs and required files for grading.
 
-    Use from_specimen_and_critique() factory to build from raw data.
-    IDs are computed internally - caller doesn't handle prefixing.
+    Context key: "grade_validation_context"
     """
 
     allowed_tp_ids: set[TruePositiveID]
     allowed_fp_ids: set[FalsePositiveID]
     allowed_input_ids: set[InputIssueID]
+    tp_files: set[SpecimenRelativePath]  # Files with canonical TPs (need recall)
+    critique_files: set[SpecimenRelativePath]  # Files with critique issues (need ratios)
 
     @classmethod
     def from_specimen_and_critique(
-        cls, specimen: SpecimenRecord, critique: CriticSubmitPayload
+        cls, specimen: HydratedSpecimen, critique: CriticSubmitPayload
     ) -> GradeValidationContext:
-        """Build context with namespaced IDs from specimen and critique.
+        """Build validation context from specimen and critique."""
+        # Collect files from canonical TPs and critique issues
+        # Use specimen's convenience properties (delegates to .record)
+        tp_files = {
+            f for issue_rec in specimen.issues.values() for instance in issue_rec.instances for f in instance.files
+        }
 
-        INPUT BOUNDARY: This is where we construct typed namespaced IDs.
-        Uses NewType wrappers for compile-time type safety.
-        """
+        critique_files = {f for issue in critique.issues for occ in issue.occurrences for f in occ.files}
+
         return cls(
             allowed_tp_ids={TruePositiveID(id) for id in specimen.issues},
             allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
+            tp_files=tp_files,
+            critique_files=critique_files,
         )
 
 
@@ -93,13 +190,7 @@ class GradeMetrics(BaseModel):
 
 
 class CanonicalTPCoverage(BaseModel):
-    """How well a canonical true positive was covered by the input.
-
-    Grader provides one entry per canonical TP, explaining:
-    - Which input issues cover it and how much each contributes
-    - Total recall credit (constrained by individual contributions)
-    - Why this decision was made
-    """
+    """Coverage of a canonical TP: which inputs matched, recall credit, rationale."""
 
     covered_by: dict[InputIssueID, RatioFloat] = Field(
         default_factory=dict,
@@ -111,10 +202,8 @@ class CanonicalTPCoverage(BaseModel):
         description="Total recall credit. 0=not covered, 1=fully covered, 0.x=partial. Must satisfy: min(covered_by.values()) <= recall_credit <= sum(covered_by.values()).",
     )
 
-    reasoning: str = Field(
-        ...,
-        min_length=10,
-        description="Explanation of coverage decision. For matches: why semantically equivalent. For no-match: what was closest and why insufficient.",
+    rationale: Rationale = Field(
+        description="Explanation of coverage decision. For matches: why semantically equivalent. For no-match: what was closest and why insufficient."
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -141,56 +230,31 @@ class CanonicalTPCoverage(BaseModel):
 
 
 class CanonicalFPCoverage(BaseModel):
-    """Whether a known false positive was matched by the input.
-
-    Grader provides one entry per canonical FP, explaining:
-    - Which input issues (if any) matched it
-    - Why this decision was made
-
-    Note: FPs don't have recall_credit since they don't contribute to recall.
-    Uses a set for binary matching (either matched or not).
-    """
+    """Coverage of a known FP: which inputs matched (if any), rationale."""
 
     covered_by: set[InputIssueID] = Field(
         default_factory=set, description="Input issue IDs that matched this known FP. Empty set = not matched."
     )
 
-    reasoning: str = Field(
-        ...,
-        min_length=10,
-        description="Explanation of match decision. For matches: why this input matches the FP. For no-match: why the input avoided this trap.",
+    rationale: Rationale = Field(
+        description="Explanation of match decision. For matches: why this input matches the FP. For no-match: why the input avoided this trap."
     )
 
     model_config = ConfigDict(extra="forbid")
 
 
 class NovelIssueReasoning(BaseModel):
-    """Reasoning for novel aspects of an input issue.
+    """Rationale for novel aspects beyond matched canonicals/FPs."""
 
-    An input issue can be BOTH in covered_by lists (matching canonicals/FPs) AND have novel aspects.
-    This captures what is novel/additional beyond any matched canonicals.
-
-    Examples:
-    - Pure novel: "Doesn't match any canonical. Discusses X which isn't covered."
-    - Hybrid: "Matches C001 for the duplication aspect, but also raises a novel performance concern about the duplicated code."
-    """
-
-    reasoning: str = Field(
-        ...,
-        min_length=10,
-        description="Explanation of novel aspects. For pure novel: why it doesn't match anything. For hybrid: what's novel beyond the matched canonical(s).",
+    rationale: Rationale = Field(
+        description="Explanation of novel aspects. For pure novel: why it doesn't match anything. For hybrid: what's novel beyond the matched canonical(s)."
     )
 
     model_config = ConfigDict(extra="forbid")
 
 
 class ReportedIssueRatios(BaseModel):
-    """Ratios of reported issues: {tp, fp, unlabeled}.
-
-    All ratios represent weighted proportions in [0,1] and must sum to ~1.0.
-    Weight by issue importance/severity (some issues are big, some are small).
-    Explain weighting rationale in summary if non-obvious.
-    """
+    """Weighted ratios {tp, fp, unlabeled} in [0,1], must sum to ~1.0."""
 
     tp: float = Field(..., ge=0.0, le=1.0, description="Ratio of reported issue weight that matches canonical TPs")
 
@@ -208,8 +272,9 @@ class ReportedIssueRatios(BaseModel):
     @model_validator(mode="after")
     def validate_ratios_sum(self) -> ReportedIssueRatios:
         """Validate that ratios sum to approximately 1.0."""
-        total = self.tp + self.fp + self.unlabeled
-        if not (0.99 <= total <= 1.01):
+        if not (
+            1.0 - RATIO_SUM_TOLERANCE <= (total := self.tp + self.fp + self.unlabeled) <= 1.0 + RATIO_SUM_TOLERANCE
+        ):
             raise ValueError(
                 f"Ratios must sum to ~1.0, got {total:.3f} "
                 f"(tp={self.tp:.3f}, fp={self.fp:.3f}, unlabeled={self.unlabeled:.3f})"
@@ -218,19 +283,10 @@ class ReportedIssueRatios(BaseModel):
 
 
 class GradeSubmitInput(BaseModel):
-    """Complete grading submission with explicit accounting for all issues.
+    """Complete grading: coverage for all TPs/FPs/novel issues, metrics, summary.
 
-    The grader MUST provide:
-    1. Coverage for every canonical TP with recall credits
-    2. Coverage for every known FP without recall credits
-    3. Explicit list of novel/unlabeled input issues (those not mentioned in any covered_by)
-    4. Reported issue ratios: {tp, fp, unlabeled} (weighted, must sum to ~1.0)
-    5. Recall: fraction of canonical TPs covered (weighted)
-    6. Summary explaining weighting, novel issues, and partial coverage
-
-    Validation enforces completeness - submission rejected if any issue is missing or double-counted.
-
-    IDs are plain strings (no prefixes). ID type (TP/FP/input) is implied by position in the data structure.
+    Validation enforces completeness. Weight issues fractionally by severity/size.
+    Put reasoning in narrowest applicable field; avoid duplication.
     """
 
     # Coverage for ground truth issues
@@ -262,21 +318,47 @@ class GradeSubmitInput(BaseModel):
     )
 
     # Required summary
-    summary: str = Field(
+    summary: Rationale = Field(
+        description="Markdown summary with high-level observations. Use for cross-cutting patterns, weighting rationale (if non-obvious), or specimen-level notes. Do NOT repeat per-issue details already in rationale fields—assume reader sees entire object."
+    )
+
+    # Per-file metrics (split by what needs to be tracked)
+    per_file_recall: dict[SpecimenRelativePath, float] = Field(
         ...,
-        min_length=10,
-        description="Markdown summary with high-level observations. MUST include weighting rationale if non-obvious, explanations for novel issues, and notes on partial coverage.",
+        description="Recall [0,1] for EVERY file with canonical TPs. Keys = file paths. Value = fraction of canonical TPs in this file that were covered, weighted by importance/severity.",
+    )
+
+    per_file_ratios: dict[SpecimenRelativePath, ReportedIssueRatios] = Field(
+        ...,
+        description="Ratios {tp,fp,unlabeled} for EVERY file with critique issues. Keys = file paths. Value = ratios for reported issues touching this file, weighted, must sum to ~1.0.",
     )
 
     model_config = ConfigDict(extra="forbid")
 
+    def _get_validation_context(self, info: ValidationInfo) -> GradeValidationContext | None:
+        """Get validation context if available and correct type."""
+        if info.context is None:
+            return None
+        ctx = info.context.get("grade_validation_context")
+        if ctx is None or not isinstance(ctx, GradeValidationContext):
+            return None
+        return cast(GradeValidationContext, ctx)
+
+    @property
+    def _mentioned_tp_ids(self) -> set[InputIssueID]:
+        """Input IDs mentioned in canonical TP coverage."""
+        return set().union(*(cov.covered_by.keys() for cov in self.canonical_tp_coverage.values()))
+
+    @property
+    def _mentioned_fp_ids(self) -> set[InputIssueID]:
+        """Input IDs mentioned in canonical FP coverage."""
+        return set().union(*(cov.covered_by for cov in self.canonical_fp_coverage.values()))
+
     @model_validator(mode="after")
     def validate_tp_coverage_complete(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate all canonical TPs are covered."""
-        if not info.context or not isinstance(info.context, GradeValidationContext):
+        if (ctx := self._get_validation_context(info)) is None:
             return self
-
-        ctx: GradeValidationContext = info.context
         missing_tp = ctx.allowed_tp_ids - self.canonical_tp_coverage.keys()
         if missing_tp:
             raise ValueError(f"Missing canonical TP coverage for: {sorted(missing_tp)}")
@@ -290,10 +372,8 @@ class GradeSubmitInput(BaseModel):
     @model_validator(mode="after")
     def validate_fp_coverage_complete(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate all known FPs are covered."""
-        if not info.context or not isinstance(info.context, GradeValidationContext):
+        if (ctx := self._get_validation_context(info)) is None:
             return self
-
-        ctx: GradeValidationContext = info.context
         missing_fp = ctx.allowed_fp_ids - self.canonical_fp_coverage.keys()
         if missing_fp:
             raise ValueError(f"Missing FP coverage for: {sorted(missing_fp)}")
@@ -307,29 +387,22 @@ class GradeSubmitInput(BaseModel):
     @model_validator(mode="after")
     def validate_covered_by_ids(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate all IDs mentioned in covered_by are valid input IDs."""
-        if not info.context or not isinstance(info.context, GradeValidationContext):
+        if (ctx := self._get_validation_context(info)) is None:
             return self
 
-        ctx: GradeValidationContext = info.context
+        if invalid_tp := self._mentioned_tp_ids - ctx.allowed_input_ids:
+            raise ValueError(f"Invalid input IDs in TP covered_by: {sorted(invalid_tp)}")
 
-        # Collect all mentioned input IDs from covered_by (TP uses dict, FP uses set)
-        mentioned_tp = set().union(*(cov.covered_by.keys() for cov in self.canonical_tp_coverage.values()))
-        mentioned_fp = set().union(*(cov.covered_by for cov in self.canonical_fp_coverage.values()))
-        mentioned = mentioned_tp | mentioned_fp
-
-        invalid_mentioned = mentioned - ctx.allowed_input_ids
-        if invalid_mentioned:
-            raise ValueError(f"Invalid input IDs in covered_by: {sorted(invalid_mentioned)}")
+        if invalid_fp := self._mentioned_fp_ids - ctx.allowed_input_ids:
+            raise ValueError(f"Invalid input IDs in FP covered_by: {sorted(invalid_fp)}")
 
         return self
 
     @model_validator(mode="after")
     def validate_novel_ids(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate all novel issue IDs are valid input IDs."""
-        if not info.context or not isinstance(info.context, GradeValidationContext):
+        if (ctx := self._get_validation_context(info)) is None:
             return self
-
-        ctx: GradeValidationContext = info.context
         extra_novel = self.novel_critique_issues.keys() - ctx.allowed_input_ids
         if extra_novel:
             raise ValueError(f"Unknown input IDs in novel_critique_issues: {sorted(extra_novel)}")
@@ -339,23 +412,57 @@ class GradeSubmitInput(BaseModel):
     @model_validator(mode="after")
     def validate_all_inputs_accounted(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate every input issue appears somewhere (covered_by or novel_critique_issues)."""
-        if not info.context or not isinstance(info.context, GradeValidationContext):
+        if (ctx := self._get_validation_context(info)) is None:
             return self
 
-        ctx: GradeValidationContext = info.context
-
-        # Collect mentioned IDs from covered_by (TP uses dict, FP uses set)
-        mentioned_tp = set().union(*(cov.covered_by.keys() for cov in self.canonical_tp_coverage.values()))
-        mentioned_fp = set().union(*(cov.covered_by for cov in self.canonical_fp_coverage.values()))
-        mentioned = mentioned_tp | mentioned_fp
-
         # All input IDs must be either mentioned or in novel_critique_issues
-        accounted = mentioned | self.novel_critique_issues.keys()
-        missing_input = ctx.allowed_input_ids - accounted
+        missing_input = ctx.allowed_input_ids - (
+            self._mentioned_tp_ids | self._mentioned_fp_ids | self.novel_critique_issues.keys()
+        )
         if missing_input:
             raise ValueError(
                 f"Missing input IDs: {sorted(missing_input)}. "
                 f"Every input issue MUST appear in covered_by or novel_critique_issues."
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_per_file_metrics_complete(self, info: ValidationInfo) -> GradeSubmitInput:
+        """Validate per-file metrics cover exactly the required files."""
+        if (ctx := self._get_validation_context(info)) is None:
+            return self
+
+        # Check per_file_recall keys match tp_files
+        provided_recall = set(self.per_file_recall.keys())
+        missing_recall = ctx.tp_files - provided_recall
+        if missing_recall:
+            raise ValueError(
+                f"Missing per_file_recall for: {sorted(str(f) for f in missing_recall)}. "
+                f"Must provide recall for all files with canonical TPs."
+            )
+
+        extra_recall = provided_recall - ctx.tp_files
+        if extra_recall:
+            raise ValueError(
+                f"Unexpected per_file_recall for: {sorted(str(f) for f in extra_recall)}. "
+                f"Only provide recall for files with canonical TPs."
+            )
+
+        # Check per_file_ratios keys match critique_files
+        provided_ratios = set(self.per_file_ratios.keys())
+        missing_ratios = ctx.critique_files - provided_ratios
+        if missing_ratios:
+            raise ValueError(
+                f"Missing per_file_ratios for: {sorted(str(f) for f in missing_ratios)}. "
+                f"Must provide ratios for all files with critique issues."
+            )
+
+        extra_ratios = provided_ratios - ctx.critique_files
+        if extra_ratios:
+            raise ValueError(
+                f"Unexpected per_file_ratios for: {sorted(str(f) for f in extra_ratios)}. "
+                f"Only provide ratios for files with critique issues."
             )
 
         return self
@@ -369,65 +476,41 @@ class GradeSubmitState:
 
 @dataclass(frozen=True)
 class GradeInputs:
-    """Single cohesive context for grading: specimen and the critique payload."""
+    """Grading context: specimen and critique."""
 
-    specimen: SpecimenRecord
+    specimen: HydratedSpecimen
     critique: CriticSubmitPayload
-    round: int | None = None
 
 
-def build_grader_submit_tools(mcp: FastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
-    """Register grader submit tool on an existing server (tools-builder pattern).
-
-    Uses factory method to build validation context with typed IDs at INPUT boundary.
-    IDs are plain strings at runtime; type safety via NewType at compile time.
-    """
+def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
+    """Register grader submit tool with validation context."""
     # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
     context = GradeValidationContext.from_specimen_and_critique(inputs.specimen, inputs.critique)
 
     @mcp.flat_model()
-    async def submit_result(result: GradeSubmitInput) -> SimpleOk:
-        """Submit the final grading result.
-
-        Validates via Pydantic context.
-        IDs are plain strings (NewType wrappers at runtime).
-        """
+    async def submit_result(payload: GradeSubmitInput) -> SimpleOk:
+        """Submit the final grading result."""
         # Re-validate with context to trigger all validators
-        result = GradeSubmitInput.model_validate(result.model_dump(), context=context)
-
-        # Store the result as-is
-        state.result = result
+        state.result = GradeSubmitInput.model_validate(
+            payload.model_dump(), context={"grade_validation_context": context}
+        )
         return SimpleOk(ok=True)
 
 
-def make_grader_submit_server(state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs) -> FastMCP:
-    """Exposes submit_result(result: GradeSubmitInput) -> {ok: True}.
+def make_grader_submit_server(
+    state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
+) -> NotifyingFastMCP:
+    """Create MCP server with submit_result tool."""
 
-    Validates returned IDs and computes metrics server-side using specimen + critique context.
-    """
-
-    mcp = FastMCP(name)
+    mcp = NotifyingFastMCP(name)
     build_grader_submit_tools(mcp, state, inputs=inputs)
 
     return mcp
 
 
-def make_grader_submit_server_from_inputs(
-    state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
-) -> FastMCP:
-    """Thin wrapper: pass GradeInputs through to the primary builder.
-
-    The main make_grader_submit_server() derives allowed IDs and counts internally.
-    """
-    return make_grader_submit_server(state, name=name, inputs=inputs)
-
-
 @render_to_rich.register
 def _render_grade_submit_input(obj: GradeSubmitInput):
-    """Rich renderer for GradeSubmitInput (shows coverage and summary).
-
-    Computes derived metrics for display purposes only.
-    """
+    """Rich renderer: coverage tables and summary."""
     bits: list[RenderableType] = []
 
     # Compute derived metrics for display
@@ -442,8 +525,9 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     coverage_recall = None
     if total_canonical_tps > 0:
         # Sum recall credits, clamping each canonical's total credit to 1.0
-        total_credit = sum(min(1.0, cov.recall_credit) for cov in obj.canonical_tp_coverage.values())
-        coverage_recall = total_credit / total_canonical_tps
+        coverage_recall = (
+            sum(min(1.0, cov.recall_credit) for cov in obj.canonical_tp_coverage.values()) / total_canonical_tps
+        )
 
     # Main metrics table
     metrics_tbl = Table(title="Grading Metrics", show_lines=False, expand=True)
@@ -476,6 +560,150 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     if obj.summary:
         bits.append(Panel(Markdown(obj.summary), title="Summary", border_style="dim"))
 
-    body: RenderableType = bits[0] if len(bits) == 1 else Group(*bits)
-    title = "[bold blue]Grader Submission[/bold blue]"
-    return Panel(body, title=title, border_style="blue", padding=(1, 2))
+    return Panel(
+        bits[0] if len(bits) == 1 else Group(*bits),
+        title="[bold blue]Grader Submission[/bold blue]",
+        border_style="blue",
+        padding=(1, 2),
+    )
+
+
+# =============================================================================
+# Grader Run Function
+# =============================================================================
+
+
+async def run_grader(
+    *,
+    input_data: GraderInput,
+    client: OpenAIModelProto,
+    hydrated_specimen: HydratedSpecimen,
+    extra_handlers: tuple[BaseHandler, ...] = (),
+    verbose: bool = False,
+) -> tuple[GraderOutput, UUID]:
+    """Run grader agent: evaluate critique against ground truth, persist to DB."""
+    # Import at function level to avoid circular dependency (prompts.builder → grader)
+    from adgn.props.prompts.builder import build_grade_from_json_prompt
+
+    # Generate unique IDs for this run
+    run_id = uuid4()
+    transcript_id = uuid4()
+
+    # Phase 1: Write initial run and fetch critique (BEFORE agent runs)
+    with get_session() as session:
+        db_run = DBGraderRun(
+            id=run_id,
+            transcript_id=transcript_id,
+            specimen_slug=input_data.specimen_slug,
+            model=client.model,
+            critique_id=input_data.critique_id,
+            prompt_optimization_run_id=input_data.prompt_optimization_run_id,
+            output=None,  # Will be set in Phase 2
+        )
+        session.add(db_run)
+        session.commit()
+        logger.info(
+            f"Created initial grader run in DB: {run_id=}, {transcript_id=}, specimen_slug={input_data.specimen_slug}"
+        )
+
+        # Fetch critique from database
+        critique = CriticSubmitPayload.model_validate(_get_required_critique(session, input_data.critique_id).payload)
+
+    # Use specimen's canonical issues and false positives (via convenience properties)
+    canonical_typed = hydrated_specimen.record.canonical_issues
+    fp_typed = hydrated_specimen.record.known_false_positives
+
+    # Convert critique issues to CritiqueInputIssue
+    critique_typed = [
+        CritiqueInputIssue(id=InputIssueID(issue.id), rationale=issue.rationale, occurrences=issue.occurrences)
+        for issue in critique.issues
+    ]
+
+    # Build grader inputs and state
+    grader_state = GradeSubmitState()
+    inputs = GradeInputs(specimen=hydrated_specimen, critique=critique)
+
+    submit_tool_name = build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result")
+
+    wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
+    prompt = build_grade_from_json_prompt(
+        canonical_issues=canonical_typed,
+        critique_issues=critique_typed,
+        known_fps=fp_typed,
+        submit_tool_name=submit_tool_name,
+        wiring=wiring,
+    )
+
+    # Set up compositor and servers
+    comp = Compositor("compositor")
+    runtime_server = await wiring.attach(comp)
+    grader_submit_server = NotifyingFastMCP(
+        GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
+    )
+    build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
+    await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+
+    # Set up handlers
+    servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
+
+    handlers: list = [
+        GateUntil(lambda: grader_state.result is not None),
+        *build_props_handlers(
+            transcript_id=transcript_id,
+            verbose_prefix=f"[GRADER {input_data.specimen_slug}] " if verbose else None,
+            servers=servers,
+        ),
+        *extra_handlers,
+    ]
+
+    # Run grader agent
+    # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
+    #       for better agent context about runtime environment
+    async with Client(comp) as mcp_client:
+        await mount_standard_inproc_servers(compositor=comp)
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client,
+            system="You are a strict grader. Return only metrics via submit_result.",
+            client=client,
+            handlers=handlers,
+            parallel_tool_calls=True,
+            reasoning_summary=ReasoningSummary.detailed,
+        )
+        await agent.run(prompt)
+
+    if grader_state.result is None:
+        raise ToolError("Grader did not submit result")
+
+    output = GraderOutput(grade=grader_state.result)
+
+    # Phase 2: Update run with output
+    with get_session() as session:
+        found_run = session.get(DBGraderRun, run_id)
+        assert found_run is not None, f"Grader run {run_id} not found in database"
+        found_run.output = output.model_dump(mode="json")
+        session.commit()
+        logger.info(f"Updated grader run in DB: {transcript_id=}, specimen_slug={input_data.specimen_slug}")
+
+    return (output, run_id)
+
+
+async def grade_critique_by_id(critique_id: UUID, client: OpenAIModelProto, verbose: bool = False) -> UUID:
+    """Grade critique by ID, return grader_run_id."""
+    # Import at function level to avoid circular dependency
+    from adgn.props.specimens.registry import SpecimenRegistry
+
+    # Fetch specimen_slug from critique
+    with get_session() as session:
+        specimen_slug = _get_required_critique(session, critique_id).specimen_slug
+
+    # Create grader input
+    grader_input = GraderInput(specimen_slug=specimen_slug, critique_id=critique_id)
+
+    # Load and hydrate specimen once, then execute
+    async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
+        # Execute grader run
+        _grader_output, grader_run_id = await run_grader(
+            input_data=grader_input, client=client, hydrated_specimen=hydrated, verbose=verbose
+        )
+
+        return grader_run_id

@@ -36,7 +36,7 @@ class LiteralAndSymbolExtractor(ast.NodeVisitor):
         self.literals: list[dict[str, Any]] = []
         self.symbols: list[dict[str, Any]] = []
 
-    def visit_Constant(self, node: ast.Constant) -> None:  # noqa: N802
+    def visit_Constant(self, node: ast.Constant) -> None:
         """Extract string literals."""
         if isinstance(node.value, str):
             literal = node.value
@@ -45,12 +45,12 @@ class LiteralAndSymbolExtractor(ast.NodeVisitor):
                 self.literals.append({"value": literal, "line": node.lineno, "file": str(self.filepath)})
         self.generic_visit(node)
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Extract class names."""
         self.symbols.append({"name": node.name, "line": node.lineno, "file": str(self.filepath), "type": "class"})
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Extract function names."""
         self.symbols.append({"name": node.name, "line": node.lineno, "file": str(self.filepath), "type": "function"})
         # Extract parameter names
@@ -58,7 +58,7 @@ class LiteralAndSymbolExtractor(ast.NodeVisitor):
             self.symbols.append({"name": arg.arg, "line": node.lineno, "file": str(self.filepath), "type": "parameter"})
         self.generic_visit(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Extract async function names."""
         self.symbols.append(
             {"name": node.name, "line": node.lineno, "file": str(self.filepath), "type": "async_function"}
@@ -68,14 +68,14 @@ class LiteralAndSymbolExtractor(ast.NodeVisitor):
             self.symbols.append({"name": arg.arg, "line": node.lineno, "file": str(self.filepath), "type": "parameter"})
         self.generic_visit(node)
 
-    def visit_Name(self, node: ast.Name) -> None:  # noqa: N802
+    def visit_Name(self, node: ast.Name) -> None:
         """Extract variable names (in assignments)."""
         # Only extract when it's being assigned to (Store context)
         if isinstance(node.ctx, ast.Store):
             self.symbols.append({"name": node.id, "line": node.lineno, "file": str(self.filepath), "type": "variable"})
         self.generic_visit(node)
 
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         """Extract annotated field/variable names."""
         if isinstance(node.target, ast.Name):
             self.symbols.append(
@@ -83,7 +83,7 @@ class LiteralAndSymbolExtractor(ast.NodeVisitor):
             )
         self.generic_visit(node)
 
-    def visit_Attribute(self, node: ast.Attribute) -> None:  # noqa: N802
+    def visit_Attribute(self, node: ast.Attribute) -> None:
         """Extract attribute names."""
         self.symbols.append({"name": node.attr, "line": node.lineno, "file": str(self.filepath), "type": "attribute"})
         self.generic_visit(node)

@@ -26,7 +26,7 @@ from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
-from tests.types import McpServerSpecs
+from tests.support.types import McpServerSpecs
 
 
 @pytest.fixture
@@ -120,7 +120,7 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_approval_policy_server(sqlite_persistence, docker_client, test_agent_id):
+def make_approval_policy_server(sqlite_persistence, docker_client, test_agent_id) -> Callable[[str], PolicyEngine]:
     """Factory producing PolicyEngine instances with per-test defaults.
 
     The returned engine owns .reader, .proposer and .approver sub-servers.
@@ -174,8 +174,8 @@ def make_backend_server() -> Callable[[str], FastMCP]:
 
 
 @pytest.fixture
-def backend_server(make_backend_server) -> FastMCP:
-    return make_backend_server()
+def backend_server(make_backend_server: Callable[[str], FastMCP]) -> FastMCP:
+    return make_backend_server("backend")
 
 
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
@@ -399,7 +399,9 @@ if __name__ == "__main__":
 
 
 @pytest.fixture
-def make_decision_engine(make_approval_policy_server):
+def make_decision_engine(
+    make_approval_policy_server: Callable[[str], PolicyEngine],
+) -> Callable[[ApprovalDecision], PolicyEngine]:
     """Factory for creating PolicyEngine with a specific decision policy.
 
     Usage:
@@ -411,7 +413,8 @@ def make_decision_engine(make_approval_policy_server):
     """
 
     def _make(decision: ApprovalDecision) -> PolicyEngine:
-        return make_approval_policy_server(make_policy_source(decision))
+        policy_source = make_policy_source(decision)
+        return make_approval_policy_server(policy_source)
 
     return _make
 

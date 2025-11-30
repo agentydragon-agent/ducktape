@@ -1,7 +1,7 @@
 ---
 # Include system inspection sudo permissions for all systems
 - import_role:
-    name: system-inspection-nopasswd
+    name: system_inspection_nopasswd
   tags: [sudo, system]
 
 - name: System-wide apt lock acquire timeout (3 min)

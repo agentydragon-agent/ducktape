@@ -94,31 +94,6 @@ local issueWithOccurrences(rationale, occurrences, should_flag=true) = {
 local issueOccurrencesFromLines(rationale, linesByFile, should_flag=true) =
   issueWithOccurrences(rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), should_flag=should_flag);
 
-// Multi-occurrence issue built from a simple list of files → each file as an instance with unspecified range
-local instancesFromFiles(filesList) = [{ files: { [f]: null } } for f in filesList];
-// Treat as a special case of linesByFile with empty arrays (unspecified ranges per file)
-local issueOccurrencesFromFiles(rationale, filesList, should_flag=true) =
-  issueOccurrencesFromLines(
-    rationale=rationale,
-    linesByFile={ [f]: [] for f in filesList },
-    should_flag=should_flag,
-  );
-
-// Root wrapper for SpecimenIssues
-local root(items) = { items: items };
-
-// New v2 schema: embed source/scope (replaces YAML frontmatter)
-local sourceGit(url, ref) = { vcs: 'git', url: url, ref: ref };
-local sourceGitHub(org, repo, ref) = { vcs: 'github', org: org, repo: repo, ref: ref };
-local sourceLocal(root='.') = { vcs: 'local', root: root };
-local scope(include, exclude=null) = { include: include, exclude: exclude };
-
-// Root wrapper v2 with manifest-style fields co-located with items (source/scope above items)
-local rootV2(source, scope, items) = {
-  source: source,
-  scope: scope,
-  items: items,
-};
 
 // Note: Batch loading requires Python to compose explicit import statements
 // (Jsonnet does not support computed import paths)
@@ -128,13 +103,4 @@ local rootV2(source, scope, items) = {
   issueOneOccurrence: issueOneOccurrence,
   issueWithOccurrences: issueWithOccurrences,
   issueOccurrencesFromLines: issueOccurrencesFromLines,
-  issueOccurrencesFromFiles: issueOccurrencesFromFiles,
-  // Legacy items-only root
-  root: root,
-  // V2 helpers
-  sourceGit: sourceGit,
-  sourceGitHub: sourceGitHub,
-  sourceLocal: sourceLocal,
-  scope: scope,
-  rootV2: rootV2,
 }

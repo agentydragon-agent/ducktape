@@ -107,9 +107,7 @@ class TokenRoutingASGI:
         self.agent_apps = agent_apps
 
     @staticmethod
-    async def _send_error(
-        scope: Scope, receive: Receive, send: Send, message: str, status_code: int
-    ) -> None:
+    async def _send_error(scope: Scope, receive: Receive, send: Send, message: str, status_code: int) -> None:
         """Send an HTTP error response."""
         await Response(message, status_code=status_code)(scope, receive, send)
 

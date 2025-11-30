@@ -1,240 +1,147 @@
 import asyncio
-from collections.abc import Iterable
+from collections import defaultdict
 import json
 import logging
 from pathlib import Path
+from uuid import UUID
 
 from fastmcp.client import Client
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP  # type: ignore
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.critic import CriticSubmitPayload
+from adgn.props.db import get_session
+from adgn.props.db.models import Critique, GraderRun
+from adgn.props.grader import GraderOutput
 from adgn.props.ids import BaseIssueID
 from adgn.props.rationale import Rationale
-from adgn.props.run_models import GraderInput, GraderOutput, SpecimenScope
-from adgn.props.runs_context import RunsContext
+from adgn.props.runs_context import RunsContext, format_timestamp_session
 
 logger = logging.getLogger(__name__)
+
+
+class ClusteredIssueID(BaseModel):
+    """Unique identifier for an issue within a critique (critique_id, issue_id)."""
+
+    critique_id: UUID
+    issue_id: BaseIssueID
+
+    model_config = ConfigDict(frozen=True)
 
 
 class UnknownIssue(BaseModel):
     """Structured view of a single unknown issue extracted from grader runs."""
 
-    specimen: str
-    id: BaseIssueID
-    should_flag: bool | None = None
+    issue_id: ClusteredIssueID
     rationale: Rationale
-    files: set[str]
-    run_path: Path = Field(..., description="Path to grader run directory for provenance")
+    files: set[Path]
 
 
 class ClusterSpec(BaseModel):
     name: str
-    issues: list[str]
+    issues: list[ClusteredIssueID]
 
 
 class ClusterSubmitPayload(BaseModel):
     clusters: list[ClusterSpec]
 
 
-class ClusterSubmitState:
-    def __init__(self) -> None:
-        self.result: list[ClusterSpec] | None = None
+def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[UnknownIssue]:
+    """Extract unknown issues from a single grader run.
 
-
-def load_unknowns(run_dirs: Iterable[Path], ctx: RunsContext) -> list[UnknownIssue]:
-    """Load unknown issues from grader run directories using Pydantic models.
-
-    Loads typed input.json (GraderInput) and output.json (GraderOutput) from each run.
-    Extracts specimen from input.scope, unknown issues from output.grade.novel_critique_issues.
-
-    Args:
-        run_dirs: Grader run directories (each containing input.json and output.json)
-        ctx: RunsContext for path derivation (no hardcoded path tokens)
-
-    Returns:
-        List of UnknownIssue objects ready for clustering
-
-    TODO: Refactor to not pass run_dirs as a list parameter.
-    Consider: load_unknowns(ctx) discovers runs internally, or use a different pattern.
+    Returns empty list if critic result is not success or if no novel issues found.
     """
-    issues: list[UnknownIssue] = []
+    # Parse typed output from JSONB
+    grader_output = GraderOutput.model_validate(db_run.output)
+    critique_payload = CriticSubmitPayload.model_validate(critique.payload)
 
-    for run_dir in run_dirs:
-        try:
-            # Load typed input to get specimen (using context for path)
-            input_path = ctx.run_input_path(run_dir)
-            grader_input = GraderInput.model_validate_json(input_path.read_text())
+    critique_id = db_run.critique_id
 
-            # Only handle SpecimenScope for now
-            if not isinstance(grader_input.scope, SpecimenScope):
-                logger.warning(f"Skipping non-specimen scope in {run_dir}: {grader_input.scope.tag}")
-                continue
-
-            specimen_slug = grader_input.scope.specimen_slug
-
-            # Load typed output to get grading results (using context for path)
-            output_path = ctx.run_output_path(run_dir)
-            grader_output = GraderOutput.model_validate_json(output_path.read_text())
-
-            # Get the critique that was graded (to access original issue details)
-            if not isinstance(grader_input.critic_result, type(grader_input.critic_result)):
-                # This handles both CriticSuccess and CriticFailure via duck typing
-                # We need CriticSuccess to get the critique payload
-                logger.warning(f"Skipping failed critic result in {run_dir}")
-                continue
-
-            # Access novel (unknown) issues from grading result
-            # novel_critique_issues: dict[InputIssueID, str] (reasoning why it's novel)
-            for input_id, _reasoning in grader_output.grade.novel_critique_issues.items():
-                # Find the corresponding issue in the critique to get full details
-                # critic_result is CriticOutput (discriminated union)
-                # We need to check if it's a success to access the result
-                if grader_input.critic_result.tag != "success":
-                    continue
-
-                critique = grader_input.critic_result.result
-
-                # Find the issue by ID
-                matching_issue = next((issue for issue in critique.issues if issue.id == str(input_id)), None)
-
-                if not matching_issue:
-                    logger.warning(f"Could not find issue {input_id} in critique for {run_dir}")
-                    continue
-
-                # Collect all files from all occurrences
-                files: set[str] = set()
-                for occ in matching_issue.occurrences:
-                    files.update(str(f) for f in occ.files)
-
-                issues.append(
-                    UnknownIssue(
-                        specimen=specimen_slug,
-                        id=input_id,
-                        should_flag=None,  # Unknown issues need human triage
-                        rationale=matching_issue.rationale,
-                        files=files,
-                        run_path=run_dir,
-                    )
-                )
-
-        except Exception as e:
-            logger.warning(f"Failed to load unknowns from {run_dir}: {e}")
-            continue
-
-    return issues
+    # Extract unknown issues
+    return [
+        UnknownIssue(
+            issue_id=ClusteredIssueID(critique_id=critique_id, issue_id=input_id),
+            rationale=matching_issue.rationale,
+            files={f for occ in matching_issue.occurrences for f in occ.files},
+        )
+        for input_id in grader_output.grade.novel_critique_issues
+        if (matching_issue := next((issue for issue in critique_payload.issues if issue.id == str(input_id)), None))
+        is not None
+    ]
 
 
-async def cluster_unknowns_async(
-    issues: list[UnknownIssue], *, model: str, out_root: Path, client: OpenAIModelProto
-) -> Path:
-    """Run the in-proc MCP clustering agent and write clusters.json under out_root.
-
-    Returns the output directory path.
-    """
-
-    state = ClusterSubmitState()
-
-    # Helper to compute unique key for clustering (internal to this function)
-    def _issue_key(issue: UnknownIssue) -> str:
-        return f"{issue.run_path.name}::{issue.id}"
-
-    def _builder(s: NotifyingFastMCP) -> None:
-        @s.tool()
-        def submit_result(payload: ClusterSubmitPayload) -> str:
-            # Validate coverage: every key appears in >=1 submitted cluster
-            seen: set[str] = set()
-            for c in payload.clusters:
-                for it in c.issues:
-                    seen.add(it)
-            all_keys = {_issue_key(u) for u in issues}
-            missing = sorted(all_keys - seen)
-            if missing:
-                raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
-            state.result = payload.clusters
-            return "ok"
+async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path, model: str) -> None:
+    """Run clustering agent for a single specimen."""
+    out_root.mkdir(parents=True, exist_ok=True)
+    result: list[ClusterSpec] | None = None
 
     comp = Compositor("compositor")
     srv = NotifyingFastMCP("cluster_submit", instructions="Cluster submit")
-    _builder(srv)
+
+    @srv.tool()
+    def submit_result(payload: ClusterSubmitPayload) -> str:
+        nonlocal result
+        seen = {it for c in payload.clusters for it in c.issues}
+        all_keys = {u.issue_id for u in specimen_issues}
+        missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.issue_id))
+        if missing:
+            raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
+        result = payload.clusters
+        return "ok"
+
     await comp.mount_inproc("cluster_submit", srv)
-    system = (
-        "You cluster semantically equivalent issues. You MUST call cluster_submit.submit_result exactly once with: "
-        "[{name:string, issues:[string,...]}]."
-    )
-    # Serialize issues with key for LLM clustering (internal key, not exposed on model)
-    # TODO: Improve serialization - avoid manual JSON wrangling, use proper Pydantic serialization helpers
-    input_lines = "\n".join(
-        json.dumps({**i.model_dump(exclude={"run_path", "specimen"}), "key": _issue_key(i)}, ensure_ascii=False)
-        for i in issues
-    )
+    system = "Cluster semantically equivalent issues. Reference issues by their issue_id."
+    input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in specimen_issues)
     async with Client(comp) as mcp_client:
-
-        def _ready_state() -> bool:
-            return state.result is not None
-
         agent = await MiniCodex.create(
-            model=model,
             mcp_client=mcp_client,
             system=system,
-            client=client,
-            handlers=[TranscriptHandler(dest_dir=out_root), GateUntil(_ready_state)],
+            client=build_client(model),
+            handlers=[TranscriptHandler(events_path=out_root / "events.jsonl"), GateUntil(lambda: result is not None)],
             parallel_tool_calls=True,
         )
-        user = "Cluster the following issues. Every uid must appear in >=1 cluster.\n\n" + input_lines
-        await agent.run(user)
-    if state.result is None:
+        await agent.run("Cluster the following issues. Every issue_id must appear in >=1 cluster.\n\n" + input_lines)
+    if result is None:
         raise RuntimeError("cluster_submit.submit_result not called")
     (out_root / "clusters.json").write_text(
-        json.dumps([c.model_dump() for c in state.result], indent=2), encoding="utf-8"
+        json.dumps([c.model_dump(mode="json") for c in result], indent=2), encoding="utf-8"
     )
-    return out_root
 
 
-def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, ctx: RunsContext) -> Path:
+async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, ctx: RunsContext) -> Path:
     """Cluster unknowns per specimen in parallel using an LLM (one run per specimen).
 
-    - Discovers grader runs and loads unknown issues from output.json files (using Pydantic)
-    - Partitions unknowns by specimen and launches an in-proc MCP clustering agent per specimen concurrently
-    - LLM input excludes specimen and run_path (implicitly scoped to the specimen)
-    - Each specimen writes clusters.json under runs/cluster/<ts>/{specimen}/
-    - Returns the root directory containing per-specimen outputs
-
-    Args:
-        model: LLM model to use for clustering
-        out_dir: Optional output directory override
-        ctx: RunsContext for path derivation (injected from CLI)
+    Loads unknown issues from grader runs in the database (using Pydantic).
+    Partitions unknowns by specimen and launches an in-proc MCP clustering agent per specimen concurrently.
+    Each specimen writes clusters.json under runs/cluster/<ts>/{specimen}/.
     """
-    grader_run_dirs = ctx.discover_grader_runs()
-    issues = load_unknowns(grader_run_dirs, ctx)
-    if not issues:
-        raise RuntimeError(f"no unknown issues found in grader runs under {ctx.base_dir}/*/grader/*/*/")
+    # Load unknown issues from grader runs in database, partitioned by specimen
+    by_spec: dict[str, list[UnknownIssue]] = defaultdict(list)
+    with get_session() as session:
+        # Join GraderRun with Critique to avoid N+1 queries
+        results = session.query(GraderRun, Critique).join(Critique, GraderRun.critique_id == Critique.id).all()
+        for db_run, critique in results:
+            by_spec[db_run.specimen_slug].extend(_extract_unknowns_from_run(db_run, critique))
+
+    if not by_spec:
+        raise RuntimeError("no unknown issues found in grader runs in database")
     if out_dir is not None:
         root: Path = Path(out_dir).expanduser().resolve()
     else:
-        root = ctx.cluster_output_dir()
+        # Inline cluster_output_dir (only called here)
+        timestamp = format_timestamp_session()
+        root = ctx.base_dir / "cluster" / timestamp
     root.mkdir(parents=True, exist_ok=True)
 
-    # Partition by specimen
-    by_spec = {u.specimen: [u] for u in issues}
-
-    # Construct a single typed client per invocation
-    typed_client = build_client(model)
-
-    async def _run_all() -> Path:
-        tasks = []
-        for spec, items in by_spec.items():
-            out_spec = root / spec
-            out_spec.mkdir(parents=True, exist_ok=True)
-            tasks.append(cluster_unknowns_async(items, model=model, out_root=out_spec, client=typed_client))
-        # Run in parallel; await all
-        await asyncio.gather(*tasks)
-        return root
-
-    out_root_path: Path = asyncio.run(_run_all())
-    return out_root_path
+    # Run clustering tasks in parallel (one per specimen)
+    tasks = []
+    for spec, items in by_spec.items():
+        out_spec = root / spec
+        tasks.append(_cluster_specimen(items, out_spec, model))
+    await asyncio.gather(*tasks)
+    return root

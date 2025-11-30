@@ -370,7 +370,7 @@ def main():
         results = reader.search_content(args.search)
         print(f"Found {len(results)} matches:")
         for r in results:
-            timestamp = datetime.fromisoformat(r.timestamp.replace("Z", "+00:00"))
+            timestamp = datetime.fromisoformat(r.timestamp)
             print(f"\n[{timestamp.strftime('%Y-%m-%d %H:%M')}] {r.project} ({r.type})")
             print(f"  {r.snippet}")
 
@@ -413,8 +413,8 @@ def main():
                     print(f"Summary: {session.metadata.get('summary', 'N/A')}")
                     print(f"Messages: {session.message_count}")
                     if session.start_time:
-                        start = datetime.fromisoformat(session.start_time.replace("Z", "+00:00"))
-                        end = datetime.fromisoformat(session.end_time.replace("Z", "+00:00"))
+                        start = datetime.fromisoformat(session.start_time)
+                        end = datetime.fromisoformat(session.end_time)
                         print(f"Duration: {end - start}")
                     break
         else:
@@ -422,7 +422,7 @@ def main():
             print("\nRecent Sessions:")
             for session in analysis.sessions[-5:]:
                 if session.start_time:
-                    timestamp = datetime.fromisoformat(session.start_time.replace("Z", "+00:00"))
+                    timestamp = datetime.fromisoformat(session.start_time)
                     summary = session.metadata.get("summary", "No summary")[:60]
                     print(f"  [{timestamp.strftime('%Y-%m-%d %H:%M')}] {summary}...")
     else:

@@ -50,7 +50,7 @@ import pygit2
 
 from adgn.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
 
-from .core import _diff
+from .core import _diff, has_uncommitted_changes
 from .editor_template import SCISSORS_MARK, build_commit_template
 
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
@@ -634,10 +634,10 @@ def _get_editor(repo: pygit2.Repository) -> str:
         repo.config.get("core.editor"),
         os.environ.get("VISUAL"),
         os.environ.get("EDITOR"),
-        "vi",
     ):
         if candidate:
             return candidate
+    return "vi"
 
 
 async def async_main(argv: list[str] | None = None):

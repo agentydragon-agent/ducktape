@@ -27,7 +27,7 @@ class ErrorHandlingAnalyzer(ast.NodeVisitor):
         self.non_raising_except: list[dict[str, Any]] = []
         self.single_line_try: list[dict[str, Any]] = []
 
-    def visit_Try(self, node: ast.Try) -> None:  # noqa: N802
+    def visit_Try(self, node: ast.Try) -> None:
         """Analyze try-except blocks."""
         # Check if try body is single statement (excluding pass/docstring)
         meaningful_stmts = [s for s in node.body if not isinstance(s, ast.Pass | ast.Expr)]

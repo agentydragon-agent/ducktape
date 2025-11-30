@@ -132,11 +132,11 @@ class SingleLineExtractor(ast.NodeVisitor):
         # Continue visiting nested functions
         self.generic_visit(node)
 
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         """Visit sync function definition."""
         self._visit_function(node, is_async=False)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         """Visit async function definition."""
         self._visit_function(node, is_async=True)
 

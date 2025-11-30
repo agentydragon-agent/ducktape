@@ -6,7 +6,6 @@ from adgn.mcp.git_ro.server import LogInput, StatusInput, TextPage, TextSlice
 async def test_git_status_basic(typed_git_ro) -> None:
     async with typed_git_ro() as client:
         sp = await client.git_status(StatusInput())
-        assert hasattr(sp, "entries")
         assert isinstance(sp.entries, list)
 
 

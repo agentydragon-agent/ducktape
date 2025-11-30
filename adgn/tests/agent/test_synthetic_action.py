@@ -25,7 +25,6 @@ async def test_mini_codex_handles_synthetic_action_without_api_calls(
     client = make_fake_openai([responses_factory.make_assistant_message("should_not_be_used")])
     resp = responses_factory.make_assistant_message("hello")
     agent = await MiniCodex.create(
-        model=responses_factory.model,
         mcp_client=pg_session_policy_only,
         system="You are a code agent.",
         client=client,

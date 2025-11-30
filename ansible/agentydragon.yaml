@@ -15,6 +15,7 @@
     # - role: gui
     # - role: laptop
     # - role: scanbox
+    - role: system_inspection_nopasswd
     - role: tailscale_client
     - role: k3s_client
 

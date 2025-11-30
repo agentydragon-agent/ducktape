@@ -2,6 +2,9 @@
 
 Each specimen is explicitly assigned to 'train', 'valid', or 'test'.
 The split is deterministic and aims for ~60/20/20 distribution by issue count.
+
+TODO: Move split assignment into manifest YAMLs (add 'split: train|valid|test' field)
+      and remove SPECIMEN_SPLITS dict. Manifest should be single source of truth.
 """
 
 from __future__ import annotations
@@ -19,22 +22,20 @@ class Split(StrEnum):
 
 # Explicit train/valid/test assignment for each specimen
 # Format: specimen_slug -> split_name (all slugs follow {project}/{date-sequence} pattern)
-# Total: ~24 issues from pyright_watch_report specimen (exact count TBD)
 SPECIMEN_SPLITS: dict[str, Split] = {
-    # Train set: 181+ issues
-    "ducktape/2025-09-03-00": Split.TRAIN,  # 71 issues
-    "ducktape/2025-11-20-00": Split.TRAIN,  # 45 issues
-    "ducktape/2025-11-26-00": Split.TRAIN,  # TBD issues
-    "crush/2025-08-30-internal_db": Split.TRAIN,  # 41 issues
-    "misc/2025-08-29-pyright_watch_report": Split.TRAIN,  # ~24 issues
-    # Validation set: 77 issues
-    "ducktape/2025-11-21-repo": Split.VALID,  # 39 issues
-    "ducktape/2025-11-26-code-quality": Split.VALID,  # 20 issues
-    "ducktape/2025-11-22-repo": Split.VALID,  # 17 issues
-    "ducktape/2025-11-22-post-fixes": Split.VALID,  # 1 issue
-    # Test set: 68 issues
-    "ducktape/2025-11-22-02": Split.TEST,  # 37 issues
-    "ducktape/2025-11-20-01": Split.TEST,  # 31 issues
+    # Train set
+    "ducktape/2025-09-03-00": Split.TRAIN,
+    "ducktape/2025-11-20-00": Split.TRAIN,
+    "crush/2025-08-30-internal_db": Split.TRAIN,
+    "misc/2025-08-29-pyright_watch_report": Split.TRAIN,
+    # Validation set
+    "ducktape/2025-11-21-00": Split.VALID,
+    "ducktape/2025-11-26-00": Split.VALID,
+    "ducktape/2025-11-22-00": Split.VALID,
+    "ducktape/2025-11-22-01": Split.VALID,
+    # Test set
+    "ducktape/2025-11-22-02": Split.TEST,
+    "ducktape/2025-11-20-01": Split.TEST,
 }
 
 

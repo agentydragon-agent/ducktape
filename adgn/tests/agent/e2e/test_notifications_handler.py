@@ -6,10 +6,9 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.runtime.container import build_container
-from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
-from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
+from tests.support.responses import ResponsesFactory
 
 
 @pytest.mark.requires_docker
@@ -40,8 +39,10 @@ async def test_notifications_handler_in_container_inserts_system_message(
     )
 
     try:
-        # Trigger a policy update via admin MCP client (out-of-band notification)
-        await container.policy_approver.set_policy_text(SetPolicyTextArgs(source=policy_allow_all))
+        # Trigger a policy update via approval engine (out-of-band notification)
+        # TODO: Actually trigger this via MCP tool call to admin server instead of direct method
+        assert container.approval_engine is not None
+        container.approval_engine.set_policy(policy_allow_all)
 
         # Run one turn; first sampling triggers notifier tool; second should include notification insert
         assert container.session is not None

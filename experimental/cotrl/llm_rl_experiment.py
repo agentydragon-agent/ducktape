@@ -130,11 +130,11 @@ class OpaqueEnvironmentWrapper:
         self.action_space_size = self.env.action_space.n
 
     def reset(self) -> np.ndarray:
-        obs, info = self.env.reset()
+        obs, _info = self.env.reset()
         return self._flatten_observation(obs)
 
     def step(self, action: int) -> tuple[np.ndarray, float, bool, bool]:
-        obs, reward, done, truncated, info = self.env.step(action)
+        obs, reward, done, truncated, _info = self.env.step(action)
         return self._flatten_observation(obs), reward, done, truncated
 
     def _flatten_observation(self, obs: Any) -> np.ndarray:
@@ -383,7 +383,7 @@ def plot_results(all_runs: list[Run]):
     n_models = len(MODELS)
     n_envs = len(ENVIRONMENTS)
 
-    fig, axes = plt.subplots(n_models, n_envs, figsize=(4 * n_envs, 3 * n_models))
+    _fig, axes = plt.subplots(n_models, n_envs, figsize=(4 * n_envs, 3 * n_models))
     if n_models == 1:
         axes = axes.reshape(1, -1)
     if n_envs == 1:

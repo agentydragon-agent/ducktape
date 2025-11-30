@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 T = TypeVar("T")
 
 
-async def persist(db_session: AsyncSession, obj: T) -> T:
+async def persist[T](db_session: AsyncSession, obj: T) -> T:
     """Persist a model instance and refresh it.
 
     This function works both within an existing transaction

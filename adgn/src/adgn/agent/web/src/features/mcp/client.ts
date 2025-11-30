@@ -4,11 +4,12 @@
  * Provides simplified interface for connecting to the MCP compositor and calling tools/resources.
  * Supports bearer token authentication from URL query param (?token=...).
  */
-import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { Client } from '@modelcontextprotocol/sdk/client'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import {
   ResourceUpdatedNotificationSchema,
   ResourceListChangedNotificationSchema,
+  type ResourceUpdatedNotification,
 } from '@modelcontextprotocol/sdk/types.js'
 
 export interface McpClientOptions {
@@ -92,12 +93,15 @@ export class AgentMcpClient {
    */
   private setupNotificationHandler(): void {
     // Handle resource update notifications (specific resource changed)
-    this.client.setNotificationHandler(ResourceUpdatedNotificationSchema, async (notification) => {
-      const uri = notification.params?.uri
-      if (uri) {
-        await this.notifySubscribers(uri)
+    this.client.setNotificationHandler(
+      ResourceUpdatedNotificationSchema,
+      async (notification: ResourceUpdatedNotification) => {
+        const uri = notification.params?.uri
+        if (uri) {
+          await this.notifySubscribers(uri)
+        }
       }
-    })
+    )
 
     // Handle resource list changed notifications (re-fetch all subscribed)
     this.client.setNotificationHandler(ResourceListChangedNotificationSchema, async () => {
@@ -183,7 +187,6 @@ export class AgentMcpClient {
   async callTool<T = unknown>(name: string, args: Record<string, unknown> = {}): Promise<T> {
     const toolName = this.agentId ? `${this.agentId}_${name}` : name
     const result = await this.client.callTool({ name: toolName, arguments: args })
-    // @ts-expect-error - structuredContent is available from flat Pydantic tools
     return result.structuredContent as T
   }
 
@@ -251,7 +254,7 @@ export class AgentMcpClient {
         // Only unsubscribe when no more callbacks
         if (callbacks.size === 0) {
           this.subscriptions.delete(resourceUri)
-          this.client.unsubscribeResource({ uri: resourceUri }).catch((e) => {
+          this.client.unsubscribeResource({ uri: resourceUri }).catch((e: unknown) => {
             console.warn(`Failed to unsubscribe from ${resourceUri}:`, e)
           })
         }

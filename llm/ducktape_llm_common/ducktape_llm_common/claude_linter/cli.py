@@ -47,7 +47,7 @@ def evaluate_pre(req: HookRequest) -> HookResponse:
             return HookResponse()
 
         # Content changed, check if pre-commit is satisfied with the fixed version
-        ret2, out2, err2 = runner.run([tmp_path], cwd=str(Path(inp.file_path).parent))
+        _ret2, out2, err2 = runner.run([tmp_path], cwd=str(Path(inp.file_path).parent))
         fixed_again_content = Path(tmp_path).read_text()
 
         if fixed_content == fixed_again_content:
@@ -83,7 +83,7 @@ def evaluate_post(req: HookRequest) -> HookResponse:
         runner = PreCommitRunner(config)
 
         # Run check-only (no fixes)
-        ret, out, err = runner.run([file_path], cwd=str(Path(file_path).parent))
+        ret, out, _err = runner.run([file_path], cwd=str(Path(file_path).parent))
 
         if ret != 0:
             # There are violations - report them
@@ -101,7 +101,7 @@ def evaluate_post(req: HookRequest) -> HookResponse:
     runner = PreCommitRunner(config)
 
     # First run: apply autofixes
-    ret1, out1, err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
+    _ret1, _out1, _err1 = runner.run([file_path], cwd=str(Path(file_path).parent))
     content_after_fixes = Path(file_path).read_text()
 
     if content_after_fixes == original:

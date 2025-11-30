@@ -80,9 +80,7 @@ class InfrastructureRegistry:
             raise CompositorNotInitializedError("Global compositor not initialized")
         return comp
 
-    async def _register_and_mount_agent(
-        self, container: AgentContainer, *, external: bool
-    ) -> None:
+    async def _register_and_mount_agent(self, container: AgentContainer, *, external: bool) -> None:
         """Register container and mount to global compositor.
 
         For internal agents, also mounts agent_control server.

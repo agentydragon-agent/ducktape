@@ -3,12 +3,6 @@ source:
   url: file://../specimens.bundle
   ref: refs/tags/specimen-2025-11-20-repo
   commit: 023db0b8da0f0211b268c7ebe27d38f46215be30
-scope:
-  include:
-  - '**/*.py'
-  - '**/*.md'
-  - '**/*.yaml'
-  - '**/*.yml'
 bundle:
   include:
   - adgn/

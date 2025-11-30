@@ -14,7 +14,8 @@
 # Skip false-positive warnings from incomplete ansible-lint module parameter database
 skip_list: []
 exclude_paths:
-  - "roles/legacy_*/**"                 # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
+  # All legacy roles, being migrated to Nix home-manager (relative to ansible/ dir)
+  - "roles/legacy_*/**"
   - ".ansible/**"                       # Galaxy-installed roles and collections (not our code)
 
 # Custom modules and plugins configuration

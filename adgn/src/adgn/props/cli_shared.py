@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+from uuid import UUID
 
 import tiktoken
 
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.agent_runner import run_prompt_async
+from adgn.props.db import get_session
+from adgn.props.db.models import Prompt
 from adgn.props.docker_env import properties_docker_spec
+from adgn.props.runs_context import format_timestamp_session
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,26 @@ class BuildOptions:
     skip_git_repo_check: bool
     full_auto: bool
     extra_configs: list[str] | None = None
+
+
+def hash_and_upsert_prompt(prompt_text: str, prompt_optimization_run_id: UUID | None = None) -> str:
+    """Compute SHA-256 hash of prompt text and upsert to database.
+
+    Args:
+        prompt_text: The prompt content to hash and store
+        prompt_optimization_run_id: Optional ID of the optimization run that generated this prompt
+
+    Returns:
+        The computed SHA-256 hash.
+    """
+    prompt_sha256 = hashlib.sha256(prompt_text.encode()).hexdigest()
+    with get_session() as session:
+        prompt_obj = Prompt(
+            prompt_sha256=prompt_sha256, prompt_text=prompt_text, prompt_optimization_run_id=prompt_optimization_run_id
+        )
+        session.merge(prompt_obj)
+        session.flush()
+    return prompt_sha256
 
 
 def detect_tools() -> list[str]:
@@ -60,19 +84,14 @@ def detect_tools() -> list[str]:
     return available
 
 
-def now_ts() -> str:
-    """Return a filesystem-friendly timestamp string (YYYYMMDD_HHMMSS)."""
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
 def save_prompt_to_tmp(stem: str, text: str) -> Path:
     """Save prompt text under the system temp dir and print a short summary.
 
-    File name: <stem>_<ts>.md; returns the full path. Prints an approximate token count using tiktoken.
+    File name: <stem>_<ts>.md. Prints an approximate token count using tiktoken.
     """
     tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
     tmpdir.mkdir(parents=True, exist_ok=True)
-    ts = now_ts()
+    ts = format_timestamp_session()
     outfile = tmpdir / f"{stem}_{ts}.md"
     outfile.write_text(text, encoding="utf-8")
     tokens = len(tiktoken.get_encoding("cl100k_base").encode(text))
@@ -103,7 +122,7 @@ async def run_check_minicodex_async(
 ) -> int:
     wiring = properties_docker_spec(workdir, mount_properties=True)
     server_factories = {wiring.server_name: wiring.server_factory}
-    res = await run_prompt_async(prompt, model, server_factories, client=client, capture_transcript=not final_only)
+    res = await run_prompt_async(prompt, model, server_factories, client=client)
     if output_final_message:
         Path(output_final_message).write_text(res.final_text, encoding="utf-8")
     if not final_only and res.final_text:

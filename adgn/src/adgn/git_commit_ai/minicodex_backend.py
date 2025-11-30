@@ -193,7 +193,6 @@ async def generate_commit_message_minicodex(
     await comp.mount_inproc(SUBMIT_COMMIT_MESSAGE_SERVER_NAME, make_submit_server(submit_state))
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            model=model,
             mcp_client=mcp_client,
             system="You are a code agent. Be concise.",
             client=build_client(model),

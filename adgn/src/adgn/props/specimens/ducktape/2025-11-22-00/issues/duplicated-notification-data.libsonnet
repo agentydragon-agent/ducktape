@@ -54,7 +54,7 @@ I.issueOneOccurrence(
   filesToRanges={
     'adgn/src/adgn/agent/notifications/types.py': [
       [14, 30],  // NotificationsBatch with redundant fields
-      [33, 51],  // ResourcesServerNotice and NotificationsForModel (redundant with NotificationsBatch)
+      [33, 49],  // ResourcesServerNotice and NotificationsForModel (redundant with NotificationsBatch)
     ],
   },
 )

@@ -6,13 +6,14 @@ Provides fetch_policy(name) to load policy source text from this package.
 from __future__ import annotations
 
 from importlib.resources import files
+from typing import cast
 
 from adgn.mcp._shared.naming import build_mcp_function
 
 
 def fetch_policy(name: str) -> str:
     """Return policy Python source from a file named "<name>.py" in this package."""
-    return files(__name__).joinpath(f"{name}.py").read_text(encoding="utf-8").strip()
+    return cast(str, files(__name__).joinpath(f"{name}.py").read_text(encoding="utf-8"))
 
 
 def make_policy(

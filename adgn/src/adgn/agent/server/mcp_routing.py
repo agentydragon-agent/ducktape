@@ -8,9 +8,9 @@ This module provides token-based routing for MCP requests, routing:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -67,7 +67,7 @@ class MCPRoutingMiddleware(BaseHTTPMiddleware):
         self.registry = registry
         self.agents_server = agents_server
 
-    async def dispatch(self, request: Request, call_next: Any) -> Response:
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
         """Route request based on bearer token."""
         # Extract bearer token
         auth_header = request.headers.get("Authorization", "")

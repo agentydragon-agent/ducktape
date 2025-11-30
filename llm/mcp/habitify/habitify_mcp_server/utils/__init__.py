@@ -110,7 +110,7 @@ def validate_required_params(*param_names: str, **params: Any) -> dict[str, Any]
     return None
 
 
-def with_api_key(func: F) -> F:
+def with_api_key[F: Callable[..., Any]](func: F) -> F:
     """
     Decorator to inject the API key from server context or environment.
 
@@ -139,7 +139,7 @@ def with_api_key(func: F) -> F:
     return cast(F, wrapper)
 
 
-def with_client(func: F) -> F:
+def with_client[F: Callable[..., Any]](func: F) -> F:
     """
     Decorator to handle common client creation and error handling.
 

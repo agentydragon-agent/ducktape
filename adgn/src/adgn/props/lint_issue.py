@@ -30,12 +30,13 @@ from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.ids import BaseIssueID
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.models.lint import AnchorIncorrect, IssueLintFindingRecord, LintSubmitPayload
-from adgn.props.prompts.util import build_input_schemas_json, render_prompt_template
+from adgn.props.models.lint import IssueLintFindingRecord, LintSubmitPayload, extract_corrections
+from adgn.props.prompts.schemas import build_input_schemas_json
+from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
+from adgn.props.runs_context import format_timestamp_session
 from adgn.props.specimens.registry import SpecimenRegistry
 
-from .cli_shared import now_ts
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
 # ---------------------------------------------------------------------------
@@ -55,20 +56,11 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):
     anchors_tbl.add_column("Path", style="cyan")
     anchors_tbl.add_column("Ranges", style="magenta")
 
-    corrections: dict[str, list[LineRange]] = {}
-    if obj.findings:
-        for fr in obj.findings:
-            f = fr.finding
-            if isinstance(f, AnchorIncorrect):
-                corr = f.correction
-                corrections.setdefault(corr.file, []).append(corr.range)
+    corrections = extract_corrections(obj.findings)
 
     if corrections:
         for pth, ranges in corrections.items():
-            spans = ", ".join(
-                (f"[{r.start_line}, {r.end_line}]" if r.end_line is not None else f"[{r.start_line}]") for r in ranges
-            )
-            anchors_tbl.add_row(pth, spans)
+            anchors_tbl.add_row(str(pth), ", ".join(r.format() for r in ranges))
     else:
         anchors_tbl.add_row("(no corrections)", "")
 
@@ -319,26 +311,16 @@ async def lint_issue_run(
     issue_core: IssueCore,
     occurrence: Occurrence,
     *,
-    model: str = "gpt-5",
     client: OpenAIModelProto,
     handlers: list[BaseHandler] | None = None,
     content_root: Path | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
-    Args:
-        specimen: Specimen slug (required if content_root not provided, for hydration)
-        issue_core: Issue to lint
-        occurrence: Single occurrence to lint
-        model: Model ID for agent
-        client: OpenAI client
-        handlers: Additional handlers (optional)
-        content_root: Pre-hydrated specimen root (optional, avoids rehydration)
-
-    - If content_root provided: uses it directly (caller manages hydration)
-    - If content_root not provided: hydrates specimen under $HOME/.cache
-    - Launches in-proc submit server and docker_exec MCP
-    - Uses same LinterController bootstrap/tool policy as the CLI path
+    If content_root provided: uses it directly (caller manages hydration).
+    If content_root not provided: hydrates specimen under $HOME/.cache.
+    Launches in-proc submit server and docker_exec MCP with the same LinterController
+    bootstrap/tool policy as the CLI path.
     """
     submit_state = LintSubmitState()
 
@@ -346,16 +328,16 @@ async def lint_issue_run(
     if content_root is not None:
         # Caller manages hydration
         return await _lint_issue_run_with_hydrated_root(
-            content_root, issue_core, occurrence, model, client, submit_state, handlers
+            content_root, issue_core, occurrence, client, submit_state, handlers
         )
 
     # Hydrate and run
     if specimen is None:
         raise ValueError("Either specimen or content_root must be provided")
 
-    async with SpecimenRegistry.load_and_hydrate(Path(specimen).name) as (_rec, hydrated_root):
+    async with SpecimenRegistry.load_and_hydrate(Path(specimen).name) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
-            hydrated_root, issue_core, occurrence, model, client, submit_state, handlers
+            hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
         )
 
 
@@ -363,7 +345,6 @@ async def _lint_issue_run_with_hydrated_root(
     content_root: Path,
     issue_core: IssueCore,
     occurrence: Occurrence,
-    model: str,
     client: OpenAIModelProto,
     submit_state: LintSubmitState,
     handlers: list[BaseHandler] | None,
@@ -399,7 +380,6 @@ async def _lint_issue_run_with_hydrated_root(
     await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            model=model,
             mcp_client=mcp_client,
             system="You are a code agent. Be concise.",
             client=client,
@@ -428,8 +408,8 @@ async def run_specimen_lint_issue_async(
     client: OpenAIModelProto,
 ) -> int:
     # Load and hydrate once (avoids rehydration in lint_issue_run)
-    async with SpecimenRegistry.load_and_hydrate(specimen) as (rec, content_root):
-        irec = rec.issues[issue_id]
+    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+        irec = hydrated.issues[issue_id]
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue
         if not (0 <= occurrence_index < len(irec.instances)):
@@ -442,7 +422,7 @@ async def run_specimen_lint_issue_async(
         if dry_run:
             # Build a wiring for prompt rendering (no container launched in dry-run)
             # Use hydrated content_root for accurate wiring
-            wiring = properties_docker_spec(content_root, mount_properties=True)
+            wiring = properties_docker_spec(hydrated.content_root, mount_properties=True)
             prompt = _build_prompt(
                 irec.core,  # render via IssueCore + single occurrence
                 submit_tool_name=submit_tool_name,
@@ -451,26 +431,25 @@ async def run_specimen_lint_issue_async(
             )
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
             tmpdir.mkdir(parents=True, exist_ok=True)
-            ts = now_ts()
+            ts = format_timestamp_session()
             outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
             outfile.write_text(prompt, encoding="utf-8")
             print(f"[dry-run] Saved prompt: {outfile}")
             return 0
 
         # Shared core: run and capture structured payload (reuses hydrated content_root)
-        # Add per-run transcript logger handler
+        # Add per-run transcript logger handler (logs/ for ad-hoc debugging)
         run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
-        run_dir = run_dir / f"run_{now_ts()}_{os.getpid()}"
+        run_dir = run_dir / f"run_{format_timestamp_session()}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
         res = await lint_issue_run(
             specimen=None,  # Not needed when content_root provided
             issue_core=irec.core,
             occurrence=occ,
-            model=model,
             client=client,
-            handlers=[DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)],
-            content_root=content_root,  # Reuse hydrated root (avoids rehydration)
+            handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+            content_root=hydrated.content_root,  # Reuse hydrated root (avoids rehydration)
         )
 
         # Print the exact occurrence representation as fed to the model

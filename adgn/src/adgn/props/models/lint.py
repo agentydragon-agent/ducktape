@@ -1,15 +1,17 @@
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, defaultdict
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.props.models.issue import LineRange
+from adgn.props.paths import SpecimenRelativePath
 
 
 class Correction(BaseModel):
-    file: str
+    file: SpecimenRelativePath
     range: LineRange
 
     model_config = ConfigDict(extra="forbid")
@@ -98,6 +100,18 @@ class LintSubmitPayload(BaseModel):
                 "Findings must have: (a) exactly one false positive or true positive finding, or (b) at least 1 'other error' finding"
             )
         return self
+
+
+def extract_corrections(findings: list[IssueLintFindingRecord]) -> defaultdict[Path, list[LineRange]]:
+    """Extract file corrections from AnchorIncorrect findings.
+
+    Returns a defaultdict mapping file paths to corrected line ranges.
+    """
+    corrections: defaultdict[Path, list[LineRange]] = defaultdict(list)
+    for fr in findings:
+        if isinstance(f := fr.finding, AnchorIncorrect):
+            corrections[f.correction.file].append(f.correction.range)
+    return corrections
 
 
 # ChecklistItem (commented out — checklist handling is currently disabled)

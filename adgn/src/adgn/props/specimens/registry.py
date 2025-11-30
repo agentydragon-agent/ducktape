@@ -13,14 +13,13 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse
 from urllib.request import urlopen
 import uuid
-import warnings
 
-import _jsonnet
+import _jsonnet  # type: ignore[import-untyped]
 from filelock import FileLock
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
@@ -30,9 +29,12 @@ from ..ids import FalsePositiveID, TruePositiveID
 from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..paths import FileType, classify_path
-from ..prop_utils import pkg_dir
 from ..rationale import Rationale
 from ..validation_context import SpecimenContext
+
+if TYPE_CHECKING:
+    # Import for type annotations only to avoid circular dependency
+    from .hydrated import HydratedSpecimen
 
 logger = logging.getLogger(__name__)
 
@@ -54,9 +56,7 @@ def _specimen_extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarI
         return tarfile.data_filter(member, path)
     except tarfile.AbsoluteLinkError:
         # Skip absolute symlinks with warning
-        logger.warning(
-            f"Skipping absolute symlink in specimen: {member.name} -> {member.linkname}"
-        )
+        logger.warning(f"Skipping absolute symlink in specimen: {member.name} -> {member.linkname}")
         return None
 
 
@@ -131,16 +131,15 @@ def _jsonnet_evaluate_to_dict(spec_dir: Path, subdir: str, should_flag: bool) ->
     for p in issue_files:
         name = p.stem
         abs_path = str(p.resolve())
-        imports.append(f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}, should_flag: {json.dumps(should_flag)}}}")
+        imports.append(
+            f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}, should_flag: {json.dumps(should_flag)}}}"
+        )
 
     snippet = "{\n" + ",\n".join(imports) + "\n}"
 
     eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
     raw_obj = eval_snippet(
-        f"<batch:{subdir}>",
-        snippet,
-        jpathdir=[str(JSONNET_LIBDIR)],
-        import_callback=_jsonnet_importer,
+        f"<batch:{subdir}>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
     )
     if not isinstance(raw_obj, str):
         raise SpecimenIssuesLoadError([f"{subdir}: Jsonnet returned non-string"])
@@ -153,9 +152,7 @@ def _jsonnet_evaluate_to_dict(spec_dir: Path, subdir: str, should_flag: bool) ->
 
 
 def _validate_issues_from_dicts(
-    raw_issues: dict[str, dict],
-    validation_context: dict,
-    strict: bool,
+    raw_issues: dict[str, dict], validation_context: dict, strict: bool
 ) -> IssuesLoadResult:
     """Validate pre-evaluated issue dicts with complete context.
 
@@ -189,8 +186,6 @@ def _validate_issues_from_dicts(
     if errors and strict:
         raise SpecimenIssuesLoadError(errors)
     return IssuesLoadResult(items=items, errors=errors)
-
-
 
 
 def _xdg_cache_base() -> Path:
@@ -246,11 +241,6 @@ def _repack_tar_with_mtime(archive: Path, mtime: int = 0) -> Path:
     return archive
 
 
-def _default_gitconfig() -> Path | None:
-    cfg = pkg_dir() / "gitconfig.local"
-    return cfg if cfg.exists() else None
-
-
 def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     url = urlunparse(("https", "codeload.github.com", f"/{owner}/{repo}/tar.gz/{ref}", "", "", ""))
@@ -270,12 +260,7 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
         return False
 
 
-def _create_archive_from_git(
-    url: str,
-    ref: str,
-    out_archive: Path,
-    gitconfig: Path | None,
-) -> bool:
+def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
 
     try:
@@ -284,79 +269,28 @@ def _create_archive_from_git(
             file_path = url.removeprefix("file://")
             if file_path.endswith(".bundle"):
                 # For bundles, use subprocess since pygit2 doesn't handle bundles well
-                env = dict(**os.environ)
-                if gitconfig is not None:
-                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
                 # Clone from bundle using subprocess
                 subprocess.run(
                     ["git", "clone", file_path, str(tmpdir)],
                     check=True,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    env=env,
                 )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                    check=True,
-                    env=env,
-                )
+                subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
             else:
                 # Regular file:// repository - use standard approach with subprocess
                 # (pygit2 has issues with file:// URLs)
-                env = dict(**os.environ)
-                if gitconfig is not None:
-                    env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
-                subprocess.run(
-                    ["git", "init", str(tmpdir)],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
-                    check=True,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-                    check=True,
-                    env=env,
-                )
-                subprocess.run(
-                    ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                    check=True,
-                    env=env,
-                )
+                subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL)
+                subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True)
+                subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True)
+                subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
         else:
             # For non-file URLs, fall back to subprocess for now
             # (pygit2 network operations can be complex with auth)
-            env = dict(**os.environ)
-            if gitconfig is not None:
-                env["GIT_CONFIG_GLOBAL"] = str(gitconfig.expanduser().resolve())
-
-            subprocess.run(
-                ["git", "init", str(tmpdir)],
-                check=True,
-                stdout=subprocess.DEVNULL,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "remote", "add", "origin", url],
-                check=True,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref],
-                check=True,
-                env=env,
-            )
-            subprocess.run(
-                ["git", "-C", str(tmpdir), "checkout", "--detach", ref],
-                check=True,
-                env=env,
-            )
+            subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True)
+            subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True)
+            subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
 
         # Drop VCS internals to keep archives small and writable on extract
         shutil.rmtree(tmpdir / ".git", ignore_errors=True)
@@ -366,11 +300,7 @@ def _create_archive_from_git(
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def ensure_archive_for_specimen_slug(
-    man: SpecimenDoc,
-    manifest_path: Path,
-    gitconfig: Path | None,
-) -> Path:
+def ensure_archive_for_specimen_slug(man: SpecimenDoc, manifest_path: Path) -> Path:
     """Ensure a cached archive exists for the specimen.
 
     The slug is computed from the manifest path as repo/name.
@@ -379,7 +309,6 @@ def ensure_archive_for_specimen_slug(
 
     Uses a lock file to prevent concurrent cache creation from multiple processes.
     """
-    gitconfig = gitconfig or _default_gitconfig()
     # Extract hierarchical slug from path: specimens/{repo}/{name}/manifest.yaml -> repo/name
     specimen_dir = manifest_path.parent
     repo_name = specimen_dir.parent.name
@@ -419,19 +348,9 @@ def ensure_archive_for_specimen_slug(
                 return out
             if (
                 _create_archive_from_git(
-                    urlunparse(
-                        (
-                            "https",
-                            "github.com",
-                            f"/{man.source.org}/{man.source.repo}.git",
-                            "",
-                            "",
-                            "",
-                        )
-                    ),
+                    urlunparse(("https", "github.com", f"/{man.source.org}/{man.source.repo}.git", "", "", "")),
                     man.source.ref,
                     out,
-                    gitconfig,
                 )
                 and out.exists()
             ):
@@ -441,35 +360,20 @@ def ensure_archive_for_specimen_slug(
             git_ref = man.source.commit
 
             if man.source.url.startswith("https://github.com/"):
-                parts = (
-                    man.source.url.removeprefix("https://github.com/")
-                    .rstrip("/")
-                    .removesuffix(".git")
-                    .split("/")
-                )
-                if len(parts) >= 2 and _download_github_to(
-                    parts[0],
-                    parts[1],
-                    git_ref,
-                    out,
-                ):
+                parts = man.source.url.removeprefix("https://github.com/").rstrip("/").removesuffix(".git").split("/")
+                if len(parts) >= 2 and _download_github_to(parts[0], parts[1], git_ref, out):
                     _repack_tar_with_mtime(out, mtime=0)
                     return out
             # Resolve relative file:// URLs relative to the manifest directory
             url = resolve_bundle_url(manifest_path, man.source.url)
 
-            if (
-                _create_archive_from_git(url, git_ref, out, gitconfig)
-                and out.exists()
-            ):
+            if _create_archive_from_git(url, git_ref, out) and out.exists():
                 return out
         elif isinstance(man.source, LocalSource):
             src = (manifest_path.parent / man.source.root).resolve()
             _repack_dir_with_mtime(src, out, mtime=0)
             return out
-        raise SystemExit(
-            f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ",
-        )
+        raise SystemExit(f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ")
 
 
 def resolve_bundle_url(manifest_path: Path, source_url: str) -> str:
@@ -491,14 +395,9 @@ def resolve_bundle_url(manifest_path: Path, source_url: str) -> str:
     return url
 
 
-def resolve_source_root(
-    man: SpecimenDoc,
-    manifest_path: Path,
-    gitconfig: Path | None,
-) -> Path:
-    gitconfig = gitconfig or _default_gitconfig()
+def resolve_source_root(man: SpecimenDoc, manifest_path: Path) -> Path:
     if isinstance(man.source, GitHubSource | GitSource):
-        archive = ensure_archive_for_specimen_slug(man, manifest_path, gitconfig)
+        archive = ensure_archive_for_specimen_slug(man, manifest_path)
         return _extract_tar_gz_to_temp(archive)
     if isinstance(man.source, LocalSource):
         # Use existing local copy helper for consistency
@@ -539,9 +438,7 @@ def find_specimens_base() -> Path:
     traversable = resources.files("adgn.props").joinpath("specimens")
     with resources.as_file(traversable) as p:
         if not p.exists() or not p.is_dir():
-            raise FileNotFoundError(
-                f"Specimens directory not found in package resources: {p}",
-            )
+            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
         return p
 
 
@@ -583,16 +480,15 @@ class SpecimenRecord:
     manifest: SpecimenDoc
     issues: dict[str, IssueRecord]
     false_positives: dict[str, IssueRecord]
-    known_files: dict[Path, FileType]  # File map from hydration (for complete validation contexts)
+    all_discovered_files: dict[Path, FileType]  # File map from hydration (for complete validation contexts)
 
     @asynccontextmanager
-    async def hydrated_copy(self, gitconfig: Path | None = None) -> AsyncIterator[Path]:
+    async def hydrated_copy(self) -> AsyncIterator[Path]:
         """Yield a fresh private working tree path under $HOME for Docker-friendly mounts; clean up on exit.
 
         On macOS/Docker Desktop, mounts must be under $HOME to be shared with the VM. We therefore extract/copy under
         ~/.cache/adgn-llm/workspaces/<slug>_<ts>/ and yield the single extracted top-level directory.
         """
-        gitconfig = gitconfig or _default_gitconfig()
         # Build a Docker-friendly mount root under $HOME
         mount_base = Path.home() / ".cache" / "adgn-llm" / "workspaces"
         mount_base.mkdir(parents=True, exist_ok=True)
@@ -604,22 +500,13 @@ class SpecimenRecord:
         # Materialize contents into mount_root according to source
         try:
             if isinstance(self.manifest.source, GitHubSource | GitSource):
-                archive = ensure_archive_for_specimen_slug(
-                    self.manifest,
-                    self.manifest_path,
-                    gitconfig,
-                )
+                archive = ensure_archive_for_specimen_slug(self.manifest, self.manifest_path)
                 with tarfile.open(archive, "r:gz") as tf:
                     members = [m for m in tf.getmembers() if ".git" not in m.name.split("/")]
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         total = len(tf.getmembers())
                         filtered = len(members)
-                        logger.debug(
-                            "[specimen] extracting %s members=%s/%s (filtered .git)",
-                            archive,
-                            filtered,
-                            total,
-                        )
+                        logger.debug("[specimen] extracting %s members=%s/%s (filtered .git)", archive, filtered, total)
                     tf.extractall(mount_root, members=members, filter=_specimen_extract_filter)
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
                         git_dirs = list((mount_root).rglob(".git"))
@@ -631,9 +518,7 @@ class SpecimenRecord:
                 # For local specimens, materialize directly into mount_root (no extra subdir)
                 shutil.copytree(src, mount_root, dirs_exist_ok=True)
             else:  # pragma: no cover - guarded by SpecimenDoc model
-                raise SystemExit(
-                    f"Unsupported source type: {type(self.manifest.source)}",
-                )
+                raise SystemExit(f"Unsupported source type: {type(self.manifest.source)}")
 
             # Determine content root:
             # - If exactly one directory and no files: use that directory (typical for tarball extractions)
@@ -646,28 +531,12 @@ class SpecimenRecord:
         finally:
             shutil.rmtree(mount_root, ignore_errors=True)
 
-    def _validation_context(self) -> dict:
-        """Build complete validation context for specimen.
-
-        Returns:
-            Dict with "specimen_context" key for model_validate(..., context=...)
-        """
-        ctx = SpecimenContext(
-            specimen_slug=self.slug,
-            known_files=self.known_files,  # Use stored file map for complete context
-            allowed_tp_ids=self.issues.keys(),
-            allowed_fp_ids=self.false_positives.keys(),
-        )
-        return {"specimen_context": ctx}
-
     @property
     def canonical_issues(self) -> list[CanonicalIssue]:
         """Canonical true positive issues with typed namespaced IDs."""
         return [
             CanonicalIssue(
-                id=TruePositiveID(record.core.id),
-                rationale=record.core.rationale,
-                occurrences=record.instances,
+                id=TruePositiveID(record.core.id), rationale=record.core.rationale, occurrences=record.instances
             )
             for record in self.issues.values()
         ]
@@ -677,9 +546,7 @@ class SpecimenRecord:
         """Known false positive issues with typed namespaced IDs."""
         return [
             KnownFalsePositive(
-                id=FalsePositiveID(record.core.id),
-                rationale=record.core.rationale,
-                occurrences=record.instances,
+                id=FalsePositiveID(record.core.id), rationale=record.core.rationale, occurrences=record.instances
             )
             for record in self.false_positives.values()
         ]
@@ -697,22 +564,20 @@ class SpecimenRegistry:
 
     @classmethod
     @asynccontextmanager
-    async def load_and_hydrate(
-        cls,
-        slug: str,
-        base: Path | None = None,
-        gitconfig: Path | None = None,
-    ) -> AsyncIterator[tuple[SpecimenRecord, Path]]:
-        """Load specimen with validation and yield record + hydrated root together.
+    async def load_and_hydrate(cls, slug: str, base: Path | None = None) -> AsyncIterator[HydratedSpecimen]:
+        """Load specimen with validation and yield hydrated specimen object.
 
         Avoids double-hydration when caller needs both loaded issues and hydrated specimen.
 
         Yields:
-            (SpecimenRecord, hydrated_root_path): Validated specimen and its hydrated working tree
+            HydratedSpecimen: Single object containing specimen record + hydrated content root
 
         Example:
-            async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20-00") as (rec, root):
-                await run_critic_agent(specimen_rec=rec, content_root=root, ...)
+            async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20-00") as hydrated:
+                # Access specimen data: hydrated.all_discovered_files, hydrated.issues
+                # Access content root: hydrated.content_root
+                # Example: run critic/grader via CriticRun/GraderRun with content_root=hydrated.content_root
+                pass
         """
         base_dir = base or find_specimens_base()
         manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
@@ -731,14 +596,13 @@ class SpecimenRegistry:
             raw_fps = {}  # FPs are optional
 
         # Hydrate specimen to build complete validation context
-        gitconfig = gitconfig or _default_gitconfig()
-        hydrated_root = resolve_source_root(man, manifest_path, gitconfig)
+        hydrated_root = resolve_source_root(man, manifest_path)
         try:
             # Build complete context: files from hydration + IDs from Jsonnet
-            known_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
+            all_discovered_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
             ctx = SpecimenContext(
                 specimen_slug=slug,
-                known_files=known_files,
+                all_discovered_files=all_discovered_files,
                 allowed_tp_ids=list(raw_issues.keys()),  # IDs from Jsonnet (strings)
                 allowed_fp_ids=list(raw_fps.keys()),  # IDs from Jsonnet (strings)
             )
@@ -758,11 +622,14 @@ class SpecimenRegistry:
                 manifest=man,
                 issues={it.core.id: it for it in res_pos.items},
                 false_positives={it.core.id: it for it in res_fp.items},
-                known_files=known_files,  # Store for complete validation contexts
+                all_discovered_files=all_discovered_files,  # Store for complete validation contexts
             )
 
-            # Yield both - caller can use hydrated specimen without re-hydrating
-            yield rec, hydrated_root
+            # Runtime import to avoid circular dependency (type annotation uses TYPE_CHECKING)
+            from adgn.props.specimens.hydrated import HydratedSpecimen  # noqa: PLC0415
+
+            # Yield hydrated specimen - single object with record + content root
+            yield HydratedSpecimen(record=rec, content_root=hydrated_root)
         finally:
             # Clean up hydrated specimen
             shutil.rmtree(
@@ -771,29 +638,7 @@ class SpecimenRegistry:
             )
 
     @classmethod
-    async def load_strict(cls, slug: str, base: Path | None = None, gitconfig: Path | None = None) -> SpecimenRecord:
-        """Load a specimen, raising SpecimenIssuesLoadError on any validation errors.
-
-        .. deprecated::
-            Use `load_and_hydrate()` directly instead. This wrapper discards the hydrated content root.
-
-        Hydrates temporarily for validation, then cleans up.
-        For use cases that need both specimen and hydrated root, use load_and_hydrate() instead.
-        """
-        warnings.warn(
-            "load_strict() is deprecated. Use load_and_hydrate() context manager directly.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        async with cls.load_and_hydrate(slug, base, gitconfig) as (rec, _):
-            return rec
-
-    @classmethod
-    def load_manifest_only(
-        cls,
-        slug: str,
-        base: Path | None = None,
-    ) -> tuple[Path, SpecimenDoc]:
+    def load_manifest_only(cls, slug: str, base: Path | None = None) -> tuple[Path, SpecimenDoc]:
         """Load only the manifest (no Jsonnet issues) for fast collection.
 
         Returns: (manifest_path, manifest_doc)
@@ -807,37 +652,6 @@ class SpecimenRegistry:
 
         manifest = SpecimenDoc.model_validate(raw)
         return (manifest_path, manifest)
-
-    @classmethod
-    async def load_lenient(
-        cls,
-        slug: str,
-        base: Path | None = None,
-        gitconfig: Path | None = None,
-    ) -> tuple[SpecimenRecord, list[str]]:
-        """Load a specimen by hierarchical ID (e.g., 'ducktape/2025-11-20-adgn').
-
-        .. deprecated::
-            Use `load_and_hydrate()` directly instead. This wrapper has no lenient behavior
-            (just re-raises exceptions) and discards the hydrated content root.
-
-        Returns specimen and any non-fatal errors encountered during loading.
-        Hydrates temporarily for validation, then cleans up.
-        For use cases that need both specimen and hydrated root, use load_and_hydrate() instead.
-        """
-        warnings.warn(
-            "load_lenient() is deprecated. Use load_and_hydrate() context manager directly.",
-            DeprecationWarning,
-            stacklevel=2
-        )
-        try:
-            async with cls.load_and_hydrate(slug, base, gitconfig) as (rec, _):
-                return rec, []
-        except SpecimenIssuesLoadError:
-            # load_and_hydrate raises on errors; convert to lenient format
-            # Re-run without strict mode by catching and returning errors
-            # For now, just propagate (lenient mode not really different in new impl)
-            raise
 
     @property
     def specimen_ids(self) -> list[str]:

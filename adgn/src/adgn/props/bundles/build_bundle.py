@@ -10,27 +10,19 @@ from pathlib import Path
 import subprocess
 
 # Import specimen models
-import sys
 import tempfile
 
 from pydantic import TypeAdapter
 import pygit2
 import yaml
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-from props.models.specimen import SpecimenDoc
+from adgn.props.models.specimen import SpecimenDoc
 
 
 def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
     """Apply gitignore-style include/exclude patterns to a file list.
 
-    Args:
-        file_list: List of file paths
-        include: Include patterns (if specified, only matching files are kept)
-        exclude: Exclude patterns (matching files are removed)
-
-    Returns:
-        Filtered list of file paths
+    Include patterns are applied first (whitelist), then exclude patterns (blacklist).
     """
 
     def matches_pattern(path: str, pattern: str) -> bool:
@@ -56,25 +48,27 @@ def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, ex
     return result
 
 
-def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> dict[str, tuple]:
-    """Get all files in a tree recursively.
-
-    Returns:
-        Dict mapping path -> (oid, filemode) tuple
-    """
-    files = {}
+def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> dict[str, tuple[pygit2.Oid, int]]:
+    """Get all files in a tree recursively as path -> (oid, filemode) mappings."""
+    files: dict[str, tuple[pygit2.Oid, int]] = {}
 
     for entry in tree:
         path = f"{prefix}{entry.name}"
         if entry.type_str == "tree":
             # Recursively walk subtrees
             subtree = repo[entry.id]
-            files.update(get_tree_files(repo, subtree, path + "/"))
+            if isinstance(subtree, pygit2.Tree):
+                files.update(get_tree_files(repo, subtree, path + "/"))
         else:
             # Store file entry
             files[path] = (entry.id, entry.filemode)
 
     return files
+
+
+def calculate_tree_size(repo: pygit2.Repository, files: dict[str, tuple[pygit2.Oid, int]]) -> int:
+    """Calculate total size of all blobs in bytes."""
+    return sum(len(repo[oid].read_raw()) for oid, _ in files.values())
 
 
 def copy_blob(source_repo: pygit2.Repository, bundle_repo: pygit2.Repository, oid: pygit2.Oid) -> None:
@@ -100,15 +94,8 @@ def create_filtered_tree(
 ) -> pygit2.Oid:
     """Create a filtered tree by applying include/exclude patterns.
 
-    Args:
-        source_repo: Source repository
-        bundle_repo: Bundle repository
-        source_tree: Source tree to filter
-        include: Include patterns
-        exclude: Exclude patterns
-
-    Returns:
-        OID of the new filtered tree
+    Copies necessary blobs to bundle_repo and builds a new tree structure containing only
+    files that pass the filters.
     """
     # Get all files from source tree
     all_files = get_tree_files(source_repo, source_tree)
@@ -127,7 +114,7 @@ def create_filtered_tree(
         builder = bundle_repo.TreeBuilder()
 
         # Collect items at this level
-        items: dict[str, tuple[str, pygit2.Oid, int]] = {}  # name -> (type, oid, mode)
+        items: dict[str, tuple[str, pygit2.Oid | None, int]] = {}  # name -> (type, oid, mode)
 
         for path, (oid, mode) in filtered_files.items():
             if not path.startswith(path_prefix):
@@ -145,14 +132,15 @@ def create_filtered_tree(
 
         # Build tree
         for name in sorted(items.keys()):
-            item_type, oid, mode = items[name]
+            item_type, item_oid, mode = items[name]
             if item_type == "tree":
                 # Recursively build subdirectory
                 subtree_oid = build_tree(f"{path_prefix}{name}/")
                 builder.insert(name, subtree_oid, mode)
             else:
-                # Add file
-                builder.insert(name, oid, mode)
+                # Add file (oid cannot be None for files)
+                assert item_oid is not None
+                builder.insert(name, item_oid, mode)
 
         return builder.write()
 
@@ -168,37 +156,34 @@ def create_filtered_commit(
     include: list[str] | None,
     exclude: list[str] | None,
 ) -> pygit2.Oid:
-    """Create a filtered commit in the bundle repo.
+    """Create a filtered commit in the bundle repo with original metadata.
 
-    Args:
-        source_repo: Source repository
-        bundle_repo: Bundle repository
-        source_commit_sha: Source commit SHA
-        tag_name: Tag name for the filtered commit
-        base_commit: Base commit in bundle repo
-        include: Include patterns
-        exclude: Exclude patterns
-
-    Returns:
-        OID of the created commit
+    Applies filters to the source tree, preserves original author/committer/message,
+    and tags the result.
     """
     print(f"Processing {tag_name} from {source_commit_sha}...")
 
     # Get source commit
-    source_commit = source_repo.get(source_commit_sha)
+    source_commit_obj = source_repo.get(source_commit_sha)
+    if not isinstance(source_commit_obj, pygit2.Commit):
+        raise TypeError(f"Expected Commit, got {type(source_commit_obj)}")
+    source_commit = source_commit_obj
     source_tree = source_commit.tree
 
     # Get all files and calculate size
     all_files = get_tree_files(source_repo, source_tree)
-    orig_size = sum(source_repo[oid].size for oid, _ in all_files.values())
+    orig_size = calculate_tree_size(source_repo, all_files)
 
     # Create filtered tree
     filtered_tree_oid = create_filtered_tree(source_repo, bundle_repo, source_tree, include, exclude)
-    filtered_tree = bundle_repo[filtered_tree_oid]
+    filtered_tree_obj = bundle_repo[filtered_tree_oid]
+    if not isinstance(filtered_tree_obj, pygit2.Tree):
+        raise TypeError(f"Expected Tree, got {type(filtered_tree_obj)}")
+    filtered_tree = filtered_tree_obj
 
     # Calculate filtered size
     filtered_files = get_tree_files(bundle_repo, filtered_tree)
-    new_size = sum(bundle_repo[oid].size for oid, _ in filtered_files.values())
+    new_size = calculate_tree_size(bundle_repo, filtered_files)
 
     print(f"  Files: {len(all_files)} -> {len(filtered_files)} after filtering")
     print(f"  Original: {orig_size / 1024 / 1024:.1f}MB, Filtered: {new_size / 1024 / 1024:.1f}MB")
@@ -284,9 +269,9 @@ def main():
             include = specimen.bundle.include if specimen.bundle else None
             exclude = specimen.bundle.exclude if specimen.bundle else None
 
-            # Derive tag name from ref in manifest
-            ref = specimen.source.ref
-            tag_name = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else f"specimen-{spec_id}"
+            # Derive tag name from ref in manifest (only for Git/GitHub sources)
+            ref = getattr(specimen.source, "ref", None)
+            tag_name = ref.removeprefix("refs/tags/") if ref and ref.startswith("refs/tags/") else f"specimen-{spec_id}"
 
             # Create filtered commit
             create_filtered_commit(

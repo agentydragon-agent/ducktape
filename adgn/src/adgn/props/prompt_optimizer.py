@@ -2,51 +2,289 @@
 
 Runs an LLM agent to optimize critic prompts using train/valid/test splits
 with budget tracking and granular evaluation tools.
+
+Includes MCP server for prompt evaluation (run_critic/run_grader tools).
 """
 
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
-from datetime import datetime
-from importlib import resources
 import logging
+import os
 from pathlib import Path
+from uuid import UUID, uuid4
 
 from fastmcp.client import Client
+from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.agent import MiniCodex
-
-# from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Abort, Auto, Continue
-from adgn.agent.rich_display import RichDisplayHandler
-from adgn.agent.transcript_handler import TranscriptHandler
-from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME
+from adgn.agent.reducer import AutoHandler
+from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, WORKING_DIR
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.types import ReasoningSummary
+from adgn.props.agent_setup import build_props_handlers
+from adgn.props.cli_shared import hash_and_upsert_prompt
+from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.db import agent_queries, get_session
+from adgn.props.db.sync_specimens import ensure_specimens_synced
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.prompt_eval.server import PromptEvalState, attach_prompt_eval
+from adgn.props.grader import grade_critique_by_id
+from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
-from adgn.props.runs_context import RunsContext
+from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.splits import get_train_specimens
 
 logger = logging.getLogger(__name__)
 
 
-class BudgetHandler(BaseHandler):
-    """Loop controller: continue while budget remains, abort when exceeded."""
+# NOTE: BudgetHandler removed pending refactor - PromptEvalState no longer exists
+# Budget tracking needs to be reimplemented with the new prompt_eval server API
 
-    def __init__(self, state: PromptEvalState) -> None:
-        self._state = state
 
-    def on_before_sample(self):
-        """Check budget and decide whether to continue or abort."""
-        if self._state.budget_limit and self._state.total_cost >= self._state.budget_limit:
-            logger.info(f"Budget exhausted: ${self._state.total_cost:.2f} >= ${self._state.budget_limit:.2f}")
-            return Abort()
-        return Continue(Auto())
+# ============================================================================
+# MCP Server for Prompt Evaluation
+# ============================================================================
+
+
+class UpsertPromptInput(BaseModel):
+    """Input for upsert_prompt tool."""
+
+    file_path: str = Field(
+        description="Path to prompt file in container filesystem (e.g., /workspace/prompt-v1.txt). Use docker_exec write_file first to create it."
+    )
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class UpsertPromptOutput(BaseModel):
+    """Output for upsert_prompt tool."""
+
+    prompt_sha256: str = Field(description="SHA256 hash of prompt content (use this in run_critic)")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RunCriticOutput(BaseModel):
+    """Output for run_critic tool - DB IDs for critic run and generated critique."""
+
+    critic_run_id: UUID = Field(description="Database ID of critic run. Query DB for results/metrics/costs.")
+    critique_id: UUID = Field(description="UUID of critique (linked to critic run). Use for run_grader.")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RunGraderInput(BaseModel):
+    """Input for run_grader tool.
+
+    Note: model is NOT included - the server is bound to a specific client/model at build time.
+    """
+
+    critique_id: UUID = Field(description="UUID of critique to grade (from critiques table)")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class RunGraderOutput(BaseModel):
+    """Output for run_grader tool - only the DB ID."""
+
+    grader_run_id: UUID = Field(description="Database ID of grader run. Query DB for results/metrics/costs.")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+async def build_server(
+    *,
+    client: OpenAIModelProto,
+    name: str = "prompt_eval",
+    prompt_optimization_run_id: UUID | None = None,
+    workspace_root: Path,
+    verbose: bool = False,
+) -> NotifyingFastMCP:
+    """Build prompt_eval server with minimal critic/grader execution tools.
+
+    Provides MCP tools for triggering critic and grader runs:
+    - upsert_prompt(file_path) -> prompt_sha256
+    - run_critic(specimen, scope, prompt_sha256) -> critic_run_id, critique_id
+    - run_grader(critique_id) -> grader_run_id
+
+    Tools return only DB IDs. Agent queries database for results, metrics, costs.
+
+    TODO: Implement proper cost tracking and limiting
+    Implementation approach:
+    - Enforcement: Check if total_cost > budget_limit before accepting run_critic/run_grader calls
+    - Tracking: After each run completes, fetch run_id from DB, pull its costs field, add to running tally
+    - Storage option 1: In-memory running tally in server state (simple, per-session)
+    - Storage option 2: Create PromptOptimizationRun DB model with parent pointer to group related runs
+      - Aggregate costs across all child critic_runs/grader_runs linked to the optimization session
+      - Persist budget and accumulated costs for resumability
+
+    Args:
+        client: OpenAI client for running evaluations
+        name: MCP server name
+        prompt_optimization_run_id: Optional ID of the optimization run for tracking prompts
+
+    Returns:
+        MCP server with upsert_prompt, run_critic and run_grader tools
+    """
+    # Ensure specimens table is synced on server startup
+    await ensure_specimens_synced()
+
+    mcp = NotifyingFastMCP(
+        name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
+    )
+
+    @mcp.tool(flat=True)
+    async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
+        """Hash prompt text and upsert to database.
+
+        Workflow:
+        1. Write prompt to file using docker_exec write_file
+        2. Call this tool with the container file path
+        3. Tool reads from mapped host path and hashes
+        4. Use returned SHA256 in run_critic calls
+
+        Returns SHA256 hash for use in run_critic tool.
+        """
+        # Map container path to host path
+        # Container paths like /workspace/prompt-v1.txt map to workspace_root/prompt-v1.txt
+        container_path = Path(payload.file_path)
+        working_dir_str = str(WORKING_DIR) + "/"
+        if not str(container_path).startswith(working_dir_str):
+            raise ValueError(f"File path must be in {WORKING_DIR}/ directory, got: {payload.file_path}")
+
+        relative_path = str(container_path).removeprefix(working_dir_str)
+        host_path = workspace_root / relative_path
+
+        if not host_path.exists():
+            raise FileNotFoundError(f"Prompt file not found: {host_path}")
+
+        # Read prompt text from host filesystem
+        prompt_text = host_path.read_text(encoding="utf-8")
+
+        # Hash and upsert to database (with optional run ID for tracking)
+        prompt_sha256 = hash_and_upsert_prompt(prompt_text, prompt_optimization_run_id)
+
+        return UpsertPromptOutput(prompt_sha256=prompt_sha256)
+
+    @mcp.tool(flat=True)
+    async def run_critic(payload: CriticInput) -> RunCriticOutput:
+        """Execute critic agent on specimen to generate critique (list of reported issues).
+
+        Runs the critic agent on specified files within a specimen using the provided prompt.
+        The critic agent analyzes code and reports issues it finds.
+
+        Returns database IDs for the run - query the database to access:
+        - critic_runs.output (full CriticOutput with reported issues, costs, model info)
+        - critiques.payload (structured issue list from agent)
+        - events (full execution trace by transcript_id)
+
+        Files parameter:
+        - Set of Path objects: scope to specific files (train specimens only)
+        - "all": evaluate all files with known ground-truth issues (required for validation split)
+
+        Validation split restriction: must use files="all" (full specimen evaluation only).
+
+        Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
+        """
+        # Check specimen split and enforce validation restriction
+        from adgn.props.db import get_session
+        from adgn.props.db.models import Specimen
+
+        with get_session() as session:
+            db_specimen = session.query(Specimen).filter_by(specimen_slug=payload.specimen_slug).first()
+            if db_specimen is None:
+                raise ValueError(f"Specimen '{payload.specimen_slug}' not found in database")
+
+            # Validation split: must use files=ALL_FILES_WITH_ISSUES
+            if db_specimen.split == "valid" and payload.files != ALL_FILES_WITH_ISSUES:
+                raise ValueError(
+                    f"Validation split specimen '{payload.specimen_slug}' must use files=\"{ALL_FILES_WITH_ISSUES}\" (full specimen evaluation only). "
+                    f"Cannot run on subset of files."
+                )
+
+        # Resolve files for prompt rendering and validation
+        resolved_files = await resolve_critic_scope(specimen_slug=payload.specimen_slug, files=payload.files)
+
+        # Load and hydrate specimen for content_root
+        async with SpecimenRegistry.load_and_hydrate(payload.specimen_slug) as hydrated:
+            # Validate explicit files exist (when not using sentinel)
+            if payload.files != ALL_FILES_WITH_ISSUES:
+                specimen_files = set(hydrated.all_discovered_files.keys())
+                if invalid_files := resolved_files - specimen_files:
+                    raise ValueError(
+                        f"Invalid files for specimen '{payload.specimen_slug}': {sorted(str(f) for f in invalid_files)}. "
+                        f"Available files: {sorted(str(f) for f in specimen_files)[:10]}..."
+                    )
+
+            # Build user prompt with resolved file list
+            user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))
+
+            # Fetch prompt text from database using SHA256
+            from adgn.props.db.models import Prompt
+
+            with get_session() as session:
+                prompt_obj = session.query(Prompt).filter_by(prompt_sha256=payload.prompt_sha256).first()
+                if prompt_obj is None:
+                    raise ValueError(
+                        f"Prompt not found in database: {payload.prompt_sha256}. "
+                        f"Call upsert_prompt tool first to register the prompt."
+                    )
+                system_prompt = prompt_obj.prompt_text
+
+            # Execute critic run (saves to DB automatically)
+            _critic_success, critic_run_id, critique_id = await execute_critic_run(
+                input_data=payload,
+                client=client,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                content_root=hydrated.content_root,
+                mount_properties=False,
+                extra_handlers=(),
+                verbose=verbose,
+            )
+
+            if critique_id is None:
+                raise RuntimeError("Critic run completed but no critique was created")
+            return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
+
+    @mcp.tool(flat=True)
+    async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
+        """Execute grader agent to evaluate a critique against ground truth.
+
+        Runs the grader agent to compare a critic's reported issues against ground truth.
+        Computes precision, recall, true positives, false positives, false negatives.
+
+        Returns database ID for the run - query the database to access:
+        - grader_runs.output (full GraderOutput with grade.recall, grade.precision, grade.metrics)
+        - grader_runs.critique_id (links back to the critique that was graded)
+        - Join to critic_runs via critique_id to get prompt_sha256, model, files scoped
+        - Join to specimens to check split (train has per-specimen access, valid only via aggregate view)
+        - events (full execution trace by transcript_id)
+
+        Grade metrics in output JSONB:
+        - grade.recall: fraction of ground-truth issues found (PRIMARY METRIC)
+        - grade.precision: fraction of reported issues that match ground truth (may be low due to sparse labeling)
+        - grade.metrics: {true_positives, false_positives, false_negatives} counts
+
+        Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
+        """
+        # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
+        grader_run_id = await grade_critique_by_id(critique_id=payload.critique_id, client=client, verbose=verbose)
+
+        return RunGraderOutput(grader_run_id=grader_run_id)
+
+    return mcp
+
+
+# ============================================================================
+# Prompt Optimizer
+# ============================================================================
 
 
 @asynccontextmanager
@@ -55,11 +293,6 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
 
     Uses AsyncExitStack to keep all specimens hydrated until context exits.
     No copying - mount each specimen and its definitions directly as separate Docker volumes.
-
-    Yields:
-        (specimen_paths, defs_root):
-            - specimen_paths: {specimen_slug: Path_to_hydrated_specimen} - mount each as /specimens/{slug}
-            - defs_root: Base path to specimen definitions - mount {slug} subdirs as /defs/{slug}
     """
     specimen_paths: dict[str, Path] = {}
     defs_root = specimens_definitions_root()
@@ -70,12 +303,10 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
 
         for slug in train_specimens:
             # Load and hydrate specimen, keep alive for Docker mounting
-            _rec, content_root = await stack.enter_async_context(
-                SpecimenRegistry.load_and_hydrate(slug, gitconfig=None)
-            )
+            hydrated = await stack.enter_async_context(SpecimenRegistry.load_and_hydrate(slug))
             # No copying - mount hydrated path directly as separate Docker volume
-            specimen_paths[slug] = content_root
-            logger.debug(f"Hydrated {slug} → {content_root} (mount as /specimens/{slug})")
+            specimen_paths[slug] = hydrated.content_root
+            logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /specimens/{slug})")
 
         # Return base definitions directory - consumer mounts defs_root/{slug} for each train specimen
         logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
@@ -85,38 +316,41 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
 
 
 async def run_prompt_optimizer(
-    budget: float,
-    ctx: RunsContext,
-    out_dir: Path | None = None,
-    model: str = "gpt-5",
-    agent_model: str = "gpt-5-mini",
-    verbose: bool = False,
+    budget: float, ctx: RunsContext, out_dir: Path | None = None, model: str = "gpt-5", verbose: bool = False
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt.
 
-    Args:
-        budget: $ budget for optimization
-        ctx: RunsContext for path derivation (injected from CLI)
-        out_dir: Output directory (defaults to runs/prompt_optimize_<timestamp>)
-        model: Model ID to use for optimization agent
-        agent_model: Model ID to use for inner critic agent during evaluations
-        verbose: If True, display inner agent (critic/grader) events during evaluations
+    Hydrates train specimens and mounts them with definitions via Docker.
+    The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
     """
-    # Load system prompt from prompts directory
-    system = (resources.files(__package__) / "prompts" / "prompt_optimizer_system.md").read_text(encoding="utf-8")
+    # Render system prompt with query constants
+    system = render_prompt_template(
+        "prompt_optimizer_system.j2.md",
+        sql_list_train=agent_queries.SQL_LIST_TRAIN_SPECIMENS,
+        sql_recent_graders=agent_queries.SQL_RECENT_GRADER_RESULTS,
+        sql_valid_agg_view=agent_queries.SQL_VALID_AGGREGATES_VIEW,
+        sql_critique_for_specimen=agent_queries.SQL_CRITIQUE_FOR_SPECIMEN,
+        sql_link_to_prompt=agent_queries.SQL_LINK_GRADER_TO_PROMPT,
+        sql_tools_used=agent_queries.SQL_TOOLS_USED,
+        sql_tool_sequence=agent_queries.SQL_TOOL_SEQUENCE,
+        sql_failed_tools=agent_queries.SQL_FAILED_TOOLS,
+        sql_blocked_valid_critiques=agent_queries.SQL_BLOCKED_VALID_CRITIQUES,
+        sql_blocked_valid_grader_runs=agent_queries.SQL_BLOCKED_VALID_GRADER_RUNS,
+        sql_blocked_valid_events=agent_queries.SQL_BLOCKED_VALID_EVENTS,
+    )
 
-    # Session directory
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    session_dir = (out_dir if out_dir is not None else ctx.prompt_optimize_output_dir(ts)).resolve()
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    # Shared evaluation directories
-    evals_base = ctx.prompt_evals_dir().resolve()
-    evals_base.mkdir(parents=True, exist_ok=True)
+    # Session directory (inline adhoc_run_dir - only called here)
+    ts = format_timestamp_session()
+    if out_dir is not None:
+        session_dir = out_dir.resolve()
+    else:
+        session_dir = ctx.base_dir / "prompt_optimize" / f"session_{ts}"
+        session_dir.mkdir(parents=True, exist_ok=True)
+        session_dir = session_dir.resolve()
 
     # Hydrate train specimens and keep alive for Docker mounting
     async with hydrate_train_specimens() as (train_specimens, defs_root):
-        # Build extra volumes for Docker (specimens + eval results + definitions)
+        # Build extra volumes for Docker (specimens + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
 
@@ -131,11 +365,18 @@ async def run_prompt_optimizer(
             if def_path.exists():
                 extra_volumes[str(def_path.resolve())] = {"bind": f"/specimen_defs/train/{slug}", "mode": "ro"}
 
-        # Past evaluation results (ro) - ONLY mount train split to prevent validation leakage
-        # Create train/ directory eagerly (required for Docker mount)
-        train_evals = evals_base / "train"
-        train_evals.mkdir(parents=True, exist_ok=True)
-        extra_volumes[str(train_evals)] = {"bind": "/artifacts/prompt_evals/train", "mode": "ro"}
+        # Get agent_user database URL from environment
+        agent_db_url = os.environ.get("PROPS_AGENT_DB_URL")
+        logger.info(f"PROPS_AGENT_DB_URL from environment: {agent_db_url}")
+        if not agent_db_url:
+            logger.warning(
+                "PROPS_AGENT_DB_URL not set - agent will not have database access. "
+                "Set to enable querying train data and valid aggregates."
+            )
+        else:
+            # Transform localhost:5433 → props-postgres:5432 for Docker network access
+            agent_db_url = agent_db_url.replace("localhost:5433", "props-postgres:5432")
+            logger.info(f"Transformed agent_db_url for container: {agent_db_url}")
 
         # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
@@ -143,58 +384,75 @@ async def run_prompt_optimizer(
             workspace_root=session_dir,
             mount_properties=False,  # No property definitions mounted
             extra_volumes=extra_volumes,
-            ephemeral=True,
+            ephemeral=False,  # Use persistent container to maintain environment
             workspace_mode="rw",  # Agent needs to write prompt iterations
+            db_url=agent_db_url,  # Agent-restricted database access
+            network_mode=("props_default" if agent_db_url else None),  # Join postgres network if DB enabled
         )
+
+        # Create PromptOptimizationRun record for tracking
+        from adgn.props.db.models import PromptOptimizationRun
+
+        with get_session() as session:
+            po_run = PromptOptimizationRun(
+                budget_limit=budget, config={"model": model, "session_dir": str(session_dir)}
+            )
+            session.add(po_run)
+            session.flush()
+            prompt_optimization_run_id = po_run.id
+            session.commit()
+
+        logger.info(f"Created PromptOptimizationRun: {prompt_optimization_run_id}")
 
         comp = Compositor("compositor")
         runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
 
-        prompt_eval_server, pe_state = await attach_prompt_eval(
-            comp,
-            client=build_client(model),
-            name=PROMPT_EVAL_SERVER_NAME,
-            agent_model=agent_model,
-            evals_base_dir=evals_base,
-            workspace_host_path=session_dir,  # Map /workspace to host session_dir
+        await comp.mount_inproc(
+            PROMPT_EVAL_SERVER_NAME,
+            await build_server(
+                client=build_client(model),
+                name=PROMPT_EVAL_SERVER_NAME,
+                prompt_optimization_run_id=prompt_optimization_run_id,
+                workspace_root=session_dir,
+                verbose=verbose,
+            ),
         )
-        pe_state.budget_limit = budget
-        pe_state.verbose = verbose
 
         # Collect servers for tool schema extraction
-        servers = {wiring.server_name: runtime_server, PROMPT_EVAL_SERVER_NAME: prompt_eval_server}
+        servers = {wiring.server_name: runtime_server}
 
         user = f"""Your budget is: ${budget:.2f}.
 
 Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
 Prioritize recall first, then precision.
-
-Start with cheap iterations (eval_file, eval_specimen) to explore quickly.
-Run expensive eval_split() when you have a promising candidate.
-
-Write prompts to /workspace (e.g., /workspace/prompts/v1.txt).
-Organize your work however you like.
-
-The critic will run in a harness ensuring proper output format.
-Do not prescribe output schemas explicitly in your prompt.
 """
 
+        # Generate transcript ID for database event tracking
+        transcript_id = uuid4()
+        logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
+
+        handlers: list = [
+            AutoHandler(),  # Loop control (continue until agent stops)
+            *build_props_handlers(
+                transcript_id=transcript_id, verbose_prefix="[OPTIMIZER] " if verbose else None, servers=servers
+            ),
+        ]
+
+        # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
+        #       for better agent context about runtime environment
         async with Client(comp) as mcp_client:
+            await mount_standard_inproc_servers(compositor=comp)
             agent = await MiniCodex.create(
-                model=model,
                 mcp_client=mcp_client,
                 system=system,
                 client=build_client(model),
-                handlers=[
-                    BudgetHandler(pe_state),  # Loop control: abort when budget exhausted
-                    TranscriptHandler(dest_dir=session_dir / "transcript"),
-                    RichDisplayHandler(max_lines=50, prefix="[OPTIMIZER] ", servers=servers),
-                ],
+                handlers=handlers,
                 parallel_tool_calls=True,
+                reasoning_summary=ReasoningSummary.detailed,
             )
 
-            res = await agent.run(user)
-            (session_dir / "final.md").write_text(res.text, encoding="utf-8")
+            await agent.run(user)
 
         logger.info(f"Optimization session complete. Results in: {session_dir}")
-        logger.info(f"Total cost: ${pe_state.total_cost:.2f} / ${budget:.2f}")
+        # NOTE: Cost tracking removed pending refactor - pe_state no longer available
+        logger.info(f"Budget: ${budget:.2f}")

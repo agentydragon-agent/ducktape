@@ -108,9 +108,10 @@ async def test_all_specimens_in_splits_can_load():
     base = find_specimens_base()
 
     for slug in SPECIMEN_SPLITS:
-        rec = await SpecimenRegistry.load_strict(slug, base=base)
-        assert rec is not None, f"Specimen {slug} failed to load"
-        assert len(rec.issues) > 0, f"Specimen {slug} has no issues"
+        async with SpecimenRegistry.load_and_hydrate(slug, base=base) as hydrated:
+            rec = hydrated.record
+            assert rec is not None, f"Specimen {slug} failed to load"
+            assert len(rec.issues) > 0, f"Specimen {slug} has no issues"
 
 
 async def test_split_issue_counts():
@@ -126,15 +127,16 @@ async def test_split_issue_counts():
     test_issues = 0
 
     for slug in SPECIMEN_SPLITS:
-        rec = await SpecimenRegistry.load_strict(slug, base=base)
-        issue_count = len(rec.issues)
+        async with SpecimenRegistry.load_and_hydrate(slug, base=base) as hydrated:
+            rec = hydrated.record
+            issue_count = len(rec.issues)
 
-        if is_train(slug):
-            train_issues += issue_count
-        elif is_valid(slug):
-            valid_issues += issue_count
-        else:
-            test_issues += issue_count
+            if is_train(slug):
+                train_issues += issue_count
+            elif is_valid(slug):
+                valid_issues += issue_count
+            else:
+                test_issues += issue_count
 
     # Primary constraint: valid and test must have >=50 issues each
     # (Relaxed from 60 as validation set currently has 57 issues)

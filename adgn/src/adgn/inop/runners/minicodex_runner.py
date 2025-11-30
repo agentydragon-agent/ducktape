@@ -32,7 +32,8 @@ from adgn.inop.engine.models import (
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.constants import WORKING_DIR
-from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
+from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.types import NetworkMode
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.bwrap import make_bwrap_exec_server
 from adgn.mcp.exec.direct import make_direct_exec_server
@@ -83,12 +84,11 @@ class MiniCodexRunner(AgentRunner):
         default_handlers: list[BaseHandler] = [
             AutoHandler(),
             DisplayEventsHandler(),
-            TranscriptHandler(dest_dir=run_dir),
+            TranscriptHandler(events_path=run_dir / "events.jsonl"),
         ]
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await MiniCodex.create(
-            model=self.model,
             system=None,
             mcp_client=mcp_client,
             client=self._openai_model,

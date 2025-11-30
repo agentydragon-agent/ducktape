@@ -34,12 +34,12 @@ class SpecimenContext:
     def __init__(
         self,
         specimen_slug: str,
-        known_files: dict[Path, FileType],
+        all_discovered_files: dict[Path, FileType],
         allowed_tp_ids: Iterable[BaseIssueID],
         allowed_fp_ids: Iterable[BaseIssueID],
     ):
         self.specimen_slug = specimen_slug
-        self.known_files = known_files
+        self.all_discovered_files = all_discovered_files
         self.allowed_tp_ids: frozenset[BaseIssueID] = frozenset(allowed_tp_ids)
         self.allowed_fp_ids: frozenset[BaseIssueID] = frozenset(allowed_fp_ids)
 
@@ -52,11 +52,11 @@ class SpecimenContext:
         specimen_fps: Iterable[BaseIssueID],
     ) -> SpecimenContext:
         """Build file map from hydrated_root via rglob("*") and classify_path."""
-        known_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
+        all_discovered_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
 
         return cls(
             specimen_slug=specimen_slug,
-            known_files=known_files,
+            all_discovered_files=all_discovered_files,
             allowed_tp_ids=specimen_issues,
             allowed_fp_ids=specimen_fps,
         )

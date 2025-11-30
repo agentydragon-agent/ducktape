@@ -45,7 +45,7 @@ class FileAnalyzer(ast.NodeVisitor):
         self.stack: list[FunctionContext] = []
 
     # -- Import alias detection -------------------------------------------------
-    def visit_Import(self, node: ast.Import) -> None:  # noqa: N802 (ast API)
+    def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
             if alias.asname:
                 self.findings.append(
@@ -53,7 +53,7 @@ class FileAnalyzer(ast.NodeVisitor):
                 )
         self.generic_visit(node)
 
-    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:  # noqa: N802
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         module = node.module or "<unknown>"
         for alias in node.names:
             if alias.asname:
@@ -63,14 +63,14 @@ class FileAnalyzer(ast.NodeVisitor):
         self.generic_visit(node)
 
     # -- Function analysis ------------------------------------------------------
-    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:  # noqa: N802
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_function(node)
 
-    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:  # noqa: N802
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function(node)
 
     # -- Assignment/store tracking ---------------------------------------------
-    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+    def visit_Assign(self, node: ast.Assign) -> None:
         ctx = self._current()
         if ctx is not None:
             for target in node.targets:
@@ -87,31 +87,31 @@ class FileAnalyzer(ast.NodeVisitor):
                         )
         self.generic_visit(node)
 
-    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:  # noqa: N802
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         ctx = self._current()
         if ctx is not None:
             self._record_store_target(node.target, node.lineno)
         self.generic_visit(node)
 
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
         ctx = self._current()
         if ctx is not None:
             self._record_store_target(node.target, node.lineno)
         self.generic_visit(node)
 
-    def visit_For(self, node: ast.For) -> None:  # noqa: N802
+    def visit_For(self, node: ast.For) -> None:
         ctx = self._current()
         if ctx is not None:
             self._record_store_target(node.target, node.lineno)
         self.generic_visit(node)
 
-    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
         ctx = self._current()
         if ctx is not None:
             self._record_store_target(node.target, node.lineno)
         self.generic_visit(node)
 
-    def visit_With(self, node: ast.With) -> None:  # noqa: N802
+    def visit_With(self, node: ast.With) -> None:
         ctx = self._current()
         if ctx is not None:
             for item in node.items:
@@ -119,7 +119,7 @@ class FileAnalyzer(ast.NodeVisitor):
                     self._record_store_target(item.optional_vars, node.lineno)
         self.generic_visit(node)
 
-    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:  # noqa: N802
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
         ctx = self._current()
         if ctx is not None:
             for item in node.items:

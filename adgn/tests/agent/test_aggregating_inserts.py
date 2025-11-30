@@ -58,7 +58,6 @@ async def test_function_call_inject_without_skip_sampling_raises(make_fake_opena
     """Verify runtime check prevents FunctionCallItem injection without skip_sampling=True."""
     async with make_session({}) as mcp_client:
         agent = await MiniCodex.create(
-            model="test",
             system="test",
             mcp_client=mcp_client,
             client=make_fake_openai([]),

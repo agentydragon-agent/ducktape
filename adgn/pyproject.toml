@@ -35,7 +35,7 @@ dependencies = [
   "pandas>=2.2.0",
   "tiktoken>=0.7.0",
   "sqlalchemy[asyncio]>=2.0.32",
-  "types-sqlalchemy>=1.4.53",
+  "alembic>=1.13.0",
   "psycopg[binary]>=3.1",
   "psycopg2-binary>=2.9",
   "plotnine>=0.13.0",
@@ -63,6 +63,7 @@ dependencies = [
   "jinja2>=3.1",
   "kubernetes>=29.0.0",
   "filelock>=3.13.0",
+  "compact-json>=1.4.0",
 ]
 
 [project.optional-dependencies]
@@ -146,6 +147,7 @@ timeout_method = "thread"
 # Run tests in parallel using xdist by default
 addopts = [
     "-n=16",
+    "--dist=loadscope",
     "-m",
     "not live_llm",
     "-v",
@@ -169,6 +171,7 @@ markers = [
     "macos: macOS-only tests",
     "requires_docker: tests that require Docker to run",
     "requires_sandbox_exec: tests that require local sandbox exec capabilities",
+    "requires_postgres: tests that require PostgreSQL database to run",
 ]
 # Ensure hermetic git by default via pytest-env plugin
 # These are static-safe; dynamic HOME/XDG are set by autouse fixture
@@ -193,7 +196,7 @@ rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
-adgn-properties = "adgn.props.cli:main"
+adgn-properties = "adgn.props.cli_app.main:main"
 adgn-properties2 = "adgn.props.cli_app.main:app"
 git-commit-ai = "adgn.git_commit_ai.cli:main"
 sandbox-jupyter = "adgn.mcp.sandboxed_jupyter.wrapper:main"

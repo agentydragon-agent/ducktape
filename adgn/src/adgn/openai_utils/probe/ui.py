@@ -117,9 +117,7 @@ class ProbeTUI(App):
         self._render_view(final=True)
 
     def _family_label(self, fam: Family | None) -> str:
-        if fam is None:
-            return "ALL"
-        return str(fam.value)
+        return fam.value if fam else "ALL"
 
     @property
     def current_family(self) -> Family | None:

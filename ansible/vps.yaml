@@ -36,6 +36,7 @@
 
   roles:
     - role: common
+    - role: system_inspection_nopasswd
     # - cli    # <- TODO:  needs ducktape, etc
 
   tasks:

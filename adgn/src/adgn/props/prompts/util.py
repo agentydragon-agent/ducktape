@@ -1,20 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-import json
+from pathlib import Path
 from typing import Any
 
-from jinja2 import Environment, PackageLoader, select_autoescape
-from pydantic import BaseModel
+from jinja2 import Environment, PackageLoader
 
-
-def _to_json_filter(value: Any, indent: int = 2) -> str:
-    """Jinja filter to serialize Pydantic models/lists to JSON."""
-    if isinstance(value, list) and value and isinstance(value[0], BaseModel):
-        return json.dumps([item.model_dump(mode="json") for item in value], ensure_ascii=False, indent=indent)
-    if isinstance(value, BaseModel):
-        return value.model_dump_json(indent=indent)
-    return json.dumps(value, ensure_ascii=False, indent=indent)
+from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.prompts.schemas import build_input_schemas_json
 
 
 def get_templates_env() -> Environment:
@@ -22,14 +15,12 @@ def get_templates_env() -> Environment:
 
     Templates live under the adgn.props.prompts package directory.
     """
-    env = Environment(
+    return Environment(
         loader=PackageLoader("adgn.props", "prompts"),
-        autoescape=select_autoescape(["md", "markdown", "txt", "j2"]),
+        autoescape=False,  # Prompts are text for LLMs, not HTML
         trim_blocks=True,
         lstrip_blocks=True,
     )
-    env.filters["to_json"] = _to_json_filter
-    return env
 
 
 def render_prompt_template(name: str, **ctx: object) -> str:
@@ -38,23 +29,97 @@ def render_prompt_template(name: str, **ctx: object) -> str:
     return str(tmpl.render(**ctx)).strip()
 
 
-def build_input_schemas_json(models: Iterable[type[BaseModel]]) -> dict[str, dict]:
-    """Return {ModelName: model_json_schema()} for all given Pydantic models.
+def enumerate_files_from_path(root: Path) -> list[Path]:
+    """Enumerate all regular files in a directory tree (relative paths).
 
-    This is passed wholesale to Jinja; templates choose which to render.
+    Args:
+        root: Directory to walk
+
+    Returns:
+        List of relative Path objects for all regular files found
+
+    Example:
+        files = enumerate_files_from_path(Path("/some/project"))
+        scope_text = build_scope_text(files)
     """
-    out: dict[str, dict] = {}
-    for m in models:
-        out[m.__name__] = m.model_json_schema()
-    return out
+    files = []
+    for item in root.rglob("*"):
+        if item.is_file():
+            try:
+                files.append(item.relative_to(root))
+            except ValueError:
+                # Skip files that can't be made relative (shouldn't happen with rglob)
+                continue
+    return files
 
 
-def build_scope_text(include: list[str], exclude: list[str] | None = None) -> str:
-    """Human-readable scope string used in prompt headers.
+def build_scope_text(files: Iterable[Path]) -> str:
+    """Generate explicit file list for prompt headers.
 
-    Example: "all files under wt/** (excluding: wt/tests/**)"
+    Args:
+        files: Iterable of Path objects (typically SpecimenRelativePath from all_discovered_files.keys())
+
+    Returns:
+        Formatted string with bullet list of files, e.g.:
+        "Review the following files:
+        - src/foo.py
+        - src/bar.py"
+
+    Example:
+        # For specimens
+        scope_text = build_scope_text(hydrated.all_discovered_files.keys())
+
+        # For local paths
+        files = enumerate_files_from_path(Path("/project"))
+        scope_text = build_scope_text(files)
     """
-    inc = ", ".join(include)
-    if exclude:
-        return f"all files under {inc} (excluding: {', '.join(exclude)})"
-    return f"all files under {inc}"
+    file_list = "\n".join(f"- {file}" for file in sorted(files, key=str))
+    return f"Review the following files:\n{file_list}"
+
+
+def build_standard_context(
+    *,
+    files: Iterable[Path],
+    wiring: Any,  # PropertiesDockerWiring, avoid circular import
+    available_tools: list[str] | None = None,
+    supplemental_text: str | None = None,
+    static_action: str = "analyze",
+    ambiguity_tail: str = "do not include anything outside run instructions.",
+    include_schemas: bool = True,
+) -> dict[str, Any]:
+    """Build standard Jinja context for properties prompts.
+
+    Args:
+        files: Iterable of Path objects (file list for scope)
+        wiring: PropertiesDockerWiring with image/volumes/network config
+        available_tools: List of tool names (default: [])
+        supplemental_text: Optional additional context (e.g., specimen notes)
+        static_action: Action description for scope section (default: "analyze")
+        ambiguity_tail: Trailing instruction for scope section
+        include_schemas: Whether to include schemas_json (default: True)
+
+    Returns:
+        Dictionary suitable for Jinja template.render(**context)
+    """
+    context: dict[str, Any] = {
+        "files": sorted(files, key=str),
+        "wiring": wiring,
+        "available_tools": available_tools if available_tools is not None else [],
+        "supplemental_text": supplemental_text,
+        "static_action": static_action,
+        "ambiguity_tail": ambiguity_tail,
+        "read_only": True,
+        "include_tools": False,
+        "include_reporting": False,
+    }
+
+    if include_schemas:
+        # Import schemas here to avoid circular dependency
+        from adgn.props.critic import CriticSubmitPayload, ReportedIssue
+        from adgn.props.grader import GradeMetrics, GradeSubmitInput
+
+        context["schemas_json"] = build_input_schemas_json(
+            [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
+        )
+
+    return context

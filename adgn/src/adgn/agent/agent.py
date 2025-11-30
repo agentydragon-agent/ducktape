@@ -115,9 +115,8 @@ def _maybe_error_message(res: CallToolResult) -> str | None:
     if not res.is_error:
         return None
     structured = res.structured_content
-    if isinstance(structured, dict):
-        if isinstance(err := structured.get("error"), str) and err:
-            return err
+    if isinstance(structured, dict) and isinstance(err := structured.get("error"), str) and err:
+        return err
     for block in res.content or []:
         # Only support plain text blocks for now; surface others explicitly.
         if isinstance(block, mcp_types.TextContent):
@@ -197,7 +196,6 @@ class MiniCodex:
     def __init__(
         self,
         *,
-        model: str,
         system: str | None,
         mcp_client: Client,
         client: OpenAIModelProto,
@@ -207,7 +205,6 @@ class MiniCodex:
         handlers: Iterable[BaseHandler],
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
-        self._model = model
         self._default_system = system or SYSTEM_INSTRUCTIONS
         self._system = self._default_system
         self._dynamic_instructions = dynamic_instructions
@@ -426,7 +423,7 @@ class MiniCodex:
             sdk_usage = resp.usage
             usage = (
                 GroundTruthUsage(
-                    model=self._model,
+                    model=self._client.model,
                     input_tokens=sdk_usage.input_tokens,
                     input_tokens_details=sdk_usage.input_tokens_details,
                     output_tokens=sdk_usage.output_tokens,
@@ -434,9 +431,9 @@ class MiniCodex:
                     total_tokens=sdk_usage.total_tokens,
                 )
                 if sdk_usage is not None
-                else GroundTruthUsage(model=self._model)
+                else GroundTruthUsage(model=self._client.model)
             )
-            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._model))
+            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._client.model))
             resp_output = resp.output
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
@@ -507,7 +504,6 @@ class MiniCodex:
     async def create(
         cls,
         *,
-        model: str,
         mcp_client: Client,
         handlers: Iterable[BaseHandler],
         client: OpenAIModelProto,
@@ -518,7 +514,6 @@ class MiniCodex:
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> MiniCodex:
         return cls(
-            model=model,
             system=system,
             mcp_client=mcp_client,
             client=client,

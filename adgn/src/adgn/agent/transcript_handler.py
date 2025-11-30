@@ -21,27 +21,23 @@ class _Event:
 class TranscriptHandler(BaseHandler):
     """Unified transcript writer for MiniCodex runs.
 
-    Emits a JSONL stream under the destination directory:
-    - events.jsonl with timestamped records: {"ts": ISO8601, ...to_jsonl_record(evt)...}
+    Writes a JSONL stream to the specified events file path.
+    Each record is timestamped: {"ts": ISO8601, ...to_jsonl_record(evt)...}
 
-    Also writes metadata.json once at start with a started timestamp.
+    The parent directory must already exist (created by run managers).
 
     Usage:
-      h = TranscriptHandler(dest_dir=Path("runs/prompt_eval/<ts>/<specimen>/grader"))
+      h = TranscriptHandler(events_path=run_dir / "events.jsonl")
       MiniCodex.create(..., handlers=[h, ...])
     """
 
-    def __init__(self, *, dest_dir: Path) -> None:
-        self._root = dest_dir
-        self._root.mkdir(parents=True, exist_ok=True)
-        self._events_path = self._root / "events.jsonl"
+    def __init__(self, *, events_path: Path) -> None:
+        self._events_path = events_path
+        # Create parent directory if needed
+        self._events_path.parent.mkdir(parents=True, exist_ok=True)
         # Fail fast if a transcript already exists at destination
         if self._events_path.exists():
             raise FileExistsError(f"Transcript already exists: {self._events_path}")
-        # Write a small metadata file once
-        (self._root / "metadata.json").write_text(
-            json.dumps({"started": datetime.now(UTC).isoformat()}, indent=2), encoding="utf-8"
-        )
 
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:

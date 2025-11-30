@@ -18,8 +18,9 @@ from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp._shared.constants import MATRIX_CONTROL_SERVER_NAME
-from adgn.mcp._shared.container_session import ContainerOptions, NetworkMode
+from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import NetworkMode
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import BaseExecResult
@@ -90,7 +91,6 @@ def run(
         notif_buffer = NotificationsBuffer(compositor=comp)
         async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
             agent = await MiniCodex.create(
-                model=model,
                 mcp_client=mcp_client,
                 system=effective_system,
                 client=client,

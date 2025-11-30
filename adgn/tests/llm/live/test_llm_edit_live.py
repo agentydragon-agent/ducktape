@@ -10,7 +10,7 @@ import pytest
 from adgn.llm.llm_edit import _execute
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import ResponsesRequest
-from tests.fixtures.responses import ResponsesFactory
+from tests.support.responses import ResponsesFactory
 
 from ..support.openai_mock import LIVE
 

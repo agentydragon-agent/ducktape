@@ -24,7 +24,7 @@ def parse_date(date_string: str | None = None) -> datetime.datetime:
         return datetime.datetime.now()
 
     try:
-        return datetime.datetime.fromisoformat(date_string.replace("Z", "+00:00"))
+        return datetime.datetime.fromisoformat(date_string)
     except ValueError:
         try:
             # Try to parse as YYYY-MM-DD
@@ -56,7 +56,7 @@ def _normalize_date(date: str | datetime.date | datetime.datetime | None = None)
     return parse_date(date)
 
 
-def _format_with_template(
+def _format_with_template[T](
     date: str | datetime.date | datetime.datetime | None, formatter: Callable[[datetime.datetime], T]
 ) -> T:
     """

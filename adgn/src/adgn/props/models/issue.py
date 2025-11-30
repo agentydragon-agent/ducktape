@@ -23,6 +23,12 @@ class LineRange(BaseModel):
             raise ValueError("end_line must be >= start_line when provided")
         return self
 
+    def format(self) -> str:
+        """Format line range as string (e.g., '123' or '123-145')."""
+        if self.end_line is None:
+            return str(self.start_line)
+        return f"{self.start_line}-{self.end_line}"
+
     model_config = ConfigDict(extra="forbid")
 
 

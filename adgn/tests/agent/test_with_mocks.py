@@ -31,11 +31,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
     agent = await MiniCodex.create(
-        model=responses_factory.model,
-        mcp_client=pg_session_echo,
-        system="test",
-        client=client,
-        handlers=[AutoHandler(), recording_handler],
+        mcp_client=pg_session_echo, system="test", client=client, handlers=[AutoHandler(), recording_handler]
     )
 
     res = await agent.run("say hi")

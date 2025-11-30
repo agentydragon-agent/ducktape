@@ -25,14 +25,11 @@
 
   # Wyrm-specific pip configuration for tankshare storage
   # This creates ~/.config/pip/pip.conf to use shared cache
-  # Only applies when /tank/share exists
-  xdg.configFile."pip/pip.conf" = lib.mkIf (builtins.pathExists "/tank/share") {
+  # Only applies when /mnt/tankshare exists (virtiofs mount from atlas)
+  xdg.configFile."pip/pip.conf" = lib.mkIf (builtins.pathExists "/mnt/tankshare") {
     text = ''
       [global]
-      cache-dir = /tank/share/pip-cache
-
-      [install]
-      user = true
+      cache-dir = /mnt/tankshare/shared/pip-cache
     '';
   };
 }

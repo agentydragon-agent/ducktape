@@ -53,7 +53,7 @@ class OpenAIClient(Protocol):
     def responses(self) -> Any: ...  # pragma: no cover
 
 
-def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIClient:
+def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIModelProto:
     """Construct a minimal mock client whose responses.create(req) calls the provided behavior."""
 
     class _Responses:

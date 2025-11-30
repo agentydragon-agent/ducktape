@@ -65,7 +65,6 @@ async def _execute(
 
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            model=model,
             mcp_client=mcp_client,
             system=(
                 "You are a code editor assistant. Use tools to read/modify/save files.\n"
@@ -75,7 +74,7 @@ async def _execute(
             client=client,
             reasoning_effort=effort_val,
             reasoning_summary=summary_val,
-            handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptHandler(dest_dir=run_dir)],
+            handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
         )
         async with agent:
             res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")

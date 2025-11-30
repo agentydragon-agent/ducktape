@@ -13,7 +13,7 @@ from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 
 from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD, WORKING_DIR
-from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, NetworkMode
+from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
@@ -31,8 +31,10 @@ class ContainerSessionState:
     volumes: dict[str, dict[str, str]] | list[str] | None
     # Container working directory
     working_dir: Path
-    # Network mode used to start the container
-    network_mode: NetworkMode
+    # Network mode used to start the container (str: "none", "bridge", "host", or custom network name)
+    network_mode: str
+    # Environment variables for the container
+    environment: dict[str, str] | None
     ephemeral: bool
 
 
@@ -52,49 +54,83 @@ class ContainerOptions:
     image: str
     working_dir: Path = WORKING_DIR
     volumes: dict[str, dict[str, str]] | list[str] | None = None
-    network_mode: NetworkMode = NetworkMode.NONE
+    network_mode: str = "none"
     environment: dict[str, str] | None = None
     labels: dict[str, str] | None = None
     describe: bool = True
     ephemeral: bool = False
+
+    def to_container_config(
+        self,
+        *,
+        cmd: list[str],
+        working_dir: Path | None = None,
+        env: dict[str, str] | None = None,
+        auto_remove: bool = False,
+    ) -> dict[str, Any]:
+        """Build Docker container config dict.
+
+        Args:
+            cmd: Command to run (list of strings)
+            working_dir: Override container working directory (uses self.working_dir if None)
+            env: Override environment variables (uses self.environment if None)
+            auto_remove: Whether to auto-remove container after exit
+
+        Returns:
+            Docker container config dict ready for containers.create()
+        """
+        return {
+            "Image": self.image,
+            "Cmd": cmd,
+            "WorkingDir": str(working_dir if working_dir is not None else self.working_dir),
+            "Env": [f"{k}={v}" for k, v in (env or self.environment or {}).items()],
+            "Labels": self.labels or {},
+            "AttachStdout": True,
+            "AttachStderr": True,
+            "Tty": False,
+            "HostConfig": _build_host_config(self, auto_remove=auto_remove),
+        }
 
 
 def _session_state_from_ctx(ctx: Any) -> ContainerSessionState:
     return cast(ContainerSessionState, ctx.request_context.lifespan_context)
 
 
-def _volumes_to_binds(volumes: dict[str, dict[str, str]] | list[str] | None) -> list[str]:
-    """Convert volumes dict to aiodocker Binds format."""
-    if not volumes or not isinstance(volumes, dict):
-        return []
-    binds = []
-    for host_path, volume_config in volumes.items():
-        bind = f"{host_path}:{volume_config['bind']}"
-        if mode := volume_config.get("mode"):
-            bind += f":{mode}"
-        binds.append(bind)
-    return binds
+def _build_host_config(opts: ContainerOptions, *, auto_remove: bool = False) -> dict[str, Any]:
+    """Build Docker HostConfig from ContainerOptions.
+
+    Args:
+        opts: Container options with volumes and network_mode
+        auto_remove: Whether to set AutoRemove (for per-session containers)
+
+    Returns:
+        Docker HostConfig dict with Binds and NetworkMode if applicable
+    """
+    host_config: dict[str, Any] = {}
+
+    if auto_remove:
+        host_config["AutoRemove"] = True
+
+    # Convert volumes to binds format
+    if opts.volumes and isinstance(opts.volumes, dict):
+        binds = []
+        for host_path, volume_config in opts.volumes.items():
+            bind = f"{host_path}:{volume_config['bind']}"
+            if mode := volume_config.get("mode"):
+                bind += f":{mode}"
+            binds.append(bind)
+        if binds:
+            host_config["Binds"] = binds
+
+    # Apply network mode if not 'none'
+    if opts.network_mode != "none":
+        host_config["NetworkMode"] = opts.network_mode
+
+    return host_config
 
 
 async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-    host_config: dict[str, Any] = {"AutoRemove": True}
-    if binds := _volumes_to_binds(opts.volumes):
-        host_config["Binds"] = binds
-
-    container_config: dict[str, Any] = {
-        "Image": opts.image,
-        "Cmd": SLEEP_FOREVER_CMD,
-        "WorkingDir": str(opts.working_dir),
-        "Env": [f"{k}={v}" for k, v in (opts.environment or {}).items()],
-        "Labels": opts.labels or {},
-        "AttachStdout": True,
-        "AttachStderr": True,
-        "Tty": False,
-        "HostConfig": host_config,
-    }
-
-    if opts.network_mode != NetworkMode.NONE:
-        container_config["HostConfig"]["NetworkMode"] = str(opts.network_mode)
+    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=True)
 
     container = await client.containers.create(container_config)
     await container.start()
@@ -120,6 +156,7 @@ def make_container_lifespan(opts: ContainerOptions):
                 volumes=opts.volumes,
                 working_dir=opts.working_dir,
                 network_mode=opts.network_mode,
+                environment=opts.environment,
                 ephemeral=opts.ephemeral,
             )
         finally:
@@ -163,23 +200,22 @@ async def _run_ephemeral_container(
     """Run command in ephemeral container using aiodocker."""
     docker_client = s.docker_client
 
-    host_config: dict[str, Any] = {}
-    if binds := _volumes_to_binds(s.volumes):
-        host_config["Binds"] = binds
+    # Build ephemeral container options from session state
+    ephemeral_opts = ContainerOptions(
+        image=s.image,
+        working_dir=s.working_dir,
+        volumes=s.volumes,
+        network_mode=s.network_mode,
+        environment=s.environment,
+        ephemeral=True,
+    )
 
-    ephemeral_config: dict[str, Any] = {
-        "Image": s.image,
-        "Cmd": prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd],
-        "WorkingDir": str(input.cwd) if input.cwd is not None else str(s.working_dir),
-        "Env": [f"{k}={v}" for k, v in (input.env or {}).items()],
-        "AttachStdout": True,
-        "AttachStderr": True,
-        "Tty": False,  # No TTY to ensure stdout/stderr separation
-        "HostConfig": host_config,
-    }
-
-    if s.network_mode != NetworkMode.NONE:
-        ephemeral_config["HostConfig"]["NetworkMode"] = str(s.network_mode)
+    ephemeral_config = ephemeral_opts.to_container_config(
+        cmd=prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd],
+        working_dir=input.cwd,  # Override if specified
+        env=input.env,  # Override if specified
+        auto_remove=False,
+    )
 
     # Create and start container
     container = await docker_client.containers.create(ephemeral_config)
@@ -366,7 +402,7 @@ def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_na
             container_id=(s.container["Id"] if s.container is not None else None),
             volumes=s.volumes,
             working_dir=str(s.working_dir),
-            network_mode=NetworkMode(s.network_mode.value),
+            network_mode=s.network_mode,
             image_history=img_history,
             ephemeral=s.ephemeral,
         )

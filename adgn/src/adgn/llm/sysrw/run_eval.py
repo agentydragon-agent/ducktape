@@ -388,7 +388,7 @@ def generate_html_report(report_base: Path):
 
     # Jinja2 template
     env = Environment(
-        loader=FileSystemLoader(str(Path(__file__).parent / "templates")), autoescape=select_autoescape(["html", "xml"])
+        loader=FileSystemLoader(Path(__file__).parent / "templates"), autoescape=select_autoescape(["html", "xml"])
     )
     template = env.get_template("report.html.j2")
     html_text = template.render(rows=rows, summary=summary)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -22,8 +21,9 @@ from adgn.openai_utils.model import (
     UserMessage,
 )
 from adgn.props.ids import BaseIssueID
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.models.lint import AnchorIncorrect
+from adgn.props.models.issue import IssueCore, Occurrence
+from adgn.props.models.lint import extract_corrections
+from adgn.props.runs_context import RunsContext, format_timestamp_session
 
 from .lint_issue import lint_issue_run
 
@@ -94,7 +94,7 @@ class EvalIndex(BaseModel):
 
 
 async def _grade_rationale_with_llm(
-    client: OpenAIModelProto, original: str, proposed: str, *, rubric: str, model: str = "gpt-5"
+    client: OpenAIModelProto, original: str, proposed: str, *, rubric: str
 ) -> dict[str, str]:
     """Force a tool call that returns verdict: YES | PARTIALLY | NO, with reason."""
     if not proposed or not proposed.strip():
@@ -154,19 +154,14 @@ async def _grade_rationale_with_llm(
 
 
 async def eval_issue_spec(
-    spec: IssueEvalSpec, *, model: str = "gpt-5", client: OpenAIModelProto, out_dir: Path | str | None = None
+    spec: IssueEvalSpec, *, client: OpenAIModelProto, out_dir: Path | str | None = None, ctx: RunsContext
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
     Returns a structured SampleRunSummary and writes summary.json to out_dir.
     """
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    base = (
-        Path(out_dir)
-        if out_dir is not None
-        else (Path.cwd() / "runs" / "evals" / f"{spec.specimen}_{spec.issue.id}_{ts}")
-    )
-    base.mkdir(parents=True, exist_ok=True)
+    ts = format_timestamp_session()
+    base = Path(out_dir) if out_dir is not None else ctx.issue_eval_dir(f"{spec.specimen}_{spec.issue.id}", ts)
 
     results: list[dict[str, Any]] = []
     passes = 0
@@ -194,7 +189,6 @@ async def eval_issue_spec(
             specimen=spec.specimen,
             issue_core=spec.issue,
             occurrence=occ,
-            model=model,
             client=client,
             handlers=[OneLineProgressHandler()],
         )
@@ -204,16 +198,8 @@ async def eval_issue_spec(
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
-        corrections: dict[str, list[LineRange]] = {}
-        if payload.findings:
-            for fr in payload.findings:
-                f = fr.finding
-                if isinstance(f, AnchorIncorrect):
-                    corr = f.correction
-                    corrections.setdefault(corr.file, []).append(corr.range)
-
-        ranges = corrections.get(str(path), [])
-        all_ranges = [(r.start_line, r.end_line) for r in ranges]
+        corrections = extract_corrections(payload.findings)
+        all_ranges = [(r.start_line, r.end_line) for r in corrections[path]]
         effective: list[tuple[int, int | None]] = all_ranges or [(start_line, end_line)]
 
         estart, eend = effective[0]
@@ -238,7 +224,7 @@ async def eval_issue_spec(
                 case_pass = case_pass and ok
             elif isinstance(exp, RationaleExpectation):
                 grade = await _grade_rationale_with_llm(
-                    client, spec.issue.rationale, payload.suggested_rationale or "", rubric=exp.rubric, model=model
+                    client, spec.issue.rationale, payload.suggested_rationale or "", rubric=exp.rubric
                 )
                 ok = grade.get("verdict") == "YES"
                 exp_results.append(
@@ -311,19 +297,18 @@ def _load_samples() -> list[IssueEvalSpec]:
 
 
 async def run_all_evals(
-    *, model: str = "gpt-5", client: OpenAIModelProto, root_out: Path | None = None, concurrency: int = 4
+    *, client: OpenAIModelProto, root_out: Path | None = None, concurrency: int = 4, ctx: RunsContext
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    root = Path(root_out) if root_out is not None else (Path.cwd() / "runs" / "evals" / f"all_{ts}")
-    root.mkdir(parents=True, exist_ok=True)
+    ts = format_timestamp_session()
+    root = Path(root_out) if root_out is not None else ctx.issue_eval_dir("all", ts)
 
     sem = asyncio.Semaphore(max(1, concurrency))
 
     async def _run_one(sample: IssueEvalSpec) -> SampleRunSummary:
         async with sem:
             out_dir = root / sample.issue.id
-            return await eval_issue_spec(spec=sample, model=model, client=client, out_dir=out_dir)
+            return await eval_issue_spec(spec=sample, client=client, out_dir=out_dir, ctx=ctx)
 
     entries = await asyncio.gather(*[_run_one(s) for s in _load_samples()])
 

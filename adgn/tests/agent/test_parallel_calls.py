@@ -48,7 +48,6 @@ async def test_parallel_tool_calls_reduce_wall_time(make_session, slow_server, r
 
     async with make_session({"dummy": slow_server}) as mcp_client:
         agent = await MiniCodex.create(
-            model="noop",
             system="test",
             mcp_client=mcp_client,
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI

@@ -4,11 +4,7 @@ from adgn.agent.server.history import fold_events_to_ui_state
 from tests.agent.ui.typed_asserts import assert_typed_items_have, is_assistant_markdown, is_user_message
 
 
-def test_fold_events_typed_ui_message(
-    make_user_text_event,
-    make_tool_call_event,
-    make_function_output_event,
-) -> None:
+def test_fold_events_typed_ui_message(make_user_text_event, make_tool_call_event, make_function_output_event) -> None:
     """Verify ui.send_message tool output becomes AssistantMarkdown in UI state."""
     ui_message_content = {"kind": "UiMessage", "mime": "text/markdown", "content": "**hello**"}
 
@@ -20,8 +16,4 @@ def test_fold_events_typed_ui_message(
 
     state = fold_events_to_ui_state(events)
 
-    assert_typed_items_have(
-        state.items,
-        is_user_message("hi"),
-        is_assistant_markdown("**hello**"),
-    )
+    assert_typed_items_have(state.items, is_user_message("hi"), is_assistant_markdown("**hello**"))

@@ -14,8 +14,8 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
-from tests.fixtures.responses import ResponsesFactory
 from tests.llm.support.openai_mock import make_mock
+from tests.support.responses import ResponsesFactory
 
 
 class NotifyPolicyInput(BaseModel):
@@ -75,11 +75,7 @@ async def test_notifications_pre_sampling_out_of_band(
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
-            client=client,
-            system="n/a",
+            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
         )
         await agent.run("hello")
 
@@ -123,11 +119,7 @@ async def test_notifications_within_turn_from_tool(
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
-            client=client,
-            system="n/a",
+            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
         )
         await agent.run("go")
 
@@ -169,11 +161,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            model="test-model",
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
-            client=client,
-            system="n/a",
+            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
         )
         await agent.run("hello")
 

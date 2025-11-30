@@ -71,7 +71,7 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 
 {% from "_partials.j2" import scope_block, constraints_read_only, supplemental_section_md, tools_section, reporting_requirements %}
 
-{{ scope_block(scope_text, static_action, ambiguity_tail) }}
+{{ scope_block(files, static_action, ambiguity_tail) }}
 
 {% if read_only %}{{ constraints_read_only() }}{% endif %}
 

@@ -22,16 +22,9 @@ from pydantic import TypeAdapter
 
 # Import models to export
 from adgn.agent.approvals import ApprovalRequest
+from adgn.agent.handler import ToolCall
 from adgn.agent.mcp_bridge.agents import AgentInfo
-from adgn.agent.persist import (
-    ApprovalOutcome,
-    Decision,
-    EventType,
-    PersistenceRunStatus,
-    ToolCallExecution,
-    ToolCallRecord,
-)
-from adgn.agent.types import ToolCall
+from adgn.agent.persist import ApprovalOutcome, EventType, RunStatus
 
 # ============================================================================
 # MCP Constants Generation
@@ -43,8 +36,7 @@ def extract_constants_from_file(python_file: Path) -> dict[str, Any]:
     namespace: dict[str, Any] = {}
 
     try:
-        with open(python_file) as f:
-            code = f.read()
+        code = python_file.read_text(encoding="utf-8")
         exec(code, namespace)
     except Exception as e:
         print(f"Error executing constants file: {e}", file=sys.stderr)
@@ -196,12 +188,8 @@ def generate_pydantic_types() -> None:
         ToolCall,
         # Enums
         ApprovalOutcome,
-        PersistenceRunStatus,
+        RunStatus,
         EventType,
-        # Decision and execution
-        Decision,
-        ToolCallExecution,
-        ToolCallRecord,
         # Approval types
         ApprovalRequest,
         # Agent info

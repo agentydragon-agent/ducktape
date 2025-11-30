@@ -197,24 +197,28 @@ agents:
 
     def test_null_values_skipped(self, tokens_yaml):
         """Skips null token values in config."""
-        config = TokensConfig.from_yaml_file(tokens_yaml("""
+        config = TokensConfig.from_yaml_file(
+            tokens_yaml("""
 users:
   admin: "valid-token"
   invalid: null
   empty: ""
-"""))
+""")
+        )
         # Only non-null, non-empty tokens should be included
         assert config.user_tokens() == {"valid-token": "admin"}
         assert config.agent_tokens() == {}
 
     def test_model_validation(self, tokens_yaml):
         """TokensConfig validates and parses YAML correctly."""
-        config = TokensConfig.from_yaml_file(tokens_yaml("""
+        config = TokensConfig.from_yaml_file(
+            tokens_yaml("""
 users:
   admin: "token-1"
 agents:
   agent-1: "token-2"
-"""))
+""")
+        )
 
         # Check raw model attributes
         assert config.users == {"admin": "token-1"}

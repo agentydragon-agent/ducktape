@@ -90,16 +90,22 @@ def test_rejects_invalid_format(specimen_relative_path_model, path_str, error_ma
         specimen_relative_path_model(path=path_str)
 
 
-def test_validation_fails_without_context(specimen_relative_path_model):
-    """Without specimen_context, validation should fail (strict validation)."""
-    with pytest.raises((KeyError, TypeError)):
-        specimen_relative_path_model(path="nonexistent/file.py")
+def test_validation_without_context_skips_existence_check(specimen_relative_path_model):
+    """Without specimen_context, validation skips existence check (allows standalone parsing).
+
+    This enables parsing critiques without loading full specimen context.
+    Format validation (relative path, no ..) still applies.
+    """
+    # Should succeed - format validation passes, existence check skipped
+    result = specimen_relative_path_model(path="nonexistent/file.py")
+    assert str(result.path) == "nonexistent/file.py"
 
 
-def test_validation_fails_with_wrong_context_key(specimen_relative_path_model):
-    """With context dict but no specimen_context key, validation should fail."""
-    with pytest.raises((KeyError, TypeError)):
-        specimen_relative_path_model.model_validate({"path": "nonexistent.py"}, context={"other_key": "value"})
+def test_validation_with_wrong_context_key_skips_existence_check(specimen_relative_path_model):
+    """With context dict but no specimen_context key, existence check is skipped."""
+    # Should succeed - format validation passes, existence check skipped
+    result = specimen_relative_path_model.model_validate({"path": "nonexistent.py"}, context={"other_key": "value"})
+    assert str(result.path) == "nonexistent.py"
 
 
 def test_validation_with_context_checks_existence(specimen_relative_path_model, mock_specimen_context: SpecimenContext):

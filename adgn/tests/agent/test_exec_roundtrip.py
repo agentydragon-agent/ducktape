@@ -40,7 +40,6 @@ async def test_live_llm_exec_echo(pg_session_box) -> None:
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
     agent = await MiniCodex.create(
-        model=model_name,
         mcp_client=pg_session_box,
         system=(
             "You are testing an MCP exec tool.\n"

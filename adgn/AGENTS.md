@@ -123,8 +123,6 @@ See `README.md` for a shorter overview.
   - Declare a module‑level logger at the top of every module: `logger = logging.getLogger(__name__)`
   - Do not call `logging.getLogger(...)` inside functions/classes; use the module‑level `logger` instead.
   - Do not store the module‑level logger on `self` (e.g., `self._logger = ...`). Refer to the module‑level `logger` directly.
-- Patching (unified diff)
-  - Use `adgn.util.patch.apply_unified_patch` — do not reimplement patch logic
 - Arg0 virtual CLIs
   - Virtual commands are exposed by argv0 name on PATH, e.g., `apply_patch` (`applypatch` alias) to apply OpenAI‑style patch envelopes
   - Symlink creation is strict; failures abort startup

@@ -67,8 +67,7 @@ class TestAgentsListResource:
         """agents://list returns running agent info."""
         # Create agent record in persistence first
         agent_id = await sqlite_persistence.create_agent(
-            mcp_config=MCPConfig(mcpServers={}),
-            metadata=AgentMetadata(preset="default"),
+            mcp_config=MCPConfig(mcpServers={}), metadata=AgentMetadata(preset="default")
         )
 
         # Setup mock container
@@ -94,8 +93,7 @@ class TestAgentsListResource:
 
         # Create agent record in persistence
         agent_id = await sqlite_persistence.create_agent(
-            mcp_config=MCPConfig(mcpServers={}),
-            metadata=AgentMetadata(preset="my-preset"),
+            mcp_config=MCPConfig(mcpServers={}), metadata=AgentMetadata(preset="my-preset")
         )
 
         async with Client(agents_server) as sess:
@@ -112,8 +110,7 @@ class TestAgentsListResource:
         """agents://list correctly marks external agents."""
         # Create agent record in persistence
         agent_id = await sqlite_persistence.create_agent(
-            mcp_config=MCPConfig(mcpServers={}),
-            metadata=AgentMetadata(preset="external"),
+            mcp_config=MCPConfig(mcpServers={}), metadata=AgentMetadata(preset="external")
         )
 
         mock_container = MagicMock()

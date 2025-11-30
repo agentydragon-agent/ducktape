@@ -160,9 +160,7 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
     for name, spec in cfg.mcpServers.items():
         await comp.mount_server(name, spec)
     async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            model=model, mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers()
-        )
+        agent = await MiniCodex.create(mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers())
         async with agent:
             for line in sys.stdin:
                 user = line.rstrip("\n")
@@ -179,7 +177,7 @@ def run(model: str = MODEL_OPT, system: str = SYSTEM_OPT, mcp_configs: list[Path
     asyncio.run(_run_repl_async(model=model, system=system, mcp_configs=mcp_configs))
 
 
-async def _serve_async(host: str, port: int, model: str, system: str | None, mcp_configs: list[Path]) -> None:
+async def _serve_async(host: str, port: int, mcp_configs: list[Path]) -> None:
     _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
     print("mini-codex serve: starting agent + UI server")
@@ -201,15 +199,9 @@ async def _serve_async(host: str, port: int, model: str, system: str | None, mcp
 
 
 @app.command("serve")
-def serve(
-    host: str = HOST_OPT,
-    port: int = PORT_OPT,
-    model: str = MODEL_OPT,
-    system: str | None = typer.Option(None, "--system", help="Override default UI system instructions"),
-    mcp_configs: list[Path] = MCP_CONFIGS_OPT,
-) -> None:
+def serve(host: str = HOST_OPT, port: int = PORT_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
     """Launch the local FastAPI UI server and keep running."""
-    asyncio.run(_serve_async(host=host, port=port, model=model, system=system, mcp_configs=mcp_configs))
+    asyncio.run(_serve_async(host=host, port=port, mcp_configs=mcp_configs))
 
 
 @app.command("dev")
@@ -217,8 +209,6 @@ def dev(
     host: str = HOST_OPT,
     port: int = PORT_OPT,
     frontend_port: int = FRONTEND_PORT_OPT,
-    model: str = MODEL_OPT,
-    system: str | None = typer.Option(None, "--system", help="Override default UI system instructions"),
     mcp_configs: list[Path] = MCP_CONFIGS_OPT,
     open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
 ) -> None:

@@ -27,7 +27,6 @@ async def test_model_reads_container_info_with_stubbed_openai(
         ]
         client = FakeOpenAIModel(seq)
         agent = await MiniCodex.create(
-            model=reasoning_model,
             mcp_client=mcp_client,
             client=client,
             system="test",

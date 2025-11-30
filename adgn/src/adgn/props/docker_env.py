@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 
 import docker
@@ -13,6 +14,8 @@ from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.props.prop_utils import props_definitions_root
+
+logger = logging.getLogger(__name__)
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 # Shared startup command for long-lived containers
@@ -97,19 +100,13 @@ def properties_docker_spec(
     extra_volumes: dict[str, dict[str, str]] | None = None,
     ephemeral: bool = True,
     workspace_mode: str = "ro",
+    db_url: str | None = None,
+    network_mode: str | None = None,
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
-    Ensures the default critic image exists (raises if missing). Mounts
-    `workspace_root` at /workspace with the specified mode. Optionally mounts
-    property definitions at /props.
-
-    Args:
-        workspace_root: Host directory to mount as /workspace
-        mount_properties: Whether to mount property definitions at /props
-        extra_volumes: Additional volumes to mount (Docker volume dict format)
-        ephemeral: Whether to remove container after execution
-        workspace_mode: Mount mode for workspace ("ro" or "rw")
+    Ensures the default critic image exists (raises if missing). Sets up standard tool cache
+    environment variables to use /tmp.
     """
     # Ensure image exists; let exceptions propagate with helpful message
     ensure_critic_image()
@@ -129,6 +126,13 @@ def properties_docker_spec(
         "PYTHONPYCACHEPREFIX": "/tmp/__pycache__",
     }
 
+    # Inject database URL if provided
+    if db_url:
+        env["DATABASE_URL"] = db_url
+        logger.info(f"Setting DATABASE_URL in container environment: {db_url[:50]}...")
+    else:
+        logger.warning("No db_url provided - container will not have database access")
+
     def _factory() -> FastMCP:
         return make_container_exec_server(
             ContainerOptions(
@@ -138,6 +142,7 @@ def properties_docker_spec(
                 environment=env,
                 describe=True,
                 ephemeral=ephemeral,
+                network_mode=network_mode or "none",
             )
         )
 

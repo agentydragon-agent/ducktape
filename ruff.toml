@@ -86,5 +86,8 @@ split-on-trailing-comma = false
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "adgn/src/adgn/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
-# AST visitor methods must use CamelCase (visit_Import, visit_Name, etc.) to match Python AST node types
+# AST visitor methods must use visit_<NodeType> naming (framework requirement)
+# Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "adgn/src/adgn/props/detectors/det_*.py" = ["N802"]
+"adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
+"prompts/scans/scan_*.py" = ["N802"]

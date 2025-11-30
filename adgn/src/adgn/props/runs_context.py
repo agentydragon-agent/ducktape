@@ -19,6 +19,20 @@ OUTPUT_JSON = "output.json"
 EVENTS_JSONL = "events.jsonl"
 
 
+def format_timestamp_session(dt: datetime | None = None) -> str:
+    """Standard timestamp format for session/output directories: YYYYMMDD_HHMMSS.
+
+    Args:
+        dt: datetime to format (defaults to now)
+
+    Returns:
+        Formatted timestamp string (e.g., "20250127_153045")
+    """
+    if dt is None:
+        dt = datetime.now()
+    return dt.strftime("%Y%m%d_%H%M%S")
+
+
 class RunsContext:
     """Context object for runs directory path derivation.
 
@@ -43,89 +57,19 @@ class RunsContext:
         """
         return cls(pkg_dir() / "runs")
 
-    def discover_grader_runs(self) -> list[Path]:
-        """Find all grader run directories.
-
-        Returns:
-            List of run directories (each containing input.json and output.json)
-        """
-        # Pattern: runs/*/grader/*/*/output.json
-        output_files = sorted(self.base_dir.rglob(f"*/{RUN_TYPE_GRADER}/*/*/{OUTPUT_JSON}"))
-        return [f.parent for f in output_files]
-
-    def discover_critic_runs(self) -> list[Path]:
-        """Find all critic run directories.
-
-        Returns:
-            List of run directories (each containing input.json and output.json)
-        """
-        # Pattern: runs/*/critic/*/*/output.json
-        output_files = sorted(self.base_dir.rglob(f"*/{RUN_TYPE_CRITIC}/*/*/{OUTPUT_JSON}"))
-        return [f.parent for f in output_files]
-
-    def run_input_path(self, run_dir: Path) -> Path:
-        """Get input.json path for a run directory.
+    def issue_eval_dir(self, identifier: str, timestamp: str | None = None) -> Path:
+        """Get output directory for issue evaluation runs (lint_issue harness).
 
         Args:
-            run_dir: Run directory
-
-        Returns:
-            Path to input.json
-        """
-        return run_dir / INPUT_JSON
-
-    def run_output_path(self, run_dir: Path) -> Path:
-        """Get output.json path for a run directory.
-
-        Args:
-            run_dir: Run directory
-
-        Returns:
-            Path to output.json
-        """
-        return run_dir / OUTPUT_JSON
-
-    def run_events_path(self, run_dir: Path) -> Path:
-        """Get events.jsonl path for a run directory.
-
-        Args:
-            run_dir: Run directory
-
-        Returns:
-            Path to events.jsonl (agent transcript)
-        """
-        return run_dir / EVENTS_JSONL
-
-    def cluster_output_dir(self, timestamp: str | None = None) -> Path:
-        """Get output directory for clustering runs.
-
-        Args:
+            identifier: Identifier for the eval (e.g., specimen_issue_id or "all")
             timestamp: Optional timestamp string (defaults to creating new one)
 
         Returns:
-            Path to cluster output directory
+            Path to eval output directory (created if it doesn't exist)
+            Structure: runs/evals/{identifier}_{timestamp}/
         """
         if timestamp is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return self.base_dir / "cluster" / timestamp
-
-    def prompt_optimize_output_dir(self, timestamp: str | None = None) -> Path:
-        """Get output directory for prompt optimization runs.
-
-        Args:
-            timestamp: Optional timestamp string (defaults to creating new one)
-
-        Returns:
-            Path to prompt optimization output directory
-        """
-        if timestamp is None:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return self.base_dir / f"prompt_optimize_{timestamp}"
-
-    def prompt_evals_dir(self) -> Path:
-        """Get shared directory for prompt evaluations.
-
-        Returns:
-            Path to prompt_evals directory
-        """
-        return self.base_dir / "prompt_evals"
+            timestamp = format_timestamp_session()
+        path = self.base_dir / "evals" / f"{identifier}_{timestamp}"
+        path.mkdir(parents=True, exist_ok=True)
+        return path

@@ -28,11 +28,6 @@ class LocalSource(BaseModel):
 Source = Annotated[GitSource | GitHubSource | LocalSource, Field(discriminator="vcs")]
 
 
-class Scope(BaseModel):
-    include: list[str]
-    exclude: list[str] | None = None
-
-
 class BundleFilter(BaseModel):
     """Filters for bundle creation: which files to include/exclude when snapshotting.
 
@@ -46,13 +41,14 @@ class BundleFilter(BaseModel):
 
 
 class SpecimenDoc(BaseModel):
-    """Unified specimen document (v2): source/scope and items (Jsonnet-only).
+    """Unified specimen document (v2): source and bundle filters (Jsonnet-only).
 
     Note: issues are loaded separately from issues/*.libsonnet files. We keep
     `items` as a generic list to avoid cross-module type cycles with Issue.
+
+    Bundle is optional - only required for specimens that use git bundles.
     """
 
     source: Source
-    scope: Scope
     bundle: BundleFilter | None = None
     model_config = ConfigDict(extra="forbid")

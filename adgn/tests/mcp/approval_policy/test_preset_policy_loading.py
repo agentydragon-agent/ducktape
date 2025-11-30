@@ -156,9 +156,7 @@ class TestPresetPolicyResolution:
         from adgn.agent.presets import create_agent_from_preset
 
         agent_id, _config, _system = await create_agent_from_preset(
-            persistence=sqlite_persistence,
-            preset_name="default",
-            base_mcp_config=MCPConfig(mcpServers={}),
+            persistence=sqlite_persistence, preset_name="default", base_mcp_config=MCPConfig(mcpServers={})
         )
 
         # Check that metadata has preset recorded

@@ -1,9 +1,5 @@
 # TODO
 
-- Severity/requiredness levels and aggregation rubric
-- Evaluation LLM (critic/grader) integration and output schema
-- Prompt-generation LLM integration flow
-- Optional specimen sections: Signals (how discovered) and Lessons (when useful)
 - Potential indexing (property ↔ specimen cross-refs) if/when scale requires it
 - Policy question: If an ABC's method docstring is repeated verbatim by an implementing subclass method, should this violate no-useless-docs? Lean yes, but leave undecided for now; reasonable people may disagree. Track under properties/no-useless-docs.md
 - Windows/locale encodings: keep encoding="utf-8" for read_text/write_text to avoid surprises. TODO: I hate this.
@@ -19,22 +15,22 @@
     - No classes-as-namespaces for constants; in Python 'class' implies instances; prefer modules/enums/simple names (use a class only when you intend to instantiate)
     - Prefer direct library APIs over shelling out (unless required by constraints)
 
-- New general property (planned): prefer comprehensions for simple filter/map
-  - Kind: outcome
-  - Predicate: For simple, readable cases, prefer list/set/dict comprehensions (and generator expressions) over loops that only append/continue or build trivial maps.
-  - Acceptance ideas:
-    - Single-predicate filters and simple key/value mapping use comprehensions
-    - No multi-branch loop when a single comprehension with a concise predicate fits on one readable line
-    - Fall back to loops when readability would suffer (long, nested conditions)
-    - Keep pre-checks (e.g., early returns) outside the comprehension for clarity
-
-- New general property (planned): no-footguns (clear, unambiguous outputs)
-  - Kind: behavior
-  - Predicate: Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded extension lists diverging from constants).
-  - Acceptance ideas:
-    - Chosen accounting mode is stated near the results (or in help/docs)
-    - Derived output from single source of truth (e.g., CODE_EXTS) — no drift
-    - Avoid confusing throwaway state that obscures meaning; inline when clearer
+- New general property (planned)
+  - prefer comprehensions for simple filter/map
+    - Kind: outcome
+    - Predicate: For simple, readable cases, prefer list/set/dict comprehensions (and generator expressions) over loops that only append/continue or build trivial maps.
+    - Acceptance ideas:
+      - Single-predicate filters and simple key/value mapping use comprehensions
+      - No multi-branch loop when a single comprehension with a concise predicate fits on one readable line
+      - Fall back to loops when readability would suffer (long, nested conditions)
+      - Keep pre-checks (e.g., early returns) outside the comprehension for clarity
+  - no-footguns (clear, unambiguous outputs)
+    - Kind: behavior
+    - Predicate: Outputs must be clear, correct, and unambiguous; when multiple accounting modes exist (e.g., first-match vs all-matches), the chosen mode must be explicitly surfaced in output/docs; avoid misleading displays (e.g., hard-coded extension lists diverging from constants).
+    - Acceptance ideas:
+      - Chosen accounting mode is stated near the results (or in help/docs)
+      - Derived output from single source of truth (e.g., CODE_EXTS) — no drift
+      - Avoid confusing throwaway state that obscures meaning; inline when clearer
 
 Example (scrubbed):
 ```python
@@ -189,3 +185,45 @@ Observation (to investigate)
   - Remove the `specimen-discover` command after migration; update docs to use:
     - `adgn-properties2 run --specimen <slug> --preset discover --structured true --embed-specimen-notes`
   - Tests: port any `specimen-discover` dry-run tests to run with `--preset discover --dry-run --embed-specimen-notes`.
+
+## Move bundle into Source discriminated union
+
+Currently `bundle` is optional at the top level of `SpecimenDoc`:
+
+```python
+class SpecimenDoc(BaseModel):
+    source: Source
+    bundle: BundleFilter | None = None
+```
+
+**Better design**: Move `bundle` into the `Source` union, since it's only relevant for git bundles:
+
+```python
+class GitSource(BaseModel):
+    vcs: Literal["git"]
+    url: str
+    commit: str
+    ref: str | None = None
+    bundle: BundleFilter | None = None  # Only for git bundles
+
+class GitHubSource(BaseModel):
+    vcs: Literal["github"]
+    org: str
+    repo: str
+    ref: str
+    # No bundle - GitHub sources don't use bundles
+
+class LocalSource(BaseModel):
+    vcs: Literal["local"]
+    root: str = "."
+    # No bundle - local sources don't use bundles
+```
+
+**Benefits**:
+- Type safety: Can't specify bundle for sources that don't support it
+- Clearer intent: Bundle config co-located with source type
+- Better validation: Pydantic enforces correctness per source type
+
+**Migration complexity**: Would require updating all git bundle specimen manifests to nest bundle under source.
+
+**Decision**: Deferred to future refactor when we have more specimen types and clearer patterns.

@@ -1,19 +1,26 @@
 """Shared test fixtures for props tests."""
 
 from pathlib import Path
+from uuid import uuid4
 
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
+from sqlalchemy import text
 
-from adgn.props.critic import CriticSubmitPayload
+from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
+from adgn.props.critic import CriticSubmitPayload, CriticSuccess
+from adgn.props.db import get_session, init_db, recreate_database
+from adgn.props.db.config import get_test_config
+from adgn.props.db.models import Prompt
+from adgn.props.grader import GraderInput
 from adgn.props.ids import BaseIssueID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
-from adgn.props.run_models import CriticInput, CriticSuccess, GraderInput, SpecimenScope
 from adgn.props.runs_context import RunsContext
 from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
+from tests.llm.support.openai_mock import FakeOpenAIModel
 
 
 @pytest.fixture
@@ -50,10 +57,10 @@ def rationale_model():
 def make_specimen_ctx():
     """Factory for creating specimen contexts with custom allowed IDs."""
 
-    def _make(tp_ids=(), fp_ids=(), known_files=None):
+    def _make(tp_ids=(), fp_ids=(), all_discovered_files=None):
         return SpecimenContext(
             specimen_slug="test/specimen",
-            known_files=known_files or {},
+            all_discovered_files=all_discovered_files or {},
             allowed_tp_ids=frozenset(tp_ids),
             allowed_fp_ids=frozenset(fp_ids),
         )
@@ -83,13 +90,13 @@ def critique_ctx_single():
 async def loaded_specimen():
     """Load a real specimen with validation using load_and_hydrate.
 
-    Yields (record, hydrated_root) tuple for tests that need both
-    the validated specimen data and access to the hydrated files.
+    Yields HydratedSpecimen object containing both the validated specimen data
+    and the hydrated content root.
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-22-02") as (rec, hydrated_root):
-        yield rec, hydrated_root
+    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+        yield hydrated
 
 
 @pytest_asyncio.fixture
@@ -98,7 +105,8 @@ async def loaded_specimen_record():
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    return await SpecimenRegistry.load_strict("ducktape/2025-11-22-02")
+    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+        return hydrated.record
 
 
 # =============================================================================
@@ -107,21 +115,9 @@ async def loaded_specimen_record():
 
 
 @pytest.fixture
-def train_specimen_scope() -> SpecimenScope:
-    """Sample train specimen scope (ducktape/2025-11-26-00)."""
-    return SpecimenScope(specimen_slug="ducktape/2025-11-26-00")
-
-
-@pytest.fixture
-def valid_specimen_scope() -> SpecimenScope:
-    """Sample valid specimen scope (ducktape/2025-11-21-repo)."""
-    return SpecimenScope(specimen_slug="ducktape/2025-11-21-repo")
-
-
-@pytest.fixture
-def sample_critic_input(train_specimen_scope: SpecimenScope) -> CriticInput:
-    """Sample CriticInput with train specimen and default model."""
-    return CriticInput(scope=train_specimen_scope, model="claude-sonnet-4")
+def mock_prompt_sha256() -> str:
+    """Mock SHA-256 hash for test prompts."""
+    return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"  # SHA256 of empty string
 
 
 @pytest.fixture
@@ -131,12 +127,69 @@ def sample_critic_success() -> CriticSuccess:
 
 
 @pytest.fixture
-def sample_grader_input(train_specimen_scope: SpecimenScope, sample_critic_success: CriticSuccess) -> GraderInput:
-    """Sample GraderInput with train specimen, successful critique, and default model."""
-    return GraderInput(scope=train_specimen_scope, critic_result=sample_critic_success, model="claude-sonnet-4")
+def sample_grader_input() -> GraderInput:
+    """Sample GraderInput with train specimen and critique ID."""
+    return GraderInput(specimen_slug="ducktape/2025-11-26-00", critique_id=uuid4())
 
 
 @pytest.fixture
 def runs_context(tmp_path: Path) -> RunsContext:
-    """RunsContext using pytest tmp_path fixture."""
+    """RunsContext using pytest tmp_path fixture.
+
+    Available to props tests for creating temporary run directories.
+    """
     return RunsContext(tmp_path)
+
+
+@pytest.fixture
+def mock_openai_client() -> FakeOpenAIModel:
+    """Mock OpenAI client that returns empty assistant messages.
+
+    For tests that need specific responses, create a custom FakeOpenAIModel
+    with the desired response sequence.
+    """
+    # Single generic success response
+    result = ResponsesResult(
+        id="resp_test",
+        usage=None,
+        output=[AssistantMessageOut(parts=[OutputText(text="Task completed successfully.")])],
+    )
+    return FakeOpenAIModel([result])
+
+
+@pytest.fixture
+def test_db():
+    """Initialize test database schema and truncate after test.
+
+    Uses postgres superuser credentials from get_test_config() to:
+    - Drop and recreate all tables (clean slate)
+    - Create agent_user role
+    - Enable RLS policies
+    - Create default test prompts
+
+    Yields for test to run, then truncates all tables for isolation.
+    """
+    # Get test database configuration (postgres superuser)
+    config = get_test_config()
+
+    # Connect and recreate database (includes agent_user creation)
+    init_db(config.admin_url)
+    recreate_database()
+
+    # Create default test prompts
+    with get_session() as session:
+        for prompt_sha256 in ["test123", "unknown", "test", "train-test"]:
+            prompt = Prompt(prompt_sha256=prompt_sha256, prompt_text=f"Test prompt for {prompt_sha256}")
+            session.add(prompt)
+        session.commit()
+
+    yield  # Test runs here
+
+    # Cleanup: truncate all table contents
+    with get_session() as session:
+        session.execute(
+            text(
+                "TRUNCATE TABLE critic_runs, grader_runs, critiques, specimens, prompts, events RESTART IDENTITY CASCADE"
+            )
+        )
+        session.commit()

@@ -13,7 +13,7 @@ from adgn.openai_utils.model import (
     ResponsesResult,
 )
 from tests.agent.ui.typed_asserts import assert_items_exclude_instance, assert_items_include_instances
-from tests.fixtures.responses import ResponsesFactory
+from tests.support.responses import ResponsesFactory
 
 
 @pytest.fixture

@@ -20,6 +20,7 @@ Match input critique items against canonical positives and known false positives
 - Identify novel/unlabeled input issues (pure novel or hybrid)
 - Compute weighted reported_issue_ratios (must sum to ~1.0)
 - Compute weighted recall for canonical TPs
+- Provide per-file recall for files with canonical TPs, and per-file ratios for files with critique issues
 - Write summary explaining weighting, novel issues, and partial coverage
 
 ## Matching Guidance
@@ -59,15 +60,15 @@ Match input critique items against canonical positives and known false positives
 ## Inputs (JSON)
 - canonical positives:
 ```json
-{{ canonical_issues | to_json }}
+{{ canonical_issues_json }}
 ```
 - input critique (unified run output):
 ```json
-{{ critique_issues | to_json }}
+{{ critique_issues_json }}
 ```
-{% if known_fps %}- known false positives:
+{% if known_fps_json != "[]" %}- known false positives:
 ```json
-{{ known_fps | to_json }}
+{{ known_fps_json }}
 ```
 {% else %}- known false positives: (none)
 {% endif %}
@@ -94,6 +95,8 @@ Match input critique items against canonical positives and known false positives
   - ALL input issues appear in either covered_by or novel_critique_issues
   - reported_issue_ratios sum to ~1.0
   - recall_credit bounds: min(covered_by.values()) ≤ recall_credit ≤ sum(covered_by.values())
+  - per_file_recall: keys must exactly match files with canonical TPs
+  - per_file_ratios: keys must exactly match files with critique issues
 
 **Required Justifications** (in summary and reasoning fields):
 - **For each unknown critique issue**: Explain WHY it didn't match, referencing the code you inspected (e.g., "Inspected lines 45-48 in file.py - code implements X, but canonical issue discusses Y at lines 20-25")

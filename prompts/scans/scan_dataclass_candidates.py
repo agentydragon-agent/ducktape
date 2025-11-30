@@ -24,7 +24,7 @@ class DataclassAnalyzer(ast.NodeVisitor):
     def __init__(self):
         self.classes: dict[str, dict[str, Any]] = {}
 
-    def visit_ClassDef(self, node: ast.ClassDef) -> None:  # noqa: N802
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
         """Analyze each class definition."""
         class_info = {
             "line": node.lineno,

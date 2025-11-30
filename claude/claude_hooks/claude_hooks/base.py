@@ -5,7 +5,7 @@ import json
 import logging
 from pathlib import Path
 import sys
-from typing import Any, Generic, TypeVar
+from typing import Any, TypeVar
 
 from platformdirs import user_config_dir, user_state_dir
 import yaml
@@ -39,7 +39,7 @@ InputT = TypeVar("InputT", bound=BaseHookInput)
 OutputT = TypeVar("OutputT", bound="HookAction")
 
 
-class HookBase(ABC, Generic[InputT, OutputT]):
+class HookBase[InputT: BaseHookInput, OutputT: "HookAction"](ABC):
     """Base class for all Claude Code hooks."""
 
     INPUT_MODEL: type[InputT]  # Subclasses must set this

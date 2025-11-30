@@ -310,11 +310,10 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
         # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
         pe = await MiniCodex.create(
-            model=args.cfg.prompt_engineer.model,
             mcp_client=mcp_client,
             client=model,
             system=system_message,
-            handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(dest_dir=run_dir)],
+            handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(events_path=run_dir / "events.jsonl")],
         )
 
         # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)

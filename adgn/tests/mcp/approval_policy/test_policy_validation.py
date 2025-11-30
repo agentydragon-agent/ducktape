@@ -26,7 +26,8 @@ def policy_engine(sqlite_persistence, docker_client) -> PolicyEngine:
 @pytest.fixture
 def failing_policy() -> str:
     """Policy source with failing tests."""
-    return fetch_policy("failing_tests")
+    result: str = fetch_policy("failing_tests")
+    return result
 
 
 @pytest.mark.requires_docker
@@ -57,7 +58,7 @@ class TestPolicyValidation:
     @pytest.mark.asyncio
     async def test_self_check_directly(self, policy_engine, failing_policy):
         """PolicyEngine.self_check raises for invalid policy."""
-        with pytest.raises(Exception):
+        with pytest.raises(RuntimeError, match="policy eval failed"):
             policy_engine.self_check(failing_policy)
 
     @pytest.mark.asyncio

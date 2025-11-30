@@ -280,7 +280,7 @@ class HabitifyClient:
         habit_id = self._validate_habit_id(habit_id)
 
         # Create the date range
-        start_dt, end_dt, date_range = create_date_range(start_date=start_date, end_date=end_date, days=days)
+        _start_dt, _end_dt, date_range = create_date_range(start_date=start_date, end_date=end_date, days=days)
 
         # Run all tasks concurrently using TaskGroup for automatic cancellation on error
         try:

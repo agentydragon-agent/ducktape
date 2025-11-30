@@ -77,11 +77,11 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
     if info.context and "specimen_context" in info.context:
         ctx = info.context["specimen_context"]
 
-        if p not in ctx.known_files:
+        if p not in ctx.all_discovered_files:
             raise ValueError(f"Path not found in specimen: {p}")
 
-        if ctx.known_files[p] != FileType.REGULAR:
-            raise ValueError(f"Path must be a regular file, got {ctx.known_files[p].value}: {p}")
+        if ctx.all_discovered_files[p] != FileType.REGULAR:
+            raise ValueError(f"Path must be a regular file, got {ctx.all_discovered_files[p].value}: {p}")
 
     return p
 
@@ -99,7 +99,7 @@ Validates:
 - Path is relative (not absolute)
 - Path has no parent references (..)
 - Path is non-empty
-- Path exists in specimen's known_files
+- Path exists in specimen's all_discovered_files
 - Path is a regular file (not directory/symlink/other)
 
 Serializes to string in JSON output.

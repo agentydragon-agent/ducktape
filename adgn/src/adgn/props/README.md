@@ -150,3 +150,70 @@ Examples
 Notes
 - Prefer specimen-exec for reading/grepping specimen files. Avoid mounting host paths directly.
 - For quoting-heavy commands, pass a single string after -- and let bash -lc interpret it, or use a $''-quoted heredoc as above.
+
+## Usage Workflow
+
+### 1. Run Critic on a Specimen
+
+Run structured critic to find issues in a specimen:
+
+```bash
+export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
+
+# Run critic with default preset (max-recall-critic)
+adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true
+
+# Or specify a custom preset
+adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --preset find
+
+# Filter to specific files
+adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
+```
+
+This:
+- Loads the specimen from the registry
+- Runs the critic agent with MCP tools (Docker-based)
+- Stores the critique in the database
+- Returns the critique_id for grading
+
+### 2. Grade a Critique
+
+Grade a stored critique against canonical findings:
+
+```bash
+# Grade by critique ID (from previous critic run output)
+adgn-properties2 specimen-grade 123
+
+# Use different model for grading
+adgn-properties2 specimen-grade 123 --model gpt-4o
+```
+
+This:
+- Fetches the critique from the database
+- Loads the specimen's canonical issues
+- Runs the grader to compute metrics (TP/FP/FN/recall/precision)
+- Stores grader results in the database
+
+### 3. Query Results
+
+Query stored critic and grader runs from the database:
+
+```python
+from adgn.props.db import get_session
+from adgn.props.db.models import CriticRun, GraderRun, Critique
+
+with get_session() as session:
+    # Get all critic runs for a specimen
+    runs = session.query(CriticRun).filter_by(specimen_slug="ducktape/2025-11-20-00").all()
+
+    # Get grader runs with metrics
+    graders = session.query(GraderRun).all()
+    for gr in graders:
+        print(f"Run {gr.transcript_id}: {gr.output['grade']['metrics']}")
+```
+
+All structured runs are persisted with:
+- Input/output payloads (JSONB columns in database)
+- Prompt hashes for deduplication
+- Specimen splits for train/valid/test separation
+- Execution traces in events table (via DatabaseEventHandler)

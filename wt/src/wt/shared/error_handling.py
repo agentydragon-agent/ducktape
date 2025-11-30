@@ -22,7 +22,7 @@ class GitHubUnavailableError(WorktreeManagerError):
     pass
 
 
-def handle_github_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_github_errors[T](func: Callable[..., T]) -> Callable[..., T]:
     @wraps(func)
     def wrapper(*args, **kwargs) -> T:
         try:

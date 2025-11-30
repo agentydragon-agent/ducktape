@@ -18,6 +18,10 @@ SYSTEM_NOTIFICATION_END_TAG = "</system notification>"
 class NoopOpenAIClient(OpenAIModelProto):
     """No-op OpenAI client for tests that bypass sampling via SyntheticAction."""
 
+    @property
+    def model(self) -> str:
+        return "noop-model"
+
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         # This should never be called when using SyntheticAction path
         raise NotImplementedError("NoopOpenAIClient should not be called in SyntheticAction path")
@@ -107,5 +111,3 @@ def http_set_policy(client, agent_id: str, content: str, proposal_id: str | None
     if proposal_id is not None:
         body["proposal_id"] = proposal_id
     return client.post(agent_endpoint(agent_id, "policy"), json=body)
-
-

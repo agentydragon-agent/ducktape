@@ -247,7 +247,7 @@ async def _status_async(habit: str, date: str | None = None, api_key: str | None
             status = await client.check_habit_status(habit_id, date)
 
             # Create a nice table
-            formatted_date = datetime.fromisoformat(status.date.replace("Z", "+00:00")).strftime("%B %d, %Y")
+            formatted_date = datetime.fromisoformat(status.date).strftime("%B %d, %Y")
 
             console.print(f"Status for [bold green]{habit_name}[/] on [bold]{formatted_date}[/]:")
 
@@ -326,7 +326,7 @@ async def _log_async(
             actual_date = date or today
             if result and result.date:
                 actual_date = result.date
-            formatted_date = datetime.fromisoformat(actual_date.replace("Z", "+00:00")).strftime("%B %d, %Y")
+            formatted_date = datetime.fromisoformat(actual_date).strftime("%B %d, %Y")
 
             # Success message with color based on status
             status_color = get_status_color(status)

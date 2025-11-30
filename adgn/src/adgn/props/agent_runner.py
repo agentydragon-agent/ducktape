@@ -28,14 +28,12 @@ async def run_prompt_async(
     model: str,
     server_factories: Mapping[str, Callable[..., FastMCP]],
     client: OpenAIModelProto,
-    capture_transcript: bool = True,
     system_prompt: str = "You are a code agent. Be concise.",
 ) -> AgentResult:
     """Run the prompt using MiniCodex + MCP specs and return an AgentResult.
 
-    - `servers` is a mapping server_name -> FastMCP (as produced by properties_docker_spec or builders)
-    - This is the low-level primitive for running prompts through MCP-backed MiniCodex.
-    - Returns transcript (list) and final_text (string).
+    This is the low-level primitive for running prompts through MCP-backed MiniCodex.
+    Uses quiet single-line progress handler and per-run transcript directory.
     """
     transcript: list[TranscriptItem] = []
     comp = Compositor("compositor")
@@ -43,17 +41,16 @@ async def run_prompt_async(
         server = factory()
         await comp.mount_inproc(name, server)
     # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
-    # Per-run transcript directory
+    # Per-run transcript directory (logs/ for ad-hoc debugging)
     run_dir = Path.cwd() / "logs" / "mini_codex" / "agent_runner"
     run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
     run_dir.mkdir(parents=True, exist_ok=True)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            model=model,
             mcp_client=mcp_client,
             system=system_prompt,
             client=client,
-            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptHandler(dest_dir=run_dir)],
+            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
         )
         res_any = await agent.run(prompt)
 

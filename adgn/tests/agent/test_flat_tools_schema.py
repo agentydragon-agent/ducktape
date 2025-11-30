@@ -165,7 +165,6 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     async with make_compositor({"server_a": server_a}) as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase1,
@@ -193,7 +192,6 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     async with make_compositor({"server_a": server_a, "server_b": server_b}) as (mcp_client, _comp):
         agent = await MiniCodex.create(
-            model="test-model",
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase2,
@@ -206,6 +204,7 @@ async def test_agent_compositor_flat_tools_request_schema(
     # Verify phase 2
     first_request = client_phase2.captured[0]
     assert_that(first_request.tools, has_length(2))
+    assert first_request.tools is not None  # Type narrowing for mypy
 
     print("\nPHASE 2 REQUEST (server_a + server_b):")
     print(json.dumps(first_request.model_dump(exclude_none=True), indent=2))

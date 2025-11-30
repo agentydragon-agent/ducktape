@@ -297,30 +297,7 @@ class _PolicyGatewayMiddleware(Middleware):
             call_id = uuid.uuid4().hex
             self._inflight[call_id] = tool_key
             try:
-                call_result = await call_next(context)
-                if call_result.is_error:
-                    if (err := call_result.error) is None:
-                        return call_result
-                    try:
-                        ed = mtypes.ErrorData.model_validate(err)
-                    except Exception:
-                        return call_result
-                    stamped_downstream = isinstance(ed.data, dict) and ed.data.get(POLICY_GATEWAY_STAMP_KEY) is True
-                    if (
-                        stamped_downstream
-                        or ed.code
-                        in (POLICY_DENIED_ABORT_CODE, POLICY_DENIED_CONTINUE_CODE, POLICY_EVALUATOR_ERROR_CODE)
-                        or ed.message
-                        in (POLICY_DENIED_ABORT_MSG, POLICY_DENIED_CONTINUE_MSG, POLICY_EVALUATOR_ERROR_MSG)
-                    ):
-                        raise McpError(
-                            ErrorData(
-                                code=POLICY_BACKEND_RESERVED_MISUSE_CODE,
-                                message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
-                                data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": ed.code},
-                            )
-                        )
-                return call_result
+                return await call_next(context)
             except McpError as e:
                 _raise_if_reserved_code(e, name)
                 raise
@@ -436,8 +413,8 @@ class PolicyEngine:
 
         # Create owned servers
         self.reader = NotifyingFastMCP(name="reader", instructions=_load_instructions())
-        self.policy_proposer = FastMCP(name="policy_proposer", instructions=None)
-        self.admin = FastMCP(name="admin", instructions=None)
+        self.policy_proposer = NotifyingFastMCP(name="policy_proposer", instructions=None)
+        self.admin = NotifyingFastMCP(name="admin", instructions=None)
 
         # Register tools/resources on each server
         self._register_reader()

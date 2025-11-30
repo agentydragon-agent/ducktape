@@ -87,7 +87,7 @@ async def login(
     await db_session.flush()
     response = RedirectResponse("/admin/", status_code=302)
     response.set_cookie("admin_session", session.session_token, httponly=True)
-    token, signed = csrf_protect.generate_csrf_tokens()
+    _token, signed = csrf_protect.generate_csrf_tokens()
     csrf_protect.set_csrf_cookie(signed, response)
     return response
 

@@ -15,7 +15,7 @@
   # Python environment managed by devenv + uv
   languages.python = {
     enable = true;
-    package = pkgs.python311;
+    package = pkgs.python312;
     uv = {
       enable = true;
       sync = {

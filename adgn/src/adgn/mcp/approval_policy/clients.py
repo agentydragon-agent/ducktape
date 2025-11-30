@@ -4,7 +4,7 @@ from typing import Final
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME, POLICY_ADMIN_SERVER_NAME
-from adgn.mcp.approval_policy.engine import ApproveProposalArgs, RejectProposalArgs, SetPolicyTextArgs
+from adgn.mcp.approval_policy.engine import DecideProposalArgs, SetPolicyTextArgs
 from adgn.mcp.stubs.server_stubs import ServerStub
 
 READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME
@@ -24,8 +24,5 @@ class PolicyApproverStub(ServerStub):
     async def set_policy_text(self, input: SetPolicyTextArgs) -> None:
         raise NotImplementedError  # Auto-wired at runtime
 
-    async def approve_proposal(self, input: ApproveProposalArgs) -> None:
-        raise NotImplementedError  # Auto-wired at runtime
-
-    async def reject_proposal(self, input: RejectProposalArgs) -> None:
+    async def decide_proposal(self, input: DecideProposalArgs) -> None:
         raise NotImplementedError  # Auto-wired at runtime

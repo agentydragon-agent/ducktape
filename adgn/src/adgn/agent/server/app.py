@@ -42,8 +42,8 @@ def default_client_factory(model: str) -> OpenAIModelProto:
 def create_app(*, require_static_assets: bool = True) -> FastAPI:
     app = FastAPI()
 
-    # Initialize state variables to None for proper type checking
-    app.state.mcp_registry: InfrastructureRegistry | None = None
+    # Initialize state variables to None (mypy infers types from usage)
+    app.state.mcp_registry = None
     app.state.global_compositor = None
 
     def _mount_static(path: str, directory: Path, name: str) -> None:

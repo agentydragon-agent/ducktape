@@ -12,7 +12,7 @@ RUN --mount=type=cache,target=/var/cache/apt \
     --mount=type=cache,target=/var/lib/apt/lists \
     apt-get update \
     && apt-get install -y --no-install-recommends \
-       g++ make ripgrep
+       g++ make ripgrep postgresql-client
 
 COPY pyproject.toml uv.lock ./
 COPY src ./src

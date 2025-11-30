@@ -26,7 +26,7 @@ async def test_minimal():
     # Test environment creation
     try:
         env = gym.make("FrozenLake-v1")
-        obs, info = env.reset()
+        obs, _info = env.reset()
         print(f"✓ Environment created - observation: {obs}")
         env.close()
     except Exception as e:

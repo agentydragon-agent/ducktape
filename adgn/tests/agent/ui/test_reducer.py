@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from hamcrest import assert_that, equal_to, has_properties, instance_of
-from mcp import types
+from hamcrest import assert_that, equal_to, has_properties
 
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.protocol import UiMessageEvt, UiMessagePayload, UserText
 from adgn.agent.server.reducer import reduce_ui_state
-from adgn.agent.server.state import ExecContent, ToolItem
+from adgn.agent.server.state import ExecContent, JsonContent, ToolItem
 from tests.agent.ui.typed_asserts import (
     assert_typed_items_have_one,
     is_assistant_markdown,
@@ -32,9 +31,9 @@ def test_tool_call_exec_starts_exec_content_with_cmd(fresh_ui_state, make_tool_c
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_tool_item(tool="seatbelt_sandbox_exec", call_id="c1"))
     item = result.items[0]
-    assert_that(item, instance_of(ToolItem))
+    assert isinstance(item, ToolItem)
     assert_that(item, has_properties(decision=None))
-    assert_that(item.content, instance_of(ExecContent))
+    assert isinstance(item.content, ExecContent)
     assert_that(item.content, is_exec_content(cmd_starts="echo "))
 
 
@@ -47,7 +46,7 @@ def test_tool_call_json_starts_json_content_with_args(fresh_ui_state, make_tool_
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_tool_item(call_id="c2"))
     item = result.items[0]
-    assert_that(item, instance_of(ToolItem))
+    assert isinstance(item, ToolItem)
     assert_that(item.content, is_json_content(args=args))
 
 
@@ -59,9 +58,8 @@ def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, mak
     result = reduce_ui_state(s1, output)
 
     item = result.items[0]
-    assert_that(item, instance_of(ToolItem))
-    assert_that(item, has_properties(kind="Tool"))
-    assert_that(item.content, instance_of(ExecContent))
+    assert isinstance(item, ToolItem)
+    assert isinstance(item.content, ExecContent)
     assert_that(item.content, is_exec_content(stdout="ok", exit_code=0))
 
 
@@ -74,10 +72,10 @@ def test_function_output_updates_json_output_when_not_exec(fresh_ui_state, make_
     result = reduce_ui_state(s1, output)
 
     item = result.items[0]
-    assert_that(item, instance_of(ToolItem))
-    assert_that(item, has_properties(kind="Tool"))
+    assert isinstance(item, ToolItem)
     assert_that(item.content, is_json_content())
-    assert_that(item.content.result, instance_of(types.CallToolResult))
+    assert isinstance(item.content, JsonContent)
+    assert item.content.result is not None
     assert_that(item.content.result.structuredContent, equal_to(payload))
 
 

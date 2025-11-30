@@ -151,9 +151,6 @@
         content: |
           [global]
           cache-dir = /mnt/tankshare/shared/pip-cache
-
-          [install]
-          user = true
         dest: "{{ ansible_user_dir }}/.config/pip/pip.conf"
         owner: "{{ my_user }}"
         group: "{{ my_user }}"

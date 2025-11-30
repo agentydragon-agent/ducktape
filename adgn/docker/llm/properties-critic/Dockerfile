@@ -22,7 +22,8 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
         npm \
         universal-ctags \
         jq \
-        fd-find
+        fd-find \
+        postgresql-client
 
 WORKDIR /opt/adgn
 

@@ -145,12 +145,27 @@ export async function setPolicy(content: string, proposal_id?: string) {
 export async function approveProposal(proposal_id: string) {
   if (!currentClient) return
   try {
-    // Approve proposal via MCP tool
-    await currentClient.callTool('approval_policy.admin_approve_proposal', {
-      id: proposal_id,
+    // Approve proposal via unified decide_proposal MCP tool
+    await currentClient.callTool('approval_policy.admin_decide_proposal', {
+      proposal_id,
+      decision: 'approve',
     })
   } catch (e) {
     handleError('Approve proposal', e)
+  }
+  await refreshSnapshot()
+}
+
+export async function rejectProposal(proposal_id: string) {
+  if (!currentClient) return
+  try {
+    // Reject proposal via unified decide_proposal MCP tool
+    await currentClient.callTool('approval_policy.admin_decide_proposal', {
+      proposal_id,
+      decision: 'reject',
+    })
+  } catch (e) {
+    handleError('Reject proposal', e)
   }
   await refreshSnapshot()
 }

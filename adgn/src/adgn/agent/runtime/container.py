@@ -266,7 +266,7 @@ class AgentContainer:
         preset_name: str | None = None
         if row and row.metadata is not None:
             preset_name = row.metadata.preset
-        presets = discover_presets(os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
+        presets = discover_presets(override_dir=os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
         preset = presets.get(preset_name) if preset_name else None
         chosen = (
             self.initial_policy
@@ -390,7 +390,6 @@ class AgentContainer:
 
         # Start agent
         agent = await MiniCodex.create(
-            model=self.model,
             mcp_client=mcp_client,
             system=base_system,
             client=client,

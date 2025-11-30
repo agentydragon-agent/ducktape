@@ -109,14 +109,16 @@ def test_grade_submit_uses_typed_id_dicts():
     payload = GradeSubmitInput.model_validate(
         {
             "canonical_tp_coverage": {
-                "issue-001": {"covered_by": {"input-001": 1.0}, "recall_credit": 1.0, "reasoning": "Fully covered"},
-                "issue-002": {"covered_by": {}, "recall_credit": 0.0, "reasoning": "Not covered"},
+                "issue-001": {"covered_by": {"input-001": 1.0}, "recall_credit": 1.0, "rationale": "Fully covered"},
+                "issue-002": {"covered_by": {}, "recall_credit": 0.0, "rationale": "Not covered"},
             },
-            "canonical_fp_coverage": {"fp-001": {"covered_by": [], "reasoning": "Not matched"}},
-            "novel_critique_issues": {"input-002": {"reasoning": "Novel issue not in canonicals"}},
+            "canonical_fp_coverage": {"fp-001": {"covered_by": [], "rationale": "Not matched"}},
+            "novel_critique_issues": {"input-002": {"rationale": "Novel issue not in canonicals"}},
             "reported_issue_ratios": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1},
             "recall": 0.5,
             "summary": "Test summary",
+            "per_file_recall": {"src/main.py": 0.5},
+            "per_file_ratios": {"src/main.py": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1}},
         }
     )
 
@@ -139,7 +141,7 @@ def test_grade_submit_serialization_round_trip():
                 "issue-001": {
                     "covered_by": {"input-001": 1.0},
                     "recall_credit": 1.0,
-                    "reasoning": "Fully matched the canonical issue",
+                    "rationale": "Fully matched the canonical issue",
                 }
             },
             "canonical_fp_coverage": {},
@@ -147,6 +149,8 @@ def test_grade_submit_serialization_round_trip():
             "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
             "recall": 1.0,
             "summary": "All issues were matched correctly",
+            "per_file_recall": {"src/example.py": 1.0},
+            "per_file_ratios": {"src/example.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
         }
     )
 
@@ -182,15 +186,15 @@ class TestValidationContexts:
         assert_that(ctx.allowed_tp_ids, equal_to(frozenset(["issue-001", "issue-002"])))
         assert_that(ctx.allowed_fp_ids, equal_to(frozenset(["false-pos"])))
 
-        # Check known_files includes all files (relative paths)
-        assert Path("file1.py") in ctx.known_files
-        assert Path("file2.txt") in ctx.known_files
-        assert Path("subdir") in ctx.known_files
-        assert Path("subdir/file3.py") in ctx.known_files
+        # Check all_discovered_files includes all files (relative paths)
+        assert Path("file1.py") in ctx.all_discovered_files
+        assert Path("file2.txt") in ctx.all_discovered_files
+        assert Path("subdir") in ctx.all_discovered_files
+        assert Path("subdir/file3.py") in ctx.all_discovered_files
 
         # Check file types
-        assert_that(ctx.known_files[Path("file1.py")], equal_to(FileType.REGULAR))
-        assert_that(ctx.known_files[Path("subdir")], equal_to(FileType.DIRECTORY))
+        assert_that(ctx.all_discovered_files[Path("file1.py")], equal_to(FileType.REGULAR))
+        assert_that(ctx.all_discovered_files[Path("subdir")], equal_to(FileType.DIRECTORY))
 
     def test_graded_critique_context_construction(self):
         """GradedCritiqueContext construction with frozenset."""
