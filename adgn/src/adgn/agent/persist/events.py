@@ -66,7 +66,3 @@ class EventRecord(BaseModel):
 
 def parse_event(d: dict[str, Any]) -> EventRecord:
     return EventRecord.model_validate(d)
-
-
-def parse_events(items: list[dict[str, Any]]) -> list[EventRecord]:
-    return [parse_event(d) for d in items]
