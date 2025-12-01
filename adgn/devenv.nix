@@ -7,7 +7,8 @@
 }: {
   # Basic packages available in the shell
   # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, jsonnet, etc.
-  packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib];
+  # playwright-driver provides Nix-patched Playwright browsers (fixes GLIBC issues)
+  packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib pkgs.playwright-driver];
 
   # Python (devenv-managed venv)
   languages.python = {
@@ -43,6 +44,10 @@
 
     # Add native library paths for Python C extensions (numpy, jsonnet, etc.)
     export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+
+    # Use Nix-provided Playwright browsers (fixes GLIBC compatibility)
+    export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
+    export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
     python --version
     echo "Tip: run 'devenv up' to start the Vite UI dev server in the background, or use 'ui-dev'/'mini-codex-serve' scripts."

@@ -44,11 +44,11 @@ async def compositor():
     return Compositor("comp")
 
 
-# Ensure shared fixtures from tests/fixtures are always registered, even when
+# Ensure shared fixtures from tests/support are always registered, even when
 # running a subset of tests or in parallel workers where the module wouldn't be
 # imported implicitly.
 pytest_plugins = (
-    "tests.fixtures.responses",
+    "tests.support.responses",
     "pytest_asyncio",  # Ensure async fixtures work in worker processes
 )
 
@@ -176,6 +176,37 @@ def make_backend_server() -> Callable[[str], FastMCP]:
 @pytest.fixture
 def backend_server(make_backend_server: Callable[[str], FastMCP]) -> FastMCP:
     return make_backend_server("backend")
+
+
+@pytest.fixture
+def make_step_runner(responses_factory):
+    """Factory fixture that creates step runners.
+
+    Returns a factory function that creates _StepRunner instances.
+    Each runner is a context manager that validates all steps completed.
+
+    Usage:
+        def test_workflow(make_step_runner):
+            with make_step_runner(steps=[...]) as runner:
+                # Use runner
+                pass
+            # Validation happens automatically on context exit
+
+        def test_multiple_agents(make_step_runner):
+            with make_step_runner(steps=[...]) as agent1, \
+                 make_step_runner(steps=[...]) as agent2:
+                # Use both agents
+                pass
+    """
+    from collections.abc import Sequence
+
+    from tests.support.responses import _StepRunner
+    from tests.support.steps import Step
+
+    def _make(steps: Sequence[Step]) -> _StepRunner:
+        return _StepRunner(factory=responses_factory, steps=steps)
+
+    return _make
 
 
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
@@ -312,6 +343,16 @@ async def pg_compositor_echo(echo_spec, make_pg_compositor):
     """
     async with make_pg_compositor(echo_spec) as result:
         yield result
+
+
+@pytest.fixture
+async def pg_session_echo(pg_compositor_echo):
+    """Ready-to-use client with echo server and allow-all policy.
+
+    Yields just the client for tests that only need MCP access.
+    """
+    client, _compositor, _engine = pg_compositor_echo
+    return client
 
 
 @pytest.fixture

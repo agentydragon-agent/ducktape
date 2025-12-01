@@ -26,7 +26,6 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
-from adgn.mcp._shared.naming import build_mcp_function
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 # ============================================================================
@@ -158,7 +157,7 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     client_phase1 = FakeOpenAIModel(
         [
-            responses_factory.make_tool_call(build_mcp_function("server_a", "tool_a"), {"param_x": 10, "param_y": 20}),
+            responses_factory.make_mcp_tool_call("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
             responses_factory.make_assistant_message("The result is 30."),
         ]
     )
@@ -185,7 +184,7 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     client_phase2 = FakeOpenAIModel(
         [
-            responses_factory.make_tool_call(build_mcp_function("server_a", "tool_a"), {"param_x": 10, "param_y": 20}),
+            responses_factory.make_mcp_tool_call("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
             responses_factory.make_assistant_message("The result is 30."),
         ]
     )

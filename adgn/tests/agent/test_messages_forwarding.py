@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import (
     AssistantMessage,
     FunctionCallItem,
@@ -61,7 +62,7 @@ async def test_function_call_and_function_call_output_replay(
     agent, client = await make_test_agent(
         pg_session_echo,
         [
-            _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}, responses_factory),
+            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
         ],
     )
@@ -80,6 +81,7 @@ async def test_mixed_reasoning_fc_ordering(
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
     """
+    # Note: .make() requires individual items; tool_call still uses build_mcp_function (justified)
     resp = responses_factory.make(
         responses_factory.make_item_reasoning(),
         responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
@@ -106,7 +108,7 @@ async def test_no_synthesized_reasoning_items(
     agent, client = await make_test_agent(
         pg_session_echo,
         [
-            _make_tool_call_resp(build_mcp_function("echo", "echo"), {"text": "hi"}, responses_factory),
+            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
         ],
     )
@@ -126,6 +128,7 @@ async def test_model_provided_tool_output_records_without_execution(
     agent, client = await make_test_agent(
         pg_session_echo,
         [
+            # Note: make_tool_call_with_output uses build_mcp_function (no typed variant yet - justified)
             responses_factory.make_tool_call_with_output(
                 build_mcp_function("echo", "echo"), {"text": "hi"}, {"echo": "hi"}
             )

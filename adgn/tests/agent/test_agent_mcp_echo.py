@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.reducer import AutoHandler
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import EchoInput
 
 
 async def test_agent_mcp_echo_tool_use(
@@ -12,7 +12,7 @@ async def test_agent_mcp_echo_tool_use(
     agent, _client = await make_test_agent(
         pg_session_echo,
         [
-            responses_factory.make_tool_call(build_mcp_function("echo", "echo"), {"text": "hello"}),
+            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hello")),
             responses_factory.make_assistant_message("done"),
         ],
         handlers=[AutoHandler(), recording_handler],

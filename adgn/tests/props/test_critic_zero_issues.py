@@ -1,0 +1,234 @@
+"""Test critic agent successfully submits zero issues on clean trivial code.
+
+Verifies the fix for the infinite loop bug where agents tried to send text responses
+instead of calling submit(issues=0) when finding no violations.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Generator
+import hashlib
+from pathlib import Path
+import shutil
+import uuid
+
+from platformdirs import user_cache_dir
+import pytest
+
+from adgn.mcp.exec.models import ExecInput
+from adgn.props.critic import CriticInput, run_critic
+from adgn.props.db import get_session
+from adgn.props.db.models import CriticRun, Critique, Prompt, Specimen
+from adgn.props.ids import SpecimenSlug
+from tests.support.responses import ResponsesFactory
+
+# Trivial clean Python code that should have zero issues
+TRIVIAL_CLEAN_CODE = '''#!/usr/bin/env python3
+"""A trivial script that subtracts two numbers."""
+
+
+def subtract(a: float, b: float) -> float:
+    """Subtract b from a."""
+    return a - b
+
+
+def main() -> None:
+    """Main entry point."""
+    print("Enter two numbers to subtract:")
+    try:
+        num1 = float(input("First number: "))
+        num2 = float(input("Second number: "))
+        result = subtract(num1, num2)
+        print(f"{num1} - {num2} = {result}")
+    except ValueError:
+        print("Error: Please enter valid numbers")
+        return
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+# Simple max-recall system prompt that shouldn't find issues in trivial clean code
+SIMPLE_MAX_RECALL_PROMPT = """# Clean Code Critic
+
+Find code quality issues, design smells, and violations of best practices.
+
+## What to Flag
+- Unused imports, variables, functions
+- Type annotation issues (missing, incorrect, inconsistent)
+- Error handling problems (bare except, swallowed exceptions)
+- Code duplication
+- Overly complex functions
+- Missing docstrings for public functions
+- Security issues (hardcoded secrets, SQL injection risks)
+
+## Method
+1. Read files as needed
+2. Look for violations
+3. Report each issue via critic_submit tools
+4. Call submit(issues=N) when done (N=0 if no issues found)
+
+Focus on concrete, actionable findings with specific line numbers.
+"""
+
+
+@pytest.fixture
+def temp_specimen_root() -> Generator[Path, None, None]:
+    """Temporary specimen root directory."""
+    cache_root = Path(user_cache_dir("adgn-tests")) / "specimens"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    p = cache_root / f"specimen-{uuid.uuid4().hex[:8]}"
+    try:
+        p.mkdir(parents=True, exist_ok=True)
+        yield p
+    finally:
+        shutil.rmtree(p, ignore_errors=True)
+
+
+@pytest.fixture
+def trivial_specimen(temp_specimen_root: Path) -> tuple[SpecimenSlug, Path]:
+    """Create a minimal specimen with trivial clean Python code."""
+    # Create specimen structure
+    specimen_dir = temp_specimen_root / "test-trivial-2025-12-01"
+    specimen_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write the trivial Python file
+    code_file = specimen_dir / "subtract.py"
+    code_file.write_text(TRIVIAL_CLEAN_CODE, encoding="utf-8")
+
+    # Create minimal manifest
+    manifest = specimen_dir / "manifest.yaml"
+    manifest.write_text(
+        "split: test\ndescription: Trivial clean Python script for testing zero-issues case\n", encoding="utf-8"
+    )
+
+    # Create empty issues directory
+    issues_dir = specimen_dir / "issues"
+    issues_dir.mkdir(parents=True, exist_ok=True)
+
+    slug = SpecimenSlug("test-trivial-2025-12-01")
+    return slug, specimen_dir
+
+
+def _make_critic_response_sequence() -> list:
+    """Create response sequence for critic that finds zero issues and calls submit(issues=0)."""
+    factory = ResponsesFactory("gpt-5-nano")
+
+    return [
+        # 1. Read the Python file
+        factory.make_mcp_tool_call(
+            "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
+        ),
+        # 2. Call submit with zero issues
+        factory.make(factory.tool_call("critic_submit_submit", {"issues": 0})),
+    ]
+
+
+@pytest.mark.requires_docker
+@pytest.mark.requires_postgres
+async def test_critic_zero_issues_submits_successfully(trivial_specimen: tuple[SpecimenSlug, Path], make_openai_client):
+    """Test that critic successfully calls submit(issues=0) when finding no issues.
+
+    This is a regression test for the infinite loop bug where RequireAnyTool()
+    forced the agent to call dummy tools instead of completing with submit(issues=0).
+    """
+    slug, specimen_dir = trivial_specimen
+
+    # Insert specimen into database
+    with get_session() as session:
+        spec_record = Specimen(specimen_slug=slug, split="test", labeled_files=["subtract.py"])
+        session.add(spec_record)
+
+        # Insert prompt into database
+        prompt_text = SIMPLE_MAX_RECALL_PROMPT
+        prompt_sha256 = hashlib.sha256(prompt_text.encode()).hexdigest()
+        prompt_record = Prompt(
+            prompt_sha256=prompt_sha256, prompt_text=prompt_text, template_file_path="test_simple_max_recall.md"
+        )
+        session.add(prompt_record)
+        session.commit()
+
+    # Create fake OpenAI client with expected tool call sequence
+    client = make_openai_client(_make_critic_response_sequence())
+
+    # Run critic
+    input_data = CriticInput(specimen_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+
+    # This should complete successfully without infinite loop
+    output, critic_run_id, critique_id = await run_critic(
+        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
+    )
+
+    # Verify output
+    assert output.result is not None
+    assert len(output.result.issues) == 0, "Should find zero issues in trivial clean code"
+    assert critic_run_id is not None
+    assert critique_id is not None
+
+    # Verify database records
+    with get_session() as session:
+        run = session.get(CriticRun, critic_run_id)
+        assert run is not None
+        assert run.specimen_slug == slug
+        assert run.critique_id == critique_id
+
+        critique = session.get(Critique, critique_id)
+        assert critique is not None
+        payload = critique.payload
+        assert payload["issues"] == []
+        assert len(payload["issues"]) == 0
+
+
+@pytest.mark.requires_docker
+@pytest.mark.requires_postgres
+async def test_critic_does_not_infinite_loop_on_zero_issues(
+    trivial_specimen: tuple[SpecimenSlug, Path], make_openai_client
+):
+    """Verify critic doesn't get stuck in infinite loop when finding zero issues.
+
+    Before the fix, RequireAnyTool() would force dummy docker_exec calls indefinitely.
+    After the fix, the agent calls submit(issues=0) and the loop terminates via GateUntil.
+    """
+    slug, specimen_dir = trivial_specimen
+
+    # Setup database records (same as above)
+    with get_session() as session:
+        spec_record = Specimen(specimen_slug=slug, split="test", labeled_files=["subtract.py"])
+        session.add(spec_record)
+
+        prompt_text = SIMPLE_MAX_RECALL_PROMPT
+        prompt_sha256 = hashlib.sha256(prompt_text.encode()).hexdigest()
+        prompt_record = Prompt(
+            prompt_sha256=prompt_sha256, prompt_text=prompt_text, template_file_path="test_simple_max_recall.md"
+        )
+        session.add(prompt_record)
+        session.commit()
+
+    # Create response sequence with LIMITED docker_exec calls
+    # If the bug exists, this will fail because agent keeps calling docker_exec
+    factory = ResponsesFactory("gpt-5-nano")
+    responses = [
+        factory.make_mcp_tool_call("docker", "docker_exec", ExecInput(cmd=["ls", "/workspace"], timeout_ms=5000)),
+        factory.make_mcp_tool_call(
+            "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
+        ),
+        # After reading file, should call submit(issues=0), NOT more docker_exec
+        factory.make(factory.tool_call("critic_submit_submit", {"issues": 0})),
+    ]
+
+    client = make_openai_client(responses)
+
+    input_data = CriticInput(specimen_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+
+    # This should complete in 3 turns, not loop infinitely
+    output, _, _ = await run_critic(
+        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
+    )
+
+    assert output.result is not None
+    assert len(output.result.issues) == 0
+
+    # Verify we used exactly the expected number of responses (no infinite loop)
+    # The fake client will raise if more responses are requested
+    assert client.call_count <= len(responses), f"Agent made {client.call_count} calls, expected <= {len(responses)}"

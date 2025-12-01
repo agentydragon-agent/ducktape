@@ -465,12 +465,7 @@ class PolicyEngine:
     async def _record_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         """Record approval outcome to persistence."""
         await self.persistence.record_approval(
-            run_id=None,  # No run context available in middleware
-            agent_id=self.agent_id,
-            call_id=call_id,
-            tool_key=tool_key,
-            outcome=outcome,
-            decided_at=datetime.now(UTC),
+            agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, outcome=outcome, decided_at=datetime.now(UTC)
         )
 
     # ---- Policy state methods ----

@@ -172,6 +172,9 @@ async def build_server(
 
         return UpsertPromptOutput(prompt_sha256=prompt_sha256)
 
+    # Create registry once for the MCP server
+    registry = SpecimenRegistry.from_package_resources()
+
     @mcp.tool(flat=True)
     async def run_critic(payload: CriticInput) -> RunCriticOutput:
         """Execute critic agent on specimen to generate critique (list of reported issues).
@@ -209,10 +212,12 @@ async def build_server(
                 )
 
         # Resolve files for prompt rendering and validation
-        resolved_files = await resolve_critic_scope(specimen_slug=payload.specimen_slug, files=payload.files)
+        resolved_files = await resolve_critic_scope(
+            specimen_slug=payload.specimen_slug, files=payload.files, registry=registry
+        )
 
         # Load and hydrate specimen for content_root
-        async with SpecimenRegistry.load_and_hydrate(payload.specimen_slug) as hydrated:
+        async with registry.load_and_hydrate(payload.specimen_slug) as hydrated:
             # Validate explicit files exist (when not using sentinel)
             if payload.files != ALL_FILES_WITH_ISSUES:
                 specimen_files = set(hydrated.all_discovered_files.keys())
@@ -296,6 +301,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
     """
     specimen_paths: dict[str, Path] = {}
     defs_root = specimens_definitions_root()
+    registry = SpecimenRegistry.from_package_resources()
 
     async with AsyncExitStack() as stack:
         train_specimens = get_train_specimens()
@@ -303,7 +309,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
 
         for slug in train_specimens:
             # Load and hydrate specimen, keep alive for Docker mounting
-            hydrated = await stack.enter_async_context(SpecimenRegistry.load_and_hydrate(slug))
+            hydrated = await stack.enter_async_context(registry.load_and_hydrate(slug))
             # No copying - mount hydrated path directly as separate Docker volume
             specimen_paths[slug] = hydrated.content_root
             logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /specimens/{slug})")

@@ -16,10 +16,43 @@ Centralising them here keeps behaviour consistent and avoids redundant fixtures.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from fastmcp.server import FastMCP
 from mcp import McpError, types as mtypes
+from pydantic import BaseModel
 
 from adgn.mcp._shared.constants import POLICY_GATEWAY_STAMP_KEY
+from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
+
+
+class EchoInput(BaseModel):
+    """Input for echo tool.
+
+    Simple tool that echoes back the provided text.
+    """
+
+    text: str
+
+
+class SendMessageInput(BaseModel):
+    """Input for send_message validation tool.
+
+    Strictly requires text/markdown mime type for validation testing.
+    """
+
+    mime: Literal["text/markdown"]
+    content: str
+
+
+class EmptyInput(BaseModel):
+    """Empty input for parameterless MCP tools.
+
+    Use when a tool takes no arguments but requires a Pydantic model
+    for type safety in the test framework.
+
+    Examples: noop, ping, slow, slow2 tools.
+    """
 
 
 def build_simple_tools(server: FastMCP) -> None:
@@ -29,24 +62,24 @@ def build_simple_tools(server: FastMCP) -> None:
     be reused across unit, integration, and approval-policy tests.
     """
 
-    @server.tool(name="echo")
-    def echo(text: str) -> dict[str, str]:
-        return {"echo": text}
+    @mcp_flat_model(server, name="echo")
+    def echo(input: EchoInput) -> dict[str, str]:
+        return {"echo": input.text}
 
-    @server.tool(name="ping")
-    def ping() -> str:
+    @mcp_flat_model(server, name="ping")
+    def ping(input: EmptyInput) -> str:
         return "pong"
 
-    @server.tool(name="noop")
-    def noop() -> dict[str, bool]:
+    @mcp_flat_model(server, name="noop")
+    def noop(input: EmptyInput) -> dict[str, bool]:
         return {"ok": True}
 
-    @server.tool(name="raise_reserved")
-    def raise_reserved() -> None:
+    @mcp_flat_model(server, name="raise_reserved")
+    def raise_reserved(input: EmptyInput) -> None:
         raise McpError(mtypes.ErrorData(code=-32950, message="policy_denied"))
 
-    @server.tool(name="raise_with_gateway_stamp")
-    def raise_with_gateway_stamp() -> None:
+    @mcp_flat_model(server, name="raise_with_gateway_stamp")
+    def raise_with_gateway_stamp(input: EmptyInput) -> None:
         raise McpError(
             mtypes.ErrorData(
                 code=-32000, message="upstream_error", data={POLICY_GATEWAY_STAMP_KEY: True, "note": "spoof"}
@@ -62,4 +95,4 @@ def make_simple_mcp(name: str = "simple") -> FastMCP:
     return server
 
 
-__all__ = ["build_simple_tools", "make_simple_mcp"]
+__all__ = ["EchoInput", "EmptyInput", "SendMessageInput", "build_simple_tools", "make_simple_mcp"]

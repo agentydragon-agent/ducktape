@@ -700,7 +700,8 @@ async def grade_critique_by_id(critique_id: UUID, client: OpenAIModelProto, verb
     grader_input = GraderInput(specimen_slug=specimen_slug, critique_id=critique_id)
 
     # Load and hydrate specimen once, then execute
-    async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
+    registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(specimen_slug) as hydrated:
         # Execute grader run
         _grader_output, grader_run_id = await run_grader(
             input_data=grader_input, client=client, hydrated_specimen=hydrated, verbose=verbose

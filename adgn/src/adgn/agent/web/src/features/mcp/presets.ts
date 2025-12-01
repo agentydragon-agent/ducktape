@@ -31,19 +31,6 @@ export const MCP_PRESETS: McpPreset[] = [
     },
   },
   {
-    id: 'seatbelt_exec',
-    label: 'Seatbelt Exec (inproc)',
-    transport: 'inproc',
-    defaultName: 'seatbelt',
-    defaults: {
-      inproc: {
-        factory: 'adgn.mcp.exec.seatbelt:SeatbeltExecMCP',
-        args: [],
-        kwargs: { name: 'seatbelt' },
-      },
-    },
-  },
-  {
     id: 'http_template',
     label: 'HTTP (manual)',
     transport: 'http',

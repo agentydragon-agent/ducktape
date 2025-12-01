@@ -10,6 +10,7 @@ from hamcrest import assert_that, contains_string
 
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import SendMessageInput
 from tests.agent.test_matchers import assert_function_call_output_structured
 
 
@@ -28,13 +29,14 @@ async def test_tool_error_continues_turn(
     async with make_pg_client({"validator": validation_server}) as mcp_client:
         # Simulate the agent trying with wrong mime, then correcting itself
         seq = [
-            # First attempt with wrong mime type
+            # First attempt with wrong mime type (using dict for intentionally invalid value)
+            # Note: using make_tool_call + build_mcp_function here is justified - testing error path with invalid input
             responses_factory.make_tool_call(
                 build_mcp_function("validator", "send_message"), {"mime": "text/plain", "content": "Hello"}
             ),
             # After error, agent retries with correct mime type
-            responses_factory.make_tool_call(
-                build_mcp_function("validator", "send_message"), {"mime": "text/markdown", "content": "Hello"}
+            responses_factory.make_mcp_tool_call(
+                "validator", "send_message", SendMessageInput(mime="text/markdown", content="Hello")
             ),
             # Final message
             responses_factory.make_assistant_message("Successfully sent message"),

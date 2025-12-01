@@ -409,45 +409,12 @@ def resolve_source_root(man: SpecimenDoc, manifest_path: Path) -> Path:
     raise SystemExit(f"Unsupported source type: {type(man.source)}")
 
 
-def list_specimen_names(base: Path) -> list[str]:
-    """List all specimen names in hierarchical format (repo/name).
-
-    Specimens are organized as:
-      specimens/
-        {repo}/
-          {name}/
-            manifest.yaml
-
-    Returns specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
-    """
-    names = []
-    for repo_dir in base.iterdir():
-        if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
-            continue
-        for specimen_dir in repo_dir.iterdir():
-            if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
-                names.append(f"{repo_dir.name}/{specimen_dir.name}")
-    return sorted(names)
-
-
-def find_specimens_base() -> Path:
-    """Resolve the installed specimens directory deterministically via package resources.
-
-    This must exist inside the installed package; no filesystem fallbacks are used.
-    """
-    traversable = resources.files("adgn.props").joinpath("specimens")
-    with resources.as_file(traversable) as p:
-        if not p.exists() or not p.is_dir():
-            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
-        return p
-
-
-def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | None:
+def resolve_manifest_arg(arg: str | None, base: Path) -> Path | None:
     """Resolve a specimen identifier or path to its manifest.yaml.
 
     Args:
         arg: Specimen ID like "ducktape/2025-11-20-adgn" or filesystem path
-        base: Specimens base directory (defaults to find_specimens_base())
+        base: Specimens base directory (required - pass from registry.base_path)
 
     Returns:
         Path to manifest.yaml or None if not found
@@ -460,13 +427,14 @@ def resolve_manifest_arg(arg: str | None, base: Path | None = None) -> Path | No
             yaml_cand = path / "manifest.yaml"
             return yaml_cand if yaml_cand.exists() else None
         return path if path.suffix.lower() in {".yaml", ".yml"} else None
-    base_dir = base or find_specimens_base()
+    base_dir = base
     # Try direct hierarchical path (repo/name)
     yaml_cand = base_dir / arg.replace("/", os.sep) / "manifest.yaml"
     if yaml_cand.exists():
         return yaml_cand
     # Try prefix matching for convenience
-    matches = [n for n in list_specimen_names(base_dir) if n.startswith(arg)]
+    registry = SpecimenRegistry.from_base_path(base_dir)
+    matches = [n for n in registry.list_specimen_names() if n.startswith(arg)]
     if len(matches) == 1:
         mdir = base_dir / matches[0].replace("/", os.sep)
         return (mdir / "manifest.yaml") if (mdir / "manifest.yaml").exists() else None
@@ -553,34 +521,106 @@ class SpecimenRecord:
 
 
 class SpecimenRegistry:
-    """Entry point for listing and obtaining specimen records (code-only facade).
+    """Entry point for listing and obtaining specimen records.
 
-    DI-friendly: pass in a preloaded mapping for tests; use load_* in app code.
+    DI-friendly design: base path is injected at construction via factory methods.
+
+    Usage:
+        # Production code
+        registry = SpecimenRegistry.from_package_resources()
+
+        # Test code
+        test_base = Path(__file__).parent / "fixtures" / "specimens"
+        registry = SpecimenRegistry.from_base_path(test_base)
+
+        # Both use same API
+        async with registry.load_and_hydrate(slug) as hydrated:
+            ...
     """
 
-    def __init__(self, specimens: dict[str, SpecimenRecord]) -> None:
-        # No I/O here; accept fully materialized data
-        self._specimens = specimens
+    def __init__(self, base_path: Path) -> None:
+        """Minimal init - just stores injected dependencies.
+
+        Do not call directly - use from_base_path() or from_package_resources() factories.
+
+        Args:
+            base_path: Base directory where specimens are located
+        """
+        self._base_path = base_path
+        self._specimens: dict[str, SpecimenRecord] = {}
 
     @classmethod
+    def from_base_path(cls, base: Path) -> SpecimenRegistry:
+        """Main factory - creates registry with explicit base path.
+
+        Args:
+            base: Base directory containing specimen subdirectories
+
+        Returns:
+            SpecimenRegistry instance
+        """
+        return cls(base_path=base)
+
+    @classmethod
+    def from_package_resources(cls) -> SpecimenRegistry:
+        """Factory for production use - loads from installed package.
+
+        Returns:
+            SpecimenRegistry instance using package resources path
+
+        Raises:
+            FileNotFoundError: If specimens directory not found in package
+        """
+        # Resolve specimens directory from package resources
+        traversable = resources.files("adgn.props").joinpath("specimens")
+        with resources.as_file(traversable) as base_path:
+            if not base_path.exists() or not base_path.is_dir():
+                raise FileNotFoundError(f"Specimens directory not found in package resources: {base_path}")
+            return cls.from_base_path(base_path)
+
+    @property
+    def base_path(self) -> Path:
+        """Base directory where specimens are located."""
+        return self._base_path
+
+    @property
+    def specimen_ids(self) -> list[str]:
+        """List of specimen slugs in this registry."""
+        return sorted(self._specimens.keys())
+
+    def _get_manifest_path(self, slug: str) -> Path:
+        """Get manifest.yaml path for a specimen slug.
+
+        DRY helper - used by load_and_hydrate and load_manifest_only.
+
+        Args:
+            slug: Specimen slug like "ducktape/2025-11-20-00"
+
+        Returns:
+            Resolved absolute path to manifest.yaml
+        """
+        return (self._base_path / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+
     @asynccontextmanager
-    async def load_and_hydrate(cls, slug: str, base: Path | None = None) -> AsyncIterator[HydratedSpecimen]:
+    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
         """Load specimen with validation and yield hydrated specimen object.
 
         Avoids double-hydration when caller needs both loaded issues and hydrated specimen.
+
+        Args:
+            slug: Specimen slug like "ducktape/2025-11-20-00"
 
         Yields:
             HydratedSpecimen: Single object containing specimen record + hydrated content root
 
         Example:
-            async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20-00") as hydrated:
+            registry = SpecimenRegistry.from_base_path()
+            async with registry.load_and_hydrate("ducktape/2025-11-20-00") as hydrated:
                 # Access specimen data: hydrated.all_discovered_files, hydrated.issues
                 # Access content root: hydrated.content_root
-                # Example: run critic/grader via CriticRun/GraderRun with content_root=hydrated.content_root
                 pass
         """
-        base_dir = base or find_specimens_base()
-        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+        manifest_path = self._get_manifest_path(slug)
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
@@ -637,15 +677,19 @@ class SpecimenRegistry:
                 ignore_errors=True,
             )
 
-    @classmethod
-    def load_manifest_only(cls, slug: str, base: Path | None = None) -> tuple[Path, SpecimenDoc]:
+    def load_manifest_only(self, slug: str) -> tuple[Path, SpecimenDoc]:
         """Load only the manifest (no Jsonnet issues) for fast collection.
 
-        Returns: (manifest_path, manifest_doc)
-        Raises: SystemExit on manifest errors
+        Args:
+            slug: Specimen slug like "ducktape/2025-11-20-00"
+
+        Returns:
+            Tuple of (manifest_path, manifest_doc)
+
+        Raises:
+            SystemExit on manifest errors
         """
-        base_dir = base or find_specimens_base()
-        manifest_path = (base_dir / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+        manifest_path = self._get_manifest_path(slug)
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
@@ -653,6 +697,23 @@ class SpecimenRegistry:
         manifest = SpecimenDoc.model_validate(raw)
         return (manifest_path, manifest)
 
-    @property
-    def specimen_ids(self) -> list[str]:
-        return sorted(self._specimens.keys())
+    def list_specimen_names(self) -> list[str]:
+        """List all specimen names in hierarchical format (repo/name).
+
+        Specimens are organized as:
+          specimens/
+            {repo}/
+              {name}/
+                manifest.yaml
+
+        Returns:
+            Specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
+        """
+        names = []
+        for repo_dir in self._base_path.iterdir():
+            if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
+                continue
+            for specimen_dir in repo_dir.iterdir():
+                if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
+                    names.append(f"{repo_dir.name}/{specimen_dir.name}")
+        return sorted(names)

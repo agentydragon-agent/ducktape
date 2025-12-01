@@ -5,7 +5,6 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.reducer import AutoHandler
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -17,11 +16,11 @@ async def test_model_reads_container_info_with_stubbed_openai(
 ) -> None:
     async with make_pg_client({"runtime": docker_inproc_spec_alpine}) as mcp_client:
         # Prepare a deterministic two-step sequence: function_call then final text
-        ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024)
         seq = [
-            responses_factory.make_tool_call(
-                build_mcp_function("resources", "read"),
-                {"server": "docker", "uri": "resource://container.info", "start_offset": 0, "max_bytes": 1024},
+            responses_factory.make_mcp_tool_call(
+                "resources",
+                "read",
+                ResourcesReadArgs(server="docker", uri="resource://container.info", start_offset=0, max_bytes=1024),
             ),
             responses_factory.make_assistant_message("ok"),
         ]

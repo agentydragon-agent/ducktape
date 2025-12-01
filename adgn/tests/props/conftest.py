@@ -86,8 +86,50 @@ def critique_ctx_single():
     return GradedCritiqueContext(allowed_input_ids=frozenset(["critique-001"]))
 
 
+# === Specimen Registry Fixtures (DI Pattern) ===
+# Two explicit registries:
+# 1. production_specimens_registry - for real specimens (src/adgn/props/specimens/)
+# 2. test_specimens_registry - for test fixtures (tests/props/fixtures/specimens/)
+
+
+@pytest.fixture
+def production_specimens_registry() -> SpecimenRegistry:
+    """Production specimens registry from package resources.
+
+    Uses installed package specimens (src/adgn/props/specimens/).
+    Alias: specimens_registry
+    """
+    return SpecimenRegistry.from_package_resources()
+
+
+@pytest.fixture
+def specimens_registry(production_specimens_registry) -> SpecimenRegistry:
+    """Alias for production_specimens_registry (backward compatibility)."""
+    return production_specimens_registry
+
+
+@pytest.fixture
+def test_specimens_base() -> Path:
+    """Base directory for test-only fixture specimens.
+
+    Returns path to tests/props/fixtures/specimens/ which contains
+    minimal specimens for testing specific scenarios.
+    """
+    return Path(__file__).parent / "fixtures" / "specimens"
+
+
+@pytest.fixture
+def test_specimens_registry(test_specimens_base: Path) -> SpecimenRegistry:
+    """Test fixtures specimens registry (DI pattern - no monkeypatching).
+
+    Uses test fixtures from tests/props/fixtures/specimens/ which contains
+    minimal test-only specimens like test-trivial.
+    """
+    return SpecimenRegistry.from_base_path(test_specimens_base)
+
+
 @pytest_asyncio.fixture
-async def loaded_specimen():
+async def loaded_specimen(specimens_registry):
     """Load a real specimen with validation using load_and_hydrate.
 
     Yields HydratedSpecimen object containing both the validated specimen data
@@ -95,18 +137,30 @@ async def loaded_specimen():
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+    async with specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
         yield hydrated
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen_record():
+async def loaded_specimen_record(specimens_registry):
     """Load a real specimen (async fixture for tests that only need the record).
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+    async with specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
         return hydrated.record
+
+
+@pytest_asyncio.fixture
+async def test_trivial_specimen(test_specimens_registry):
+    """Load test-trivial fixture specimen (clean Python code, zero issues).
+
+    Test-only specimen for validating zero-issues case.
+    Lives in tests/props/fixtures/specimens/test-trivial/.
+    Uses DI - no monkeypatching needed.
+    """
+    async with test_specimens_registry.load_and_hydrate("test-trivial") as hydrated:
+        yield hydrated
 
 
 # =============================================================================

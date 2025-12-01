@@ -112,6 +112,36 @@ See `README.md` for a shorter overview.
 - Excluding a suite: `-k "not sandboxed_jupyter"`
 - `live_llm` tests require API keys and network access
 
+### Bootstrap Handlers (Agent Initialization)
+Bootstrap handlers inject synthetic function calls before the agent's first sampling cycle, providing initial context without requiring explicit agent requests.
+
+**Pattern (immediate construction):**
+```python
+from adgn.agent.bootstrap import TypedBootstrapBuilder, BootstrapHandler, read_resource_call, docker_exec_call
+
+# Create builder with introspection (validates payload types against server schema)
+builder = TypedBootstrapBuilder.for_server(runtime_server)
+
+# Build calls immediately - no factories, no inheritance
+calls = [
+    read_resource_call(builder, server="resources", uri="resource://foo/bar"),
+    docker_exec_call(builder, server="runtime", cmd=["ls", "-la"]),
+]
+
+# Create handler
+bootstrap = BootstrapHandler(calls)
+handlers = [bootstrap, ...other handlers...]
+```
+
+**Key principles:**
+- Builder instances are local (no global state)
+- Auto-generates call_ids (no manual management needed)
+- Type-safe: Pydantic payloads validated via introspection
+- Immediate construction (not factories/lambdas)
+- Helper functions for common patterns: `read_resource_call()`, `docker_exec_call()`
+
+**Future enhancement:** See `docs/bootstrap_type_safety_plans.md` for plans to eliminate string literals via generic/typed stubs
+
 ## Conventions and Tips
 - MCP naming
   - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` from `adgn.mcp._shared.naming`.

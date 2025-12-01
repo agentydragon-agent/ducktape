@@ -178,6 +178,26 @@ class GraderRun(Base):
     prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="grader_runs")
 
 
+class ModelMetadata(Base):
+    """OpenAI model metadata: pricing, context limits, and capabilities.
+
+    Synchronized from adgn.openai_utils.model_metadata.MODEL_METADATA via CLI.
+    Enables post-hoc cost calculation and context validation in SQL.
+    """
+
+    __tablename__ = "model_metadata"
+
+    model_id: Mapped[str] = mapped_column(String, primary_key=True)
+    input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
+    cached_input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
+    output_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
+    context_window_tokens: Mapped[int] = mapped_column(nullable=False)
+    max_output_tokens: Mapped[int] = mapped_column(nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Event(Base):
     """Agent execution event.
 

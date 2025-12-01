@@ -67,7 +67,7 @@ from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
+from adgn.props.specimens.registry import SpecimenRegistry
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -229,9 +229,10 @@ async def _run_specimen_minicodex_async(
     output_final_message: Path | None,
     client: OpenAIModelProto,
     files: list[str] | None = None,
+    registry: SpecimenRegistry,
 ) -> int:
     # Load and hydrate specimen (single hydration for both dry-run and real run)
-    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+    async with registry.load_and_hydrate(specimen) as hydrated:
         supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
         # Filter files if requested (returns FileScopeSpec: sentinel or explicit set)
@@ -294,12 +295,15 @@ async def cmd_specimen_discover(
     files: list[str] | None = OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs specimen notes (covered/not_covered_yet)."""
-    base = find_specimens_base()
-    names = list_specimen_names(base)
+    registry = SpecimenRegistry.from_package_resources()
+    # Build full specimen list
+    names = registry.list_specimen_names()
     if specimen not in names:
         typer.echo(f"Unknown specimen slug: {specimen}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
         raise typer.Exit(2)
-    spec_dir = base / specimen
+    # TODO: Remove this manual path wrangling. The covered.md/not_covered_yet.md files
+    # should be deprecated and removed, along with specimen-discover command and related paths.
+    spec_dir = registry.base_path / specimen
     embed_paths: list[Path] | None = [
         p for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
     ]
@@ -314,6 +318,7 @@ async def cmd_specimen_discover(
         output_final_message=output_final_message,
         client=build_client("gpt-5"),
         files=files,
+        registry=registry,
     )
     raise typer.Exit(code=rc)
 
@@ -547,13 +552,16 @@ def _render_prompt_with_context(
 
 
 @asynccontextmanager
-async def _open_run_context(path: Path | None, specimen: str | None, files: list[str] | None = None):
+async def _open_run_context(
+    path: Path | None, specimen: str | None, files: list[str] | None, registry: SpecimenRegistry
+):
     """Yield (wiring, files_spec, label) for either a local path or a hydrated specimen.
 
     Args:
         path: Local directory path (mutually exclusive with specimen)
         specimen: Specimen slug (mutually exclusive with path)
         files: Optional file filter (only for specimens)
+        registry: SpecimenRegistry instance (always required, instantiated at CLI entry point)
 
     Yields:
         (wiring, files_spec, label) tuple where files_spec is FileScopeSpec
@@ -564,7 +572,7 @@ async def _open_run_context(path: Path | None, specimen: str | None, files: list
         yield wiring, all_files, path.name
         return
     # Load and hydrate specimen (single hydration, avoid wasteful re-hydrate)
-    async with SpecimenRegistry.load_and_hydrate(specimen or "") as hydrated:
+    async with registry.load_and_hydrate(specimen or "") as hydrated:
         wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         yield wiring, files_spec, hydrated.slug
@@ -744,8 +752,11 @@ async def cmd_run(
         print("ERROR: --structured requires --specimen (not --path) for database persistence.")
         raise typer.Exit(2)
 
+    # Create registry once at CLI entry point (always, even for path mode - lightweight)
+    registry = SpecimenRegistry.from_package_resources()
+
     # Enter workspace context and run (same path for dry-run and real execution)
-    async with _open_run_context(path, specimen, files) as (wiring, files_spec, label):
+    async with _open_run_context(path, specimen, files, registry) as (wiring, files_spec, label):
         # Resolve files for prompt rendering (specimen mode resolves sentinel, path mode is already explicit)
         if specimen is not None:
             resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec)
@@ -781,8 +792,9 @@ async def specimen_dump(
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
     """Dump a specimen's full structure as JSON (manifest, all issues, occurrences)."""
+    registry = SpecimenRegistry.from_package_resources()
     try:
-        async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+        async with registry.load_and_hydrate(specimen) as hydrated:
             rec = hydrated.record
 
             # Use existing Pydantic model_dump() for all structured data
@@ -832,7 +844,8 @@ async def specimen_exec(
     ensure_critic_image()
 
     # Load and hydrate specimen (keep hydrated for entire container lifetime)
-    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+    registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(specimen) as hydrated:
         try:
             _ = next(hydrated.content_root.iterdir())
         except StopIteration:
@@ -865,12 +878,3 @@ async def specimen_exec(
             raise typer.Exit(rc)
         finally:
             container.stop()
-
-
-def main() -> None:
-    """Console entrypoint that invokes the Typer app."""
-    # Initialize database before syncing specimens
-    init_db()
-    # Ensure specimens table is synced before any operations
-    asyncio.run(ensure_specimens_synced())
-    app()

@@ -9,11 +9,11 @@ from pydantic import BaseModel, Field
 import pygit2
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import Abort, Continue, RequireAny
 from adgn.agent.reducer import BaseHandler
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.git_ro.server import (
@@ -27,7 +27,6 @@ from adgn.mcp.git_ro.server import (
     attach_git_ro,
 )
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem
 
@@ -40,41 +39,42 @@ def _default_bootstrap(
     Returns initial function calls agent should start out having executed when composing
     a commit message. Parameters control pagination sizes used for heavy payloads.
     """
-    f = ItemFactory(call_id_prefix="bootstrap")
+    builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
     return [
-        f.tool_call(
-            name=build_mcp_function(server, "git_status"),
-            arguments=StatusInput(list_slice=ListSlice(offset=0, limit=1000)).model_dump(),
-            call_id="bootstrap:status",
+        builder.call(
+            server, "git_status", StatusInput(list_slice=ListSlice(offset=0, limit=1000)), call_id="bootstrap:status"
         ),
-        f.tool_call(
-            name=build_mcp_function(server, "git_diff"),
-            arguments=DiffInput(
+        builder.call(
+            server,
+            "git_diff",
+            DiffInput(
                 format=DiffFormat.NAME_STATUS,
                 staged=True,
                 find_renames=True,
                 list_slice=ListSlice(offset=0, limit=staged_limit),
-            ).model_dump(),
+            ),
             call_id="bootstrap:diff-name-status",
         ),
-        f.tool_call(
-            name=build_mcp_function(server, "git_diff"),
-            arguments=DiffInput(
+        builder.call(
+            server,
+            "git_diff",
+            DiffInput(
                 format=DiffFormat.STAT,
                 staged=True,
                 find_renames=True,
                 list_slice=ListSlice(offset=0, limit=staged_limit),
-            ).model_dump(),
+            ),
             call_id="bootstrap:diff-stat",
         ),
-        f.tool_call(
-            name=build_mcp_function(server, "git_diff"),
-            arguments=DiffInput(
+        builder.call(
+            server,
+            "git_diff",
+            DiffInput(
                 format=DiffFormat.PATCH,
                 staged=True,
                 unified=0,
                 slice=TextSlice(offset_chars=0, max_chars=patch_slice_chars),
-            ).model_dump(),
+            ),
             call_id="bootstrap:diff-patch",
         ),
     ]
@@ -123,24 +123,24 @@ class CommitController(BaseHandler):
 
         # If amending, append dedicated bootstrap calls for the amended commit and its original diff
         if amend:
-            f = ItemFactory(call_id_prefix="bootstrap")
+            builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
             extra_boots = [
-                f.tool_call(
-                    name=build_mcp_function(self._server, "git_show"),
-                    arguments=ShowInput(
-                        object="HEAD", format=DiffFormat.PATCH, slice=TextSlice(offset_chars=0, max_chars=50000)
-                    ).model_dump(),
+                builder.call(
+                    self._server,
+                    "git_show",
+                    ShowInput(object="HEAD", format=DiffFormat.PATCH, slice=TextSlice(offset_chars=0, max_chars=50000)),
                     call_id="bootstrap:show-head",
                 ),
-                f.tool_call(
-                    name=build_mcp_function(self._server, "git_diff"),
-                    arguments=DiffInput(
+                builder.call(
+                    self._server,
+                    "git_diff",
+                    DiffInput(
                         format=DiffFormat.PATCH,
                         rev_a="HEAD^",
                         rev_b="HEAD",
                         unified=0,
                         slice=TextSlice(offset_chars=0, max_chars=50000),
-                    ).model_dump(),
+                    ),
                     call_id="bootstrap:orig-diff",
                 ),
             ]

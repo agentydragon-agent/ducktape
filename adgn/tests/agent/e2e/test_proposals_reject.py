@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.ui.server import EndTurnInput
 from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
 
@@ -24,7 +24,7 @@ async def test_policy_proposal_reject_updates_ui(
 
     # No model tool calls needed for proposal authoring in this flow
     async def responses_create(_req):
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+        return responses_factory.make_mcp_tool_call("ui", "end_turn", EndTurnInput(), call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]

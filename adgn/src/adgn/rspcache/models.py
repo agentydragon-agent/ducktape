@@ -7,7 +7,6 @@ from openai.types.responses import (
     Response as OpenAIResponse,
     ResponseCompletedEvent,
     ResponseCreatedEvent,
-    ResponseError,
     ResponseFailedEvent,
     ResponseIncompleteEvent,
     ResponseInProgressEvent,
@@ -15,10 +14,7 @@ from openai.types.responses import (
     ResponseStreamEvent,
     ResponseUsage,
 )
-from pydantic import BaseModel, ConfigDict, TypeAdapter, field_serializer
-
-RESPONSE_ADAPTER: TypeAdapter[OpenAIResponse] = TypeAdapter(OpenAIResponse)
-ERROR_ADAPTER: TypeAdapter[ResponseError] = TypeAdapter(ResponseError)
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 def response_from_event(event: ResponseStreamEvent) -> OpenAIResponse | None:
@@ -33,7 +29,7 @@ def response_from_event(event: ResponseStreamEvent) -> OpenAIResponse | None:
         | ResponseIncompleteEvent
         | ResponseQueuedEvent,
     ):
-        return RESPONSE_ADAPTER.validate_python(event.response)
+        return OpenAIResponse.model_validate(event.response)
     return None
 
 

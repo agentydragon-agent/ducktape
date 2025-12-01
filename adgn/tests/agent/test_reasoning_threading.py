@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem
 
 
@@ -11,18 +10,14 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
 
     # Create function calls with explicit id and status to verify preservation
     fc1 = FunctionCallItem(
-        name=build_mcp_function("echo", "echo"),
+        name="echo__echo",
         arguments='{"text": "hi"}',
         call_id="call_1",
         id="fc_id_1",  # Must be preserved
         status="completed",  # Must be preserved
     )
     fc2 = FunctionCallItem(
-        name=build_mcp_function("echo", "echo"),
-        arguments='{"text": "bye"}',
-        call_id="call_2",
-        id="fc_id_2",
-        status="in_progress",
+        name="echo__echo", arguments='{"text": "bye"}', call_id="call_2", id="fc_id_2", status="in_progress"
     )
 
     # Multi-turn sequence to test proper threading:

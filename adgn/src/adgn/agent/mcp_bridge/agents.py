@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
@@ -89,7 +89,7 @@ class BootAgentOutput(BaseModel):
 # ---- Server factory ----------------------------------------------------------
 
 
-def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModelFastMCP:
+def make_agents_server(name: str, registry: InfrastructureRegistry) -> NotifyingFastMCP:
     """Create the agents management MCP server.
 
     Resources:
@@ -101,7 +101,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModel
     - delete_agent(agent_id) - Delete an agent
     - boot_agent(agent_id) - Boot existing agent from DB
     """
-    mcp = FlatModelFastMCP(name)
+    mcp = NotifyingFastMCP(name)
 
     @mcp.resource("agents://list")
     async def list_agents() -> list[AgentInfo]:

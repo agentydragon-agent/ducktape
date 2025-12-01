@@ -45,4 +45,37 @@ def to_pydantic(res: FMCallToolResult) -> mcp_types.CallToolResult:
     # Pydantic MCP content models. Otherwise, forward JSON-serializable values.
     payload["content"] = list(res.content or [])
     # Validate into the Pydantic type (uses alias names)
-    return TypeAdapter(mcp_types.CallToolResult).validate_python(payload)
+    return mcp_types.CallToolResult.model_validate(payload)
+
+
+def extract_structured_content[T](result: mcp_types.CallToolResult | FMCallToolResult, output_type: type[T]) -> T:
+    """Extract and parse structured content from an MCP CallToolResult.
+
+    Handles both FastMCP client results and Pydantic MCP types.
+
+    Args:
+        result: MCP tool result (FastMCP or Pydantic variant)
+        output_type: Pydantic model class or type to validate structured content as
+
+    Returns:
+        Parsed and validated instance of output_type
+
+    Raises:
+        ValueError: If structured content is missing or result is an error
+        ValidationError: If structured content doesn't match output_type schema
+    """
+    # Normalize to Pydantic type if needed
+    if isinstance(result, FMCallToolResult):
+        result = to_pydantic(result)
+
+    # Direct attribute access on Pydantic model
+    # Pydantic models expose both the alias (isError) and Python name (is_error)
+    if result.isError:
+        raise ValueError(f"Cannot extract from error result: {result}")
+
+    # Access structured content via Pydantic alias (preferred for MCP types)
+    sc = result.structuredContent
+    if sc is None:
+        raise ValueError(f"CallToolResult missing structured content: {result}")
+
+    return TypeAdapter(output_type).validate_python(sc)

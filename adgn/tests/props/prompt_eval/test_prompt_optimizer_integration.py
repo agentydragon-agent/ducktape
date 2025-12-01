@@ -19,7 +19,6 @@ from hamcrest import assert_that, equal_to, has_length, not_none
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import (
     FunctionCallItem,
@@ -44,7 +43,7 @@ from adgn.props.prompt_optimizer import (
 )
 from adgn.props.runs_context import RunsContext
 from adgn.props.specimens.hydrated import HydratedSpecimen
-from adgn.props.specimens.registry import IssueRecord, SpecimenRecord, SpecimenRegistry
+from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
 from tests.support.responses import ResponsesFactory
 
 logger = logging.getLogger(__name__)
@@ -240,8 +239,9 @@ class POAgentState(AgentStateBase):
     def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
         if self.turn == 1:
             # Turn 1: Initial - emit docker exec to write file
-            return self.factory.make_tool_call(
-                build_mcp_function("docker", "exec"),
+            return self.factory.make_mcp_tool_call(
+                "docker",
+                "exec",
                 ExecInput(
                     cmd=[
                         "sh",
@@ -249,7 +249,7 @@ class POAgentState(AgentStateBase):
                         "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt",
                     ],
                     timeout_ms=30000,  # 30 second timeout
-                ).model_dump(),
+                ),
             )
 
         if self.turn == 2:
@@ -297,25 +297,23 @@ class CriticAgentState(AgentStateBase):
     def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
         if self.turn == 1:
             # Turn 1: Initial - emit upsert_issue
-            return self.factory.make_tool_call(
-                build_mcp_function("critic_submit", "upsert_issue"),
-                UpsertIssueInput(issue_id="test-issue-001", description="Test issue").model_dump(),
+            return self.factory.make_mcp_tool_call(
+                "critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue-001", description="Test issue")
             )
 
         if self.turn == 2:
             # Turn 2: Check upsert_issue completed - emit add_occurrence
             assert_last_call(req, "critic_submit_upsert_issue")
-            return self.factory.make_tool_call(
-                build_mcp_function("critic_submit", "add_occurrence"),
-                AddOccurrenceInput(issue_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]).model_dump(),
+            return self.factory.make_mcp_tool_call(
+                "critic_submit",
+                "add_occurrence",
+                AddOccurrenceInput(issue_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
             )
 
         if self.turn == 3:
             # Turn 3: Check add_occurrence completed - emit submit
             assert_last_call(req, "critic_submit_add_occurrence")
-            return self.factory.make_tool_call(
-                build_mcp_function("critic_submit", "submit"), SubmitInput(issues=1).model_dump()
-            )
+            return self.factory.make_mcp_tool_call("critic_submit", "submit", SubmitInput(issues=1))
 
         raise RuntimeError(f"Unexpected turn {self.turn} for {self.agent_name}")
 
@@ -348,9 +346,8 @@ class GraderAgentState(AgentStateBase):
                 "per_file_ratios": {"adgn/README.md": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
             }
 
-            return self.factory.make_tool_call(
-                build_mcp_function("grader_submit", "submit_result"),
-                GradeSubmitInput.model_validate(grade_input).model_dump(mode="json"),
+            return self.factory.make_mcp_tool_call(
+                "grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input)
             )
 
         raise RuntimeError(f"Unexpected turn {self.turn} for {self.agent_name}")
@@ -434,7 +431,7 @@ async def test_full_workflow_po_agent_critic_grader(test_specimen, mock_specimen
         yield specimen_paths, defs_root
 
     with (
-        patch.object(SpecimenRegistry, "load_and_hydrate", mock_specimen),
+        patch("adgn.props.specimens.registry.load_and_hydrate", mock_specimen),
         patch("adgn.props.prompt_optimizer.hydrate_train_specimens", return_value=fake_hydrate()),
         patch("adgn.props.prompt_optimizer.build_client", return_value=mock),
     ):

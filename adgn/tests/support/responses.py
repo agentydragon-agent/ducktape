@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 import os
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastmcp.client.client import CallToolResult
 from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 import pytest
 
+from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
     AssistantMessageOut,
@@ -15,9 +17,13 @@ from adgn.openai_utils.model import (
     FunctionCallOutputItem,
     ReasoningItem,
     ResponseOutItem,
+    ResponsesRequest,
     ResponsesResult,
 )
 from tests.llm.support.openai_mock import LIVE, make_mock
+
+if TYPE_CHECKING:
+    from tests.support.steps import Step
 
 
 @pytest.fixture(scope="session")
@@ -58,6 +64,24 @@ class ResponsesFactory:
     def make_tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> ResponsesResult:
         result: ResponsesResult = self.make(self._item_factory.tool_call(name, arguments, call_id))
         return result
+
+    def make_mcp_tool_call(
+        self, server: str, tool: str, input_model: BaseModel, call_id: str | None = None
+    ) -> ResponsesResult:
+        """Create a tool call response for an MCP tool with typed input.
+
+        Args:
+            server: MCP server name
+            tool: MCP tool name
+            input_model: Pydantic input model instance
+            call_id: Optional call ID
+
+        Returns:
+            ResponsesResult with the tool call
+        """
+        name = build_mcp_function(server, tool)
+        arguments = input_model.model_dump()
+        return self.make_tool_call(name, arguments, call_id)
 
     # ---- Low-level item builders (compose with make(...items)) ----
 
@@ -125,6 +149,49 @@ class ResponsesFactory:
         out = FunctionCallOutputItem(call_id=call.call_id, output=payload_json.decode("utf-8"))
         result: ResponsesResult = self.make(call, out)
         return result
+
+
+class _StepRunner:
+    """Generic state machine driven by declarative steps.
+
+    Use as a context manager to get automatic validation that all steps completed:
+        with _StepRunner(factory, steps) as runner:
+            # Use runner
+            pass
+        # Validates all steps executed on exit
+    """
+
+    def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
+        self.factory: ResponsesFactory = factory
+        self.steps: Sequence[Step] = steps
+        self.turn: int = 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        # Only validate if no exception occurred during test
+        if exc_type is None and self.turn != len(self.steps):
+            pytest.fail(f"Step runner incomplete: executed {self.turn}/{len(self.steps)} steps")
+        return False
+
+    def handle_request(self, req: ResponsesRequest) -> ResponsesResult:
+        """Sync entry point - checks bounds and executes current step."""
+        if self.turn >= len(self.steps):
+            pytest.fail(f"Exceeded {len(self.steps)} expected turns (got turn {self.turn + 1})")
+        result = self.steps[self.turn].execute(req, self.factory)
+        self.turn += 1
+        return result
+
+    async def handle_request_async(self, req: ResponsesRequest) -> ResponsesResult:
+        """Async wrapper for handle_request.
+
+        Use with make_mock() to create a mock client:
+            from tests.llm.support.openai_mock import make_mock
+            with runner:
+                client = make_mock(runner.handle_request_async)
+        """
+        return self.handle_request(req)
 
 
 @pytest.fixture(scope="session")

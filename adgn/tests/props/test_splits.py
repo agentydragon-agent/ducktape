@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
 from adgn.props.splits import (
     SPECIMEN_SPLITS,
     Split,
@@ -18,10 +17,9 @@ from adgn.props.splits import (
 )
 
 
-def test_all_specimens_have_split():
+def test_all_specimens_have_split(specimens_registry):
     """Verify specimens and splits are in sync: all specimens have splits, all splits have specimens."""
-    base = find_specimens_base()
-    all_specimens = set(list_specimen_names(base))
+    all_specimens = set(specimens_registry.list_specimen_names())
     split_specimens = set(SPECIMEN_SPLITS.keys())
 
     # Every specimen in registry must have a split
@@ -103,31 +101,27 @@ def test_split_distribution():
     assert test_count >= 1, f"Test has {test_count} specimens, expected >=1"
 
 
-async def test_all_specimens_in_splits_can_load():
+async def test_all_specimens_in_splits_can_load(specimens_registry):
     """Verify every specimen in splits can be loaded without errors."""
-    base = find_specimens_base()
-
     for slug in SPECIMEN_SPLITS:
-        async with SpecimenRegistry.load_and_hydrate(slug, base=base) as hydrated:
+        async with specimens_registry.load_and_hydrate(slug) as hydrated:
             rec = hydrated.record
             assert rec is not None, f"Specimen {slug} failed to load"
             assert len(rec.issues) > 0, f"Specimen {slug} has no issues"
 
 
-async def test_split_issue_counts():
+async def test_split_issue_counts(specimens_registry):
     """Verify issue counts meet minimum constraints (slow test, uses registry).
 
     Constraint: Valid and Test must each have at least 60 issues.
     Train gets the remainder to maximize training data.
     """
-    base = find_specimens_base()
-
     train_issues = 0
     valid_issues = 0
     test_issues = 0
 
     for slug in SPECIMEN_SPLITS:
-        async with SpecimenRegistry.load_and_hydrate(slug, base=base) as hydrated:
+        async with specimens_registry.load_and_hydrate(slug) as hydrated:
             rec = hydrated.record
             issue_count = len(rec.issues)
 

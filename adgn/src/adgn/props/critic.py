@@ -47,7 +47,7 @@ from adgn.props.splits import Split, get_split
 
 # Deferred import to avoid circular dependency (SpecimenRegistry imports from this module)
 if TYPE_CHECKING:
-    pass
+    from adgn.props.specimens.registry import SpecimenRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -236,7 +236,10 @@ class AddOccurrenceInput(BaseModel):
 class SubmitInput(BaseModel):
     """Finalize: the model must state the number of issues it believes it created."""
 
-    issues: int = Field(ge=0, description="Count of issues in the critique at submit time")
+    issues: int = Field(
+        ge=0,
+        description="Number of issues created. REQUIRED: Use 0 if no issues found. Must exactly match the count of issues you created via upsert_issue.",
+    )
 
     model_config = ConfigDict(extra="forbid")
 
@@ -255,8 +258,15 @@ class AddOccurrenceFilesInput(BaseModel):
 
 CRITIC_MCP_INSTRUCTIONS = (
     "Critique builder: incrementally add issues and occurrences, then call submit(issues) when complete.\n\n"
-    "For multiple occurrences of the same issue, call add_occurrence repeatedly.\n"
-    "For a single occurrence spanning multiple files/ranges, use add_occurrence_files.\n"
+    "Workflow:\n"
+    "1. For each distinct issue: upsert_issue(issue_id, description) with a concise rationale\n"
+    "2. Add occurrences: add_occurrence(issue_id, file, ranges) or add_occurrence_files for multi-file spans\n"
+    "3. When finished: ALWAYS call submit(issues=N) where N matches the number of issues created\n\n"
+    "Important:\n"
+    "- If you found ZERO issues, call submit(issues=0) - this is required\n"
+    "- Do not send plain-text responses or summaries outside tool calls\n"
+    "- The submit count must exactly match the number of issues you created\n"
+    "- Use report_failure only when truly blocked (access issues, no files matched scope)\n"
 )
 
 
@@ -324,7 +334,11 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
 
     @mcp.flat_model()
     async def submit(payload: SubmitInput) -> SubmitAck:
-        """Finalize critique (enforces count and at least one occurrence per issue)."""
+        """Finalize critique and complete the review.
+
+        ALWAYS call this when finished analyzing, even if you found zero issues.
+        The 'issues' count must exactly match the number of issues you created via upsert_issue.
+        """
         _ensure_not_submitted(state)
         missing = [it.id for it in state.work.issues if not it.occurrences]
         if missing:
@@ -403,12 +417,15 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 # =============================================================================
 
 
-async def resolve_critic_scope(specimen_slug: SpecimenSlug, files: FileScopeSpec) -> ResolvedFileScope:
+async def resolve_critic_scope(
+    specimen_slug: SpecimenSlug, files: FileScopeSpec, registry: SpecimenRegistry | None = None
+) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
 
     Args:
         specimen_slug: Target specimen
         files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
+        registry: SpecimenRegistry instance (created if not provided)
 
     Returns:
         Resolved file set (guaranteed non-empty)
@@ -417,10 +434,12 @@ async def resolve_critic_scope(specimen_slug: SpecimenSlug, files: FileScopeSpec
         ValueError: If sentinel is used but specimen has no files with issues
     """
     # Import here to avoid circular dependency at module load time
-    from adgn.props.specimens.registry import SpecimenRegistry
+    from adgn.props.specimens.registry import SpecimenRegistry as _SpecimenRegistry
 
     if files == ALL_FILES_WITH_ISSUES:
-        async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
+        if registry is None:
+            registry = _SpecimenRegistry.from_package_resources()
+        async with registry.load_and_hydrate(specimen_slug) as hydrated:
             resolved_files = hydrated.files_with_issues()
             if not resolved_files:
                 raise ValueError(

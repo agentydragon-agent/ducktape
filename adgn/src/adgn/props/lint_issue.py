@@ -14,19 +14,17 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Abort, Auto, Continue, NoLoopDecision, RequireAny
-from adgn.agent.reducer import BaseHandler
+from adgn.agent.loop_control import Auto, Continue, NoLoopDecision, RequireAny
+from adgn.agent.reducer import BaseHandler, GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME, RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.resources.server import ResourcesReadArgs
-from adgn.openai_utils.builders import make_item_tool_call
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.ids import BaseIssueID
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
@@ -123,37 +121,78 @@ class LintConfig:
     dry_run: bool = False
 
 
-def make_nl_tool_call(server_name: str, container_path: Path, call_id: str) -> FunctionCallItem:
-    """Create a docker exec tool call to render a file with line numbers.
+BIG_THRESHOLD = 20480
 
-    Reads the entire file (no size cap) using `nl -ba -w1 -s ' ' <path>`.
+
+def make_linter_bootstrap_calls(
+    wiring: PropertiesDockerWiring, occ: Occurrence, content_root: Path, prop_host_paths: list[Path] | None = None
+) -> list[FunctionCallItem]:
+    """Build bootstrap function calls for linter agent.
+
+    Returns initial function calls providing context about the container,
+    workspace structure, and source files to review.
+
+    Args:
+        wiring: Docker container wiring configuration
+        occ: Issue occurrence with files to inspect
+        content_root: Host path to specimen content
+        prop_host_paths: Optional property definition files to read
+
+    Returns:
+        List of FunctionCallItem objects for bootstrap injection
     """
-    return make_item_tool_call(
-        call_id=call_id,
-        name=build_mcp_function(server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)], timeout_ms=10_000).model_dump(),
-    )
+    builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
+    calls: list[FunctionCallItem] = []
 
+    # Step 1: Container info
+    calls.append(read_resource_call(builder, server=wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI))
 
-def make_container_info_call(wiring: PropertiesDockerWiring) -> FunctionCallItem:
-    """resources.read for runtime container.info resource."""
-    return make_item_tool_call(
-        call_id="bootstrap:res",
-        name=build_mcp_function("resources", "read"),
-        arguments=ResourcesReadArgs(
-            server=wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI, start_offset=0, max_bytes=65536
-        ).model_dump(),
-    )
+    # Step 2: Directory listing
+    files = list((occ.files or {}).keys())
+    dirs = sorted({str(Path(p).parent) for p in files})
+    if dirs:
+        targets = [str(wiring.working_dir / d) for d in dirs]
+        calls.append(docker_exec_call(builder, server=wiring.server_name, cmd=["ls", "-la", *targets]))
 
+    # Step 3: File content (for small files only)
+    sizes: dict[str, int] = {}
+    for p in files:
+        hp = (content_root / p).resolve()
+        if not hp.is_file():
+            raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
+        sizes[str(p)] = int(hp.stat().st_size)
 
-def make_ls_workspace_call(wiring: PropertiesDockerWiring, subpaths: list[str] | None = None) -> FunctionCallItem:
-    """docker_exec ls -la for /workspace or provided subpaths."""
-    targets = [str(wiring.working_dir)] if not subpaths else [str(wiring.working_dir / p) for p in subpaths]
-    return make_item_tool_call(
-        call_id="bootstrap:ls",
-        name=build_mcp_function(wiring.server_name, DOCKER_EXEC_TOOL_NAME),
-        arguments=ExecInput(cmd=["ls", "-la", *targets], timeout_ms=10_000).model_dump(),
-    )
+    big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
+    if files and not big_detected:
+        for q in files:
+            if sizes[str(q)] > BIG_THRESHOLD:
+                continue
+            container_path = wiring.working_dir / q
+            calls.append(
+                docker_exec_call(
+                    builder,
+                    server=wiring.server_name,
+                    cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)],
+                    timeout_ms=10_000,
+                )
+            )
+
+    # Step 4: Property definition reads (if provided)
+    if wiring and prop_host_paths:
+        defs_dir = props_definitions_root().resolve()
+        for host_p in prop_host_paths:
+            rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
+            cont_path = wiring.container_path_for_prop_rel(rel)
+            calls.append(
+                docker_exec_call(
+                    builder,
+                    server=wiring.server_name,
+                    cmd=["nl", "-ba", "-w1", "-s", " ", str(cont_path)],
+                    timeout_ms=10_000,
+                )
+            )
+
+    return calls
 
 
 class BootstrapInspectHandler(BaseHandler):
@@ -170,8 +209,13 @@ class BootstrapInspectHandler(BaseHandler):
         # First cycle: emit synthetic calls, but do NOT mark done yet
         if not self._emitted:
             self._emitted = True
-            calls = [make_container_info_call(self._wiring)]
-            calls.append(make_ls_workspace_call(self._wiring))
+            builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
+            calls = [
+                read_resource_call(builder, server=self._wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI),
+                docker_exec_call(
+                    builder, server=self._wiring.server_name, cmd=["ls", "-la", str(self._wiring.working_dir)]
+                ),
+            ]
             return Continue(RequireAny(), inserts_input=tuple(calls), skip_sampling=True)
         # Second cycle: mark done and defer; subsequent cycles will continue normally
         self._done = True
@@ -211,96 +255,6 @@ def _build_prompt(
     return prompt_md
 
 
-BIG_THRESHOLD = 20480
-
-
-class LinterController(BaseHandler):
-    """LinterController (purpose-specific) with integrated display + tool policy
-
-    TODO(mpokorny): Split bootstrap from gating and rely on GateUntil for the
-    steady-state loop; keep this class focused on composing SyntheticAction
-    bootstrap sequences only.
-    """
-
-    def __init__(
-        self,
-        *,
-        state: LintSubmitState,
-        occ: Occurrence,
-        content_root: Path,
-        docker_wiring: PropertiesDockerWiring,
-        prop_host_paths: list[Path] | None = None,
-    ) -> None:
-        self._state = state
-        self._step = 0
-        self._wiring = docker_wiring
-        # Snapshot specimen inputs
-        self._files = list((occ.files or {}).keys())
-        self._dirs = sorted({str(Path(p).parent) for p in self._files})
-        # Determine sizes and big-file detection
-        sizes: dict[str, int] = {}
-        for p in self._files:
-            hp = (content_root / p).resolve()
-            st = hp.stat()
-            if not hp.is_file():
-                raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
-            sizes[str(p)] = int(st.st_size)
-        self._big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
-        # Pre-build synthetic steps
-        self._step1 = [make_container_info_call(self._wiring)]
-        if self._dirs:
-            self._step2 = [
-                make_item_tool_call(
-                    call_id="bootstrap:ls",
-                    name=build_mcp_function(self._wiring.server_name, DOCKER_EXEC_TOOL_NAME),
-                    arguments={"cmd": ["ls", "-la"] + [str(self._wiring.working_dir / d) for d in self._dirs]},
-                )
-            ]
-        else:
-            self._step2 = []
-
-        def _content_calls() -> list[FunctionCallItem]:
-            out: list[FunctionCallItem] = []
-            for q in self._files:
-                if sizes[str(q)] > BIG_THRESHOLD:
-                    continue
-                out.append(
-                    make_nl_tool_call(
-                        self._wiring.server_name, self._wiring.working_dir / q, f"bootstrap:show:{len(out) + 1}"
-                    )
-                )
-            return out
-
-        self._step3 = _content_calls()
-        # Property definition reads (full files, no cap)
-        self._prop_calls: list[FunctionCallItem] = []
-        if docker_wiring and prop_host_paths:
-            defs_dir = props_definitions_root().resolve()
-            for i, host_p in enumerate(prop_host_paths):
-                rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
-                cont_path = docker_wiring.container_path_for_prop_rel(rel)
-                self._prop_calls.append(
-                    make_nl_tool_call(self._wiring.server_name, cont_path, f"bootstrap:prop:{i + 1}")
-                )
-
-    def on_before_sample(self):
-        # Stop immediately once submit_result was called
-        if self._state.result is not None:
-            return Abort()
-        # Bootstrap synthetic steps
-        self._step += 1
-        if self._step == 1:
-            return Continue(Auto(), inserts_input=tuple(self._step1), skip_sampling=True)
-        if self._step == 2 and self._step2:
-            return Continue(Auto(), inserts_input=tuple(self._step2), skip_sampling=True)
-        if self._step == 3 and self._files and not self._big_detected:
-            return Continue(Auto(), inserts_input=tuple(self._step3), skip_sampling=True)
-        if self._step == 4 and self._prop_calls:
-            return Continue(Auto(), inserts_input=tuple(self._prop_calls), skip_sampling=True)
-        # After bootstrap, always require a tool call until submit_result flips the switch
-        return Continue(RequireAny())
-
-
 # ---------------------------------------------------------------------------
 # Shared core runner (used by tests and CLI)
 # ---------------------------------------------------------------------------
@@ -314,13 +268,14 @@ async def lint_issue_run(
     client: OpenAIModelProto,
     handlers: list[BaseHandler] | None = None,
     content_root: Path | None = None,
+    registry: SpecimenRegistry | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
     If content_root provided: uses it directly (caller manages hydration).
     If content_root not provided: hydrates specimen under $HOME/.cache.
-    Launches in-proc submit server and docker_exec MCP with the same LinterController
-    bootstrap/tool policy as the CLI path.
+    Launches in-proc submit server and docker_exec MCP with bootstrap injection
+    and gating handlers as the CLI path.
     """
     submit_state = LintSubmitState()
 
@@ -335,7 +290,9 @@ async def lint_issue_run(
     if specimen is None:
         raise ValueError("Either specimen or content_root must be provided")
 
-    async with SpecimenRegistry.load_and_hydrate(Path(specimen).name) as hydrated:
+    if registry is None:
+        registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(Path(specimen).name) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
             hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
         )
@@ -360,9 +317,31 @@ async def _lint_issue_run_with_hydrated_root(
         wiring=wiring,
     )
 
-    # Controller: LinterController with identical bootstrap/tool policy
-    ctrl = LinterController(
-        state=submit_state, occ=occurrence, content_root=content_root, docker_wiring=wiring, prop_host_paths=props
+    # Build bootstrap calls and handlers
+    bootstrap_calls = make_linter_bootstrap_calls(
+        wiring=wiring, occ=occurrence, content_root=content_root, prop_host_paths=props
+    )
+
+    # Bootstrap handler with _done flag for deferral coordination (matches BootstrapInspectHandler pattern)
+    class BootstrapWithDone(BootstrapHandler):
+        def __init__(self, calls):
+            super().__init__(calls)
+            self._done = False
+
+        def on_before_sample(self):
+            if self._done:
+                return NoLoopDecision()
+            if not self._injected:
+                self._injected = True
+                return Continue(tool_policy=Auto(), inserts_input=tuple(self._calls), skip_sampling=True)
+            # Second cycle: mark done
+            self._done = True
+            return NoLoopDecision()
+
+    bootstrap_handler = BootstrapWithDone(bootstrap_calls)
+    # GateUntil defers while bootstrap hasn't completed (matches critic.py pattern)
+    gate_handler = GateUntil(
+        is_done=lambda: submit_state.result is not None, defer_when=lambda: not bootstrap_handler._done
     )
 
     # Build compositor and client
@@ -383,7 +362,7 @@ async def _lint_issue_run_with_hydrated_root(
             mcp_client=mcp_client,
             system="You are a code agent. Be concise.",
             client=client,
-            handlers=[ctrl, *(handlers if handlers is not None else [])],
+            handlers=[bootstrap_handler, gate_handler, *(handlers if handlers is not None else [])],
             parallel_tool_calls=True,
         )
         await agent.run(prompt)
@@ -408,7 +387,8 @@ async def run_specimen_lint_issue_async(
     client: OpenAIModelProto,
 ) -> int:
     # Load and hydrate once (avoids rehydration in lint_issue_run)
-    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+    registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(specimen) as hydrated:
         irec = hydrated.issues[issue_id]
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue

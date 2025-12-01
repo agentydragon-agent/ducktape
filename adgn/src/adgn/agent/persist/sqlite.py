@@ -90,14 +90,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_events_run_seq ON events(run_id, seq);
 CREATE INDEX IF NOT EXISTS idx_events_call ON events(call_id);
 CREATE TABLE IF NOT EXISTS approvals (
   call_id TEXT PRIMARY KEY,
-  run_id TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
-  agent_id TEXT NULL REFERENCES agents(id) ON DELETE SET NULL,
+  agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
   tool_key TEXT NOT NULL,
   outcome TEXT NOT NULL,
   decided_at TEXT NOT NULL,
   details TEXT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_approvals_run_decided ON approvals(run_id, decided_at);
+CREATE INDEX IF NOT EXISTS idx_approvals_agent_decided ON approvals(agent_id, decided_at);
 CREATE TABLE IF NOT EXISTS approval_policies (
   version INTEGER PRIMARY KEY AUTOINCREMENT,
   agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
@@ -457,8 +456,7 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
     async def record_approval(
         self,
         *,
-        run_id: UUID | None,
-        agent_id: str | None,
+        agent_id: str,
         call_id: str,
         tool_key: str,
         outcome: ApprovalOutcome,
@@ -468,12 +466,11 @@ VALUES (?, ?, ?, NULL, 'running', ?, ?, ?, 0)
         async with self._open() as db:
             await db.execute(
                 """
-INSERT OR REPLACE INTO approvals (call_id, run_id, agent_id, tool_key, outcome, decided_at, details)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT OR REPLACE INTO approvals (call_id, agent_id, tool_key, outcome, decided_at, details)
+VALUES (?, ?, ?, ?, ?, ?)
                 """,
                 (
                     call_id,
-                    str(run_id) if run_id is not None else None,
                     agent_id,
                     tool_key,
                     outcome.value,

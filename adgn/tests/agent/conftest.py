@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any
 
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
@@ -30,6 +30,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
+from adgn.mcp.testing.simple_servers import SendMessageInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -376,8 +377,8 @@ def validation_server() -> FastMCP:
     mcp = FastMCP("validator")
 
     @mcp.tool()
-    def send_message(mime: Literal["text/markdown"], content: str) -> dict[str, Any]:
-        return {"ok": True, "message": content}
+    def send_message(input: SendMessageInput) -> dict[str, Any]:
+        return {"ok": True, "message": input.content}
 
     return mcp
 

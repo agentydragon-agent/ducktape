@@ -17,6 +17,27 @@
   # mkCmdWithFlags "smartctl" ["-a" "-H" "-i"] => ["smartctl -a" "smartctl -H" "smartctl -i"]
   mkCmdWithFlags = baseCmd: flags: map (flag: "${baseCmd} ${flag}") flags;
 
+  # Helper to generate Read/Grep/Glob permissions for directories
+  # Allows recursive access to all files in specified directories
+  # Pattern syntax: https://code.claude.com/docs/en/settings
+  #   - Supports glob patterns: ** for recursive, * for wildcard
+  #   - Supports ~ for home directory expansion
+  mkReadPerms = dirs:
+    lib.flatten (map (
+        dir:
+          map (tool: "${tool}(${dir}/**)") ["Read" "Grep" "Glob"]
+      )
+      dirs);
+
+  # Directories where Read/Grep/Glob are always allowed without prompting
+  # /code contains all git repos organized by host (github.com, gitlab.com, etc.)
+  # ~/code contains symlinks to specific projects within /code, plus some direct subdirs
+  alwaysAllowedReadDirs = [
+    "~/.claude" # Claude Code session history, settings, commands
+    "/code" # Primary code location (canonical git repos by host)
+    "/home/agentydragon/code" # Convenience symlinks + some direct projects
+  ];
+
   # KEEP IN SYNC - BEGIN: System inspection sudo commands from Ansible
   #   ansible/roles/system_inspection_nopasswd/defaults/main.yml (system_inspection_nopasswd_commands)
   #
@@ -174,14 +195,32 @@
   # Ansible makes these log viewing commands passwordless for convenience, but we omit them
   # from Claude Code auto-allow to avoid granting unrestricted file access.
   # KEEP IN SYNC - END
+
+  # Auto-discover all .md files in commands/ directory
+  commandsDir = ./commands;
+  commandFiles = builtins.readDir commandsDir;
+  commands =
+    lib.mapAttrs' (
+      name: type:
+        lib.nameValuePair
+        (lib.removeSuffix ".md" name)
+        (commandsDir + "/${name}")
+    ) (lib.filterAttrs (
+        name: type:
+          type == "regular" && lib.hasSuffix ".md" name
+      )
+      commandFiles);
+
+  # Skills directory for Claude Code
+  # Skills are model-invoked capabilities that Claude automatically uses based on context
+  # Each skill is a subdirectory containing SKILL.md and optional supporting files
+  skillsDir = ./skills;
 in {
   programs.claude-code = {
     enable = true;
     package = unstablePkgs.claude-code;
 
-    commands = {
-      readback = ./commands/readback.md;
-    };
+    commands = commands;
 
     settings = {
       theme = "dark";
@@ -197,9 +236,12 @@ in {
             "Task"
             "Bash(git status:*)"
             "Bash(git diff:*)"
+            "Bash(git stash show:*)"
+            "Bash(git stash list:*)"
             "WebFetch"
             "WebSearch"
           ]
+          ++ mkReadPerms alwaysAllowedReadDirs
           ++ mkBashPermsWildcard noSudoInspectionCommands
           ++ mkBashPermsSudoWildcard sudoSimpleInspectionCommands
           ++ mkBashPermsSudo sudoSpecificSubcommandsExact
@@ -210,4 +252,21 @@ in {
       };
     };
   };
+
+  # Deploy skills to ~/.claude/skills/
+  # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
+  home.file =
+    lib.mapAttrs' (
+      skillName: skillType:
+        lib.nameValuePair
+        ".claude/skills/${skillName}"
+        {
+          source = skillsDir + "/${skillName}";
+          recursive = true;
+        }
+    ) (lib.filterAttrs (
+        name: type:
+          type == "directory"
+      )
+      (builtins.readDir skillsDir));
 }

@@ -32,7 +32,6 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
@@ -41,6 +40,7 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.ui.server import make_ui_server
@@ -216,7 +216,7 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def make_control_server(self, name: str) -> FlatModelFastMCP:
+    def make_control_server(self, name: str) -> NotifyingFastMCP:
         """Create an agent control MCP server for this container.
 
         Tools:
@@ -227,9 +227,9 @@ class AgentContainer:
             name: Server name
 
         Returns:
-            FlatModelFastMCP server instance
+            NotifyingFastMCP server instance
         """
-        mcp = FlatModelFastMCP(name)
+        mcp = NotifyingFastMCP(name)
         container = self  # capture self for closures
 
         @mcp.tool(flat=True)
@@ -540,16 +540,8 @@ class AgentContainer:
     async def record_policy_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         if self.session is None:
             return
-        run_id = self.session.active_run.run_id if self.session.active_run else None
-        if not run_id:
-            return
         await self.persistence.record_approval(
-            run_id=run_id,
-            agent_id=None,
-            call_id=call_id,
-            tool_key=tool_key,
-            outcome=outcome,
-            decided_at=datetime.now(UTC),
+            agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, outcome=outcome, decided_at=datetime.now(UTC)
         )
 
     async def _attach_inproc_servers(self, ui_bus: ServerBus | None) -> None:
@@ -586,13 +578,7 @@ class AgentContainer:
     async def _attach_wired_seatbelt(self) -> None:
         if self._compositor is None:
             raise RuntimeError("compositor not initialized")
-        await attach_seatbelt_exec(
-            self._compositor,
-            agent_id=self.agent_id,
-            persistence=self.persistence,
-            docker_client=self.docker_client,
-            name=SEATBELT_EXEC_SERVER_NAME,
-        )
+        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_SERVER_NAME)
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True

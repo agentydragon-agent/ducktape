@@ -12,7 +12,6 @@ import subprocess
 # Import specimen models
 import tempfile
 
-from pydantic import TypeAdapter
 import pygit2
 import yaml
 
@@ -263,7 +262,7 @@ def main():
                 manifest_data = yaml.safe_load(f)
 
             # Parse into SpecimenDoc
-            specimen = TypeAdapter(SpecimenDoc).validate_python(manifest_data)
+            specimen = SpecimenDoc.model_validate(manifest_data)
 
             # Extract bundle filters
             include = specimen.bundle.include if specimen.bundle else None

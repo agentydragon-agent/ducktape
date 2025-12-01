@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import pytest
 import requests
 
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import EchoInput
+from adgn.mcp.ui.server import EndTurnInput
 from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
 
@@ -34,10 +35,8 @@ def test_approvals_delivery_and_user_approve(page: Page, run_server, responses_f
         i = state["i"]
         state["i"] = i + 1
         if i == 0:
-            return responses_factory.make_tool_call(
-                build_mcp_function("echo", "echo"), {"text": "hello"}, call_id="call_echo"
-            )
-        return responses_factory.make_tool_call(build_mcp_function("ui", "end_turn"), {}, call_id="call_ui_end")
+            return responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hello"), call_id="call_echo")
+        return responses_factory.make_mcp_tool_call("ui", "end_turn", EndTurnInput(), call_id="call_ui_end")
 
     s = run_server(lambda model: make_mock(responses_create))
     base = s["base_url"]

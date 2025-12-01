@@ -16,7 +16,6 @@ import anyio
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from mcp import types as mcp_types
-from pydantic import TypeAdapter
 
 from adgn.agent.handler import AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, Auto, Continue, Forbid, RequireAny, RequireSpecific, ToolPolicy
@@ -158,7 +157,7 @@ def _call_tool_result_from_json(output: str) -> CallToolResult:
 
     Expects native snake_case keys; raises ValueError on invalid payload.
     """
-    return TypeAdapter(CallToolResult).validate_json(output)
+    return CallToolResult.model_validate_json(output)
 
 
 # Namespaced tool form: mcp_{server}_{tool}

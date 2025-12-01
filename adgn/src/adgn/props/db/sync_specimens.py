@@ -18,11 +18,12 @@ from adgn.props.splits import SPECIMEN_SPLITS
 logger = logging.getLogger(__name__)
 
 
-async def _load_all_labeled_files(slugs: list[str]) -> dict[str, set[Path]]:
+async def _load_all_labeled_files(slugs: list[str], registry: SpecimenRegistry) -> dict[str, set[Path]]:
     """Load labeled_files (files with ground truth issues) for all specimens in parallel.
 
     Args:
         slugs: List of specimen slugs to load
+        registry: SpecimenRegistry instance for loading specimens
 
     Returns:
         Dict mapping slug -> set of file paths that appear in issue definitions
@@ -30,7 +31,7 @@ async def _load_all_labeled_files(slugs: list[str]) -> dict[str, set[Path]]:
 
     async def load_one(slug: str) -> tuple[str, set[Path]]:
         """Load labeled_files for a single specimen."""
-        async with SpecimenRegistry.load_and_hydrate(slug) as hydrated:
+        async with registry.load_and_hydrate(slug) as hydrated:
             # Extract all files referenced in issue definitions (TPs and FPs)
             def files_from_issue_records(records: dict) -> set[Path]:
                 return {
@@ -58,6 +59,9 @@ async def ensure_specimens_synced() -> dict[str, int]:
     Returns:
         Stats dict: {"added": int, "updated": int, "deleted": int, "total": int}
     """
+    # Create registry once at the start
+    registry = SpecimenRegistry.from_package_resources()
+
     with get_session() as session:
         # Fast path: if count matches, assume synced
         existing_count = session.query(Specimen).count()
@@ -84,7 +88,7 @@ async def ensure_specimens_synced() -> dict[str, int]:
 
         # Add/update from source (populate labeled_files from issue definitions)
         # Batch load all labeled_files upfront
-        all_labeled_files_paths = await _load_all_labeled_files(list(SPECIMEN_SPLITS.keys()))
+        all_labeled_files_paths = await _load_all_labeled_files(list(SPECIMEN_SPLITS.keys()), registry)
 
         for slug, split in SPECIMEN_SPLITS.items():
             labeled_files_paths = all_labeled_files_paths.get(slug, set())

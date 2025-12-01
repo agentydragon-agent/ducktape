@@ -20,7 +20,8 @@ class HydratedSpecimen:
     Provides convenient access to specimen data and the hydrated working tree.
 
     Example:
-        async with SpecimenRegistry.load_and_hydrate("ducktape/2025-11-20") as hydrated:
+        registry = SpecimenRegistry()
+        async with registry.load_and_hydrate("ducktape/2025-11-20") as hydrated:
             # Access specimen data
             files = hydrated.all_discovered_files
             issues = hydrated.issues

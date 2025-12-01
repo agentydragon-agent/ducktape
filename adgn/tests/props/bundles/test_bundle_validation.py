@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from adgn.props.models.specimen import GitSource
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names, resolve_bundle_url
+from adgn.props.specimens.registry import SpecimenRegistry, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -16,41 +16,63 @@ MAX_BUNDLE_SIZE = 10 * 1024 * 1024
 
 
 @pytest.fixture(scope="session")
-def specimens_base() -> Path:
+def specimens_base_for_bundles() -> Path:
     """Base directory containing all specimens."""
-    return find_specimens_base()
+    registry = SpecimenRegistry.from_package_resources()
+    return registry.base_path
 
 
 def pytest_generate_tests(metafunc):
-    """Dynamically parametrize tests with specimens."""
-    if "specimen_record" in metafunc.fixturenames or "hydrated_specimen" in metafunc.fixturenames:
-        specimens_base = find_specimens_base()
-        all_specimens = list_specimen_names(specimens_base)
-        slugs = []
+    """Dynamically parametrize tests with specimens (pytest collection-time hook).
 
-        for slug in all_specimens:
-            # Fast path: load only manifest (no Jsonnet) during collection
-            # Manifest errors will raise and fail the test suite (which is correct)
-            manifest_path, manifest = SpecimenRegistry.load_manifest_only(slug, base=specimens_base)
+    WHY THIS IS MAGIC (and can't be avoided easily):
+    - Runs during pytest collection (before fixtures are available)
+    - Filters specimens by source type (Git bundles) at collection time
+    - Creates test cases dynamically based on discovered specimens
 
-            if isinstance(manifest.source, GitSource):
-                bundle_url = resolve_bundle_url(manifest_path, manifest.source.url)
-                if bundle_url.startswith("file://"):
-                    slugs.append(slug)
+    CLEANER ALTERNATIVE (but requires manual maintenance):
+    - Create explicit list: BUNDLE_SPECIMENS = ["slug1", "slug2", ...]
+    - Use: @pytest.mark.parametrize("specimen_record", BUNDLE_SPECIMENS, indirect=True)
+    - Trade-off: Less magic but requires updating list when specimens change
 
-        slugs = sorted(slugs)
-        metafunc.parametrize("specimen_record", slugs, ids=slugs, indirect=True)
+    CURRENT APPROACH:
+    - Auto-discovers Git bundle specimens from registry
+    - Filters to only file:// bundles (local files)
+    - No manual list maintenance needed
+    """
+    if "specimen_record" not in metafunc.fixturenames and "hydrated_specimen" not in metafunc.fixturenames:
+        return
+
+    # Create registry at collection time (lightweight, no specimens loaded yet)
+    registry = SpecimenRegistry.from_package_resources()
+    all_specimen_slugs = registry.list_specimen_names()
+
+    # Filter to Git bundle specimens with file:// URLs
+    bundle_specimen_slugs = []
+    for slug in all_specimen_slugs:
+        # Fast path: load only manifest (no Jsonnet) during collection
+        manifest_path, manifest = registry.load_manifest_only(slug)
+
+        if isinstance(manifest.source, GitSource):
+            bundle_url = resolve_bundle_url(manifest_path, manifest.source.url)
+            if bundle_url.startswith("file://"):
+                bundle_specimen_slugs.append(slug)
+
+    # Parametrize tests with filtered specimen slugs
+    metafunc.parametrize(
+        "specimen_record", sorted(bundle_specimen_slugs), ids=sorted(bundle_specimen_slugs), indirect=True
+    )
 
 
 @pytest.fixture
-async def specimen_record(request, specimens_base: Path):
+async def specimen_record(request, specimens_registry):
     """Fixture that loads a specimen record without hydration.
 
     Parameter: specimen_slug (string)
     Returns: SpecimenRecord
     """
     specimen_slug = request.param
-    async with SpecimenRegistry.load_and_hydrate(specimen_slug, base=specimens_base) as hydrated:
+    async with specimens_registry.load_and_hydrate(specimen_slug) as hydrated:
         return hydrated.record
 
 

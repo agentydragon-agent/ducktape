@@ -7,7 +7,6 @@ from pathlib import Path
 from urllib.parse import urlencode
 
 from fastmcp.client import Client
-from pydantic import TypeAdapter
 import typer
 
 from adgn.agent.agent import MiniCodex
@@ -108,7 +107,7 @@ def run(
                     name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
                 )
                 res = to_pydantic(res_client)
-                ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
+                ex = BaseExecResult.model_validate(res.structuredContent or {})
                 stdout_stream = ex.stdout or ""
                 assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
                 stdout = stdout_stream

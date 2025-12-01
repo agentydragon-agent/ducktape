@@ -13,6 +13,8 @@ from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
+
+# Note: build_mcp_function still needed for ToolStub construction (line 66) and direct call_tool (line 159)
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
@@ -108,8 +110,8 @@ async def test_notifications_within_turn_from_tool(
         stage["n"] += 1
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
-            tool_call_result: ResponsesResult = responses_factory.make_tool_call(
-                build_mcp_function("notifier", "notify_policy"), {}
+            tool_call_result: ResponsesResult = responses_factory.make_mcp_tool_call(
+                "notifier", "notify_policy", NotifyPolicyInput()
             )
             return tool_call_result
         # Second (and later) model output: nothing else to do

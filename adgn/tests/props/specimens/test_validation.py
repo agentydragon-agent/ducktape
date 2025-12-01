@@ -6,20 +6,19 @@ import re
 import pytest
 
 from adgn.props.models.specimen import LocalSource
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base, list_specimen_names
+from adgn.props.specimens.registry import SpecimenRegistry
 
 
 def _all_specimens() -> list[str]:
-    base = find_specimens_base()
-    return list_specimen_names(base)
+    registry = SpecimenRegistry.from_package_resources()
+    return registry.list_specimen_names()
 
 
 @pytest.mark.parametrize("specimen", _all_specimens())
-async def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
+async def test_specimen_issues_and_false_positives_load(specimen: str, specimens_registry) -> None:
     # Load both issues/ and false_positives/ via the registry; assert no load errors
-    base = find_specimens_base()
     try:
-        async with SpecimenRegistry.load_and_hydrate(specimen, base=base) as _hydrated:
+        async with specimens_registry.load_and_hydrate(specimen) as _hydrated:
             # If we get here, loading succeeded - no errors
             pass
     except Exception as e:
@@ -50,7 +49,7 @@ async def test_specimen_issues_and_false_positives_load(specimen: str) -> None:
 
 @pytest.mark.parametrize("specimen", _all_specimens())
 @pytest.mark.asyncio
-async def test_specimen_references_are_valid(specimen: str) -> None:
+async def test_specimen_references_are_valid(specimen: str, specimens_registry) -> None:
     """Validate that all file references and line ranges in issues are valid.
 
     For each specimen:
@@ -59,8 +58,7 @@ async def test_specimen_references_are_valid(specimen: str) -> None:
        - All referenced files exist in the hydrated copy
        - All line ranges are within the file's actual line count
     """
-    base = find_specimens_base()
-    async with SpecimenRegistry.load_and_hydrate(specimen, base=base) as hydrated:
+    async with specimens_registry.load_and_hydrate(specimen) as hydrated:
         rec = hydrated.record
         content_root = hydrated.content_root
 

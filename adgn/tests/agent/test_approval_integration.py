@@ -9,8 +9,8 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.constants import PENDING_CALLS_URI
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.engine import CallDecision
+from adgn.mcp.testing.simple_servers import EchoInput
 from tests.agent.testdata.approval_policy import make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
@@ -28,7 +28,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
 
     # Model tries to call the tool then returns text
     seq = [
-        responses_factory.make(responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "test"})),
+        responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="test")),
         responses_factory.make_assistant_message("done"),
     ]
     client = FakeOpenAIModel(seq)

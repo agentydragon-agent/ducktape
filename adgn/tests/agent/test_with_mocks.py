@@ -4,7 +4,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.reducer import AutoHandler
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 from tests.agent.test_matchers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import LIVE, FakeOpenAIModel
@@ -23,7 +23,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     if client_mode is not LIVE:
         client = FakeOpenAIModel(
             [
-                responses_factory.make_tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
+                responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
                 responses_factory.make_assistant_message("done"),
             ]
         )
