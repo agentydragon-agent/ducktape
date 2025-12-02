@@ -96,13 +96,4 @@ def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
     return m, recorder
 
 
-@pytest.fixture
-def backend_server() -> FastMCP:
-    """Simple backend server with a ping tool."""
-    m = FastMCP("backend")
-
-    @m.tool(name="ping")
-    def ping() -> str:
-        return "pong"
-
-    return m
+# Note: backend_server fixture is provided by tests/conftest.py (uses make_simple_mcp)

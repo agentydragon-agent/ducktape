@@ -348,7 +348,7 @@ class WorkflowMock(OpenAIModelProto):
         return self.po_state.handle_request(req)
 
     def _dump_request(self, req: ResponsesRequest):
-        """Dump request to file for debugging."""
+        """Dump request to file for debugging. Creates separate files per agent in subdirectories."""
         assert self.dump_requests_to is not None
         tool_names = {t.name for t in req.tools} if req.tools else set()
 
@@ -362,11 +362,13 @@ class WorkflowMock(OpenAIModelProto):
             agent_type = "po"
             turn_num = self.po_state.turn + 1
 
-        dump_data = {"agent_type": agent_type, "turn": turn_num, "request": req.model_dump(mode="json")}
+        # Create agent-specific subdirectory
+        agent_dir = self.dump_requests_to / agent_type
+        agent_dir.mkdir(parents=True, exist_ok=True)
 
-        with self.dump_requests_to.open("a") as f:
-            f.write(json.dumps(dump_data, indent=2))
-            f.write("\n" + "=" * 80 + "\n")
+        # Write full request to file named by turn number
+        with (agent_dir / f"{turn_num}.json").open("w") as f:
+            json.dump(req.model_dump(mode="json"), f, indent=2)
 
 
 @pytest.mark.asyncio

@@ -1,7 +1,7 @@
 import pytest
 
-from adgn.agent.loop_control import Auto, Continue, RequireAnyTool
-from adgn.agent.reducer import BaseHandler, NoLoopDecision, Reducer
+from adgn.agent.loop_control import Continue, NoLoopDecision
+from adgn.agent.reducer import BaseHandler, Reducer
 
 
 class DeferringHandler(BaseHandler):
@@ -9,14 +9,9 @@ class DeferringHandler(BaseHandler):
         return NoLoopDecision()
 
 
-class DecisionHandlerA(BaseHandler):
+class ContinueHandler(BaseHandler):
     def on_before_sample(self):
-        return Continue(RequireAnyTool())
-
-
-class DecisionHandlerB(BaseHandler):
-    def on_before_sample(self):
-        return Continue(Auto())
+        return Continue()
 
 
 class BadHandler(BaseHandler):
@@ -24,26 +19,22 @@ class BadHandler(BaseHandler):
         return None  # invalid by policy
 
 
-def test_crash_on_no_decision():
+def test_all_defer_returns_continue():
+    """All handlers deferring should result in Continue() as default."""
     ctrl = Reducer([DeferringHandler()])
-    with pytest.raises(RuntimeError):
-        ctrl.on_before_sample()
+    res = ctrl.on_before_sample()
+    assert isinstance(res, Continue)
 
 
-def test_crash_on_conflicting_decisions():
-    ctrl = Reducer([DecisionHandlerA(), DecisionHandlerB()])
-    with pytest.raises(RuntimeError):
-        ctrl.on_before_sample()
-
-
-def test_agreeing_decisions_ok():
-    # Two handlers that return equivalent LoopDecision values should succeed
-    ctrl = Reducer([DecisionHandlerA(), DecisionHandlerA()])
+def test_multiple_continue_passes_through():
+    """Multiple Continue() handlers should result in Continue() (no merging, just pass-through)."""
+    ctrl = Reducer([ContinueHandler(), ContinueHandler()])
     res = ctrl.on_before_sample()
     assert isinstance(res, Continue)
 
 
 def test_invalid_return_type_raises_type_error():
+    """Invalid return type should raise TypeError."""
     ctrl = Reducer([BadHandler()])
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="invalid decision type"):
         ctrl.on_before_sample()

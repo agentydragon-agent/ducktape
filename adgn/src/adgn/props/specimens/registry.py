@@ -490,62 +490,47 @@ class SpecimenRecord:
 
 
 class SpecimenRegistry:
-    """Entry point for listing and obtaining specimen records.
+    """Entry point for listing and obtaining specimen records (code-only facade).
 
-    DI-friendly design: base path is injected at construction via factory methods.
-
-    Usage:
-        # Production code
-        registry = SpecimenRegistry.from_package_resources()
-
-        # Test code
-        test_base = Path(__file__).parent / "fixtures" / "specimens"
-        registry = SpecimenRegistry.from_base_path(test_base)
-
-        # Both use same API
-        async with registry.load_and_hydrate(slug) as hydrated:
-            ...
+    DI-friendly: pass in a preloaded mapping for tests; use from_base_path() factory in app code.
     """
 
-    def __init__(self, base_path: Path) -> None:
-        """Minimal init - just stores injected dependencies.
-
-        Do not call directly - use from_base_path() or from_package_resources() factories.
-
-        Args:
-            base_path: Base directory where specimens are located
-        """
+    def __init__(self, specimens: dict[str, SpecimenRecord | None], base_path: Path) -> None:
+        # No I/O here; accept fully materialized data
+        self._specimens = specimens
         self._base_path = base_path
-        self._specimens: dict[str, SpecimenRecord] = {}
 
     @classmethod
-    def from_base_path(cls, base: Path) -> SpecimenRegistry:
-        """Main factory - creates registry with explicit base path.
+    def from_base_path(cls, base: Path | None = None) -> SpecimenRegistry:
+        """Factory method to create a registry with discovered specimen IDs.
 
         Args:
-            base: Base directory containing specimen subdirectories
+            base: Specimens base directory (defaults to package resources specimens dir)
 
         Returns:
             SpecimenRegistry instance
         """
-        return cls(base_path=base)
+        if base is None:
+            # Resolve from package resources
+            traversable = resources.files("adgn.props").joinpath("specimens")
+            with resources.as_file(traversable) as p:
+                if not p.exists() or not p.is_dir():
+                    raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
+                base_dir = p
+        else:
+            base_dir = base
 
-    @classmethod
-    def from_package_resources(cls) -> SpecimenRegistry:
-        """Factory for production use - loads from installed package.
-
-        Returns:
-            SpecimenRegistry instance using package resources path
-
-        Raises:
-            FileNotFoundError: If specimens directory not found in package
-        """
-        # Resolve specimens directory from package resources
-        traversable = resources.files("adgn.props").joinpath("specimens")
-        with resources.as_file(traversable) as base_path:
-            if not base_path.exists() or not base_path.is_dir():
-                raise FileNotFoundError(f"Specimens directory not found in package resources: {base_path}")
-            return cls.from_base_path(base_path)
+        # Discover all specimen slugs upfront by walking directory structure
+        specimens: dict[str, SpecimenRecord | None] = {}
+        for repo_dir in base_dir.iterdir():
+            if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
+                continue
+            for specimen_dir in repo_dir.iterdir():
+                if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
+                    slug = f"{repo_dir.name}/{specimen_dir.name}"
+                    # Store None as placeholder - actual loading happens on demand via load_and_hydrate
+                    specimens[slug] = None
+        return cls(specimens=specimens, base_path=base_dir)
 
     @property
     def base_path(self) -> Path:
@@ -666,31 +651,15 @@ class SpecimenRegistry:
         manifest = SpecimenDoc.model_validate(raw)
         return (manifest_path, manifest)
 
-    @property
-    def specimen_slugs(self) -> set[str]:
-        """All specimen slugs in hierarchical format (repo/name).
+    def list_all(self) -> set[str]:
+        """List all specimen names in hierarchical format (repo/name).
 
-        Specimens are organized as:
-          specimens/
-            {repo}/
-              {name}/
-                manifest.yaml
+        Returns specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
 
         Returns:
-            Set of specimen slugs like {"ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"}
+            Set of specimen IDs in format "repo/name"
         """
-        slugs = set()
-        for repo_dir in self._base_path.iterdir():
-            if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
-                continue
-            for specimen_dir in repo_dir.iterdir():
-                if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
-                    slugs.add(f"{repo_dir.name}/{specimen_dir.name}")
-        return slugs
-
-    def list_specimen_names(self) -> list[str]:
-        """List all specimen names (deprecated, use .specimen_slugs property)."""
-        return sorted(self.specimen_slugs)
+        return set(self._specimens.keys())
 
     def get_split(self, slug: str) -> Split:
         """Get the train/valid/test split for a specimen from its manifest.

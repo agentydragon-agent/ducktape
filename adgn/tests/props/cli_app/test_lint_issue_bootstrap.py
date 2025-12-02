@@ -10,32 +10,29 @@ from platformdirs import user_cache_dir
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import BootstrapHandler
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Auto, Continue, NoLoopDecision
-from adgn.agent.reducer import GateUntil
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
-from adgn.props.lint_issue import LintSubmitState, make_linter_bootstrap_calls
+from adgn.props.lint_issue import LinterController, LintSubmitState
 from adgn.props.models.issue import Occurrence
 from tests.conftest import make_container_opts
-from tests.llm.support.openai_mock import FakeOpenAIModel
-from tests.support.responses import ResponsesFactory
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage as StepAssistantMessage, MakeCall
 
 
-def _make_seq() -> list:
-    responses_factory = ResponsesFactory("gpt-5-nano")
+@pytest.fixture
+def lint_bootstrap_steps():
+    """Create steps for LinterController bootstrap test.
+
+    NOTE: Uses typed ExecInput model for docker_exec arguments to ensure
+    correct validation and serialization for the MCP runtime server.
+    """
     return [
-        responses_factory.make(
-            responses_factory.tool_call(
-                build_mcp_function("docker", "docker_exec"),
-                ExecInput(cmd=["bash", "-lc", "echo from_llm"], timeout_ms=10_000).model_dump(),
-            )
-        ),
-        responses_factory.make_assistant_message("FINAL"),
+        MakeCall("docker", "docker_exec", ExecInput(cmd=["bash", "-lc", "echo from_llm"], timeout_ms=10_000)),
+        StepAssistantMessage("FINAL"),
     ]
 
 
@@ -52,7 +49,9 @@ def content_root() -> Generator[Path, None, None]:
 
 
 @pytest.mark.requires_docker
-async def test_lint_issue_bootstrap_small_files(content_root: Path, make_pg_client):
+async def test_lint_issue_bootstrap_small_files(
+    content_root: Path, make_pg_client, make_step_runner, lint_bootstrap_steps
+):
     # Arrange: create a tiny workspace with two small files
     # Colima note: bind mounts from /tmp are blocked; place workspace under XDG cache dir.
     content_root.mkdir(parents=True, exist_ok=True)
@@ -65,51 +64,31 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path, make_pg_clie
     # Occurrence: two files, no explicit ranges (whole-file path)
     occ = Occurrence(files={Path("pkg/a.py"): None, Path("pkg/b.py"): None})
 
+    # Bootstrap controller (3-turn plan)
+    # We'll create the PropertiesDockerWiring after we build the inproc spec below and assign it directly.
+
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     opts = make_container_opts("python:3.12-slim")
     opts.volumes = {str(content_root): {"bind": "/workspace", "mode": "ro"}}
     opts.describe = False
     runtime_server = make_container_exec_server(opts)
-    # Use our shared Pydantic-only fake OpenAI client with canned outputs
-    client = FakeOpenAIModel(_make_seq())
+    # Use our shared step runner with typed mock
+    runner = make_step_runner(steps=lint_bootstrap_steps)
+    client = make_mock(runner.handle_request_async)
 
-    # Create wiring and bootstrap handlers
+    # Now create the controller with real wiring
     wiring = PropertiesDockerWiring(
         server_factory=lambda: runtime_server, working_dir=WORKING_DIR, definitions_container_dir=None, image_name="n/a"
     )
-    submit_state = LintSubmitState()
-    bootstrap_calls = make_linter_bootstrap_calls(
-        wiring=wiring, occ=occ, content_root=content_root, prop_host_paths=None
-    )
-
-    # Bootstrap handler with _done flag for deferral coordination
-    class BootstrapWithDone(BootstrapHandler):
-        def __init__(self, calls):
-            super().__init__(calls)
-            self._done = False
-
-        def on_before_sample(self):
-            if self._done:
-                return NoLoopDecision()
-            if not self._injected:
-                self._injected = True
-                return Continue(tool_policy=Auto(), inserts_input=tuple(self._calls), skip_sampling=True)
-            # Second cycle: mark done
-            self._done = True
-            return NoLoopDecision()
-
-    bootstrap_handler = BootstrapWithDone(bootstrap_calls)
-    # GateUntil defers while bootstrap hasn't completed (matches critic.py pattern)
-    gate_handler = GateUntil(
-        is_done=lambda: submit_state.result is not None, defer_when=lambda: not bootstrap_handler._done
-    )
+    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
 
     async with make_pg_client({"runtime": runtime_server}) as mcp_client:
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
             system="test",
             client=client,
-            handlers=[bootstrap_handler, gate_handler, DisplayEventsHandler()],
+            handlers=[ctrl, DisplayEventsHandler()],
+            tool_policy=RequireAnyTool(),
         )
 
         # Act
@@ -120,16 +99,17 @@ async def test_lint_issue_bootstrap_small_files(content_root: Path, make_pg_clie
 
     # Inspect transcript for bootstrap then LLM tool call then final text
     messages = agent.messages
-    # Function call outputs we expect: resources.read (bootstrap:1), ls (bootstrap:2), nl for each file (bootstrap:3, bootstrap:4)
+    # Function call outputs we expect: resources.read (bootstrap:res), ls (bootstrap:ls), nl for each file (bootstrap:show:*)
     fco = [m for m in messages if isinstance(m, FunctionCallOutputItem)]
     by_id = {m.call_id: m for m in fco}
-    # At least 4 bootstrap outputs + 1 LLM tool output
-    assert len(fco) >= 5
+    # At least 3 bootstrap outputs + 1 LLM tool output
+    assert len(fco) >= 4
 
-    # Verify expected bootstrap call_ids are present (auto-generated as bootstrap:N)
-    bootstrap_ids = [k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:")]
-    # We expect: 1 container info + 1 ls + 2 nl (for two files) = 4 bootstrap calls
-    assert len(bootstrap_ids) >= 4
+    # Verify expected bootstrap call_ids are present; transcript may not embed structuredContent here
+    assert by_id.get("bootstrap:res") is not None
+    assert by_id.get("bootstrap:ls") is not None
+    show_ids = [k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:show:")]
+    assert len(show_ids) >= 2
 
     # Ensure we saw a final assistant emission with text "FINAL"
     def _is_final(msg) -> bool:

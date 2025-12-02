@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
+from adgn.props.cli_shared import discover_detector_prompts, load_and_upsert_detector_prompt
 from adgn.props.db import get_session
 from adgn.props.db.models import Prompt
-from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -39,6 +39,7 @@ def test_load_and_upsert_detector_prompt(test_db):
         prompt_obj = session.get(Prompt, prompt_hash)
         assert prompt_obj is not None
         assert prompt_obj.prompt_sha256 == prompt_hash
+        assert prompt_obj.template_file_path == "dead_code.md"
         assert "Dead Code & Unreachability Detector" in prompt_obj.prompt_text
         assert len(prompt_obj.prompt_text) > 100  # Non-trivial content
 
@@ -57,9 +58,10 @@ def test_sync_all_detector_prompts(test_db):
 
     # Verify all prompts are in DB with correct metadata
     with get_session() as session:
-        for _, prompt_hash in hashes:
+        for filename, prompt_hash in hashes:
             prompt_obj = session.get(Prompt, prompt_hash)
             assert prompt_obj is not None
+            assert prompt_obj.template_file_path == filename
             assert len(prompt_obj.prompt_text) > 0
 
 
@@ -78,3 +80,4 @@ def test_upsert_idempotency(test_db):
     with get_session() as session:
         prompt_obj = session.get(Prompt, hash1)
         assert prompt_obj is not None
+        assert prompt_obj.template_file_path == "dead_code.md"

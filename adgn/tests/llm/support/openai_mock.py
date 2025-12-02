@@ -54,7 +54,10 @@ class OpenAIClient(Protocol):
 
 
 def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIModelProto:
-    """Construct a minimal mock client whose responses.create(req) calls the provided behavior."""
+    """Construct a minimal mock client whose responses.create(req) calls the provided behavior.
+
+    The returned client has a .captured attribute that records all requests.
+    """
 
     class _Responses:
         async def create(self, req: ResponsesRequest) -> ResponsesResult:
@@ -63,12 +66,14 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> OpenAIModelProto:
     class _Client(OpenAIModelProto):
         def __init__(self) -> None:
             self.responses = _Responses()
+            self.captured: list[ResponsesRequest] = []
 
         @property
         def model(self) -> str:
             return "test-model"
 
         async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+            self.captured.append(req.model_copy(deep=True))
             return await self.responses.create(req)
 
     return _Client()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.loop_control import Abort, Continue, RequireAnyTool
+from adgn.agent.loop_control import Abort, Continue
 from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.mode_handler import ServerModeHandler
@@ -42,10 +42,9 @@ def test_ui_handler_abort_on_end_turn(bus) -> None:
 
     h = ServerModeHandler(bus=bus, poll_notifications=dummy_poll)
 
-    # No end_turn pending -> RequireAnyTool tool usage
+    # No end_turn pending -> Continue
     dec = h.on_before_sample()
     assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, RequireAnyTool)
 
     # Push end_turn -> handler should Abort
     bus.push_end_turn()

@@ -3,13 +3,15 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage
 
 
 @pytest.mark.requires_docker
-async def test_approval_policy_server_is_available(responses_factory, echo_spec, make_pg_compositor):
+async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor, make_step_runner):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
     # make_pg_compositor creates a PolicyEngine with reader auto-mounted;
@@ -20,8 +22,8 @@ async def test_approval_policy_server_is_available(responses_factory, echo_spec,
         await comp.mount_inproc("policy_proposer", policy_engine.policy_proposer)
 
         # Create a sequence where agent lists available tools
-        seq = [responses_factory.make_assistant_message("I can see the approval tools")]
-        client = FakeOpenAIModel(seq)
+        runner = make_step_runner(steps=[AssistantMessage("I can see the approval tools")])
+        client = make_mock(runner.handle_request_async)
 
         # With servers attached, proceed with assertions
         # Check that policy servers are available and list flat tools
@@ -34,7 +36,9 @@ async def test_approval_policy_server_is_available(responses_factory, echo_spec,
         }
         assert expected <= tool_names
 
-        agent = await MiniCodex.create(mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()])
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()], tool_policy=RequireAnyTool()
+        )
 
         # Run should complete without issues
         result = await agent.run("test")

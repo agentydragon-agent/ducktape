@@ -8,7 +8,6 @@ from fastmcp.client.client import CallToolResult
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
     AssistantMessageOut,
@@ -50,7 +49,7 @@ class ResponsesFactory:
         return self._reasoning_seq
 
     def make_assistant_message(self, text: str) -> ResponsesResult:
-        result: ResponsesResult = ResponsesResult(
+        return ResponsesResult(
             id="resp_msg",
             usage=ResponseUsage(
                 input_tokens=0,
@@ -59,121 +58,82 @@ class ResponsesFactory:
                 output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
                 total_tokens=1,
             ),
-            output=[self._item_factory.assistant_text(text)],
+            output=[self.assistant_text(text)],
         )
-        return result
 
     def make_tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> ResponsesResult:
-        result: ResponsesResult = self.make(self._item_factory.tool_call(name, arguments, call_id))
-        return result
-
-    def make_mcp_tool_call(
-        self, server: str, tool: str, input_model: BaseModel, call_id: str | None = None
-    ) -> ResponsesResult:
-        """Create a tool call response for an MCP tool with typed input.
-
-        Args:
-            server: MCP server name
-            tool: MCP tool name
-            input_model: Pydantic input model instance
-            call_id: Optional call ID
-
-        Returns:
-            ResponsesResult with the tool call
-        """
-        return self.make_tool_call(build_mcp_function(server, tool), input_model.model_dump(mode="json"), call_id)
+        return self.make(self.tool_call(name, arguments, call_id))
 
     # ---- Low-level item builders (compose with make(...items)) ----
 
     def assistant_text(self, text: str) -> AssistantMessageOut:
-        """Create an assistant text item. Delegates to ItemFactory."""
         return self._item_factory.assistant_text(text)
 
     def tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> FunctionCallItem:
-        """Create a tool call item. Delegates to ItemFactory."""
         return self._item_factory.tool_call(name, arguments, call_id)
+
+    def mcp_tool_call(
+        self, server: str, tool: str, arguments: BaseModel, call_id: str | None = None
+    ) -> FunctionCallItem:
+        return self._item_factory.mcp_tool_call(server, tool, arguments, call_id)
+
+    def make_mcp_tool_call(self, server: str, tool: str, arguments: BaseModel) -> ResponsesResult:
+        """Create tool call response for MCP server/tool with automatic naming."""
+        return self.make(self.mcp_tool_call(server, tool, arguments))
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
 
-    def make_item_tool_call_auto(self, name: str, arguments: dict[str, Any]) -> FunctionCallItem:
-        return self._item_factory.tool_call(name, arguments)
-
     # ---- Message/response constructors (compose items) ----
 
     def make(self, *items: ResponseOutItem) -> ResponsesResult:
-        # Minimal usage heuristic: count assistant text parts as output tokens >=1
-        out_tokens = 0
-        for it in items:
-            if isinstance(it, AssistantMessageOut):
-                out_tokens += max(1, len(it.text))
-        usage = ResponseUsage(
-            input_tokens=0,
-            input_tokens_details=InputTokensDetails(cached_tokens=0),
-            output_tokens=(1 if out_tokens else 0),
-            output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
-            total_tokens=(1 if out_tokens else 0),
+        out_tokens = sum(max(1, len(it.text)) for it in items if isinstance(it, AssistantMessageOut))
+        return ResponsesResult(
+            id="resp_generic",
+            usage=ResponseUsage(
+                input_tokens=0,
+                input_tokens_details=InputTokensDetails(cached_tokens=0),
+                output_tokens=(1 if out_tokens else 0),
+                output_tokens_details=OutputTokensDetails(reasoning_tokens=0),
+                total_tokens=(1 if out_tokens else 0),
+            ),
+            output=list(items),
         )
-        # Coerce any plain dicts to proper models if needed (not expected here)
-        result: ResponsesResult = ResponsesResult(id="resp_generic", usage=usage, output=list(items))
-        return result
-
-    def make_tool_call_auto(self, name: str, arguments: dict[str, Any]) -> ResponsesResult:
-        result: ResponsesResult = self.make(self.make_item_tool_call_auto(name, arguments))
-        return result
 
     def make_final_assistant(self, text: str) -> ResponsesResult:
-        result: ResponsesResult = self.make(self._item_factory.assistant_text(text))
-        return result
+        return self.make(self.assistant_text(text))
 
     def make_reasoning_then_assistant(self, text: str) -> ResponsesResult:
-        result: ResponsesResult = self.make(self.make_item_reasoning(), self._item_factory.assistant_text(text))
-        return result
+        return self.make(self.make_item_reasoning(), self.assistant_text(text))
 
-    def make_reasoning_tool_then_assistant(
-        self, *, call_id: str, name: str, arguments: dict[str, Any], text: str
-    ) -> ResponsesResult:
-        result: ResponsesResult = self.make(
-            self.make_item_reasoning(),
-            self._item_factory.tool_call(name, arguments, call_id),
-            self._item_factory.assistant_text(text),
-        )
-        return result
+    def _make_output_item(self, call_id: str, output: Any) -> FunctionCallOutputItem:
+        """Create FunctionCallOutputItem from structured output."""
+        tool_result = CallToolResult(content=[], structured_content=output, is_error=False, meta=None)
+        payload_json = TypeAdapter(CallToolResult).dump_json(tool_result, by_alias=True)
+        return FunctionCallOutputItem(call_id=call_id, output=payload_json.decode("utf-8"))
+
+    def _make_call_with_output(self, call: FunctionCallItem, output: Any) -> ResponsesResult:
+        return self.make(call, self._make_output_item(call.call_id, output))
 
     def make_tool_call_with_output(
         self, name: str, arguments: dict[str, Any], output: Any, call_id: str | None = None
     ) -> ResponsesResult:
-        call = self._item_factory.tool_call(name, arguments, call_id)
-        tool_result = CallToolResult(content=[], structured_content=output, is_error=False, meta=None)
-        payload_json = TypeAdapter(CallToolResult).dump_json(tool_result, by_alias=True)
-        out = FunctionCallOutputItem(call_id=call.call_id, output=payload_json.decode("utf-8"))
-        result: ResponsesResult = self.make(call, out)
-        return result
+        return self._make_call_with_output(self.tool_call(name, arguments, call_id), output)
+
+    def make_mcp_tool_call_with_output(
+        self, server: str, tool: str, arguments: BaseModel, output: Any
+    ) -> ResponsesResult:
+        """Create paired tool call + output for MCP server/tool."""
+        return self._make_call_with_output(self.mcp_tool_call(server, tool, arguments), output)
 
 
 class _StepRunner:
-    """Generic state machine driven by declarative steps.
-
-    Use as a context manager to get automatic validation that all steps completed:
-        with _StepRunner(factory, steps) as runner:
-            # Use runner
-            pass
-        # Validates all steps executed on exit
-    """
+    """Internal: Generic state machine driven by declarative steps."""
 
     def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
         self.factory: ResponsesFactory = factory
         self.steps: Sequence[Step] = steps
         self.turn: int = 0
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # Only validate if no exception occurred during test
-        if exc_type is None and self.turn != len(self.steps):
-            pytest.fail(f"Step runner incomplete: executed {self.turn}/{len(self.steps)} steps")
-        return False
 
     def handle_request(self, req: ResponsesRequest) -> ResponsesResult:
         """Sync entry point - checks bounds and executes current step."""
@@ -188,8 +148,7 @@ class _StepRunner:
 
         Use with make_mock() to create a mock client:
             from tests.llm.support.openai_mock import make_mock
-            with runner:
-                client = make_mock(runner.handle_request_async)
+            client = make_mock(runner.handle_request_async)
         """
         return self.handle_request(req)
 
