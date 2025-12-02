@@ -1,12 +1,11 @@
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from mcp import types as mcp_types
 
 from adgn.agent.approvals import WellKnownTools
-from adgn.agent.server.protocol import FunctionCallOutput, ToolCall, UiEndTurnEvt, UiMessageEvt, UserText
+from adgn.agent.server.protocol import FunctionCallOutput, ServerMessage, ToolCall, UiEndTurnEvt, UiMessageEvt, UserText
 from adgn.mcp._shared.constants import UI_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 
@@ -23,7 +22,7 @@ from .state import (
 )
 
 
-def reduce_ui_state(state: UiState, evt: Any) -> UiState:
+def reduce_ui_state(state: UiState, evt: ServerMessage) -> UiState:
     """Pure reducer: match by Pydantic type; never treat models as dicts.
 
     Accepted types:

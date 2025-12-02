@@ -47,7 +47,7 @@ Ordering & snapshot
 
 Handler & loop control
 - UiAutoHandler(bus):
-  - on_before_sample: if bus.consume_end_turn() → Abort(); else Continue(RequireAny()) to force tool usage
+  - on_before_sample: if bus.consume_end_turn() → Abort(); else Continue(RequireAnyTool()) to force tool usage
   - No per‑tool interception; approvals are enforced by Policy Gateway middleware
   - Reducer is applied by the UI server ConnectionManager/AgentSession on typed events and bus drains
 

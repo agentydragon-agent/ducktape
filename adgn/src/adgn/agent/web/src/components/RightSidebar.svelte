@@ -8,7 +8,7 @@
     agentStatusError as agentStatusErrorStore,
   } from '../features/agents/stores'
   import {
-    runStatus as runStatusStore,
+    agentPhase as agentPhaseStore,
     pendingApprovals,
     approvalPolicy as approvalPolicyStore,
     mcpServerEntries as mcpServerEntriesStore,
@@ -53,7 +53,7 @@
     <span class="dot {$mcpConnected.connected ? 'on' : 'off'}"></span>
     <span>{$mcpConnected.connected ? 'MCP connected' : 'MCP disconnected'}</span>
   </div>
-  <div class="status">Status: {$runStatusStore}</div>
+  <div class="status">Phase: {$agentPhaseStore}</div>
   {#if $agentStatusStore}
     <div class="row" style="gap: 0.5rem; font-size: 0.85rem; margin-top: 0.25rem;">
       <span title="Lifecycle"

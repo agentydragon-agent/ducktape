@@ -5,7 +5,7 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Abort, Continue, RequireAny
+from adgn.agent.loop_control import Abort, Continue, InjectItems
 
 # Import just the NotificationsBatch type - it's a lightweight Pydantic model
 from adgn.agent.notifications.types import NotificationsBatch
@@ -14,12 +14,13 @@ from adgn.agent.server.bus import ServerBus
 
 
 class ServerModeHandler(BaseModel, BaseHandler):
-    """UI mode handler combining notifications delivery and RequireAny policy.
+    """UI mode handler combining notifications delivery and loop control.
 
     Single handler that:
     1. Checks for end_turn signal and aborts if set
     2. Delivers any pending MCP notifications as system messages
-    3. Enforces RequireAny tool policy for UI interaction
+
+    Note: Tool policy (typically RequireAnyTool) is configured at agent construction time.
     """
 
     bus: ServerBus
@@ -34,10 +35,10 @@ class ServerModeHandler(BaseModel, BaseHandler):
         batch = self.poll_notifications()
 
         if batch.has_notifications():
-            # Return Continue with RequireAny policy AND the notification message
-            return Continue(RequireAny(), inserts_input=(format_notifications_message(batch),))
+            # Inject notification message as user input
+            return InjectItems(items=(format_notifications_message(batch),))
 
-        # No notifications - just require tool use
-        return Continue(RequireAny())
+        # No notifications - just continue
+        return Continue()
 
     # No per-tool interception needed; approvals are enforced by Policy Gateway middleware

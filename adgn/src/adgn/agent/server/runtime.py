@@ -1,23 +1,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Coroutine
 import contextlib
-from datetime import UTC, datetime
 import logging
 from typing import Any
 import uuid
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
-from adgn.agent.persist import Persistence, RunStatus
+from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
     ApprovalPolicyInfo,
     FunctionCallOutput,
     ProposalInfo,
-    RunState,
-    RunStatus as UiRunStatus,
     ServerMessage,
     SessionState,
     Snapshot,
@@ -70,11 +68,11 @@ class ConnectionManager(BaseHandler):
     def set_session(self, session: AgentSession) -> None:
         self._session = session
 
-    def on_response(self, evt: Any) -> None:
+    def on_response(self, evt: Response) -> None:
         return None
 
-    def _spawn(self, coro: Any) -> None:
-        t: asyncio.Task[Any] = asyncio.create_task(coro)
+    def _spawn(self, coro: Coroutine[Any, Any, None]) -> None:
+        t: asyncio.Task[None] = asyncio.create_task(coro)
         self._bg_tasks.add(t)
         t.add_done_callback(self._bg_tasks.discard)
 
@@ -116,8 +114,6 @@ class AgentSession:
     ) -> None:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
-        self.active_run: RunState | None = None
-        self._run_counter = 0
         self._agent: MiniCodex | None = None
         self._manager = manager
         self._persistence: Persistence = persistence
@@ -125,23 +121,18 @@ class AgentSession:
         self.ui_state: UiState = new_state()
         self.approval_engine: PolicyEngine = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
-        # Agent identifier to associate runs with a specific hosted agent
+        # Agent identifier for persistence
         self.agent_id: AgentID = agent_id
 
     def current_run_phase(self) -> RunPhase:
         """Compute the current run phase from live signals (no stored state).
 
-        - IDLE: no active run
-        - SAMPLING: default while running
+        - IDLE: no pending approvals and no MCP inflight
+        - WAITING_APPROVAL / TOOLS_RUNNING: based on live signals
 
-        Note: WAITING_APPROVAL and TOOLS_RUNNING phases were removed.
         UI should read pending://calls resource directly for approval state.
         """
-        return determine_run_phase(
-            active_run_id=(self.active_run.run_id if self.active_run else None),
-            pending_approvals=0,
-            mcp_has_inflight=False,
-        )
+        return determine_run_phase(pending_approvals=0, mcp_has_inflight=False)
 
     async def build_snapshot(self, sampling=None) -> Snapshot:
         # Note: pending_approvals not populated here; UI reads pending://calls resource via MCP
@@ -159,11 +150,8 @@ class AgentSession:
                 version="1.0.0",
                 capabilities=[],
                 last_event_id=self._manager._event_id or None,
-                active_run_id=(self.active_run.run_id if self.active_run else None),
-                run_counter=self._run_counter,
             ),
             approval_policy=approval_policy,
-            run_state=self.active_run,
             sampling=sampling,
         )
 
@@ -176,7 +164,7 @@ class AgentSession:
     def set_persist_handler(self, handler: RunPersistenceHandler) -> None:
         self._persist_handler = handler
 
-    async def _apply_ui_event(self, evt: Any) -> None:
+    async def _apply_ui_event(self, evt: ServerMessage) -> None:
         self.ui_state = reduce_ui_state(self.ui_state, evt)
         # UI state updates now fetched via HTTP GET /api/agents/{id}/snapshot
 
@@ -211,43 +199,19 @@ class AgentSession:
     async def _run_impl(self, prompt: str) -> None:
         if self._agent is not None:
             # Agent notices are injected via the NotificationsHandler/ServerModeHandler from MCP resource updates
-            run_id = uuid.uuid4()
-            started = datetime.now(UTC)
-            model_params: dict[str, Any] = {}
-            await self._persistence.start_run(
-                run_id=run_id,
-                agent_id=self.agent_id,
-                system_message=self._system_text,
-                model=self._model,
-                model_params=model_params,
-                started_at=started,
-            )
-            # Run status updates now fetched via HTTP GET /api/agents/{id}/snapshot
-            self.active_run = RunState(
-                run_id=run_id, status=UiRunStatus.RUNNING, started_at=started, pending_approvals=[], last_event_id=None
-            )
-            self._run_counter += 1
-            finish_status = RunStatus.FINISHED
             try:
                 await self._agent.run(user_text=prompt)
             except asyncio.CancelledError:
                 # Error now logged, not sent via dead send_payload
-                finish_status = RunStatus.ABORTED
+                logger.debug("agent_run_cancelled")
             except Exception as e:
                 # Error now logged, not sent via dead send_payload
                 logger.error(f"agent_run_exception: {e}", exc_info=True)
-                finish_status = RunStatus.ERROR
             finally:
-                if self.active_run:
-                    self.active_run.status = UiRunStatus.FINISHED
-                    self.active_run.finished_at = datetime.now(UTC)
-                self.active_run = None
                 await self._manager.flush()
                 if self._persist_handler is not None:
-                    # Ensure all transcript events have been persisted before finishing the run
+                    # Ensure all transcript events have been persisted
                     await self._persist_handler.drain()
-                await self._persistence.finish_run(run_id=run_id, status=finish_status, finished_at=datetime.now(UTC))
-                # Run status now fetched via HTTP GET /api/agents/{id}/snapshot
             return
         # Error now logged, not sent via dead send_payload
         logger.error("no_agent_attached")

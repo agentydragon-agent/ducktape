@@ -1,6 +1,6 @@
 import pytest
 
-from adgn.agent.loop_control import Auto, Continue, RequireAny
+from adgn.agent.loop_control import Auto, Continue, RequireAnyTool
 from adgn.agent.reducer import BaseHandler, NoLoopDecision, Reducer
 
 
@@ -11,7 +11,7 @@ class DeferringHandler(BaseHandler):
 
 class DecisionHandlerA(BaseHandler):
     def on_before_sample(self):
-        return Continue(RequireAny())
+        return Continue(RequireAnyTool())
 
 
 class DecisionHandlerB(BaseHandler):

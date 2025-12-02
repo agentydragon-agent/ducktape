@@ -10,7 +10,7 @@ from pydantic import BaseModel
 # as a first-class input item so the agent can initiate web search via Responses
 # without custom tool plumbing.
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import Abort, Auto, Continue, InjectedItem, LoopDecision, NoLoopDecision, RequireAny
+from adgn.agent.loop_control import Abort, Compact, Continue, InjectItems, LoopDecision, NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem, UserMessage
 
 from .notifications.types import NotificationsBatch, ResourcesServerNotice
@@ -19,25 +19,28 @@ logger = logging.getLogger(__name__)
 
 
 class AutoHandler(BaseHandler):
-    """Common simple handler that signals Continue(Auto()) for every turn.
+    """Common simple handler that signals Continue() for every turn.
 
-    Useful as default handler in simple agents.
+    Useful as default handler in simple agents. Does not inject any items
+    or impose constraints - just ensures the loop continues.
     """
 
     def on_before_sample(self):
-        return Continue(Auto())
+        return Continue()
 
 
 class GateUntil(BaseHandler):
-    """Loop controller: require tool call until condition is met, then abort.
+    """Loop controller: continue until condition is met, then abort.
 
     Pass an is_done callable that returns True when the external state indicates
-    completion (e.g., submit_state.result is set). While not done, the handler
-    enforces RequireAny so the agent keeps making tool calls.
+    completion (e.g., submit_state.result is set).
 
     Optional defer_when: when provided and returns True, this handler defers
     its opinion for this phase (returns NoLoopDecision). Useful to avoid
     conflicts with bootstrap handlers that emit Continue(skip_sampling=True).
+
+    Note: The agent's tool_policy (typically RequireAnyTool) is configured at
+    construction time and applies throughout the agent's lifetime.
     """
 
     def __init__(self, is_done: Callable[[], bool], defer_when: Callable[[], bool] | None = None) -> None:
@@ -49,7 +52,7 @@ class GateUntil(BaseHandler):
             return NoLoopDecision()
         if self._is_done():
             return Abort()
-        return Continue(RequireAny())
+        return Continue()
 
 
 class Reducer:
@@ -68,76 +71,45 @@ class Reducer:
         self._handlers = list(handlers)
 
     def on_before_sample(self) -> LoopDecision:
-        # Collect concrete decisions (non-NoLoopDecision) from handlers in order.
-        decisions: list[LoopDecision] = []
-        collected_inserts: list[InjectedItem] = []
-        skip_value: bool | None = None
+        """Sequential handler execution: first action wins.
+
+        Handlers are executed in order. The first handler that returns an action
+        (not NoLoopDecision or empty Continue) wins and we stop processing remaining handlers.
+
+        Actions:
+        - InjectItems: inject items (user messages or synthetic output) and process
+        - Abort: stop the loop
+        - Compact: compact transcript and continue
+        - Continue: sample LLM normally (also returned as default if all handlers defer)
+
+        If all handlers defer (return NoLoopDecision or Continue), we sample the LLM normally.
+
+        Returns:
+            LoopDecision from first handler with an action, or Continue() if all defer
+        """
         for h in self._handlers:
-            dec = h.on_before_sample()
-            # Explicit deferral must be the NoLoopDecision() sentinel
-            if isinstance(dec, NoLoopDecision):
+            decision = h.on_before_sample()
+
+            # Skip handlers that defer
+            if isinstance(decision, NoLoopDecision):
                 continue
-            # Additive collection of pre-sample inserts_input from Continue decisions
-            if isinstance(dec, Continue) and dec.inserts_input:
-                collected_inserts.extend(list(dec.inserts_input))
-            if isinstance(dec, Continue):
-                if skip_value is None:
-                    skip_value = dec.skip_sampling
-                elif skip_value != dec.skip_sampling:
-                    raise RuntimeError(f"Conflicting skip_sampling flags in Continue decisions: {decisions!r}")
-            # Anything that is not one of the concrete decision classes is a programming error
-            if not isinstance(dec, Continue | Abort):
-                raise TypeError(f"Handler {h!r} returned invalid decision type: {type(dec).__name__} ({dec!r})")
-            decisions.append(dec)
 
-        # Crash if no handler emitted a decision
-        if not decisions:
-            raise RuntimeError(
-                "MiniCodex loop control misconfiguration: no handler emitted a LoopDecision (all returned NoLoopDecision()). "
-                "MiniCodex instances must have a configured loop-control handler (that can emit Continue/Abort). "
-                "Fix the MiniCodex instance to provide a loop handler."
-            )
-
-        # Reduction rules:
-        # - If all decisions are identical -> return that decision
-        # - Otherwise, prefer a single non-Continue decision if present (e.g., Abort)
-        # - If multiple differing non-Continue decisions are present -> conflict -> crash
-        first = decisions[0]
-        if all(d == first for d in decisions):
-            if isinstance(first, Continue) and collected_inserts:
-                return Continue(
-                    first.tool_policy, inserts_input=tuple(collected_inserts), skip_sampling=bool(skip_value)
+            # Validate decision type
+            valid_types = (Continue, InjectItems, Abort, Compact)
+            if not isinstance(decision, valid_types):
+                raise TypeError(
+                    f"Handler {h!r} returned invalid decision type: {type(decision).__name__} ({decision!r})"
                 )
-            return first
 
-        # If all decisions are Continue, allow merging when tool_policy matches; else conflict
-        if all(isinstance(d, Continue) for d in decisions):
-            # All Continue: if tool policies are the same type/value, merge inserts additively
-            policies = [d.tool_policy for d in decisions if isinstance(d, Continue)]
-            if all(type(p) is type(policies[0]) and p == policies[0] for p in policies):
-                return Continue(policies[0], inserts_input=tuple(collected_inserts), skip_sampling=bool(skip_value))
-            # Otherwise conflicting Continue opinions
-            raise RuntimeError(f"Conflicting Continue decisions from handlers: {decisions!r}")
+            # First handler with an action wins
+            # InjectItems, Abort, Compact are all actions
+            if isinstance(decision, InjectItems | Abort | Compact):
+                return decision
 
-        # Collect non-Continue decisions (Concrete ones other than Continue)
-        non_continue = [d for d in decisions if not isinstance(d, Continue)]
-        # Mixed case (at least one Continue and at least one non-Continue) is a conflict
-        if non_continue and any(isinstance(d, Continue) for d in decisions):
-            raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
-        if len(non_continue) == 0:
-            # Fallback: return the first (attach inserts if winning decision is Continue)
-            if isinstance(first, Continue) and collected_inserts:
-                return Continue(first.tool_policy, inserts_input=tuple(collected_inserts))
-            return first
-        if len(non_continue) == 1:
-            return non_continue[0]
+            # Continue() passes to next handler (same as NoLoopDecision)
 
-        # Multiple non-Continue decisions: they must be identical or it's a conflict
-        first_nc = non_continue[0]
-        for other in non_continue[1:]:
-            if other != first_nc:
-                raise RuntimeError(f"Conflicting handler decisions: {decisions!r}; crashing per policy.")
-        return first_nc
+        # No handler did anything - sample normally
+        return Continue()
 
     # ---- Event forwarding (typed, observer-only) ----
     def on_response(self, evt: Response) -> None:
@@ -194,11 +166,11 @@ def format_notifications_message(batch: NotificationsBatch) -> UserMessage:
 
 
 class NotificationsHandler(BaseHandler):
-    """Deliver MCP notifications as one batched system message via Continue.inserts_input.
+    """Deliver MCP notifications as one batched system message via InjectItems.
 
-    Polls a provided notifications buffer for buffered updates and, if present, returns a
-    Continue(Auto()) decision with a single input-side SystemMessage insert that
-    encodes the per-server resource version changes.
+    Polls a provided notifications buffer for buffered updates and, if present, returns an
+    InjectItems() decision with a single UserMessage that encodes the per-server resource
+    version changes.
     """
 
     def __init__(self, poll: Callable[[], NotificationsBatch]) -> None:
@@ -217,4 +189,4 @@ class NotificationsHandler(BaseHandler):
         logger.info(
             "NotificationsHandler: delivering %d notifications (msg #%d)", notification_count, self._msg_counter
         )
-        return Continue(Auto(), inserts_input=(format_notifications_message(batch),))
+        return InjectItems(items=(format_notifications_message(batch),))

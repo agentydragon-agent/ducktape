@@ -16,7 +16,7 @@ from rich.table import Table
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Auto, Continue, NoLoopDecision, RequireAny
+from adgn.agent.loop_control import Auto, Continue, NoLoopDecision, RequireAnyTool
 from adgn.agent.reducer import BaseHandler, GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
@@ -216,7 +216,7 @@ class BootstrapInspectHandler(BaseHandler):
                     builder, server=self._wiring.server_name, cmd=["ls", "-la", str(self._wiring.working_dir)]
                 ),
             ]
-            return Continue(RequireAny(), inserts_input=tuple(calls), skip_sampling=True)
+            return Continue(RequireAnyTool(), inserts_input=tuple(calls), skip_sampling=True)
         # Second cycle: mark done and defer; subsequent cycles will continue normally
         self._done = True
         return NoLoopDecision()

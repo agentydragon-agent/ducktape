@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
-from uuid import UUID
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
@@ -23,8 +21,6 @@ class SessionState(BaseModel):
     version: str
     capabilities: list[str] = []
     last_event_id: int | None = None
-    active_run_id: UUID | None = None
-    run_counter: int = 0
 
     model_config = ConfigDict(extra="forbid")
 
@@ -63,7 +59,9 @@ class ApprovalPolicyInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class RunStatus(StrEnum):
+class AgentStatus(StrEnum):
+    """Agent execution status."""
+
     IDLE = "idle"
     STARTING = "starting"
     RUNNING = "running"
@@ -71,17 +69,6 @@ class RunStatus(StrEnum):
     ABORTING = "aborting"
     FINISHED = "finished"
     ERROR = "error"
-
-
-class RunState(BaseModel):
-    run_id: UUID
-    status: RunStatus
-    started_at: datetime
-    finished_at: datetime | None = None
-    pending_approvals: list[ApprovalBrief] = []
-    last_event_id: int | None = None
-
-    model_config = ConfigDict(extra="forbid")
 
 
 # --------------------------
@@ -164,7 +151,6 @@ class Snapshot(BaseModel):
     type: Literal["snapshot"] = "snapshot"
     session_state: SessionState
     approval_policy: ApprovalPolicyInfo | None = None
-    run_state: RunState | None = None
     sampling: SamplingSnapshot | None = None
     model_config = ConfigDict(extra="forbid")
 

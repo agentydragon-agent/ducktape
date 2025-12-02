@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.approvals import load_default_policy_source
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist import ApprovalOutcome
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -25,6 +26,7 @@ from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, ConnectionManager
 from adgn.agent.server.system_message import get_ui_system_message
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
@@ -32,6 +34,7 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
@@ -40,7 +43,6 @@ from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.ui.server import make_ui_server
@@ -77,12 +79,12 @@ class SendPromptOutput(BaseModel):
     message: str
 
 
-class AbortRunInput(BaseModel):
-    """Input for the abort_run tool (empty - no parameters)."""
+class AbortInput(BaseModel):
+    """Input for the abort tool (empty - no parameters)."""
 
 
-class AbortRunOutput(BaseModel):
-    """Output for the abort_run tool."""
+class AbortOutput(BaseModel):
+    """Output for the abort tool."""
 
     status: Literal["aborted", "error"]
     message: str
@@ -163,7 +165,7 @@ class AgentContainer:
     _handle_actor_msg should be broken into smaller initialization functions.
     """
 
-    agent_id: str
+    agent_id: AgentID
     persistence: SQLitePersistence
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
@@ -216,37 +218,37 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def make_control_server(self, name: str) -> NotifyingFastMCP:
+    def make_control_server(self, name: str) -> FlatModelFastMCP:
         """Create an agent control MCP server for this container.
 
         Tools:
-        - send_prompt(prompt) - Send a prompt to start an agent run
-        - abort_run() - Abort the currently running agent
+        - send_prompt(prompt) - Send a prompt to the agent
+        - abort() - Abort the currently active agent
 
         Args:
             name: Server name
 
         Returns:
-            NotifyingFastMCP server instance
+            FlatModelFastMCP server instance
         """
-        mcp = NotifyingFastMCP(name)
+        mcp = FlatModelFastMCP(name)
         container = self  # capture self for closures
 
         @mcp.tool(flat=True)
         async def send_prompt(input: SendPromptInput) -> SendPromptOutput:
-            """Send a prompt to start an agent run."""
+            """Send a prompt to the agent."""
             if container.session is None:
                 return SendPromptOutput(status="error", message="Agent session not initialized")
             await container.session.run(input.prompt)
             return SendPromptOutput(status="started", message="Prompt sent successfully")
 
         @mcp.tool(flat=True)
-        async def abort_run(input: AbortRunInput) -> AbortRunOutput:
-            """Abort the currently running agent."""
+        async def abort(input: AbortInput) -> AbortOutput:
+            """Abort the currently active agent."""
             if container.session is None:
-                return AbortRunOutput(status="error", message="Agent session not initialized")
+                return AbortOutput(status="error", message="Agent session not initialized")
             await container.session.cancel_active_run()
-            return AbortRunOutput(status="aborted", message="Run aborted successfully")
+            return AbortOutput(status="aborted", message="Agent aborted successfully")
 
         return mcp
 
@@ -362,16 +364,12 @@ class AgentContainer:
         # LLM client
         client = self.client_factory(self.model)
 
-        # Define run ID helper
-        def _get_run_id():
-            return sess.active_run.run_id if sess.active_run else None
-
         # Build handlers
         handlers, persist_handler = build_handlers(
             poll_notifications=notifications.poll,
             manager=manager,
             persistence=self.persistence,
-            get_run_id=_get_run_id,
+            agent_id=self.agent_id,
             ui_bus=self._ui_bus if self.with_ui else None,
         )
         sess.set_persist_handler(persist_handler)
@@ -395,6 +393,7 @@ class AgentContainer:
             client=client,
             handlers=handlers,
             dynamic_instructions=_dynamic_instructions,
+            tool_policy=RequireAnyTool(),
         )
         await self._stack.enter_async_context(agent)
 
@@ -538,8 +537,6 @@ class AgentContainer:
         return cast(SamplingSnapshot | None, res)
 
     async def record_policy_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
-        if self.session is None:
-            return
         await self.persistence.record_approval(
             agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, outcome=outcome, decided_at=datetime.now(UTC)
         )
@@ -578,7 +575,13 @@ class AgentContainer:
     async def _attach_wired_seatbelt(self) -> None:
         if self._compositor is None:
             raise RuntimeError("compositor not initialized")
-        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_SERVER_NAME)
+        await attach_seatbelt_exec(
+            self._compositor,
+            agent_id=self.agent_id,
+            persistence=self.persistence,
+            docker_client=self.docker_client,
+            name=SEATBELT_EXEC_SERVER_NAME,
+        )
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True
@@ -624,7 +627,7 @@ class AgentContainer:
 
 async def build_container(
     *,
-    agent_id: str,
+    agent_id: AgentID,
     mcp_config: MCPConfig,
     persistence: SQLitePersistence,
     model: str,

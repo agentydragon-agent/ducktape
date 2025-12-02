@@ -15,7 +15,7 @@ import type { AgentMcpClient } from '../mcp/client'
 
 export type Pending = { call_id: string; tool_key: string; args_json?: string | null }
 
-export const runStatus: Writable<string> = writable('idle')
+export const agentPhase: Writable<string> = writable('idle')
 // Agent-scoped UI state
 export const uiStates: Writable<Map<string, UiState>> = writable(new Map())
 export const uiState: Readable<UiState | null> = derived(
@@ -88,7 +88,7 @@ export async function disconnectAgentMcp() {
 
 export async function sendPrompt(text: string) {
   // Optimistically reflect starting state
-  runStatus.set('starting')
+  agentPhase.set('starting')
   if (!currentClient) {
     lastError.set('Not connected to agent')
     return
@@ -193,13 +193,13 @@ export async function refreshSnapshot() {
   }
 }
 
-export async function abortRun() {
+export async function abortAgent() {
   if (!currentClient) return
   try {
-    // Use MCP tool: agent_control_abort_run
-    await currentClient.callTool('agent_control_abort_run', {})
+    // Use MCP tool: agent_control_abort
+    await currentClient.callTool('agent_control_abort', {})
   } catch (e) {
-    handleError('Abort run', e)
+    handleError('Abort agent', e)
   }
   await refreshSnapshot()
 }
@@ -249,22 +249,11 @@ function handleSnapshot(p: SnapshotPayload) {
   if (sampling) {
     mcpServerEntries.set(sampling.servers || [])
   }
-  const st = p.run_state?.status
-  if (st) runStatus.set(st)
-  else runStatus.set('idle')
+  // Run state removed - status now tracked via AgentStatus resource
+  agentPhase.set('idle')
 
-  // Pending approvals are now updated via MCP resource subscription
-  // But still handle snapshot data for initial state
-  if (Array.isArray(p.run_state?.pending_approvals)) {
-    const map = new Map<string, Pending>()
-    for (const a of p.run_state!.pending_approvals!) {
-      map.set(a.call_id, {
-        call_id: a.call_id,
-        tool_key: a.tool_key,
-        args_json: JSON.stringify(a.args),
-      })
-    }
-    pendingApprovals.set(map)
-  }
+  // Pending approvals are now updated via MCP resource subscription only
+  // (no longer in snapshot)
+
   if (p.approval_policy) approvalPolicy.set(p.approval_policy)
 }

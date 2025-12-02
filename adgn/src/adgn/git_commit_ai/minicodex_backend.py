@@ -11,7 +11,7 @@ import pygit2
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Abort, Continue, RequireAny
+from adgn.agent.loop_control import Abort, Continue, RequireAnyTool
 from adgn.agent.reducer import BaseHandler
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
@@ -151,8 +151,8 @@ class CommitController(BaseHandler):
             return Abort()
         self._step += 1
         if self._step == 1:
-            return Continue(tool_policy=RequireAny(), inserts_input=tuple(self._bootstrap), skip_sampling=True)
-        return Continue(RequireAny())
+            return Continue(tool_policy=RequireAnyTool(), inserts_input=tuple(self._bootstrap), skip_sampling=True)
+        return Continue(RequireAnyTool())
 
 
 async def generate_commit_message_minicodex(

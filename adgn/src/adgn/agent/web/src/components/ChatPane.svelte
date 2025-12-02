@@ -14,9 +14,9 @@
   import {
     uiState as uiStateStore,
     lastError as lastErrorStore,
-    runStatus as runStatusStore,
+    agentPhase as agentPhaseStore,
     sendPrompt,
-    abortRun,
+    abortAgent,
   } from '../features/chat/stores'
   import { isCollapsedToolKey } from '../lib/collapsedTools'
   import { renderMarkdown as renderMarkdownHtml } from '../shared/markdown'
@@ -28,13 +28,13 @@
   let prompt = ''
   let messagesEl: HTMLDivElement | null = null
   let promptEl: HTMLTextAreaElement | null = null
-  $: runStatus = $runStatusStore
+  $: agentPhase = $agentPhaseStore
   // Consider agent busy for these transient states; allow send only when idle/finished
   $: busy =
-    runStatus === 'running' ||
-    runStatus === 'awaiting_approval' ||
-    runStatus === 'starting' ||
-    runStatus === 'aborting'
+    agentPhase === 'running' ||
+    agentPhase === 'awaiting_approval' ||
+    agentPhase === 'starting' ||
+    agentPhase === 'aborting'
 
   function sendPromptLocal() {
     if (busy || !prompt.trim()) return
@@ -227,8 +227,8 @@
       on:input={onPromptInput}
       on:keydown={onPromptKeydown}
     ></textarea>
-    {#if $runStatusStore === 'running' || $runStatusStore === 'starting'}
-      <button type="button" class="abort" title="Abort current run" on:click={() => abortRun()}
+    {#if $agentPhaseStore === 'running' || $agentPhaseStore === 'starting'}
+      <button type="button" class="abort" title="Abort agent" on:click={() => abortAgent()}
         >Abort</button
       >
     {/if}
