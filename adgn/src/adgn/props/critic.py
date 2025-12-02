@@ -26,7 +26,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
 from adgn.agent.handler import BaseHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import GateUntil
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
@@ -37,10 +39,10 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun as DBCriticRun, Critique
+from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.ids import BaseIssueID, SpecimenSlug
-from adgn.props.lint_issue import BootstrapInspectHandler
+from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.issue import LineRange, Occurrence
 from adgn.props.rationale import Rationale
 
@@ -450,8 +452,6 @@ async def run_critic(
     *,
     input_data: CriticInput,
     client: OpenAIModelProto,
-    system_prompt: str,
-    user_prompt: str,
     content_root,
     registry: SpecimenRegistry,
     mount_properties: bool = False,
@@ -467,8 +467,21 @@ async def run_critic(
     Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
     from within an MCP tool that outlives the session.
     """
+    # Import here to avoid circular dependency at module load time
+    from adgn.props.prompts.util import render_prompt_template
+
+    # Fetch system prompt from DB using prompt_sha256 (primary key lookup)
+    with get_session() as session:
+        prompt_obj = session.get(Prompt, input_data.prompt_sha256)
+        if not prompt_obj:
+            raise ValueError(f"Prompt not found in database: {input_data.prompt_sha256}")
+        system_prompt = prompt_obj.prompt_text
+
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel)
     resolved_files = await resolve_critic_scope(input_data.specimen_slug, input_data.files, registry)
+
+    # Build user prompt from resolved files
+    user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))
 
     # Generate unique IDs for this run
     run_id = uuid4()
@@ -495,7 +508,8 @@ async def run_critic(
 
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
-    wiring = properties_docker_spec(content_root, mount_properties=mount_properties)
+    # Use ephemeral=False so critic can persist temporary analysis artifacts, checklists, and reasoning
+    wiring = properties_docker_spec(content_root, mount_properties=mount_properties, ephemeral=False)
     comp = Compositor("compositor")
     runtime_server = await wiring.attach(comp)
 
@@ -505,7 +519,9 @@ async def run_critic(
     await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, critic_server)
 
     # Set up handlers
-    bootstrap = BootstrapInspectHandler(wiring)
+    builder = TypedBootstrapBuilder.for_server(runtime_server)
+    bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, builder)
+    bootstrap = BootstrapHandler(bootstrap_calls)
 
     # Build servers dict for handlers
     servers = {wiring.server_name: runtime_server, CRITIC_SUBMIT_SERVER_NAME: critic_server}
@@ -533,6 +549,7 @@ async def run_critic(
             client=client,
             handlers=handlers,
             parallel_tool_calls=True,
+            tool_policy=RequireAnyTool(),
             reasoning_summary=ReasoningSummary.detailed,
         )
         await agent.run(user_prompt)

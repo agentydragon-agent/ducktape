@@ -10,6 +10,7 @@ import asyncio
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from importlib import resources
 import json
 import logging
@@ -17,16 +18,20 @@ from pathlib import Path
 import subprocess
 import tempfile
 import time
+from typing import Annotated
 from uuid import UUID
 
 import docker
 from fastmcp.client import Client
+import pygit2
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
 import typer
+import yaml
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.logging_config import configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
@@ -36,8 +41,9 @@ from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.bundles.build_bundle import main as build_bundle_main
 from adgn.props.cli_app import common_options as opt
-from adgn.props.cli_app.cmd_db import cmd_db_recreate, cmd_sync_specimens
+from adgn.props.cli_app.cmd_db import cmd_db_recreate, cmd_sync
 from adgn.props.cli_app.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli_app.decorators import async_run
 from adgn.props.cli_app.shared import (
@@ -54,7 +60,6 @@ from adgn.props.db.models import GraderRun as DBGraderRun
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
-    WORKING_DIR as CRITIC_WORKDIR,
     PropertiesDockerWiring,
     build_critic_volumes,
     ensure_critic_image,
@@ -79,36 +84,12 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_completion=False)
 
-# Typer parameter singletons to avoid function-call defaults in signatures (ruff B008)
-ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)
-ARG_SCOPE = typer.Argument(..., help="Freeform scope description (e.g. 'all files under src/**')")
-OPT_DRY_RUN = typer.Option(False, help="Compose prompt only; do not run")
-OPT_FINAL_ONLY = typer.Option(False, help="Print only final message")
-OPT_OUTPUT_FINAL_MESSAGE = typer.Option(None, help="Write final message to this path")
-OPT_ALLOW_GENERAL = typer.Option(False, help="Allow general code-quality findings beyond formal properties")
-# Additional shared Typer params (B008-safe)
-ARG_SPECIMEN = typer.Argument(..., help="Specimen slug (under properties/specimens)")
-ARG_ISSUE_ID = typer.Argument(..., help="Issue id to lint (must have should_flag=true)")
-ARG_OCCURRENCE = typer.Argument(..., help="0-based occurrence index")
-ARG_CMD_LIST = typer.Argument(..., help="Command to run inside container")
-ARG_PROMPT = typer.Argument(..., help="Candidate critic system prompt to evaluate across specimens")
-OPT_OUTPUT_DIR = typer.Option(None, help="Root directory for run artifacts")
-OPT_CONTEXT = typer.Option(
-    "minimal", help=("Agent context: minimal (no extra servers) or props (mount /props via docker MCP)")
-)
-OPT_CRITIQUE = typer.Option(..., "--critique", exists=True, help="Path to the input critique JSON file")
-OPT_INTERACTIVE = typer.Option(False, "-i", help="Attach STDIN (docker exec -i)")
-OPT_TTY_EXEC = typer.Option(False, "-t", help="Allocate TTY (docker exec -t)")
-OPT_WORKDIR_CRITIC = typer.Option(CRITIC_WORKDIR, "--workdir", help="Container working dir (default: /workspace)")
-# Shared option for iteration budget
-OPT_MAX_ITERS = typer.Option(10, help="Maximum number of prompt evaluations (tool calls)")
-OPT_SKIP_GIT_REPO_CHECK = typer.Option(False, help="Pass --skip-git-repo-check to codex exec")
-OPT_FULL_AUTO = typer.Option(False, help="Pass --full-auto to codex exec")
-
 
 @app.callback()
 def _init_logging() -> None:
     configure_logging()
+    # Reduce Rich traceback verbosity for CLI errors
+    rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
 
 
 @dataclass
@@ -125,13 +106,13 @@ class MetricsRow:
 @app.command("check")
 @async_run
 async def cmd_check(
-    workdir: Path = ARG_WORKDIR,
-    scope: str = ARG_SCOPE,
+    workdir: Path = opt.ARG_WORKDIR,
+    scope: str = opt.ARG_SCOPE,
     model: str = opt.OPT_MODEL,
-    dry_run: bool = OPT_DRY_RUN,
-    final_only: bool = OPT_FINAL_ONLY,
-    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
-    allow_general_findings: bool = OPT_ALLOW_GENERAL,
+    dry_run: bool = opt.OPT_DRY_RUN,
+    final_only: bool = opt.OPT_FINAL_ONLY,
+    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
+    allow_general_findings: bool = opt.OPT_ALLOW_GENERAL,
 ) -> None:
     """Check a static path set against committed property definitions (docker RO mount)."""
 
@@ -255,8 +236,6 @@ async def _run_specimen_minicodex_async(
                 specimen_slug=specimen, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
             ),
             client=client,
-            system_prompt="You are a code agent. Be concise.",
-            user_prompt=prompt,
             content_root=hydrated.content_root,
             registry=registry,
             mount_properties=True,
@@ -273,22 +252,18 @@ async def _run_specimen_minicodex_async(
         return 0
 
 
-# specimen-check command removed in favor of the unified 'run' command.
-
-
 @app.command("specimen-discover")
 @async_run
 async def cmd_specimen_discover(
-    specimen: str = ARG_SPECIMEN,
-    dry_run: bool = OPT_DRY_RUN,
-    final_only: bool = OPT_FINAL_ONLY,
-    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
+    specimen: str = opt.ARG_SPECIMEN,
+    dry_run: bool = opt.OPT_DRY_RUN,
+    final_only: bool = opt.OPT_FINAL_ONLY,
+    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs specimen notes (covered/not_covered_yet)."""
-    registry = SpecimenRegistry.from_package_resources()
-    # Build full specimen list
-    names = registry.list_specimen_names()
+    registry = SpecimenRegistry.from_base_path()
+    names = sorted(registry.list_all())
     if specimen not in names:
         typer.echo(f"Unknown specimen slug: {specimen}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
         raise typer.Exit(2)
@@ -316,7 +291,7 @@ async def cmd_specimen_discover(
 
 @app.command("cluster-unknowns")
 @async_run
-async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = OPT_OUTPUT_DIR) -> None:
+async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = opt.OPT_OUTPUT_DIR) -> None:
     """Cluster all 'unknown' issues across all prompt_optimize runs via an in-proc MCP tool.
 
     The agent must submit a single payload of clusters: [{name: str, issues: [uid,...]}].
@@ -342,7 +317,7 @@ async def prompt_optimize(
 @async_run
 async def prompt_eval(
     prompt: str = typer.Argument(..., help="Candidate critic system prompt to evaluate across specimens"),
-    out_dir: Path | None = OPT_OUTPUT_DIR,
+    out_dir: Path | None = opt.OPT_OUTPUT_DIR,
     model: str = opt.OPT_MODEL,
     debug: bool = typer.Option(False, help="Log raw OpenAI HTTP to JSONL for diagnostics"),
 ) -> None:
@@ -393,13 +368,13 @@ async def specimen_grade(
 
 @app.command("fix")
 def cmd_fix(
-    workdir: Path = ARG_WORKDIR,
+    workdir: Path = opt.ARG_WORKDIR,
     scope: str = typer.Argument(..., help="Freeform scope description to enforce"),
     model: str = opt.OPT_MODEL,
-    final_only: bool = OPT_FINAL_ONLY,
-    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
-    skip_git_repo_check: bool = OPT_SKIP_GIT_REPO_CHECK,
-    full_auto: bool = OPT_FULL_AUTO,
+    final_only: bool = opt.OPT_FINAL_ONLY,
+    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
+    skip_git_repo_check: bool = opt.OPT_SKIP_GIT_REPO_CHECK,
+    full_auto: bool = opt.OPT_FULL_AUTO,
 ) -> None:
     """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
 
@@ -433,7 +408,7 @@ async def cmd_lint_issue(
     issue_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
     occurrence: int = typer.Argument(..., help="0-based occurrence index"),
     model: str = opt.OPT_MODEL,
-    dry_run: bool = OPT_DRY_RUN,
+    dry_run: bool = opt.OPT_DRY_RUN,
 ) -> None:
     rc = await run_specimen_lint_issue_async(
         specimen, issue_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
@@ -448,26 +423,10 @@ async def cmd_eval_all() -> None:
     await run_all_evals(client=build_client("gpt-5"), registry=registry, ctx=RunsContext.from_pkg_dir())
 
 
-# Database commands moved to cmd_db.py
-app.command("sync-specimens")(cmd_sync_specimens)
-app.command("db-recreate")(cmd_db_recreate)
-
-# Detector commands moved to cmd_detector.py
+app.command("sync")(cmd_sync)
 app.command("run-detector")(cmd_run_detector)
 app.command("detector-coverage")(cmd_detector_coverage)
-
-
-OPT_RUNBOOK_PATH = typer.Option(
-    None,
-    "--path",
-    exists=True,
-    file_okay=False,
-    resolve_path=True,
-    help="Local code path to mount as /workspace (read-only)",
-)
-OPT_RUNBOOK_SPECIMEN = typer.Option(
-    None, "--specimen", help="Specimen slug to hydrate and mount as /workspace (read-only)"
-)
+app.command("db-recreate")(cmd_db_recreate)
 
 
 # ---------- Shared helpers for run ----------
@@ -555,8 +514,6 @@ async def _exec_agent(
                 specimen_slug=specimen_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
             ),
             client=build_client(model),
-            system_prompt="You are a code agent. Use tools to execute commands. Respond concisely.",
-            user_prompt=prompt_text,
             content_root=wiring.working_dir,
             registry=registry,
             mount_properties=True,
@@ -588,6 +545,7 @@ async def _exec_agent(
             client=build_client(model),
             handlers=handlers,
             parallel_tool_calls=True,
+            tool_policy=RequireAnyTool(),
         )
         result = await agent.run(prompt_text)
         if output_final_message:
@@ -605,10 +563,6 @@ _PRESET_MAP: dict[str, str] = {
     "discover": "prompts/discover.j2.md",
     # High-volume structured critic
     "max-recall-critic": "prompts/max_recall_critic.j2.md",
-    # Detectors/runbooks
-    "dead-code-and-reachability": "detectors/prompts/dead_code_and_reachability.j2.md",
-    "flag-propagation": "detectors/prompts/flag_propagation.j2.md",
-    "contract-truthfulness": "detectors/prompts/contract_truthfulness.j2.md",
 }
 
 
@@ -635,8 +589,8 @@ def _load_preset_text(name: str) -> str:
 @async_run
 async def cmd_run(
     # Scope (exactly one)
-    path: Path | None = OPT_RUNBOOK_PATH,
-    specimen: str | None = OPT_RUNBOOK_SPECIMEN,
+    path: Path | None = opt.OPT_RUNBOOK_PATH,
+    specimen: str | None = opt.OPT_RUNBOOK_SPECIMEN,
     # Prompt source (at most one; default by mode)
     preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name; see --list-presets"),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
@@ -649,8 +603,8 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    final_only: bool = OPT_FINAL_ONLY,
-    output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
+    final_only: bool = opt.OPT_FINAL_ONLY,
+    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     list_presets: bool = typer.Option(False, "--list-presets", help="List available built-in presets and exit"),
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
 ) -> None:
@@ -775,10 +729,10 @@ async def specimen_dump(
 @async_run
 async def specimen_exec(
     specimen: str = typer.Argument(..., help="Specimen name/path or manifest"),
-    workdir: Path = OPT_WORKDIR_CRITIC,
-    interactive: bool = OPT_INTERACTIVE,
-    tty_exec: bool = OPT_TTY_EXEC,
-    cmd: list[str] = ARG_CMD_LIST,
+    workdir: Path = opt.OPT_WORKDIR_CRITIC,
+    interactive: bool = opt.OPT_INTERACTIVE,
+    tty_exec: bool = opt.OPT_TTY_EXEC,
+    cmd: list[str] = opt.ARG_CMD_LIST,
 ) -> None:
     """Execute a command in a container with hydrated specimen mounted at /workspace (RW)."""
     # Docker sanity
@@ -825,3 +779,83 @@ async def specimen_exec(
             raise typer.Exit(rc)
         finally:
             container.stop()
+
+
+@app.command("capture-ducktape-specimen")
+def cmd_capture_ducktape_specimen(
+    slug: Annotated[
+        str | None, typer.Option(help="Specimen slug (e.g., 'ducktape/2025-11-30-00'); auto-generated if not provided")
+    ] = None,
+    include: Annotated[list[str] | None, typer.Option(help="Paths to include in bundle (repeatable)")] = None,
+    exclude: Annotated[list[str] | None, typer.Option(help="Paths to exclude from bundle (repeatable)")] = None,
+) -> None:
+    """Capture current ducktape repo state as a new specimen and add to bundle.
+
+    Creates manifest.yaml with bundle metadata and regenerates the specimens.bundle
+    to include the new snapshot.
+    """
+    # Set defaults for mutable list arguments (match recent ducktape specimens)
+    if include is None:
+        include = ["adgn/"]
+    if exclude is None:
+        exclude = ["adgn/src/adgn/props/"]
+
+    # Get current commit SHA using pygit2
+    repo = pygit2.Repository("/code/gitlab.com/agentydragon/ducktape")
+    source_commit = str(repo.head.target)
+
+    # Generate slug if not provided
+    if slug is None:
+        today = datetime.now().strftime("%Y-%m-%d")
+        registry = SpecimenRegistry.from_base_path()
+        existing = sorted([name for name in registry.list_all() if name.startswith(f"ducktape/{today}")])
+        next_num = len(existing)
+        slug = f"ducktape/{today}-{next_num:02d}"
+
+    # Create specimen directory
+    registry = SpecimenRegistry.from_base_path()
+    specimens_dir = registry.base_path
+    specimen_dir = specimens_dir / slug
+    specimen_dir.mkdir(parents=True, exist_ok=False)
+    issues_dir = specimen_dir / "issues"
+    issues_dir.mkdir()
+
+    # Derive tag name from slug
+    tag_name = f"specimen-{slug.replace('/', '-')}"
+
+    # Create manifest
+    manifest = {
+        "source": {
+            "vcs": "git",
+            "url": "file://../specimens.bundle",
+            "ref": f"refs/tags/{tag_name}",
+            "commit": "<will be updated after bundle creation>",
+        },
+        "bundle": {"source_commit": source_commit, "include": list(include), "exclude": list(exclude)},
+    }
+
+    manifest_path = specimen_dir / "manifest.yaml"
+    with manifest_path.open("w") as f:
+        yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
+
+    typer.echo(f"Created manifest: {manifest_path}")
+    typer.echo(f"  Slug: {slug}")
+    typer.echo(f"  Source commit: {source_commit}")
+    typer.echo(f"  Tag: {tag_name}")
+    typer.echo(f"  Include: {include}")
+    typer.echo(f"  Exclude: {exclude}")
+    typer.echo()
+    typer.echo("Rebuilding bundle with new specimen...")
+
+    # Rebuild bundle with new specimen
+    build_bundle_main()
+
+    typer.echo()
+    typer.echo(f"✓ Specimen captured: {slug}")
+    typer.echo(f"  Directory: {specimen_dir}")
+    typer.echo(f"  Manifest: {manifest_path}")
+    typer.echo()
+    typer.echo("Next steps:")
+    typer.echo(f"  1. Update {manifest_path} with the correct 'source.commit' SHA from bundle")
+    typer.echo(f"  2. Add issues to {issues_dir}/")
+    typer.echo(f"  3. Commit changes: git add {specimen_dir} adgn/src/adgn/props/specimens/ducktape/specimens.bundle")

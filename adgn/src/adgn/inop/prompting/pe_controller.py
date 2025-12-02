@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from adgn.agent.loop_control import Abort, Continue, RequireAnyTool
+from adgn.agent.loop_control import Abort, Continue
 from adgn.agent.reducer import BaseHandler
 
 """Prompt Engineer loop controller(s).
@@ -28,5 +28,5 @@ class ProposePromptNTimes(BaseHandler):
     def on_before_sample(self):
         if self._k < self._n:
             self._k += 1
-            return Continue(RequireAnyTool())
+            return Continue()
         return Abort()

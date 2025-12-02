@@ -5,6 +5,7 @@ source:
   commit: 593813ea3db62bc9f9004e05dae236ae43f9ce2f
 split: valid
 bundle:
+  source_commit: 751a2a33c8b7daaf18f6c004e31ed6485a62a6a9
   include:
   - adgn/
   exclude:

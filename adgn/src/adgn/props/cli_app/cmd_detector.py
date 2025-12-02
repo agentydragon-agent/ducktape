@@ -20,7 +20,7 @@ from adgn.props.cli_app.decorators import async_run
 from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec, run_critic
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun
-from adgn.props.db.prompts import discover_detector_prompts, get_prompt_text_by_sha256, load_and_upsert_detector_prompt
+from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
 from adgn.props.specimens.registry import SpecimenRegistry
 
 
@@ -133,7 +133,7 @@ def collect_missing_pairs(coverage_data: list[DetectorCoverage]) -> list[tuple[s
 
 
 async def run_detector_on_specimen(
-    detector_filename: str, specimen_slug: str, *, registry: SpecimenRegistry, client: OpenAIModelProto, verbose: bool
+    detector_filename: str, specimen_slug: str, *, client: OpenAIModelProto, verbose: bool
 ) -> tuple[str, str, bool]:
     """Run a single detector on a specimen.
 
@@ -141,9 +141,7 @@ async def run_detector_on_specimen(
         (detector_filename, specimen_slug, success)
     """
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
-    prompt_text = get_prompt_text_by_sha256(prompt_sha256)
-
-    async with registry.load_and_hydrate(specimen_slug) as hydrated:
+    async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
         await run_critic(
             input_data=CriticInput(
                 specimen_slug=specimen_slug,
@@ -151,10 +149,7 @@ async def run_detector_on_specimen(
                 prompt_sha256=prompt_sha256,
             ),
             client=client,
-            system_prompt="You are a code agent. Use tools to execute commands. Respond concisely.",
-            user_prompt=prompt_text,
             content_root=hydrated.content_root,
-            registry=registry,
             mount_properties=False,
             verbose=verbose,
         )
@@ -162,7 +157,7 @@ async def run_detector_on_specimen(
 
 
 async def run_missing_evaluations(
-    missing_pairs: list[tuple[str, str]], *, registry: SpecimenRegistry, client: OpenAIModelProto, verbose: bool
+    missing_pairs: list[tuple[str, str]], *, client: OpenAIModelProto, verbose: bool
 ) -> int:
     """Run all missing (detector, specimen) pairs in parallel.
 
@@ -176,7 +171,7 @@ async def run_missing_evaluations(
     console.print(f"\n[yellow]Running {len(missing_pairs)} missing evaluations in parallel...[/yellow]")
 
     tasks = [
-        run_detector_on_specimen(detector, specimen, registry=registry, client=client, verbose=verbose)
+        run_detector_on_specimen(detector, specimen, client=client, verbose=verbose)
         for detector, specimen in missing_pairs
     ]
     results = await asyncio.gather(*tasks)
@@ -198,8 +193,8 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     # Discover all detectors and specimens
     detector_filenames = discover_detector_prompts()
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
-    registry = SpecimenRegistry.from_package_resources()
-    all_specimens = registry.list_specimen_names()
+    registry = SpecimenRegistry.from_base_path()
+    all_specimens = sorted(registry.list_all())
 
     # Fetch current coverage
     coverage_data = fetch_coverage_data(detector_prompts, all_specimens)
@@ -220,7 +215,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
         missing_pairs = collect_missing_pairs(coverage_data)
         if missing_pairs:
             client = build_client(model)
-            successes = await run_missing_evaluations(missing_pairs, registry=registry, client=client, verbose=verbose)
+            successes = await run_missing_evaluations(missing_pairs, client=client, verbose=verbose)
 
             if successes > 0:
                 # Re-fetch and display updated coverage
@@ -301,21 +296,14 @@ async def cmd_run_detector(
 
     # Load current file content and upsert to DB (auto-sync)
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
-    prompt_text = get_prompt_text_by_sha256(prompt_sha256)
-
-    # Create registry
-    registry = SpecimenRegistry.from_package_resources()
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    async with registry.load_and_hydrate(specimen) as hydrated:
+    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
             input_data=CriticInput(specimen_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
-            system_prompt="You are a code agent. Use tools to execute commands. Respond concisely.",
-            user_prompt=prompt_text,
             content_root=hydrated.content_root,
-            registry=registry,
             mount_properties=False,
             verbose=verbose,
         )

@@ -183,16 +183,12 @@ class ResponsesRequest(BaseModel):
 
     def to_kwargs(self) -> dict[str, Any]:
         """Normalize to kwargs compatible with AsyncOpenAI.responses.create()."""
-
-        def norm_item(x: Any) -> Any:
-            if isinstance(x, BaseModel):
-                return x.model_dump(exclude_none=True)
-            return x
-
         payload = self.model_dump(exclude_none=True)
         input_value = payload.get("input")
         if isinstance(input_value, list):
-            payload["input"] = [norm_item(it) for it in input_value]
+            payload["input"] = [
+                it.model_dump(exclude_none=True) if isinstance(it, BaseModel) else it for it in input_value
+            ]
         return payload
 
 
@@ -221,7 +217,7 @@ class AssistantMessageOut(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def _coerce_text(cls, data: Any) -> Any:
+    def _coerce_text(cls, data: str | dict[str, Any]) -> dict[str, Any]:
         if isinstance(data, str):
             return {"parts": [{"text": data}]}
         if isinstance(data, dict) and "parts" not in data:
@@ -309,39 +305,35 @@ class ResponsesResult(BaseModel):
     def to_input_items(self) -> list[InputItem]:
         return [response_out_item_to_input(item) for item in self.output]
 
-
-def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
-    """Convert an OpenAI SDK Response to our typed ResponsesResult.
-
-    Mirrors OpenAIModel.responses_create conversion so non-Pydantic clients
-    (that accept kwargs) can still be used with MiniCodex.
-    """
-    out_items: list[ResponseOutItem] = []
-    for item in sdk_resp.output:
-        if isinstance(item, ResponseReasoningItem):
-            # Convert SDK Summary objects to our ReasoningSummaryItem
-            summary_items = []
-            if item.summary:
-                summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
-            out_items.append(ReasoningItem(id=item.id, summary=summary_items))
-        elif isinstance(item, ResponseFunctionToolCall):
-            out_items.append(
-                FunctionCallItem(
-                    name=item.name,
-                    arguments=item.arguments,  # Already string from SDK
-                    call_id=item.call_id,
-                    id=item.id,
-                    status=item.status,
+    @classmethod
+    def from_sdk(cls, sdk_resp: Response) -> Self:
+        """Convert an OpenAI SDK Response to our typed ResponsesResult."""
+        out_items: list[ResponseOutItem] = []
+        for item in sdk_resp.output:
+            if isinstance(item, ResponseReasoningItem):
+                # Convert SDK Summary objects to our ReasoningSummaryItem
+                summary_items = []
+                if item.summary:
+                    summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
+                out_items.append(ReasoningItem(id=item.id, summary=summary_items))
+            elif isinstance(item, ResponseFunctionToolCall):
+                out_items.append(
+                    FunctionCallItem(
+                        name=item.name,
+                        arguments=item.arguments,  # Already string from SDK
+                        call_id=item.call_id,
+                        id=item.id,
+                        status=item.status,
+                    )
                 )
-            )
-        elif isinstance(item, ResponseOutputMessage):
-            converted = _message_output_to_assistant(item)
-            if converted is not None:
-                out_items.append(converted)
-        else:
-            continue
-    usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
-    return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
+            elif isinstance(item, ResponseOutputMessage):
+                converted = _message_output_to_assistant(item)
+                if converted is not None:
+                    out_items.append(converted)
+            else:
+                raise NotImplementedError(f"Unsupported output item type: {type(item)}")
+        usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
+        return cls(id=sdk_resp.id, usage=usage, output=out_items)
 
 
 # ------------------------------
@@ -372,7 +364,7 @@ class OpenAIModel:
 
         kwargs = req.to_kwargs()
         sdk_resp: Response = await self.client.responses.create(**kwargs)
-        return convert_sdk_response(sdk_resp)
+        return ResponsesResult.from_sdk(sdk_resp)
 
 
 # ------------------------------
@@ -398,7 +390,7 @@ class BoundOpenAIModel:
         if self.reasoning_effort and "reasoning" not in kwargs:
             kwargs["reasoning"] = {"effort": self.reasoning_effort.value}
         sdk_resp: Response = await self.client.responses.create(**kwargs)
-        return convert_sdk_response(sdk_resp)
+        return ResponsesResult.from_sdk(sdk_resp)
 
 
 # ---------------------------------------------

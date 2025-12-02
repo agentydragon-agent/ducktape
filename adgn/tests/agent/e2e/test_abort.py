@@ -5,7 +5,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
 
 pytestmark = pytest.mark.usefixtures()
@@ -22,7 +21,7 @@ else:
 """E2E Abort test. Shared fixtures are provided in tests/agent/e2e/conftest.py."""
 
 
-def test_ui_abort_sampling(page: Page, run_server, responses_factory):
+def test_ui_abort_sampling(e2e_page, run_server, responses_factory):
     """Start a long sampling call, click Abort in UI, and verify the run stops.
 
     - FE: exercise Abort button visibility/interaction
@@ -45,33 +44,23 @@ def test_ui_abort_sampling(page: Page, run_server, responses_factory):
         return responses_factory.make_assistant_message("done")
 
     s = run_server(lambda model: make_mock(responses_create))
-    base = s["base_url"]
 
-    # Create agent via API and open UI directly
-    agent_id = api_create_agent(base)
-    # Hook console logging for debugging WS issues
-    page.on("console", lambda msg: print(f"[browser console] {msg.type}: {msg.text}"))
-    page.goto(base + f"/?agent_id={agent_id}")
-
-    # Wait for WS connected
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
+    e2e_page.goto(s.base_url)
+    e2e_page.create_agent_via_ui()
 
     # Send a prompt to kick off sampling; Abort button should appear while running
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("start long task")
-    page.get_by_role("button", name="Send").click()
+    e2e_page.send_prompt("start long task")
 
     # Wait for Abort button to become visible and click it
-    abort_btn = page.get_by_role("button", name="Abort")
-    abort_btn.wait_for(timeout=5000)
-    abort_btn.click()
+    e2e_page.wait_and_click_abort()
 
     # After abort, the UI should unblock; type a new draft and expect Send to enable
-    page.wait_for_timeout(200)  # brief yield to allow UI update
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("draft after abort")
-    page.locator('button:has-text("Send"):not([disabled])').wait_for(timeout=5000)
+    e2e_page.page.wait_for_timeout(200)  # brief yield to allow UI update
+    e2e_page.page.locator('textarea[placeholder^="Type a prompt"]').fill("draft after abort")
+    e2e_page.page.locator('button:has-text("Send"):not([disabled])').wait_for(timeout=5000)
 
     # Ensure the long-running message was not rendered
-    expect_none = page.locator(".messages .msg .text", has_text="too-late")
+    expect_none = e2e_page.page.locator(".messages .msg .text", has_text="too-late")
     assert expect_none.count() == 0
 
-    s["stop"]()
+    s.stop()

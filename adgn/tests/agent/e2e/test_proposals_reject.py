@@ -4,9 +4,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
+from adgn.mcp.approval_policy.engine import CreateProposalArgs
 from adgn.mcp.ui.server import EndTurnInput
-from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import MakeCall
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -17,40 +18,39 @@ else:
     Page = playwright.Page
 
 
-async def test_policy_proposal_reject_updates_ui(
-    page: Page, run_server, responses_factory, policy_allow_all: str, sqlite_persistence
-):
+async def test_policy_proposal_reject_updates_ui(e2e_page, run_server, responses_factory, policy_allow_all: str, make_step_runner):
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
-    # No model tool calls needed for proposal authoring in this flow
-    async def responses_create(_req):
-        return responses_factory.make_mcp_tool_call("ui", "end_turn", EndTurnInput(), call_id="call_ui_end")
+    # Mock the agent to create a proposal via tool call, then end turn
+    runner = make_step_runner(
+        steps=[
+            MakeCall("policy_proposer", "create_proposal", CreateProposalArgs(content=policy_allow_all)),
+            MakeCall("ui", "end_turn", EndTurnInput()),
+        ]
+    )
+    mock_client = make_mock(runner.handle_request_async)
 
-    s = run_server(lambda model: make_mock(responses_create))
-    base = s["base_url"]
+    s = run_server(lambda model: mock_client)
 
-    # Create agent via helper
-    agent_id = api_create_agent(base)
+    e2e_page.goto(s.base_url)
+    e2e_page.create_agent_via_ui()
 
-    # Open UI and connect WS
-    page.goto(base + f"/?agent_id={agent_id}")
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
+    # Trigger agent to create a proposal by sending a prompt
+    e2e_page.send_prompt("create policy proposal")
 
-    # Create a proposal directly via persistence (no named volumes)
-    # Insert a proposal for this agent
-    await sqlite_persistence.create_policy_proposal(agent_id, "p-e2e", policy_allow_all)
-    # Open UI and connect WS
-    page.goto(base + f"/?agent_id={agent_id}")
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
+    # Wait for the run to finish (agent created proposal and ended turn)
+    e2e_page.wait_for_text("Status: finished")
 
-    # Open proposal should appear in the Approvals tab without reload
-    page.get_by_text("Open Proposals (1)").wait_for(timeout=10000)
+    # Reload page to pick up the proposal
+    e2e_page.reload_and_reconnect()
+
+    # Open proposal should appear in the Approvals tab
+    e2e_page.wait_for_text("Open Proposals (1)")
 
     # Reject it
-    page.get_by_role("button", name="Reject").first.click()
+    e2e_page.click_reject()
 
     # The open proposals section should disappear (no open proposals remain)
-    # Wait for it to be detached from the DOM
-    page.get_by_text("Open Proposals (1)").wait_for(state="detached", timeout=10000)
+    e2e_page.page.get_by_text("Open Proposals (1)").wait_for(state="detached", timeout=10000)
 
-    s["stop"]()
+    s.stop()

@@ -1,8 +1,11 @@
-{% from "_partials.j2" import scope_block %}
-
 Analyze the mounted repository under /workspace.
 
-{{ scope_block(files, static_action|default("analyze"), ambiguity_tail|default("do not include anything outside run instructions.")) }}
+Files in scope:
+{% for file in files %}
+- {{ file }}
+{% endfor %}
+
+Report issues only for the files listed above.
 
 Instructions:
 - Read files as needed using available tools

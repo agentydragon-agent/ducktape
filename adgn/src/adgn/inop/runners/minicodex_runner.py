@@ -17,6 +17,7 @@ from fastmcp.server import FastMCP
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.engine.models import (
@@ -94,6 +95,7 @@ class MiniCodexRunner(AgentRunner):
             client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
             handlers=handlers,
+            tool_policy=RequireAnyTool(),
         )
         self._agent = await self._exit_stack.enter_async_context(agent)
 

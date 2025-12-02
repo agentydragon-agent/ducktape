@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler, NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
@@ -77,7 +78,11 @@ async def test_notifications_pre_sampling_out_of_band(
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
+            client=client,
+            system="n/a",
+            tool_policy=RequireAnyTool(),
         )
         await agent.run("hello")
 
@@ -121,7 +126,11 @@ async def test_notifications_within_turn_from_tool(
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
+            client=client,
+            system="n/a",
+            tool_policy=RequireAnyTool(),
         )
         await agent.run("go")
 
@@ -163,7 +172,11 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
 
         client = make_mock(_create)
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll), AutoHandler()], client=client, system="n/a"
+            mcp_client=mcp_client,
+            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
+            client=client,
+            system="n/a",
+            tool_policy=RequireAnyTool(),
         )
         await agent.run("hello")
 

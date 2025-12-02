@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from adgn.agent.handler import GroundTruthUsage
-from adgn.openai_utils.pricing import MODEL_PRICING
+from adgn.openai_utils.model_metadata import get_model_metadata
 
 logger = logging.getLogger(__name__)
 
@@ -16,14 +16,9 @@ def calculate_cost(usage: GroundTruthUsage) -> float:
     Handles cached tokens and reasoning tokens when available.
 
     Raises:
-        ValueError: If model pricing is not available
+        KeyError: If model pricing is not available
     """
-    pricing = MODEL_PRICING.get(usage.model)
-    if pricing is None:
-        raise ValueError(
-            f"No pricing information for model: {usage.model}. "
-            f"Available models: {', '.join(sorted(MODEL_PRICING.keys()))}"
-        )
+    meta = get_model_metadata(usage.model)
 
     cost = 0.0
 
@@ -32,14 +27,14 @@ def calculate_cost(usage: GroundTruthUsage) -> float:
         if usage.input_tokens_details and usage.input_tokens_details.cached_tokens:
             cached = usage.input_tokens_details.cached_tokens
             regular = usage.input_tokens - cached
-            cost += (regular / 1_000_000) * pricing["input"]
-            cost += (cached / 1_000_000) * pricing["cached_input"]
+            cost += (regular / 1_000_000) * meta.input_usd_per_1m_tokens
+            cost += (cached / 1_000_000) * meta.cached_input_usd_per_1m_tokens
         else:
-            cost += (usage.input_tokens / 1_000_000) * pricing["input"]
+            cost += (usage.input_tokens / 1_000_000) * meta.input_usd_per_1m_tokens
 
     # Output tokens
     if usage.output_tokens:
-        cost += (usage.output_tokens / 1_000_000) * pricing["output"]
+        cost += (usage.output_tokens / 1_000_000) * meta.output_usd_per_1m_tokens
 
     # Reasoning tokens are already included in output_tokens for o-series
 

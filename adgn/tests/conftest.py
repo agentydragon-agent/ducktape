@@ -334,6 +334,16 @@ async def pg_compositor_box(make_pg_compositor):
 
 
 @pytest.fixture
+async def pg_client_box(pg_compositor_box):
+    """MCP client for boxed Docker exec server (convenience extractor).
+
+    For tests that only need the client, not the full compositor/engine.
+    """
+    client, _compositor, _policy_engine = pg_compositor_box
+    return client
+
+
+@pytest.fixture
 async def pg_compositor_echo(echo_spec, make_pg_compositor):
     """Async fixture with echo server and policy gateway.
 
@@ -344,12 +354,12 @@ async def pg_compositor_echo(echo_spec, make_pg_compositor):
 
 
 @pytest.fixture
-async def pg_session_echo(pg_compositor_echo):
-    """Ready-to-use client with echo server and allow-all policy.
+async def pg_client_echo(pg_compositor_echo):
+    """MCP client for echo server (convenience extractor).
 
-    Yields just the client for tests that only need MCP access.
+    For tests that only need the client, not the full compositor/engine.
     """
-    client, _compositor, _engine = pg_compositor_echo
+    client, _compositor, _policy_engine = pg_compositor_echo
     return client
 
 
@@ -523,3 +533,34 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 def echo_spec(make_backend_server) -> McpServerSpecs:
     """In-proc FastMCP server spec for echo tests."""
     return {"echo": make_backend_server("echo")}
+
+
+@pytest.fixture
+def make_step_runner(responses_factory):
+    """Factory fixture that creates step runners and validates all steps were executed.
+
+    Usage:
+        def test_workflow(make_step_runner):
+            agent = make_step_runner(steps=[...])
+            # Test runs agent through all steps
+            # Fixture automatically asserts all steps completed
+    """
+    from contextlib import ExitStack, contextmanager
+
+    from tests.support.responses import _StepRunner
+
+    stack = ExitStack()
+
+    def _make(steps: Sequence[Step]) -> _StepRunner:
+        @contextmanager
+        def _runner_context():
+            runner = _StepRunner(factory=responses_factory, steps=steps)
+            yield runner
+            # Validation on context exit
+            if runner.turn != len(runner.steps):
+                pytest.fail(f"Step runner incomplete: executed {runner.turn}/{len(runner.steps)} steps")
+
+        return stack.enter_context(_runner_context())
+
+    with stack:
+        yield _make

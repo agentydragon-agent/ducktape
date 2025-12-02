@@ -5,6 +5,7 @@ source:
   commit: 023db0b8da0f0211b268c7ebe27d38f46215be30
 split: test
 bundle:
+  source_commit: c18279d2c1716008afc17a12350aaee89248c1ca
   include:
   - adgn/
   - wt/

@@ -9,7 +9,6 @@ from typing import TypeGuard
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.loop_control import InjectedItem
 from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, UserMessage
 from tests.support.extraction import get_last_function_output
 
@@ -58,11 +57,11 @@ def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, 
 # Type narrowing helpers (TypeGuard)
 
 
-def is_all_function_calls(items: tuple[InjectedItem, ...]) -> TypeGuard[tuple[FunctionCallItem, ...]]:
-    """TypeGuard to narrow tuple[InjectedItem, ...] to tuple[FunctionCallItem, ...]."""
+def is_all_function_calls(items: tuple[UserMessage | FunctionCallItem, ...]) -> TypeGuard[tuple[FunctionCallItem, ...]]:
+    """TypeGuard to narrow tuple[UserMessage | FunctionCallItem, ...] to tuple[FunctionCallItem, ...]."""
     return all(isinstance(x, FunctionCallItem) for x in items)
 
 
-def is_all_user_messages(items: tuple[InjectedItem, ...]) -> TypeGuard[tuple[UserMessage, ...]]:
-    """TypeGuard to narrow tuple[InjectedItem, ...] to tuple[UserMessage, ...]."""
+def is_all_user_messages(items: tuple[UserMessage | FunctionCallItem, ...]) -> TypeGuard[tuple[UserMessage, ...]]:
+    """TypeGuard to narrow tuple[UserMessage | FunctionCallItem, ...] to tuple[UserMessage, ...]."""
     return all(isinstance(x, UserMessage) for x in items)

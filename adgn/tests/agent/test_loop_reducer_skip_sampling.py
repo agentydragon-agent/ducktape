@@ -1,44 +1,66 @@
 from __future__ import annotations
 
-import pytest
-
-from adgn.agent.loop_control import Auto, Continue
+from adgn.agent.loop_control import Abort, Continue, InjectItems, NoLoopDecision
 from adgn.agent.reducer import BaseHandler, Reducer
+from adgn.openai_utils.model import InputTextPart, UserMessage
 
 
-class _SkipHandler(BaseHandler):
-    def __init__(self, *, skip: bool, inserts: tuple | None = None, policy: Auto | None = None) -> None:
-        self._skip = skip
-        self._inserts = inserts or ()
-        self._policy = policy or Auto()
+class _ContinueHandler(BaseHandler):
+    def on_before_sample(self):
+        return Continue()
+
+
+class _InjectHandler(BaseHandler):
+    def __init__(self, items: tuple) -> None:
+        self._items = items
 
     def on_before_sample(self):
-        return Continue(self._policy, inserts_input=self._inserts, skip_sampling=self._skip)
+        return InjectItems(items=self._items)
 
 
-def test_all_continue_same_policy_skip_true_merge():
-    m1 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "a"}]}
-    m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "b"}]}
-    ctrl = Reducer([_SkipHandler(skip=True, inserts=(m1,)), _SkipHandler(skip=True, inserts=(m2,))])
+class _AbortHandler(BaseHandler):
+    def on_before_sample(self):
+        return Abort()
+
+
+class _DeferHandler(BaseHandler):
+    def on_before_sample(self):
+        return NoLoopDecision()
+
+
+def test_first_action_wins_inject():
+    """First handler with InjectItems wins; second handler not consulted."""
+    msg = UserMessage(role="user", content=[InputTextPart(text="first")])
+    ctrl = Reducer([_InjectHandler((msg,)), _ContinueHandler()])
+    dec = ctrl.on_before_sample()
+    assert isinstance(dec, InjectItems)
+    assert len(dec.items) == 1
+
+
+def test_first_action_wins_abort():
+    """First handler with Abort wins; second handler not consulted."""
+    ctrl = Reducer([_AbortHandler(), _ContinueHandler()])
+    dec = ctrl.on_before_sample()
+    assert isinstance(dec, Abort)
+
+
+def test_defer_passes_to_next_handler():
+    """NoLoopDecision defers to next handler."""
+    msg = UserMessage(role="user", content=[InputTextPart(text="deferred")])
+    ctrl = Reducer([_DeferHandler(), _InjectHandler((msg,))])
+    dec = ctrl.on_before_sample()
+    assert isinstance(dec, InjectItems)
+
+
+def test_all_continue_returns_continue():
+    """All handlers returning Continue results in Continue()."""
+    ctrl = Reducer([_ContinueHandler(), _ContinueHandler()])
     dec = ctrl.on_before_sample()
     assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert getattr(dec, "skip_sampling", False) is True
-    assert tuple(dec.inserts_input) == (m1, m2)
 
 
-def test_all_continue_same_policy_no_skip_merge():
-    m1 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "x"}]}
-    m2 = {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "y"}]}
-    ctrl = Reducer([_SkipHandler(skip=False, inserts=(m1,)), _SkipHandler(skip=False, inserts=(m2,))])
+def test_all_defer_returns_continue():
+    """All handlers deferring results in Continue() as default."""
+    ctrl = Reducer([_DeferHandler(), _DeferHandler()])
     dec = ctrl.on_before_sample()
     assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert getattr(dec, "skip_sampling", False) is False
-    assert tuple(dec.inserts_input) == (m1, m2)
-
-
-def test_mixed_skip_sampling_conflict_raises():
-    ctrl = Reducer([_SkipHandler(skip=True), _SkipHandler(skip=False)])
-    with pytest.raises(RuntimeError):
-        _ = ctrl.on_before_sample()

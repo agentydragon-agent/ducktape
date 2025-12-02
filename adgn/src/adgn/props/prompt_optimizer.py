@@ -19,7 +19,10 @@ from fastmcp.client import Client
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, read_resource_call
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
+from adgn.llm.transcript import FunctionCallItem
 from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, WORKING_DIR
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
@@ -45,6 +48,20 @@ logger = logging.getLogger(__name__)
 
 # NOTE: BudgetHandler removed pending refactor - PromptEvalState no longer exists
 # Budget tracking needs to be reimplemented with the new prompt_eval server API
+
+
+# ============================================================================
+# Bootstrap Helper
+# ============================================================================
+
+
+def make_po_bootstrap_calls(builder: TypedBootstrapBuilder) -> list[FunctionCallItem]:
+    """Build bootstrap calls for prompt optimizer: reads PO run ID."""
+    return [
+        read_resource_call(
+            builder, server=PROMPT_EVAL_SERVER_NAME, uri="resource://prompt_eval/po_run_id", max_bytes=256
+        )
+    ]
 
 
 # ============================================================================
@@ -102,7 +119,7 @@ async def build_server(
     *,
     client: OpenAIModelProto,
     name: str = "prompt_eval",
-    prompt_optimization_run_id: UUID | None = None,
+    prompt_optimization_run_id: UUID,
     workspace_root: Path,
     verbose: bool = False,
 ) -> NotifyingFastMCP:
@@ -138,6 +155,14 @@ async def build_server(
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
     )
+
+    @mcp.resource("resource://prompt_eval/po_run_id")
+    async def get_po_run_id() -> UUID:
+        """Get the prompt optimization run ID for this session.
+
+        Use this UUID to query costs via sql_po_run_costs (replace <po_run_id> placeholder).
+        """
+        return prompt_optimization_run_id
 
     @mcp.tool(flat=True)
     async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
@@ -227,27 +252,11 @@ async def build_server(
                         f"Available files: {sorted(str(f) for f in specimen_files)[:10]}..."
                     )
 
-            # Build user prompt with resolved file list
-            user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))
-
-            # Fetch prompt text from database using SHA256
-            from adgn.props.db.models import Prompt
-
-            with get_session() as session:
-                prompt_obj = session.query(Prompt).filter_by(prompt_sha256=payload.prompt_sha256).first()
-                if prompt_obj is None:
-                    raise ValueError(
-                        f"Prompt not found in database: {payload.prompt_sha256}. "
-                        f"Call upsert_prompt tool first to register the prompt."
-                    )
-                system_prompt = prompt_obj.prompt_text
-
-            # Execute critic run (saves to DB automatically)
+            # Execute critic run (saves to DB automatically; fetches system prompt from DB internally
+            # and builds user prompt from resolved files)
             _critic_success, critic_run_id, critique_id = await execute_critic_run(
                 input_data=payload,
                 client=client,
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
                 content_root=hydrated.content_root,
                 registry=registry,
                 mount_properties=False,
@@ -344,6 +353,7 @@ async def run_prompt_optimizer(
         sql_blocked_valid_critiques=agent_queries.SQL_BLOCKED_VALID_CRITIQUES,
         sql_blocked_valid_grader_runs=agent_queries.SQL_BLOCKED_VALID_GRADER_RUNS,
         sql_blocked_valid_events=agent_queries.SQL_BLOCKED_VALID_EVENTS,
+        sql_po_run_costs=agent_queries.SQL_PO_RUN_COSTS,
     )
 
     # Session directory (inline adhoc_run_dir - only called here)
@@ -438,15 +448,19 @@ Prioritize recall first, then precision.
         transcript_id = uuid4()
         logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
 
+        # Get the prompt_eval server for introspection
+        prompt_eval_server = await comp.get_inproc_server(PROMPT_EVAL_SERVER_NAME)
+        builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
+        bootstrap_calls = make_po_bootstrap_calls(builder)
+        bootstrap = BootstrapHandler(bootstrap_calls)
+
         handlers: list = [
+            bootstrap,
             AutoHandler(),  # Loop control (continue until agent stops)
             *build_props_handlers(
                 transcript_id=transcript_id, verbose_prefix="[OPTIMIZER] " if verbose else None, servers=servers
             ),
         ]
-
-        # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
-        #       for better agent context about runtime environment
         async with Client(comp) as mcp_client:
             await mount_standard_inproc_servers(compositor=comp)
             agent = await MiniCodex.create(
@@ -456,6 +470,7 @@ Prioritize recall first, then precision.
                 handlers=handlers,
                 parallel_tool_calls=True,
                 reasoning_summary=ReasoningSummary.detailed,
+                tool_policy=RequireAnyTool(),
             )
 
             await agent.run(user)

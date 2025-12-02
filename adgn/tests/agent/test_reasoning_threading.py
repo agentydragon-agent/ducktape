@@ -1,23 +1,29 @@
 from __future__ import annotations
 
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem
 
 
 async def test_reasoning_threading_filters_reasoning_from_next_input(
-    responses_factory, pg_session_echo, make_test_agent
+    responses_factory, pg_client_echo, make_test_agent
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
     # Create function calls with explicit id and status to verify preservation
     fc1 = FunctionCallItem(
-        name="echo__echo",
-        arguments='{"text": "hi"}',
+        name=build_mcp_function("echo", "echo"),
+        arguments=EchoInput(text="hi").model_dump_json(),
         call_id="call_1",
         id="fc_id_1",  # Must be preserved
         status="completed",  # Must be preserved
     )
     fc2 = FunctionCallItem(
-        name="echo__echo", arguments='{"text": "bye"}', call_id="call_2", id="fc_id_2", status="in_progress"
+        name=build_mcp_function("echo", "echo"),
+        arguments=EchoInput(text="bye").model_dump_json(),
+        call_id="call_2",
+        id="fc_id_2",
+        status="in_progress",
     )
 
     # Multi-turn sequence to test proper threading:
@@ -33,7 +39,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
         responses_factory.make_assistant_message("done"),
     ]
 
-    agent, client = await make_test_agent(pg_session_echo, seq)
+    agent, client = await make_test_agent(pg_client_echo, seq)
 
     res = await agent.run("say hi")
 

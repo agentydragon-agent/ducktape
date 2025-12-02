@@ -1,12 +1,13 @@
 """Full prompt optimizer workflow integration test.
 
 Tests the complete workflow: PO agent → run_critic → critic agent → run_grader → grader agent
-All three agents (PO, critic, grader) are driven by a single OpenAI mock backend.
+All three agents (PO, critic, grader) are driven by step runners with declarative sequences.
 Verifies database records are created correctly and catches bugs like naming collisions.
 """
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import json
 import logging
 import os
@@ -15,21 +16,18 @@ from typing import TypeVar
 from unittest.mock import patch
 
 from hamcrest import assert_that, equal_to, has_length, not_none
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 import pytest
 
 from adgn.mcp.exec.models import ExecInput
-from adgn.openai_utils.model import (
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    OpenAIModelProto,
-    ResponsesRequest,
-    ResponsesResult,
-)
+from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.props.critic import AddOccurrenceInput, CriticInput, SubmitInput, UpsertIssueInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Specimen
 from adgn.props.grader import GradeSubmitInput
+from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.models.specimen import GitHubSource, SpecimenDoc
+from adgn.props.paths import FileType
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,
@@ -38,120 +36,15 @@ from adgn.props.prompt_optimizer import (
     run_prompt_optimizer,
 )
 from adgn.props.runs_context import RunsContext
-from tests.support.responses import ResponsesFactory
+from adgn.props.specimens.hydrated import HydratedSpecimen
+from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
+from tests.support.steps import CheckThenCall, ExtractThenCall, Finish, MakeCall
 
 logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 T = TypeVar("T", bound=BaseModel)
-
-
-def extract_structured_content(item: FunctionCallOutputItem, output_type: type[T]) -> T:
-    """Extract and parse structured content from MCP tool result.
-
-    The output field contains a JSON-serialized CallToolResult with the actual
-    tool output either in structured_content or in content[0].text (as JSON).
-
-    Args:
-        item: FunctionCallOutputItem containing the MCP result
-        output_type: Pydantic model class to parse the structured content as
-
-    Returns:
-        Parsed and validated instance of output_type
-    """
-    if not item.output:
-        raise ValueError(f"FunctionCallOutputItem has no output: {item}")
-
-    # Parse the MCP result (CallToolResult)
-    result_dict = json.loads(item.output)
-
-    # Check for structured_content first (newer format)
-    structured_content = result_dict.get("structured_content") or result_dict.get("structuredContent")
-
-    # Fall back to content[0].text (older/default format)
-    if structured_content is None:
-        content = result_dict.get("content", [])
-        if content and len(content) > 0:
-            text_content = content[0].get("text", "")
-            if text_content:
-                try:
-                    # Parse JSON from text field
-                    structured_content = json.loads(text_content)
-                except json.JSONDecodeError as e:
-                    logger.error(f"Failed to parse JSON from text content: {text_content!r}")
-                    logger.error(f"Full result_dict: {result_dict}")
-                    raise ValueError(f"Invalid JSON in content[0].text: {e}") from e
-
-    if structured_content is None:
-        logger.error(f"No structured content found in result_dict: {result_dict}")
-        raise ValueError(f"CallToolResult has no structured_content or parseable content: {result_dict}")
-
-    # Parse structured content as the specific type
-    return TypeAdapter(output_type).validate_python(structured_content)
-
-
-def get_last_function_output(req: ResponsesRequest, output_type: type[T]) -> T:
-    """Extract and parse structured content from last FunctionCallOutputItem in request input.
-
-    Args:
-        req: ResponsesRequest containing input items
-        output_type: Pydantic model class to parse the structured content as
-
-    Returns:
-        Parsed and validated instance of output_type from the last FunctionCallOutputItem
-
-    Raises:
-        RuntimeError: If no FunctionCallOutputItem is found in input
-    """
-    if isinstance(req.input, str):
-        raise RuntimeError("Cannot extract from string input")
-
-    # Find last FunctionCallOutputItem with output
-    for item in reversed(req.input):
-        if isinstance(item, FunctionCallOutputItem) and item.output:
-            return extract_structured_content(item, output_type)
-
-    raise RuntimeError(f"No FunctionCallOutputItem found in request input for {output_type.__name__}")
-
-
-def assert_last_call(req: ResponsesRequest, expected_tool: str):
-    """Assert last FunctionCallItem matches expected tool."""
-    if isinstance(req.input, str):
-        logger.error("Full request dump:")
-        logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
-        pytest.fail(f"Expected FunctionCallItem for '{expected_tool}', got string input. See log for full request.")
-
-    # Find last FunctionCallItem
-    for item in reversed(req.input):
-        if isinstance(item, FunctionCallItem):
-            actual_name = item.name
-            if expected_tool in actual_name:
-                return  # Success
-
-            logger.error("Full request dump:")
-            logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
-            pytest.fail(f"Expected last call to be '{expected_tool}', got '{actual_name}'. See log for full request.")
-
-    logger.error("Full request dump:")
-    logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
-    pytest.fail(f"No FunctionCallItem found. Expected '{expected_tool}'. See log for full request.")
-
-
-def extract_output(req: ResponsesRequest, output_type: type[T]) -> T:
-    """Extract and validate output from last FunctionCallOutputItem."""
-    try:
-        return get_last_function_output(req, output_type)
-    except Exception as e:
-        logger.error("Full request dump:")
-        logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
-        pytest.fail(f"Failed to extract {output_type.__name__}: {e}. See log for full request.")
-
-
-def assert_and_extract(req: ResponsesRequest, expected_tool: str, output_type: type[T]) -> T:
-    """Assert expected tool and extract its output."""
-    assert_last_call(req, expected_tool)
-    return extract_output(req, output_type)
 
 
 @pytest.fixture
@@ -163,204 +56,149 @@ def test_specimen(test_db):
         session.commit()
 
 
-class AgentStateBase:
-    """Base class for agent state machines with shared validation logic."""
+@pytest.fixture
+def mock_specimen():
+    """Provide a minimal specimen with one canonical TP for testing."""
+    # Create minimal manifest
+    manifest = SpecimenDoc(source=GitHubSource(vcs="github", org="test", repo="repo", ref="a" * 40))
 
-    def __init__(self, factory: ResponsesFactory, agent_name: str, max_turns: int):
-        self.factory: ResponsesFactory = factory
-        self.agent_name: str = agent_name
-        self.max_turns: int = max_turns
-        self.turn: int = 0
+    # Create one canonical TP issue (matching the mock grader's coverage)
+    issue_record = IssueRecord(
+        core=IssueCore(id="issue-001", should_flag=True, rationale="Test issue for integration test"),
+        instances=[Occurrence(files={Path("adgn/README.md"): [LineRange(start_line=10, end_line=20)]})],
+    )
 
-    def handle_request(self, req: ResponsesRequest) -> ResponsesResult:
-        """Main entry point - increments turn and checks bounds."""
-        self.turn += 1
+    record = SpecimenRecord(
+        slug="ducktape/2025-11-26-00",
+        manifest_path=Path("/tmp/manifest.yaml"),
+        manifest=manifest,
+        issues={"issue-001": issue_record},
+        false_positives={},
+        all_discovered_files={Path("adgn/README.md"): FileType.REGULAR},
+    )
 
-        if self.turn > self.max_turns:
-            logger.error(f"{self.agent_name} Turn {self.turn}: Full request dump:")
-            logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
-            pytest.fail(
-                f"{self.agent_name} Turn {self.turn}: Exceeded expected {self.max_turns} turns. "
-                f"See log for full request."
-            )
+    specimen = HydratedSpecimen(record=record, content_root=Path("/tmp/mock-specimen"))
 
-        return self._handle_turn(req)
+    # Create async context manager that yields the mock specimen
+    @asynccontextmanager
+    async def mock_load_and_hydrate(slug: str):
+        yield specimen
 
-    def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
-        """Subclass implements turn-by-turn logic."""
-        raise NotImplementedError
-
-
-class POAgentState(AgentStateBase):
-    """State machine for PO agent - manages prompt optimization workflow."""
-
-    factory: ResponsesFactory  # Explicit type annotation for mypy
-
-    def __init__(self, factory: ResponsesFactory):
-        super().__init__(factory, agent_name="PO Agent", max_turns=5)
-
-    def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
-        if self.turn == 1:
-            # Turn 1: Initial - emit docker exec to write file
-            return self.factory.make_mcp_tool_call(
-                "docker",
-                "exec",
-                ExecInput(
-                    cmd=[
-                        "sh",
-                        "-c",
-                        "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt",
-                    ],
-                    timeout_ms=30000,  # 30 second timeout
-                ),
-            )
-
-        if self.turn == 2:
-            # Turn 2: Check docker exec completed - emit upsert_prompt
-            assert_last_call(req, "docker_exec")
-            return self.factory.make_tool_call(
-                "prompt_eval_upsert_prompt", UpsertPromptInput(file_path="/workspace/prompt-v1.txt").model_dump()
-            )
-
-        if self.turn == 3:
-            # Turn 3: Check upsert_prompt completed - emit run_critic with SHA256
-            upsert_result = assert_and_extract(req, "prompt_eval_upsert_prompt", UpsertPromptOutput)
-
-            return self.factory.make_tool_call(
-                "prompt_eval_run_critic",
-                CriticInput(
-                    specimen_slug="test-fixtures/test-trivial", files="all", prompt_sha256=upsert_result.prompt_sha256
-                ).model_dump(),
-            )
-
-        if self.turn == 4:
-            # Turn 4: Check run_critic completed - emit run_grader with critique_id
-            critic_result = assert_and_extract(req, "prompt_eval_run_critic", RunCriticOutput)
-
-            return self.factory.make_tool_call(
-                "prompt_eval_run_grader", RunGraderInput(critique_id=critic_result.critique_id).model_dump(mode="json")
-            )
-
-        if self.turn == 5:
-            # Turn 5: Check run_grader completed - finish
-            assert_last_call(req, "prompt_eval_run_grader")
-            return self.factory.make_assistant_message("Done")
-
-        raise RuntimeError(f"Unexpected turn {self.turn} for {self.agent_name}")
+    return mock_load_and_hydrate
 
 
-class CriticAgentState(AgentStateBase):
-    """State machine for Critic agent - reports issues."""
+@pytest.fixture
+def po_agent_steps():
+    """Declarative steps for PO agent - prompt optimization workflow."""
+    return [
+        MakeCall(
+            "docker",
+            "exec",
+            ExecInput(
+                cmd=["sh", "-c", "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt"],
+                timeout_ms=30000,
+            ),
+        ),
+        CheckThenCall(
+            "docker_exec", "prompt_eval", "upsert_prompt", UpsertPromptInput(file_path="/workspace/prompt-v1.txt")
+        ),
+        ExtractThenCall(
+            "prompt_eval_upsert_prompt",
+            UpsertPromptOutput,
+            lambda out: (
+                "prompt_eval",
+                "run_critic",
+                CriticInput(specimen_slug="ducktape/2025-11-26-00", files="all", prompt_sha256=out.prompt_sha256),
+            ),
+        ),
+        ExtractThenCall(
+            "prompt_eval_run_critic",
+            RunCriticOutput,
+            lambda out: ("prompt_eval", "run_grader", RunGraderInput(critique_id=out.critique_id)),
+        ),
+        Finish("prompt_eval_run_grader", message="Done"),
+    ]
 
-    factory: ResponsesFactory  # Explicit type annotation for mypy
 
-    def __init__(self, factory: ResponsesFactory):
-        super().__init__(factory, agent_name="Critic Agent", max_turns=3)
-
-    def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
-        if self.turn == 1:
-            # Turn 1: Initial - emit upsert_issue
-            return self.factory.make_mcp_tool_call(
-                "critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue-001", description="Test issue")
-            )
-
-        if self.turn == 2:
-            # Turn 2: Check upsert_issue completed - emit add_occurrence
-            assert_last_call(req, "critic_submit_upsert_issue")
-            return self.factory.make_mcp_tool_call(
-                "critic_submit",
-                "add_occurrence",
-                AddOccurrenceInput(issue_id="test-issue-001", file="subtract.py", ranges=[[10, 20]]),
-            )
-
-        if self.turn == 3:
-            # Turn 3: Check add_occurrence completed - emit submit
-            assert_last_call(req, "critic_submit_add_occurrence")
-            return self.factory.make_mcp_tool_call("critic_submit", "submit", SubmitInput(issues=1))
-
-        raise RuntimeError(f"Unexpected turn {self.turn} for {self.agent_name}")
+@pytest.fixture
+def critic_agent_steps():
+    """Declarative steps for Critic agent - reports issues."""
+    return [
+        MakeCall(
+            "critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue-001", description="Test issue")
+        ),
+        CheckThenCall(
+            "critic_submit_upsert_issue",
+            "critic_submit",
+            "add_occurrence",
+            AddOccurrenceInput(issue_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
+        ),
+        CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues=1)),
+    ]
 
 
-class GraderAgentState(AgentStateBase):
-    """State machine for Grader agent - evaluates critic output."""
-
-    factory: ResponsesFactory  # Explicit type annotation for mypy
-
-    def __init__(self, factory: ResponsesFactory):
-        super().__init__(factory, agent_name="Grader Agent", max_turns=1)
-
-    def _handle_turn(self, req: ResponsesRequest) -> ResponsesResult:
-        if self.turn == 1:
-            # Turn 1: Initial - emit submit_result with grade
-            grade_input = {
-                "canonical_tp_coverage": {
-                    "test-issue": {
-                        "covered_by": {"test-issue-001": 1.0},
-                        "recall_credit": 1.0,
-                        "rationale": "Test issue matches canonical TP.",
-                    }
-                },
-                "canonical_fp_coverage": {},
-                "novel_critique_issues": {},
-                "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
-                "recall": 0.8,
-                "summary": "Good coverage of canonical issues.",
-                "per_file_recall": {"subtract.py": 0.8},
-                "per_file_ratios": {"subtract.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
+@pytest.fixture
+def grader_agent_steps():
+    """Declarative steps for Grader agent - evaluates critic output."""
+    grade_input = {
+        "canonical_tp_coverage": {
+            "issue-001": {
+                "covered_by": {"test-issue-001": 1.0},
+                "recall_credit": 1.0,
+                "rationale": "Test issue matches canonical TP.",
             }
-
-            return self.factory.make_mcp_tool_call(
-                "grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input)
-            )
-
-        raise RuntimeError(f"Unexpected turn {self.turn} for {self.agent_name}")
+        },
+        "canonical_fp_coverage": {},
+        "novel_critique_issues": {},
+        "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
+        "recall": 0.8,
+        "summary": "Good coverage of canonical issues.",
+        "per_file_recall": {"adgn/README.md": 0.8},
+        "per_file_ratios": {"adgn/README.md": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
+    }
+    return [MakeCall("grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input))]
 
 
 class WorkflowMock(OpenAIModelProto):
-    """Smart mock that delegates to appropriate agent state machine."""
+    """Smart mock that delegates to appropriate step runner based on tool context."""
 
-    def __init__(self, dump_requests_to: Path | None = None):
-        self.factory = ResponsesFactory("gpt-5-nano")
+    def __init__(self, po_runner, critic_runner, grader_runner, dump_requests_to: Path):
+        self.po_runner = po_runner
+        self.critic_runner = critic_runner
+        self.grader_runner = grader_runner
         self.dump_requests_to = dump_requests_to
-
-        # Create state machines for each agent
-        self.po_state = POAgentState(self.factory)
-        self.critic_state = CriticAgentState(self.factory)
-        self.grader_state = GraderAgentState(self.factory)
 
     @property
     def model(self) -> str:
         return "fake-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        """Determine which agent from request context and delegate to appropriate state."""
-        # Optionally dump request for debugging
-        if self.dump_requests_to:
-            self._dump_request(req)
+        """Determine which agent from request context and delegate to appropriate runner."""
+        # Dump request for debugging
+        self._dump_request(req)
 
         # Determine agent type from available tools
         tool_names = {t.name for t in req.tools} if req.tools else set()
 
         if any("critic_submit" in name for name in tool_names):
-            return self.critic_state.handle_request(req)
+            return await self.critic_runner.handle_request_async(req)
         if any("grader_submit" in name for name in tool_names):
-            return self.grader_state.handle_request(req)
-        return self.po_state.handle_request(req)
+            return await self.grader_runner.handle_request_async(req)
+        return await self.po_runner.handle_request_async(req)
 
     def _dump_request(self, req: ResponsesRequest):
         """Dump request to file for debugging. Creates separate files per agent in subdirectories."""
-        assert self.dump_requests_to is not None
         tool_names = {t.name for t in req.tools} if req.tools else set()
 
         if any("critic_submit" in name for name in tool_names):
             agent_type = "critic"
-            turn_num = self.critic_state.turn + 1
+            turn_num = self.critic_runner.turn
         elif any("grader_submit" in name for name in tool_names):
             agent_type = "grader"
-            turn_num = self.grader_state.turn + 1
+            turn_num = self.grader_runner.turn
         else:
             agent_type = "po"
-            turn_num = self.po_state.turn + 1
+            turn_num = self.po_runner.turn
 
         # Create agent-specific subdirectory
         agent_dir = self.dump_requests_to / agent_type
@@ -372,7 +210,9 @@ class WorkflowMock(OpenAIModelProto):
 
 
 @pytest.mark.asyncio
-async def test_full_workflow_po_agent_critic_grader(test_specimen, test_specimens_registry, tmp_path):
+async def test_full_workflow_po_agent_critic_grader(
+    test_specimen, mock_specimen, tmp_path, make_step_runner, po_agent_steps, critic_agent_steps, grader_agent_steps
+):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
     Tests the complete CLI workflow: specimen hydration → Docker setup → compositor → agent → database writes.
@@ -384,11 +224,19 @@ async def test_full_workflow_po_agent_critic_grader(test_specimen, test_specimen
     - RLS policy issues
     - New workflow: docker_exec write_file → upsert_prompt → run_critic (with SHA256) → run_grader
 
-    Set DUMP_REQUESTS env var to a file path to dump all agent requests.
+    Set DUMP_REQUESTS env var to override dump directory (defaults to test tmp_path).
     Uses test-fixtures/test-trivial specimen from test fixtures registry.
     """
-    dump_path = os.environ.get("DUMP_REQUESTS")
-    mock = WorkflowMock(dump_requests_to=Path(dump_path) if dump_path else None)
+    # Create step runners for each agent
+    po_runner = make_step_runner(steps=po_agent_steps)
+    critic_runner = make_step_runner(steps=critic_agent_steps)
+    grader_runner = make_step_runner(steps=grader_agent_steps)
+
+    # Always dump requests; use DUMP_REQUESTS override or default to tmp_path
+    dump_dir = Path(os.environ.get("DUMP_REQUESTS", str(tmp_path / "agent_requests")))
+    mock = WorkflowMock(
+        po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
+    )
 
     with (
         patch(
@@ -398,6 +246,8 @@ async def test_full_workflow_po_agent_critic_grader(test_specimen, test_specimen
         patch("adgn.props.prompt_optimizer.build_client", return_value=mock),
     ):
         await run_prompt_optimizer(budget=1.0, ctx=RunsContext.from_pkg_dir(), out_dir=tmp_path, model="gpt-5-nano")
+
+    # make_step_runner fixture automatically validates all steps were executed for all three agents
 
     with get_session() as session:
         critic_runs = session.query(CriticRun).filter_by(specimen_slug="test-fixtures/test-trivial").all()

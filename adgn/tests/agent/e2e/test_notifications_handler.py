@@ -6,26 +6,25 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.runtime.container import build_container
-from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import InputTextPart
 from tests.llm.support.openai_mock import make_mock
-from tests.support.responses import ResponsesFactory
+from tests.support.steps import AssistantMessage, MakeCall
 
 
 @pytest.mark.requires_docker
 async def test_notifications_handler_in_container_inserts_system_message(
-    docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str
+    docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str, make_step_runner
 ) -> None:
-    # Persistence and container
-    # Capture OpenAI requests
-    captured: list[ResponsesRequest] = []
-
-    async def _create(req: ResponsesRequest) -> ResponsesResult:
-        captured.append(req)
-        # Always return a simple assistant message; notifications come from admin set_policy
-        result: ResponsesResult = ResponsesFactory("test-model").make_assistant_message("done")
-        return result
-
-    client = make_mock(_create)
+    # Capture OpenAI requests and mock agent responses
+    runner = make_step_runner(
+        steps=[
+            # First turn: agent calls admin_set_policy to trigger notification
+            MakeCall("approval_policy_admin", "set_policy", {"source": policy_allow_all}),
+            # Subsequent turns: just return done
+            AssistantMessage("done"),
+        ]
+    )
+    client = make_mock(runner.handle_request_async)
     # Build container headless (no UI) with allow-all policy
     container = await build_container(
         agent_id="notif-e2e",
@@ -39,18 +38,16 @@ async def test_notifications_handler_in_container_inserts_system_message(
     )
 
     try:
-        # Trigger a policy update via approval engine (out-of-band notification)
-        # TODO: Actually trigger this via MCP tool call to admin server instead of direct method
-        assert container.approval_engine is not None
-        container.approval_engine.set_policy(policy_allow_all)
-
-        # Run one turn; first sampling triggers notifier tool; second should include notification insert
+        # First turn: agent sets policy via MCP tool, triggering notification
         assert container.session is not None
-        await asyncio.wait_for(container.session.run("go"), timeout=30)
+        await asyncio.wait_for(container.session.run("set policy"), timeout=30)
+
+        # Second turn: notification should be inserted
+        await asyncio.wait_for(container.session.run("check"), timeout=30)
 
         # Look for the system notification in the request input
         found = False
-        for req in captured:
+        for req in client.captured:
             inp = req.input or []
             for msg in inp:
                 # UserMessage with inserted system notification block

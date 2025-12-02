@@ -99,17 +99,15 @@ async def test_lint_issue_bootstrap_small_files(
 
     # Inspect transcript for bootstrap then LLM tool call then final text
     messages = agent.messages
-    # Function call outputs we expect: resources.read (bootstrap:res), ls (bootstrap:ls), nl for each file (bootstrap:show:*)
     fco = [m for m in messages if isinstance(m, FunctionCallOutputItem)]
-    by_id = {m.call_id: m for m in fco}
-    # At least 3 bootstrap outputs + 1 LLM tool output
-    assert len(fco) >= 4
 
-    # Verify expected bootstrap call_ids are present; transcript may not embed structuredContent here
-    assert by_id.get("bootstrap:res") is not None
-    assert by_id.get("bootstrap:ls") is not None
-    show_ids = [k for k in by_id if isinstance(k, str) and k.startswith("bootstrap:show:")]
-    assert len(show_ids) >= 2
+    # Verify we have bootstrap outputs and the LLM's tool call
+    bootstrap_outputs = [m for m in fco if m.call_id.startswith("bootstrap:")]
+    test_outputs = [m for m in fco if m.call_id.startswith("test:")]
+
+    # Expect: container.info + ls + 2 file reads (nl) from bootstrap, plus 1 from test
+    assert len(bootstrap_outputs) >= 4, f"Expected >=4 bootstrap outputs, got {len(bootstrap_outputs)}"
+    assert len(test_outputs) >= 1, f"Expected >=1 test outputs, got {len(test_outputs)}"
 
     # Ensure we saw a final assistant emission with text "FINAL"
     def _is_final(msg) -> bool:

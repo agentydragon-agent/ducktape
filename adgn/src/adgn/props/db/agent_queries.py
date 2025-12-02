@@ -103,3 +103,29 @@ WHERE transcript_id IN (
   SELECT transcript_id FROM critic_runs
   WHERE specimen IN (SELECT specimen FROM specimens WHERE split = 'valid')
 );"""
+
+# Cost tracking query (post-hoc via run_costs view)
+# Shows per-run costs and cumulative total for this PO session
+SQL_PO_RUN_COSTS = """WITH po_transcripts AS (
+    SELECT cr.transcript_id, cr.specimen, 'critic' as run_type, cr.created_at
+    FROM critic_runs cr
+    WHERE cr.prompt_optimization_run_id = '<po_run_id>'
+    UNION ALL
+    SELECT gr.transcript_id, gr.specimen, 'grader' as run_type, gr.created_at
+    FROM grader_runs gr
+    WHERE gr.prompt_optimization_run_id = '<po_run_id>'
+)
+SELECT
+    pt.transcript_id,
+    pt.specimen,
+    pt.run_type,
+    rc.model,
+    SUM(rc.cost_usd) as cost_usd,
+    SUM(rc.input_tokens) as input_tokens,
+    SUM(rc.cached_tokens) as cached_tokens,
+    SUM(rc.output_tokens) as output_tokens,
+    pt.created_at
+FROM po_transcripts pt
+JOIN run_costs rc ON pt.transcript_id = rc.transcript_id
+GROUP BY pt.transcript_id, pt.specimen, pt.run_type, rc.model, pt.created_at
+ORDER BY pt.created_at DESC;"""

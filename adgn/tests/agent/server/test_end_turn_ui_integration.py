@@ -59,7 +59,8 @@ def test_regular_tools_not_affected(make_tool_call):
     """Regular tools should still create Tool items."""
     state = new_state()
 
-    after_regular = reduce_ui_state(state, make_tool_call("echo", "echo", "echo-123", {"text": "test"}))
+    tool_call = make_tool_call("echo", "echo", args={"text": "test"})
+    after_regular = reduce_ui_state(state, tool_call)
 
     assert_items_count(after_regular.items, 1)
-    assert_that(after_regular.items[0], is_tool_item(tool="echo_echo", call_id="echo-123"))
+    assert_that(after_regular.items[0], is_tool_item(tool="echo_echo", call_id=tool_call.call_id))

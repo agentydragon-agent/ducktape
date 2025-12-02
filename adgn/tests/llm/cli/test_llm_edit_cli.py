@@ -6,11 +6,12 @@ import pytest
 
 from adgn.llm.llm_edit import main
 from adgn.openai_utils import client_factory
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage
 
 
 def test_typer_cli_invokes_execute_without_sys(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, responses_factory
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, make_step_runner
 ) -> None:
     # Prepare a file path and a prompt
     p = tmp_path / "file.txt"
@@ -21,7 +22,8 @@ def test_typer_cli_invokes_execute_without_sys(
 
     def _mk_client(model: str):
         called.update({"client_model": model})
-        return FakeOpenAIModel([responses_factory.make_assistant_message("ok")])
+        runner = make_step_runner(steps=[AssistantMessage("ok")])
+        return make_mock(runner.handle_request_async)
 
     monkeypatch.setattr(client_factory, "build_client", _mk_client, raising=True)
 

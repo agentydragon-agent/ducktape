@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from adgn.agent.loop_control import Auto, Continue
+from adgn.agent.loop_control import InjectItems, NoLoopDecision
 from adgn.agent.notifications.types import NotificationsBatch, ResourcesServerNotice
 from adgn.agent.reducer import NotificationsHandler
 from adgn.openai_utils.text_extraction import extract_input_text_content
@@ -28,10 +28,9 @@ def test_notifications_handler_batches_single_message():
     buf = _FakeBuffer()
     h = NotificationsHandler(buf.poll)
     dec = h.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert isinstance(dec.tool_policy, Auto)
-    assert len(dec.inserts_input) == 1
-    msg = dec.inserts_input[0]
+    assert isinstance(dec, InjectItems)
+    assert len(dec.items) == 1
+    msg = dec.items[0]
     # Extract input_text content from the message
     texts = extract_input_text_content([msg])
     assert texts, "expected an input_text content part"
@@ -43,5 +42,4 @@ def test_notifications_handler_batches_single_message():
     assert "editor" in text
     # Second call returns NoLoopDecision (empty)
     dec2 = h.on_before_sample()
-    # NoLoopDecision has no attributes; assert by type name
-    assert type(dec2).__name__ == "NoLoopDecision"
+    assert isinstance(dec2, NoLoopDecision)

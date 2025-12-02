@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import pytest
-
-from adgn.agent.agent import MiniCodex
-from adgn.agent.loop_control import Abort, Auto, Continue
+from adgn.agent.loop_control import Abort, Continue, InjectItems
 from adgn.agent.reducer import BaseHandler, Reducer
-from adgn.openai_utils.model import FunctionCallItem, InputTextPart, UserMessage
+from adgn.openai_utils.model import InputTextPart, UserMessage
 from adgn.openai_utils.text_extraction import extract_input_text_content
 
 
@@ -14,14 +11,14 @@ class _InsertsHandler(BaseHandler):
         self._msg_id = msg_id
 
     def on_before_sample(self):
-        # Insert as input message (user role), not output message
+        # Insert as input message (user role)
         msg = UserMessage(role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")])
-        return Continue(Auto(), inserts_input=(msg,))
+        return InjectItems(items=(msg,))
 
 
 class _ContinueOnlyHandler(BaseHandler):
     def on_before_sample(self):
-        return Continue(Auto())
+        return Continue()
 
 
 class _AbortHandler(BaseHandler):
@@ -29,39 +26,19 @@ class _AbortHandler(BaseHandler):
         return Abort()
 
 
-def test_aggregating_merges_inserts_additively():
+def test_first_inject_wins():
+    """First handler with an action wins; second handler is not consulted."""
     ctrl = Reducer([_InsertsHandler("m1"), _InsertsHandler("m2")])
     dec = ctrl.on_before_sample()
-    assert isinstance(dec, Continue)
-    assert dec.tool_policy.__class__ is Auto
-    assert len(dec.inserts_input) == 2
-    # Extract texts from input messages and assert ordering
-    texts = extract_input_text_content(dec.inserts_input)
-    assert texts == ["payload:m1", "payload:m2"]
+    assert isinstance(dec, InjectItems)
+    assert len(dec.items) == 1
+    # Only first handler's message should be present
+    texts = extract_input_text_content(dec.items)
+    assert texts == ["payload:m1"]
 
 
-def test_aggregating_continue_and_abort_conflict():
-    ctrl = Reducer([_ContinueOnlyHandler(), _AbortHandler()])
-    with pytest.raises(RuntimeError):
-        _ = ctrl.on_before_sample()
-
-
-class _InvalidFunctionCallInjectHandler(BaseHandler):
-    """Handler that incorrectly injects FunctionCallItem without skip_sampling=True."""
-
-    def on_before_sample(self):
-        fc = FunctionCallItem(name="test", call_id="test_call", arguments="{}")
-        return Continue(Auto(), inserts_input=(fc,))  # Missing skip_sampling=True
-
-
-async def test_function_call_inject_without_skip_sampling_raises(make_fake_openai, make_session):
-    """Verify runtime check prevents FunctionCallItem injection without skip_sampling=True."""
-    async with make_session({}) as mcp_client:
-        agent = await MiniCodex.create(
-            system="test",
-            mcp_client=mcp_client,
-            client=make_fake_openai([]),
-            handlers=[_InvalidFunctionCallInjectHandler()],
-        )
-        with pytest.raises(TypeError, match="FunctionCallItem requires skip_sampling=True"):
-            await agent.run("test")
+def test_first_action_wins_abort():
+    """First handler returning Abort wins; Continue handler is not consulted."""
+    ctrl = Reducer([_AbortHandler(), _ContinueOnlyHandler()])
+    dec = ctrl.on_before_sample()
+    assert isinstance(dec, Abort)

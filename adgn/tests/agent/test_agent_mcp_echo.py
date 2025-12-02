@@ -2,20 +2,31 @@ from __future__ import annotations
 
 import pytest
 
+from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp.testing.simple_servers import EchoInput
+from tests.agent.test_matchers import assert_function_call_output_structured
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage, MakeCall
 
 
 async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch, responses_factory, pg_session_echo, recording_handler, make_test_agent
+    monkeypatch: pytest.MonkeyPatch, pg_client_echo, recording_handler, make_step_runner
 ) -> None:
-    agent, _client = await make_test_agent(
-        pg_session_echo,
-        [
-            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hello")),
-            responses_factory.make_assistant_message("done"),
-        ],
+    runner = make_step_runner(
+        steps=[
+            MakeCall("echo", "echo", EchoInput(text="hello")),
+            AssistantMessage("done"),
+        ]
+    )
+    client = make_mock(runner.handle_request_async)
+    agent = await MiniCodex.create(
+        mcp_client=pg_client_echo,
+        system="test",
+        client=client,
         handlers=[AutoHandler(), recording_handler],
+        tool_policy=RequireAnyTool(),
         parallel_tool_calls=False,
     )
 
@@ -23,8 +34,5 @@ async def test_agent_mcp_echo_tool_use(
         res = await agent.run(user_text="use echo")
 
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
-    outputs = [r for r in recording_handler.records if r.get("kind") == "function_call_output"]
-    assert outputs, "No tool outputs captured"
-    first = outputs[0]
-    assert first["result"]["structured_content"] == {"echo": "hello"}
+    assert_function_call_output_structured(recording_handler.records, echo="hello")
     assert res.text.strip() == "done"

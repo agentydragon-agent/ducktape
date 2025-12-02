@@ -1,14 +1,3 @@
-{% macro scope_block(files, static_action, ambiguity_tail) %}
-Review the following files:
-{% for file in files %}
-- {{ file }}
-{% endfor %}
-
-Constraints:
-- {{ static_action | capitalize }} only the files listed above.
-- {{ ambiguity_tail }}
-{% endmacro %}
-
 {% macro constraints_read_only() %}
 Constraints:
 - Read-only sandbox: do not execute commands that modify files or the repo

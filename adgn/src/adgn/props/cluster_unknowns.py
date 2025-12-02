@@ -9,6 +9,7 @@ from fastmcp.client import Client
 from pydantic import BaseModel, ConfigDict
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
@@ -56,6 +57,10 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
 
     Returns empty list if critic result is not success or if no novel issues found.
     """
+    # Skip runs with no output (failed/incomplete runs)
+    if db_run.output is None:
+        return []
+
     # Parse typed output from JSONB
     grader_output = GraderOutput.model_validate(db_run.output)
     critique_payload = CriticSubmitPayload.model_validate(critique.payload)
@@ -104,6 +109,7 @@ async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path,
             client=build_client(model),
             handlers=[TranscriptHandler(events_path=out_root / "events.jsonl"), GateUntil(lambda: result is not None)],
             parallel_tool_calls=True,
+            tool_policy=RequireAnyTool(),
         )
         await agent.run("Cluster the following issues. Every issue_id must appear in >=1 cluster.\n\n" + input_lines)
     if result is None:

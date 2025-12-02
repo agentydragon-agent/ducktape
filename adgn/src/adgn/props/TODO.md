@@ -156,6 +156,11 @@ Observation (to investigate)
 
 ## Detector ideas (small TODOs)
 
+- Flag Propagation Detector Scope
+  - Current `flag_propagation.md` combines multiple concerns: "CLI flag propagation" vs "any boolean variable threading" vs "control flow structure" (nested guards, early bailout).
+  - Consider splitting into focused detectors: one for CLI→backend flag tracing, one for boolean parameter threading, one for control flow simplification.
+  - Current unified approach may be acceptable for initial coverage, but splitting would provide clearer acceptance criteria and reduce false positives.
+
 - Choices vs Arms (CLI/Enum drift)
   - Extract source sets from argparse/Typer choices and Enums; compare against match/case arms, if/elif chains, and dispatch maps.
   - Flag unreachable arms (not in source set), missing arms (values unhandled), and redundant defaults when exhaustive.

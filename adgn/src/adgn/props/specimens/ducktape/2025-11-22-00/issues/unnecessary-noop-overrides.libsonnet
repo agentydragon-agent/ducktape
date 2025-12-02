@@ -61,7 +61,7 @@ I.issueOneOccurrence(
         """Deliver MCP notifications as one batched system message via Continue.inserts_input.
 
         Polls a provided notifications buffer for buffered updates and, if present, returns a
-        Continue(Auto()) decision with a single input-side SystemMessage insert that
+        Continue(AllowAnyToolOrTextMessage()) decision with a single input-side SystemMessage insert that
         encodes the per-server resource version changes.
         """
 
@@ -83,7 +83,7 @@ I.issueOneOccurrence(
                 len(batch.resources_updated),
                 self._msg_counter
             )
-            return Continue(Auto(), inserts_input=(msg,))
+            return Continue(AllowAnyToolOrTextMessage(), inserts_input=(msg,))
 
         # That's it - no need to override no-op methods!
     ```

@@ -4,16 +4,9 @@ from __future__ import annotations
 
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 
-from adgn.agent.server.protocol import RunStatus
-
 # ------------------------
 # Hamcrest matcher helpers
 # ------------------------
-
-
-def has_finished_run():
-    """Matcher: run_status with status == finished."""
-    return has_properties(type="run_status", run_state=has_properties(status=RunStatus.FINISHED))
 
 
 def is_ui_message(content: str | None = None, mime: str | None = None):
@@ -34,11 +27,6 @@ def has_function_call_output_structured(**kvs):
 def assert_payloads_have(payloads: list[object], *matchers):
     """Assert payloads contain all matchers using has_items."""
     assert_that(payloads, has_items(*matchers))
-
-
-def assert_finished(payloads: list[object]):
-    """Assert payloads include a finished run_status event."""
-    assert_payloads_have(payloads, has_finished_run())
 
 
 # Convenience alias for substring assertions

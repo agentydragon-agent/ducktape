@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import BaseHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import GateUntil
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
@@ -668,6 +669,7 @@ async def run_grader(
             handlers=handlers,
             parallel_tool_calls=True,
             reasoning_summary=ReasoningSummary.detailed,
+            tool_policy=RequireAnyTool(),
         )
         await agent.run(prompt)
 

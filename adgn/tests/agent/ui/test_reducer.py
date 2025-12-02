@@ -24,12 +24,12 @@ def test_user_text_appends_user_message(fresh_ui_state):
 
 
 def test_tool_call_exec_starts_exec_content_with_cmd(fresh_ui_state, make_tool_call):
-    tool_call = make_tool_call("seatbelt", "sandbox_exec", "c1", {"argv": ["echo", "hi there"]})
+    tool_call = make_tool_call("seatbelt", "sandbox_exec", args={"argv": ["echo", "hi there"]})
 
     result = reduce_ui_state(fresh_ui_state, tool_call)
 
     assert_that(result.seq, equal_to(1))
-    assert_typed_items_have_one(result.items, is_tool_item(tool="seatbelt_sandbox_exec", call_id="c1"))
+    assert_typed_items_have_one(result.items, is_tool_item(tool="seatbelt_sandbox_exec", call_id=tool_call.call_id))
     item = result.items[0]
     assert isinstance(item, ToolItem)
     assert_that(item, has_properties(decision=None))
@@ -39,22 +39,22 @@ def test_tool_call_exec_starts_exec_content_with_cmd(fresh_ui_state, make_tool_c
 
 def test_tool_call_json_starts_json_content_with_args(fresh_ui_state, make_tool_call):
     args = {"foo": 1, "bar": "baz"}
-    tool_call = make_tool_call("demo", "inspect", "c2", args)
+    tool_call = make_tool_call("demo", "inspect", args=args)
 
     result = reduce_ui_state(fresh_ui_state, tool_call)
 
     assert_that(result.seq, equal_to(1))
-    assert_typed_items_have_one(result.items, is_tool_item(call_id="c2"))
+    assert_typed_items_have_one(result.items, is_tool_item(call_id=tool_call.call_id))
     item = result.items[0]
     assert isinstance(item, ToolItem)
     assert_that(item.content, is_json_content(args=args))
 
 
 def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, make_function_output):
-    tool_call = make_tool_call("seatbelt", "sandbox_exec", "c4", {"argv": ["ls"]})
+    tool_call = make_tool_call("seatbelt", "sandbox_exec", args={"argv": ["ls"]})
     s1 = reduce_ui_state(fresh_ui_state, tool_call)
 
-    output = make_function_output("c4", {"stdout": "ok", "stderr": "", "exit_code": 0})
+    output = make_function_output(tool_call.call_id, {"stdout": "ok", "stderr": "", "exit_code": 0})
     result = reduce_ui_state(s1, output)
 
     item = result.items[0]
@@ -64,11 +64,11 @@ def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, mak
 
 
 def test_function_output_updates_json_output_when_not_exec(fresh_ui_state, make_tool_call, make_function_output):
-    tool_call = make_tool_call("kv", "get", "c5", {"key": "k"})
+    tool_call = make_tool_call("kv", "get", args={"key": "k"})
     s1 = reduce_ui_state(fresh_ui_state, tool_call)
     payload = {"value": {"a": 1}}
 
-    output = make_function_output("c5", payload)
+    output = make_function_output(tool_call.call_id, payload)
     result = reduce_ui_state(s1, output)
 
     item = result.items[0]

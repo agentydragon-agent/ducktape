@@ -24,9 +24,11 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage, MakeCall
 
 # ============================================================================
 # Server A: Simple tool - Models at module scope
@@ -139,7 +141,7 @@ def server_b() -> FlatModelFastMCP:
 
 
 async def test_agent_compositor_flat_tools_request_schema(
-    responses_factory, make_compositor, server_a, server_b
+    responses_factory, make_compositor, server_a, server_b, make_step_runner
 ) -> None:
     """Test agent with 2 flat MCP servers attached one by one, showing schema evolution.
 
@@ -155,12 +157,13 @@ async def test_agent_compositor_flat_tools_request_schema(
     """
     print("PHASE 1: SERVER_A ONLY")
 
-    client_phase1 = FakeOpenAIModel(
-        [
-            responses_factory.make_mcp_tool_call("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
-            responses_factory.make_assistant_message("The result is 30."),
+    mock_phase1 = make_step_runner(
+        steps=[
+            MakeCall("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
+            AssistantMessage("The result is 30."),
         ]
     )
+    client_phase1 = make_mock(mock_phase1.handle_request_async)
 
     async with make_compositor({"server_a": server_a}) as (mcp_client, _comp):
         agent = await MiniCodex.create(
@@ -169,6 +172,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             client=client_phase1,
             handlers=[AutoHandler()],
             parallel_tool_calls=False,
+            tool_policy=RequireAnyTool(),
         )
         async with agent:
             await agent.run(user_text="What is 10 + 20?")
@@ -182,12 +186,13 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     print("PHASE 2: SERVER_A + SERVER_B")
 
-    client_phase2 = FakeOpenAIModel(
-        [
-            responses_factory.make_mcp_tool_call("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
-            responses_factory.make_assistant_message("The result is 30."),
+    mock_phase2 = make_step_runner(
+        steps=[
+            MakeCall("server_a", "tool_a", ToolAInput(param_x=10, param_y=20)),
+            AssistantMessage("The result is 30."),
         ]
     )
+    client_phase2 = make_mock(mock_phase2.handle_request_async)
 
     async with make_compositor({"server_a": server_a, "server_b": server_b}) as (mcp_client, _comp):
         agent = await MiniCodex.create(
@@ -196,6 +201,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             client=client_phase2,
             handlers=[AutoHandler()],
             parallel_tool_calls=False,
+            tool_policy=RequireAnyTool(),
         )
         async with agent:
             await agent.run(user_text="What is 10 + 20?")

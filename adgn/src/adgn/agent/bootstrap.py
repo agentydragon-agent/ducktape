@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Auto, Continue, NoLoopDecision
+from adgn.agent.loop_control import InjectItems, NoLoopDecision
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -238,4 +238,4 @@ class BootstrapHandler(BaseHandler):
             return NoLoopDecision()
 
         self._injected = True
-        return Continue(tool_policy=Auto(), inserts_input=tuple(self._calls), skip_sampling=True)
+        return InjectItems(items=tuple(self._calls))

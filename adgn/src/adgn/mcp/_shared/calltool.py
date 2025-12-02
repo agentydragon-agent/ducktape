@@ -4,10 +4,10 @@ from typing import Any
 
 from fastmcp.client.client import CallToolResult as FMCallToolResult
 from mcp import types as mcp_types
-from pydantic import TypeAdapter
+from pydantic import JsonValue, TypeAdapter
 
 
-def _normalize_structured_content(sc: Any) -> Any:
+def _normalize_structured_content(sc: JsonValue) -> JsonValue:
     """Return JSON-serializable structured content.
 
     Keep BaseModel instances intact so downstream typed adapters can consume them.

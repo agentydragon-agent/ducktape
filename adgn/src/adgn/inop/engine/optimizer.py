@@ -45,6 +45,7 @@ import sys
 from fastmcp.client import Client
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.config import OptimizerConfig
 from adgn.inop.engine.models import AgentTaskType, Criterion, GradedRollout, TaskDefinition
@@ -314,6 +315,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             client=model,
             system=system_message,
             handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+            tool_policy=RequireAnyTool(),
         )
 
         # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)

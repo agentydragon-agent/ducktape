@@ -11,7 +11,7 @@ from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
-from .model import ResponsesRequest, ResponsesResult, convert_sdk_response
+from .model import ResponsesRequest, ResponsesResult
 
 if TYPE_CHECKING:
     from .model import OpenAIModelProto
@@ -64,7 +64,7 @@ def retry_decorator(
 @retry_decorator()
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
     sdk_resp = await client.responses.create(**kwargs)
-    return convert_sdk_response(sdk_resp)
+    return ResponsesResult.from_sdk(sdk_resp)
 
 
 @retry_decorator()

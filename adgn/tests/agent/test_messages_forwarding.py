@@ -4,7 +4,6 @@ from typing import Any
 
 import pytest
 
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import (
     AssistantMessage,
@@ -44,10 +43,10 @@ def _make_tool_call_resp(
 
 
 async def test_stateless_reasoning_forwarding(
-    pg_session_echo, responses_factory: ResponsesFactory, make_test_agent
+    pg_client_echo, responses_factory: ResponsesFactory, make_test_agent
 ) -> None:
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
-    agent, _client = await make_test_agent(pg_session_echo, [_make_reasoning_then_message("ok", responses_factory)])
+    agent, _client = await make_test_agent(pg_client_echo, [_make_reasoning_then_message("ok", responses_factory)])
 
     await agent.run("say hi")
 
@@ -56,11 +55,11 @@ async def test_stateless_reasoning_forwarding(
 
 
 async def test_function_call_and_function_call_output_replay(
-    pg_session_echo, responses_factory: ResponsesFactory, make_test_agent
+    pg_client_echo, responses_factory: ResponsesFactory, make_test_agent
 ) -> None:
     """Request1 produces a function_call; after local execution, messages() must include function_call and function_call_output."""
     agent, client = await make_test_agent(
-        pg_session_echo,
+        pg_client_echo,
         [
             responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
@@ -76,7 +75,7 @@ async def test_function_call_and_function_call_output_replay(
 
 
 async def test_mixed_reasoning_fc_ordering(
-    pg_session_echo, responses_factory: ResponsesFactory, make_test_agent
+    pg_client_echo, responses_factory: ResponsesFactory, make_test_agent
 ) -> None:
     """Resp1 returns reasoning, function_call, assistant; after function_call_output, messages preserves order
     reasoning, function_call, function_call_output, assistant.
@@ -84,12 +83,10 @@ async def test_mixed_reasoning_fc_ordering(
     # Note: .make() requires individual items; tool_call still uses build_mcp_function (justified)
     resp = responses_factory.make(
         responses_factory.make_item_reasoning(),
-        responses_factory.tool_call(build_mcp_function("echo", "echo"), {"text": "hi"}),
+        responses_factory.mcp_tool_call("echo", "echo", EchoInput(text="hi")),
         responses_factory.assistant_text("done"),
     )
-    agent, client = await make_test_agent(
-        pg_session_echo, [resp, _make_reasoning_then_message("ok", responses_factory)]
-    )
+    agent, client = await make_test_agent(pg_client_echo, [resp, _make_reasoning_then_message("ok", responses_factory)])
 
     await agent.run("start")
 
@@ -102,11 +99,11 @@ async def test_mixed_reasoning_fc_ordering(
 
 
 async def test_no_synthesized_reasoning_items(
-    pg_session_echo, responses_factory: ResponsesFactory, make_test_agent
+    pg_client_echo, responses_factory: ResponsesFactory, make_test_agent
 ) -> None:
     """Ensure agent does not fabricate reasoning rs_* items when missing."""
     agent, client = await make_test_agent(
-        pg_session_echo,
+        pg_client_echo,
         [
             responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
@@ -122,17 +119,12 @@ async def test_no_synthesized_reasoning_items(
 
 
 async def test_model_provided_tool_output_records_without_execution(
-    responses_factory: ResponsesFactory, pg_session_echo, make_test_agent
+    responses_factory: ResponsesFactory, pg_client_echo, make_test_agent
 ) -> None:
     """If the model supplies tool output inline, agent should not run the tool again."""
     agent, client = await make_test_agent(
-        pg_session_echo,
-        [
-            # Note: make_tool_call_with_output uses build_mcp_function (no typed variant yet - justified)
-            responses_factory.make_tool_call_with_output(
-                build_mcp_function("echo", "echo"), {"text": "hi"}, {"echo": "hi"}
-            )
-        ],
+        pg_client_echo,
+        [responses_factory.make_mcp_tool_call_with_output("echo", "echo", EchoInput(text="hi"), {"echo": "hi"})],
     )
 
     await agent.run("say hi")

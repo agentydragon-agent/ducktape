@@ -149,7 +149,7 @@ Between steps, query the database to inspect results, understand failures, and d
 - Identify train specimens where best prompt had low recall
 - Understand failure patterns before spending budget on new runs
 
-**2. Debug on train specimens ($0.10-0.15 per critic+grader pair):**
+**2. Debug on train specimens:**
 - Pick 2-3 train specimens where best prompt struggled
 - Run file-level evaluations on specific files with issues
 - Iterate quickly to test hypotheses
@@ -171,9 +171,9 @@ Between steps, query the database to inspect results, understand failures, and d
 
 ### Budget Management
 
-**TODO: Budget tracking not yet enforced at tool level.** Current manual approach:
-- Query grader_runs and critic_runs tables to estimate costs from past runs (LLM API costs only)
-- Typical costs: ~$0.10-0.15 per critic+grader pair on train specimens
+Budget tracking is available via the `run_costs` view. Use the cost tracking query (see "Cost Tracking and Budget Management" section below) to monitor spend:
+- Query `sql_po_run_costs` to see all runs in this PO session with per-run costs
+- Sum the `cost_usd` column for cumulative spend
 - Focus budget on runs with promising candidates, not exploratory queries
 
 **Strategy:**
@@ -291,6 +291,38 @@ The `events` table contains full execution traces for critic and grader runs. Us
    - Don't overfit to "agent should read file X" (specimen-specific)
    - Do extract "agent should run static analysis before file reads" (generalizable)
    - Focus on workflow patterns, not specific file names
+
+## Cost Tracking and Budget Management
+
+The database tracks token usage and costs for all runs via the `run_costs` view. Query your runs to monitor budget:
+
+**Get your PO run ID:**
+Read the resource `resource://prompt_eval/po_run_id` to get the UUID for this optimization session.
+
+**Query costs:**
+```sql
+-- All runs in this PO session with per-run costs (replace <po_run_id> with UUID from resource)
+-- Shows: transcript_id, specimen, run_type (critic/grader), model, cost breakdown, timestamp
+-- Sum the cost_usd column to get cumulative spend
+{{ sql_po_run_costs }}
+```
+
+**Budget optimization strategies:**
+
+1. **Start cheap, scale up strategically:**
+   - Use file-level evaluation on train specimens for initial debugging (faster, cheaper)
+   - Run full-specimen evaluation only when you have a promising candidate
+   - Query past results before running new evaluations
+
+2. **Track cumulative spend:**
+   - Query `sql_po_run_costs` to see all runs and their costs
+   - Sum the `cost_usd` column for total budget consumed
+   - Prioritize high-leverage evaluations (validation over train, diverse specimens over similar ones)
+
+3. **Cost-recall tradeoff:**
+   - Don't run exhaustive evaluations on every train specimen
+   - Focus on specimens where the current prompt struggles
+   - Use validation aggregates as your north star metric
 
 ## Avoiding Local Optima
 

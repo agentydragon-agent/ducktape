@@ -83,8 +83,6 @@ def build_standard_context(
     wiring: Any,  # PropertiesDockerWiring, avoid circular import
     available_tools: list[str] | None = None,
     supplemental_text: str | None = None,
-    static_action: str = "analyze",
-    ambiguity_tail: str = "do not include anything outside run instructions.",
     include_schemas: bool = True,
 ) -> dict[str, Any]:
     """Build standard Jinja context for properties prompts.
@@ -94,8 +92,6 @@ def build_standard_context(
         wiring: PropertiesDockerWiring with image/volumes/network config
         available_tools: List of tool names (default: [])
         supplemental_text: Optional additional context (e.g., specimen notes)
-        static_action: Action description for scope section (default: "analyze")
-        ambiguity_tail: Trailing instruction for scope section
         include_schemas: Whether to include schemas_json (default: True)
 
     Returns:
@@ -106,8 +102,6 @@ def build_standard_context(
         "wiring": wiring,
         "available_tools": available_tools if available_tools is not None else [],
         "supplemental_text": supplemental_text,
-        "static_action": static_action,
-        "ambiguity_tail": ambiguity_tail,
         "read_only": True,
         "include_tools": False,
         "include_reporting": False,

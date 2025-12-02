@@ -1,90 +1,57 @@
-import asyncio
-import json
 import time
 from typing import Any
-from unittest.mock import patch
+
+from pydantic import BaseModel
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.loop_control import Abort, Auto, Continue
+from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
 from adgn.agent.reducer import BaseHandler
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FunctionCallItem
+from adgn.openai_utils.builders import ItemFactory
 from tests.agent.helpers import NoopOpenAIClient
 
 
+class SlowInput(BaseModel):
+    """Empty input for slow() tool."""
+
+
+class Slow2Input(BaseModel):
+    """Empty input for slow2() tool."""
+
+
 class OneShotSyntheticHandler(BaseHandler):
-    """Handler that returns a SyntheticAction once, then Abort."""
+    """Handler that injects synthetic output once, then aborts."""
 
     def __init__(self, outputs: list[Any]):
         self._done = False
         self._outputs = outputs
 
-    def on_before_sample(self):  # returns SyntheticAction first, then Abort
+    def on_before_sample(self):
         if not self._done:
             self._done = True
-            return Continue(Auto(), inserts_input=tuple(self._outputs), skip_sampling=True)
+            return InjectItems(items=tuple(self._outputs))
         return Abort()
 
-    # No-ops for hooks used by agent
-    def on_reasoning(self, *_a, **_k):  # pragma: no cover - not used here
-        return None
 
-    def on_assistant_text(self, *_a, **_k):  # pragma: no cover - not used here
-        return None
-
-    def on_tool_call(self, *_a, **_k):  # pragma: no cover - not used here
-        return None
-
-    def on_tool_result_event(self, *_a, **_k):  # pragma: no cover - not used here
-        return None
-
-
-async def test_parallel_tool_calls_reduce_wall_time(make_session, slow_server, recording_handler):
+async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server, recording_handler):
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
-    tc1 = FunctionCallItem(name=build_mcp_function("dummy", "slow"), call_id="call_1", arguments=json.dumps({}))
-    tc2 = FunctionCallItem(name=build_mcp_function("dummy", "slow2"), call_id="call_2", arguments=json.dumps({}))
+    factory = ItemFactory(call_id_prefix="test")
+    tc1 = factory.mcp_tool_call("dummy", "slow", SlowInput())
+    tc2 = factory.mcp_tool_call("dummy", "slow2", Slow2Input())
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
-    async with make_session({"dummy": slow_server}) as mcp_client:
+    async with make_compositor({"dummy": slow_server}) as (mcp_client, _):
         agent = await MiniCodex.create(
             system="test",
             mcp_client=mcp_client,
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
             handlers=[handler, recording_handler],
+            tool_policy=RequireAnyTool(),
         )
 
         t0 = time.perf_counter()
         await agent.run("go")
-
-        # Wait for recording handler to observe expected events (tool_call + function_call_output)
-        # Set up event-driven completion notification
-        completion_event = asyncio.Event()
-        target_records = 4  # 2 tools x 2 events each
-
-        # Store original methods
-        original_on_tool_call = recording_handler.on_tool_call_event
-        original_on_tool_result = recording_handler.on_tool_result_event
-
-        def check_and_signal():
-            if len(recording_handler.records) >= target_records:
-                completion_event.set()
-
-        def enhanced_tool_call(evt):
-            original_on_tool_call(evt)  # Call original method
-            check_and_signal()
-
-        def enhanced_tool_result(evt):
-            original_on_tool_result(evt)  # Call original method
-            check_and_signal()
-
-        # Use proper mocking to patch the methods
-        with (
-            patch.object(recording_handler, "on_tool_call_event", side_effect=enhanced_tool_call),
-            patch.object(recording_handler, "on_tool_result_event", side_effect=enhanced_tool_result),
-        ):
-            await asyncio.wait_for(completion_event.wait(), timeout=2.0)
         elapsed = time.perf_counter() - t0
 
     # Assert shorter than serial (~0.60s), with generous headroom for CI noise

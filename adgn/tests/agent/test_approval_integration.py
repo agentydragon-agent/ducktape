@@ -7,17 +7,19 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.constants import PENDING_CALLS_URI
 from adgn.mcp.approval_policy.engine import CallDecision
 from adgn.mcp.testing.simple_servers import EchoInput
 from tests.agent.testdata.approval_policy import make_policy
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage, MakeCall
 
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory, echo_spec, make_pg_compositor, make_approval_policy_server
+    responses_factory, echo_spec, make_pg_compositor, make_approval_policy_server, make_step_runner
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 
@@ -27,16 +29,15 @@ async def test_approval_system_wired_and_blocks_on_ask(
     )
 
     # Model tries to call the tool then returns text
-    seq = [
-        responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="test")),
-        responses_factory.make_assistant_message("done"),
-    ]
-    client = FakeOpenAIModel(seq)
+    mock = make_step_runner(steps=[MakeCall("echo", "echo", EchoInput(text="test")), AssistantMessage("done")])
+    client = make_mock(mock.handle_request_async)
 
     # Use make_pg_compositor with custom policy engine
     servers = dict(echo_spec)
     async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, _comp, policy_engine):
-        agent = await MiniCodex.create(mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()])
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()], tool_policy=RequireAnyTool()
+        )
 
         # Start the agent run in the background
         run_task = asyncio.create_task(agent.run("test"))

@@ -687,7 +687,7 @@ class SpecimenRegistry:
             List of specimen slugs in the given split, sorted alphabetically
         """
         result = []
-        for slug in sorted(self.specimen_slugs):
+        for slug in sorted(self._specimens.keys()):
             _, manifest = self.load_manifest_only(slug)
             if manifest.split == split:
                 result.append(slug)

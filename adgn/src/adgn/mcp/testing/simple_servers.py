@@ -1,17 +1,13 @@
 """Shared FastMCP helpers for unit tests and demos.
 
-These utilities provide a lightweight FastMCP server that exposes a handful of
-simple tools used across the test suite:
+Provides minimal test tools that exercise meaningfully different functionality:
 
-- ``echo(text)`` returns structured content ``{"echo": text}``
-- ``ping()`` returns ``"pong"`` for quick reachability checks
-- ``noop()`` returns ``{"ok": True}`` as a placeholder action
-- ``raise_reserved()`` raises ``McpError`` with the reserved policy-denied code
-- ``raise_with_gateway_stamp()`` raises ``McpError`` tagged with the policy
-  gateway stamp to exercise gateway pass-through logic.
+- ``echo(input)`` - Normal tool call: echoes input text back in structured output
+- ``raise_reserved()`` - Error handling: raises McpError with reserved policy-denied code
+- ``raise_with_gateway_stamp()`` - Gateway testing: raises McpError tagged with policy stamp
 
-Tests previously duplicated these helpers (and imported ``adgn.mcp.echo``).
-Centralising them here keeps behaviour consistent and avoids redundant fixtures.
+Each tool tests a distinct pattern. Removed redundant tools (ping, noop) that
+don't add coverage beyond echo().
 """
 
 from __future__ import annotations
@@ -26,25 +22,6 @@ from adgn.mcp._shared.constants import POLICY_GATEWAY_STAMP_KEY
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 
 
-class EchoInput(BaseModel):
-    """Input for echo tool.
-
-    Simple tool that echoes back the provided text.
-    """
-
-    text: str
-
-
-class SendMessageInput(BaseModel):
-    """Input for send_message validation tool.
-
-    Strictly requires text/markdown mime type for validation testing.
-    """
-
-    mime: Literal["text/markdown"]
-    content: str
-
-
 class EmptyInput(BaseModel):
     """Empty input for parameterless MCP tools.
 
@@ -55,6 +32,28 @@ class EmptyInput(BaseModel):
     """
 
 
+class EchoInput(BaseModel):
+    """Input for echo tool."""
+
+    text: str
+
+
+class EchoOutput(BaseModel):
+    """Output for echo tool."""
+
+    echo: str
+
+
+class SendMessageInput(BaseModel):
+    """Input for validation send_message tool.
+
+    Used by validation_server fixture for testing strict validation.
+    """
+
+    mime: Literal["text/markdown", "text/plain"]
+    content: str
+
+
 def build_simple_tools(server: FastMCP) -> None:
     """Register the standard simple tools on ``server``.
 
@@ -62,17 +61,9 @@ def build_simple_tools(server: FastMCP) -> None:
     be reused across unit, integration, and approval-policy tests.
     """
 
-    @mcp_flat_model(server, name="echo")
-    def echo(input: EchoInput) -> dict[str, str]:
-        return {"echo": input.text}
-
-    @mcp_flat_model(server, name="ping")
-    def ping(input: EmptyInput) -> str:
-        return "pong"
-
-    @mcp_flat_model(server, name="noop")
-    def noop(input: EmptyInput) -> dict[str, bool]:
-        return {"ok": True}
+    @server.tool(name="echo")
+    def echo(input: EchoInput) -> EchoOutput:
+        return EchoOutput(echo=input.text)
 
     @mcp_flat_model(server, name="raise_reserved")
     def raise_reserved(input: EmptyInput) -> None:
@@ -95,4 +86,4 @@ def make_simple_mcp(name: str = "simple") -> FastMCP:
     return server
 
 
-__all__ = ["EchoInput", "EmptyInput", "SendMessageInput", "build_simple_tools", "make_simple_mcp"]
+__all__ = ["EchoInput", "EchoOutput", "EmptyInput", "SendMessageInput", "build_simple_tools", "make_simple_mcp"]

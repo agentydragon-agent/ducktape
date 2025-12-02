@@ -3,19 +3,21 @@
 
 Reads specimen manifests, applies their bundle filters, and creates a git bundle
 containing only the necessary files for each specimen.
+
+Automatically discovers specimens by scanning for manifest.yaml files.
+Only specimens with `bundle` metadata are included.
 """
 
 import fnmatch
 from pathlib import Path
 import subprocess
-
-# Import specimen models
 import tempfile
 
 import pygit2
 import yaml
 
-from adgn.props.models.specimen import SpecimenDoc
+from adgn.props.models.specimen import GitSource, SpecimenDoc
+from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base
 
 
 def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
@@ -210,28 +212,58 @@ def create_filtered_commit(
     return new_commit_oid
 
 
+def discover_specimens_to_build(specimens_dir: Path) -> list[tuple[str, SpecimenDoc]]:
+    """Discover all specimens with bundle metadata.
+
+    Returns:
+        List of (specimen_id, SpecimenDoc) tuples for specimens that have bundle metadata.
+    """
+    results = []
+    registry = SpecimenRegistry.from_base_path(specimens_dir)
+
+    for spec_id in registry.list_all():
+        manifest_path = specimens_dir / spec_id / "manifest.yaml"
+        if not manifest_path.exists():
+            continue
+
+        with manifest_path.open() as f:
+            manifest_data = yaml.safe_load(f)
+
+        # Skip specimens without bundle metadata
+        if "bundle" not in manifest_data or not manifest_data["bundle"]:
+            continue
+
+        # Parse and validate the full manifest (let validation errors propagate)
+        specimen = TypeAdapter(SpecimenDoc).validate_python(manifest_data)
+
+        # Only include specimens with complete bundle metadata
+        if specimen.bundle is not None:
+            results.append((spec_id, specimen))
+
+    return results
+
+
 def main():
     """Build specimen bundle with per-specimen filters."""
     # Configuration
-    specimens_dir = Path(__file__).parent.parent / "specimens"
+    specimens_dir = find_specimens_base()
     source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
     output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
 
     # Open source repository
     source_repo = pygit2.Repository(str(source_repo_path))
 
-    # Specimens to include (determined from git tags in source repo)
-    # spec_id is relative to specimens_dir (e.g., "ducktape/2025-11-20-adgn")
-    specimen_configs = [
-        ("ducktape/2025-11-20-adgn", "b729b362de957d127d1e8ac17d8811665ce805fe"),
-        ("ducktape/2025-11-20-repo", "c18279d2c1716008afc17a12350aaee89248c1ca"),
-        ("ducktape/2025-11-21-repo", "167e39012aca16381442c53bf10d5fc980d0f26a"),
-        ("ducktape/2025-11-22-post-fixes", "9395ba65dcef5057176c890981fa0e973d9798eb"),
-        ("ducktape/2025-11-22-repo", "c263d6808e04d509d1a48b17fa6016733bb1fce6"),
-        ("ducktape/2025-11-22-repo-2", "a81550a1af11e03e397ff8344b1aa818658113db"),
-    ]
+    # Discover specimens with bundle metadata
+    specimens_to_build = discover_specimens_to_build(specimens_dir)
+
+    if not specimens_to_build:
+        print("No specimens with bundle metadata found")
+        return
 
     print("=== Building specimen bundle ===")
+    print(f"Found {len(specimens_to_build)} specimens with bundle metadata:")
+    for spec_id, _ in specimens_to_build:
+        print(f"  - {spec_id}")
     print()
 
     # Create temporary bundle repository
@@ -251,36 +283,26 @@ def main():
         print()
 
         # Process each specimen
-        for spec_id, source_commit_sha in specimen_configs:
-            # Read manifest
-            manifest_path = specimens_dir / spec_id / "manifest.yaml"
-            if not manifest_path.exists():
-                print(f"Warning: No manifest for {spec_id}, skipping")
-                continue
+        for spec_id, specimen in specimens_to_build:
+            # specimens_to_build only contains specimens with bundle metadata (filtered by discover_specimens_to_build)
+            assert specimen.bundle is not None
 
-            with manifest_path.open() as f:
-                manifest_data = yaml.safe_load(f)
-
-            # Parse into SpecimenDoc
-            specimen = SpecimenDoc.model_validate(manifest_data)
-
-            # Extract bundle filters
-            include = specimen.bundle.include if specimen.bundle else None
-            exclude = specimen.bundle.exclude if specimen.bundle else None
-
-            # Derive tag name from ref in manifest (only for Git/GitHub sources)
-            ref = getattr(specimen.source, "ref", None)
-            tag_name = ref.removeprefix("refs/tags/") if ref and ref.startswith("refs/tags/") else f"specimen-{spec_id}"
+            # Derive tag name from ref in manifest
+            if isinstance(specimen.source, GitSource) and specimen.source.ref:
+                ref = specimen.source.ref
+                tag_name = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else ref
+            else:
+                tag_name = f"specimen-{spec_id.replace('/', '-')}"
 
             # Create filtered commit
             create_filtered_commit(
                 source_repo=source_repo,
                 bundle_repo=bundle_repo,
-                source_commit_sha=source_commit_sha,
+                source_commit_sha=specimen.bundle.source_commit,
                 tag_name=tag_name,
                 base_commit=base_commit,
-                include=include,
-                exclude=exclude,
+                include=specimen.bundle.include,
+                exclude=specimen.bundle.exclude,
             )
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)
@@ -293,16 +315,21 @@ def main():
         # Verify bundle
         print()
         print("=== Verifying bundle ===")
-        verify_dir = Path(tmpdir) / "verify"
-        verify_repo = pygit2.clone_repository(str(output_bundle), str(verify_dir))
-        tags = sorted(verify_repo.listall_references())
-        tag_names = [t.removeprefix("refs/tags/") for t in tags if t.startswith("refs/tags/")]
-        print(f"Tags in bundle: {', '.join(tag_names)}")
-
-        if tag_names:
-            verify_repo.set_head(f"refs/tags/{tag_names[0]}")
-            verify_repo.checkout_head()
-            print(f"✓ Successfully checked out {tag_names[0]}")
+        verify_result = subprocess.run(
+            ["git", "bundle", "verify", str(output_bundle)], capture_output=True, text=True, check=False
+        )
+        if verify_result.returncode == 0:
+            print("✓ Bundle verification passed")
+            # List tags in bundle
+            list_heads_result = subprocess.run(
+                ["git", "bundle", "list-heads", str(output_bundle)], capture_output=True, text=True, check=True
+            )
+            tags = [
+                line.split()[-1].removeprefix("refs/tags/") for line in list_heads_result.stdout.strip().split("\n")
+            ]
+            print(f"Tags in bundle: {', '.join(tags)}")
+        else:
+            print(f"✗ Bundle verification failed:\n{verify_result.stderr}")
 
 
 if __name__ == "__main__":

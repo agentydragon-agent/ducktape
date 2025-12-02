@@ -31,8 +31,6 @@ def build_enforce_prompt(
         "enforce.j2.md",
         scope_text=scope_text,
         supplemental_text=supplemental_text,
-        static_action="edit",
-        ambiguity_tail="avoid touching anything outside it unless required by the editing policy below.",
         wiring=wiring,
         schemas_json=schemas_json,
     )

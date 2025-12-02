@@ -16,7 +16,7 @@ from rich.table import Table
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Auto, Continue, NoLoopDecision, RequireAnyTool
+from adgn.agent.loop_control import Abort, Continue, InjectItems, NoLoopDecision, RequireAnyTool
 from adgn.agent.reducer import BaseHandler, GateUntil
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
@@ -195,6 +195,16 @@ def make_linter_bootstrap_calls(
     return calls
 
 
+def make_bootstrap_calls_for_inspection(
+    wiring: PropertiesDockerWiring, builder: TypedBootstrapBuilder
+) -> list[FunctionCallItem]:
+    """Build bootstrap calls for basic property inspection: container.info + ls workspace."""
+    return [
+        read_resource_call(builder, server=wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI),
+        docker_exec_call(builder, server=wiring.server_name, cmd=["ls", "-la", str(wiring.working_dir)]),
+    ]
+
+
 class BootstrapInspectHandler(BaseHandler):
     """Shared bootstrap handler: emits container.info + ls workspace without sampling."""
 
@@ -216,7 +226,7 @@ class BootstrapInspectHandler(BaseHandler):
                     builder, server=self._wiring.server_name, cmd=["ls", "-la", str(self._wiring.working_dir)]
                 ),
             ]
-            return Continue(RequireAnyTool(), inserts_input=tuple(calls), skip_sampling=True)
+            return InjectItems(items=tuple(calls))
         # Second cycle: mark done and defer; subsequent cycles will continue normally
         self._done = True
         return NoLoopDecision()
@@ -253,6 +263,44 @@ def _build_prompt(
         schemas_json=schemas_json,
     )
     return prompt_md
+
+
+class LinterController(BaseHandler):
+    """LinterController with standard bootstrap pattern.
+
+    Builds all bootstrap calls upfront as a continuous sequence, then injects them
+    in one turn. After bootstrap, monitors for submit_result and aborts when done.
+    """
+
+    def __init__(
+        self,
+        *,
+        state: LintSubmitState,
+        occ: Occurrence,
+        content_root: Path,
+        docker_wiring: PropertiesDockerWiring,
+        prop_host_paths: list[Path] | None = None,
+    ) -> None:
+        self._state = state
+        self._injected = False
+
+        # Build all bootstrap calls upfront (continuous sequence)
+        self._bootstrap_calls = make_linter_bootstrap_calls(
+            wiring=docker_wiring, occ=occ, content_root=content_root, prop_host_paths=prop_host_paths
+        )
+
+    def on_before_sample(self):
+        # Stop immediately once submit_result was called
+        if self._state.result is not None:
+            return Abort()
+
+        # Inject all bootstrap calls in one turn (continuous sequence)
+        if not self._injected:
+            self._injected = True
+            return InjectItems(items=tuple(self._bootstrap_calls))
+
+        # After bootstrap, continue loop (agent's tool_policy handles requirements)
+        return Continue()
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +379,7 @@ async def _lint_issue_run_with_hydrated_root(
                 return NoLoopDecision()
             if not self._injected:
                 self._injected = True
-                return Continue(tool_policy=Auto(), inserts_input=tuple(self._calls), skip_sampling=True)
+                return InjectItems(items=tuple(self._calls))
             # Second cycle: mark done
             self._done = True
             return NoLoopDecision()
@@ -362,6 +410,7 @@ async def _lint_issue_run_with_hydrated_root(
             client=client,
             handlers=[bootstrap_handler, gate_handler, *(handlers if handlers is not None else [])],
             parallel_tool_calls=True,
+            tool_policy=RequireAnyTool(),
         )
         await agent.run(prompt)
 

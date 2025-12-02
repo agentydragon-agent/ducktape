@@ -4,7 +4,6 @@ import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loggers import RecordingHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
@@ -31,6 +31,7 @@ from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.mcp.testing.simple_servers import SendMessageInput
+from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -38,55 +39,14 @@ from tests.support.types import McpServerSpecs
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
-
-class _AgentHttp:
-    """HTTP helper for agent API endpoints."""
-
-    def __init__(self, client, agent_id: str) -> None:
-        self._c = client
-        self._id = agent_id
-
-    def _url(self, path: str) -> str:
-        """Build agent-specific URL path."""
-        return f"/api/agents/{self._id}/{path}"
-
-    def post(self, path: str, **kwargs):
-        """POST to agent-specific endpoint."""
-        return self._c.post(self._url(path), **kwargs)
-
-    def get(self, path: str, **kwargs):
-        """GET from agent-specific endpoint."""
-        return self._c.get(self._url(path), **kwargs)
-
-    # Chat
-    def prompt(self, text: str):
-        return self.post("prompt", json={"text": text})
-
-    def abort(self):
-        return self.post("abort")
-
-    def snapshot(self):
-        return self.get("snapshot")
-
-    # Approvals
-    def approve(self, call_id: str):
-        return self.post("approve", json={"call_id": call_id})
-
-    def deny_continue(self, call_id: str):
-        return self.post("deny_continue", json={"call_id": call_id})
-
-    def deny_abort(self, call_id: str):
-        return self.post("deny_abort", json={"call_id": call_id})
-
-    # Policy
-    def set_policy(self, content: str, proposal_id: str | None = None):
-        body: dict[str, object] = {"content": content}
-        if proposal_id is not None:
-            body["proposal_id"] = proposal_id
-        return self.post("policy", json=body)
-
-
 # Note: docker_client and approval_policy_server fixtures are provided globally in tests/conftest.py
+
+
+@pytest.fixture
+async def compositor_client(compositor):
+    """Client connected to the compositor fixture."""
+    async with Client(compositor) as client:
+        yield client
 
 
 @pytest.fixture
@@ -167,11 +127,11 @@ def policy_const() -> str:
     return str(fetch_policy("const"))
 
 
-# reasoning_model fixture is provided globally in tests/fixtures/responses.py
+# reasoning_model fixture is provided globally in tests/support/responses.py
 # (registered via pytest_plugins in tests/conftest.py)
 
 # assistant_response_factory, tool_call_response_factory, responses_factory
-# come from tests.fixtures.responses (registered globally in tests/conftest.py).
+# come from tests.support.responses (registered globally in tests/conftest.py).
 
 
 # Local factory: construct our Pydantic-only fake client from a sequence of ResponsesResult
@@ -204,11 +164,15 @@ def make_test_agent(responses_factory):
         assert client.calls == 1
     """
 
-    async def _make(mcp_client, responses, *, handlers=None, system="test", **kwargs):
-        client = FakeOpenAIModel(list(responses))
+    async def _make(mcp_client, responses, *, handlers=None, system="test", tool_policy=None, **kwargs):
+        client = FakeOpenAIModel(responses)
         if handlers is None:
             handlers = [AutoHandler()]
-        agent = await MiniCodex.create(mcp_client=mcp_client, system=system, client=client, handlers=handlers, **kwargs)
+        if tool_policy is None:
+            tool_policy = RequireAnyTool()
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client, system=system, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
+        )
         return agent, client
 
     return _make
@@ -324,41 +288,6 @@ def agent_test_client(agent_app_client):
     return client
 
 
-@pytest.fixture
-def make_spy_spec() -> Callable[[list[str]], McpServerSpecs]:
-    def _spec(counter: list[str]) -> McpServerSpecs:
-        mcp = FastMCP("spy")
-
-        @mcp.tool()
-        def echo(text: str) -> dict[str, Any]:
-            counter.append(text)
-            return {"ok": True, "echo": text}
-
-        return {"spy": mcp}
-
-    return _spec
-
-
-# ---- Bound HTTP helper fixture ----------------------------------------------
-
-
-@pytest.fixture
-def make_agent_http():
-    """Factory returning an object with HTTP helpers bound to (client, agent_id).
-
-    Usage:
-        http = make_agent_http(client, agent_id)
-        http.prompt("hi")
-        http.set_policy("src")
-        http.snapshot()
-        http.abort()
-        http.approve(call_id)
-        http.deny_continue(call_id)
-        http.deny_abort(call_id)
-    """
-    return _AgentHttp
-
-
 # ---- Recording handler fixture -----------------------------------------------
 
 
@@ -425,11 +354,11 @@ def fresh_ui_state():
 @pytest.fixture
 def make_tool_call() -> Callable[..., ToolCall]:
     """Factory for creating ToolCall instances with defaults."""
+    factory = ItemFactory(call_id_prefix="test_call")
 
-    def _make(server: str, tool: str, call_id: str, args: dict[str, Any] | None = None) -> ToolCall:
-        return ToolCall(
-            name=build_mcp_function(server, tool), call_id=call_id, args_json=json.dumps(args) if args else None
-        )
+    def _make(server: str, tool: str, call_id: str | None = None, args: dict[str, Any] | None = None) -> ToolCall:
+        item = factory.tool_call(name=build_mcp_function(server, tool), arguments=args or {}, call_id=call_id)
+        return ToolCall(name=item.name, call_id=item.call_id, args_json=item.arguments)
 
     return _make
 
@@ -480,13 +409,16 @@ def make_user_text_event(event_ts) -> Callable[[int, str], EventRecord]:
 @pytest.fixture
 def make_tool_call_event(event_ts) -> Callable[..., EventRecord]:
     """Factory for ToolCall EventRecord."""
+    factory = ItemFactory(call_id_prefix="test_event_call")
 
-    def _make(seq: int, server: str, tool: str, call_id: str, args_json: str | None = None) -> EventRecord:
+    def _make(seq: int, server: str, tool: str, call_id: str | None = None, args_json: str | None = None) -> EventRecord:
+        # Use ItemFactory for consistent call_id generation
+        item = factory.tool_call(name=build_mcp_function(server, tool), arguments={}, call_id=call_id)
         return EventRecord(
             seq=seq,
             ts=event_ts,
-            payload=ToolCallPayload(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id),
-            call_id=call_id,
+            payload=ToolCallPayload(name=item.name, args_json=args_json, call_id=item.call_id),
+            call_id=item.call_id,
         )
 
     return _make

@@ -31,13 +31,17 @@ Source = Annotated[GitSource | GitHubSource | LocalSource, Field(discriminator="
 
 
 class BundleFilter(BaseModel):
-    """Filters for bundle creation: which files to include/exclude when snapshotting.
+    """Build-time metadata for bundle creation (optional).
+
+    Only needed when regenerating bundles from a source repository.
+    Contains the source commit SHA and gitignore-style filters.
 
     Uses gitignore-style patterns:
     - Trailing slash means directory (e.g., "web/" excludes the web directory)
     - No wildcards needed for "everything under" (e.g., "adgn/" includes all of adgn/)
     """
 
+    source_commit: str  # Full commit SHA in the original source repository to filter from
     include: list[str] | None = None
     exclude: list[str] | None = None
 
@@ -45,11 +49,16 @@ class BundleFilter(BaseModel):
 class SpecimenDoc(BaseModel):
     """Unified specimen document (v2): source, bundle filters, and split assignment.
 
-    Note: issues are loaded separately from issues/*.libsonnet files. We keep
-    `items` as a generic list to avoid cross-module type cycles with Issue.
+        Note: issues are loaded separately from issues/*.libsonnet files. We keep
+        `items` as a generic list to avoid cross-module type cycles with Issue.
 
-    Bundle is optional - only required for specimens that use git bundles.
-    Split is required - every specimen must be assigned to train/valid/test.
+    <<<<<<< Updated upstream
+        Bundle is optional - only required for specimens that use git bundles.
+        Split is required - every specimen must be assigned to train/valid/test.
+    =======
+        Bundle is optional - only needed when regenerating bundles from source.
+        At runtime, specimens only use the `source` field.
+    >>>>>>> Stashed changes
     """
 
     source: Source

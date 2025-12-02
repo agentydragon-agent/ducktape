@@ -1,36 +1,21 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-from urllib.parse import parse_qs, urlparse
-
 import pytest
 
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from adgn.mcp.ui.server import EndTurnInput
-from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import MakeCall
 
 pytestmark = pytest.mark.usefixtures()
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
 
-if TYPE_CHECKING:
-    from playwright.sync_api import Page
-else:
-    Page = playwright.Page
-
-
 """E2E UI tests. Shared fixtures are provided in tests/agent/e2e/conftest.py."""
 
 
-def _extract_agent_id(url: str) -> str | None:
-    qs = parse_qs(urlparse(url).query)
-    vals = qs.get("agent_id")
-    return vals[0] if vals else None
-
-
-def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
+def test_ui_create_chat_and_restore(e2e_page, run_server, responses_factory, make_step_runner):
     """Create agent via UI, send two prompts, restart server, and verify hydration in snapshot.
 
     - FE: exercise Svelte UI flows (agent creation, chatting, rendering messages)
@@ -39,67 +24,44 @@ def test_ui_create_chat_and_restore(page: Page, run_server, responses_factory):
     """
 
     # Program two turns: **r1**, end; then **r2**, end
-    state = {"i": 0}
-
-    async def responses_create(_req):
-        i = state["i"]
-        state["i"] = i + 1
-        if i == 0:
-            return responses_factory.make_mcp_tool_call(
-                "ui", "send_message", SendMessageInput(mime="text/markdown", content="**r1**"), call_id="call_ui_msg_r1"
-            )
-        if i == 1:
-            return responses_factory.make_mcp_tool_call("ui", "end_turn", EndTurnInput(), call_id="call_ui_end_r1")
-        if i == 2:
-            return responses_factory.make_mcp_tool_call(
-                "ui", "send_message", SendMessageInput(mime="text/markdown", content="**r2**"), call_id="call_ui_msg_r2"
-            )
-        return responses_factory.make_mcp_tool_call("ui", "end_turn", EndTurnInput(), call_id="call_ui_end_r2")
+    runner = make_step_runner(
+        steps=[
+            MakeCall("ui", "send_message", SendMessageInput(mime="text/markdown", content="**r1**")),
+            MakeCall("ui", "end_turn", EndTurnInput()),
+            MakeCall("ui", "send_message", SendMessageInput(mime="text/markdown", content="**r2**")),
+            MakeCall("ui", "end_turn", EndTurnInput()),
+        ]
+    )
 
     # Start server instance A
-    s1 = run_server(lambda model: make_mock(responses_create))
-    base1 = s1["base_url"]
+    s1 = run_server(lambda model: make_mock(runner.handle_request_async))
 
-    # 1) Create agent via backend API, then open UI directly on that agent
-    agent_id = api_create_agent(base1)
-    # Hook console logging for debugging WS issues
-    page.on("console", lambda msg: print(f"[browser console] {msg.type}: {msg.text}"))
-    page.goto(base1 + f"/?agent_id={agent_id}")
-    # Wait for either WS connected or an error banner, print error if seen
-    try:
-        # Prefer stable selector over text to avoid timing blips
-        page.locator(".ws .dot.on").wait_for(timeout=10000)
-    except Exception:
-        # Surface any UI error banner for diagnosis
-        try:
-            err_text = page.locator(".error").first.text_content(timeout=1000) or ""
-            print("UI error banner:", err_text)
-        except Exception:
-            pass
-        raise
+    # 1) Open UI and create agent via the UI
+    e2e_page.goto(s1.base_url)
+    e2e_page.create_agent_via_ui()
+
+    # Extract agent_id from URL after agent is created
+    e2e_page.page.wait_for_url("**/?(agent_id=*", timeout=10000)
+    agent_id = e2e_page.extract_agent_id_from_url()
 
     # 2) Send first prompt and expect Assistant message r1
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("hi")
-    page.get_by_role("button", name="Send").click()
-    page.locator(".messages .msg .text", has_text="r1").wait_for(timeout=5000)
+    e2e_page.send_prompt("hi")
+    e2e_page.wait_for_message("r1")
 
     # 3) Send second prompt and expect Assistant message r2
-    page.locator('textarea[placeholder^="Type a prompt"]').fill("again")
-    page.get_by_role("button", name="Send").click()
-    page.locator(".messages .msg .text", has_text="r2").wait_for(timeout=5000)
+    e2e_page.send_prompt("again")
+    e2e_page.wait_for_message("r2")
 
     # Stop server A
-    s1["stop"]()
+    s1.stop()
 
     # Start server instance B (same DB)
-    s2 = run_server(lambda model: make_mock(responses_create))
-    base2 = s2["base_url"]
+    s2 = run_server(lambda model: make_mock(runner.handle_request_async))
 
     # 4) Re-open UI on the same agent id, wait for WS connected (dot), verify hydration
-    page.goto(base2 + f"/?agent_id={agent_id}")
-    page.locator(".ws .dot.on").wait_for(timeout=10000)
-    page.locator(".messages .msg .text", has_text="r1").wait_for(timeout=5000)
-    page.locator(".messages .msg .text", has_text="r2").wait_for(timeout=5000)
+    e2e_page.goto_agent(s2.base_url, agent_id)
+    e2e_page.wait_for_message("r1")
+    e2e_page.wait_for_message("r2")
 
     # Cleanup
-    s2["stop"]()
+    s2.stop()

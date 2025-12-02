@@ -5,6 +5,7 @@ import os
 import pytest
 
 from adgn.agent.agent import AgentResult, MiniCodex
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
@@ -28,19 +29,19 @@ async def _assert_exec_echo(sess) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo(pg_session_box) -> None:
+async def test_exec_roundtrip_echo(pg_client_box) -> None:
     """Spin up real Docker container and roundtrip an echo via exec."""
-    await _assert_exec_echo(pg_session_box)
+    await _assert_exec_echo(pg_client_box)
 
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-async def test_live_llm_exec_echo(pg_session_box) -> None:
+async def test_live_llm_exec_echo(pg_client_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
     agent = await MiniCodex.create(
-        mcp_client=pg_session_box,
+        mcp_client=pg_client_box,
         system=(
             "You are testing an MCP exec tool.\n"
             "Call the tool "
@@ -49,6 +50,7 @@ async def test_live_llm_exec_echo(pg_session_box) -> None:
         ),
         client=client,
         handlers=[AutoHandler()],
+        tool_policy=RequireAnyTool(),
     )
     res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
     text = (res.text or "").strip()

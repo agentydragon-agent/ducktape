@@ -20,7 +20,6 @@ export type ContainerState = { present: boolean; id?: string | null; ephemeral?:
 export type AgentStatus = {
   id: string
   live: boolean
-  active_run_id?: string | null
   lifecycle?: 'persisted_only' | 'starting' | 'ready' | 'closing' | 'closed' | 'error'
   run_phase?:
     | 'idle'
@@ -94,15 +93,9 @@ export type ApprovalPolicyInfo = {
   proposals?: Proposal[]
 }
 
-export type RunState = {
-  status: string
-  pending_approvals: any[]
-}
-
 export type SnapshotPayload = {
   type: 'snapshot'
   approval_policy?: ApprovalPolicyInfo
-  run_state?: RunState
   sampling?: SamplingSnapshot
 }
 
@@ -168,7 +161,6 @@ export type UiState = {
 
 export type UiStateSnapshotPayload = { type: 'ui_state_snapshot'; state: UiState }
 export type UiStateUpdatedPayload = { type: 'ui_state_updated'; state: UiState }
-export type RunStatusPayload = { type: 'run_status'; run_state?: { status?: string } }
 export type ApprovalPendingPayload = {
   type: 'approval_pending'
   call_id: string
@@ -189,7 +181,6 @@ export type IncomingPayload =
   | SnapshotPayload
   | UiStateSnapshotPayload
   | UiStateUpdatedPayload
-  | RunStatusPayload
   | ApprovalPendingPayload
   | ApprovalDecisionPayload
   | AcceptedPayload

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 import threading
 import time
 from typing import Any
 
-import requests
 from uvicorn import Config, Server
 
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
@@ -13,6 +13,19 @@ from adgn.util.net import pick_free_port
 # System notification tag constants
 SYSTEM_NOTIFICATION_START_TAG = "<system notification>"
 SYSTEM_NOTIFICATION_END_TAG = "</system notification>"
+
+
+@dataclass
+class ServerHandle:
+    """Handle for a running uvicorn server with cleanup."""
+
+    base_url: str
+    app: Any
+    _stop_fn: Any
+
+    def stop(self) -> None:
+        """Stop the server."""
+        self._stop_fn()
 
 
 class NoopOpenAIClient(OpenAIModelProto):
@@ -38,10 +51,10 @@ def strip_system_notification_wrapper(text: str) -> str:
 
 def start_uvicorn_app(
     app: Any, *, host: str = "127.0.0.1", port: int | None = None, log_level: str = "info"
-) -> dict[str, Any]:
+) -> ServerHandle:
     """Start a FastAPI app in a background thread with uvicorn.
 
-    Returns a dict with base_url and stop() to terminate the server.
+    Returns a ServerHandle with base_url, app, and stop() method.
     Waits until app.state.ready is set if present (best-effort).
     """
     if port is None:
@@ -61,53 +74,4 @@ def start_uvicorn_app(
         server.should_exit = True
         th.join(timeout=10)
 
-    return {"base_url": f"http://{host}:{port}", "stop": _stop}
-
-
-# ------------------------------
-# HTTP convenience for E2E flows
-# ------------------------------
-
-
-def api_create_agent(base_url: str, *, preset: str = "default", system: str | None = None) -> str:
-    """Create an agent via HTTP POST /api/agents and return its id.
-
-    Keeps E2E tests concise and consistent.
-    """
-    body: dict[str, object] = {"preset": preset}
-    if system is not None:
-        body["system"] = system
-    # Freeform metadata removed; preset is tracked internally only.
-    resp = requests.post(f"{base_url}/api/agents", json=body)
-    resp.raise_for_status()
-    data = resp.json()
-    return str(data.get("id"))
-
-
-# ------------------------------
-# HTTP agent endpoint helpers
-# ------------------------------
-
-
-def agent_endpoint(agent_id: str, suffix: str | None = None) -> str:
-    base = f"/api/agents/{agent_id}"
-    return f"{base}/{suffix}" if suffix else base
-
-
-def http_prompt(client, agent_id: str, text: str):
-    return client.post(agent_endpoint(agent_id, "prompt"), json={"text": text})
-
-
-def http_abort(client, agent_id: str):
-    return client.post(agent_endpoint(agent_id, "abort"))
-
-
-def http_snapshot(client, agent_id: str):
-    return client.get(agent_endpoint(agent_id, "snapshot"))
-
-
-def http_set_policy(client, agent_id: str, content: str, proposal_id: str | None = None):
-    body: dict[str, object] = {"content": content}
-    if proposal_id is not None:
-        body["proposal_id"] = proposal_id
-    return client.post(agent_endpoint(agent_id, "policy"), json=body)
+    return ServerHandle(base_url=f"http://{host}:{port}", app=app, _stop_fn=_stop)

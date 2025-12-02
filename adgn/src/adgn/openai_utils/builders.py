@@ -12,6 +12,10 @@ Reasoning items originate from the model and should never be synthesized in prod
 import json
 from typing import Any
 
+from pydantic import BaseModel
+
+from adgn.mcp._shared.naming import build_mcp_function
+
 from .model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, OutputText
 
 
@@ -42,6 +46,12 @@ class ItemFactory:
     def tool_call(self, name: str, arguments: dict[str, Any], call_id: str | None = None) -> FunctionCallItem:
         cid = call_id or self.next_call_id()
         return make_item_tool_call(call_id=cid, name=name, arguments=arguments)
+
+    def mcp_tool_call(
+        self, server: str, tool: str, arguments: BaseModel, call_id: str | None = None
+    ) -> FunctionCallItem:
+        """Create tool call for MCP server/tool with automatic naming."""
+        return self.tool_call(build_mcp_function(server, tool), arguments.model_dump(), call_id)
 
     def assistant_text(self, text: str) -> AssistantMessageOut:
         return make_item_assistant_text(text)

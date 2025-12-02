@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 import pygit2
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import Abort, Continue, RequireAnyTool
 from adgn.agent.reducer import BaseHandler
@@ -31,19 +31,28 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem
 
 
-def _default_bootstrap(
-    server: str, *, staged_limit: int = 2000, patch_slice_chars: int = 50000
+def make_commit_bootstrap_calls(
+    builder: TypedBootstrapBuilder,
+    server: str,
+    *,
+    amend: bool = False,
+    staged_limit: int = 2000,
+    patch_slice_chars: int = 50000,
 ) -> list[FunctionCallItem]:
-    """Build the default list of bootstrap tool calls for a commit flow.
+    """Build bootstrap calls for commit message generation.
 
-    Returns initial function calls agent should start out having executed when composing
-    a commit message. Parameters control pagination sizes used for heavy payloads.
+    Args:
+        builder: TypedBootstrapBuilder instance
+        server: Git MCP server name
+        amend: If True, include git_show and diff for HEAD (for amending commits)
+        staged_limit: Maximum number of staged files to list
+        patch_slice_chars: Maximum characters for patch output
+
+    Returns:
+        List of bootstrap function call items
     """
-    builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
-    return [
-        builder.call(
-            server, "git_status", StatusInput(list_slice=ListSlice(offset=0, limit=1000)), call_id="bootstrap:status"
-        ),
+    calls = [
+        builder.call(server, "git_status", StatusInput(list_slice=ListSlice(offset=0, limit=1000))),
         builder.call(
             server,
             "git_diff",
@@ -53,7 +62,6 @@ def _default_bootstrap(
                 find_renames=True,
                 list_slice=ListSlice(offset=0, limit=staged_limit),
             ),
-            call_id="bootstrap:diff-name-status",
         ),
         builder.call(
             server,
@@ -64,7 +72,6 @@ def _default_bootstrap(
                 find_renames=True,
                 list_slice=ListSlice(offset=0, limit=staged_limit),
             ),
-            call_id="bootstrap:diff-stat",
         ),
         builder.call(
             server,
@@ -75,9 +82,32 @@ def _default_bootstrap(
                 unified=0,
                 slice=TextSlice(offset_chars=0, max_chars=patch_slice_chars),
             ),
-            call_id="bootstrap:diff-patch",
         ),
     ]
+
+    if amend:
+        calls.extend(
+            [
+                builder.call(
+                    server,
+                    "git_show",
+                    ShowInput(object="HEAD", format=DiffFormat.PATCH, slice=TextSlice(offset_chars=0, max_chars=50000)),
+                ),
+                builder.call(
+                    server,
+                    "git_diff",
+                    DiffInput(
+                        format=DiffFormat.PATCH,
+                        rev_a="HEAD^",
+                        rev_b="HEAD",
+                        unified=0,
+                        slice=TextSlice(offset_chars=0, max_chars=50000),
+                    ),
+                ),
+            ]
+        )
+
+    return calls
 
 
 class CommitMessage(BaseModel):
@@ -107,52 +137,26 @@ def make_submit_server(state: SubmitState):
 
 
 class CommitController(BaseHandler):
-    """Emit bootstrap git calls in parallel on first turn; then require tools until submit.
+    """Manages commit flow: bootstrap git calls → require tools → submit.
 
-    The controller can be configured with `amend=True` to include additional
-    bootstrap calls that inspect the commit being amended (HEAD) and the original
-    commit diff (HEAD^..HEAD) so the agent has explicit amendment context.
+    Delegates bootstrap injection to BootstrapHandler, then monitors for submission.
     """
 
-    def __init__(self, state: SubmitState, server_name: str, amend: bool = False) -> None:
+    def __init__(self, state: SubmitState, bootstrap_handler: BootstrapHandler) -> None:
         self._state = state
-        self._server = server_name
-        self._step = 0
-        # Bootstrap with read-only Git MCP tools (structured payloads)
-        self._bootstrap = _default_bootstrap(self._server)
-
-        # If amending, append dedicated bootstrap calls for the amended commit and its original diff
-        if amend:
-            builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
-            extra_boots = [
-                builder.call(
-                    self._server,
-                    "git_show",
-                    ShowInput(object="HEAD", format=DiffFormat.PATCH, slice=TextSlice(offset_chars=0, max_chars=50000)),
-                    call_id="bootstrap:show-head",
-                ),
-                builder.call(
-                    self._server,
-                    "git_diff",
-                    DiffInput(
-                        format=DiffFormat.PATCH,
-                        rev_a="HEAD^",
-                        rev_b="HEAD",
-                        unified=0,
-                        slice=TextSlice(offset_chars=0, max_chars=50000),
-                    ),
-                    call_id="bootstrap:orig-diff",
-                ),
-            ]
-            self._bootstrap.extend(extra_boots)
+        self._bootstrap_handler = bootstrap_handler
 
     def on_before_sample(self):
+        # Stop immediately once submit_commit_message was called
         if self._state.result is not None:
             return Abort()
-        self._step += 1
-        if self._step == 1:
-            return Continue(tool_policy=RequireAnyTool(), inserts_input=tuple(self._bootstrap), skip_sampling=True)
-        return Continue(RequireAnyTool())
+
+        # Delegate bootstrap to BootstrapHandler
+        decision = self._bootstrap_handler.on_before_sample()
+        if decision is not None:
+            return decision
+
+        return Continue()
 
 
 async def generate_commit_message_minicodex(
@@ -183,14 +187,20 @@ async def generate_commit_message_minicodex(
 
     prompt = _build_commit_prompt(amend)
 
-    handlers: list[BaseHandler] = [CommitController(submit_state, GIT_RO_SERVER_NAME, amend=amend)]
+    # Build compositor, mount servers
+    comp = Compositor("compositor")
+    git_server = await attach_git_ro(comp, repo_root)
+    await comp.mount_inproc(SUBMIT_COMMIT_MESSAGE_SERVER_NAME, make_submit_server(submit_state))
+
+    # Build bootstrap calls
+    builder = TypedBootstrapBuilder.for_server(git_server)
+    bootstrap_calls = make_commit_bootstrap_calls(builder, GIT_RO_SERVER_NAME, amend=amend)
+    bootstrap = BootstrapHandler(bootstrap_calls)
+
+    handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
     if debug:
         handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
-    # Build compositor, mount servers, and run agent with a client
-    comp = Compositor("compositor")
-    await attach_git_ro(comp, repo_root)
-    await comp.mount_inproc(SUBMIT_COMMIT_MESSAGE_SERVER_NAME, make_submit_server(submit_state))
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
@@ -198,6 +208,7 @@ async def generate_commit_message_minicodex(
             client=build_client(model),
             handlers=handlers,
             parallel_tool_calls=True,
+            tool_policy=RequireAnyTool(),
         )
         await agent.run(prompt)
 

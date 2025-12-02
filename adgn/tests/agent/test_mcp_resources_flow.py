@@ -4,39 +4,44 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.reducer import AutoHandler
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import make_mock
+from tests.support.steps import AssistantMessage, MakeCall
 
 
 @pytest.mark.requires_docker
 async def test_model_reads_container_info_with_stubbed_openai(
-    reasoning_model, responses_factory, docker_inproc_spec_alpine, make_pg_client, recording_handler
+    reasoning_model, docker_inproc_spec_alpine, make_pg_client, recording_handler, make_step_runner
 ) -> None:
     async with make_pg_client({"runtime": docker_inproc_spec_alpine}) as mcp_client:
         # Prepare a deterministic two-step sequence: function_call then final text
-        seq = [
-            responses_factory.make_mcp_tool_call(
-                "resources",
-                "read",
-                ResourcesReadArgs(server="docker", uri="resource://container.info", start_offset=0, max_bytes=1024),
-            ),
-            responses_factory.make_assistant_message("ok"),
-        ]
-        client = FakeOpenAIModel(seq)
+        runner = make_step_runner(
+            steps=[
+                MakeCall(
+                    "resources",
+                    "read",
+                    ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024),
+                ),
+                AssistantMessage("ok"),
+            ]
+        )
+        client = make_mock(runner.handle_request_async)
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
             client=client,
             system="test",
             handlers=[AutoHandler(), DisplayEventsHandler(), recording_handler],
+            tool_policy=RequireAnyTool(),
         )
 
         await agent.run("read container info")
         kinds = [e.get("kind") for e in recording_handler.records]
         assert "tool_call" in kinds
         assert "function_call_output" in kinds
-        assert client.calls == 2
+        assert len(client.captured) == 2
         # Verify that the second call included the function_call and function_call_output (stateless replay).
         second = client.captured[1]
         input_items = list(second.input or [])

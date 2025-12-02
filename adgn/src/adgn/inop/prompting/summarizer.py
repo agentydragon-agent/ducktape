@@ -5,10 +5,10 @@ import json
 
 from adgn.inop.engine.models import FileInfo, GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
-from adgn.inop.prompting.context_window import context_window_tokens_by_id
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
 from adgn.inop.prompting.truncation_utils import TruncationManager
 from adgn.openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
+from adgn.openai_utils.model_metadata import get_model_metadata
 from adgn.openai_utils.text_extraction import first_assistant_text
 
 logger = DualOutputLogging.get_logger()
@@ -52,7 +52,7 @@ class PatternSummarizer(FeedbackProvider):
         header_text = (
             f"Analyze these {len(rollouts)} coding task rollouts and identify key patterns for prompt improvement:\n\n"
         )
-        ctx_window = context_window_tokens_by_id(self.context_model_id)
+        ctx_window = get_model_metadata(self.context_model_id).context_window_tokens
         remaining_tokens = ctx_window - system_tokens - self._count_tokens(header_text)
 
         logger.info(

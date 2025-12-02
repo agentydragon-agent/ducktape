@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from uuid import UUID
 
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
@@ -23,35 +22,31 @@ class RunPhase(StrEnum):
     ERROR = "error"
 
 
-def derive_run_phase(*, active_run_id: UUID | None, pending_approvals: int) -> RunPhase:
+def derive_run_phase(*, pending_approvals: int) -> RunPhase:
     """Coarse run phase derivation used by HTTP and WS status.
 
-    - idle: no active run
-    - waiting_approval: active run with pending approvals
-    - sampling: active run without pending approvals (default)
+    - idle: no pending approvals (no activity)
+    - waiting_approval: pending approvals exist
+    - sampling: default (activity but no pending approvals)
     """
-    if active_run_id is None:
-        return RunPhase.IDLE
     if pending_approvals > 0:
         return RunPhase.WAITING_APPROVAL
-    return RunPhase.SAMPLING
+    return RunPhase.IDLE
 
 
-def determine_run_phase(*, active_run_id: UUID | None, pending_approvals: int, mcp_has_inflight: bool) -> RunPhase:
+def determine_run_phase(*, pending_approvals: int, mcp_has_inflight: bool) -> RunPhase:
     """Precise run phase from live signals.
 
-    - IDLE: no active run
+    - IDLE: no pending approvals and no MCP inflight
     - WAITING_APPROVAL: approvals pending
     - TOOLS_RUNNING: MCP policy gateway has in-flight requests
-    - SAMPLING: otherwise
+    - SAMPLING: has activity but not in other states
     """
-    if active_run_id is None:
-        return RunPhase.IDLE
     if pending_approvals > 0:
         return RunPhase.WAITING_APPROVAL
     if mcp_has_inflight:
         return RunPhase.TOOLS_RUNNING
-    return RunPhase.SAMPLING
+    return RunPhase.IDLE
 
 
 class AgentLifecycle(StrEnum):
@@ -78,7 +73,6 @@ class ContainerState(BaseModel):
 class AgentStatusCore(BaseModel):
     id: str
     live: bool
-    active_run_id: UUID | None
     lifecycle: AgentLifecycle
     run_phase: RunPhase
     ui: UiStateLite
@@ -99,13 +93,10 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     c = registry.get(agent_id)
     present = c is not None
 
-    # UI + active run
+    # UI + pending approvals
     ui_ready = bool(c and c.ui is not None)
     pending = 0
-    active_run: UUID | None = None
     if c and c.session is not None:
-        if c.session.active_run:
-            active_run = c.session.active_run.run_id
         pending = len(c.session.approval_hub.pending)
 
     # MCP server entries — read via compositor_meta resources through container
@@ -136,12 +127,11 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     # Run phase from live signals; no exceptions expected in this path
     # Check policy gateway for in-flight tool calls (if container and gateway exist)
     has_inflight = bool(c and c._policy_gateway and c._policy_gateway.has_inflight_calls())
-    run_phase = determine_run_phase(active_run_id=active_run, pending_approvals=pending, mcp_has_inflight=has_inflight)
+    run_phase = determine_run_phase(pending_approvals=pending, mcp_has_inflight=has_inflight)
 
     return AgentStatusCore(
         id=agent_id,
         live=present and lifecycle in (AgentLifecycle.STARTING, AgentLifecycle.READY),
-        active_run_id=active_run,
         lifecycle=lifecycle,
         run_phase=run_phase,
         ui=UiStateLite(ready=ui_ready),
