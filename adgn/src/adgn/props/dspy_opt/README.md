@@ -1,7 +1,36 @@
-# DSPy-based Prompt Optimization for Props
+# DSPy-based Prompt Optimization with GEPA-style Feedback
 
-DSPy is used **only** for generating/optimizing prompt text.
-Agent execution uses existing `run_critic()` + `grade_critique_by_id()`.
+DSPy optimizes prompt text using rich structured feedback from your existing infrastructure.
+
+## Feedback Sources
+
+The optimizer receives three types of structured feedback for each failed specimen:
+
+### 1. Execution Traces (from `events` table)
+```
+[0] CALL docker__run_command({"command": "ruff check src/"})
+[1] → src/foo.py:42: E501 Line too long...
+[2] CALL critic_submit__upsert_issue({"issue_id": "line-too-long", ...})
+...
+```
+
+### 2. Grader Analysis (full `GradeSubmitInput`)
+```
+Covered 2/5 canonical issues (recall=40%)
+
+**Missed Issues (CRITICAL):**
+- dead-import: The critic didn't check for unused imports in module.py
+- missing-type-annotation: Function bar() lacks return type annotation
+
+**False Positives Triggered:**
+- trivial-style-nit: This is a known FP, prompt should ignore
+```
+
+### 3. Ground Truth Issues (from specimen)
+```
+- **dead-import**: Unused import 'os' at line 3 (in src/module.py)
+- **missing-type-annotation**: Function bar() needs return type (in src/api.py)
+```
 
 ## Flow
 
@@ -9,22 +38,20 @@ Agent execution uses existing `run_critic()` + `grade_critique_by_id()`.
 ┌─────────────────────────────────────────────────────────────┐
 │                    Optimization Loop                         │
 │                                                              │
-│  1. Current prompt                                           │
-│         │                                                    │
-│         ▼                                                    │
-│  2. run_critic() on train specimens                          │
-│     (MiniCodex + Docker MCP - your existing infrastructure)  │
-│         │                                                    │
-│         ▼                                                    │
-│  3. grade_critique_by_id() for each                          │
-│     (LLM grader - your existing grader)                      │
-│         │                                                    │
-│         ▼                                                    │
-│  4. DSPy LM proposes improved prompt based on failures       │
-│         │                                                    │
-│         ▼                                                    │
-│  5. Repeat until target recall or max iterations             │
+│  1. run_critic() on train specimens                          │
+│     └─ Logs events to DB (tool calls, outputs)              │
 │                                                              │
+│  2. grade_critique_by_id()                                   │
+│     └─ Returns full GradeSubmitInput (coverage, rationales) │
+│                                                              │
+│  3. Format rich feedback:                                    │
+│     - Execution trace (what agent did)                       │
+│     - Grader analysis (what was missed/covered)              │
+│     - Ground truth (what should be found)                    │
+│                                                              │
+│  4. DSPy PromptImprover analyzes failures, proposes fix      │
+│                                                              │
+│  5. Repeat until target recall                               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -36,45 +63,66 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.props.dspy_opt import optimize_critic_prompt
 from adgn.props.specimens.registry import SpecimenRegistry
 
-# Configure DSPy LM (for prompt improvement only)
+# Configure DSPy LM for prompt improvement
 dspy.configure(lm=dspy.LM("openai/gpt-4o"))
 
-# Your existing client for critic/grader execution
+# Your existing infrastructure
 client = build_client()
 registry = SpecimenRegistry.from_package_resources()
 
-# Load initial prompt
+# Initial prompt
 initial_prompt = Path("prompts/critic_system.md").read_text()
 
-# Optimize
+# Optimize with rich feedback
 best_prompt, history = await optimize_critic_prompt(
     initial_prompt=initial_prompt,
     registry=registry,
     client=client,
     max_iterations=5,
     target_recall=0.95,
-    verbose=True,
 )
 
-# Evaluate on validation
+# Check validation performance
 from adgn.props.dspy_opt.optimize import evaluate_on_validation
 valid_eval = await evaluate_on_validation(best_prompt, registry, client)
 print(f"Validation recall: {valid_eval.avg_recall:.2%}")
 ```
 
-## What DSPy does here
+## Key Types
 
-DSPy's role is minimal:
-- `PromptImprover` signature generates improved prompts based on failure feedback
-- `dspy.ChainOfThought(PromptImprover)` is used to propose changes
+- `RichEvalResult`: Full evaluation with grader output, ground truth, and trace
+- `PromptEvaluation`: Aggregated results with `avg_recall` and `failures`
+- `PromptImprover`: DSPy signature that analyzes feedback and proposes improvements
 
-Everything else uses your existing infrastructure:
-- Critic runs in Docker via MCP (your `run_critic`)
-- Grading via your LLM grader (`grade_critique_by_id`)
-- Specimens from your registry
-- Results stored in your Postgres DB
+## What the Optimizer Sees
 
-## Key types
+For each failed specimen, the `PromptImprover` receives:
 
-- `EvalResult`: Single specimen evaluation (critic_run_id, critique_id, grader_run_id, recall)
-- `PromptEvaluation`: Full evaluation of a prompt (results list, avg_recall, failures)
+```markdown
+# Specimen: ducktape/2025-11-20-00
+**Recall: 40%**
+
+### Ground Truth Issues (what should be found):
+- **dead-import**: Unused import detected... (in src/module.py)
+- **missing-annotation**: Function lacks type hints... (in src/api.py)
+
+### Grader Analysis:
+Covered 2/5 canonical issues (recall=40%)
+
+**Missed Issues (CRITICAL - prompt must address these):**
+- dead-import: The critic checked imports but missed the unused 'os' import
+- missing-annotation: No type checking was performed on function signatures
+
+**Grader Summary:** The critic focused on runtime issues but neglected...
+
+### Execution Trace (what the agent did):
+[0] CALL docker__run_command({"command": "ruff check ."})
+[1] → All checks passed
+[2] CALL docker__run_command({"command": "mypy src/"})
+...
+```
+
+The optimizer uses this to understand:
+- **What** was missed (grader analysis)
+- **Why** it was missed (execution trace shows agent behavior)
+- **What** should have been found (ground truth)
