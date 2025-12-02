@@ -1,26 +1,15 @@
 """DSPy integration for props - prompt optimization for code review agents.
 
-This module adapts the props evaluation framework to DSPy's optimization paradigm:
-- Specimens become DSPy Examples
-- The critic agent becomes a DSPy ReAct module
-- The grader becomes the metric function
-- DSPy teleprompters optimize the critic prompt
+DSPy optimizes the prompt text. Agent execution uses existing MiniCodex + MCP.
 
-Key insight: This is prompt optimization for an agent (ReAct), not single-turn completion.
-The agent needs tools (file read, command execution) which operate on a per-specimen workspace.
+Flow:
+1. Load specimens (train/valid)
+2. For each prompt candidate:
+   a. Run critic via existing run_critic() (MiniCodex + Docker MCP)
+   b. Grade via existing run_grader() (LLM grader)
+3. DSPy teleprompter optimizes prompt based on grades
 """
 
-from .examples import load_specimens_as_examples, SpecimenExample
-from .metric import grader_metric
-from .optimize import optimize_critic
-from .signature import FindCodeIssues
-from .tools import WorkspaceTools
+from .optimize import optimize_critic_prompt
 
-__all__ = [
-    "FindCodeIssues",
-    "WorkspaceTools",
-    "grader_metric",
-    "load_specimens_as_examples",
-    "optimize_critic",
-    "SpecimenExample",
-]
+__all__ = ["optimize_critic_prompt"]
