@@ -29,7 +29,8 @@ class NotificationsBatch(BaseModel):
             for uri in notice.updated:
                 yield (server, uri)
 
-    def get_servers_with_list_changes(self) -> set[str]:
+    @property
+    def resource_list_changed(self) -> set[str]:
         """Get set of server names where resources/list changed."""
         return {server for server, notice in self.resources.items() if notice.list_changed}
 

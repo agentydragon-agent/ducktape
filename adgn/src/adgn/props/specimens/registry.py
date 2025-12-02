@@ -30,6 +30,7 @@ from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..paths import FileType, classify_path
 from ..rationale import Rationale
+from ..splits import Split
 from ..validation_context import SpecimenContext
 
 if TYPE_CHECKING:
@@ -409,38 +410,6 @@ def resolve_source_root(man: SpecimenDoc, manifest_path: Path) -> Path:
     raise SystemExit(f"Unsupported source type: {type(man.source)}")
 
 
-def resolve_manifest_arg(arg: str | None, base: Path) -> Path | None:
-    """Resolve a specimen identifier or path to its manifest.yaml.
-
-    Args:
-        arg: Specimen ID like "ducktape/2025-11-20-adgn" or filesystem path
-        base: Specimens base directory (required - pass from registry.base_path)
-
-    Returns:
-        Path to manifest.yaml or None if not found
-    """
-    if arg is None:
-        return None
-    path = Path(arg)
-    if path.exists():
-        if path.is_dir():
-            yaml_cand = path / "manifest.yaml"
-            return yaml_cand if yaml_cand.exists() else None
-        return path if path.suffix.lower() in {".yaml", ".yml"} else None
-    base_dir = base
-    # Try direct hierarchical path (repo/name)
-    yaml_cand = base_dir / arg.replace("/", os.sep) / "manifest.yaml"
-    if yaml_cand.exists():
-        return yaml_cand
-    # Try prefix matching for convenience
-    registry = SpecimenRegistry.from_base_path(base_dir)
-    matches = [n for n in registry.list_specimen_names() if n.startswith(arg)]
-    if len(matches) == 1:
-        mdir = base_dir / matches[0].replace("/", os.sep)
-        return (mdir / "manifest.yaml") if (mdir / "manifest.yaml").exists() else None
-    return None
-
-
 @dataclass(frozen=True)
 class SpecimenRecord:
     slug: str
@@ -697,8 +666,9 @@ class SpecimenRegistry:
         manifest = SpecimenDoc.model_validate(raw)
         return (manifest_path, manifest)
 
-    def list_specimen_names(self) -> list[str]:
-        """List all specimen names in hierarchical format (repo/name).
+    @property
+    def specimen_slugs(self) -> set[str]:
+        """All specimen slugs in hierarchical format (repo/name).
 
         Specimens are organized as:
           specimens/
@@ -707,13 +677,49 @@ class SpecimenRegistry:
                 manifest.yaml
 
         Returns:
-            Specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
+            Set of specimen slugs like {"ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"}
         """
-        names = []
+        slugs = set()
         for repo_dir in self._base_path.iterdir():
             if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
                 continue
             for specimen_dir in repo_dir.iterdir():
                 if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
-                    names.append(f"{repo_dir.name}/{specimen_dir.name}")
-        return sorted(names)
+                    slugs.add(f"{repo_dir.name}/{specimen_dir.name}")
+        return slugs
+
+    def list_specimen_names(self) -> list[str]:
+        """List all specimen names (deprecated, use .specimen_slugs property)."""
+        return sorted(self.specimen_slugs)
+
+    def get_split(self, slug: str) -> Split:
+        """Get the train/valid/test split for a specimen from its manifest.
+
+        Args:
+            slug: Specimen identifier (e.g., "ducktape/2025-11-20-00")
+
+        Returns:
+            Split.TRAIN, Split.VALID, or Split.TEST
+
+        Raises:
+            FileNotFoundError: If specimen manifest doesn't exist
+            ValidationError: If manifest is malformed or missing split field
+        """
+        _, manifest = self.load_manifest_only(slug)
+        return manifest.split
+
+    def get_specimens_by_split(self, split: Split) -> list[str]:
+        """Get all specimen slugs for a given split.
+
+        Args:
+            split: The split to filter by (TRAIN, VALID, or TEST)
+
+        Returns:
+            List of specimen slugs in the given split, sorted alphabetically
+        """
+        result = []
+        for slug in sorted(self.specimen_slugs):
+            _, manifest = self.load_manifest_only(slug)
+            if manifest.split == split:
+                result.append(slug)
+        return result

@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import TypeGuard
 
 from pydantic import BaseModel
 import pytest
 
-from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest
+from adgn.agent.loop_control import InjectedItem
+from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, UserMessage
 from tests.support.extraction import get_last_function_output
 
 logger = logging.getLogger(__name__)
@@ -51,3 +53,16 @@ def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, 
     """Assert expected tool and extract its output."""
     assert_last_call(req, expected_tool)
     return extract_output(req, output_type)
+
+
+# Type narrowing helpers (TypeGuard)
+
+
+def is_all_function_calls(items: tuple[InjectedItem, ...]) -> TypeGuard[tuple[FunctionCallItem, ...]]:
+    """TypeGuard to narrow tuple[InjectedItem, ...] to tuple[FunctionCallItem, ...]."""
+    return all(isinstance(x, FunctionCallItem) for x in items)
+
+
+def is_all_user_messages(items: tuple[InjectedItem, ...]) -> TypeGuard[tuple[UserMessage, ...]]:
+    """TypeGuard to narrow tuple[InjectedItem, ...] to tuple[UserMessage, ...]."""
+    return all(isinstance(x, UserMessage) for x in items)

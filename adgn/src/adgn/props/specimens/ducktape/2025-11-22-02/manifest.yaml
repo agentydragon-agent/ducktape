@@ -3,6 +3,7 @@ source:
   url: file://../specimens.bundle
   ref: refs/tags/specimen-2025-11-22-repo-2
   commit: e81d92265969f98e4eef41207e295e84ffda05f7
+split: test
 bundle:
   include:
   - adgn/

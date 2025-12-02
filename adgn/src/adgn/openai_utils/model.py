@@ -5,12 +5,60 @@ from functools import singledispatch
 from typing import Any, Literal, Protocol, Self, cast
 
 from openai import AsyncOpenAI
-from openai.types.responses import Response, ResponseFunctionToolCall, ResponseOutputMessage, ResponseOutputText
+from openai.types.responses import (
+    Response,
+    ResponseFunctionToolCall,
+    ResponseOutputMessage,
+    ResponseOutputText,
+    response_usage as sdk_usage_types,
+)
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from openai.types.responses.response_usage import ResponseUsage
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
+
+# ------------------------------
+# Usage types (wrapped from OpenAI SDK)
+# ------------------------------
+
+
+class InputTokensDetails(BaseModel):
+    """Token usage details for input (wrapped from OpenAI SDK)."""
+
+    cached_tokens: int
+    model_config = ConfigDict(extra="allow")
+
+
+class OutputTokensDetails(BaseModel):
+    """Token usage details for output (wrapped from OpenAI SDK)."""
+
+    reasoning_tokens: int
+    model_config = ConfigDict(extra="allow")
+
+
+class ResponseUsage(BaseModel):
+    """Response usage information (wrapped from OpenAI SDK)."""
+
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    input_tokens_details: InputTokensDetails
+    output_tokens_details: OutputTokensDetails
+    model_config = ConfigDict(extra="allow")
+
+    @classmethod
+    def from_sdk(cls, sdk_usage: sdk_usage_types.ResponseUsage) -> Self:
+        """Convert OpenAI SDK ResponseUsage to our wrapped type."""
+        return cls(
+            input_tokens=sdk_usage.input_tokens,
+            output_tokens=sdk_usage.output_tokens,
+            total_tokens=sdk_usage.total_tokens,
+            input_tokens_details=InputTokensDetails(cached_tokens=sdk_usage.input_tokens_details.cached_tokens),
+            output_tokens_details=OutputTokensDetails(
+                reasoning_tokens=sdk_usage.output_tokens_details.reasoning_tokens
+            ),
+        )
+
 
 # ------------------------------
 # Typed, tolerant input items we compose into Responses API "input"
@@ -292,7 +340,8 @@ def convert_sdk_response(sdk_resp: Response) -> ResponsesResult:
                 out_items.append(converted)
         else:
             continue
-    return ResponsesResult(id=sdk_resp.id, usage=sdk_resp.usage, output=out_items)
+    usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
+    return ResponsesResult(id=sdk_resp.id, usage=usage, output=out_items)
 
 
 # ------------------------------

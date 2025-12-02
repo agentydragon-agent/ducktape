@@ -43,7 +43,6 @@ from adgn.props.ids import BaseIssueID, SpecimenSlug
 from adgn.props.lint_issue import BootstrapInspectHandler
 from adgn.props.models.issue import LineRange, Occurrence
 from adgn.props.rationale import Rationale
-from adgn.props.splits import Split, get_split
 
 # Deferred import to avoid circular dependency (SpecimenRegistry imports from this module)
 if TYPE_CHECKING:
@@ -92,11 +91,6 @@ class CriticInput(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
-
-    @property
-    def split(self) -> Split:
-        """Compute split from specimen membership."""
-        return get_split(self.specimen_slug)
 
 
 class CriticSuccess(BaseModel):
@@ -418,14 +412,14 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 
 async def resolve_critic_scope(
-    specimen_slug: SpecimenSlug, files: FileScopeSpec, registry: SpecimenRegistry | None = None
+    specimen_slug: SpecimenSlug, files: FileScopeSpec, registry: SpecimenRegistry
 ) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
 
     Args:
         specimen_slug: Target specimen
         files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
-        registry: SpecimenRegistry instance (created if not provided)
+        registry: SpecimenRegistry instance (required, always threaded explicitly)
 
     Returns:
         Resolved file set (guaranteed non-empty)
@@ -433,12 +427,7 @@ async def resolve_critic_scope(
     Raises:
         ValueError: If sentinel is used but specimen has no files with issues
     """
-    # Import here to avoid circular dependency at module load time
-    from adgn.props.specimens.registry import SpecimenRegistry as _SpecimenRegistry
-
     if files == ALL_FILES_WITH_ISSUES:
-        if registry is None:
-            registry = _SpecimenRegistry.from_package_resources()
         async with registry.load_and_hydrate(specimen_slug) as hydrated:
             resolved_files = hydrated.files_with_issues()
             if not resolved_files:
@@ -464,6 +453,7 @@ async def run_critic(
     system_prompt: str,
     user_prompt: str,
     content_root,
+    registry: SpecimenRegistry,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
@@ -478,7 +468,7 @@ async def run_critic(
     from within an MCP tool that outlives the session.
     """
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel)
-    resolved_files = await resolve_critic_scope(input_data.specimen_slug, input_data.files)
+    resolved_files = await resolve_critic_scope(input_data.specimen_slug, input_data.files, registry)
 
     # Generate unique IDs for this run
     run_id = uuid4()

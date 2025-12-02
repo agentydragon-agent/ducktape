@@ -3,6 +3,7 @@ source:
   url: file://../specimens.bundle
   ref: refs/tags/specimen-2025-11-26-code-quality
   commit: 593813ea3db62bc9f9004e05dae236ae43f9ce2f
+split: valid
 bundle:
   include:
   - adgn/

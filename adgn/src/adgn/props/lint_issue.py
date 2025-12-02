@@ -268,7 +268,7 @@ async def lint_issue_run(
     client: OpenAIModelProto,
     handlers: list[BaseHandler] | None = None,
     content_root: Path | None = None,
-    registry: SpecimenRegistry | None = None,
+    registry: SpecimenRegistry,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
@@ -290,8 +290,6 @@ async def lint_issue_run(
     if specimen is None:
         raise ValueError("Either specimen or content_root must be provided")
 
-    if registry is None:
-        registry = SpecimenRegistry.from_package_resources()
     async with registry.load_and_hydrate(Path(specimen).name) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
             hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
@@ -430,6 +428,7 @@ async def run_specimen_lint_issue_async(
             client=client,
             handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
             content_root=hydrated.content_root,  # Reuse hydrated root (avoids rehydration)
+            registry=registry,
         )
 
         # Print the exact occurrence representation as fed to the model

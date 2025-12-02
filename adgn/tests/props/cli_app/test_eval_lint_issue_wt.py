@@ -30,7 +30,10 @@ from adgn.props.models.issue import IssueCore, LineRange, Occurrence
     ],
 )
 async def test_iss014_anchor_windows(
-    initial_range: tuple[int, int], allowed_window: tuple[tuple[int, int], tuple[int, int]], entity: str
+    initial_range: tuple[int, int],
+    allowed_window: tuple[tuple[int, int], tuple[int, int]],
+    entity: str,
+    production_specimens_registry,
 ):
     """Runs the lint-issue agent for iss-014 on the wt specimen per occurrence and
     asserts the corrected anchors fall within allowed inclusive windows.
@@ -56,7 +59,11 @@ async def test_iss014_anchor_windows(
     occ = Occurrence(files={path: [LineRange(start_line=s, end_line=e)]}, note=entity)
 
     payload = await lint_issue_run(
-        specimen=specimen, issue_core=issue_core, occurrence=occ, client=build_client("gpt-5")
+        specimen=specimen,
+        issue_core=issue_core,
+        occurrence=occ,
+        client=build_client("gpt-5"),
+        registry=production_specimens_registry,
     )
 
     # Extract corrected anchors from AnchorIncorrect findings

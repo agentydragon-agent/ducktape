@@ -7,7 +7,6 @@ Verifies database records are created correctly and catches bugs like naming col
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import json
 import logging
 import os
@@ -31,9 +30,6 @@ from adgn.props.critic import AddOccurrenceInput, CriticInput, SubmitInput, Upse
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Specimen
 from adgn.props.grader import GradeSubmitInput
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.models.specimen import GitHubSource, SpecimenDoc
-from adgn.props.paths import FileType
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,
@@ -42,8 +38,6 @@ from adgn.props.prompt_optimizer import (
     run_prompt_optimizer,
 )
 from adgn.props.runs_context import RunsContext
-from adgn.props.specimens.hydrated import HydratedSpecimen
-from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
 from tests.support.responses import ResponsesFactory
 
 logger = logging.getLogger(__name__)
@@ -164,40 +158,9 @@ def assert_and_extract(req: ResponsesRequest, expected_tool: str, output_type: t
 def test_specimen(test_db):
     """Create test specimen record (uses test_db fixture from tests/props/conftest.py)."""
     with get_session() as session:
-        specimen = Specimen(specimen_slug="ducktape/2025-11-26-00", split="train")
+        specimen = Specimen(specimen_slug="test-fixtures/test-trivial", split="train", labeled_files=["subtract.py"])
         session.merge(specimen)
         session.commit()
-
-
-@pytest.fixture
-def mock_specimen():
-    """Provide a minimal specimen with one canonical TP for testing."""
-    # Create minimal manifest
-    manifest = SpecimenDoc(source=GitHubSource(vcs="github", org="test", repo="repo", ref="a" * 40))
-
-    # Create one canonical TP issue (matching the mock grader's coverage)
-    issue_record = IssueRecord(
-        core=IssueCore(id="issue-001", should_flag=True, rationale="Test issue for integration test"),
-        instances=[Occurrence(files={Path("adgn/README.md"): [LineRange(start_line=10, end_line=20)]})],
-    )
-
-    record = SpecimenRecord(
-        slug="ducktape/2025-11-26-00",
-        manifest_path=Path("/tmp/manifest.yaml"),
-        manifest=manifest,
-        issues={"issue-001": issue_record},
-        false_positives={},
-        all_discovered_files={Path("adgn/README.md"): FileType.REGULAR},
-    )
-
-    specimen = HydratedSpecimen(record=record, content_root=Path("/tmp/mock-specimen"))
-
-    # Create async context manager that yields the mock specimen
-    @asynccontextmanager
-    async def mock_load_and_hydrate(slug: str):
-        yield specimen
-
-    return mock_load_and_hydrate
 
 
 class AgentStateBase:
@@ -266,7 +229,7 @@ class POAgentState(AgentStateBase):
             return self.factory.make_tool_call(
                 "prompt_eval_run_critic",
                 CriticInput(
-                    specimen_slug="ducktape/2025-11-26-00", files="all", prompt_sha256=upsert_result.prompt_sha256
+                    specimen_slug="test-fixtures/test-trivial", files="all", prompt_sha256=upsert_result.prompt_sha256
                 ).model_dump(),
             )
 
@@ -307,7 +270,7 @@ class CriticAgentState(AgentStateBase):
             return self.factory.make_mcp_tool_call(
                 "critic_submit",
                 "add_occurrence",
-                AddOccurrenceInput(issue_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
+                AddOccurrenceInput(issue_id="test-issue-001", file="subtract.py", ranges=[[10, 20]]),
             )
 
         if self.turn == 3:
@@ -331,7 +294,7 @@ class GraderAgentState(AgentStateBase):
             # Turn 1: Initial - emit submit_result with grade
             grade_input = {
                 "canonical_tp_coverage": {
-                    "issue-001": {
+                    "test-issue": {
                         "covered_by": {"test-issue-001": 1.0},
                         "recall_credit": 1.0,
                         "rationale": "Test issue matches canonical TP.",
@@ -342,8 +305,8 @@ class GraderAgentState(AgentStateBase):
                 "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
                 "recall": 0.8,
                 "summary": "Good coverage of canonical issues.",
-                "per_file_recall": {"adgn/README.md": 0.8},
-                "per_file_ratios": {"adgn/README.md": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
+                "per_file_recall": {"subtract.py": 0.8},
+                "per_file_ratios": {"subtract.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
             }
 
             return self.factory.make_mcp_tool_call(
@@ -407,7 +370,7 @@ class WorkflowMock(OpenAIModelProto):
 
 
 @pytest.mark.asyncio
-async def test_full_workflow_po_agent_critic_grader(test_specimen, mock_specimen, tmp_path):
+async def test_full_workflow_po_agent_critic_grader(test_specimen, test_specimens_registry, tmp_path):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
     Tests the complete CLI workflow: specimen hydration → Docker setup → compositor → agent → database writes.
@@ -420,31 +383,28 @@ async def test_full_workflow_po_agent_critic_grader(test_specimen, mock_specimen
     - New workflow: docker_exec write_file → upsert_prompt → run_critic (with SHA256) → run_grader
 
     Set DUMP_REQUESTS env var to a file path to dump all agent requests.
+    Uses test-fixtures/test-trivial specimen from test fixtures registry.
     """
     dump_path = os.environ.get("DUMP_REQUESTS")
     mock = WorkflowMock(dump_requests_to=Path(dump_path) if dump_path else None)
 
-    @asynccontextmanager
-    async def fake_hydrate():
-        specimen_paths = {"ducktape/2025-11-26-00": Path("/tmp/mock-specimen")}
-        defs_root = Path("/tmp/mock-defs")
-        yield specimen_paths, defs_root
-
     with (
-        patch("adgn.props.specimens.registry.load_and_hydrate", mock_specimen),
-        patch("adgn.props.prompt_optimizer.hydrate_train_specimens", return_value=fake_hydrate()),
+        patch(
+            "adgn.props.specimens.registry.SpecimenRegistry.from_package_resources",
+            return_value=test_specimens_registry,
+        ),
         patch("adgn.props.prompt_optimizer.build_client", return_value=mock),
     ):
         await run_prompt_optimizer(budget=1.0, ctx=RunsContext.from_pkg_dir(), out_dir=tmp_path, model="gpt-5-nano")
 
     with get_session() as session:
-        critic_runs = session.query(CriticRun).filter_by(specimen_slug="ducktape/2025-11-26-00").all()
+        critic_runs = session.query(CriticRun).filter_by(specimen_slug="test-fixtures/test-trivial").all()
         assert_that(critic_runs, has_length(1))
         critic_run = critic_runs[0]
         assert_that(critic_run.model, equal_to("fake-model"))
         assert_that(critic_run.critique_id, not_none())
 
-        grader_runs = session.query(GraderRun).filter_by(specimen_slug="ducktape/2025-11-26-00").all()
+        grader_runs = session.query(GraderRun).filter_by(specimen_slug="test-fixtures/test-trivial").all()
         assert_that(grader_runs, has_length(1))
         grader_run = grader_runs[0]
         assert_that(grader_run.critique_id, equal_to(critic_run.critique_id))

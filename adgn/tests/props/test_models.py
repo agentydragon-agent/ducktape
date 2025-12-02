@@ -10,7 +10,6 @@ from hamcrest import assert_that, equal_to
 
 from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticFailure, CriticInput, CriticSubmitPayload, CriticSuccess
 from adgn.props.grader import GraderInput, GraderOutput, GradeSubmitInput
-from adgn.props.splits import Split
 
 
 class TestCriticModels:
@@ -25,7 +24,6 @@ class TestCriticModels:
         assert_that(critic_input.specimen_slug, equal_to("ducktape/2025-11-26-00"))
         assert_that(critic_input.files, equal_to({Path("src/main.py")}))
         assert_that(critic_input.prompt_sha256, equal_to(mock_prompt_sha256))
-        assert_that(critic_input.split, equal_to(Split.VALID))
 
     def test_critic_input_with_sentinel(self, mock_prompt_sha256: str):
         """CriticInput should accept ALL_FILES_WITH_ISSUES sentinel."""
@@ -35,7 +33,6 @@ class TestCriticModels:
 
         assert_that(critic_input.specimen_slug, equal_to("ducktape/2025-11-26-00"))
         assert_that(critic_input.files, equal_to(ALL_FILES_WITH_ISSUES))
-        assert_that(critic_input.split, equal_to(Split.VALID))
 
     def test_critic_success_variant(self):
         """CriticSuccess should wrap successful critique result."""

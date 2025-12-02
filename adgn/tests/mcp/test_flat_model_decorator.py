@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+from typing import Literal
 
 from fastmcp.client import Client
 from fastmcp.server.context import Context
@@ -9,6 +10,7 @@ import pytest
 
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.stubs.typed_stubs import TypedClient
 
 
 class InModel(BaseModel):
@@ -107,3 +109,54 @@ def test_structured_requires_return_annotation():
         @mcp_flat_model(m, structured_output=True)
         def bad(input: InModel):
             return {"ok": True}
+
+
+# Models for union return test
+
+
+class PageA(BaseModel):
+    type: Literal["A"] = "A"
+    value: str
+
+
+class PageB(BaseModel):
+    type: Literal["B"] = "B"
+    number: int
+
+
+UnionResult = PageA | PageB
+
+
+class EmptyInput(BaseModel):
+    pass
+
+
+async def test_flat_model_union_return_unwrapped():
+    """Test that union return types are properly unwrapped via .data field.
+
+    FastMCP wraps non-object schemas (unions, primitives) in {'result': ...} for MCP protocol,
+    but provides .data field with unwrapped content (see fastmcp/src/fastmcp/client/client.py).
+    """
+    m = NotifyingFastMCP("union_test")
+
+    @m.flat_model()
+    def get_page(input: EmptyInput) -> UnionResult:
+        return PageA(value="hello")
+
+    async with Client(m) as client:
+        # Verify FastMCP sets x-fastmcp-wrap-result for union types
+        tools = await client.list_tools()
+        tool = next(t for t in tools if t.name == "get_page")
+        assert tool.outputSchema["x-fastmcp-wrap-result"] is True
+        assert "result" in tool.outputSchema["properties"]
+
+        # Verify raw result has wrapping
+        result = await client.call_tool("get_page", {})
+        assert result.structured_content == {"result": {"type": "A", "value": "hello"}}
+        assert result.data == {"type": "A", "value": "hello"}
+
+        # Verify TypedClient unwraps via .data field
+        typed_client = TypedClient.from_server(m, client)
+        page = await typed_client.get_page(EmptyInput())
+        assert isinstance(page, PageA)
+        assert page.value == "hello"

@@ -320,12 +320,15 @@ class FlatModelToolMixin:
 
         Args:
             flat: If True, enable flat-model mode (output model inferred from return type)
+            flat_output_model: Optional explicit output model (overrides inference from return annotation)
             **kwargs: Other tool arguments passed through to FastMCP.tool
         """
         if not flat:
             base_tool = super().tool  # type: ignore[misc]
             return base_tool(*args, **kwargs)
 
+        # Extract flat_output_model from kwargs if provided
+        flat_output_model = kwargs.pop("flat_output_model", None)
         opts = self._ToolOpts.model_validate(kwargs or {})
 
         def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
@@ -345,7 +348,7 @@ class FlatModelToolMixin:
                 description=opts.description,
                 annotations=opts.annotations,
                 structured_output=opts.structured_output,
-                output_model=None,  # Always infer from return type annotation
+                output_model=flat_output_model,  # Use provided output_model or infer from return type
             ),
         )
 

@@ -10,7 +10,6 @@ import asyncio
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-import functools
 from importlib import resources
 import json
 import logging
@@ -37,19 +36,22 @@ from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.cli_shared import (
+from adgn.props.cli_app import common_options as opt
+from adgn.props.cli_app.cmd_db import cmd_db_recreate, cmd_sync_specimens
+from adgn.props.cli_app.cmd_detector import cmd_detector_coverage, cmd_run_detector
+from adgn.props.cli_app.decorators import async_run
+from adgn.props.cli_app.shared import (
     BuildOptions,
     build_cmd,
     detect_tools,
-    hash_and_upsert_prompt,
     run_check_minicodex_async,
     save_prompt_to_tmp,
 )
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec, resolve_critic_scope, run_critic
-from adgn.props.db import get_session, init_db, recreate_database
+from adgn.props.db import get_session, init_db
 from adgn.props.db.models import GraderRun as DBGraderRun
-from adgn.props.db.sync_specimens import ensure_specimens_synced, force_sync_specimens
+from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.docker_env import (
     PROPERTIES_DOCKER_IMAGE,
     WORKING_DIR as CRITIC_WORKDIR,
@@ -80,7 +82,6 @@ app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_com
 # Typer parameter singletons to avoid function-call defaults in signatures (ruff B008)
 ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)
 ARG_SCOPE = typer.Argument(..., help="Freeform scope description (e.g. 'all files under src/**')")
-OPT_MODEL = typer.Option("gpt-5", help="Model id")
 OPT_DRY_RUN = typer.Option(False, help="Compose prompt only; do not run")
 OPT_FINAL_ONLY = typer.Option(False, help="Print only final message")
 OPT_OUTPUT_FINAL_MESSAGE = typer.Option(None, help="Write final message to this path")
@@ -103,7 +104,6 @@ OPT_WORKDIR_CRITIC = typer.Option(CRITIC_WORKDIR, "--workdir", help="Container w
 OPT_MAX_ITERS = typer.Option(10, help="Maximum number of prompt evaluations (tool calls)")
 OPT_SKIP_GIT_REPO_CHECK = typer.Option(False, help="Pass --skip-git-repo-check to codex exec")
 OPT_FULL_AUTO = typer.Option(False, help="Pass --full-auto to codex exec")
-OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific files (relative paths)")
 
 
 @app.callback()
@@ -122,22 +122,12 @@ class MetricsRow:
     dir: str
 
 
-def async_run(fn):
-    """Decorator to run an async Typer command via asyncio.run (DRY)."""
-
-    @functools.wraps(fn)
-    def _wrapper(*args, **kwargs):
-        return asyncio.run(fn(*args, **kwargs))
-
-    return _wrapper
-
-
 @app.command("check")
 @async_run
 async def cmd_check(
     workdir: Path = ARG_WORKDIR,
     scope: str = ARG_SCOPE,
-    model: str = OPT_MODEL,
+    model: str = opt.OPT_MODEL,
     dry_run: bool = OPT_DRY_RUN,
     final_only: bool = OPT_FINAL_ONLY,
     output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
@@ -239,7 +229,7 @@ async def _run_specimen_minicodex_async(
         files_spec = _filter_files(hydrated.all_discovered_files, files)
 
         # Resolve files for prompt rendering
-        resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec)
+        resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec, registry=registry)
 
         # Load preset template based on mode
         preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
@@ -268,6 +258,7 @@ async def _run_specimen_minicodex_async(
             system_prompt="You are a code agent. Be concise.",
             user_prompt=prompt,
             content_root=hydrated.content_root,
+            registry=registry,
             mount_properties=True,
             verbose=True,
         )
@@ -292,7 +283,7 @@ async def cmd_specimen_discover(
     dry_run: bool = OPT_DRY_RUN,
     final_only: bool = OPT_FINAL_ONLY,
     output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
-    files: list[str] | None = OPT_FILES_FILTER,
+    files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs specimen notes (covered/not_covered_yet)."""
     registry = SpecimenRegistry.from_package_resources()
@@ -325,7 +316,7 @@ async def cmd_specimen_discover(
 
 @app.command("cluster-unknowns")
 @async_run
-async def cmd_cluster_unknowns(model: str = OPT_MODEL, out_dir: Path | None = OPT_OUTPUT_DIR) -> None:
+async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = OPT_OUTPUT_DIR) -> None:
     """Cluster all 'unknown' issues across all prompt_optimize runs via an in-proc MCP tool.
 
     The agent must submit a single payload of clusters: [{name: str, issues: [uid,...]}].
@@ -339,8 +330,8 @@ async def cmd_cluster_unknowns(model: str = OPT_MODEL, out_dir: Path | None = OP
 @async_run
 async def prompt_optimize(
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
-    model: str = OPT_MODEL,
-    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose output with agent progress display"),
+    model: str = opt.OPT_MODEL,
+    verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
@@ -352,7 +343,7 @@ async def prompt_optimize(
 async def prompt_eval(
     prompt: str = typer.Argument(..., help="Candidate critic system prompt to evaluate across specimens"),
     out_dir: Path | None = OPT_OUTPUT_DIR,
-    model: str = OPT_MODEL,
+    model: str = opt.OPT_MODEL,
     debug: bool = typer.Option(False, help="Log raw OpenAI HTTP to JSONL for diagnostics"),
 ) -> None:
     """Evaluate a critic system prompt across all known specimens and emit metrics list.
@@ -373,7 +364,7 @@ async def prompt_eval(
 @app.command("specimen-grade")
 @async_run
 async def specimen_grade(
-    critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"), model: str = OPT_MODEL
+    critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"), model: str = opt.OPT_MODEL
 ) -> None:
     """Grade a critique by database ID against canonical findings.
 
@@ -404,7 +395,7 @@ async def specimen_grade(
 def cmd_fix(
     workdir: Path = ARG_WORKDIR,
     scope: str = typer.Argument(..., help="Freeform scope description to enforce"),
-    model: str = OPT_MODEL,
+    model: str = opt.OPT_MODEL,
     final_only: bool = OPT_FINAL_ONLY,
     output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
     skip_git_repo_check: bool = OPT_SKIP_GIT_REPO_CHECK,
@@ -441,7 +432,7 @@ async def cmd_lint_issue(
     specimen: str = typer.Argument(..., help="Specimen slug (under properties/specimens)"),
     issue_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
     occurrence: int = typer.Argument(..., help="0-based occurrence index"),
-    model: str = OPT_MODEL,
+    model: str = opt.OPT_MODEL,
     dry_run: bool = OPT_DRY_RUN,
 ) -> None:
     rc = await run_specimen_lint_issue_async(
@@ -453,64 +444,17 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    await run_all_evals(client=build_client("gpt-5"), ctx=RunsContext.from_pkg_dir())
+    registry = SpecimenRegistry.from_package_resources()
+    await run_all_evals(client=build_client("gpt-5"), registry=registry, ctx=RunsContext.from_pkg_dir())
 
 
-@app.command("sync-specimens")
-@async_run
-async def cmd_sync_specimens(force: bool = typer.Option(False, "--force", help="Force re-sync (clear cache)")) -> None:
-    """Sync specimens table from splits.py (train/valid/test assignments).
+# Database commands moved to cmd_db.py
+app.command("sync-specimens")(cmd_sync_specimens)
+app.command("db-recreate")(cmd_db_recreate)
 
-    Auto-sync happens on first DB operation per process. Use this for:
-    - Manual sync after editing splits.py
-    - Forcing re-sync with --force flag
-
-    Requires PROPS_DB_URL environment variable (admin credentials).
-    """
-    init_db()
-
-    if force:
-        typer.echo("Force re-syncing specimens table...")
-        stats = await force_sync_specimens()
-    else:
-        typer.echo("Syncing specimens table...")
-        stats = await ensure_specimens_synced()
-
-    typer.echo(
-        f"Sync complete: {stats['total']} specimens "
-        f"(+{stats['added']} added, ~{stats['updated']} updated, -{stats['deleted']} deleted)"
-    )
-
-
-@app.command("db-recreate")
-@async_run
-async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")) -> None:
-    """Recreate database from scratch (destructive - drops all tables/views/policies).
-
-    This command will:
-    1. Drop all existing tables, views, and RLS policies
-    2. Create agent_user role (read-only with RLS)
-    3. Create tables from ORM models
-    4. Enable Row-Level Security policies
-    5. Sync specimens from splits.py
-
-    Requires PROPS_DB_URL environment variable (postgres superuser connection).
-    """
-    if not yes:
-        typer.echo("⚠️  WARNING: This will DELETE ALL data in the database!")
-        confirm = typer.prompt("Type 'yes' to confirm")
-        if confirm != "yes":
-            typer.echo("Aborted")
-            raise typer.Exit(1)
-
-    # Connect and recreate
-    init_db()
-    recreate_database()
-
-    # Sync specimens
-    typer.echo("Syncing specimens...")
-    stats = await ensure_specimens_synced()
-    typer.echo(f"✓ Database recreated with {stats['total']} specimens")
+# Detector commands moved to cmd_detector.py
+app.command("run-detector")(cmd_run_detector)
+app.command("detector-coverage")(cmd_detector_coverage)
 
 
 OPT_RUNBOOK_PATH = typer.Option(
@@ -589,6 +533,7 @@ async def _exec_agent(
     label: str,
     specimen_slug: str | None,
     files_spec: FileScopeSpec | None,
+    registry: SpecimenRegistry,
     dry_run: bool = False,
 ) -> None:
     # Dry-run: save prompt and exit (before any agent/DB/compositor setup)
@@ -613,6 +558,7 @@ async def _exec_agent(
             system_prompt="You are a code agent. Use tools to execute commands. Respond concisely.",
             user_prompt=prompt_text,
             content_root=wiring.working_dir,
+            registry=registry,
             mount_properties=True,
             verbose=True,
         )
@@ -700,9 +646,9 @@ async def cmd_run(
     # Mode
     structured: bool = typer.Option(False, help="Attach critic_submit and require structured submit flow"),
     # File filtering
-    files: list[str] | None = OPT_FILES_FILTER,
+    files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
-    model: str = OPT_MODEL,
+    model: str = opt.OPT_MODEL,
     final_only: bool = OPT_FINAL_ONLY,
     output_final_message: Path | None = OPT_OUTPUT_FINAL_MESSAGE,
     list_presets: bool = typer.Option(False, "--list-presets", help="List available built-in presets and exit"),
@@ -759,7 +705,7 @@ async def cmd_run(
     async with _open_run_context(path, specimen, files, registry) as (wiring, files_spec, label):
         # Resolve files for prompt rendering (specimen mode resolves sentinel, path mode is already explicit)
         if specimen is not None:
-            resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec)
+            resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec, registry=registry)
         else:
             # Path mode: files_spec is already set[Path]
             resolved_files = files_spec  # type: ignore[assignment]
@@ -775,6 +721,7 @@ async def cmd_run(
             label=label,
             specimen_slug=specimen,
             files_spec=files_spec if specimen is not None else None,
+            registry=registry,
             dry_run=dry_run,
         )
 

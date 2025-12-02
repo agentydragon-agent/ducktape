@@ -28,17 +28,17 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
-from adgn.props.cli_shared import hash_and_upsert_prompt
 from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, resolve_critic_scope, run_critic as execute_critic_run
 from adgn.props.db import agent_queries, get_session
-from adgn.props.db.sync_specimens import ensure_specimens_synced
+from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.sync_specimens import sync_specimens
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.specimens.registry import SpecimenRegistry
-from adgn.props.splits import get_train_specimens
+from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
@@ -133,7 +133,7 @@ async def build_server(
         MCP server with upsert_prompt, run_critic and run_grader tools
     """
     # Ensure specimens table is synced on server startup
-    await ensure_specimens_synced()
+    await sync_specimens()
 
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
@@ -249,6 +249,7 @@ async def build_server(
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
                 content_root=hydrated.content_root,
+                registry=registry,
                 mount_properties=False,
                 extra_handlers=(),
                 verbose=verbose,
@@ -304,7 +305,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
     registry = SpecimenRegistry.from_package_resources()
 
     async with AsyncExitStack() as stack:
-        train_specimens = get_train_specimens()
+        train_specimens = registry.get_specimens_by_split(Split.TRAIN)
         logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
 
         for slug in train_specimens:

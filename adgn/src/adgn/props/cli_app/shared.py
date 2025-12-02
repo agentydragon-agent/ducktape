@@ -1,19 +1,17 @@
+"""Shared CLI utilities for adgn-properties commands."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
-from uuid import UUID
 
 import tiktoken
 
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.agent_runner import run_prompt_async
-from adgn.props.db import get_session
-from adgn.props.db.models import Prompt
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.runs_context import format_timestamp_session
 
@@ -24,26 +22,6 @@ class BuildOptions:
     skip_git_repo_check: bool
     full_auto: bool
     extra_configs: list[str] | None = None
-
-
-def hash_and_upsert_prompt(prompt_text: str, prompt_optimization_run_id: UUID | None = None) -> str:
-    """Compute SHA-256 hash of prompt text and upsert to database.
-
-    Args:
-        prompt_text: The prompt content to hash and store
-        prompt_optimization_run_id: Optional ID of the optimization run that generated this prompt
-
-    Returns:
-        The computed SHA-256 hash.
-    """
-    prompt_sha256 = hashlib.sha256(prompt_text.encode()).hexdigest()
-    with get_session() as session:
-        prompt_obj = Prompt(
-            prompt_sha256=prompt_sha256, prompt_text=prompt_text, prompt_optimization_run_id=prompt_optimization_run_id
-        )
-        session.merge(prompt_obj)
-        session.flush()
-    return prompt_sha256
 
 
 def detect_tools() -> list[str]:

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 import os
 from pathlib import Path
@@ -26,6 +26,8 @@ from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
+from tests.support.responses import _StepRunner
+from tests.support.steps import Step
 from tests.support.types import McpServerSpecs
 
 
@@ -198,10 +200,6 @@ def make_step_runner(responses_factory):
                 # Use both agents
                 pass
     """
-    from collections.abc import Sequence
-
-    from tests.support.responses import _StepRunner
-    from tests.support.steps import Step
 
     def _make(steps: Sequence[Step]) -> _StepRunner:
         return _StepRunner(factory=responses_factory, steps=steps)

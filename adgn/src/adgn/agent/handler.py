@@ -12,11 +12,10 @@ from datetime import datetime
 from typing import Any, Literal
 
 from fastmcp.client.client import CallToolResult
-from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails
 from pydantic import BaseModel
 
 from adgn.agent.loop_control import LoopDecision, NoLoopDecision
-from adgn.openai_utils.model import ReasoningItem
+from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem
 
 
 # ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----

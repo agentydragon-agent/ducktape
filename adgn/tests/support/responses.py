@@ -5,7 +5,6 @@ import os
 from typing import TYPE_CHECKING, Any
 
 from fastmcp.client.client import CallToolResult
-from openai.types.responses.response_usage import InputTokensDetails, OutputTokensDetails, ResponseUsage
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
@@ -15,10 +14,13 @@ from adgn.openai_utils.model import (
     AssistantMessageOut,
     FunctionCallItem,
     FunctionCallOutputItem,
+    InputTokensDetails,
+    OutputTokensDetails,
     ReasoningItem,
     ResponseOutItem,
     ResponsesRequest,
     ResponsesResult,
+    ResponseUsage,
 )
 from tests.llm.support.openai_mock import LIVE, make_mock
 
@@ -79,9 +81,7 @@ class ResponsesFactory:
         Returns:
             ResponsesResult with the tool call
         """
-        name = build_mcp_function(server, tool)
-        arguments = input_model.model_dump()
-        return self.make_tool_call(name, arguments, call_id)
+        return self.make_tool_call(build_mcp_function(server, tool), input_model.model_dump(mode="json"), call_id)
 
     # ---- Low-level item builders (compose with make(...items)) ----
 

@@ -4,6 +4,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.props.splits import Split
+
 
 # Specimen schema (v2): source/scope live alongside items in Jsonnet docs
 class GitSource(BaseModel):
@@ -41,14 +43,16 @@ class BundleFilter(BaseModel):
 
 
 class SpecimenDoc(BaseModel):
-    """Unified specimen document (v2): source and bundle filters (Jsonnet-only).
+    """Unified specimen document (v2): source, bundle filters, and split assignment.
 
     Note: issues are loaded separately from issues/*.libsonnet files. We keep
     `items` as a generic list to avoid cross-module type cycles with Issue.
 
     Bundle is optional - only required for specimens that use git bundles.
+    Split is required - every specimen must be assigned to train/valid/test.
     """
 
     source: Source
+    split: Split = Field(description="Train/valid/test split assignment for this specimen")
     bundle: BundleFilter | None = None
     model_config = ConfigDict(extra="forbid")

@@ -3,6 +3,7 @@ source:
   url: file://../specimens.bundle
   ref: refs/tags/specimen-2025-11-20-adgn
   commit: 20d446fc735cecd865127aae52db466bccc309d6
+split: train
 bundle:
   include:
   - adgn/

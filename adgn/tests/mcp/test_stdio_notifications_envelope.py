@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
 import sys
-import textwrap
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
@@ -13,32 +11,9 @@ from adgn.mcp.notifications.buffer import NotificationsBuffer
 from tests.util.notifications import parse_system_notification_payload
 
 
-async def test_stdio_child_notifications_envelope(compositor, tmp_path: Path):
-    # Write a tiny stdio MCP server that emits notifications on a tool call
-    server_py = tmp_path / "stdio_child_server.py"
-    server_py.write_text(
-        textwrap.dedent(
-            """
-            import anyio
-            from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-            from fastmcp.server.server import stdio_server
-
-            m = NotifyingFastMCP("stdio_child")
-
-            @m.tool(name="emit")
-            async def emit():  # type: ignore[empty-body] - Test tool defined in dynamic code block
-                await m.broadcast_resource_list_changed()
-                await m.broadcast_resource_updated("resource://dummy")
-                return True
-
-            if __name__ == "__main__":
-                anyio.run(stdio_server)
-            """
-        ),
-        encoding="utf-8",
-    )
-
-    spec = StdioMCPServer(command=sys.executable, args=[str(server_py)])
+async def test_stdio_child_notifications_envelope(compositor):
+    """Test that stdio child server notifications are properly enveloped."""
+    spec = StdioMCPServer(command=sys.executable, args=["-m", "adgn.mcp.testing.stdio_notifier"])
     await compositor.mount_server("stdio_child", spec)
 
     buf = NotificationsBuffer(compositor=compositor)

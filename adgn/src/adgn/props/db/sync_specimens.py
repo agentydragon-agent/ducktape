@@ -1,21 +1,32 @@
-"""Sync specimens table from splits.py source of truth.
-
-Auto-syncs on first DB operation per process (cached).
-"""
+"""Sync specimens table from specimen manifest splits."""
 
 from __future__ import annotations
 
 import asyncio
-from functools import lru_cache
+from dataclasses import dataclass
 import logging
 from pathlib import Path
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Specimen
 from adgn.props.specimens.registry import SpecimenRegistry
-from adgn.props.splits import SPECIMEN_SPLITS
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SyncStats:
+    """Statistics from a specimen sync operation."""
+
+    total: int
+    added: int
+    updated: int
+    deleted: int
+
+    @property
+    def summary_text(self) -> str:
+        """Format as human-readable summary."""
+        return f"{self.total} specimens (+{self.added}, ~{self.updated}, -{self.deleted})"
 
 
 async def _load_all_labeled_files(slugs: list[str], registry: SpecimenRegistry) -> dict[str, set[Path]]:
@@ -50,30 +61,32 @@ async def _load_all_labeled_files(slugs: list[str], registry: SpecimenRegistry) 
     return dict(results)
 
 
-@lru_cache(maxsize=1)
-async def ensure_specimens_synced() -> dict[str, int]:
-    """Ensure specimens table exactly matches splits.py SPECIMEN_SPLITS.
+async def sync_specimens() -> SyncStats:
+    """Sync specimens table from specimen manifests.
 
-    Runs once per process (cached). Safe to call before any DB operation.
+    Ensures database exactly matches the source of truth (manifest files).
 
     Returns:
-        Stats dict: {"added": int, "updated": int, "deleted": int, "total": int}
+        Statistics about what changed
     """
     # Create registry once at the start
     registry = SpecimenRegistry.from_package_resources()
 
+    # Get all specimen slugs and build split mapping
+    source_slugs = registry.specimen_slugs
+    source_count = len(source_slugs)
+
     with get_session() as session:
         # Fast path: if count matches, assume synced
         existing_count = session.query(Specimen).count()
-        if existing_count == len(SPECIMEN_SPLITS):
+        if existing_count == source_count:
             logger.debug(f"Specimens already synced ({existing_count} specimens)")
-            return {"added": 0, "updated": 0, "deleted": 0, "total": existing_count}
+            return SyncStats(added=0, updated=0, deleted=0, total=existing_count)
 
         # Full sync: make DB exactly match source
-        logger.info(f"Syncing specimens table (source: {len(SPECIMEN_SPLITS)} specimens, DB: {existing_count})...")
+        logger.info(f"Syncing specimens table (source: {source_count} specimens, DB: {existing_count})...")
 
         db_specimens = {s.specimen_slug: s for s in session.query(Specimen).all()}
-        source_slugs = set(SPECIMEN_SPLITS.keys())
         db_slugs = set(db_specimens.keys())
 
         added = 0
@@ -88,9 +101,10 @@ async def ensure_specimens_synced() -> dict[str, int]:
 
         # Add/update from source (populate labeled_files from issue definitions)
         # Batch load all labeled_files upfront
-        all_labeled_files_paths = await _load_all_labeled_files(list(SPECIMEN_SPLITS.keys()), registry)
+        all_labeled_files_paths = await _load_all_labeled_files(list(source_slugs), registry)
 
-        for slug, split in SPECIMEN_SPLITS.items():
+        for slug in source_slugs:
+            split = registry.get_split(slug)
             labeled_files_paths = all_labeled_files_paths.get(slug, set())
             # Convert to sorted list of strings for database storage
             labeled_files = sorted(str(p) for p in labeled_files_paths)
@@ -117,21 +131,5 @@ async def ensure_specimens_synced() -> dict[str, int]:
 
         session.commit()
 
-        logger.info(
-            f"Specimens synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(SPECIMEN_SPLITS)} total"
-        )
-        return {"added": added, "updated": updated, "deleted": deleted, "total": len(SPECIMEN_SPLITS)}
-
-
-async def force_sync_specimens() -> dict[str, int]:
-    """Force re-sync of specimens table (clears cache).
-
-    Use this for manual sync commands or when cache must be bypassed.
-
-    Returns:
-        Stats dict from ensure_specimens_synced()
-    """
-    # Clear the cache
-    ensure_specimens_synced.cache_clear()
-    # Run sync
-    return await ensure_specimens_synced()
+        logger.info(f"Specimens synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={source_count} total")
+        return SyncStats(added=added, updated=updated, deleted=deleted, total=source_count)

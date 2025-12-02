@@ -8,6 +8,7 @@ import pytest
 
 from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
 from adgn.agent.loop_control import Continue, NoLoopDecision
+from tests.support.assertions import is_all_function_calls
 
 
 class TestInput(BaseModel):
@@ -54,12 +55,13 @@ async def test_bootstrap_handler_injects_calls_before_first_sampling(test_server
     assert decision.skip_sampling is True
     assert len(decision.inserts_input) == 2
 
-    # Verify call structure
-    first_call = decision.inserts_input[0]
+    # Verify call structure - use TypeGuard to narrow types
+    assert is_all_function_calls(decision.inserts_input)
+    first_call, second_call = decision.inserts_input
+
     assert first_call.name == "test_server_test_tool"
     assert first_call.call_id == "bootstrap:1"  # auto-generated
 
-    second_call = decision.inserts_input[1]
     assert second_call.name == "test_server_test_tool"
     assert second_call.call_id == "bootstrap:2"
 

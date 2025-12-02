@@ -24,6 +24,7 @@ from adgn.props.ids import BaseIssueID
 from adgn.props.models.issue import IssueCore, Occurrence
 from adgn.props.models.lint import extract_corrections
 from adgn.props.runs_context import RunsContext, format_timestamp_session
+from adgn.props.specimens.registry import SpecimenRegistry
 
 from .lint_issue import lint_issue_run
 
@@ -154,7 +155,12 @@ async def _grade_rationale_with_llm(
 
 
 async def eval_issue_spec(
-    spec: IssueEvalSpec, *, client: OpenAIModelProto, out_dir: Path | str | None = None, ctx: RunsContext
+    spec: IssueEvalSpec,
+    *,
+    client: OpenAIModelProto,
+    registry: SpecimenRegistry,
+    out_dir: Path | str | None = None,
+    ctx: RunsContext,
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
@@ -191,6 +197,7 @@ async def eval_issue_spec(
             occurrence=occ,
             client=client,
             handlers=[OneLineProgressHandler()],
+            registry=registry,
         )
 
         # Print the structured output object produced by the agent for this case
@@ -297,7 +304,12 @@ def _load_samples() -> list[IssueEvalSpec]:
 
 
 async def run_all_evals(
-    *, client: OpenAIModelProto, root_out: Path | None = None, concurrency: int = 4, ctx: RunsContext
+    *,
+    client: OpenAIModelProto,
+    registry: SpecimenRegistry,
+    root_out: Path | None = None,
+    concurrency: int = 4,
+    ctx: RunsContext,
 ) -> EvalIndex:
     """Run all samples concurrently (bounded), print a Rich summary, and return EvalIndex."""
     ts = format_timestamp_session()
@@ -308,7 +320,7 @@ async def run_all_evals(
     async def _run_one(sample: IssueEvalSpec) -> SampleRunSummary:
         async with sem:
             out_dir = root / sample.issue.id
-            return await eval_issue_spec(spec=sample, client=client, out_dir=out_dir, ctx=ctx)
+            return await eval_issue_spec(spec=sample, client=client, registry=registry, out_dir=out_dir, ctx=ctx)
 
     entries = await asyncio.gather(*[_run_one(s) for s in _load_samples()])
 

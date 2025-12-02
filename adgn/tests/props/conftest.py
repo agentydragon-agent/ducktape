@@ -97,15 +97,8 @@ def production_specimens_registry() -> SpecimenRegistry:
     """Production specimens registry from package resources.
 
     Uses installed package specimens (src/adgn/props/specimens/).
-    Alias: specimens_registry
     """
     return SpecimenRegistry.from_package_resources()
-
-
-@pytest.fixture
-def specimens_registry(production_specimens_registry) -> SpecimenRegistry:
-    """Alias for production_specimens_registry (backward compatibility)."""
-    return production_specimens_registry
 
 
 @pytest.fixture
@@ -129,7 +122,7 @@ def test_specimens_registry(test_specimens_base: Path) -> SpecimenRegistry:
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen(specimens_registry):
+async def loaded_specimen(production_specimens_registry):
     """Load a real specimen with validation using load_and_hydrate.
 
     Yields HydratedSpecimen object containing both the validated specimen data
@@ -137,18 +130,17 @@ async def loaded_specimen(specimens_registry):
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+    async with production_specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
         yield hydrated
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen_record(specimens_registry):
+async def loaded_specimen_record(loaded_specimen):
     """Load a real specimen (async fixture for tests that only need the record).
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
-        return hydrated.record
+    return loaded_specimen.record
 
 
 @pytest_asyncio.fixture
@@ -156,10 +148,10 @@ async def test_trivial_specimen(test_specimens_registry):
     """Load test-trivial fixture specimen (clean Python code, zero issues).
 
     Test-only specimen for validating zero-issues case.
-    Lives in tests/props/fixtures/specimens/test-trivial/.
+    Lives in tests/props/fixtures/specimens/test-fixtures/test-trivial/.
     Uses DI - no monkeypatching needed.
     """
-    async with test_specimens_registry.load_and_hydrate("test-trivial") as hydrated:
+    async with test_specimens_registry.load_and_hydrate("test-fixtures/test-trivial") as hydrated:
         yield hydrated
 
 
@@ -212,22 +204,57 @@ def mock_openai_client() -> FakeOpenAIModel:
 
 
 @pytest.fixture
-def test_db():
-    """Initialize test database schema and truncate after test.
+def make_openai_client():
+    """Factory fixture for creating mock OpenAI clients from response sequences.
 
-    Uses postgres superuser credentials from get_test_config() to:
-    - Drop and recreate all tables (clean slate)
-    - Create agent_user role
-    - Enable RLS policies
-    - Create default test prompts
+    Usage:
+        responses = [factory.make(...), factory.make(...)]
+        client = make_openai_client(responses)
 
-    Yields for test to run, then truncates all tables for isolation.
+    This is a props-specific alias for the pattern used in agent tests (make_fake_openai).
     """
-    # Get test database configuration (postgres superuser)
-    config = get_test_config()
 
-    # Connect and recreate database (includes agent_user creation)
-    init_db(config.admin_url)
+    def _factory(responses: list[ResponsesResult]) -> FakeOpenAIModel:
+        return FakeOpenAIModel(responses)
+
+    return _factory
+
+
+@pytest.fixture
+def test_db(request):
+    """Create isolated database for each test.
+
+    Creates a unique database per test, initializes schema, and drops it after.
+    Safe for parallel pytest-xdist execution - each test gets its own database.
+    """
+    from sqlalchemy import create_engine
+
+    from adgn.props.db.config import DatabaseConfig
+
+    # Generate unique database name for this test
+    test_id = str(uuid4()).replace("-", "")[:16]
+    db_name = f"props_test_{test_id}"
+
+    # Get base config and parse admin URL
+    base_config = get_test_config()
+    # Parse admin URL to get connection params (connect to postgres db to create new db)
+    from urllib.parse import urlparse, urlunparse
+
+    parsed = urlparse(base_config.admin_url)
+    postgres_url = urlunparse((parsed.scheme, parsed.netloc, "/postgres", "", "", ""))
+
+    # Connect to postgres database to create test database
+    postgres_engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
+    with postgres_engine.connect() as conn:
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+
+    # Build URLs for the new test database
+    test_admin_url = urlunparse((parsed.scheme, parsed.netloc, f"/{db_name}", "", "", ""))
+    test_agent_url = test_admin_url.replace("postgres:postgres", "agent_user:agent_password_changeme")
+    test_config = DatabaseConfig(admin_url=test_admin_url, agent_url=test_agent_url)
+
+    # Initialize schema in the new database
+    init_db(test_config.admin_url)
     recreate_database()
 
     # Create default test prompts
@@ -239,11 +266,19 @@ def test_db():
 
     yield  # Test runs here
 
-    # Cleanup: truncate all table contents
-    with get_session() as session:
-        session.execute(
+    # Cleanup: drop the test database
+    with postgres_engine.connect() as conn:
+        # Terminate connections to the test database
+        conn.execute(
             text(
-                "TRUNCATE TABLE critic_runs, grader_runs, critiques, specimens, prompts, events RESTART IDENTITY CASCADE"
+                f"""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '{db_name}'
+              AND pid <> pg_backend_pid()
+        """
             )
         )
-        session.commit()
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+
+    postgres_engine.dispose()

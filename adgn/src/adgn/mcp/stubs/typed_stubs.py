@@ -39,9 +39,26 @@ class ToolStub(Generic[T_Out]):
     async def __call__(self, payload: T_In) -> T_Out:
         args = payload.model_dump(exclude_none=self._exclude_none)
         result = await self._session.call_tool(name=self._name, arguments=args)
-        pydantic_result = to_pydantic(result)
-        structured = _structured_content(pydantic_result, tool_name=self._name)
-        return TypeAdapter(self._out_type).validate_python(structured)
+
+        # FastMCP wraps non-object schemas (unions, primitives) in {"result": ...}
+        # (see fastmcp/src/fastmcp/tools/tool.py). For wrapped results, FastMCP's client provides
+        # a .data field with unwrapped content (see fastmcp/src/fastmcp/client/client.py).
+        #
+        # Strategy:
+        # - For wrapped results: use .data (dict with unwrapped content)
+        # - For object results: use .structured_content (dict), NOT .data (Pydantic model instance)
+        #
+        # We distinguish by checking if .data is a dict (usable) vs Pydantic model (needs conversion).
+        if result.data is not None and isinstance(result.data, dict):
+            # FastMCP unwrapped a union/primitive for us
+            return TypeAdapter(self._out_type).validate_python(result.data)
+
+        if result.structured_content is not None:
+            # Regular object schema - use the dict directly
+            return TypeAdapter(self._out_type).validate_python(result.structured_content)
+
+        # Fallback: no structured output
+        raise RuntimeError(f"{self._name!r} did not return structured_content; tests require structured outputs")
 
 
 def _resolve_output_type(hinted_output: object, out_model: object) -> type[Any]:

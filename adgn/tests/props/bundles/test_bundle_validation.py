@@ -65,14 +65,14 @@ def pytest_generate_tests(metafunc):
 
 
 @pytest.fixture
-async def specimen_record(request, specimens_registry):
+async def specimen_record(request, production_specimens_registry):
     """Fixture that loads a specimen record without hydration.
 
     Parameter: specimen_slug (string)
     Returns: SpecimenRecord
     """
     specimen_slug = request.param
-    async with specimens_registry.load_and_hydrate(specimen_slug) as hydrated:
+    async with production_specimens_registry.load_and_hydrate(specimen_slug) as hydrated:
         return hydrated.record
 
 

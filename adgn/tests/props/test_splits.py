@@ -2,140 +2,65 @@
 
 from __future__ import annotations
 
+from collections import Counter
+
+from hamcrest import assert_that, greater_than_or_equal_to, is_in, not_none
 import pytest
 
-from adgn.props.splits import (
-    SPECIMEN_SPLITS,
-    Split,
-    get_split,
-    get_test_specimens,
-    get_train_specimens,
-    get_valid_specimens,
-    is_test,
-    is_train,
-    is_valid,
-)
+from adgn.props.splits import Split
 
 
-def test_all_specimens_have_split(specimens_registry):
-    """Verify specimens and splits are in sync: all specimens have splits, all splits have specimens."""
-    all_specimens = set(specimens_registry.list_specimen_names())
-    split_specimens = set(SPECIMEN_SPLITS.keys())
+def test_all_specimens_have_split(production_specimens_registry):
+    """Verify all specimens in registry have valid splits in their manifests."""
+    all_specimens = production_specimens_registry.specimen_slugs
 
-    # Every specimen in registry must have a split
-    missing = all_specimens - split_specimens
-    assert not missing, f"Specimens in registry but not in splits: {missing}"
-
-    # Every specimen in splits must exist in registry
-    extra = split_specimens - all_specimens
-    assert not extra, f"Specimens in splits but not in registry: {extra}"
+    # Every specimen must have a split
+    for slug in all_specimens:
+        split = production_specimens_registry.get_split(slug)
+        assert_that(split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
-def test_each_specimen_in_exactly_one_split():
-    """Verify no specimen appears in multiple splits."""
-    train = set(get_train_specimens())
-    valid = set(get_valid_specimens())
-    test = set(get_test_specimens())
-
-    # Check for overlaps
-    train_valid = train & valid
-    train_test = train & test
-    valid_test = valid & test
-
-    assert not train_valid, f"Specimens in both train and valid: {train_valid}"
-    assert not train_test, f"Specimens in both train and test: {train_test}"
-    assert not valid_test, f"Specimens in both valid and test: {valid_test}"
-
-    # Verify union equals full set
-    assert train | valid | test == set(SPECIMEN_SPLITS.keys())
+def test_unknown_specimen_raises(production_specimens_registry):
+    """Verify get_split raises for unknown specimens."""
+    with pytest.raises(FileNotFoundError):
+        production_specimens_registry.get_split("nonexistent/specimen")
 
 
-def test_split_helpers_consistency():
-    """Verify helper functions return consistent results."""
-    for slug in SPECIMEN_SPLITS:
-        split = get_split(slug)
-
-        if split == Split.TRAIN:
-            assert is_train(slug)
-            assert not is_valid(slug)
-            assert not is_test(slug)
-            assert slug in get_train_specimens()
-            assert slug not in get_valid_specimens()
-            assert slug not in get_test_specimens()
-        elif split == Split.VALID:
-            assert not is_train(slug)
-            assert is_valid(slug)
-            assert not is_test(slug)
-            assert slug not in get_train_specimens()
-            assert slug in get_valid_specimens()
-            assert slug not in get_test_specimens()
-        else:  # Split.TEST
-            assert not is_train(slug)
-            assert not is_valid(slug)
-            assert is_test(slug)
-            assert slug not in get_train_specimens()
-            assert slug not in get_valid_specimens()
-            assert slug in get_test_specimens()
-
-
-def test_unknown_specimen_raises():
-    """Verify get_split raises KeyError for unknown specimens."""
-    with pytest.raises(KeyError):
-        get_split("nonexistent/specimen")
-
-
-def test_split_distribution():
+def test_split_distribution(production_specimens_registry):
     """Verify train/valid/test distribution by specimen count (non-strict bounds).
 
     Note: This tests specimen count, not issue count. The split is optimized for
     minimum issue counts (>=60 for valid and test), so specimen counts may vary widely.
     This test just ensures all splits have at least one specimen.
     """
-    train_count = len(get_train_specimens())
-    valid_count = len(get_valid_specimens())
-    test_count = len(get_test_specimens())
-
-    # Sanity check: each split should have at least one specimen
-    assert train_count >= 1, f"Train has {train_count} specimens, expected >=1"
-    assert valid_count >= 1, f"Valid has {valid_count} specimens, expected >=1"
-    assert test_count >= 1, f"Test has {test_count} specimens, expected >=1"
+    # Each split should have at least one specimen
+    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.TRAIN)), greater_than_or_equal_to(1))
+    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.VALID)), greater_than_or_equal_to(1))
+    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.TEST)), greater_than_or_equal_to(1))
 
 
-async def test_all_specimens_in_splits_can_load(specimens_registry):
-    """Verify every specimen in splits can be loaded without errors."""
-    for slug in SPECIMEN_SPLITS:
-        async with specimens_registry.load_and_hydrate(slug) as hydrated:
-            rec = hydrated.record
-            assert rec is not None, f"Specimen {slug} failed to load"
-            assert len(rec.issues) > 0, f"Specimen {slug} has no issues"
+async def test_all_specimens_in_splits_can_load(production_specimens_registry):
+    """Verify every specimen can be loaded without errors."""
+    for slug in production_specimens_registry.specimen_slugs:
+        async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
+            assert_that(hydrated.record, not_none())
+            assert_that(len(hydrated.record.issues), greater_than_or_equal_to(1))
 
 
-async def test_split_issue_counts(specimens_registry):
+async def test_split_issue_counts(production_specimens_registry):
     """Verify issue counts meet minimum constraints (slow test, uses registry).
 
     Constraint: Valid and Test must each have at least 60 issues.
     Train gets the remainder to maximize training data.
     """
-    train_issues = 0
-    valid_issues = 0
-    test_issues = 0
+    issue_counts: Counter[Split] = Counter()
 
-    for slug in SPECIMEN_SPLITS:
-        async with specimens_registry.load_and_hydrate(slug) as hydrated:
-            rec = hydrated.record
-            issue_count = len(rec.issues)
-
-            if is_train(slug):
-                train_issues += issue_count
-            elif is_valid(slug):
-                valid_issues += issue_count
-            else:
-                test_issues += issue_count
+    for slug in production_specimens_registry.specimen_slugs:
+        async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
+            issue_counts[production_specimens_registry.get_split(slug)] += len(hydrated.record.issues)
 
     # Primary constraint: valid and test must have >=50 issues each
     # (Relaxed from 60 as validation set currently has 57 issues)
-    assert valid_issues >= 50, f"Valid has {valid_issues} issues, expected >=50"
-    assert test_issues >= 60, f"Test has {test_issues} issues, expected >=60"
-
-    # Sanity check: train should have some data too
-    assert train_issues >= 60, f"Train has {train_issues} issues, should have >=60"
+    assert_that(issue_counts[Split.VALID], greater_than_or_equal_to(50))
+    assert_that(issue_counts[Split.TEST], greater_than_or_equal_to(60))
+    assert_that(issue_counts[Split.TRAIN], greater_than_or_equal_to(60))
