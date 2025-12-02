@@ -23,26 +23,32 @@ Usage:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Mapping, Sequence
+from typing import Any, Mapping, Sequence
 from uuid import UUID
 
 import gepa
 
+from adgn.agent.persist.events import (
+    EventRecord,
+    FunctionCallOutputPayload,
+    ToolCallPayload,
+)
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, run_critic
+from adgn.props.critic import (
+    ALL_FILES_WITH_ISSUES,
+    CriticInput,
+    CriticSubmitPayload,
+    ReportedIssue,
+    run_critic,
+)
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as DBGraderRun
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader import GradeSubmitInput, GraderOutput, grade_critique_by_id
-from adgn.props.specimens.hydrated import HydratedSpecimen
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import IssueRecord, SpecimenRegistry
 from adgn.props.splits import Split
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +64,8 @@ class SpecimenInput:
 
     slug: str
     target_files: list[str]
-    ground_truth_issues: list[dict[str, Any]]
-    known_false_positives: list[dict[str, Any]]
+    ground_truth_issues: dict[str, IssueRecord]
+    known_false_positives: dict[str, IssueRecord]
 
 
 @dataclass
@@ -68,8 +74,8 @@ class CriticTrajectory:
 
     specimen_slug: str
     transcript_id: UUID
-    events: list[dict[str, Any]]  # Tool calls and outputs
-    critique_payload: dict[str, Any]  # What the critic submitted
+    events: list[EventRecord]
+    critique_payload: CriticSubmitPayload
 
 
 @dataclass
@@ -77,7 +83,7 @@ class CriticOutput:
     """Output from a critic evaluation."""
 
     specimen_slug: str
-    issues_found: list[dict[str, Any]]
+    issues_found: list[ReportedIssue]
     grader_output: GradeSubmitInput | None
     recall: float
 
@@ -87,25 +93,32 @@ class CriticOutput:
 # =============================================================================
 
 
-def format_events_as_trace(events: list[dict[str, Any]], max_events: int = 50) -> str:
+def format_events_as_trace(events: list[EventRecord], max_events: int = 50) -> str:
     """Format execution events as readable trace text."""
     lines = []
-    tool_events = [e for e in events if e.get("type") in ("tool_call", "function_call_output")]
+    tool_events = [
+        e for e in events
+        if isinstance(e.payload, (ToolCallPayload, FunctionCallOutputPayload))
+    ]
 
     if len(tool_events) > max_events:
         tool_events = tool_events[:max_events]
         lines.append(f"[Truncated to first {max_events} tool events]")
 
     for e in tool_events:
-        if e.get("type") == "tool_call":
-            name = e.get("payload", {}).get("name", "?")
-            args = e.get("payload", {}).get("arguments", {})
-            args_str = json.dumps(args)
+        if isinstance(e.payload, ToolCallPayload):
+            name = e.payload.name
+            args_str = e.payload.args_json or "{}"
             if len(args_str) > 200:
                 args_str = args_str[:200] + "..."
             lines.append(f"CALL {name}({args_str})")
-        elif e.get("type") == "function_call_output":
-            output = str(e.get("payload", {}).get("output", ""))
+        elif isinstance(e.payload, FunctionCallOutputPayload):
+            # Extract text from MCP CallToolResult content
+            content_parts = []
+            for item in e.payload.result.content:
+                if hasattr(item, "text"):
+                    content_parts.append(item.text)
+            output = " ".join(content_parts)
             if len(output) > 300:
                 output = output[:300] + "..."
             lines.append(f"  → {output}")
@@ -233,7 +246,7 @@ class CriticAdapter:
                     critic_run = session.get(DBCriticRun, critic_run_id)
                     transcript_id = critic_run.transcript_id
 
-                    events = []
+                    events: list[EventRecord] = []
                     if capture_traces:
                         event_rows = (
                             session.query(Event)
@@ -242,7 +255,13 @@ class CriticAdapter:
                             .all()
                         )
                         events = [
-                            {"seq": e.sequence_num, "type": e.event_type, "payload": e.payload}
+                            EventRecord(
+                                seq=e.sequence_num,
+                                ts=e.timestamp,
+                                payload=e.payload,
+                                call_id=e.payload.get("call_id"),
+                                tool_key=e.payload.get("name") if e.event_type == "tool_call" else None,
+                            )
                             for e in event_rows
                         ]
 
@@ -258,7 +277,7 @@ class CriticAdapter:
 
                 output = CriticOutput(
                     specimen_slug=slug,
-                    issues_found=critic_output.result.model_dump()["issues"],
+                    issues_found=critic_output.result.issues,
                     grader_output=grader_output.grade,
                     recall=grader_output.recall,
                 )
@@ -267,7 +286,7 @@ class CriticAdapter:
                     specimen_slug=slug,
                     transcript_id=transcript_id,
                     events=events,
-                    critique_payload=critic_output.result.model_dump(),
+                    critique_payload=critic_output.result,
                 ) if capture_traces else None
 
                 results.append({
@@ -320,12 +339,13 @@ class CriticAdapter:
                     "current_text": candidate["system_prompt"],
                     "score": score,
                     "specimen": output.specimen_slug,
-                    "issues_found": output.issues_found,
+                    "issues_found": [issue.model_dump() for issue in output.issues_found],
                 }
 
                 # Add trace if available
                 if trajectory:
                     example["trace"] = format_events_as_trace(trajectory.events)
+                    example["critique_payload"] = trajectory.critique_payload.model_dump()
 
                 # Add grader feedback if available
                 if output.grader_output:
@@ -359,30 +379,11 @@ async def load_datasets(
         async with registry.load_and_hydrate(slug) as hydrated:
             target_files = [str(f) for f in hydrated.files_with_issues()]
 
-            # Use model_dump for Pydantic models
-            ground_truth = [
-                {
-                    "id": issue_id,
-                    "core": record.core.model_dump(),
-                    "occurrences": [occ.model_dump() for occ in record.instances],
-                }
-                for issue_id, record in hydrated.issues.items()
-            ]
-
-            known_fps = [
-                {
-                    "id": fp_id,
-                    "core": record.core.model_dump(),
-                    "occurrences": [occ.model_dump() for occ in record.instances],
-                }
-                for fp_id, record in hydrated.false_positives.items()
-            ]
-
             return SpecimenInput(
                 slug=slug,
                 target_files=target_files,
-                ground_truth_issues=ground_truth,
-                known_false_positives=known_fps,
+                ground_truth_issues=hydrated.issues,
+                known_false_positives=hydrated.false_positives,
             )
 
     trainset = [await load_specimen(slug) for slug in train_slugs]
