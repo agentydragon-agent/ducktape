@@ -89,72 +89,21 @@ class CriticOutput:
 
 
 # =============================================================================
-# Trace Formatting
+# Trace Extraction
 # =============================================================================
 
 
-def format_events_as_trace(events: list[EventRecord], max_events: int = 50) -> str:
-    """Format execution events as readable trace text."""
-    lines = []
+def extract_tool_events(
+    events: list[EventRecord], max_events: int = 50
+) -> list[dict[str, Any]]:
+    """Extract tool call/output events as serialized payloads."""
     tool_events = [
         e for e in events
         if isinstance(e.payload, (ToolCallPayload, FunctionCallOutputPayload))
     ]
-
     if len(tool_events) > max_events:
         tool_events = tool_events[:max_events]
-        lines.append(f"[Truncated to first {max_events} tool events]")
-
-    for e in tool_events:
-        if isinstance(e.payload, ToolCallPayload):
-            name = e.payload.name
-            args_str = e.payload.args_json or "{}"
-            if len(args_str) > 200:
-                args_str = args_str[:200] + "..."
-            lines.append(f"CALL {name}({args_str})")
-        elif isinstance(e.payload, FunctionCallOutputPayload):
-            # Extract text from MCP CallToolResult content
-            content_parts = []
-            for item in e.payload.result.content:
-                if hasattr(item, "text"):
-                    content_parts.append(item.text)
-            output = " ".join(content_parts)
-            if len(output) > 300:
-                output = output[:300] + "..."
-            lines.append(f"  → {output}")
-
-    return "\n".join(lines)
-
-
-def format_grader_feedback(grade: GradeSubmitInput) -> str:
-    """Format grader output as feedback text."""
-    lines = []
-
-    # Missed issues
-    missed = [
-        (tp_id, cov)
-        for tp_id, cov in grade.canonical_tp_coverage.items()
-        if not cov.covered_by
-    ]
-    if missed:
-        lines.append("MISSED ISSUES:")
-        for tp_id, cov in missed:
-            lines.append(f"  - {tp_id}: {cov.rationale}")
-
-    # False positives triggered
-    fps_hit = [
-        (fp_id, cov)
-        for fp_id, cov in grade.canonical_fp_coverage.items()
-        if cov.covered_by
-    ]
-    if fps_hit:
-        lines.append("FALSE POSITIVES TRIGGERED:")
-        for fp_id, cov in fps_hit:
-            lines.append(f"  - {fp_id}: {cov.rationale}")
-
-    lines.append(f"SUMMARY: {grade.summary}")
-
-    return "\n".join(lines)
+    return [e.payload.model_dump() for e in tool_events]
 
 
 # =============================================================================
@@ -334,7 +283,7 @@ class CriticAdapter:
                 eval_batch.scores,
                 eval_batch.trajectories or [None] * len(eval_batch.outputs),
             ):
-                example = {
+                example: dict[str, Any] = {
                     "component_name": "system_prompt",
                     "current_text": candidate["system_prompt"],
                     "score": score,
@@ -342,14 +291,11 @@ class CriticAdapter:
                     "issues_found": [issue.model_dump() for issue in output.issues_found],
                 }
 
-                # Add trace if available
                 if trajectory:
-                    example["trace"] = format_events_as_trace(trajectory.events)
+                    example["tool_events"] = extract_tool_events(trajectory.events)
                     example["critique_payload"] = trajectory.critique_payload.model_dump()
 
-                # Add grader feedback if available
                 if output.grader_output:
-                    example["grader_feedback"] = format_grader_feedback(output.grader_output)
                     example["grader_output"] = output.grader_output.model_dump()
 
                 examples.append(example)
