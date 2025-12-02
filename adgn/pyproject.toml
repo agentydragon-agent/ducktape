@@ -114,6 +114,9 @@ gnome = [
 matrix = [
   "mautrix>=0.20.0",
 ]
+gepa = [
+  "gepa>=0.1.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
