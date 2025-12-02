@@ -1,15 +1,34 @@
-"""DSPy integration for props - prompt optimization for code review agents.
+"""Prompt optimization for props critic.
 
-DSPy optimizes the prompt text. Agent execution uses existing MiniCodex + MCP.
+Two approaches available:
 
-Flow:
-1. Load specimens (train/valid)
-2. For each prompt candidate:
-   a. Run critic via existing run_critic() (MiniCodex + Docker MCP)
-   b. Grade via existing run_grader() (LLM grader)
-3. DSPy teleprompter optimizes prompt based on grades
+1. Custom optimization loop (optimize.py):
+   - Simple iterative improvement with rich feedback
+   - Uses DSPy ChainOfThought for prompt proposals
+
+2. GEPA integration (gepa_adapter.py):
+   - Full evolutionary optimization with gepa-ai/gepa
+   - Implements GEPAAdapter protocol for external agent integration
+   - Uses GEPA's reflection and Pareto optimization
+
+Both use your existing infrastructure:
+- run_critic(): MiniCodex + Docker MCP
+- grade_critique_by_id(): LLM grader
+- Traces from events table
 """
 
-from .optimize import optimize_critic_prompt
+from .optimize import optimize_critic_prompt, evaluate_on_validation
 
-__all__ = ["optimize_critic_prompt"]
+# GEPA adapter (requires `pip install gepa`)
+try:
+    from .gepa_adapter import CriticAdapter, optimize_with_gepa, load_datasets
+    __all__ = [
+        "optimize_critic_prompt",
+        "evaluate_on_validation",
+        "CriticAdapter",
+        "optimize_with_gepa",
+        "load_datasets",
+    ]
+except ImportError:
+    # gepa not installed
+    __all__ = ["optimize_critic_prompt", "evaluate_on_validation"]
