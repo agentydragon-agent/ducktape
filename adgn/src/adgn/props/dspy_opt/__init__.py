@@ -7,7 +7,7 @@ Implements GEPAAdapter protocol to integrate with your existing infrastructure:
 - Traces from events table
 
 Usage:
-    pip install gepa
+    pip install adgn[gepa]
 
     from adgn.props.dspy_opt import optimize_with_gepa
 

@@ -29,16 +29,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Mapping, Sequence
 from uuid import UUID
 
-if TYPE_CHECKING:
-    from gepa import EvaluationBatch
-    from gepa.core.adapter import DataInst
+import gepa
 
-    from adgn.openai_utils.model import OpenAIModelProto
-    from adgn.props.grader import GradeSubmitInput
-    from adgn.props.specimens.hydrated import HydratedSpecimen
-    from adgn.props.specimens.registry import SpecimenRegistry
-
+from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, run_critic
+from adgn.props.db import get_session
+from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as DBGraderRun
+from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.grader import GradeSubmitInput, GraderOutput, grade_critique_by_id
+from adgn.props.specimens.hydrated import HydratedSpecimen
+from adgn.props.specimens.registry import SpecimenRegistry
 from adgn.props.splits import Split
+
+if TYPE_CHECKING:
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +78,7 @@ class CriticOutput:
 
     specimen_slug: str
     issues_found: list[dict[str, Any]]
-    grader_output: "GradeSubmitInput"
+    grader_output: GradeSubmitInput | None
     recall: float
 
 
@@ -109,7 +113,7 @@ def format_events_as_trace(events: list[dict[str, Any]], max_events: int = 50) -
     return "\n".join(lines)
 
 
-def format_grader_feedback(grade: "GradeSubmitInput") -> str:
+def format_grader_feedback(grade: GradeSubmitInput) -> str:
     """Format grader output as feedback text."""
     lines = []
 
@@ -154,8 +158,8 @@ class CriticAdapter:
 
     def __init__(
         self,
-        registry: "SpecimenRegistry",
-        client: "OpenAIModelProto",
+        registry: SpecimenRegistry,
+        client: OpenAIModelProto,
         verbose: bool = False,
     ):
         self.registry = registry
@@ -167,7 +171,7 @@ class CriticAdapter:
         batch: list[SpecimenInput],
         candidate: dict[str, str],
         capture_traces: bool = False,
-    ) -> "EvaluationBatch[CriticTrajectory, CriticOutput]":
+    ) -> gepa.EvaluationBatch[CriticTrajectory, CriticOutput]:
         """Evaluate a prompt candidate on a batch of specimens.
 
         Args:
@@ -178,8 +182,6 @@ class CriticAdapter:
         Returns:
             EvaluationBatch with outputs, scores, and optional trajectories
         """
-        from gepa import EvaluationBatch
-
         # Run async evaluation in sync context
         results = asyncio.run(self._evaluate_async(batch, candidate, capture_traces))
 
@@ -187,7 +189,7 @@ class CriticAdapter:
         scores = [r["score"] for r in results]
         trajectories = [r["trajectory"] for r in results] if capture_traces else None
 
-        return EvaluationBatch(
+        return gepa.EvaluationBatch(
             outputs=outputs,
             scores=scores,
             trajectories=trajectories,
@@ -200,12 +202,6 @@ class CriticAdapter:
         capture_traces: bool,
     ) -> list[dict[str, Any]]:
         """Async implementation of evaluate."""
-        from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, run_critic
-        from adgn.props.db import get_session
-        from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as DBGraderRun
-        from adgn.props.db.prompts import hash_and_upsert_prompt
-        from adgn.props.grader import GraderOutput, grade_critique_by_id
-
         system_prompt = candidate["system_prompt"]
         prompt_sha256 = hash_and_upsert_prompt(system_prompt)
 
@@ -262,7 +258,7 @@ class CriticAdapter:
 
                 output = CriticOutput(
                     specimen_slug=slug,
-                    issues_found=[i.model_dump() for i in critic_output.result.issues],
+                    issues_found=critic_output.result.model_dump()["issues"],
                     grader_output=grader_output.grade,
                     recall=grader_output.recall,
                 )
@@ -299,7 +295,7 @@ class CriticAdapter:
     def make_reflective_dataset(
         self,
         candidate: dict[str, str],
-        eval_batch: "EvaluationBatch[CriticTrajectory, CriticOutput]",
+        eval_batch: gepa.EvaluationBatch[CriticTrajectory, CriticOutput],
         components_to_update: list[str],
     ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
         """Build reflective dataset for GEPA's teacher model.
@@ -314,11 +310,11 @@ class CriticAdapter:
                 continue  # Only optimize system_prompt
 
             examples = []
-            for i, (output, score, trajectory) in enumerate(zip(
+            for output, score, trajectory in zip(
                 eval_batch.outputs,
                 eval_batch.scores,
                 eval_batch.trajectories or [None] * len(eval_batch.outputs),
-            )):
+            ):
                 example = {
                     "component_name": "system_prompt",
                     "current_text": candidate["system_prompt"],
@@ -334,6 +330,7 @@ class CriticAdapter:
                 # Add grader feedback if available
                 if output.grader_output:
                     example["grader_feedback"] = format_grader_feedback(output.grader_output)
+                    example["grader_output"] = output.grader_output.model_dump()
 
                 examples.append(example)
 
@@ -348,7 +345,7 @@ class CriticAdapter:
 
 
 async def load_datasets(
-    registry: "SpecimenRegistry",
+    registry: SpecimenRegistry,
 ) -> tuple[list[SpecimenInput], list[SpecimenInput]]:
     """Load train and validation datasets for GEPA.
 
@@ -362,20 +359,22 @@ async def load_datasets(
         async with registry.load_and_hydrate(slug) as hydrated:
             target_files = [str(f) for f in hydrated.files_with_issues()]
 
+            # Use model_dump for Pydantic models
             ground_truth = [
                 {
                     "id": issue_id,
-                    "rationale": str(record.core.rationale),
-                    "occurrences": [
-                        {"files": {str(f): list(lines) for f, lines in occ.files.items()}}
-                        for occ in record.instances
-                    ],
+                    "core": record.core.model_dump(),
+                    "occurrences": [occ.model_dump() for occ in record.instances],
                 }
                 for issue_id, record in hydrated.issues.items()
             ]
 
             known_fps = [
-                {"id": fp_id, "rationale": str(record.core.rationale)}
+                {
+                    "id": fp_id,
+                    "core": record.core.model_dump(),
+                    "occurrences": [occ.model_dump() for occ in record.instances],
+                }
                 for fp_id, record in hydrated.false_positives.items()
             ]
 
@@ -399,13 +398,13 @@ async def load_datasets(
 
 async def optimize_with_gepa(
     initial_prompt: str,
-    registry: "SpecimenRegistry",
-    client: "OpenAIModelProto",
+    registry: SpecimenRegistry,
+    client: OpenAIModelProto,
     *,
     reflection_model: str = "gpt-4o",
     max_metric_calls: int = 100,
     verbose: bool = False,
-) -> tuple[str, dict[str, Any]]:
+) -> tuple[str, Any]:
     """Optimize critic prompt using GEPA.
 
     Args:
@@ -419,8 +418,6 @@ async def optimize_with_gepa(
     Returns:
         (optimized_prompt, gepa_results) tuple
     """
-    import gepa
-
     # Load datasets
     trainset, valset = await load_datasets(registry)
 
