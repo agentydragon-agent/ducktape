@@ -10,15 +10,27 @@ import copy
 from dataclasses import dataclass
 import json
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import anyio
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from mcp import types as mcp_types
+from pydantic import TypeAdapter
 
 from adgn.agent.handler import AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import Abort, Auto, Continue, Forbid, RequireAny, RequireSpecific, ToolPolicy
+from adgn.agent.loop_control import (
+    Abort,
+    AllowAnyToolOrTextMessage,
+    Compact,
+    Continue,
+    ForbidAllTools,
+    InjectItems,
+    RequireAnyTool,
+    RequireSpecific,
+    ToolPolicy,
+)
 from adgn.mcp._shared.calltool import as_minimal_json
 from adgn.openai_utils.model import (
     AssistantMessage,
@@ -51,6 +63,13 @@ class AgentResult:
     # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to MiniCodex.create().
 
 
+@dataclass
+class CompactionResult:
+    """Result of transcript compaction operation."""
+
+    compacted: bool
+
+
 @dataclass(slots=True)
 class ToolCallSuccess:
     """Successful MCP tool invocation."""
@@ -77,9 +96,6 @@ class ToolCallAborted:
 ToolCallOutcome = ToolCallSuccess | ToolCallFailure | ToolCallAborted
 
 
-# Copying helper was trivial; inline deepcopy at call sites to avoid indirection
-
-
 def _require_call_id(function_call: FunctionCallItem) -> str:
     call_id = function_call.call_id
     if not isinstance(call_id, str) or not call_id:
@@ -87,7 +103,7 @@ def _require_call_id(function_call: FunctionCallItem) -> str:
     return call_id
 
 
-def _dump_call_tool_result(res: CallToolResult, tool_call_info: str | None = None) -> str:
+def _dump_call_tool_result(res: CallToolResult) -> str:
     """Serialize an MCP CallToolResult for Responses input (native field names).
 
     Dumps a compact JSON with native snake_case keys to avoid lossy remapping.
@@ -98,14 +114,9 @@ def _dump_call_tool_result(res: CallToolResult, tool_call_info: str | None = Non
     # Safety check: OpenAI has a 10MB limit for input strings
     # Fail fast if tool output is too large to prevent API errors
     if len(result) > MAX_TOOL_RESULT_BYTES:
-        error_msg = (
-            f"Tool output too large: {len(result) / (1024 * 1024):.1f}MB "
-            f"exceeds max {MAX_TOOL_RESULT_BYTES / (1024 * 1024):.0f}MB. "
+        raise RuntimeError(
+            f"Tool output too large: {len(result) = } > {MAX_TOOL_RESULT_BYTES = }.Check slicing/pagination."
         )
-        if tool_call_info:
-            error_msg += f" Tool call: {tool_call_info}."
-        error_msg += " MCP server returned oversized result - check slicing/pagination."
-        raise RuntimeError(error_msg)
 
     return result
 
@@ -133,7 +144,7 @@ def _maybe_error_message(res: CallToolResult) -> str | None:
 
 
 def _make_error_result(message: str) -> CallToolResult:
-    return CallToolResult(content=[], structured_content={"ok": False, "error": message}, is_error=True)
+    return CallToolResult(content=[], structured_content={"ok": False, "error": message}, is_error=True, meta=None)
 
 
 DEFAULT_ABORT_ERROR = "tool execution aborted"
@@ -143,7 +154,8 @@ def _abort_result(reason: str | None = None) -> CallToolResult:
     return _make_error_result(reason or DEFAULT_ABORT_ERROR)
 
 
-def _normalize_call_arguments(arguments: Any) -> str | None:
+def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None) -> str | None:
+    """Normalize function call arguments to JSON string."""
     if arguments is None or isinstance(arguments, str):
         return arguments
     try:
@@ -157,7 +169,7 @@ def _call_tool_result_from_json(output: str) -> CallToolResult:
 
     Expects native snake_case keys; raises ValueError on invalid payload.
     """
-    return CallToolResult.model_validate_json(output)
+    return TypeAdapter(CallToolResult).validate_json(output)
 
 
 # Namespaced tool form: mcp_{server}_{tool}
@@ -174,11 +186,11 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
 
     Exhaustive and strict: raises on unknown policy; RequireSpecific supports exactly one name.
     """
-    if isinstance(policy, RequireAny):
+    if isinstance(policy, RequireAnyTool):
         return "required"
-    if isinstance(policy, Auto):
+    if isinstance(policy, AllowAnyToolOrTextMessage):
         return "auto"
-    if isinstance(policy, Forbid):
+    if isinstance(policy, ForbidAllTools):
         return "none"
     if isinstance(policy, RequireSpecific):
         if len(policy.names) == 1:
@@ -202,6 +214,7 @@ class MiniCodex:
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool,
         handlers: Iterable[BaseHandler],
+        tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
         self._default_system = system or SYSTEM_INSTRUCTIONS
@@ -210,6 +223,7 @@ class MiniCodex:
         self._mcp_client = mcp_client
         self._client = client
         self._parallel_tool_calls = parallel_tool_calls
+        self._tool_policy = tool_policy
         self._transcript: list[TranscriptItem] = []
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
@@ -235,6 +249,91 @@ class MiniCodex:
             base = self._system or ""
             return (base + (dyn or "")).strip()
         return (self._system or "").strip()
+
+    async def compact_transcript(
+        self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
+    ) -> CompactionResult:
+        """Compact old conversation by summarizing.
+
+        Preserves:
+        - Recent N transcript items
+
+        Compacts:
+        - Old UserMessage/AssistantMessage text
+        - Old FunctionCallItem/ToolCallOutput (tool call chains)
+        - Old ReasoningItem blocks
+
+        Returns summary as a single UserMessage inserted before recent turns.
+
+        Args:
+            keep_recent_turns: Number of recent transcript items to preserve
+            summarization_prompt: Custom prompt for summarization (default: load from file)
+
+        Returns:
+            CompactionResult with statistics about what was compacted
+        """
+
+        # Find boundary: keep last N items, compact everything before
+        boundary_index = max(0, len(self._transcript) - keep_recent_turns)
+
+        if boundary_index < 1:
+            return CompactionResult(compacted=False)
+
+        # Partition transcript in original order
+        all_to_compact = self._transcript[:boundary_index]
+        recent_region = self._transcript[boundary_index:]
+
+        # Check if we have enough items to make compaction worthwhile
+        if len(all_to_compact) < 3:
+            return CompactionResult(compacted=False)
+
+        # Generate summary via LLM
+        summary_text = await self._generate_summary(all_to_compact, summarization_prompt)
+
+        # Rebuild transcript
+        summary_msg = UserMessage.text(summary_text)
+
+        self._transcript = [
+            summary_msg,  # Summary of compacted conversation
+            *recent_region,  # Recent turns preserved verbatim (no ReasoningItems)
+        ]
+
+        return CompactionResult(compacted=True)
+
+    async def _generate_summary(self, items: list[TranscriptItem], custom_prompt: str | None) -> str:
+        """Use LLM to summarize transcript items.
+
+        Handles:
+        - UserMessage: full text
+        - AssistantMessage: full text
+        - ReasoningItem: summary only (not full extended thinking)
+        - FunctionCallItem: tool name and args
+        - ToolCallOutput: result summary
+        """
+
+        # Serialize transcript items to JSON using TypeAdapter
+        # TODO: Consider stripping/formatting to remove fields without semantic content
+        #  (e.g., tool call IDs, encrypted reasoning data, internal metadata)
+        adapter = TypeAdapter(list[TranscriptItem])
+        conversation = adapter.dump_json(items, exclude_none=True, indent=2).decode()
+
+        # Load default prompt from file if not provided
+        if custom_prompt is None:
+            prompt_file = Path(__file__).parent / "compaction_prompt.md"
+            custom_prompt = prompt_file.read_text()
+
+        # Build summarization request
+        req = ResponsesRequest(input=[UserMessage.text(conversation)], instructions=custom_prompt, stream=False)
+
+        resp = await self._client.responses_create(req)
+
+        # Extract text from response
+        if resp.output and len(resp.output) > 0:
+            first = resp.output[0]
+            if isinstance(first, AssistantMessageOut):
+                return first.text
+
+        raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
     async def run(self, user_text: str) -> AgentResult:
         self._transcript.append(UserMessage.text(user_text))
@@ -359,15 +458,7 @@ class MiniCodex:
                 items.append(item)
                 continue
             if isinstance(item, ToolCallOutput):
-                # Look up the function call from our map for debugging info
-                tool_info = f"call_id={item.call_id}"
-                if item.call_id in self._function_call_map:
-                    fc = self._function_call_map[item.call_id]
-                    tool_info = f"{fc.name}(call_id={item.call_id})"
-
-                items.append(
-                    FunctionCallOutputItem(call_id=item.call_id, output=_dump_call_tool_result(item.result, tool_info))
-                )
+                items.append(FunctionCallOutputItem(call_id=item.call_id, output=_dump_call_tool_result(item.result)))
                 continue
             raise TypeError(f"Unsupported transcript item for OpenAI input: {type(item)}")
         return items
@@ -377,31 +468,37 @@ class MiniCodex:
         if isinstance(decision, Abort):
             self.finished = True
             return
+        if isinstance(decision, Compact):
+            await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            return  # Continue to next iteration after compaction
+
+        # Handle InjectItems: append all items to transcript
+        if isinstance(decision, InjectItems):
+            self._transcript.extend(decision.items)
+            # Notify handlers about injected function calls and add to pending
+            for item in decision.items:
+                if isinstance(item, FunctionCallItem):
+                    self._controller.on_tool_call(
+                        ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id)
+                    )
+                    self.pending_function_calls.append(item)
+            # Skip sampling this iteration
+            # Main loop will execute any pending function calls, then iterate again
+            return
+
         # Unify resp_output element type across branches for mypy
         resp_output: list[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut] | None = None
-        if isinstance(decision, Continue) and decision.skip_sampling:
-            # Skip sampling: treat handler-provided inserts_input as if they were
-            # model output items for this phase and process them via the normal
-            # output path (adds assistant text, enqueues tool calls, etc.).
-            # Caller must ensure inserts_input contains only output-side items when skip_sampling=True
-            resp_output = list(
-                cast(
-                    Sequence[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut],
-                    decision.inserts_input,
-                )
-            )
-        elif isinstance(decision, Continue):
-            # Inject any handler-provided pre-sample inserts into transcript
-            # Runtime check: FunctionCallItem only allowed with skip_sampling=True
-            if any(isinstance(item, FunctionCallItem) for item in decision.inserts_input):
-                raise TypeError("FunctionCallItem requires skip_sampling=True")
-            normal_inserts: list[UserMessage] = []
-            for item in decision.inserts_input:
-                if not isinstance(item, UserMessage):
-                    raise TypeError("Only UserMessage is allowed when skip_sampling=False")
-                normal_inserts.append(item)
-            self._transcript.extend(normal_inserts)
-            tool_choice = _tool_choice_from_policy(decision.tool_policy)
+
+        # Determine whether to sample LLM
+        should_sample_llm = False
+
+        if isinstance(decision, Continue):
+            should_sample_llm = True
+        else:
+            raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
+
+        if should_sample_llm:
+            tool_choice = _tool_choice_from_policy(self._tool_policy)
             reasoning_param = build_reasoning_params(self._reasoning_effort, self._reasoning_summary)
             # Build OpenAI Responses tools list via Policy Gateway client (proxy aggregates downstream)
             tools = await self._mcp_client.list_tools()
@@ -434,8 +531,7 @@ class MiniCodex:
             )
             self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._client.model))
             resp_output = resp.output
-        else:
-            raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")
+
         if resp_output is not None:
             self._process_resp_output(resp_output)
         if not self.pending_function_calls:
@@ -469,15 +565,12 @@ class MiniCodex:
                 # Store assistant as our input item type to avoid secondary translation
                 self._transcript.append(item.to_input_item())
             elif isinstance(item, FunctionCallOutputItem):
-                try:
-                    if item.output is None:
-                        raise ValueError("FunctionCallOutputItem.output is None")
-                    result = _call_tool_result_from_json(item.output)
-                except ValueError as exc:  # pragma: no cover - defensive
-                    raise ValueError(f"Failed to parse CallToolResult for call_id={item.call_id}") from exc
+                if item.output is None:
+                    raise ValueError("FunctionCallOutputItem.output is None")
+                result = _call_tool_result_from_json(item.output)
                 ocid = item.call_id
-                if not isinstance(ocid, str) or not ocid:
-                    raise RuntimeError("FunctionCallOutputItem missing call_id")
+                assert isinstance(ocid, str)
+                assert ocid
                 event = ToolCallOutput(call_id=ocid, result=result)
                 handled_cids.add(ocid)
                 self._controller.on_tool_result(event)
@@ -510,8 +603,14 @@ class MiniCodex:
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
+        tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> MiniCodex:
+        """Create a MiniCodex agent.
+
+        Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
+        Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage(), ForbidAllTools().
+        """
         return cls(
             system=system,
             mcp_client=mcp_client,
@@ -519,6 +618,7 @@ class MiniCodex:
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
             parallel_tool_calls=parallel_tool_calls,
+            tool_policy=tool_policy,
             handlers=list(handlers),
             dynamic_instructions=dynamic_instructions,
         )

@@ -24,7 +24,8 @@ from pydantic import TypeAdapter
 from adgn.agent.approvals import ApprovalRequest
 from adgn.agent.handler import ToolCall
 from adgn.agent.mcp_bridge.agents import AgentInfo
-from adgn.agent.persist import ApprovalOutcome, EventType, RunStatus
+from adgn.agent.persist import ApprovalOutcome, EventType
+from adgn.agent.server.protocol import AgentStatus
 
 # ============================================================================
 # MCP Constants Generation
@@ -188,7 +189,7 @@ def generate_pydantic_types() -> None:
         ToolCall,
         # Enums
         ApprovalOutcome,
-        RunStatus,
+        AgentStatus,
         EventType,
         # Approval types
         ApprovalRequest,

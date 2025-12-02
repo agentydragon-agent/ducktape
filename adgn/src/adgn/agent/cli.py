@@ -20,6 +20,7 @@ import uvicorn
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
@@ -160,7 +161,9 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
     for name, spec in cfg.mcpServers.items():
         await comp.mount_server(name, spec)
     async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers())
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers(), tool_policy=RequireAnyTool()
+        )
         async with agent:
             for line in sys.stdin:
                 user = line.rstrip("\n")
