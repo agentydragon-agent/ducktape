@@ -115,7 +115,7 @@ matrix = [
   "mautrix>=0.20.0",
 ]
 gepa = [
-  "gepa>=0.1.0",
+  "gepa>=0.0.22",
 ]
 
 [tool.setuptools.packages.find]
