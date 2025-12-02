@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
 from datetime import UTC, datetime
 import logging
 from typing import Any
-from uuid import UUID
 
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.types import AgentID
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.openai_utils.model import ReasoningItem
 
@@ -17,16 +16,11 @@ logger = logging.getLogger("adgn.persist.handler")
 
 
 class RunPersistenceHandler(BaseHandler):
-    """Ever-present handler that appends canonical transcript items to persistence.
+    """Ever-present handler that appends canonical transcript items to persistence."""
 
-    Uses an explicit run binding so it can remain attached across runs.
-    """
-
-    def __init__(self, *, persistence: Persistence, get_run_id: Callable[[], UUID | None] | None = None) -> None:
+    def __init__(self, *, persistence: Persistence, agent_id: AgentID) -> None:
         self._persistence = persistence
-        self._get_run_id = get_run_id
-        self._current_run_id: UUID | None = None
-        self._last_run_id: UUID | None = None
+        self._agent_id = agent_id
         self._seq = 0
         self._tasks: set[asyncio.Task] = set()
 
@@ -41,20 +35,6 @@ class RunPersistenceHandler(BaseHandler):
                 logger.exception("persistence task failed", exc_info=exc)
 
         t.add_done_callback(_done)
-
-    def bind_run(self, run_id: UUID) -> None:
-        """Explicitly bind to a run. Primarily for legacy call sites.
-
-        When a get_run_id callback is provided, this is optional; the handler
-        will automatically pick up the active run id.
-        """
-        self._current_run_id = run_id
-        self._last_run_id = run_id
-        self._seq = 0
-
-    def end_run(self) -> None:
-        self._current_run_id = None
-        self._seq = 0
 
     def _now(self) -> datetime:
         return datetime.now(UTC)
@@ -78,22 +58,20 @@ class RunPersistenceHandler(BaseHandler):
     def _record_event(
         self, *, payload: dict[str, Any], call_id: str | None = None, tool_key: str | None = None
     ) -> None:
-        """Common append path: guard run, bump seq, enqueue append_event.
+        """Common append path: bump seq, enqueue append_event.
 
-        Keeps ordering by incrementing a local sequence per run.
+        Keeps ordering by incrementing a local sequence.
         Payload must contain 'type' field for discriminated union.
         """
-        rid = self._current_run_id or (self._get_run_id() if self._get_run_id else None)
-        if rid is None:
-            return
-        # Reset sequence if run changed (auto-bind path)
-        if self._last_run_id != rid:
-            self._last_run_id = rid
-            self._seq = 0
         self._seq += 1
         self._spawn(
             self._persistence.append_event(
-                run_id=rid, seq=self._seq, ts=self._now(), payload=payload, call_id=call_id, tool_key=tool_key
+                agent_id=self._agent_id,
+                seq=self._seq,
+                ts=self._now(),
+                payload=payload,
+                call_id=call_id,
+                tool_key=tool_key,
             )
         )
 

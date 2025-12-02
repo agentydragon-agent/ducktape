@@ -23,7 +23,7 @@ from adgn.agent.types import AgentID
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.model import OpenAIModelProto
 
-# Server name for agent control (send_prompt, abort_run)
+# Server name for agent control (send_prompt, abort)
 AGENT_CONTROL_SERVER_NAME = "agent_control"
 
 logger = logging.getLogger(__name__)
@@ -97,7 +97,7 @@ class InfrastructureRegistry:
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
 
-        Only for internal agents - provides send_prompt and abort_run tools.
+        Only for internal agents - provides send_prompt and abort tools.
         """
         if container._compositor is None:
             logger.warning(f"Cannot mount agent_control: compositor not initialized for {container.agent_id}")

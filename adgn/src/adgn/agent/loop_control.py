@@ -19,13 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import (
-    AssistantMessageOut,
-    FunctionCallItem,
-    FunctionCallOutputItem,
-    ReasoningItem,
-    UserMessage,
-)
+from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -37,17 +31,17 @@ class ToolPolicy:
 
 
 @dataclass(frozen=True)
-class Auto(ToolPolicy):
+class AllowAnyToolOrTextMessage(ToolPolicy):
     """Let the model decide whether to call a tool or not for the next sample."""
 
 
 @dataclass(frozen=True)
-class RequireAny(ToolPolicy):
+class RequireAnyTool(ToolPolicy):
     """Require the model to call at least one tool for the next sample."""
 
 
 @dataclass(frozen=True)
-class Forbid(ToolPolicy):
+class ForbidAllTools(ToolPolicy):
     """Disallow tool calls for the next sample (rarely useful)."""
 
 
@@ -73,49 +67,28 @@ class NoLoopDecision:
     """
 
 
-# Type alias for Continue.inserts_input
-# Valid types: UserMessage, FunctionCallItem
-# Constraint (enforced at runtime): FunctionCallItem ONLY allowed when skip_sampling=True
-# Rationale: FunctionCallItem in normal path would create unresolved function call in API request
-InjectableItem = UserMessage | FunctionCallItem
-SyntheticOutputItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
-InjectedItem = InjectableItem | SyntheticOutputItem
+@dataclass(frozen=True)
+class Continue:
+    """Sample the LLM normally with the agent's configured tool_policy.
+
+    This is the default action when no handler wants to do anything special.
+    """
 
 
 @dataclass(frozen=True)
-class Continue:
-    """Proceed with the agent loop under a specific tool policy.
+class InjectItems:
+    """Inject items into the agent loop, then skip sampling.
 
-    Semantics
-    - Normal path (skip_sampling=False):
-      - inserts_input are appended to the next Responses API request as-is (input-side items),
-        then the model is sampled according to tool_policy.
-    - Synthetic path (skip_sampling=True):
-      - Do NOT call the model this phase. Instead, treat inserts_input as if they were the
-        model's output for this phase (compatibility with the old SyntheticAction).
-      - The agent will process these items immediately (e.g., execute any function_call
-        via MCP and emit function_call_output), then continue the loop per tool_policy
-        on subsequent iterations.
+    Supported item types:
+    - UserMessage: inject user input (e.g., notifications)
+    - FunctionCallItem: inject tool calls (e.g., bootstrap)
 
-    Compatibility notes (ex-SyntheticAction)
-    - Previously, SyntheticAction(outputs=[...]) provided "output-side" items to process locally.
-      That behavior is now expressed by Continue(skip_sampling=True, inserts_input=(...)).
-    - When skip_sampling=True, inserts_input SHOULD be output-shaped TranscriptItems encoded as
-      valid Responses input items (e.g., ResponseFunctionToolCall dicts). The agent will treat
-      them as the current phase's resp_output and will NOT send a model request.
-    - Do not fabricate server-only rs_/fc_ ids; client-scoped call_id values are acceptable for
-      function_call/function_call_output pairs.
+    All items are appended to transcript. FunctionCallItem objects are
+    added to pending_function_calls for execution. After injection,
+    the loop continues without sampling (handlers run again next iteration).
     """
 
-    tool_policy: ToolPolicy
-    # Items to inject into the agent loop.
-    # - Normal path (skip_sampling=False): Must be NormalInjectableItem types, appended to transcript
-    # - Skip-sampling path (skip_sampling=True): Must be SyntheticOutputItem types, treated as model output
-    # Type annotation accepts the union; caller must ensure items match the skip_sampling mode.
-    # ReasoningItem MUST be produced by the SDK/model, never injected.
-    inserts_input: tuple[InjectedItem, ...] = ()
-    # When True: do NOT call the model this phase; execute directly from inserts_input
-    skip_sampling: bool = False
+    items: tuple[UserMessage | FunctionCallItem, ...]
 
 
 @dataclass(frozen=True)
@@ -123,5 +96,19 @@ class Abort:
     pass
 
 
+@dataclass(frozen=True)
+class Compact:
+    """Signal that transcript should be compacted before continuing.
+
+    The agent will compact the transcript (keeping keep_recent_turns items),
+    then continue with the agent's configured tool_policy.
+
+    Note: ReasoningItem blocks are never preserved in the recent region,
+    as they cannot be reused outside their original response context.
+    """
+
+    keep_recent_turns: int = 10
+
+
 # Union type for loop decisions (for static type checking)
-type LoopDecision = Continue | Abort | NoLoopDecision
+type LoopDecision = Continue | InjectItems | Abort | Compact | NoLoopDecision

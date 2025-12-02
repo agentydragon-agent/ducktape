@@ -3,13 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
-from uuid import UUID
 
 from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 from adgn.agent.models.proposal_status import ProposalStatus
-from adgn.agent.persist.events import EventRecord
+from adgn.agent.types import AgentID
 
 
 class AgentMetadata(BaseModel):
@@ -22,18 +21,11 @@ class AgentMetadata(BaseModel):
 
 
 class AgentRow(BaseModel):
-    id: str
+    id: AgentID
     created_at: datetime
     mcp_config: MCPConfig
     metadata: AgentMetadata
     model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-class RunStatus(StrEnum):
-    RUNNING = "running"
-    FINISHED = "finished"
-    ERROR = "error"
-    ABORTED = "aborted"
 
 
 class ApprovalOutcome(StrEnum):
@@ -54,19 +46,6 @@ class EventType(StrEnum):
     RESPONSE = "response"
 
 
-class RunRow(BaseModel):
-    id: UUID
-    agent_id: str | None
-    started_at: datetime
-    finished_at: datetime | None
-    status: RunStatus
-    system_message: str | None
-    model: str | None
-    model_params: dict[str, JsonValue] | None
-    event_count: int
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
 class PolicyProposal(BaseModel):
     id: str
     status: ProposalStatus
@@ -79,34 +58,21 @@ class Persistence(Protocol):
     async def ensure_schema(self) -> None: ...
 
     # Agents API ---------------------------------------------------------------
-    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> str: ...
-    async def update_agent_specs(self, agent_id: str, *, mcp_config: MCPConfig) -> None: ...
+    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID: ...
+    async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None: ...
     async def patch_agent_specs(
-        self, agent_id: str, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
+        self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
     ) -> MCPConfig: ...
     async def list_agents(self) -> list[AgentRow]: ...
-    async def get_agent(self, agent_id: str) -> AgentRow | None: ...
-    async def list_agents_last_activity(self) -> dict[str, datetime | None]: ...
-    async def delete_agent(self, agent_id: str) -> None: ...
+    async def get_agent(self, agent_id: AgentID) -> AgentRow | None: ...
+    async def list_agents_last_activity(self) -> dict[AgentID, datetime | None]: ...
+    async def delete_agent(self, agent_id: AgentID) -> None: ...
 
-    # Runs API -----------------------------------------------------------------
-    async def start_run(
-        self,
-        *,
-        run_id: UUID,
-        agent_id: str | None,
-        system_message: str | None,
-        model: str | None,
-        model_params: dict[str, JsonValue] | None,
-        started_at: datetime,
-    ) -> None: ...
-
-    async def finish_run(self, run_id: UUID, *, status: RunStatus, finished_at: datetime) -> None: ...
-
+    # Events and approvals -----------------------------------------------------
     async def append_event(
         self,
         *,
-        run_id: UUID,
+        agent_id: AgentID,
         seq: int,
         ts: datetime,
         payload: dict[str, JsonValue],
@@ -117,7 +83,7 @@ class Persistence(Protocol):
     async def record_approval(
         self,
         *,
-        agent_id: str,
+        agent_id: AgentID,
         call_id: str,
         tool_key: str,
         outcome: ApprovalOutcome,
@@ -125,18 +91,14 @@ class Persistence(Protocol):
         details: dict[str, JsonValue] | None = None,
     ) -> None: ...
 
-    async def list_runs(self, *, agent_id: str | None = None, limit: int = 50) -> list[RunRow]: ...
-    async def get_run(self, run_id: UUID) -> RunRow | None: ...
-    async def load_events(self, run_id: UUID) -> list[EventRecord]: ...
-
     # Approval policy (per-agent) --------------------------------------------
-    async def get_latest_policy(self, agent_id: str) -> tuple[str, int] | None: ...
-    async def set_policy(self, agent_id: str, *, content: str) -> int: ...
+    async def get_latest_policy(self, agent_id: AgentID) -> tuple[str, int] | None: ...
+    async def set_policy(self, agent_id: AgentID, *, content: str) -> int: ...
 
     # Approval policy proposals (single store impl: SQLite)
-    async def create_policy_proposal(self, agent_id: str, *, proposal_id: str, content: str) -> None: ...
-    async def list_policy_proposals(self, agent_id: str) -> list[PolicyProposal]: ...
-    async def get_policy_proposal(self, agent_id: str, proposal_id: str) -> PolicyProposal | None: ...
-    async def approve_policy_proposal(self, agent_id: str, proposal_id: str) -> int: ...
-    async def reject_policy_proposal(self, agent_id: str, proposal_id: str) -> None: ...
-    async def delete_policy_proposal(self, agent_id: str, proposal_id: str) -> None: ...
+    async def create_policy_proposal(self, agent_id: AgentID, *, proposal_id: str, content: str) -> None: ...
+    async def list_policy_proposals(self, agent_id: AgentID) -> list[PolicyProposal]: ...
+    async def get_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> PolicyProposal | None: ...
+    async def approve_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> int: ...
+    async def reject_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None: ...
+    async def delete_policy_proposal(self, agent_id: AgentID, proposal_id: str) -> None: ...
