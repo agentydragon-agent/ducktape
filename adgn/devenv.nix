@@ -33,6 +33,24 @@
   scripts."mini-codex-serve".exec = "python -m adgn.agent.cli serve --host 127.0.0.1 --port 8765";
   scripts."mini-codex-serve".description = "Start MiniCodex backend + FastAPI UI server (http://127.0.0.1:8765)";
 
+  # PostgreSQL container (replaces docker-compose.yml)
+  containers.postgres = {
+    name = "props-postgres";
+    image = "postgres:16";
+    ports = ["5433:5432"];
+    environment = {
+      POSTGRES_USER = "postgres";
+      POSTGRES_PASSWORD = "props_admin_pass";
+      # Note: Creates 'postgres' database by default
+      # Additional databases (eval_results, eval_results_test) created via init_db.sh
+    };
+    volumes = [
+      "props_eval_results_data:/var/lib/postgresql/data"
+    ];
+    networks = ["props_default"];
+    cmd = []; # Use default postgres startup command
+  };
+
   # Background processes (start with: `devenv up`)
   processes.vite.exec = "npm --prefix ./src/adgn/agent/web run dev -- --host 127.0.0.1 --port 5173";
 
@@ -50,6 +68,6 @@
     export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
     python --version
-    echo "Tip: run 'devenv up' to start the Vite UI dev server in the background, or use 'ui-dev'/'mini-codex-serve' scripts."
+    echo "Tip: run 'devenv up' to start Vite UI dev server + PostgreSQL container in the background, or use 'ui-dev'/'mini-codex-serve' scripts."
   '';
 }

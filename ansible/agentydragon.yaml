@@ -10,7 +10,8 @@
   remote_user: "{{ my_user }}"
 
   roles:
-    # - role: docker
+    - role: nix
+    - role: docker
     # - role: cli
     # - role: gui
     # - role: laptop
