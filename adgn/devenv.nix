@@ -17,7 +17,7 @@
       enable = true;
       sync = {
         enable = true;
-        extras = ["dev"];
+        extras = ["dev" "gepa" "matrix"];
       };
     };
   };
