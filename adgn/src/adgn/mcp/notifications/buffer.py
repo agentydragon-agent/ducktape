@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 import logging
 
 from fastmcp.client import Client
@@ -54,7 +53,6 @@ class NotificationsBuffer:
         self._compositor = compositor
         # Per-server accumulator (mutable during accumulation, converted to NotificationsBatch on poll/peek)
         self._servers: dict[str, _ServerNoticeAccumulator] = {}
-        self._hooks: list[Callable[[], Awaitable[None]]] = []
         self.handler: MessageHandler = _ResourceNotificationHandler(self)
         # Subscribe to compositor-level notifications when available so we don't
         # rely solely on client message forwarding (which may be disabled for
@@ -64,12 +62,6 @@ class NotificationsBuffer:
         # Capture any pending list-changed signals emitted before the buffer attached
         for server in self._compositor.pop_recent_list_changed():
             self._servers.setdefault(server, _ServerNoticeAccumulator()).list_changed = True
-
-    def add_hook(self, hook: Callable[[], Awaitable[None]]) -> None:
-        self._hooks.append(hook)
-
-    def clear_hooks(self) -> None:
-        self._hooks.clear()
 
     def peek(self) -> NotificationsBatch:
         """Peek at buffered notifications without clearing them."""
@@ -87,14 +79,12 @@ class NotificationsBuffer:
         uri_str = str(message.params.uri)
         server = await self._derive_server(uri_str)
         self._servers.setdefault(server, _ServerNoticeAccumulator()).updated.add(uri_str)
-        await self._run_hooks()
 
     async def _on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Attribute origin using compositor-captured child notifications when available
         names = list(self._compositor.pop_recent_list_changed())
         for name in names:
             self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
-        await self._run_hooks()
 
     async def _derive_server(self, uri: str) -> str:
         """Derive origin server from resource URI using compositor mount specs."""
@@ -104,17 +94,6 @@ class NotificationsBuffer:
 
     async def _on_resource_listener(self, name: str, uri: str) -> None:
         self._servers.setdefault(name, _ServerNoticeAccumulator()).updated.add(uri)
-        await self._run_hooks()
 
     async def _on_list_listener(self, name: str) -> None:
         self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
-        await self._run_hooks()
-
-    async def _run_hooks(self) -> None:
-        if not self._hooks:
-            return
-        for hook in list(self._hooks):
-            try:
-                await hook()
-            except Exception:
-                logger.debug("notifications hook failed", exc_info=True)

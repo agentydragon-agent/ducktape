@@ -27,7 +27,6 @@ from adgn.agent.server.protocol import (
 )
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
-from adgn.agent.server.status_shared import RunPhase, determine_run_phase
 from adgn.agent.types import AgentID
 from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp.approval_policy.engine import PolicyEngine
@@ -123,16 +122,6 @@ class AgentSession:
         self._persist_handler: RunPersistenceHandler | None = None
         # Agent identifier for persistence
         self.agent_id: AgentID = agent_id
-
-    def current_run_phase(self) -> RunPhase:
-        """Compute the current run phase from live signals (no stored state).
-
-        - IDLE: no pending approvals and no MCP inflight
-        - WAITING_APPROVAL / TOOLS_RUNNING: based on live signals
-
-        UI should read pending://calls resource directly for approval state.
-        """
-        return determine_run_phase(pending_approvals=0, mcp_has_inflight=False)
 
     async def build_snapshot(self, sampling=None) -> Snapshot:
         # Note: pending_approvals not populated here; UI reads pending://calls resource via MCP

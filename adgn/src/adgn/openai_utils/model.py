@@ -241,14 +241,6 @@ class AssistantMessageOut(BaseModel):
             content_parts.append(InputTextPart.model_validate(part_data))
         return AssistantMessage(role="assistant", content=content_parts)
 
-    @classmethod
-    def from_input_item(cls, item: AssistantMessage) -> AssistantMessageOut:
-        parts: list[OutputText] = []
-        for block in item.content or []:
-            if isinstance(block, InputTextPart):
-                parts.append(OutputText.model_validate(block.model_dump(exclude_none=True)))
-        return cls(parts=parts)
-
 
 ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
 
@@ -301,9 +293,6 @@ class ResponsesResult(BaseModel):
     id: str
     usage: ResponseUsage | None
     output: list[ResponseOutItem]
-
-    def to_input_items(self) -> list[InputItem]:
-        return [response_out_item_to_input(item) for item in self.output]
 
     @classmethod
     def from_sdk(cls, sdk_resp: Response) -> Self:

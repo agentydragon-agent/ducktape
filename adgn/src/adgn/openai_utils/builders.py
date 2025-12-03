@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from adgn.mcp._shared.naming import build_mcp_function
 
-from .model import AssistantMessageOut, FunctionCallItem, FunctionCallOutputItem, OutputText
+from .model import AssistantMessageOut, FunctionCallItem, OutputText
 
 
 def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any]) -> FunctionCallItem:
@@ -55,29 +55,3 @@ class ItemFactory:
 
     def assistant_text(self, text: str) -> AssistantMessageOut:
         return make_item_assistant_text(text)
-
-    def tool_call_with_output(
-        self,
-        name: str,
-        arguments: dict[str, Any],
-        output: str | dict[str, Any] | FunctionCallOutputItem,
-        call_id: str | None = None,
-    ) -> tuple[FunctionCallItem, FunctionCallOutputItem]:
-        call = self.tool_call(name, arguments, call_id)
-        if isinstance(output, FunctionCallOutputItem):
-            if output.call_id == call.call_id:
-                out = output
-            else:  # keep payload but align call_id
-                out = FunctionCallOutputItem(call_id=call.call_id, output=output.output)
-        else:
-            if isinstance(output, str):
-                out_str = output
-            else:
-                try:
-                    out_str = json.dumps(output)
-                except TypeError:
-                    out_str = str(output)
-            # Ensure call_id is present for type-checkers
-            assert call.call_id is not None
-            out = FunctionCallOutputItem(call_id=call.call_id, output=out_str)
-        return call, out

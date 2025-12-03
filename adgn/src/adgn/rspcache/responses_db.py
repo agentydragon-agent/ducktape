@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncIterator, Sequence
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
@@ -622,13 +621,6 @@ class ResponsesDB:
             listeners = list(self._listeners)
         for queue in listeners:
             await queue.put(event)
-
-    @asynccontextmanager
-    async def acquire_session(self) -> AsyncIterator[AsyncSession]:
-        if self._session_factory is None:
-            raise RuntimeError("Database not initialized")
-        async with self._session_factory() as session:
-            yield session
 
     def _to_api_key_record(self, obj: ClientAPIKey) -> APIKeyRecord:
         return APIKeyRecord(

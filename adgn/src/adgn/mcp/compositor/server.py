@@ -227,24 +227,6 @@ class Compositor(FastMCP):
     # mounted proxy. Callers should use a client connected to this Compositor
     # (or the gateway) to list/read resources.
 
-    async def reconfigure(self, cfg: MCPConfig) -> None:
-        """Converge mounts to exactly the servers in cfg (full replacement).
-
-        - Unmount servers not present in cfg
-        - Mount new servers; replace mounts where spec changed (JSON-compare)
-        """
-        current_specs = await self.mount_specs()
-        current = set(current_specs.keys())
-        wanted = set(cfg.mcpServers.keys())
-        # Detach missing
-        for name in current - wanted:
-            await self.unmount_server(name)
-        # Attach new or changed
-        for name, spec in cfg.mcpServers.items():
-            prev = current_specs.get(name)
-            if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
-                await self.mount_server(name, spec)
-
     # ---- Management API (Python-only) --------------------------------------
 
     async def mount_server(self, name: str, spec: MCPServerTypes, prefix: str | None = None) -> None:

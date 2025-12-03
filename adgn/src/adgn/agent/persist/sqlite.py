@@ -140,31 +140,6 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             await db.execute("UPDATE agents SET specs = ? WHERE id = ?", (json.dumps(spec_json), agent_id))
             await db.commit()
 
-    async def patch_agent_specs(
-        self, agent_id: AgentID, *, attach: dict[str, MCPConfig] | None = None, detach: list[str] | None = None
-    ) -> MCPConfig:
-        attach = attach or {}
-        detach = detach if detach is not None else []
-        async with self._open_row() as db:
-            async with db.execute("SELECT specs FROM agents WHERE id = ?", (agent_id,)) as cur:
-                r = await cur.fetchone()
-            if not r:
-                raise KeyError(f"agent not found: {agent_id}")
-            # Load persisted JSON and rehydrate to MCPConfig
-            cfg = MCPConfig.model_validate(json.loads(r["specs"])) if r["specs"] else MCPConfig()
-            # Apply detach
-            for name in detach:
-                cfg.mcpServers.pop(name, None)
-            # Apply attach: when given a whole config per name, merge servers
-            for _name, subcfg in attach.items():
-                # Runtime assertion: values must be MCPConfig per typed API
-                assert isinstance(subcfg, MCPConfig), "attach values must be MCPConfig instances"
-                # Merge all entries from the provided config
-                for k, v in subcfg.mcpServers.items():
-                    cfg.mcpServers[k] = v
-            await self.update_agent_specs(agent_id, mcp_config=cfg)
-        return cfg
-
     async def list_agents(self) -> list[AgentRow]:
         out: list[AgentRow] = []
         async with aiosqlite.connect(self.db_path) as db:

@@ -403,9 +403,7 @@ class PolicyEngine:
         self.agent_id: AgentID = agent_id
         self.persistence: Persistence = persistence
 
-        # Broadcast coordination
-        self._broadcast_version: int = 0
-        self._broadcast_cond: asyncio.Condition = asyncio.Condition()
+        # Background task tracking
         self._bg_tasks: set[asyncio.Task] = set()
 
         # Create hub with on_change callback that broadcasts pending://calls
@@ -544,9 +542,6 @@ class PolicyEngine:
             await self.reader.broadcast_resource_list_changed()
         else:
             await self.reader.broadcast_resource_updated(uri)
-        async with self._broadcast_cond:
-            self._broadcast_version += 1
-            self._broadcast_cond.notify_all()
 
     # ---- Server registration ----
 
@@ -634,13 +629,6 @@ class PolicyEngine:
             self.self_check(input.source)
             self.set_policy(input.source)
             return {"ok": True}
-
-    async def wait_for_broadcast(self, since_version: int | None = None) -> int:
-        """Await the next completed broadcast and return the new version."""
-        target = (since_version or 0) + 1
-        async with self._broadcast_cond:
-            await self._broadcast_cond.wait_for(lambda: self._broadcast_version >= target)
-            return self._broadcast_version
 
 
 # ---- Compositor attach helpers ----

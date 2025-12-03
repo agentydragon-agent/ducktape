@@ -97,19 +97,6 @@ class ErrorInfo(BaseModel):
     code: str | None = None
 
 
-class CachedProbeError(RuntimeError):
-    """Minimal error type used when hydrating cached probe results."""
-
-    def __init__(self, info: ErrorInfo) -> None:
-        message = info.message or ""
-        super().__init__(message)
-        self.message = message
-        self.status_code = info.status_code
-        self.body = info.body
-        self.request_id = info.request_id
-        self.code = info.code
-
-
 class ProbeKind(StrEnum):
     """Type of API endpoint to probe."""
 
@@ -431,12 +418,6 @@ class ProbeResult:
     ) -> ProbeResult:
         return cls(model_id=model_id, kind=kind, ok=True, raw=raw, started_at=started_at, ended_at=ended_at)
 
-    @classmethod
-    def failure(
-        cls, *, model_id: str, kind: ProbeKind, exc: BaseException, started_at: datetime | None, ended_at: datetime
-    ) -> ProbeResult:
-        return cls(model_id=model_id, kind=kind, ok=False, exc=exc, started_at=started_at, ended_at=ended_at)
-
     @property
     def latency_s(self) -> float | None:
         if not isinstance(self.started_at, datetime) or not isinstance(self.ended_at, datetime):
@@ -519,36 +500,6 @@ class ProbeResult:
             latency_s=self.latency_s,
             response=response_json,
             error=error_json,
-        )
-
-    @classmethod
-    def from_record(cls, record: ProbeRecord) -> ProbeResult:
-        raw: Any | None = None
-        if record.ok and record.response is not None:
-            if record.kind == ProbeKind.RESPONSES:
-                data = record.response
-                try:
-                    raw = Response.model_validate(data)
-                except Exception:
-                    raw = data
-            elif record.kind == ProbeKind.CHAT:
-                data2 = record.response
-                try:
-                    raw = ChatCompletion.model_validate(data2)
-                except Exception:
-                    raw = data2
-        exc: BaseException | None = None
-        if not record.ok and record.error is not None:
-            exc = CachedProbeError(record.error)
-        return cls(
-            model_id=record.model,
-            kind=record.kind,
-            ok=record.ok,
-            exc=exc,
-            raw=raw,
-            started_at=record.started_at,
-            ended_at=record.ended_at,
-            latency_override_s=record.latency_s,
         )
 
     def raw_chat(self) -> ChatCompletion | None:

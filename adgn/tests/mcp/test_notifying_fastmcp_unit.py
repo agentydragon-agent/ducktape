@@ -40,7 +40,6 @@ async def test_broadcast_continues_after_session_failure(make_buffered_client):
 
         batch = buf.poll()
         # Expect at least one resources_updated event delivered to the active client
-        updated_uris = [uri for _server, uri in batch.iter_updated_uris()]
-        assert target_uri in updated_uris, (
+        assert target_uri in batch.resources["notifier"].updated, (
             "expected resources_updated for the active session despite one failing client"
         )

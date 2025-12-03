@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from pydantic import BaseModel, Field
 
 
@@ -22,12 +20,6 @@ class NotificationsBatch(BaseModel):
     resources: dict[str, ResourcesServerNotice] = Field(
         default_factory=dict, description="Per-server resources notice: {server -> {updated, list_changed}}"
     )
-
-    def iter_updated_uris(self) -> Iterable[tuple[str, str]]:
-        """Iterate over (server, uri) pairs for all updated resources."""
-        for server, notice in self.resources.items():
-            for uri in notice.updated:
-                yield (server, uri)
 
     @property
     def resource_list_changed(self) -> set[str]:

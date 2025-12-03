@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal, NewType, Self
 
-from pydantic import BaseModel, Field, ValidationInfo, field_serializer, field_validator, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 # Removed claude_code_sdk dependency - using provider-independent types
 
@@ -76,10 +76,6 @@ class Grade(BaseModel):
     def _ensure_overall_axis(self):
         assert "overall" in self.axes
         return self
-
-    @field_serializer("timestamp")
-    def serialize_timestamp(self, timestamp: datetime) -> str:
-        return timestamp.isoformat()
 
 
 class GradedRollout(BaseModel):
