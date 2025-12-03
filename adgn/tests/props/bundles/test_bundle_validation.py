@@ -45,7 +45,7 @@ def pytest_generate_tests(metafunc):
 
     # Create registry at collection time (lightweight, no specimens loaded yet)
     registry = SpecimenRegistry.from_package_resources()
-    all_specimen_slugs = registry.list_specimen_names()
+    all_specimen_slugs = registry.specimen_ids
 
     # Filter to Git bundle specimens with file:// URLs
     bundle_specimen_slugs = []

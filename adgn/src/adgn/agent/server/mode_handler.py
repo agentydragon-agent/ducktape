@@ -5,11 +5,11 @@ from collections.abc import Callable
 from pydantic import BaseModel
 
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Abort, Continue, InjectItems
+from adgn.agent.loop_control import Abort, InjectItems, NoAction
 
 # Import just the NotificationsBatch type - it's a lightweight Pydantic model
+from adgn.agent.notifications.handler import format_notifications_message
 from adgn.agent.notifications.types import NotificationsBatch
-from adgn.agent.reducer import format_notifications_message
 from adgn.agent.server.bus import ServerBus
 
 
@@ -39,6 +39,6 @@ class ServerModeHandler(BaseModel, BaseHandler):
             return InjectItems(items=(format_notifications_message(batch),))
 
         # No notifications - just continue
-        return Continue()
+        return NoAction()
 
     # No per-tool interception needed; approvals are enforced by Policy Gateway middleware

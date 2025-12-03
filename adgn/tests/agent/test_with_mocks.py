@@ -4,7 +4,6 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
 from tests.agent.test_matchers import assert_function_call_output_structured
@@ -32,7 +31,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         mcp_client=pg_client_echo,
         system="test",
         client=client,
-        handlers=[AutoHandler(), recording_handler],
+        handlers=[recording_handler],
         tool_policy=RequireAnyTool(),
     )
 

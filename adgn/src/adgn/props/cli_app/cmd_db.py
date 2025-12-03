@@ -9,7 +9,7 @@ import typer
 from adgn.props.cli_app.decorators import async_run
 from adgn.props.db import init_db, recreate_database
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
-from adgn.props.db.sync_model_pricing import ModelPricingSyncStats, sync_model_pricing
+from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata
 from adgn.props.db.sync_specimens import SyncStats, sync_specimens
 
 
@@ -23,11 +23,11 @@ class DetectorPromptSyncResult:
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing specimens, detector prompts, and model pricing."""
+    """Combined result from syncing specimens, detector prompts, and model metadata."""
 
     specimen_stats: SyncStats
     detector_prompts: list[DetectorPromptSyncResult]
-    model_pricing_stats: ModelPricingSyncStats
+    model_metadata_stats: ModelMetadataSyncStats
 
 
 def sync_detector_prompts() -> list[DetectorPromptSyncResult]:
@@ -43,7 +43,7 @@ def sync_detector_prompts() -> list[DetectorPromptSyncResult]:
 
 
 async def sync_all() -> FullSyncResult:
-    """Sync specimens, detector prompts, and model pricing in a single operation.
+    """Sync specimens, detector prompts, and model metadata in a single operation.
 
     Returns:
         Combined results from all sync operations
@@ -51,7 +51,7 @@ async def sync_all() -> FullSyncResult:
     return FullSyncResult(
         specimen_stats=await sync_specimens(),
         detector_prompts=sync_detector_prompts(),
-        model_pricing_stats=sync_model_pricing(),
+        model_metadata_stats=sync_model_metadata(),
     )
 
 
@@ -72,7 +72,7 @@ async def recreate_database_schema() -> SyncStats:
 
 @async_run
 async def cmd_sync() -> None:
-    """Sync specimens, detector prompts, and model pricing from source to DB."""
+    """Sync specimens, detector prompts, and model metadata from source to DB."""
     init_db()
 
     # Sync all data sources
@@ -85,8 +85,8 @@ async def cmd_sync() -> None:
     for detector in result.detector_prompts:
         typer.echo(f"  ✓ {detector.filename:50} → {detector.prompt_sha256[:12]}")
 
-    typer.echo("\nSyncing model pricing...")
-    typer.echo(f"  {result.model_pricing_stats.summary_text}")
+    typer.echo("\nSyncing model metadata...")
+    typer.echo(f"  {result.model_metadata_stats.summary_text}")
 
 
 @async_run

@@ -73,7 +73,7 @@ async def sync_specimens() -> SyncStats:
     registry = SpecimenRegistry.from_package_resources()
 
     # Get all specimen slugs and build split mapping
-    source_slugs = registry.specimen_slugs
+    source_slugs = set(registry.specimen_ids)
     source_count = len(source_slugs)
 
     with get_session() as session:

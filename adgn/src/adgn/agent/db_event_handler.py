@@ -11,7 +11,6 @@ import logging
 from uuid import UUID
 
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText, to_jsonl_record
-from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 from adgn.props.db import get_session
 from adgn.props.db.models import Event
@@ -89,7 +88,3 @@ class DatabaseEventHandler(BaseHandler):
 
     def on_response(self, evt: Response) -> None:
         self._write_event(evt)
-
-    def on_before_sample(self) -> NoLoopDecision:
-        """Do not influence loop control."""
-        return NoLoopDecision()

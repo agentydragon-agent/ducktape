@@ -7,13 +7,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
 
 from adgn.openai_utils.model import ResponsesRequest, ResponsesResult
 from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
+
+T = TypeVar("T", bound=BaseModel)
 
 
 class Step(Protocol):
@@ -49,12 +51,12 @@ class CheckThenCall:
 
 
 @dataclass
-class ExtractThenCall:
+class ExtractThenCall(Generic[T]):
     """Extract typed output from previous call, use in next call."""
 
     expected_tool: str
-    output_type: type[BaseModel]
-    make_next: Callable[[BaseModel], tuple[str, str, BaseModel]]
+    output_type: type[T]
+    make_next: Callable[[T], tuple[str, str, BaseModel]]
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         output = assert_and_extract(req, self.expected_tool, self.output_type)

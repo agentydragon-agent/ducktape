@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText, to_jsonl_record
-from adgn.agent.loop_control import NoLoopDecision
 from adgn.openai_utils.model import ReasoningItem
 
 
@@ -67,7 +66,3 @@ class TranscriptHandler(BaseHandler):
     def on_response(self, evt: Any) -> None:
         # Record one responses.create result per model call with usage
         self._write_event(evt)
-
-    def on_before_sample(self) -> NoLoopDecision:
-        # Do not influence loop control
-        return NoLoopDecision()

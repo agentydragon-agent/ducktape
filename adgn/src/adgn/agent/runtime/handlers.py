@@ -4,10 +4,10 @@ from collections.abc import Callable
 
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
+from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
-from adgn.agent.reducer import NotificationsHandler
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import ConnectionManager

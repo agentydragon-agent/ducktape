@@ -10,7 +10,6 @@ from adgn.mcp._shared.naming import build_mcp_function, tool_matches
 from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, ToolCall, ToolCallOutput, UserText
-from .loop_control import NoLoopDecision
 from .reducer import BaseHandler
 
 # Use shared server/tool name constants directly from constants module
@@ -63,9 +62,6 @@ class DisplayEventsHandler(BaseHandler):
 
     def on_reasoning(self, item: ReasoningItem) -> None:
         return None
-
-    def on_before_sample(self) -> NoLoopDecision:
-        return NoLoopDecision()
 
     # Rendering helpers ------------------------------------------------------
 

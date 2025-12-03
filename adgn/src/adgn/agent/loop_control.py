@@ -17,6 +17,7 @@ Notes / Future work (TODOs):
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from adgn.openai_utils.model import FunctionCallItem, UserMessage
@@ -59,19 +60,14 @@ class RequireSpecific(ToolPolicy):
 
 
 @dataclass(frozen=True)
-class NoLoopDecision:
-    """Explicit null-object sentinel for handler-level on_before_sample.
+class NoAction:
+    """Handler has no opinion; continue to next handler.
 
-    Handlers that do not want to claim the LoopDecision MUST return
-    NoLoopDecision() rather than None or any other sentinel.
-    """
+    When returned by a handler: "I defer, check the next handler"
+    When returned by reducer (all handlers deferred): "Sample the LLM normally"
 
-
-@dataclass(frozen=True)
-class Continue:
-    """Sample the LLM normally with the agent's configured tool_policy.
-
-    This is the default action when no handler wants to do anything special.
+    This replaces both NoLoopDecision and Continue, which had identical
+    semantics in the sequential evaluation model.
     """
 
 
@@ -88,7 +84,7 @@ class InjectItems:
     the loop continues without sampling (handlers run again next iteration).
     """
 
-    items: tuple[UserMessage | FunctionCallItem, ...]
+    items: Sequence[UserMessage | FunctionCallItem]
 
 
 @dataclass(frozen=True)
@@ -111,4 +107,4 @@ class Compact:
 
 
 # Union type for loop decisions (for static type checking)
-type LoopDecision = Continue | InjectItems | Abort | Compact | NoLoopDecision
+type LoopDecision = NoAction | InjectItems | Abort | Compact

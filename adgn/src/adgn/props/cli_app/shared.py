@@ -18,7 +18,6 @@ import tiktoken
 from adgn.agent.agent import MiniCodex, TranscriptItem
 from adgn.agent.agent_progress import OneLineProgressHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.model import OpenAIModelProto
@@ -58,7 +57,7 @@ async def run_prompt_async(
             mcp_client=mcp_client,
             system=system_prompt,
             client=client,
-            handlers=[AutoHandler(), OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+            handlers=[OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
             tool_policy=RequireAnyTool(),
         )
         res_any = await agent.run(prompt)

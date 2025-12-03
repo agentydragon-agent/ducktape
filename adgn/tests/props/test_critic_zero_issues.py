@@ -119,8 +119,6 @@ async def test_critic_zero_issues_submits_successfully(
     output, critic_run_id, critique_id = await run_critic(
         input_data=input_data,
         client=client,
-        system_prompt=prompt_text,
-        user_prompt="Review the code in subtract.py",
         content_root=specimen_dir,
         registry=production_specimens_registry,
         mount_properties=False,
@@ -189,8 +187,6 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     output, _, _ = await run_critic(
         input_data=input_data,
         client=client,
-        system_prompt=prompt_text,
-        user_prompt="Review the code in subtract.py",
         content_root=specimen_dir,
         registry=production_specimens_registry,
         mount_properties=False,

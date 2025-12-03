@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import GateUntil
+from adgn.agent.reducer import AbortIf
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
@@ -648,7 +648,7 @@ async def run_grader(
     servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
 
     handlers: list = [
-        GateUntil(lambda: grader_state.result is not None),
+        AbortIf(should_abort=lambda: grader_state.result is not None),
         *build_props_handlers(
             transcript_id=transcript_id,
             verbose_prefix=f"[GRADER {input_data.specimen_slug}] " if verbose else None,

@@ -26,10 +26,10 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import GateUntil
+from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.handler import BaseHandler, SequenceHandler
+from adgn.agent.loop_control import InjectItems, RequireAnyTool
+from adgn.agent.reducer import AbortIf
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
 from adgn.mcp.compositor.server import Compositor
@@ -461,7 +461,7 @@ async def run_critic(
     """Execute critic agent to produce candidate issues and persist to DB.
 
     Sets up critic submit server, Docker exec MCP, and standard handlers (bootstrap,
-    database events, GateUntil). Runs agent until submit_result or error is called.
+    database events, AbortIf). Runs agent until submit_result or error is called.
 
     Returns tuple of (output, critic_run_id, critique_id). Raises RuntimeError on failure.
     Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
@@ -521,7 +521,7 @@ async def run_critic(
     # Set up handlers
     builder = TypedBootstrapBuilder.for_server(runtime_server)
     bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, builder)
-    bootstrap = BootstrapHandler(bootstrap_calls)
+    bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
     # Build servers dict for handlers
     servers = {wiring.server_name: runtime_server, CRITIC_SUBMIT_SERVER_NAME: critic_server}
@@ -536,7 +536,7 @@ async def run_critic(
             verbose_prefix=f"[CRITIC {input_data.specimen_slug}] " if verbose else None,
             servers=servers,
         ),
-        GateUntil(_ready_state, defer_when=lambda: not bootstrap._done),
+        AbortIf(should_abort=_ready_state),
         *extra_handlers,
     ]
 

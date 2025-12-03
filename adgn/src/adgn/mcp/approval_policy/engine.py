@@ -583,19 +583,19 @@ class PolicyEngine:
     def _register_proposer(self) -> None:
         """Register tools on proposer server: create_proposal, withdraw_proposal."""
 
-        @self.policy_proposer.tool()
-        async def create_proposal(content: str) -> dict:
+        @self.policy_proposer.flat_model()
+        async def create_proposal(input: CreateProposalArgs) -> dict:
             """Create a new policy proposal and return its descriptor."""
-            new_id = await self.create_proposal(content)
+            new_id = await self.create_proposal(input.content)
             desc = ProposalDescriptor(
                 id=new_id, status=ProposalStatus.PENDING, created_at=datetime.now(UTC), decided_at=None
             )
             return desc.model_dump(mode="json")
 
-        @self.policy_proposer.tool()
-        async def withdraw_proposal(id: str) -> None:
+        @self.policy_proposer.flat_model()
+        async def withdraw_proposal(input: WithdrawProposalArgs) -> None:
             """Withdraw a pending policy proposal by id."""
-            await self.withdraw_proposal(id)
+            await self.withdraw_proposal(input.id)
 
     def _register_admin(self) -> None:
         """Register tools on admin server: decide_call, decide_proposal, set_policy."""
@@ -628,11 +628,11 @@ class PolicyEngine:
                 await self.reject_proposal(proposal_id)
             return {"ok": True}
 
-        @self.admin.tool()
-        async def set_policy(source: str) -> dict:
+        @self.admin.flat_model()
+        async def set_policy(input: SetPolicyTextArgs) -> dict:
             """Directly set active policy text after self-check."""
-            self.self_check(source)
-            self.set_policy(source)
+            self.self_check(input.source)
+            self.set_policy(input.source)
             return {"ok": True}
 
     async def wait_for_broadcast(self, since_version: int | None = None) -> int:

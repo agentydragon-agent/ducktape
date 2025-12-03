@@ -9,7 +9,6 @@ import socket
 import subprocess
 import sys
 import threading
-from typing import Any
 from urllib.parse import urlencode, urlunparse
 
 from fastmcp.client import Client
@@ -22,10 +21,7 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.mcp_bridge.auth import TokensConfig
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
-from adgn.agent.server.bus import ServerBus
-from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.config_loader import build_mcp_config
@@ -117,14 +113,6 @@ def _configure_logging_debug() -> None:
     logging.getLogger("websockets.server").setLevel(logging.INFO)
 
 
-def _make_handlers(*, ui_bus: ServerBus | None = None, poll_notifications=None) -> list[Any]:
-    # UI mode: use ServerModeHandler with notifications poller when provided
-    if ui_bus is not None and callable(poll_notifications):
-        return [ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications), DisplayEventsHandler()]
-    # Headless/default: allow agent to sample normally via AutoHandler
-    return [AutoHandler(), DisplayEventsHandler()]
-
-
 def _build_cfg_and_print(mcp_configs: list[Path]) -> MCPConfig:
     cfg = build_mcp_config(mcp_configs)
     _print_enabled(list(cfg.mcpServers.keys()))
@@ -162,7 +150,11 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
         await comp.mount_server(name, spec)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, system=system, client=client, handlers=_make_handlers(), tool_policy=RequireAnyTool()
+            mcp_client=mcp_client,
+            system=system,
+            client=client,
+            handlers=[DisplayEventsHandler()],
+            tool_policy=RequireAnyTool(),
         )
         async with agent:
             for line in sys.stdin:

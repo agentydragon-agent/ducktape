@@ -24,9 +24,9 @@ from adgn.agent.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
     Compact,
-    Continue,
     ForbidAllTools,
     InjectItems,
+    NoAction,
     RequireAnyTool,
     RequireSpecific,
     ToolPolicy,
@@ -104,9 +104,9 @@ def _require_call_id(function_call: FunctionCallItem) -> str:
 
 
 def _dump_call_tool_result(res: CallToolResult) -> str:
-    """Serialize an MCP CallToolResult for Responses input (native field names).
+    """Serialize an MCP CallToolResult for Responses input.
 
-    Dumps a compact JSON with native snake_case keys to avoid lossy remapping.
+    Dumps a compact JSON representation of the tool result.
     """
 
     result = json.dumps(as_minimal_json(res), ensure_ascii=False)
@@ -235,7 +235,17 @@ class MiniCodex:
         self._function_call_map: dict[str, FunctionCallItem] = {}
         # Aggregating controller (owns handlers and loop-decision semantics)
         handlers_list = list(handlers)
-        assert handlers_list, "At least one handler required; add AutoHandler() or a control handler"
+        if not handlers_list:
+            raise ValueError(
+                "At least one handler required to control the agent loop. "
+                "Without handlers, the agent will loop indefinitely. "
+                "Add a handler:\n"
+                "  • DisplayEventsHandler() - for console output\n"
+                "  • TranscriptHandler(events_path=...) - for logging\n"
+                "  • AbortIf(lambda: should_stop) - to abort when condition is met\n"
+                "  • SequenceHandler([...]) - for fixed action sequences\n"
+                "  • Custom handler - subclass BaseHandler for specialized control"
+            )
         self._controller = Reducer(handlers_list)
 
     def set_system_instructions(self, instructions: str | None) -> None:
@@ -492,7 +502,7 @@ class MiniCodex:
         # Determine whether to sample LLM
         should_sample_llm = False
 
-        if isinstance(decision, Continue):
+        if isinstance(decision, NoAction):
             should_sample_llm = True
         else:
             raise TypeError(f"Unsupported loop decision: {type(decision).__name__}")

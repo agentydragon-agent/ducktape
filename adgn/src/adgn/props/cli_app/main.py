@@ -41,8 +41,8 @@ from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.bundles.build_bundle import main as build_bundle_main
 from adgn.props.cli_app import common_options as opt
+from adgn.props.cli_app.cmd_build_bundle import cmd_build_bundle
 from adgn.props.cli_app.cmd_db import cmd_db_recreate, cmd_sync
 from adgn.props.cli_app.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli_app.decorators import async_run
@@ -262,7 +262,7 @@ async def cmd_specimen_discover(
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs specimen notes (covered/not_covered_yet)."""
-    registry = SpecimenRegistry.from_base_path()
+    registry = SpecimenRegistry.from_package_resources()
     names = sorted(registry.list_all())
     if specimen not in names:
         typer.echo(f"Unknown specimen slug: {specimen}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
@@ -807,13 +807,13 @@ def cmd_capture_ducktape_specimen(
     # Generate slug if not provided
     if slug is None:
         today = datetime.now().strftime("%Y-%m-%d")
-        registry = SpecimenRegistry.from_base_path()
+        registry = SpecimenRegistry.from_package_resources()
         existing = sorted([name for name in registry.list_all() if name.startswith(f"ducktape/{today}")])
         next_num = len(existing)
         slug = f"ducktape/{today}-{next_num:02d}"
 
     # Create specimen directory
-    registry = SpecimenRegistry.from_base_path()
+    registry = SpecimenRegistry.from_package_resources()
     specimens_dir = registry.base_path
     specimen_dir = specimens_dir / slug
     specimen_dir.mkdir(parents=True, exist_ok=False)
@@ -848,7 +848,7 @@ def cmd_capture_ducktape_specimen(
     typer.echo("Rebuilding bundle with new specimen...")
 
     # Rebuild bundle with new specimen
-    build_bundle_main()
+    cmd_build_bundle(specimens_dir=specimens_dir)
 
     typer.echo()
     typer.echo(f"✓ Specimen captured: {slug}")

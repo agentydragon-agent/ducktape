@@ -49,16 +49,11 @@ class BundleFilter(BaseModel):
 class SpecimenDoc(BaseModel):
     """Unified specimen document (v2): source, bundle filters, and split assignment.
 
-        Note: issues are loaded separately from issues/*.libsonnet files. We keep
-        `items` as a generic list to avoid cross-module type cycles with Issue.
+    Note: issues are loaded separately from issues/*.libsonnet files. We keep
+    `items` as a generic list to avoid cross-module type cycles with Issue.
 
-    <<<<<<< Updated upstream
-        Bundle is optional - only required for specimens that use git bundles.
-        Split is required - every specimen must be assigned to train/valid/test.
-    =======
-        Bundle is optional - only needed when regenerating bundles from source.
-        At runtime, specimens only use the `source` field.
-    >>>>>>> Stashed changes
+    Bundle is optional - only required for specimens that use git bundles.
+    Split is required - every specimen must be assigned to train/valid/test.
     """
 
     source: Source

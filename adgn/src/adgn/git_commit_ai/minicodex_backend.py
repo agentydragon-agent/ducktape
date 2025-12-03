@@ -9,10 +9,10 @@ from pydantic import BaseModel, Field
 import pygit2
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
+from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Abort, Continue, RequireAnyTool
-from adgn.agent.reducer import BaseHandler
+from adgn.agent.handler import BaseHandler, SequenceHandler
+from adgn.agent.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
@@ -139,10 +139,10 @@ def make_submit_server(state: SubmitState):
 class CommitController(BaseHandler):
     """Manages commit flow: bootstrap git calls → require tools → submit.
 
-    Delegates bootstrap injection to BootstrapHandler, then monitors for submission.
+    Delegates bootstrap injection to SequenceHandler, then monitors for submission.
     """
 
-    def __init__(self, state: SubmitState, bootstrap_handler: BootstrapHandler) -> None:
+    def __init__(self, state: SubmitState, bootstrap_handler: BaseHandler) -> None:
         self._state = state
         self._bootstrap_handler = bootstrap_handler
 
@@ -151,12 +151,12 @@ class CommitController(BaseHandler):
         if self._state.result is not None:
             return Abort()
 
-        # Delegate bootstrap to BootstrapHandler
+        # Delegate bootstrap to handler
         decision = self._bootstrap_handler.on_before_sample()
         if decision is not None:
             return decision
 
-        return Continue()
+        return NoAction()
 
 
 async def generate_commit_message_minicodex(
@@ -195,7 +195,7 @@ async def generate_commit_message_minicodex(
     # Build bootstrap calls
     builder = TypedBootstrapBuilder.for_server(git_server)
     bootstrap_calls = make_commit_bootstrap_calls(builder, GIT_RO_SERVER_NAME, amend=amend)
-    bootstrap = BootstrapHandler(bootstrap_calls)
+    bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
     handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
     if debug:

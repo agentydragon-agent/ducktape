@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from adgn.agent.loop_control import InjectItems, NoLoopDecision
+from adgn.agent.loop_control import InjectItems, NoAction
+from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.agent.notifications.types import NotificationsBatch, ResourcesServerNotice
-from adgn.agent.reducer import NotificationsHandler
 from adgn.openai_utils.text_extraction import extract_input_text_content
 from tests.agent.helpers import strip_system_notification_wrapper
 
@@ -40,6 +40,6 @@ def test_notifications_handler_batches_single_message():
     # Simple repr-snippet assertion: ensure server names are present
     assert "git-ro" in text
     assert "editor" in text
-    # Second call returns NoLoopDecision (empty)
+    # Second call returns NoAction (empty)
     dec2 = h.on_before_sample()
-    assert isinstance(dec2, NoLoopDecision)
+    assert isinstance(dec2, NoAction)

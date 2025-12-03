@@ -7,15 +7,12 @@ without requiring the agent to explicitly request it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
 from contextlib import suppress
 import json
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import InjectItems, NoLoopDecision
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -211,31 +208,3 @@ def docker_exec_call(
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)
 # Scope these appropriately (e.g., in conftest for tests, per-module for specific domains)
 # Do not pollute global scope with domain-specific helpers
-
-
-class BootstrapHandler(BaseHandler):
-    """Injects bootstrap calls before first sampling.
-
-    Simple two-phase handler:
-    - Cycle 1: Inject calls, skip sampling
-    - Cycle 2+: Passthrough (normal agent operation)
-
-    Usage:
-        builder = TypedBootstrapBuilder.for_server(server)
-        calls = [
-            read_resource_call(builder, "my_server", "resource://foo/bar"),
-            docker_exec_call(builder, "runtime", ["ls", "-la"]),
-        ]
-        handler = BootstrapHandler(calls)
-    """
-
-    def __init__(self, calls: Sequence[FunctionCallItem]) -> None:
-        self._calls = calls
-        self._injected = False
-
-    def on_before_sample(self):
-        if self._injected:
-            return NoLoopDecision()
-
-        self._injected = True
-        return InjectItems(items=tuple(self._calls))

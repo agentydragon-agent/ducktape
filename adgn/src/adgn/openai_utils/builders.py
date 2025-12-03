@@ -51,7 +51,7 @@ class ItemFactory:
         self, server: str, tool: str, arguments: BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         """Create tool call for MCP server/tool with automatic naming."""
-        return self.tool_call(build_mcp_function(server, tool), arguments.model_dump(), call_id)
+        return self.tool_call(build_mcp_function(server, tool), arguments.model_dump(mode="json"), call_id)
 
     def assistant_text(self, text: str) -> AssistantMessageOut:
         return make_item_assistant_text(text)

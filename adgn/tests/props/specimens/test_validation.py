@@ -11,7 +11,7 @@ from adgn.props.specimens.registry import SpecimenRegistry
 
 def _all_specimens() -> list[str]:
     registry = SpecimenRegistry.from_package_resources()
-    return registry.list_specimen_names()
+    return registry.specimen_ids
 
 
 @pytest.mark.parametrize("specimen", _all_specimens())

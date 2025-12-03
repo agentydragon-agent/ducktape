@@ -9,7 +9,7 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler, NotificationsHandler
+from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -60,6 +60,17 @@ def server() -> FastMCP:
     return _NotifierServer()
 
 
+async def _make_agent_with_notifications(mcp_client, buf, client):
+    """Helper to create agent with NotificationsHandler wired."""
+    return await MiniCodex.create(
+        mcp_client=mcp_client,
+        handlers=[NotificationsHandler(buf.poll)],
+        client=client,
+        system="n/a",
+        tool_policy=RequireAnyTool(),
+    )
+
+
 async def test_notifications_pre_sampling_out_of_band(
     server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
 ) -> None:
@@ -79,7 +90,7 @@ async def test_notifications_pre_sampling_out_of_band(
         client = make_mock(_create)
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
+            handlers=[NotificationsHandler(buf.poll)],
             client=client,
             system="n/a",
             tool_policy=RequireAnyTool(),
@@ -125,13 +136,7 @@ async def test_notifications_within_turn_from_tool(
 
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
-            client=client,
-            system="n/a",
-            tool_policy=RequireAnyTool(),
-        )
+        agent = await _make_agent_with_notifications(mcp_client, buf, client)
         await agent.run("go")
 
         # The second create call (post-tool) should include the injected system notification
@@ -171,13 +176,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
         await server.broadcast_resource_updated("notifier://policy.py")
 
         client = make_mock(_create)
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll), AutoHandler()],
-            client=client,
-            system="n/a",
-            tool_policy=RequireAnyTool(),
-        )
+        agent = await _make_agent_with_notifications(mcp_client, buf, client)
         await agent.run("hello")
 
         # Expect notification inserted before sampling

@@ -3,7 +3,6 @@ from __future__ import annotations
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.reducer import AutoHandler
 from tests.agent.test_matchers import assert_function_call_output_structured
 
 
@@ -28,7 +27,7 @@ async def test_tool_error_is_surfaced_in_sequence(
                 responses_factory.make_mcp_tool_call("editor", "fail", FailInput(x=1)),
                 responses_factory.make_assistant_message("done"),
             ],
-            handlers=[AutoHandler(), recording_handler],
+            handlers=[recording_handler],
         )
         await agent.run("call failing tool once")
 

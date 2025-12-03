@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 
 from adgn.agent.handler import BaseHandler, Response
-from adgn.agent.loop_control import Compact, LoopDecision, NoLoopDecision
+from adgn.agent.loop_control import Compact, LoopDecision, NoAction
 
 logger = logging.getLogger(__name__)
 
@@ -52,4 +52,4 @@ class CompactionHandler(BaseHandler):
             self._compacted = True  # Only compact once per session
             return Compact(keep_recent_turns=self._keep_recent)
 
-        return NoLoopDecision()  # Defer to other handlers
+        return NoAction()  # Defer to other handlers

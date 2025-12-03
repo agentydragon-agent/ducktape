@@ -5,8 +5,8 @@ import os
 import pytest
 
 from adgn.agent.agent import AgentResult, MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
 from adgn.mcp.stubs.typed_stubs import ToolStub
@@ -49,7 +49,7 @@ async def test_live_llm_exec_echo(pg_client_box) -> None:
             f"with cmd={ECHO_CMD!r} and return exactly the stdout."
         ),
         client=client,
-        handlers=[AutoHandler()],
+        handlers=[BaseHandler()],
         tool_policy=RequireAnyTool(),
     )
     res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")

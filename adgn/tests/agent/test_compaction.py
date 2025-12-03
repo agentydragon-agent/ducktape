@@ -8,9 +8,8 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.compaction import CompactionHandler
-from adgn.agent.handler import GroundTruthUsage, Response
-from adgn.agent.loop_control import Compact, NoLoopDecision, RequireAnyTool
-from adgn.agent.reducer import AutoHandler
+from adgn.agent.handler import BaseHandler, GroundTruthUsage, Response
+from adgn.agent.loop_control import Compact, NoAction, RequireAnyTool
 from adgn.openai_utils.model import AssistantMessage, AssistantMessageOut, OutputText, UserMessage
 
 
@@ -44,7 +43,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     agent = await MiniCodex.create(
         mcp_client=compositor_client,
         client=mock_openai,
-        handlers=[AutoHandler()],
+        handlers=[BaseHandler()],
         system="Test system prompt",
         tool_policy=RequireAnyTool(),
     )
@@ -95,7 +94,7 @@ async def test_compact_transcript_insufficient_history(compositor_client, mock_o
     agent = await MiniCodex.create(
         mcp_client=compositor_client,
         client=mock_openai,
-        handlers=[AutoHandler()],
+        handlers=[BaseHandler()],
         system="Test system prompt",
         tool_policy=RequireAnyTool(),
     )
@@ -129,7 +128,7 @@ async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_
         )
     )
     decision = handler.on_before_sample()
-    assert isinstance(decision, NoLoopDecision)  # Not ready to compact yet
+    assert isinstance(decision, NoAction)  # Not ready to compact yet
 
     # Simulate token usage exceeding threshold
     handler.on_response(
@@ -141,9 +140,9 @@ async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_
     assert isinstance(decision, Compact)  # Should trigger compaction
     assert decision.keep_recent_turns == 2
 
-    # Second check should return NoLoopDecision (only compact once)
+    # Second check should return NoAction (only compact once)
     decision = handler.on_before_sample()
-    assert isinstance(decision, NoLoopDecision)
+    assert isinstance(decision, NoAction)
 
 
 @pytest.mark.asyncio
@@ -157,7 +156,7 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     agent = await MiniCodex.create(
         mcp_client=compositor_client,
         client=mock_openai,
-        handlers=[handler, AutoHandler()],
+        handlers=[handler],
         system="Test system prompt",
         tool_policy=RequireAnyTool(),
     )

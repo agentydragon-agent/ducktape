@@ -18,7 +18,6 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.engine.models import (
     FinalOutput,
@@ -82,11 +81,7 @@ class MiniCodexRunner(AgentRunner):
         run_dir = Path.cwd() / "logs" / "mini_codex" / "minicodex_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        default_handlers: list[BaseHandler] = [
-            AutoHandler(),
-            DisplayEventsHandler(),
-            TranscriptHandler(events_path=run_dir / "events.jsonl"),
-        ]
+        default_handlers: list = [DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")]
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await MiniCodex.create(

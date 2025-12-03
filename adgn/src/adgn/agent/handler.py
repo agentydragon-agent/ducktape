@@ -8,13 +8,14 @@ string derived from the concrete type.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any, Literal
 
 from fastmcp.client.client import CallToolResult
 from pydantic import BaseModel
 
-from adgn.agent.loop_control import LoopDecision, NoLoopDecision
+from adgn.agent.loop_control import LoopDecision, NoAction
 from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem
 
 
@@ -138,9 +139,9 @@ class BaseHandler:
         Default: no decision (let other handlers or agent decide).
 
         Returns:
-            LoopDecision: Continue | Abort | NoLoopDecision
+            LoopDecision: NoAction | InjectItems | Abort | Compact
         """
-        return NoLoopDecision()
+        return NoAction()
 
     def on_user_text_event(self, evt: UserText) -> None:
         """Called when user text is added to the conversation."""
@@ -161,3 +162,26 @@ class BaseHandler:
     def on_reasoning(self, item: ReasoningItem) -> None:
         """Called when the model emits reasoning tokens (extended thinking mode)."""
         return
+
+
+class SequenceHandler(BaseHandler):
+    """Execute a fixed sequence of actions, then NoAction() forever.
+
+    Examples:
+        # Inject once
+        SequenceHandler([InjectItems(items=(call1, call2))])
+
+        # Inject, sample, then passthrough
+        SequenceHandler([InjectItems(...), NoAction()])
+    """
+
+    def __init__(self, actions: Sequence[LoopDecision]) -> None:
+        self._actions = list(actions)
+        self._index = 0
+
+    def on_before_sample(self) -> LoopDecision:
+        if self._index >= len(self._actions):
+            return NoAction()
+        action = self._actions[self._index]
+        self._index += 1
+        return action

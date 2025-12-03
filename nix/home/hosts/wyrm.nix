@@ -32,4 +32,11 @@
       cache-dir = /mnt/tankshare/shared/pip-cache
     '';
   };
+
+  # UV cache configuration for tankshare storage
+  # Uses shared cache across VMs for efficiency (safe with virtiofs + UV's file locking)
+  # Only applies when /mnt/tankshare exists (virtiofs mount from atlas)
+  home.sessionVariables = lib.mkIf (builtins.pathExists "/mnt/tankshare") {
+    UV_CACHE_DIR = "/mnt/tankshare/shared/uv-cache";
+  };
 }

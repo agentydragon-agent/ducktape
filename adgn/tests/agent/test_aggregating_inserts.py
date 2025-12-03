@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from adgn.agent.loop_control import Abort, Continue, InjectItems
+from adgn.agent.loop_control import Abort, InjectItems
 from adgn.agent.reducer import BaseHandler, Reducer
 from adgn.openai_utils.model import InputTextPart, UserMessage
 from adgn.openai_utils.text_extraction import extract_input_text_content
@@ -14,11 +14,6 @@ class _InsertsHandler(BaseHandler):
         # Insert as input message (user role)
         msg = UserMessage(role="user", content=[InputTextPart(text=f"payload:{self._msg_id}")])
         return InjectItems(items=(msg,))
-
-
-class _ContinueOnlyHandler(BaseHandler):
-    def on_before_sample(self):
-        return Continue()
 
 
 class _AbortHandler(BaseHandler):
@@ -39,6 +34,5 @@ def test_first_inject_wins():
 
 def test_first_action_wins_abort():
     """First handler returning Abort wins; Continue handler is not consulted."""
-    ctrl = Reducer([_AbortHandler(), _ContinueOnlyHandler()])
-    dec = ctrl.on_before_sample()
-    assert isinstance(dec, Abort)
+    ctrl = Reducer([_AbortHandler(), BaseHandler()])
+    assert isinstance(ctrl.on_before_sample(), Abort)

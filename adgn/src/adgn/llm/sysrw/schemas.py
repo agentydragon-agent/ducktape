@@ -4,8 +4,7 @@ from __future__ import annotations
 from typing import Annotated, Any, Literal
 
 from anthropic.types.tool_param import ToolParam
-from openai.types.chat import ChatCompletion
-from openai.types.chat.chat_completion_create_params import ChatCompletionCreateParams
+from openai.types.chat import ChatCompletion, CompletionCreateParams as ChatCompletionCreateParams
 from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field

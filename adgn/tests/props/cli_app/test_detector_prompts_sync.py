@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.props.cli_shared import discover_detector_prompts, load_and_upsert_detector_prompt
 from adgn.props.db import get_session
 from adgn.props.db.models import Prompt
+from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 

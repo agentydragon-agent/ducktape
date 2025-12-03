@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.reducer import format_notifications_message
+from adgn.agent.notifications.handler import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from tests.util.notifications import parse_system_notification_payload

@@ -7,8 +7,7 @@
 }: {
   # Basic packages available in the shell
   # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, jsonnet, etc.
-  # playwright-driver provides Nix-patched Playwright browsers (fixes GLIBC issues)
-  packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib pkgs.playwright-driver];
+  packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib];
 
   # Python (devenv-managed venv)
   languages.python = {

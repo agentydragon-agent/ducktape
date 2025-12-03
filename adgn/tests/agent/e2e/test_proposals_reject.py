@@ -18,7 +18,9 @@ else:
     Page = playwright.Page
 
 
-async def test_policy_proposal_reject_updates_ui(e2e_page, run_server, responses_factory, policy_allow_all: str, make_step_runner):
+async def test_policy_proposal_reject_updates_ui(
+    e2e_page, run_server, responses_factory, policy_allow_all: str, make_step_runner
+):
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
     # Mock the agent to create a proposal via tool call, then end turn

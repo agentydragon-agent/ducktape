@@ -1,23 +1,18 @@
-#!/usr/bin/env python3
-"""Build a git bundle with filtered specimen snapshots.
+"""Build-bundle command: create git bundles with filtered specimen snapshots."""
 
-Reads specimen manifests, applies their bundle filters, and creates a git bundle
-containing only the necessary files for each specimen.
-
-Automatically discovers specimens by scanning for manifest.yaml files.
-Only specimens with `bundle` metadata are included.
-"""
+from __future__ import annotations
 
 import fnmatch
 from pathlib import Path
 import subprocess
 import tempfile
 
+from pydantic import TypeAdapter
 import pygit2
 import yaml
 
 from adgn.props.models.specimen import GitSource, SpecimenDoc
-from adgn.props.specimens.registry import SpecimenRegistry, find_specimens_base
+from adgn.props.specimens.registry import SpecimenRegistry
 
 
 def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
@@ -243,13 +238,14 @@ def discover_specimens_to_build(specimens_dir: Path) -> list[tuple[str, Specimen
     return results
 
 
-def main():
-    """Build specimen bundle with per-specimen filters."""
-    # Configuration
-    specimens_dir = find_specimens_base()
-    source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
-    output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
+def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_bundle: Path) -> None:
+    """Internal bundle building implementation.
 
+    Args:
+        specimens_dir: Base directory containing specimen manifests
+        source_repo_path: Path to source git repository
+        output_bundle: Output path for bundle file
+    """
     # Open source repository
     source_repo = pygit2.Repository(str(source_repo_path))
 
@@ -278,7 +274,10 @@ def main():
         sig = pygit2.Signature("Bundle Builder", "bundle@example.com")
         tree_oid = bundle_repo.TreeBuilder().write()
         base_commit_oid = bundle_repo.create_commit("refs/heads/main", sig, sig, "Bundle base commit", tree_oid, [])
-        base_commit = bundle_repo[base_commit_oid]
+        base_commit_obj = bundle_repo[base_commit_oid]
+        if not isinstance(base_commit_obj, pygit2.Commit):
+            raise TypeError(f"Expected Commit, got {type(base_commit_obj)}")
+        base_commit = base_commit_obj
         print(f"Base commit: {base_commit_oid}")
         print()
 
@@ -315,22 +314,33 @@ def main():
         # Verify bundle
         print()
         print("=== Verifying bundle ===")
-        verify_result = subprocess.run(
-            ["git", "bundle", "verify", str(output_bundle)], capture_output=True, text=True, check=False
+        subprocess.run(["git", "bundle", "verify", str(output_bundle)], capture_output=True, text=True, check=True)
+        print("✓ Bundle verification passed")
+        # List tags in bundle
+        list_heads_result = subprocess.run(
+            ["git", "bundle", "list-heads", str(output_bundle)], capture_output=True, text=True, check=True
         )
-        if verify_result.returncode == 0:
-            print("✓ Bundle verification passed")
-            # List tags in bundle
-            list_heads_result = subprocess.run(
-                ["git", "bundle", "list-heads", str(output_bundle)], capture_output=True, text=True, check=True
-            )
-            tags = [
-                line.split()[-1].removeprefix("refs/tags/") for line in list_heads_result.stdout.strip().split("\n")
-            ]
-            print(f"Tags in bundle: {', '.join(tags)}")
-        else:
-            print(f"✗ Bundle verification failed:\n{verify_result.stderr}")
+        tags = [line.split()[-1].removeprefix("refs/tags/") for line in list_heads_result.stdout.strip().split("\n")]
+        print(f"Tags in bundle: {', '.join(tags)}")
 
 
-if __name__ == "__main__":
-    main()
+def cmd_build_bundle(
+    specimens_dir: Path | None = None, source_repo_path: Path | None = None, output_bundle: Path | None = None
+):
+    """Build specimen bundle with per-specimen filters.
+
+    Args:
+        specimens_dir: Base directory containing specimen manifests (default: from package resources)
+        source_repo_path: Path to source git repository (default: /code/gitlab.com/agentydragon/ducktape)
+        output_bundle: Output path for bundle file (default: specimens_dir/ducktape/specimens.bundle)
+    """
+    # Use defaults if not provided
+    if specimens_dir is None:
+        specimens_dir = SpecimenRegistry.from_package_resources().base_path
+    if source_repo_path is None:
+        source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
+    if output_bundle is None:
+        output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
+
+    # Call internal implementation
+    _build_bundle_internal(specimens_dir, source_repo_path, output_bundle)

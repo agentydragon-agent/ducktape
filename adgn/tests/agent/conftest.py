@@ -16,12 +16,12 @@ from pydantic import BaseModel
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.server.app import create_app
 from adgn.agent.server.protocol import FunctionCallOutput, ToolCall
 from adgn.agent.server.state import new_state
@@ -164,10 +164,10 @@ def make_test_agent(responses_factory):
         assert client.calls == 1
     """
 
-    async def _make(mcp_client, responses, *, handlers=None, system="test", tool_policy=None, **kwargs):
+    async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
         client = FakeOpenAIModel(responses)
-        if handlers is None:
-            handlers = [AutoHandler()]
+        if not handlers:
+            handlers = [BaseHandler()]
         if tool_policy is None:
             tool_policy = RequireAnyTool()
         agent = await MiniCodex.create(
@@ -411,7 +411,9 @@ def make_tool_call_event(event_ts) -> Callable[..., EventRecord]:
     """Factory for ToolCall EventRecord."""
     factory = ItemFactory(call_id_prefix="test_event_call")
 
-    def _make(seq: int, server: str, tool: str, call_id: str | None = None, args_json: str | None = None) -> EventRecord:
+    def _make(
+        seq: int, server: str, tool: str, call_id: str | None = None, args_json: str | None = None
+    ) -> EventRecord:
         # Use ItemFactory for consistent call_id generation
         item = factory.tool_call(name=build_mcp_function(server, tool), arguments={}, call_id=call_id)
         return EventRecord(

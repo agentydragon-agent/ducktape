@@ -4,7 +4,7 @@ from collections.abc import Sequence
 import os
 from typing import TYPE_CHECKING, Any
 
-from fastmcp.client.client import CallToolResult
+from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
@@ -108,8 +108,8 @@ class ResponsesFactory:
 
     def _make_output_item(self, call_id: str, output: Any) -> FunctionCallOutputItem:
         """Create FunctionCallOutputItem from structured output."""
-        tool_result = CallToolResult(content=[], structured_content=output, is_error=False, meta=None)
-        payload_json = TypeAdapter(CallToolResult).dump_json(tool_result, by_alias=True)
+        tool_result = mcp_types.CallToolResult(content=[], structuredContent=output, isError=False)
+        payload_json = TypeAdapter(mcp_types.CallToolResult).dump_json(tool_result, by_alias=True)
         return FunctionCallOutputItem(call_id=call_id, output=payload_json.decode("utf-8"))
 
     def _make_call_with_output(self, call: FunctionCallItem, output: Any) -> ResponsesResult:

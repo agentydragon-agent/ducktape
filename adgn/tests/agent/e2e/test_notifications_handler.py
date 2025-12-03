@@ -6,6 +6,7 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.runtime.container import build_container
+from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.openai_utils.model import InputTextPart
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
@@ -19,7 +20,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
     runner = make_step_runner(
         steps=[
             # First turn: agent calls admin_set_policy to trigger notification
-            MakeCall("approval_policy_admin", "set_policy", {"source": policy_allow_all}),
+            MakeCall("approval_policy_admin", "set_policy", SetPolicyTextArgs(source=policy_allow_all)),
             # Subsequent turns: just return done
             AssistantMessage("done"),
         ]

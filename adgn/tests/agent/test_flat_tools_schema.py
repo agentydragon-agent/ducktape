@@ -24,8 +24,8 @@ from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
@@ -170,7 +170,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase1,
-            handlers=[AutoHandler()],
+            handlers=[BaseHandler()],
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )
@@ -199,7 +199,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase2,
-            handlers=[AutoHandler()],
+            handlers=[BaseHandler()],
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )

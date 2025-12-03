@@ -9,7 +9,6 @@ from __future__ import annotations
 from hamcrest import assert_that, contains_string
 
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from tests.agent.test_matchers import assert_function_call_output_structured
 
@@ -44,7 +43,7 @@ async def test_tool_error_continues_turn(
         agent, _ = await make_test_agent(
             mcp_client,
             seq,
-            handlers=[AutoHandler(), recording_handler],
+            handlers=[recording_handler],
             system="You are a helpful assistant. Use the validator tools.",
             tool_policy=RequireAnyTool(),
         )

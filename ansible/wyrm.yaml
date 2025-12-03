@@ -158,6 +158,22 @@
       when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
       tags: [storage, pip]
 
+    # TODO: Consider moving tankshare directory creation (pip-cache, uv-cache, etc.)
+    # to atlas.yaml since atlas manages the actual tank ZFS volume. Would be more
+    # architecturally correct, though current approach (creating from VM) works fine.
+    - name: Create UV cache directory on tankshare
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        owner: "{{ my_user }}"
+        group: "{{ my_user }}"
+        mode: '0755'
+      become: true
+      loop:
+        - /mnt/tankshare/shared/uv-cache
+      when: tankshare_mount.stat.exists and tankshare_mount.stat.isdir
+      tags: [storage, uv, python]
+
     # MOTD configuration for wyrm
     - name: Set wyrm MOTD
       ansible.builtin.copy:
@@ -185,7 +201,8 @@
         # Keep 00-header for basic system info (OS version, kernel)
       tags: [motd]
 
-    - name: Apply Docker registry client role
-      ansible.builtin.include_role:
-        name: docker_registry_client
-      tags: [docker, registry]
+    # Docker registry client role disabled - cluster is down
+    # - name: Apply Docker registry client role
+    #   ansible.builtin.include_role:
+    #     name: docker_registry_client
+    #   tags: [docker, registry]

@@ -501,28 +501,18 @@ class SpecimenRegistry:
         self._base_path = base_path
 
     @classmethod
-    def from_base_path(cls, base: Path | None = None) -> SpecimenRegistry:
-        """Factory method to create a registry with discovered specimen IDs.
+    def from_base_path(cls, base: Path) -> SpecimenRegistry:
+        """Factory method to create a registry from a specific base directory.
 
         Args:
-            base: Specimens base directory (defaults to package resources specimens dir)
+            base: Specimens base directory (must be provided)
 
         Returns:
             SpecimenRegistry instance
         """
-        if base is None:
-            # Resolve from package resources
-            traversable = resources.files("adgn.props").joinpath("specimens")
-            with resources.as_file(traversable) as p:
-                if not p.exists() or not p.is_dir():
-                    raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
-                base_dir = p
-        else:
-            base_dir = base
-
         # Discover all specimen slugs upfront by walking directory structure
         specimens: dict[str, SpecimenRecord | None] = {}
-        for repo_dir in base_dir.iterdir():
+        for repo_dir in base.iterdir():
             if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
                 continue
             for specimen_dir in repo_dir.iterdir():
@@ -530,7 +520,21 @@ class SpecimenRegistry:
                     slug = f"{repo_dir.name}/{specimen_dir.name}"
                     # Store None as placeholder - actual loading happens on demand via load_and_hydrate
                     specimens[slug] = None
-        return cls(specimens=specimens, base_path=base_dir)
+        return cls(specimens=specimens, base_path=base)
+
+    @classmethod
+    def from_package_resources(cls) -> SpecimenRegistry:
+        """Factory method to create a registry from package resources.
+
+        Returns:
+            SpecimenRegistry instance with specimens from package resources
+        """
+        # Resolve from package resources
+        traversable = resources.files("adgn.props").joinpath("specimens")
+        with resources.as_file(traversable) as p:
+            if not p.exists() or not p.is_dir():
+                raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
+            return cls.from_base_path(base=p)
 
     @property
     def base_path(self) -> Path:

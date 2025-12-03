@@ -10,49 +10,32 @@ from pydantic import BaseModel
 # as a first-class input item so the agent can initiate web search via Responses
 # without custom tool plumbing.
 from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import Abort, Compact, Continue, InjectItems, LoopDecision, NoLoopDecision
-from adgn.openai_utils.model import ReasoningItem, UserMessage
-
-from .notifications.types import NotificationsBatch, ResourcesServerNotice
+from adgn.agent.loop_control import Abort, Compact, InjectItems, LoopDecision, NoAction
+from adgn.openai_utils.model import ReasoningItem
 
 logger = logging.getLogger(__name__)
 
 
-class AutoHandler(BaseHandler):
-    """Common simple handler that signals Continue() for every turn.
+class AbortIf(BaseHandler):
+    """Loop controller: abort if condition is met, otherwise continue.
 
-    Useful as default handler in simple agents. Does not inject any items
-    or impose constraints - just ensures the loop continues.
-    """
+    Pass a should_abort callable that returns True when the agent should stop
+    (e.g., submit_state.result is set).
 
-    def on_before_sample(self):
-        return Continue()
-
-
-class GateUntil(BaseHandler):
-    """Loop controller: continue until condition is met, then abort.
-
-    Pass an is_done callable that returns True when the external state indicates
-    completion (e.g., submit_state.result is set).
-
-    Optional defer_when: when provided and returns True, this handler defers
-    its opinion for this phase (returns NoLoopDecision). Useful to avoid
-    conflicts with bootstrap handlers that emit Continue(skip_sampling=True).
+    In the sequential evaluation model, handler ordering matters. Place AbortIf
+    after any bootstrap handlers in the handler list to ensure bootstrap completes first.
 
     Note: The agent's tool_policy (typically RequireAnyTool) is configured at
     construction time and applies throughout the agent's lifetime.
     """
 
-    def __init__(self, is_done: Callable[[], bool], defer_when: Callable[[], bool] | None = None) -> None:
-        self._is_done = is_done
-        self._defer_when = defer_when
+    def __init__(self, should_abort: Callable[[], bool]) -> None:
+        self._should_abort = should_abort
 
     def on_before_sample(self):
-        if self._defer_when and self._defer_when():
-            return NoLoopDecision()
-        if self._is_done():
+        if self._should_abort():
             return Abort()
-        return Continue()
+        return NoAction()
 
 
 class Reducer:
@@ -74,42 +57,38 @@ class Reducer:
         """Sequential handler execution: first action wins.
 
         Handlers are executed in order. The first handler that returns an action
-        (not NoLoopDecision or empty Continue) wins and we stop processing remaining handlers.
+        (InjectItems, Abort, or Compact) wins and we stop processing remaining handlers.
 
         Actions:
         - InjectItems: inject items (user messages or synthetic output) and process
         - Abort: stop the loop
         - Compact: compact transcript and continue
-        - Continue: sample LLM normally (also returned as default if all handlers defer)
+        - NoAction: defer to next handler (returned by all handlers → sample LLM normally)
 
-        If all handlers defer (return NoLoopDecision or Continue), we sample the LLM normally.
+        If all handlers defer (return NoAction), we sample the LLM normally.
 
         Returns:
-            LoopDecision from first handler with an action, or Continue() if all defer
+            LoopDecision from first handler with an action, or NoAction() if all defer
         """
         for h in self._handlers:
             decision = h.on_before_sample()
 
             # Skip handlers that defer
-            if isinstance(decision, NoLoopDecision):
+            if isinstance(decision, NoAction):
                 continue
 
             # Validate decision type
-            valid_types = (Continue, InjectItems, Abort, Compact)
+            valid_types = (InjectItems, Abort, Compact)
             if not isinstance(decision, valid_types):
                 raise TypeError(
                     f"Handler {h!r} returned invalid decision type: {type(decision).__name__} ({decision!r})"
                 )
 
             # First handler with an action wins
-            # InjectItems, Abort, Compact are all actions
-            if isinstance(decision, InjectItems | Abort | Compact):
-                return decision
+            return decision
 
-            # Continue() passes to next handler (same as NoLoopDecision)
-
-        # No handler did anything - sample normally
-        return Continue()
+        # No handler took action - sample normally
+        return NoAction()
 
     # ---- Event forwarding (typed, observer-only) ----
     def on_response(self, evt: Response) -> None:
@@ -147,46 +126,3 @@ class Reducer:
 class SystemMessage(BaseModel):
     role: Literal["system"] = "system"
     content: str
-
-
-def format_notifications_message(batch: NotificationsBatch) -> UserMessage:
-    """Format MCP notifications as a user message.
-
-    Caller must ensure batch has at least one notification.
-    """
-    # Filter to only include servers with actual updates or list changes
-    resources_filtered: dict[str, ResourcesServerNotice] = {
-        name: entry for name, entry in batch.resources.items() if entry.updated or entry.list_changed
-    }
-
-    payload = NotificationsBatch(resources=resources_filtered).model_dump_json(exclude_defaults=True, exclude_none=True)
-
-    # Insert as input-side user message, clearly tagged as a system notification
-    return UserMessage.text(f"<system notification>\n{payload}\n</system notification>")
-
-
-class NotificationsHandler(BaseHandler):
-    """Deliver MCP notifications as one batched system message via InjectItems.
-
-    Polls a provided notifications buffer for buffered updates and, if present, returns an
-    InjectItems() decision with a single UserMessage that encodes the per-server resource
-    version changes.
-    """
-
-    def __init__(self, poll: Callable[[], NotificationsBatch]) -> None:
-        self._poll = poll
-        self._msg_counter = 0
-
-    def on_before_sample(self):
-        batch = self._poll()
-        notification_count = batch.count_notifications()
-
-        if notification_count == 0:
-            logger.debug("NotificationsHandler: no updates")
-            return NoLoopDecision()
-
-        self._msg_counter += 1
-        logger.info(
-            "NotificationsHandler: delivering %d notifications (msg #%d)", notification_count, self._msg_counter
-        )
-        return InjectItems(items=(format_notifications_message(batch),))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import json
 import os
@@ -14,10 +15,11 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, docker_exec_call, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.loop_control import Abort, Continue, InjectItems, NoLoopDecision, RequireAnyTool
-from adgn.agent.reducer import BaseHandler, GateUntil
+from adgn.agent.handler import BaseHandler, SequenceHandler
+from adgn.agent.loop_control import InjectItems, RequireAnyTool
+from adgn.agent.reducer import AbortIf
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME, RUNTIME_CONTAINER_INFO_URI
@@ -205,33 +207,6 @@ def make_bootstrap_calls_for_inspection(
     ]
 
 
-class BootstrapInspectHandler(BaseHandler):
-    """Shared bootstrap handler: emits container.info + ls workspace without sampling."""
-
-    def __init__(self, wiring: PropertiesDockerWiring) -> None:
-        self._wiring = wiring
-        self._done: bool = False
-        self._emitted: bool = False
-
-    def on_before_sample(self):
-        if self._done:
-            return NoLoopDecision()
-        # First cycle: emit synthetic calls, but do NOT mark done yet
-        if not self._emitted:
-            self._emitted = True
-            builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
-            calls = [
-                read_resource_call(builder, server=self._wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI),
-                docker_exec_call(
-                    builder, server=self._wiring.server_name, cmd=["ls", "-la", str(self._wiring.working_dir)]
-                ),
-            ]
-            return InjectItems(items=tuple(calls))
-        # Second cycle: mark done and defer; subsequent cycles will continue normally
-        self._done = True
-        return NoLoopDecision()
-
-
 # TODO(mpokorny): Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc
 # (header + occurrences) and select a single occurrence here. Keep emitted JSON
 # header-only (no id) by design for model context hygiene; remove legacy Issue.
@@ -265,42 +240,29 @@ def _build_prompt(
     return prompt_md
 
 
-class LinterController(BaseHandler):
-    """LinterController with standard bootstrap pattern.
+def make_linter_handlers(
+    *,
+    state: LintSubmitState,
+    occ: Occurrence,
+    content_root: Path,
+    docker_wiring: PropertiesDockerWiring,
+    prop_host_paths: list[Path] | None = None,
+) -> list:
+    """Build handlers for linter agent: bootstrap + abort.
 
-    Builds all bootstrap calls upfront as a continuous sequence, then injects them
-    in one turn. After bootstrap, monitors for submit_result and aborts when done.
+    Returns:
+        [SequenceHandler, AbortIf] - bootstrap injects calls, abort when done
     """
+    # Build all bootstrap calls upfront (continuous sequence)
+    bootstrap_calls = make_linter_bootstrap_calls(
+        wiring=docker_wiring, occ=occ, content_root=content_root, prop_host_paths=prop_host_paths
+    )
 
-    def __init__(
-        self,
-        *,
-        state: LintSubmitState,
-        occ: Occurrence,
-        content_root: Path,
-        docker_wiring: PropertiesDockerWiring,
-        prop_host_paths: list[Path] | None = None,
-    ) -> None:
-        self._state = state
-        self._injected = False
-
-        # Build all bootstrap calls upfront (continuous sequence)
-        self._bootstrap_calls = make_linter_bootstrap_calls(
-            wiring=docker_wiring, occ=occ, content_root=content_root, prop_host_paths=prop_host_paths
-        )
-
-    def on_before_sample(self):
-        # Stop immediately once submit_result was called
-        if self._state.result is not None:
-            return Abort()
-
-        # Inject all bootstrap calls in one turn (continuous sequence)
-        if not self._injected:
-            self._injected = True
-            return InjectItems(items=tuple(self._bootstrap_calls))
-
-        # After bootstrap, continue loop (agent's tool_policy handles requirements)
-        return Continue()
+    # Return two handlers: bootstrap for injection, abort condition
+    return [
+        SequenceHandler([InjectItems(items=bootstrap_calls)]),
+        AbortIf(should_abort=lambda: state.result is not None),
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -314,7 +276,7 @@ async def lint_issue_run(
     occurrence: Occurrence,
     *,
     client: OpenAIModelProto,
-    handlers: list[BaseHandler] | None = None,
+    handlers: Sequence[BaseHandler] = (),
     content_root: Path | None = None,
     registry: SpecimenRegistry,
 ) -> LintSubmitPayload:
@@ -350,7 +312,7 @@ async def _lint_issue_run_with_hydrated_root(
     occurrence: Occurrence,
     client: OpenAIModelProto,
     submit_state: LintSubmitState,
-    handlers: list[BaseHandler] | None,
+    handlers: Sequence[BaseHandler],
 ) -> LintSubmitPayload:
     """Core lint logic with pre-hydrated specimen root."""
     wiring = properties_docker_spec(content_root, mount_properties=True)
@@ -368,27 +330,15 @@ async def _lint_issue_run_with_hydrated_root(
         wiring=wiring, occ=occurrence, content_root=content_root, prop_host_paths=props
     )
 
-    # Bootstrap handler with _done flag for deferral coordination (matches BootstrapInspectHandler pattern)
-    class BootstrapWithDone(BootstrapHandler):
-        def __init__(self, calls):
-            super().__init__(calls)
-            self._done = False
+    # Build handlers: bootstrap injection + abort condition
+    # Sequential evaluation ensures bootstrap completes before abort check runs
+    handlers_list = [
+        SequenceHandler([InjectItems(items=bootstrap_calls)]),
+        AbortIf(should_abort=lambda: submit_state.result is not None),
+    ]
 
-        def on_before_sample(self):
-            if self._done:
-                return NoLoopDecision()
-            if not self._injected:
-                self._injected = True
-                return InjectItems(items=tuple(self._calls))
-            # Second cycle: mark done
-            self._done = True
-            return NoLoopDecision()
-
-    bootstrap_handler = BootstrapWithDone(bootstrap_calls)
-    # GateUntil defers while bootstrap hasn't completed (matches critic.py pattern)
-    gate_handler = GateUntil(
-        is_done=lambda: submit_state.result is not None, defer_when=lambda: not bootstrap_handler._done
-    )
+    # Add any extra handlers provided by caller
+    handlers_list.extend(handlers)
 
     # Build compositor and client
     comp = Compositor("compositor")
@@ -408,7 +358,7 @@ async def _lint_issue_run_with_hydrated_root(
             mcp_client=mcp_client,
             system="You are a code agent. Be concise.",
             client=client,
-            handlers=[bootstrap_handler, gate_handler, *(handlers if handlers is not None else [])],
+            handlers=handlers_list,
             parallel_tool_calls=True,
             tool_policy=RequireAnyTool(),
         )

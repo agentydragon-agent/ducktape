@@ -7,16 +7,13 @@ Verifies database records are created correctly and catches bugs like naming col
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 import json
 import logging
 import os
 from pathlib import Path
-from typing import TypeVar
 from unittest.mock import patch
 
-from hamcrest import assert_that, equal_to, has_length, not_none
-from pydantic import BaseModel
+from hamcrest import assert_that, equal_to, has_entry, has_length, has_properties, not_none
 import pytest
 
 from adgn.mcp.exec.models import ExecInput
@@ -25,9 +22,6 @@ from adgn.props.critic import AddOccurrenceInput, CriticInput, SubmitInput, Upse
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Specimen
 from adgn.props.grader import GradeSubmitInput
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.models.specimen import GitHubSource, SpecimenDoc
-from adgn.props.paths import FileType
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,
@@ -36,55 +30,36 @@ from adgn.props.prompt_optimizer import (
     run_prompt_optimizer,
 )
 from adgn.props.runs_context import RunsContext
-from adgn.props.specimens.hydrated import HydratedSpecimen
-from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
+from tests.support.responses import _StepRunner
 from tests.support.steps import CheckThenCall, ExtractThenCall, Finish, MakeCall
 
 logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
-T = TypeVar("T", bound=BaseModel)
+# Test specimen slug used throughout this test
+TEST_SPECIMEN_SLUG = "test-fixtures/test-trivial"
+
+
+def get_critic_runs_for_slug(slug: str) -> list[CriticRun]:
+    """Query all critic runs for a given specimen slug."""
+    with get_session() as session:
+        return session.query(CriticRun).filter_by(specimen_slug=slug).all()
+
+
+def get_grader_runs_for_slug(slug: str) -> list[GraderRun]:
+    """Query all grader runs for a given specimen slug."""
+    with get_session() as session:
+        return session.query(GraderRun).filter_by(specimen_slug=slug).all()
 
 
 @pytest.fixture
 def test_specimen(test_db):
     """Create test specimen record (uses test_db fixture from tests/props/conftest.py)."""
     with get_session() as session:
-        specimen = Specimen(specimen_slug="test-fixtures/test-trivial", split="train", labeled_files=["subtract.py"])
+        specimen = Specimen(specimen_slug=TEST_SPECIMEN_SLUG, split="train", labeled_files=["subtract.py"])
         session.merge(specimen)
         session.commit()
-
-
-@pytest.fixture
-def mock_specimen():
-    """Provide a minimal specimen with one canonical TP for testing."""
-    # Create minimal manifest
-    manifest = SpecimenDoc(source=GitHubSource(vcs="github", org="test", repo="repo", ref="a" * 40))
-
-    # Create one canonical TP issue (matching the mock grader's coverage)
-    issue_record = IssueRecord(
-        core=IssueCore(id="issue-001", should_flag=True, rationale="Test issue for integration test"),
-        instances=[Occurrence(files={Path("adgn/README.md"): [LineRange(start_line=10, end_line=20)]})],
-    )
-
-    record = SpecimenRecord(
-        slug="ducktape/2025-11-26-00",
-        manifest_path=Path("/tmp/manifest.yaml"),
-        manifest=manifest,
-        issues={"issue-001": issue_record},
-        false_positives={},
-        all_discovered_files={Path("adgn/README.md"): FileType.REGULAR},
-    )
-
-    specimen = HydratedSpecimen(record=record, content_root=Path("/tmp/mock-specimen"))
-
-    # Create async context manager that yields the mock specimen
-    @asynccontextmanager
-    async def mock_load_and_hydrate(slug: str):
-        yield specimen
-
-    return mock_load_and_hydrate
 
 
 @pytest.fixture
@@ -108,7 +83,7 @@ def po_agent_steps():
             lambda out: (
                 "prompt_eval",
                 "run_critic",
-                CriticInput(specimen_slug="ducktape/2025-11-26-00", files="all", prompt_sha256=out.prompt_sha256),
+                CriticInput(specimen_slug=TEST_SPECIMEN_SLUG, files="all", prompt_sha256=out.prompt_sha256),
             ),
         ),
         ExtractThenCall(
@@ -142,7 +117,7 @@ def grader_agent_steps():
     """Declarative steps for Grader agent - evaluates critic output."""
     grade_input = {
         "canonical_tp_coverage": {
-            "issue-001": {
+            "test-issue-001": {
                 "covered_by": {"test-issue-001": 1.0},
                 "recall_credit": 1.0,
                 "rationale": "Test issue matches canonical TP.",
@@ -162,7 +137,9 @@ def grader_agent_steps():
 class WorkflowMock(OpenAIModelProto):
     """Smart mock that delegates to appropriate step runner based on tool context."""
 
-    def __init__(self, po_runner, critic_runner, grader_runner, dump_requests_to: Path):
+    def __init__(
+        self, po_runner: _StepRunner, critic_runner: _StepRunner, grader_runner: _StepRunner, dump_requests_to: Path
+    ):
         self.po_runner = po_runner
         self.critic_runner = critic_runner
         self.grader_runner = grader_runner
@@ -211,7 +188,13 @@ class WorkflowMock(OpenAIModelProto):
 
 @pytest.mark.asyncio
 async def test_full_workflow_po_agent_critic_grader(
-    test_specimen, mock_specimen, tmp_path, make_step_runner, po_agent_steps, critic_agent_steps, grader_agent_steps
+    test_specimen,
+    tmp_path,
+    make_step_runner,
+    po_agent_steps,
+    critic_agent_steps,
+    grader_agent_steps,
+    test_specimens_registry,
 ):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
@@ -249,16 +232,19 @@ async def test_full_workflow_po_agent_critic_grader(
 
     # make_step_runner fixture automatically validates all steps were executed for all three agents
 
-    with get_session() as session:
-        critic_runs = session.query(CriticRun).filter_by(specimen_slug="test-fixtures/test-trivial").all()
-        assert_that(critic_runs, has_length(1))
-        critic_run = critic_runs[0]
-        assert_that(critic_run.model, equal_to("fake-model"))
-        assert_that(critic_run.critique_id, not_none())
+    critic_runs = get_critic_runs_for_slug(TEST_SPECIMEN_SLUG)
+    assert_that(critic_runs, has_length(1), "Expected exactly one critic run")
+    critic_run = critic_runs[0]
+    assert_that(critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
 
-        grader_runs = session.query(GraderRun).filter_by(specimen_slug="test-fixtures/test-trivial").all()
-        assert_that(grader_runs, has_length(1))
-        grader_run = grader_runs[0]
-        assert_that(grader_run.critique_id, equal_to(critic_run.critique_id))
-        assert_that(grader_run.model, equal_to("fake-model"))
-        assert_that(grader_run.output["grade"]["recall"], equal_to(0.8))
+    grader_runs = get_grader_runs_for_slug(TEST_SPECIMEN_SLUG)
+    assert_that(grader_runs, has_length(1), "Expected exactly one grader run")
+    grader_run = grader_runs[0]
+    assert_that(
+        grader_run,
+        has_properties(
+            critique_id=equal_to(critic_run.critique_id),
+            model=equal_to("fake-model"),
+            output=has_entry("grade", has_entry("recall", equal_to(0.8))),
+        ),
+    )

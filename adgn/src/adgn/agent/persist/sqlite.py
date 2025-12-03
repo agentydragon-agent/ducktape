@@ -120,7 +120,9 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
             await db.commit()
 
     # Agents -----------------------------------------------------------------
-    async def create_agent(self, *, mcp_config: MCPConfig, metadata: AgentMetadata) -> AgentID:
+    async def create_agent(self, *, mcp_config: MCPConfig | None = None, metadata: AgentMetadata) -> AgentID:
+        if mcp_config is None:
+            mcp_config = MCPConfig()
         agent_id = uuid.uuid4().hex
         async with self._open() as db:
             # Persist only user-configured servers (exclude default auto-attached)

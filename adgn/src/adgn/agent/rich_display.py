@@ -21,7 +21,6 @@ from adgn.mcp.exec.models import BaseExecResult, ExecInput, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, Response, ToolCall, ToolCallOutput, UserText
-from .loop_control import NoLoopDecision
 from .reducer import BaseHandler
 from .tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 
@@ -140,9 +139,6 @@ class RichDisplayHandler(BaseHandler):
 
     def on_response(self, evt: Response) -> None:
         pass  # No buffering, events already rendered
-
-    def on_before_sample(self) -> NoLoopDecision:
-        return NoLoopDecision()
 
     # Rendering --------------------------------------------------------------
 
@@ -394,9 +390,6 @@ class CompactDisplayHandler(BaseHandler):
             text.append(f"  {evt.usage.model}", style="dim italic")
 
         self._console.print(text)
-
-    def on_before_sample(self) -> NoLoopDecision:
-        return NoLoopDecision()
 
     # Rendering --------------------------------------------------------------
 

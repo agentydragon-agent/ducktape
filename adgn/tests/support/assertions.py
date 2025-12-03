@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import json
 import logging
 from typing import TypeGuard
@@ -57,11 +58,11 @@ def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, 
 # Type narrowing helpers (TypeGuard)
 
 
-def is_all_function_calls(items: tuple[UserMessage | FunctionCallItem, ...]) -> TypeGuard[tuple[FunctionCallItem, ...]]:
-    """TypeGuard to narrow tuple[UserMessage | FunctionCallItem, ...] to tuple[FunctionCallItem, ...]."""
+def is_all_function_calls(items: Sequence[UserMessage | FunctionCallItem]) -> TypeGuard[Sequence[FunctionCallItem]]:
+    """TypeGuard to narrow Sequence[UserMessage | FunctionCallItem] to Sequence[FunctionCallItem]."""
     return all(isinstance(x, FunctionCallItem) for x in items)
 
 
-def is_all_user_messages(items: tuple[UserMessage | FunctionCallItem, ...]) -> TypeGuard[tuple[UserMessage, ...]]:
-    """TypeGuard to narrow tuple[UserMessage | FunctionCallItem, ...] to tuple[UserMessage, ...]."""
+def is_all_user_messages(items: Sequence[UserMessage | FunctionCallItem]) -> TypeGuard[Sequence[UserMessage]]:
+    """TypeGuard to narrow Sequence[UserMessage | FunctionCallItem] to Sequence[UserMessage]."""
     return all(isinstance(x, UserMessage) for x in items)

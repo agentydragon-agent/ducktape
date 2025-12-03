@@ -7,8 +7,8 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.constants import PENDING_CALLS_URI
 from adgn.mcp.approval_policy.engine import CallDecision
 from adgn.mcp.testing.simple_servers import EchoInput
@@ -36,7 +36,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     servers = dict(echo_spec)
     async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, _comp, policy_engine):
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()], tool_policy=RequireAnyTool()
+            mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
 
         # Start the agent run in the background

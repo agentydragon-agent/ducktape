@@ -19,16 +19,15 @@ from fastmcp.client import Client
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder, read_resource_call
-from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
-from adgn.llm.transcript import FunctionCallItem
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_resource_call
+from adgn.agent.handler import SequenceHandler
+from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, WORKING_DIR
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, resolve_critic_scope, run_critic as execute_critic_run
@@ -424,16 +423,15 @@ async def run_prompt_optimizer(
         comp = Compositor("compositor")
         runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
 
-        await comp.mount_inproc(
-            PROMPT_EVAL_SERVER_NAME,
-            await build_server(
-                client=build_client(model),
-                name=PROMPT_EVAL_SERVER_NAME,
-                prompt_optimization_run_id=prompt_optimization_run_id,
-                workspace_root=session_dir,
-                verbose=verbose,
-            ),
+        # Create and mount prompt_eval server, keeping reference for introspection
+        prompt_eval_server = await build_server(
+            client=build_client(model),
+            name=PROMPT_EVAL_SERVER_NAME,
+            prompt_optimization_run_id=prompt_optimization_run_id,
+            workspace_root=session_dir,
+            verbose=verbose,
         )
+        await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
 
         # Collect servers for tool schema extraction
         servers = {wiring.server_name: runtime_server}
@@ -448,15 +446,13 @@ Prioritize recall first, then precision.
         transcript_id = uuid4()
         logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
 
-        # Get the prompt_eval server for introspection
-        prompt_eval_server = await comp.get_inproc_server(PROMPT_EVAL_SERVER_NAME)
+        # Use the prompt_eval server reference for introspection
         builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
         bootstrap_calls = make_po_bootstrap_calls(builder)
-        bootstrap = BootstrapHandler(bootstrap_calls)
+        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         handlers: list = [
             bootstrap,
-            AutoHandler(),  # Loop control (continue until agent stops)
             *build_props_handlers(
                 transcript_id=transcript_id, verbose_prefix="[OPTIMIZER] " if verbose else None, servers=servers
             ),

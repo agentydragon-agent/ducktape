@@ -9,7 +9,6 @@ from rich.text import Text
 from adgn.openai_utils.model import ReasoningItem
 
 from .handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
-from .loop_control import NoLoopDecision
 
 
 class OneLineProgressHandler(BaseHandler):
@@ -18,7 +17,7 @@ class OneLineProgressHandler(BaseHandler):
     Displays a single-line status with a spinner, number of tool calls, and a brief
     last action. Non-blocking: updates are printed inline using carriage return.
 
-    Usage: register as a handler in MiniCodex.create(..., handlers=[AutoHandler(), OneLineProgressHandler()])
+    Usage: register as a handler in MiniCodex.create(..., handlers=[BaseHandler(), OneLineProgressHandler()])
     """
 
     def __init__(self, *, console: Console | None = None) -> None:
@@ -52,10 +51,6 @@ class OneLineProgressHandler(BaseHandler):
     def on_reasoning(self, item: ReasoningItem) -> None:
         self._last_action = "reasoning"
         self._render()
-
-    def on_before_sample(self):
-        # Observer-only hook must explicitly defer
-        return NoLoopDecision()
 
     # --- rendering ---
     def _render(self, force: bool = False) -> None:

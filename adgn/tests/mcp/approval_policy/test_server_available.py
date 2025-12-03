@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage
@@ -37,7 +37,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
         assert expected <= tool_names
 
         agent = await MiniCodex.create(
-            mcp_client=mcp_client, system="test", client=client, handlers=[AutoHandler()], tool_policy=RequireAnyTool()
+            mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
 
         # Run should complete without issues

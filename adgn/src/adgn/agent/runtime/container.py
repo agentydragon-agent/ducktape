@@ -575,13 +575,7 @@ class AgentContainer:
     async def _attach_wired_seatbelt(self) -> None:
         if self._compositor is None:
             raise RuntimeError("compositor not initialized")
-        await attach_seatbelt_exec(
-            self._compositor,
-            agent_id=self.agent_id,
-            persistence=self.persistence,
-            docker_client=self.docker_client,
-            name=SEATBELT_EXEC_SERVER_NAME,
-        )
+        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_SERVER_NAME)
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True

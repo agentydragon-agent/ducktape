@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp.testing.simple_servers import EchoInput
 
 
@@ -15,7 +14,7 @@ async def test_agent_mcp_echo_tool_use(
             responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hello")),
             responses_factory.make_assistant_message("done"),
         ],
-        handlers=[AutoHandler(), recording_handler],
+        handlers=[recording_handler],
         parallel_tool_calls=False,
     )
 
@@ -26,8 +25,5 @@ async def test_agent_mcp_echo_tool_use(
     outputs = [r for r in recording_handler.records if r.get("kind") == "function_call_output"]
     assert outputs, "No tool outputs captured"
     first = outputs[0]
-    print(f"first keys: {first.keys()}")
-    print(f"result keys: {first['result'].keys() if 'result' in first else 'NO RESULT KEY'}")
-    print(f"full first: {first}")
     assert first["result"]["structured_content"] == {"echo": "hello"}
     assert res.text.strip() == "done"

@@ -9,11 +9,13 @@ import re
 
 import docker
 from fastmcp.client import Client
+from fastmcp.mcp_config import MCPConfig
 from fastmcp.server import FastMCP
 from openai import AsyncOpenAI
 import pytest
 
 from adgn.agent.approvals import load_default_policy_source
+from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policies.policy_types import ApprovalDecision
@@ -232,6 +234,10 @@ async def _setup_pg_compositor(
     comp = Compositor("comp")
 
     if policy_engine is None:
+        # Create agent in DB first to satisfy FK constraints when recording approvals
+        # Use the persistence API to create the agent properly
+        agent_id = await sqlite_persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
+
         policy_engine = PolicyEngine(
             docker_client=docker_client,
             agent_id=agent_id,
@@ -533,34 +539,3 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 def echo_spec(make_backend_server) -> McpServerSpecs:
     """In-proc FastMCP server spec for echo tests."""
     return {"echo": make_backend_server("echo")}
-
-
-@pytest.fixture
-def make_step_runner(responses_factory):
-    """Factory fixture that creates step runners and validates all steps were executed.
-
-    Usage:
-        def test_workflow(make_step_runner):
-            agent = make_step_runner(steps=[...])
-            # Test runs agent through all steps
-            # Fixture automatically asserts all steps completed
-    """
-    from contextlib import ExitStack, contextmanager
-
-    from tests.support.responses import _StepRunner
-
-    stack = ExitStack()
-
-    def _make(steps: Sequence[Step]) -> _StepRunner:
-        @contextmanager
-        def _runner_context():
-            runner = _StepRunner(factory=responses_factory, steps=steps)
-            yield runner
-            # Validation on context exit
-            if runner.turn != len(runner.steps):
-                pytest.fail(f"Step runner incomplete: executed {runner.turn}/{len(runner.steps)} steps")
-
-        return stack.enter_context(_runner_context())
-
-    with stack:
-        yield _make

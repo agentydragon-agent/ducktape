@@ -2,4 +2,4 @@ source:
   vcs: local
   root: code
 split: train
-bundle: {}
+bundle: null

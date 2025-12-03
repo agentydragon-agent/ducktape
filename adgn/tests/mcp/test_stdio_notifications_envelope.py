@@ -5,7 +5,7 @@ import sys
 from fastmcp.client import Client
 from fastmcp.mcp_config import StdioMCPServer
 
-from adgn.agent.reducer import format_notifications_message
+from adgn.agent.notifications.handler import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from tests.util.notifications import parse_system_notification_payload

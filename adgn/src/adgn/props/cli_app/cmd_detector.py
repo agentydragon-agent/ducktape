@@ -141,8 +141,10 @@ async def run_detector_on_specimen(
         (detector_filename, specimen_slug, success)
     """
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
-    async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
+    registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(specimen_slug) as hydrated:
         await run_critic(
+            registry=registry,
             input_data=CriticInput(
                 specimen_slug=specimen_slug,
                 files=set(hydrated.all_discovered_files.keys()),
@@ -193,7 +195,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     # Discover all detectors and specimens
     detector_filenames = discover_detector_prompts()
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
-    registry = SpecimenRegistry.from_base_path()
+    registry = SpecimenRegistry.from_package_resources()
     all_specimens = sorted(registry.list_all())
 
     # Fetch current coverage
@@ -298,9 +300,11 @@ async def cmd_run_detector(
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    async with SpecimenRegistry.load_and_hydrate(specimen) as hydrated:
+    registry = SpecimenRegistry.from_package_resources()
+    async with registry.load_and_hydrate(specimen) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
+            registry=registry,
             input_data=CriticInput(specimen_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
             content_root=hydrated.content_root,

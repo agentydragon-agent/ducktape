@@ -21,7 +21,6 @@ import typer
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp._shared.constants import EDITOR_SERVER_NAME
 from adgn.mcp.compositor.server import Compositor
@@ -75,7 +74,7 @@ async def _execute(
             client=client,
             reasoning_effort=effort_val,
             reasoning_summary=summary_val,
-            handlers=[AutoHandler(), DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+            handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
             tool_policy=RequireAnyTool(),
         )
         async with agent:

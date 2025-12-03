@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import GateUntil
+from adgn.agent.reducer import AbortIf
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -107,7 +107,10 @@ async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path,
             mcp_client=mcp_client,
             system=system,
             client=build_client(model),
-            handlers=[TranscriptHandler(events_path=out_root / "events.jsonl"), GateUntil(lambda: result is not None)],
+            handlers=[
+                TranscriptHandler(events_path=out_root / "events.jsonl"),
+                AbortIf(should_abort=lambda: result is not None),
+            ],
             parallel_tool_calls=True,
             tool_policy=RequireAnyTool(),
         )

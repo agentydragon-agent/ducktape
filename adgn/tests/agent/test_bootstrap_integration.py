@@ -6,8 +6,9 @@ from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.bootstrap import BootstrapHandler, TypedBootstrapBuilder
-from adgn.agent.loop_control import Continue, NoLoopDecision
+from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.handler import SequenceHandler
+from adgn.agent.loop_control import InjectItems, NoAction
 from tests.support.assertions import is_all_function_calls
 
 
@@ -36,7 +37,7 @@ def test_server() -> FastMCP:
 
 
 async def test_bootstrap_handler_injects_calls_before_first_sampling(test_server):
-    """Bootstrap handler injects calls on first on_before_sample() and returns NoLoopDecision thereafter."""
+    """Bootstrap handler injects calls on first on_before_sample() and returns NoAction thereafter."""
     # Create builder with introspection (validates payload types)
     builder = TypedBootstrapBuilder.for_server(test_server)
 
@@ -47,17 +48,16 @@ async def test_bootstrap_handler_injects_calls_before_first_sampling(test_server
     ]
 
     # Create handler
-    bootstrap = BootstrapHandler(calls)
+    bootstrap = SequenceHandler([InjectItems(items=calls)])
 
-    # First call: should inject calls via Continue with skip_sampling=True
+    # First call: should inject calls via InjectItems
     decision = bootstrap.on_before_sample()
-    assert isinstance(decision, Continue)
-    assert decision.skip_sampling is True
-    assert len(decision.inserts_input) == 2
+    assert isinstance(decision, InjectItems)
+    assert len(decision.items) == 2
 
     # Verify call structure - use TypeGuard to narrow types
-    assert is_all_function_calls(decision.inserts_input)
-    first_call, second_call = decision.inserts_input
+    assert is_all_function_calls(decision.items)
+    first_call, second_call = decision.items
 
     assert first_call.name == "test_server_test_tool"
     assert first_call.call_id == "bootstrap:1"  # auto-generated
@@ -65,13 +65,13 @@ async def test_bootstrap_handler_injects_calls_before_first_sampling(test_server
     assert second_call.name == "test_server_test_tool"
     assert second_call.call_id == "bootstrap:2"
 
-    # Second call: should return NoLoopDecision (already injected)
+    # Second call: should return NoAction (already injected)
     decision2 = bootstrap.on_before_sample()
-    assert isinstance(decision2, NoLoopDecision)
+    assert isinstance(decision2, NoAction)
 
-    # Third call: should still return NoLoopDecision
+    # Third call: should still return NoAction
     decision3 = bootstrap.on_before_sample()
-    assert isinstance(decision3, NoLoopDecision)
+    assert isinstance(decision3, NoAction)
 
 
 async def test_bootstrap_builder_accepts_any_payload_without_introspection(test_server):

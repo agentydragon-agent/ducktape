@@ -5,7 +5,6 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.event_renderer import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AutoHandler
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 from tests.llm.support.openai_mock import make_mock
@@ -33,7 +32,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
             mcp_client=mcp_client,
             client=client,
             system="test",
-            handlers=[AutoHandler(), DisplayEventsHandler(), recording_handler],
+            handlers=[DisplayEventsHandler(), recording_handler],
             tool_policy=RequireAnyTool(),
         )
 

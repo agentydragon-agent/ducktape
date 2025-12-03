@@ -11,16 +11,15 @@ from pydantic import TypeAdapter
 from .urls import parse_any_url
 
 
-def extract_single_text_content(res: mcp_types.ReadResourceResult) -> str:
-    """Return the single text part from a ReadResourceResult or raise.
+def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
+    """Return the single text part from a read_resource result or raise.
 
     - Requires exactly one TextResourceContents part.
     - Raises RuntimeError if zero or multiple text parts are present, or if any
       non-text part is present.
     """
-    text_parts = [p for p in res.contents if isinstance(p, mcp_types.TextResourceContents)]
-    blob_parts = [p for p in res.contents if isinstance(p, mcp_types.BlobResourceContents)]
-    if blob_parts:
+    text_parts = [p for p in res if isinstance(p, mcp_types.TextResourceContents)]
+    if any(isinstance(p, mcp_types.BlobResourceContents) for p in res):
         raise RuntimeError("expected a single text part, found blob content")
     if len(text_parts) != 1:
         raise RuntimeError(f"expected exactly one text part, found {len(text_parts)}")

@@ -16,7 +16,7 @@ from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
-from adgn.props.lint_issue import LinterController, LintSubmitState
+from adgn.props.lint_issue import LintSubmitState, make_linter_handlers
 from adgn.props.models.issue import Occurrence
 from tests.conftest import make_container_opts
 from tests.llm.support.openai_mock import make_mock
@@ -25,7 +25,7 @@ from tests.support.steps import AssistantMessage as StepAssistantMessage, MakeCa
 
 @pytest.fixture
 def lint_bootstrap_steps():
-    """Create steps for LinterController bootstrap test.
+    """Create steps for linter handlers bootstrap test.
 
     NOTE: Uses typed ExecInput model for docker_exec arguments to ensure
     correct validation and serialization for the MCP runtime server.
@@ -64,9 +64,6 @@ async def test_lint_issue_bootstrap_small_files(
     # Occurrence: two files, no explicit ranges (whole-file path)
     occ = Occurrence(files={Path("pkg/a.py"): None, Path("pkg/b.py"): None})
 
-    # Bootstrap controller (3-turn plan)
-    # We'll create the PropertiesDockerWiring after we build the inproc spec below and assign it directly.
-
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     opts = make_container_opts("python:3.12-slim")
     opts.volumes = {str(content_root): {"bind": "/workspace", "mode": "ro"}}
@@ -76,18 +73,19 @@ async def test_lint_issue_bootstrap_small_files(
     runner = make_step_runner(steps=lint_bootstrap_steps)
     client = make_mock(runner.handle_request_async)
 
-    # Now create the controller with real wiring
+    # Now create the handlers with real wiring
     wiring = PropertiesDockerWiring(
         server_factory=lambda: runtime_server, working_dir=WORKING_DIR, definitions_container_dir=None, image_name="n/a"
     )
-    ctrl = LinterController(state=LintSubmitState(), occ=occ, content_root=content_root, docker_wiring=wiring)
+    state = LintSubmitState()
+    handlers = make_linter_handlers(state=state, occ=occ, content_root=content_root, docker_wiring=wiring)
 
     async with make_pg_client({"runtime": runtime_server}) as mcp_client:
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
             system="test",
             client=client,
-            handlers=[ctrl, DisplayEventsHandler()],
+            handlers=[*handlers, DisplayEventsHandler()],
             tool_policy=RequireAnyTool(),
         )
 

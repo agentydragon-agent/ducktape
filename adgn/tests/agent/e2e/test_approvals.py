@@ -6,7 +6,6 @@ import pytest
 
 from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.mcp.ui.server import EndTurnInput
-from tests.agent.helpers import api_create_agent
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import MakeCall
 
@@ -33,10 +32,7 @@ def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_fac
     """
 
     runner = make_step_runner(
-        steps=[
-            MakeCall("echo", "echo", EchoInput(text="hello")),
-            MakeCall("ui", "end_turn", EndTurnInput()),
-        ]
+        steps=[MakeCall("echo", "echo", EchoInput(text="hello")), MakeCall("ui", "end_turn", EndTurnInput())]
     )
 
     s = run_server(lambda model: make_mock(runner.handle_request_async))

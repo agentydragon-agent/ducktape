@@ -10,14 +10,19 @@ import pytest
 from adgn.props.splits import Split
 
 
-def test_all_specimens_have_split(production_specimens_registry):
-    """Verify all specimens in registry have valid splits in their manifests."""
-    all_specimens = production_specimens_registry.specimen_slugs
+def pytest_generate_tests(metafunc):
+    """Generate parametrized tests for all specimens."""
+    if "specimen_slug" in metafunc.fixturenames:
+        from adgn.props.specimens.registry import SpecimenRegistry
 
-    # Every specimen must have a split
-    for slug in all_specimens:
-        split = production_specimens_registry.get_split(slug)
-        assert_that(split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
+        registry = SpecimenRegistry.from_package_resources()
+        metafunc.parametrize("specimen_slug", registry.specimen_ids, ids=lambda slug: slug)
+
+
+def test_specimen_has_valid_split(production_specimens_registry, specimen_slug):
+    """Verify specimen has a valid split in manifest (parametrized per specimen)."""
+    split = production_specimens_registry.get_split(specimen_slug)
+    assert_that(split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
 def test_unknown_specimen_raises(production_specimens_registry):
@@ -41,7 +46,7 @@ def test_split_distribution(production_specimens_registry):
 
 async def test_all_specimens_in_splits_can_load(production_specimens_registry):
     """Verify every specimen can be loaded without errors."""
-    for slug in production_specimens_registry.specimen_slugs:
+    for slug in production_specimens_registry.specimen_ids:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
             assert_that(hydrated.record, not_none())
             assert_that(len(hydrated.record.issues), greater_than_or_equal_to(1))
@@ -55,7 +60,7 @@ async def test_split_issue_counts(production_specimens_registry):
     """
     issue_counts: Counter[Split] = Counter()
 
-    for slug in production_specimens_registry.specimen_slugs:
+    for slug in production_specimens_registry.specimen_ids:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
             issue_counts[production_specimens_registry.get_split(slug)] += len(hydrated.record.issues)
 

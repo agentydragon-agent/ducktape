@@ -61,7 +61,7 @@ def build_simple_tools(server: FastMCP) -> None:
     be reused across unit, integration, and approval-policy tests.
     """
 
-    @server.tool(name="echo")
+    @mcp_flat_model(server, name="echo")
     def echo(input: EchoInput) -> EchoOutput:
         return EchoOutput(echo=input.text)
 
