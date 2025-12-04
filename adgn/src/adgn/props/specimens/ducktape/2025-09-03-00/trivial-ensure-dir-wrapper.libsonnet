@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-014: Inline trivial _ensure_dir wrapper and delete helper
 I.issue(
   expect_caught_from=[
     ['llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py'],

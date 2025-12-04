@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-032: Delete abort_run alias - unnecessary wrapper with verbose docstring
 
 I.issue(
   rationale=|||

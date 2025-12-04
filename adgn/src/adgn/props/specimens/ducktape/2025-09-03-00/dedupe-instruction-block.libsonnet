@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-035: Deduplicate try/except for instruction_block; extract helper
 I.issue(
   rationale=|||
     The `try/except` around `mcp_manager.instruction_block()` appears twice with identical logic

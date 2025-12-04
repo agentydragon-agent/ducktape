@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-027-outside-workingdir-gate
-// Factor outside-working-directory gating (relPath check + permission request) into a helper.
 
 I.issue(
   rationale='Both View and LS tools perform the same relative-path check and permission request when the target is outside the working directory. Factor this into a shared helper to avoid duplication and ensure consistent permission behavior and messaging.',

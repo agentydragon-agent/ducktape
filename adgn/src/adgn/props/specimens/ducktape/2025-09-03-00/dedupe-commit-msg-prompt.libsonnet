@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-060: Deduplicate commit-message prompt templates (amend vs new)
 I.issue(
   rationale=|||
     Two large f-strings differ only in the intro line and optional previous message. Extract a single formatter

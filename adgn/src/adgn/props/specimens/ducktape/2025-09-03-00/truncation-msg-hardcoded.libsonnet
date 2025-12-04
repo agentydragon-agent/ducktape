@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-049: Unify truncation message; avoid hardcoded size string
 I.issue(
   rationale=|||
     The truncation note is hardcoded as "[Context truncated to 100 KiB]" in multiple places, while the cap

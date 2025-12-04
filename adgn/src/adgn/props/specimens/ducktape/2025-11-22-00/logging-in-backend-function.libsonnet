@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-016: Logging configuration in backend function instead of main
 
 I.issue(
   rationale= |||

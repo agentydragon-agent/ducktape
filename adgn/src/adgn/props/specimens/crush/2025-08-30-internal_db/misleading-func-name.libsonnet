@@ -1,8 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-001-getfileextension
-// Misleading name/doc: `getFileExtension` returns synthesized file names (fake paths),
-// not an extension; rename and update doc to reflect actual return value.
 
 I.issue(
   rationale='Misleading name/doc: `getFileExtension` returns synthesized file names (fake paths), not an extension; rename and update doc to reflect actual return value.',

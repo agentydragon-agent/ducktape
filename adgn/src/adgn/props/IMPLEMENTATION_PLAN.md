@@ -9,7 +9,7 @@
    - Should: Follow 3-file pattern in runs/ structure
    - Target: `runs/lint_issue/specimen:{slug}/{issue_id}/{timestamp}/` with input.json (IssueCore+Occurrence), output.json (LintSubmitPayload), events.jsonl
    - Structure: issue_id as path component under specimen scope
-   - Note: specimen-exec is just a Docker shell command (no agent, no outputs needed)
+   - Note: snapshot exec is just a Docker shell command (no agent, no outputs needed)
 
 ### Eval Harness
 

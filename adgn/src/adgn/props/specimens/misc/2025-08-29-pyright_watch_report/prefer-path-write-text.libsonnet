@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-016: Prefer Path.write_text for concise dump writing
 
 I.issue(
   rationale=|||

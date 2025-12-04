@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-010: Delete ApprovalRequest wrapper, use ToolCall directly
 
 I.issue(
   expect_caught_from=[

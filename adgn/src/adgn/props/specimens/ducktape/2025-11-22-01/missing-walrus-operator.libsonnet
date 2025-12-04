@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-008: await_decision should use walrus operator for pending lookup
 
 I.issue(
   rationale=|||

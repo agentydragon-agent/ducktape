@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004: Useless docstrings that restate function signatures or provide no value
 
 I.issueMulti(
   rationale= |||

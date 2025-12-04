@@ -1,18 +1,26 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Policy gateway tool call state should be exposed via MCP resources
 
 I.issue(
+  // Detection requires seeing BOTH the tracking mechanism AND either a consumer or the pattern.
+  // From middleware.py alone, can't tell this state is meant for external exposition.
+  // Need to see either:
+  //   - Direct access (runtime.py/status_shared.py) showing the violation, OR
+  //   - Pattern exemplar (compositor_meta) showing the correct approach
   expect_caught_from=[
-    ['adgn/src/adgn/agent/runtime/container.py'],
-    ['adgn/src/adgn/agent/server/runtime.py'],
-    ['adgn/src/adgn/agent/server/status_shared.py'],
-    ['adgn/src/adgn/mcp/policy_gateway/middleware.py'],
+    ['adgn/src/adgn/mcp/policy_gateway/middleware.py', 'adgn/src/adgn/agent/server/runtime.py'],         // Tracking + consumer
+    ['adgn/src/adgn/mcp/policy_gateway/middleware.py', 'adgn/src/adgn/agent/server/status_shared.py'],  // Tracking + consumer
+    ['adgn/src/adgn/mcp/policy_gateway/middleware.py', 'adgn/src/adgn/mcp/compositor_meta/server.py'],  // Tracking + pattern
   ],
   rationale= |||
     The policy gateway tracks in-flight tool calls via direct field access
     (`_policy_gateway.has_inflight_calls()`), but this breaks the architectural pattern
     where all state is accessed through MCP resources and notifications.
+
+    **Correct pattern (see compositor_meta/server.py):**
+    The `compositor_meta` server exposes mount state as MCP resources at
+    `resource://compositor_meta/state/{server}` and emits `resource_updated` notifications
+    when state changes. This is how the system exposes execution progress to the frontend.
 
     **Current architecture:**
     - AgentSession directly accesses `self._policy_gateway.has_inflight_calls()` (runtime.py)
@@ -51,19 +59,23 @@ I.issue(
     - AgentSession.current_run_phase() should check MCP resources instead of direct access
   |||,
   filesToRanges={
-    'adgn/src/adgn/agent/runtime/container.py': [
-      [197, 197],  // _policy_gateway field (direct access point)
-      [372, 372],  // policy_gateway= parameter passed to AgentSession
+    'adgn/src/adgn/mcp/policy_gateway/middleware.py': [
+      [128, 128],  // _inflight: dict[str, str] tracking (should be MCP resource)
+      [130, 136],  // has_inflight_calls(), inflight_count() (direct Python API, should be MCP)
+      [145, 180],  // on_call_tool where _inflight is updated (should emit notifications)
     ],
     'adgn/src/adgn/agent/server/runtime.py': [
-      [90, 95],  // current_run_phase() using _policy_gateway.has_inflight_calls()
+      [90, 95],  // current_run_phase() using _policy_gateway.has_inflight_calls() (direct access violation)
     ],
     'adgn/src/adgn/agent/server/status_shared.py': [
-      [60, 65],  // build_agent_status_core using c._policy_gateway.has_inflight_calls()
+      [60, 65],  // build_agent_status_core using c._policy_gateway.has_inflight_calls() (direct access violation)
     ],
-    'adgn/src/adgn/mcp/policy_gateway/middleware.py': [
-      [70, 80],  // _inflight tracking dict (should emit MCP notifications)
-      [120, 135],  // on_call_tool where _inflight is updated
+    'adgn/src/adgn/agent/runtime/container.py': [
+      [197, 197],  // _policy_gateway field stored for direct access
+      [372, 372],  // policy_gateway= parameter enabling direct access
+    ],
+    'adgn/src/adgn/mcp/compositor_meta/server.py': [
+      [35, 47],  // Pattern exemplar: expose state as MCP resources with notifications
     ],
   },
 )

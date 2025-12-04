@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024: Duplicated agent info construction and thin wrapper methods
 
 I.issue(
   rationale= |||

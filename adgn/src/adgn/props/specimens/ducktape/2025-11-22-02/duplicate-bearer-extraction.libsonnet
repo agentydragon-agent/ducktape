@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-035: Duplicated Bearer token extraction logic should be unified
 
 I.issue(
   rationale= |||

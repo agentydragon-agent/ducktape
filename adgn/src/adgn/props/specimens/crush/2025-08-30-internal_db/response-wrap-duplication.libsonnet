@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-019-wrap-text-meta
-// Centralize "Text + metadata" tool response wrapping into a small helper to remove duplicated call shape.
 
 I.issueMulti(
   rationale= |||

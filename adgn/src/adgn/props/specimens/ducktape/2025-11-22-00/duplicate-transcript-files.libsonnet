@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-019: Duplicate transcript files with nearly identical content
 
 I.issue(
   rationale= |||

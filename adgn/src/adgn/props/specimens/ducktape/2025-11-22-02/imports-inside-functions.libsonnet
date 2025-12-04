@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: imports inside functions instead of at module top
 
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py'], ['adgn/src/adgn/agent/runtime/builder.py'], ['adgn/src/adgn/agent/runtime/infrastructure.py'], ['adgn/src/adgn/agent/runtime/local_runtime.py'], ['adgn/src/adgn/agent/server/mcp_routing.py']],

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-044: Deduplicate git diff arg construction; compute once and reuse
 I.issue(
   rationale=|||
     Multiple locations build nearly-identical git diff invocations, differing only by a single flag

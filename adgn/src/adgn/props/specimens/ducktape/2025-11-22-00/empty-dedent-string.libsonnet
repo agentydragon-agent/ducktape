@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-040: Empty dedent string creates useless constant
 
 I.issue(
   rationale= |||

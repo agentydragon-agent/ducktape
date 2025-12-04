@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: SQLAlchemy import inside function should be at module top
 
 I.issue(
   rationale=|||

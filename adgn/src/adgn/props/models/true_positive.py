@@ -15,6 +15,10 @@ class LineRange(BaseModel):
     end_line: int | None = Field(
         default=None, description="1-based end line number (inclusive); omit for single-line anchor"
     )
+    # TODO: Add optional per-range note/context field
+    # Currently notes are only at occurrence level; per-range notes would help explain
+    # why specific line ranges matter within a single occurrence (e.g., "definition site"
+    # vs "call site" in the same occurrence)
 
     @model_validator(mode="after")
     def _validate_range(self) -> LineRange:

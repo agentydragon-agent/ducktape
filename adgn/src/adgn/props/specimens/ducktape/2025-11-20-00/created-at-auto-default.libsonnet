@@ -1,6 +1,6 @@
 local I = import '../../lib.libsonnet';
 
-I.issue(
+I.issueMulti(
   rationale= |||
     SQLAlchemy models define created_at fields without default values, requiring every
     creation site to manually pass created_at=datetime.now(). SQLAlchemy supports automatic
@@ -11,14 +11,28 @@ I.issue(
     - Can't forget to set created_at
     - Consistent timestamp source
     - Less code at creation sites
-
-    Affects: Agent, ToolCall, Policy models (all at models.py lines 32, 119, 153).
   |||,
-  filesToRanges={
-    'adgn/src/adgn/agent/persist/models.py': [
-      32,   // Agent.created_at
-      119,  // ToolCall.created_at
-      153,  // Policy.created_at
-    ],
-  },
+  occurrences=[
+    {
+      files: {
+        'adgn/src/adgn/agent/persist/models.py': [32],
+      },
+      note: 'Agent.created_at field',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/persist/models.py': [119],
+      },
+      note: 'ToolCall.created_at field',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/persist/models.py': [153],
+      },
+      note: 'Policy.created_at field',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+  ],
 )

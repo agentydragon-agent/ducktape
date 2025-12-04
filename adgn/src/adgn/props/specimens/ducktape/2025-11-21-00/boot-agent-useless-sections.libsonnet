@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-035: boot_agent Args and Returns sections are useless and should be deleted
 
 I.issue(
   rationale=|||

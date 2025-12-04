@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-038: McpState, PolicyState, and pending_approvals redundant with 2-layer compositor
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-037: Notifier pattern is brittle and has multiple design problems
 
 I.issue(
   expect_caught_from=[

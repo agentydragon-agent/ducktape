@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024: Delete unreachable AttributeError fallback - content blocks are always Pydantic models
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-038: Refactor walrus operator chain into for-loop
 
 I.issue(
   rationale=|||

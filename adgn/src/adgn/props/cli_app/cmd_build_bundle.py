@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fnmatch
+from importlib import resources
 from pathlib import Path
 import subprocess
 import tempfile
@@ -324,8 +325,6 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
 
 def get_specimens_dir() -> Path:
     """Get the specimens directory from package resources."""
-    from importlib import resources
-
     traversable = resources.files("adgn.props").joinpath("specimens")
     with resources.as_file(traversable) as p:
         if not p.exists() or not p.is_dir():

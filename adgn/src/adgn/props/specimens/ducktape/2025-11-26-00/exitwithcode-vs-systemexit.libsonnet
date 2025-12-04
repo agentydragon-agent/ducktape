@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-033: Use standard SystemExit instead of custom ExitWithCode
 
 I.issue(
   rationale=|||

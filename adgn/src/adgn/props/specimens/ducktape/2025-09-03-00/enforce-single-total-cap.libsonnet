@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-051: Enforce a single total prompt cap (track remaining across blocks)
 I.issue(
   rationale=|||
     Current caps are applied per git output block (status / name-status / log / diff), so the assembled

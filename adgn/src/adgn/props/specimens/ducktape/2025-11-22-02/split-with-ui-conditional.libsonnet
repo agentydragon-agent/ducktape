@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-049: Unnecessarily split with_ui conditional blocks
 
 I.issue(
   rationale=|||

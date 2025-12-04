@@ -51,7 +51,7 @@ def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) 
 
 
 async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
-    store, human, assistant = chat_servers
+    _store, human, assistant = chat_servers
 
     async with Client(human) as human_sess, Client(assistant) as assistant_sess:
         h = ChatServerStub.from_server(human, human_sess)
@@ -82,7 +82,7 @@ async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
 
 
 async def test_chat_head_notifications_other_participant(chat_servers) -> None:
-    store, human, assistant = chat_servers
+    _store, human, assistant = chat_servers
 
     # Assistant notifications on human posts
     cap_assist = ResourceUpdatedCapture()
@@ -102,7 +102,7 @@ async def test_chat_head_notifications_other_participant(chat_servers) -> None:
 
 
 async def test_chat_last_read_updates_with_read_pending(chat_servers) -> None:
-    store, human, assistant = chat_servers
+    _store, human, assistant = chat_servers
 
     # Attach a capture handler to the assistant server where read_pending is called
     cap_assist = ResourceUpdatedCapture()

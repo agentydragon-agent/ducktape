@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-048: Useless docstring on get_tool_call method
 
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/persist/__init__.py'], ['adgn/src/adgn/agent/persist/sqlite.py']],

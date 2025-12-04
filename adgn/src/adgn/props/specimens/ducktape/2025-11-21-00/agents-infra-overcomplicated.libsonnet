@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: Agents infrastructure is overcomplicated, should use compositor pattern
 
 I.issue(
   expect_caught_from=[

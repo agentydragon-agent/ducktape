@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-009: Tighten optional parameters that are never None
 I.issueMulti(
   rationale=|||
     Optional parameters should only be typed optional when None is a real, exercised state.

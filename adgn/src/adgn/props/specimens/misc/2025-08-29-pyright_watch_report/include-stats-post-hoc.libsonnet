@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-007: Compute include impacts during the scan (not post-hoc)
 
 I.issue(
   rationale=|||

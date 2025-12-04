@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-038: use f"{variable=}" debug syntax
 
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py']],

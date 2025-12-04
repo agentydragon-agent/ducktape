@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-033: total_tokens field is redundant - trivial sum of input_tokens + output_tokens
 
 I.issue(
   rationale= |||

@@ -11,6 +11,7 @@ from adgn.props.db import get_session, init_db, recreate_database
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
 from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @dataclass
@@ -49,9 +50,10 @@ def sync_all() -> FullSyncResult:
     Returns:
         Combined results from all sync operations
     """
+    registry = SnapshotRegistry.from_package_resources()
     with get_session() as session:
-        snapshot_stats = sync_snapshots_to_db(session)
-        issue_stats = sync_issues_to_db(session)
+        snapshot_stats = sync_snapshots_to_db(session, registry)
+        issue_stats = sync_issues_to_db(session, registry)
 
     return FullSyncResult(
         snapshot_stats=snapshot_stats,
@@ -73,9 +75,10 @@ def recreate_database_schema() -> tuple[SyncStats, SyncStats]:
     recreate_database()
 
     # Sync snapshots and issues into fresh database
+    registry = SnapshotRegistry.from_package_resources()
     with get_session() as session:
-        snapshot_stats = sync_snapshots_to_db(session)
-        issue_stats = sync_issues_to_db(session)
+        snapshot_stats = sync_snapshots_to_db(session, registry)
+        issue_stats = sync_issues_to_db(session, registry)
 
     return snapshot_stats, issue_stats
 

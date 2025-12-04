@@ -259,7 +259,10 @@ def _enable_rls() -> None:
 
 
 def _create_views() -> None:
-    """Create database views (idempotent)."""
+    """Create database views (idempotent).
+
+    Note: run_costs view is created automatically via DDL event listener in models.py
+    """
     if _engine is None:
         raise RuntimeError("Database not initialized.")
 
@@ -285,32 +288,6 @@ def _create_views() -> None:
                 FROM grader_runs g
                 JOIN snapshots s ON g.snapshot_slug = s.slug
                 WHERE s.split = 'valid'
-                """
-            )
-        )
-
-        # Drop and recreate run_costs view for post-hoc cost calculation
-        conn.execute(DDL("DROP VIEW IF EXISTS run_costs"))
-        conn.execute(
-            DDL(
-                """
-                CREATE VIEW run_costs AS
-                SELECT
-                    e.payload->>'response_id' as response_id,
-                    e.transcript_id,
-                    (e.payload->'usage'->>'model') as model,
-                    (e.payload->'usage'->>'input_tokens')::int as input_tokens,
-                    COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0) as cached_tokens,
-                    (e.payload->'usage'->>'output_tokens')::int as output_tokens,
-                    COALESCE((e.payload->'usage'->'output_tokens_details'->>'reasoning_tokens')::int, 0) as reasoning_tokens,
-                    ((e.payload->'usage'->>'input_tokens')::int - COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0)) * p.input_usd_per_1m_tokens / 1000000.0 +
-                    COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0) * p.cached_input_usd_per_1m_tokens / 1000000.0 +
-                    (e.payload->'usage'->>'output_tokens')::int * p.output_usd_per_1m_tokens / 1000000.0 as cost_usd,
-                    e.timestamp
-                FROM events e
-                JOIN model_pricing p ON (e.payload->'usage'->>'model') = p.model_id
-                WHERE e.event_type = 'response'
-                    AND e.payload->'usage' IS NOT NULL
                 """
             )
         )

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-001: backend_key is stringly typed, should use TokenInfo as dict key
 
 I.issue(
   rationale=|||

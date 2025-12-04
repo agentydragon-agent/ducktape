@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: Use dict comprehension for per_include_kept
 
 I.issue(
   rationale=|||

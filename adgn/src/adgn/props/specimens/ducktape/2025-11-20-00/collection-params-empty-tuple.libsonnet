@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-025: Collection parameters should default to empty tuple, not None
 
 I.issueMulti(
   rationale=|||

@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024-guard-clauses-renderers
-// Prefer guard-clause (early bailout) style when unmarshalling params in renderer Render methods
 
 I.issueMulti(
   rationale= |||

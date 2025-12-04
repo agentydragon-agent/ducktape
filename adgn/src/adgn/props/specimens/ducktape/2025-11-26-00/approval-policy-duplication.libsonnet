@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-015: approval_policy appears both as sibling and inside details bundle (duplication)
 
 I.issue(
   expect_caught_from=[

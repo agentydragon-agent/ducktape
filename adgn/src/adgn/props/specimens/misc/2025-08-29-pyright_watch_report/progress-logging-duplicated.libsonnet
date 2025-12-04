@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-010: Repeated periodic progress-logging block
 
 I.issue(
   rationale=|||

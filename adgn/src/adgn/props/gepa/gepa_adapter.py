@@ -26,6 +26,7 @@ import asyncio
 from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
+from importlib import resources
 import logging
 from pathlib import Path
 from typing import Any
@@ -218,8 +219,11 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                 events = [e.payload for e in event_rows]
 
         # Grade and fetch output in single session
+        registry = SnapshotRegistry.from_package_resources()
         with get_session() as session:
-            grader_run_id = await grade_critique_by_id(session, critique_id, self.client, verbose=self.verbose)
+            grader_run_id = await grade_critique_by_id(
+                session, critique_id, self.client, registry, verbose=self.verbose
+            )
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
             grader_output = GraderOutput.model_validate(grader_run.output)
@@ -342,8 +346,6 @@ def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[Trai
     Returns:
         (trainset, valset) tuple of TrainingExample lists
     """
-    from importlib import resources
-
     if specimens_dir is None:
         traversable = resources.files("adgn.props").joinpath("specimens")
         with resources.as_file(traversable) as p:

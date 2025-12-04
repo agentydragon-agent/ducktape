@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Progress interval magic number
 
 I.issue(
   rationale=|||

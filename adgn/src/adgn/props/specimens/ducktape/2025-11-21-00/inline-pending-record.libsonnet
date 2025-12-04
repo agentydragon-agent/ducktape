@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-013: Inline pending_record variable in PolicyGatewayMiddleware
 
 I.issue(
   rationale=|||

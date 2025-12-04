@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-031: agent_policy_proposals should return PolicyProposal objects directly, not PolicyProposalInfo wrapper
 
 I.issue(
   expect_caught_from=[

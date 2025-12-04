@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004: Remove ApprovalKind type alias, use UserApprovalDecision directly
 
 I.issue(
   expect_caught_from=[

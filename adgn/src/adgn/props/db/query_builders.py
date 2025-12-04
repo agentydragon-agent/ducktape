@@ -15,7 +15,17 @@ from uuid import UUID
 from sqlalchemy import Select, bindparam, cast, func, literal, select, text, type_coerce
 from sqlalchemy.dialects import postgresql
 
-from adgn.props.db.models import CriticRun, Critique, Event, FalsePositive, GraderRun, Prompt, Snapshot, TruePositive
+from adgn.props.db.models import (
+    CriticRun,
+    Critique,
+    Event,
+    FalsePositive,
+    GraderRun,
+    Prompt,
+    RunCost,
+    Snapshot,
+    TruePositive,
+)
 from adgn.props.ids import SnapshotSlug
 
 
@@ -418,6 +428,58 @@ def failed_tools_by_transcript_parameterized() -> Select:
     return failed_tools_by_transcript(bindparam("transcript_id"))  # type: ignore[arg-type]
 
 
+def po_run_costs(po_run_id: UUID) -> Select:
+    """Get per-run costs and totals for a prompt optimization run.
+
+    Args:
+        po_run_id: Prompt optimization run UUID
+
+    Returns:
+        Query selecting transcript details with cost/token metrics from run_costs view
+    """
+    # CTE for PO transcripts
+    po_transcripts = (
+        select(
+            CriticRun.transcript_id, CriticRun.snapshot_slug, literal("critic").label("run_type"), CriticRun.created_at
+        )
+        .where(CriticRun.prompt_optimization_run_id == po_run_id)
+        .union_all(
+            select(
+                GraderRun.transcript_id,
+                GraderRun.snapshot_slug,
+                literal("grader").label("run_type"),
+                GraderRun.created_at,
+            ).where(GraderRun.prompt_optimization_run_id == po_run_id)
+        )
+        .cte("po_transcripts")
+    )
+
+    # Main query joining with run_costs view (mapped as RunCost ORM model)
+    return (
+        select(
+            po_transcripts.c.transcript_id,
+            po_transcripts.c.snapshot_slug,
+            po_transcripts.c.run_type,
+            RunCost.model,
+            func.sum(RunCost.cost_usd).label("cost_usd"),
+            func.sum(RunCost.input_tokens).label("input_tokens"),
+            func.sum(RunCost.cached_tokens).label("cached_tokens"),
+            func.sum(RunCost.output_tokens).label("output_tokens"),
+            po_transcripts.c.created_at,
+        )
+        .select_from(po_transcripts)
+        .join(RunCost, po_transcripts.c.transcript_id == RunCost.transcript_id)
+        .group_by(
+            po_transcripts.c.transcript_id,
+            po_transcripts.c.snapshot_slug,
+            po_transcripts.c.run_type,
+            RunCost.model,
+            po_transcripts.c.created_at,
+        )
+        .order_by(po_transcripts.c.created_at.desc())
+    )
+
+
 def po_run_costs_parameterized() -> Select:
     """PO run costs (parameterized with :po_run_id placeholder).
 
@@ -473,54 +535,4 @@ def blocked_valid_events() -> Select:
 # ============================================================================
 
 
-def po_run_costs(po_run_id: UUID) -> Select:
-    """Get per-run costs and totals for a prompt optimization run.
-
-    Args:
-        po_run_id: Prompt optimization run UUID
-
-    Returns:
-        Query selecting transcript details with cost/token metrics
-    """
-    # Note: This requires the run_costs view to exist
-    # CTE for PO transcripts
-    po_transcripts = (
-        select(
-            CriticRun.transcript_id, CriticRun.snapshot_slug, literal("critic").label("run_type"), CriticRun.created_at
-        )
-        .where(CriticRun.prompt_optimization_run_id == po_run_id)
-        .union_all(
-            select(
-                GraderRun.transcript_id,
-                GraderRun.snapshot_slug,
-                literal("grader").label("run_type"),
-                GraderRun.created_at,
-            ).where(GraderRun.prompt_optimization_run_id == po_run_id)
-        )
-        .cte("po_transcripts")
-    )
-
-    # Main query joining with run_costs view
-    return (
-        select(
-            po_transcripts.c.transcript_id,
-            po_transcripts.c.snapshot_slug,
-            po_transcripts.c.run_type,
-            text("rc.model"),
-            func.sum(text("rc.cost_usd")).label("cost_usd"),
-            func.sum(text("rc.input_tokens")).label("input_tokens"),
-            func.sum(text("rc.cached_tokens")).label("cached_tokens"),
-            func.sum(text("rc.output_tokens")).label("output_tokens"),
-            po_transcripts.c.created_at,
-        )
-        .select_from(po_transcripts)
-        .join(text("run_costs rc"), text("po_transcripts.transcript_id = rc.transcript_id"))
-        .group_by(
-            po_transcripts.c.transcript_id,
-            po_transcripts.c.snapshot_slug,
-            po_transcripts.c.run_type,
-            text("rc.model"),
-            po_transcripts.c.created_at,
-        )
-        .order_by(po_transcripts.c.created_at.desc())
-    )
+# po_run_costs query removed - see comment above

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-045: Drop model_str; print provider/model_name directly
 I.issue(
   rationale=|||
     The config stores a redundant composite `model_str` solely for a debug print, while `provider` and `model_name` already exist.

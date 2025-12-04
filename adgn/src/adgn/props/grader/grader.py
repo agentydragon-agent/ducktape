@@ -39,9 +39,14 @@ from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.grader.models import CritiqueInputIssue, GraderInput, GraderOutput, GradeSubmitInput
-from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
-from adgn.props.paths import SpecimenRelativePath
+from adgn.props.grader.models import (
+    CritiqueInputIssue,
+    GraderInput,
+    GraderOutput,
+    GradeSubmitInput,
+    GradeValidationContext,
+)
+from adgn.props.ids import InputIssueID
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.snapshot_hydrated import HydratedSnapshot
 from adgn.props.snapshot_registry import SnapshotRegistry
@@ -78,44 +83,6 @@ class GradeInputs:
 
     specimen: HydratedSnapshot
     critique: CriticSubmitPayload
-
-
-@dataclass(frozen=True)
-class GradeValidationContext:
-    """Validation context: allowed IDs and required files for grading.
-
-    Context key: "grade_validation_context"
-    """
-
-    allowed_tp_ids: set[TruePositiveID]
-    allowed_fp_ids: set[FalsePositiveID]
-    allowed_input_ids: set[InputIssueID]
-    tp_files: set[SpecimenRelativePath]  # Files with canonical TPs (need recall)
-    critique_files: set[SpecimenRelativePath]  # Files with critique issues (need ratios)
-
-    @classmethod
-    def from_specimen_and_critique(
-        cls, specimen: HydratedSnapshot, critique: CriticSubmitPayload
-    ) -> GradeValidationContext:
-        """Build validation context from specimen and critique."""
-        # Collect files from canonical TPs and critique issues
-        # Use specimen's convenience properties (delegates to .record)
-        tp_files = {
-            f
-            for issue_rec in specimen.true_positives.values()
-            for instance in issue_rec.occurrences
-            for f in instance.files
-        }
-
-        critique_files = {f for issue in critique.issues for occ in issue.occurrences for f in occ.files}
-
-        return cls(
-            allowed_tp_ids={TruePositiveID(id) for id in specimen.true_positives},
-            allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
-            allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
-            tp_files=tp_files,
-            critique_files=critique_files,
-        )
 
 
 def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
@@ -322,7 +289,7 @@ async def run_grader(
 
 
 async def grade_critique_by_id(
-    session: Session, critique_id: UUID, client: OpenAIModelProto, verbose: bool = False
+    session: Session, critique_id: UUID, client: OpenAIModelProto, registry: SnapshotRegistry, verbose: bool = False
 ) -> UUID:
     """Grade critique by ID, return grader_run_id.
 
@@ -330,6 +297,7 @@ async def grade_critique_by_id(
         session: Database session (caller manages transaction)
         critique_id: ID of critique to grade
         client: OpenAI client
+        registry: Snapshot registry (required - caller must provide)
         verbose: Enable verbose output
 
     Returns:
@@ -342,7 +310,6 @@ async def grade_critique_by_id(
     grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)
 
     # Load and hydrate specimen once, then execute
-    registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(snapshot_slug) as hydrated:
         # Execute grader run
         _grader_output, grader_run_id = await run_grader(

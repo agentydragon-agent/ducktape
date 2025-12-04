@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-003: Delete comment and inline status variable
 
 I.issue(
   rationale=|||

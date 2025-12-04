@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-030: Inconsistent policy evaluation API layers and dict middle ground
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-042: Repeated type casting to any instead of using typed content models
 
 I.issue(
   rationale= |||

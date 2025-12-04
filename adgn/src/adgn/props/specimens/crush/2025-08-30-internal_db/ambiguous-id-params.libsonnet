@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-008-ambiguous-ids
-// IDs: ambiguous parameter names that should be explicit (messageID, sessionID)
 
 I.issueMulti(
   rationale='Function parameters named generically `id` are ambiguous; prefer explicit names like `messageID` or `sessionID` to make intent/units obvious and avoid accidental misuses.',

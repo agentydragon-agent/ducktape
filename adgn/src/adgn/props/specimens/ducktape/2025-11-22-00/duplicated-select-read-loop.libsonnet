@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-007: Duplicated select-read-sleep loop pattern
 
 I.issue(
   rationale= |||

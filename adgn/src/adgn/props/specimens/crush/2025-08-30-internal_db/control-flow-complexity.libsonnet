@@ -1,8 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-005-simplify-control-flow
-// Simplify control flow: reduce unnecessary nesting by using guard-clauses (early return/continue) and combining trivial nested conditionals.
-// Note: Several of these can also be addressed via guard-clauses; see Early bailout property.
 
 I.issueMulti(
   rationale='Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see Early bailout).',

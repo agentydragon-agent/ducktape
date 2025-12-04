@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-028: Diagnostics broad catch prints and continues; fail loudly instead
 I.issue(
   rationale=|||
     During diagnostics the code catches broad Exception, prints a diagnostic message, and continues. In a diagnostics path this masks failures that were supposed to surface useful debug information — the wrapper should fail fast or at least propagate the error after logging full context.

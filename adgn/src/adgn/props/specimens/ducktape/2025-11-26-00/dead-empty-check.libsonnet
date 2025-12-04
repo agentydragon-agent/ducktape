@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-022: Dead code - batch.resources empty check can be deleted
 
 I.issue(
   rationale=|||

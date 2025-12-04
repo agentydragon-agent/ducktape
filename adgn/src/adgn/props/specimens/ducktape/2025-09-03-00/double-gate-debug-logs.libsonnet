@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-054: Avoid double-gating debug logs; rely on logger configuration
 I.issue(
   rationale=|||
     Code guards debug logs with `if self.debug: ... logger.debug(...)`. Prefer leaving configuration to the logger:

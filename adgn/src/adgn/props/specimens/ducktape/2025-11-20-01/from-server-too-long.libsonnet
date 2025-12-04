@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-014: from_server method is too long and complex, extract loop body
 
 I.issue(
   rationale=|||

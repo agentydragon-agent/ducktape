@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-017: ProposalDetail and PolicyProposal types duplicate each other and should be merged
 
 I.issue(
   expect_caught_from=[

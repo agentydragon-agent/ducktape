@@ -1,10 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-001: Flip TTY guard to early bailout
-// Rationale: Prefer early bailout to reduce nesting and make the happy path clearer.
-// Current code nests the terminal sizing logic under `if sys.stdout.isatty(): ...`.
-// Better: bail out when not a TTY, then run the sizing logic at base level.
-// Benefits: flatter control flow, easier to read/maintain; consistent with Early Bailout property.
 I.issue(
   rationale=|||
     The TTY guard should use an early bailout to avoid unnecessary nesting.

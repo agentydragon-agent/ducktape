@@ -7,14 +7,13 @@ from collections import Counter
 from hamcrest import assert_that, greater_than_or_equal_to, is_in, not_none
 import pytest
 
+from adgn.props.snapshot_registry import SnapshotRegistry
 from adgn.props.splits import Split
 
 
 def pytest_generate_tests(metafunc):
     """Generate parametrized tests for all specimens."""
     if "slug" in metafunc.fixturenames:
-        from adgn.props.snapshot_registry import SnapshotRegistry
-
         registry = SnapshotRegistry.from_package_resources()
         metafunc.parametrize("slug", registry.snapshot_slugs, ids=lambda slug: str(slug))
 

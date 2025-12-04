@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-058: Delete install_policy_gateway wrapper function
 
 I.issue(
   rationale=|||

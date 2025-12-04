@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-032: Remove broad try/except around model_dump; fail loudly
 I.issue(
   rationale=|||
     The code swallows all exceptions from model_dump and continues:

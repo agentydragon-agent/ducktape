@@ -94,8 +94,6 @@ app.add_typer(snapshot_app, name="snapshot")
 @snapshot_app.command("list")
 def cmd_snapshot_list() -> None:
     """List all valid snapshot slugs."""
-    from adgn.props.snapshot_registry import SnapshotRegistry
-
     registry = SnapshotRegistry.from_package_resources()
     slugs = sorted(registry.list_all())
 
@@ -328,7 +326,10 @@ async def prompt_optimize(
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
-    await run_prompt_optimizer(budget=budget, ctx=RunsContext.from_pkg_dir(), model=model, verbose=verbose)
+    registry = SnapshotRegistry.from_package_resources()
+    await run_prompt_optimizer(
+        budget=budget, ctx=RunsContext.from_pkg_dir(), registry=registry, model=model, verbose=verbose
+    )
 
 
 @app.command("snapshot-grade")
@@ -343,8 +344,9 @@ async def snapshot_grade(
     init_db()
 
     # Query database and grade critique in single session
+    registry = SnapshotRegistry.from_package_resources()
     with get_session() as session:
-        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model))
+        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model), registry)
         db_grader_run = session.get(DBGraderRun, grader_run_id)
         if db_grader_run is None:
             raise RuntimeError(f"Grader run {grader_run_id} not found in database")

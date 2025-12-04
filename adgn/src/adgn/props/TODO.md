@@ -188,7 +188,7 @@ Observation (to investigate)
   - Add `--embed-specimen-notes` to `run` (specimen mode) to auto-embed `covered.md` and `not_covered_yet.md` as supplemental context.
   - For structured runs, keep the critic_submit gating; for `--dry-run`, render with minimal wiring and save the prompt like other presets.
   - Remove the `specimen-discover` command after migration; update docs to use:
-    - `adgn-properties2 run --specimen <slug> --preset discover --structured true --embed-specimen-notes`
+    - `adgn-properties run --snapshot <slug> --preset discover --structured true --embed-specimen-notes`
   - Tests: port any `specimen-discover` dry-run tests to run with `--preset discover --dry-run --embed-specimen-notes`.
 
 ## Move bundle into Source discriminated union

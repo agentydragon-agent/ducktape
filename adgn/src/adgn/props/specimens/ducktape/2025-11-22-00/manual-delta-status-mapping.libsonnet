@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Manual delta status mapping instead of using pygit2's status_char()
 
 I.issue(
   rationale= |||

@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-013-app-facade-reachthrough
-// App façade vs reach-through: TUI frequently reaches through app to inner services (CoderAgent/Sessions/Permissions), creating a leaky façade and Law-of-Demeter violations.
 
 I.issueMulti(
   rationale='App currently serves as both composition root and partial façade. TUI code reaches through app to call inner services (CoderAgent, Sessions, Permissions) directly, producing duplicated guards and unclear ownership. Pick one strategy: strengthen App as the agent façade (IsAgentBusy/RunAgent/CancelAgent/etc.) or treat App strictly as composition root and pass services by DI consistently.',

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-046: GlobalApprovalsList manual JSON parsing should use Zod from Pydantic
 
 I.issue(
   rationale= |||

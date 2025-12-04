@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-045: GlobalApprovalsList explicit constructions should use factories with defaults
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-030: Prefer Path(path).exists() over os.path.exists(path)
 I.issue(
   rationale=|||
     Use pathlib.Path methods when operating on filesystem paths. Replace `os.path.exists(path)` with `Path(path).exists()` so the code consistently treats paths as Path-like objects and avoids mixing abstractions.

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-067: Prefer system_message over generic system parameter name
 I.issue(
   rationale=|||
     The parameter name `system` is generic/overloaded and can be confused with modules/variables.

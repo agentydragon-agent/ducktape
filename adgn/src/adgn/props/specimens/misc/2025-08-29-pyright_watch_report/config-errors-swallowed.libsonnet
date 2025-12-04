@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011: Do not silently swallow config read/parse errors
 
 I.issue(
   rationale=|||

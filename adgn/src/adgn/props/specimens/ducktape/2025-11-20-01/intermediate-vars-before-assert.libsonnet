@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-005: Unnecessary intermediate variables before assertions
 
 I.issue(
   rationale=|||

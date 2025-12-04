@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-041: redundant stored field that should be derived
 
 I.issue(
   rationale= |||

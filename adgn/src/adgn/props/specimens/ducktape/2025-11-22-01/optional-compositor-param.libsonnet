@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-001: _global_compositor should not be optional in AgentRegistryBridgeServer
 
 I.issue(
   rationale=|||

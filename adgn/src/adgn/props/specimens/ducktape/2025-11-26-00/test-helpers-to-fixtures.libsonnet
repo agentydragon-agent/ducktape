@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-062: Test helper functions should be pytest fixtures
 
 I.issue(
   expect_caught_from=[

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-046: Replace _format_status_porcelain with simple boolean check
 
 I.issue(
   expect_caught_from=[

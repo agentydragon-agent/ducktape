@@ -43,7 +43,7 @@ This tests whether the grading system can recognize when **two reviewers indepen
 
 ### Step 1: Load Ground Truth
 
-**Issue definitions are in the repository, not in specimen-exec:**
+**Issue definitions are in the repository, not in snapshot exec:**
 
 The canonical issue files (`.libsonnet`) and manifest are stored in the repository at:
 - `src/adgn/props/specimens/<specimen-slug>/manifest.yaml`
@@ -61,14 +61,14 @@ cat src/adgn/props/specimens/<specimen-slug>/manifest.yaml
 cat src/adgn/props/specimens/<specimen-slug>/issues/<issue-name>.libsonnet
 ```
 
-**Use `specimen-exec` ONLY to verify the actual source code** being reviewed (not to read issue definitions):
+**Use `snapshot exec` ONLY to verify the actual source code** being reviewed (not to read issue definitions):
 
 ```bash
 # List source files in the hydrated specimen workspace
-adgn-properties2 specimen-exec <specimen-slug> -- find . -name "*.py" -o -name "*.ts"
+adgn-properties snapshot exec <specimen-slug> -- find . -name "*.py" -o -name "*.ts"
 
 # Read specific source file lines to verify issue anchors
-adgn-properties2 specimen-exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
+adgn-properties snapshot exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
 ```
 
 **Note**: Run these from the `adgn/` directory where direnv is configured.
@@ -96,39 +96,39 @@ Parse **ALL** canonical issues in the specimen (from the repository), noting:
 
 ```bash
 # List all Python files to confirm structure
-adgn-properties2 specimen-exec <specimen-slug> -- find . -name "*.py" -o -name "*.ts" -o -name "*.tsx"
+adgn-properties snapshot exec <specimen-slug> -- find . -name "*.py" -o -name "*.ts" -o -name "*.tsx"
 
 # For each file referenced in a canonical issue, verify it exists
-adgn-properties2 specimen-exec <specimen-slug> -- ls -l path/to/file.py
+adgn-properties snapshot exec <specimen-slug> -- ls -l path/to/file.py
 
 # For each line range, verify the lines exist and match what the issue describes
-adgn-properties2 specimen-exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
+adgn-properties snapshot exec <specimen-slug> -- sed -n '10,20p' path/to/file.py
 ```
 
 **DO NOT**:
 - ❌ Adjust file paths when paraphrasing (keep exact paths from canonical)
-- ❌ Reference line ranges without verifying them via specimen-exec
+- ❌ Reference line ranges without verifying them via snapshot exec
 - ❌ Invent new files that don't exist in the specimen
 - ❌ Create paraphrased anchors pointing to non-existent code
 
 **DO**:
 - ✅ Use exact file paths from canonical issues (they are always correct)
-- ✅ Use `specimen-exec` with sed/cat to read the actual code at line ranges before adjusting them
+- ✅ Use `snapshot exec` with sed/cat to read the actual code at line ranges before adjusting them
 - ✅ Verify adjusted line ranges still point to valid code
-- ✅ When adjusting ranges (expanding/contracting), check the new range exists via specimen-exec
+- ✅ When adjusting ranges (expanding/contracting), check the new range exists via snapshot exec
 
 **Example workflow for one issue**:
 ```bash
 # Canonical says: "adgn/src/adgn/agent/mcp_bridge/servers/agents.py lines 50-59"
 
 # Step 1: Read the canonical's code at original range
-adgn-properties2 specimen-exec ducktape/2025-11-22-01 -- sed -n '50,59p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+adgn-properties snapshot exec ducktape/2025-11-22-01 -- sed -n '50,59p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
 
 # Step 2: If paraphrasing strategy is "expand range", verify expanded range exists
-adgn-properties2 specimen-exec ducktape/2025-11-22-01 -- sed -n '48,61p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+adgn-properties snapshot exec ducktape/2025-11-22-01 -- sed -n '48,61p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
 
 # Step 3: Read the code to understand context for rationale paraphrasing
-adgn-properties2 specimen-exec ducktape/2025-11-22-01 -- sed -n '45,65p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
+adgn-properties snapshot exec ducktape/2025-11-22-01 -- sed -n '45,65p' adgn/src/adgn/agent/mcp_bridge/servers/agents.py
 ```
 
 **This verification step is mandatory for calibration validity** - a cheat critique that references non-existent files or invalid line ranges will fail grading and invalidate the test.
@@ -421,7 +421,7 @@ All three identify the **same logical problem** but frame it differently based o
 /make-cheat-critique ducktape/2025-11-22-01
 
 # Then grade it (from adgn/ directory):
-adgn-properties2 specimen-grade ducktape/2025-11-22-01 \
+adgn-properties snapshot-grade ducktape/2025-11-22-01 \
   --critique src/adgn/props/specimens/ducktape/2025-11-22-01/cheat_critique.jsonnet
 
 # The CLI automatically compiles .jsonnet to JSON before grading

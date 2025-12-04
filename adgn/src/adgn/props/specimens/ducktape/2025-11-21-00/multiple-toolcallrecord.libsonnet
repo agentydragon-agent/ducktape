@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-014: on_call_tool should progressively mutate one ToolCallRecord, not construct N independent instances
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-034: Make message an explicit required string parameter in _execute_git_commit
 
 I.issue(
   rationale=|||

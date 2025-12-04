@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-003: Avoid exceptions for normal control flow; detect "first commit" positively
 I.issueMulti(
   rationale=|||
     Do not use try/except to detect normal, non-error conditions. Reserve exceptions for unexpected situations.

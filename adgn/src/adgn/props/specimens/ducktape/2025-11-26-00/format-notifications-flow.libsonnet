@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024: Refactor format_notifications_message awkward flow
 
 I.issue(
   expect_caught_from=[

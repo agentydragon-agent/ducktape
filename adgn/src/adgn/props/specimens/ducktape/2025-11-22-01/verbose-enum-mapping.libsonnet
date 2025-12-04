@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011: _register_resources contains identity mapping encoded as long if-else chain
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-055: Useless comment about ModalBackdrop styling
 
 I.issue(
   rationale= |||

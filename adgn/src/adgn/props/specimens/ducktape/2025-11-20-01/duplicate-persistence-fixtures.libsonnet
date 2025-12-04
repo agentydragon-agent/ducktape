@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-006: Duplicated SQLite persistence fixtures across agent tests
 
 I.issue(
   rationale=|||

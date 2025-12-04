@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-021: Use list literal instead of repeated append pattern
 
 I.issue(
   rationale=|||

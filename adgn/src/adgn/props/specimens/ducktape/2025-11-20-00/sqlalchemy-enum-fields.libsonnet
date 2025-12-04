@@ -1,18 +1,9 @@
 local I = import '../../lib.libsonnet';
 
-// SQLAlchemy models use Mapped[str] with enum comments instead of actual enum types
-
-I.issue(
+I.issueMulti(
   rationale= |||
     SQLAlchemy models declare fields as Mapped[str] with inline comments indicating
     they should be enum types, but don't use the actual enum types.
-
-    Affected fields:
-    - Policy.status (line 152): comment says "active|proposed|rejected|superseded (PolicyStatus)"
-    - Run.status (line 61): comment says "RunStatus enum value"
-    - Event.type (line 90): comment says "EventType enum value"
-    - ChatMessage.author (line 178): likely "user" vs "assistant" or similar
-    - ChatMessage.mime (line 179): likely "text/plain" vs "text/markdown"
 
     All corresponding enums exist as StrEnum types:
     - PolicyStatus (defined in models.py)
@@ -37,14 +28,31 @@ I.issue(
     create MessageAuthor and MessageMimeType enums. If truly arbitrary strings,
     keep as str but add validation logic explaining why.
   |||,
-
-  filesToRanges={
-    'adgn/src/adgn/agent/persist/models.py': [
-      61,           // Run.status: Mapped[str] with RunStatus comment
-      90,           // Event.type: Mapped[str] with EventType comment
-      152,          // Policy.status: Mapped[str] with PolicyStatus comment
-      178,          // ChatMessage.author: Mapped[str]
-      179,          // ChatMessage.mime: Mapped[str]
-    ],
-  },
+  occurrences=[
+    {
+      files: { 'adgn/src/adgn/agent/persist/models.py': [61] },
+      note: 'Run.status should use RunStatus enum',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: { 'adgn/src/adgn/agent/persist/models.py': [90] },
+      note: 'Event.type should use EventType enum',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: { 'adgn/src/adgn/agent/persist/models.py': [152] },
+      note: 'Policy.status should use PolicyStatus enum',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: { 'adgn/src/adgn/agent/persist/models.py': [178] },
+      note: 'ChatMessage.author should use MessageAuthor enum',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+    {
+      files: { 'adgn/src/adgn/agent/persist/models.py': [179] },
+      note: 'ChatMessage.mime should use MessageMimeType enum',
+      expect_caught_from: [['adgn/src/adgn/agent/persist/models.py']],
+    },
+  ],
 )

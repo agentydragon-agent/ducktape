@@ -6,18 +6,20 @@ Extracted to avoid circular dependencies with prompts.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, cast
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePositiveID
-
-if TYPE_CHECKING:
-    from adgn.props.grader.grader import GradeValidationContext
 from adgn.props.models.true_positive import Occurrence
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
+
+if TYPE_CHECKING:
+    from adgn.props.critic.models import CriticSubmitPayload
+    from adgn.props.snapshot_hydrated import HydratedSnapshot
 
 # =============================================================================
 # Constants and Type Aliases
@@ -25,6 +27,49 @@ from adgn.props.rationale import Rationale
 
 RATIO_SUM_TOLERANCE = 0.01  # Allow ±0.01 deviation from 1.0
 RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
+
+
+# =============================================================================
+# Validation Context
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class GradeValidationContext:
+    """Validation context: allowed IDs and required files for grading.
+
+    Context key: "grade_validation_context"
+    """
+
+    allowed_tp_ids: set[TruePositiveID]
+    allowed_fp_ids: set[FalsePositiveID]
+    allowed_input_ids: set[InputIssueID]
+    tp_files: set[SpecimenRelativePath]  # Files with canonical TPs (need recall)
+    critique_files: set[SpecimenRelativePath]  # Files with critique issues (need ratios)
+
+    @classmethod
+    def from_specimen_and_critique(
+        cls, specimen: HydratedSnapshot, critique: CriticSubmitPayload
+    ) -> GradeValidationContext:
+        """Build validation context from specimen and critique."""
+        # Collect files from canonical TPs and critique issues
+        # Use specimen's convenience properties (delegates to .record)
+        tp_files = {
+            f
+            for issue_rec in specimen.true_positives.values()
+            for instance in issue_rec.occurrences
+            for f in instance.files
+        }
+
+        critique_files = {f for issue in critique.issues for occ in issue.occurrences for f in occ.files}
+
+        return cls(
+            allowed_tp_ids={TruePositiveID(id) for id in specimen.true_positives},
+            allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
+            allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
+            tp_files=tp_files,
+            critique_files=critique_files,
+        )
 
 
 # =============================================================================

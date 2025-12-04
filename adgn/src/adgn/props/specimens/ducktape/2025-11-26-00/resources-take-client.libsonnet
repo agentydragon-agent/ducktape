@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-059: Resources server should take Client, not Compositor
 
 I.issue(
   rationale=|||

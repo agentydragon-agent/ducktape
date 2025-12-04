@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-060: Factor out URI-to-server translation, check if FastMCP has it
 
 I.issue(
   expect_caught_from=[

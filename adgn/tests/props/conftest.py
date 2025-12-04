@@ -12,7 +12,7 @@ from sqlalchemy import create_engine, text
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
 from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import get_session, init_db, recreate_database
-from adgn.props.db.config import get_test_config
+from adgn.props.db.config import DatabaseConfig, get_test_config
 from adgn.props.db.models import Prompt
 from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID, SnapshotSlug
@@ -228,8 +228,6 @@ def test_db(request):
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
     """
-    from adgn.props.db.config import DatabaseConfig
-
     # Generate unique database name for this test
     test_id = str(uuid4()).replace("-", "")[:16]
     db_name = f"props_test_{test_id}"

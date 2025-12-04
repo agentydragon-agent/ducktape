@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-016: ApprovalPolicyAdminServerStub should be a shared pytest fixture
 
 I.issue(
   rationale=|||

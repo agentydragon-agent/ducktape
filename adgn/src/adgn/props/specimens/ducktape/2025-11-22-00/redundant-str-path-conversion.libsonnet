@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011: Redundant str() conversion when calling discover_repository()
 
 I.issue(
   rationale= |||

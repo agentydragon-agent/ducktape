@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012-collapse-blanklines
-// Collapse double blank lines in struct Options: keep at most one blank line between logical groups.
 
 I.issue(
   rationale='Collapse double blank lines in internal/config/config.go Options struct; keep at most one blank line between logical groups or use a header comment (e.g., "// ---- Tool options ----") with exactly one blank line above it.',

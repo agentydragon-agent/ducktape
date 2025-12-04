@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: has_inflight always False indicates unimplemented feature
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-025: Redundant PolicyErrorCode enum duplicating PolicyErrorStage
 
 I.issue(
   rationale= |||

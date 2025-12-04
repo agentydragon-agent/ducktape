@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-006: Explicit --config flag silently skipped if broken
 
 I.issue(
   rationale=|||

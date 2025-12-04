@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-003b: Extension list is misleading and duplicated
 
 I.issue(
   rationale=|||

@@ -29,8 +29,8 @@
 - Duplication hotspots: `jscpd --path /workspace --reporters json` (or restrict via `--languages python`, honor `.gitignore` if applicable).
 
 ## Unified Runner (CLI)
-- Preferred command: `adgn-properties2 run`
-  - Scope (choose one): `--specimen <slug>` or `--path /path/to/code`
+- Preferred command: `adgn-properties run`
+  - Scope (choose one): `--snapshot <slug>` or `--path /path/to/code`
   - Prompt source (choose one): `--preset <name>` or `--prompt-file /path/to/runbook.j2.md` or `--prompt-text 'inline'`
   - Mode:
     - Freeform (default): emits plain final text
@@ -39,11 +39,11 @@
 
 Examples
 - Structured, max‑recall critic on a specimen:
-  - `adgn-properties2 run --specimen <slug> --structured true --preset max-recall-critic`
+  - `adgn-properties run --snapshot <slug> --structured true --preset max-recall-critic`
 - Dead‑code runbook on a local path (structured):
-  - `adgn-properties2 run --preset dead-code-and-reachability --path /repo --structured true`
+  - `adgn-properties run --preset dead-code-and-reachability --path /repo --structured true`
 - Open review with a custom runbook (freeform):
-  - `adgn-properties2 run --prompt-file ./my_review.j2.md --path /repo`
+  - `adgn-properties run --prompt-file ./my_review.j2.md --path /repo`
 
 Notes
 

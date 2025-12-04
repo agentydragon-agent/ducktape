@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-020: Inline adapter and delete get_json_schema helper
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024: pending_notifier should accept ToolCall directly
 
 I.issue(
   rationale=|||

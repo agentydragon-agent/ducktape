@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-043: Remove shebangs from library modules exposed via console_scripts
 I.issueMulti(
   rationale=|||
     Modules under packages that are executed via console_scripts should not carry a `#!/usr/bin/env python3`

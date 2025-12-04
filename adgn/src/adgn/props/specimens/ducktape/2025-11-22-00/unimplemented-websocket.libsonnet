@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-054: Multiple components create separate MCP clients instead of using shared client
 
 I.issueMulti(
   rationale= |||

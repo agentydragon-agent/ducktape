@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-030: approvals_pending_global constructs URIs manually instead of using constants
 
 I.issue(
   expect_caught_from=[

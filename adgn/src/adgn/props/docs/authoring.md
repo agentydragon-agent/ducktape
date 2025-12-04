@@ -266,6 +266,19 @@ rationale=|||
 - Avoid long blocks (10+ lines) copied from source
 - Assume reader can look up exact code at cited lines
 
+**Per-range context:** Currently, notes are only supported at the occurrence level. Use Jsonnet comments for per-range context:
+```jsonnet
+filesToRanges={
+  'file.py': [
+    [10, 20],  // definition site
+    [30, 40],  // call site
+  ],
+}
+```
+Note: These comments help human readers but aren't parsed into the data model.
+
+TODO: Add support for structured per-range notes in both Jsonnet and Pydantic schemas.
+
 @quality-checklist.md
 
 ## Why This Structure?

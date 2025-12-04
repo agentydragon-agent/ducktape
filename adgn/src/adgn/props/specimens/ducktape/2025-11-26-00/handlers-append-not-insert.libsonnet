@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-052: Use handlers.append() instead of handlers.insert(0, ...)
 
 I.issue(
   rationale=|||

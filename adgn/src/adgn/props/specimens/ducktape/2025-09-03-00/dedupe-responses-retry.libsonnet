@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-066: Define _responses_create_with_retry once; import in CLI
 I.issue(
   expect_caught_from=[
     ['llm/adgn_llm/src/adgn_llm/mini_codex/agent.py'],

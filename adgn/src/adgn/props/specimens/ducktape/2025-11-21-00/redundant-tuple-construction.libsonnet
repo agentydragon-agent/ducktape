@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-007: Remove redundant tuple construction - arguments already in FunctionCallItem
 
 I.issue(
   rationale=|||

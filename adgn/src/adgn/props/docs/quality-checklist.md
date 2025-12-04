@@ -16,7 +16,7 @@ Before committing a snapshot, verify all of these criteria:
 - [ ] **Proper helpers**: Uses correct Jsonnet helpers (`issue()`, `issueMulti()`, `falsePositive()`, `falsePositiveMulti()`)
 - [ ] **Brief code citations**: No long code blocks (>10 lines), reader can look up details. Use brief verbal descriptions when sufficient
 - [ ] **Proper grouping**: Issues grouped by logical problem, not by location
-- [ ] **Accurate line ranges**: Line ranges verified using `adgn-properties2 snapshot exec <slug> -- sed -n '<start>,<end>p' <file>` to ensure cited lines match what the issue describes
+- [ ] **Accurate line ranges**: Line ranges verified using `adgn-properties snapshot exec <slug> -- sed -n '<start>,<end>p' <file>` to ensure cited lines match what the issue describes
 - [ ] **Complete rationale**: Points out the issue clearly. If not obvious, explains what's wrong, why it's wrong, and what problems it causes. Correct approach is optional
 - [ ] **Concise rationale**: Rationale is between 10-5000 characters (after whitespace stripping). If over limit, trim unnecessary detail or reconsider if this is actually multiple distinct issues
 - [ ] **Verifiable external references**: External code/API/package references include verifiable links (docs URLs, GitHub permalinks with SHAs, package versions)

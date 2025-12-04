@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004: dump_path type annotation is misleading
 
 I.issue(
   rationale=|||

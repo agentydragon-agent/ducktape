@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-067: ASK-approved calls not tracked in _inflight during execution
 
 I.issue(
   rationale=|||

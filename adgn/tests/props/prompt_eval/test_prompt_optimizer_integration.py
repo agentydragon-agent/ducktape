@@ -45,15 +45,21 @@ TEST_SPECIMEN_SLUG = "test-fixtures/test-trivial"
 
 
 def get_critic_runs_for_slug(slug: str) -> list[CriticRun]:
-    """Query all critic runs for a given specimen slug."""
+    """Query all critic runs for a given snapshot slug."""
     with get_session() as session:
-        return session.query(CriticRun).filter_by(slug=slug).all()
+        runs = session.query(CriticRun).filter_by(snapshot_slug=slug).all()
+        # Expire all objects to allow lazy-loading attributes after session closes
+        session.expunge_all()
+        return runs
 
 
 def get_grader_runs_for_slug(slug: str) -> list[GraderRun]:
-    """Query all grader runs for a given specimen slug."""
+    """Query all grader runs for a given snapshot slug."""
     with get_session() as session:
-        return session.query(GraderRun).filter_by(slug=slug).all()
+        runs = session.query(GraderRun).filter_by(snapshot_slug=slug).all()
+        # Expire all objects to allow lazy-loading attributes after session closes
+        session.expunge_all()
+        return runs
 
 
 @pytest.fixture
@@ -104,12 +110,12 @@ def po_agent_steps():
 def critic_agent_steps():
     """Declarative steps for Critic agent - reports issues."""
     return [
-        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(tp_id="test-issue-001", description="Test issue")),
+        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(tp_id="test-issue", description="Test issue")),
         CheckThenCall(
             "critic_submit_upsert_issue",
             "critic_submit",
             "add_occurrence",
-            AddOccurrenceInput(tp_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
+            AddOccurrenceInput(tp_id="test-issue", file="subtract.py", ranges=[[10, 15]]),
         ),
         CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues_count=1)),
     ]
@@ -120,8 +126,8 @@ def grader_agent_steps():
     """Declarative steps for Grader agent - evaluates critic output."""
     grade_input = {
         "canonical_tp_coverage": {
-            "test-issue-001": {
-                "covered_by": {"test-issue-001": 1.0},
+            "test-issue": {
+                "covered_by": {"test-issue": 1.0},
                 "recall_credit": 1.0,
                 "rationale": "Test issue matches canonical TP.",
             }
@@ -131,8 +137,8 @@ def grader_agent_steps():
         "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
         "recall": 0.8,
         "summary": "Good coverage of canonical issues.",
-        "per_file_recall": {"adgn/README.md": 0.8},
-        "per_file_ratios": {"adgn/README.md": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
+        "per_file_recall": {"subtract.py": 0.8},
+        "per_file_ratios": {"subtract.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
     }
     return [MakeCall("grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input))]
 
@@ -190,6 +196,7 @@ class WorkflowMock(OpenAIModelProto):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(10)
 async def test_full_workflow_po_agent_critic_grader(
     test_specimen,
     tmp_path,
@@ -224,14 +231,14 @@ async def test_full_workflow_po_agent_critic_grader(
         po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
     )
 
-    with (
-        patch(
-            "adgn.props.specimens.registry.SnapshotRegistry.from_package_resources",
-            return_value=test_specimens_registry,
-        ),
-        patch("adgn.props.prompt_optimizer.build_client", return_value=mock),
-    ):
-        await run_prompt_optimizer(budget=1.0, ctx=RunsContext.from_pkg_dir(), out_dir=tmp_path, model="gpt-5-nano")
+    with patch("adgn.props.prompt_optimizer.build_client", return_value=mock):
+        await run_prompt_optimizer(
+            budget=1.0,
+            ctx=RunsContext.from_pkg_dir(),
+            registry=test_specimens_registry,
+            out_dir=tmp_path,
+            model="gpt-5-nano",
+        )
 
     # make_step_runner fixture automatically validates all steps were executed for all three agents
 

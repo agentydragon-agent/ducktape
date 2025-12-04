@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011: test_policy_resources.py tests non-existent API functionality
 
 I.issue(
   rationale=|||

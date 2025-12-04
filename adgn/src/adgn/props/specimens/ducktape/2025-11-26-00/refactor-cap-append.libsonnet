@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-050: Refactor _cap_append - forces callers to think about truncation
 
 I.issue(
   rationale=|||

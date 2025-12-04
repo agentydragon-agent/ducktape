@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: ChatStorePersisted should use SQLAlchemy ORM instead of raw SQL
 
 I.issue(
   rationale=|||

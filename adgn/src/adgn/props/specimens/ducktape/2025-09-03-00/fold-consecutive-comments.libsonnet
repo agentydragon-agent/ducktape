@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-042: Fold consecutive comment lines into a single concise line
 I.issue(
   rationale=|||
     Two consecutive comment lines describe a single obvious condition; fold them into one concise

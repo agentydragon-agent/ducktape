@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-034: delete_agent docstring is overly verbose and states the obvious
 
 I.issue(
   rationale=|||

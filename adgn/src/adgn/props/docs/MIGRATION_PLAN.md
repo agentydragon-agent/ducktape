@@ -208,24 +208,24 @@ I.falsePositiveMulti(
 
 ### Snapshot Subcommands
 ```bash
-adgn-properties2 snapshot exec ducktape/2025-11-26-00 -- ls -la
-adgn-properties2 snapshot dump ducktape/2025-11-26-00
-adgn-properties2 snapshot capture-ducktape --slug ducktape/2025-12-01-00
+adgn-properties snapshot exec ducktape/2025-11-26-00 -- ls -la
+adgn-properties snapshot dump ducktape/2025-11-26-00
+adgn-properties snapshot capture-ducktape --slug ducktape/2025-12-01-00
 ```
 
 ### Hyphenated Commands
 ```bash
-adgn-properties2 snapshot-discover ducktape/2025-11-26-00 --preset max-recall-critic
-adgn-properties2 snapshot-grade <critique-id>
+adgn-properties snapshot-discover ducktape/2025-11-26-00 --preset max-recall-critic
+adgn-properties snapshot-grade <critique-id>
 ```
 
 ### Database Commands
 ```bash
-adgn-properties2 sync              # Sync snapshots + issues from filesystem
-adgn-properties2 db-recreate       # Drop + recreate + sync
+adgn-properties sync              # Sync snapshots + issues from filesystem
+adgn-properties db-recreate       # Drop + recreate + sync
 ```
 
 ### Run Command
 ```bash
-adgn-properties2 run --snapshot ducktape/2025-11-26-00 --preset max-recall-critic --structured
+adgn-properties run --snapshot ducktape/2025-11-26-00 --preset max-recall-critic --structured
 ```

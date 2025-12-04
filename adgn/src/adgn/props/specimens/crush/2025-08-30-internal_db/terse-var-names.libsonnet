@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011-naming-profile-e2e
-// Self-describing names: replace terse single-letter or ambiguous variable names with explicit names (address/storedAddr, compressEnabled, CRUSH_PROFILE/pstr -> descriptive names)
 
 I.issueMulti(
   rationale= |||

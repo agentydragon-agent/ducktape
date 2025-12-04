@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: Pass pathlib.Path objects to PathLike-accepting APIs; avoid redundant str(path) casts
 I.issueMulti(
   rationale=|||
     Many stdlib and library APIs accept os.PathLike objects (pathlib.Path). Prefer passing Path objects directly instead of calling str(path) everywhere.

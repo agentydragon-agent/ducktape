@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-028: Use ternary operator for policy_source assignment
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-052: Default cap/note inside _cap_append to avoid repetitive args
 I.issue(
   rationale=|||
     Calls like `_cap_append(parts, chunk, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated…]")` repeat the same

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-037: Collapse duplicated Responses turn logic in CLI; delegate to agent
 I.issue(
   rationale=|||
     `responses_turn` and `responses_followup_with_tool_outputs` in the CLI duplicate ~20 lines of logic:

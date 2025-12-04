@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-057: ALLOW case mints two different IDs for same tool call - can't correlate
 
 I.issue(
   rationale=|||

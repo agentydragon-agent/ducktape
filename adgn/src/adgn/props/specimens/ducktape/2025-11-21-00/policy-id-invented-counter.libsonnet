@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-009: _policy_id maintains invented counter instead of tracking actual database ID
 
 I.issue(
   expect_caught_from=[

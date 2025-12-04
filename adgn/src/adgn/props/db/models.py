@@ -10,9 +10,23 @@ from typing import Any, ClassVar, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    CheckConstraint,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    cast,
+    event,
+    func,
+    select,
+)
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
+from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
@@ -137,8 +151,6 @@ class Snapshot(Base):
     @classmethod
     def get(cls, slug: SnapshotSlug) -> Snapshot | None:
         """Get snapshot by slug."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -149,8 +161,6 @@ class Snapshot(Base):
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
         """Get all snapshots for a split (train/valid/test)."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -186,8 +196,6 @@ class TruePositive(Base):
     @classmethod
     def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
         """Get true positive by composite key."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -200,8 +208,6 @@ class TruePositive(Base):
     @classmethod
     def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[TruePositive]:
         """Get all true positives for a snapshot."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -238,8 +244,6 @@ class FalsePositive(Base):
     @classmethod
     def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
         """Get false positive by composite key."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -252,8 +256,6 @@ class FalsePositive(Base):
     @classmethod
     def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[FalsePositive]:
         """Get all false positives for a snapshot."""
-        from sqlalchemy import select
-        from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
@@ -469,3 +471,84 @@ class ModelPricing(Base):
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
+
+
+class RunCost(Base):
+    """Cost metrics from run_costs database VIEW (not a table).
+
+    Aggregates token usage and costs per transcript+model from the Event table.
+    Used by prompt optimizer queries to track evaluation costs.
+
+    The view is automatically created via DDL event listener during metadata.create_all().
+    """
+
+    __tablename__ = "run_costs"
+    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
+
+    # Tell SQLAlchemy NOT to create this as a table
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    model: Mapped[str] = mapped_column(String, primary_key=True)
+    cost_usd: Mapped[float] = mapped_column(nullable=False)
+    input_tokens: Mapped[int] = mapped_column(nullable=False)
+    cached_tokens: Mapped[int] = mapped_column(nullable=False)
+    output_tokens: Mapped[int] = mapped_column(nullable=False)
+
+
+# ============================================================================
+# DDL Event Listeners for Views
+# ============================================================================
+
+
+@event.listens_for(Base.metadata, "after_create")
+def create_run_costs_view(target, connection, **kw):
+    """Automatically create run_costs view after tables are created.
+
+    This is idiomatic SQLAlchemy - the view creation is declarative and
+    happens automatically during metadata.create_all().
+    """
+    # Drop existing table/view for one-time migration (old databases had it as a table)
+    connection.execute(DDL("DROP TABLE IF EXISTS run_costs CASCADE"))
+    connection.execute(DDL("DROP VIEW IF EXISTS run_costs CASCADE"))
+
+    # Build view query programmatically using SQLAlchemy
+    input_tokens_raw = Event.payload["usage"]["input_tokens"].astext
+    cached_tokens_raw = Event.payload["usage"]["input_tokens_details"]["cached_tokens"].astext
+    output_tokens_raw = Event.payload["usage"]["output_tokens"].astext
+    reasoning_tokens_raw = Event.payload["usage"]["output_tokens_details"]["reasoning_tokens"].astext
+
+    input_tokens_int = cast(input_tokens_raw, Integer)
+    cached_tokens_int = func.coalesce(cast(cached_tokens_raw, Integer), 0)
+    output_tokens_int = cast(output_tokens_raw, Integer)
+
+    uncached_tokens = input_tokens_int - cached_tokens_int
+    cost_usd = (
+        uncached_tokens * ModelPricing.input_usd_per_1m_tokens / 1000000.0
+        + cached_tokens_int * ModelPricing.cached_input_usd_per_1m_tokens / 1000000.0
+        + output_tokens_int * ModelPricing.output_usd_per_1m_tokens / 1000000.0
+    ).label("cost_usd")
+
+    run_costs_query = (
+        select(
+            Event.payload["response_id"].astext.label("response_id"),
+            Event.transcript_id,
+            Event.payload["usage"]["model"].astext.label("model"),
+            input_tokens_int.label("input_tokens"),
+            cached_tokens_int.label("cached_tokens"),
+            output_tokens_int.label("output_tokens"),
+            func.coalesce(cast(reasoning_tokens_raw, Integer), 0).label("reasoning_tokens"),
+            cost_usd,
+            Event.timestamp,
+        )
+        .select_from(Event)
+        .join(ModelPricing, Event.payload["usage"]["model"].astext == ModelPricing.model_id)
+        .where(Event.event_type == "response", Event.payload["usage"] != None)  # noqa: E711
+    )
+
+    # Compile query to SQL
+    compiled_query = run_costs_query.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": True})
+
+    # Create the view
+    connection.execute(DDL(f"CREATE VIEW run_costs AS {compiled_query}"))
+    connection.commit()

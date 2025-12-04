@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-027: run_phase should be an enum instead of string literals
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004: AgentEntry should be a dataclass
 
 I.issue(
   rationale=|||

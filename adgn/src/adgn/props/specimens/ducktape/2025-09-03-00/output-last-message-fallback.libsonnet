@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004: Do not substitute stdout when --output-last-message file read fails
 I.issue(
   rationale=|||
     The contract of --output-last-message is that the final output exists only in the designated file.

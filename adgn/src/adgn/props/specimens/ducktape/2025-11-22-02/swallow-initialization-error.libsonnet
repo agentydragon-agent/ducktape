@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-037: exception handler swallows critical initialization errors
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-037: send_json and _send_direct_all are complete duplicates
 
 I.issue(
   rationale=|||

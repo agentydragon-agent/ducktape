@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-029: Move directory creation into SQLitePersistence constructor
 
 I.issue(
   rationale=|||

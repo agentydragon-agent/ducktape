@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-036: ToolItem duplicates ToolCall structure
 
 I.issue(
   rationale= |||

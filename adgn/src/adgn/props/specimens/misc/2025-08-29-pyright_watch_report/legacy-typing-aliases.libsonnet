@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-001: Code uses legacy typing aliases
 
 I.issue(
   rationale=|||

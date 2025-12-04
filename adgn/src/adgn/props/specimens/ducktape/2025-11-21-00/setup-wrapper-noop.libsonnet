@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-006: Delete _setup_wrapper no-op method and its call site
 
 I.issue(
   rationale=|||

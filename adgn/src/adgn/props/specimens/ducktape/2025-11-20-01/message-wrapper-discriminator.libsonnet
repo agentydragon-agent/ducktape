@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-013: Message types should use wrapper pattern with kind discriminator
 
 I.issue(
   rationale=|||

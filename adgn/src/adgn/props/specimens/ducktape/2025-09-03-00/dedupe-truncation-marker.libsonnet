@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-038: Deduplicate truncation and ensure TIMEOUT marker survives
 I.issue(
   expect_caught_from=[
     ['llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py'],

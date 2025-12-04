@@ -133,22 +133,22 @@ flowchart TD
 
 ## Specimen inspection (for assistants)
 
-Use the `specimen-exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
+Use the `snapshot exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
 
 Examples
 - Open interactive shell:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt
 - Execute a one-off command (after "--"):
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
 - Numbered ranges with nl + sed:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
 - Ripgrep search (rg is baked into the image):
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
 - Multi-line convenience via heredoc:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
 
 Notes
-- Prefer specimen-exec for reading/grepping specimen files. Avoid mounting host paths directly.
+- Prefer snapshot exec for reading/grepping specimen files. Avoid mounting host paths directly.
 - For quoting-heavy commands, pass a single string after -- and let bash -lc interpret it, or use a $''-quoted heredoc as above.
 
 ## Usage Workflow
@@ -161,13 +161,13 @@ Run structured critic to find issues in a specimen:
 export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
 
 # Run critic with default preset (max-recall-critic)
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true
 
 # Or specify a custom preset
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --preset find
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true --preset find
 
 # Filter to specific files
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
 ```
 
 This:
@@ -182,10 +182,10 @@ Grade a stored critique against canonical findings:
 
 ```bash
 # Grade by critique ID (from previous critic run output)
-adgn-properties2 specimen-grade 123
+adgn-properties snapshot-grade 123
 
 # Use different model for grading
-adgn-properties2 specimen-grade 123 --model gpt-4o
+adgn-properties snapshot-grade 123 --model gpt-4o
 ```
 
 This:

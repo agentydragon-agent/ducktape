@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-026: list_agents constructs dict objects instead of using Pydantic models
 
 I.issue(
   rationale=|||

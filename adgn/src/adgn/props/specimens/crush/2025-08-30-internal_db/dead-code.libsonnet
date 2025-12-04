@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-007-no-dead-code
-// No dead code: remove unreachable or redundant branches
 
 I.issueMulti(
   rationale='Remove unreachable or redundant code paths (dead code). Delete unreachable branches and simplify conditionals that return identical results to avoid confusion and maintenance burden.',

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-010: Redundant exception handler that only re-exits
 
 I.issue(
   rationale= |||

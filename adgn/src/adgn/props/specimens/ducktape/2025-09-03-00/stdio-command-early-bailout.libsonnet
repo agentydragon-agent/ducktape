@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-024: Invert stdio command handling to early-bailout and reduce nesting
 I.issue(
   rationale=|||
     The `if args.command == "stdio"` branch nests the entire stdio handling flow under an if-block, pushing the main (long) path inside an indented branch.

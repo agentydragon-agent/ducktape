@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-068: SnapshotDetails all-or-nothing bundling is architecturally suspicious
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-020: PolicyError index and length fields are ambiguous and should be removed
 
 I.issue(
   rationale=|||

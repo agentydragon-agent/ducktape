@@ -1,7 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-004-minimize-nesting
-// Minimize nesting: prefer early returns/continues and loop-guard continues instead of wrapping the whole body.
 
 I.issueMulti(
   rationale='Prefer early returns/continues to reduce nesting and make happy-path obvious. Replace large wrapped bodies guarded by a single conditional with small guard-clauses (return/continue) at the top where appropriate.',

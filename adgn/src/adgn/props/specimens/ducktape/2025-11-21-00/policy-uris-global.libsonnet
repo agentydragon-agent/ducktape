@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-038: Approval policy URIs are global but should be agent-scoped
 
 I.issue(
   expect_caught_from=[

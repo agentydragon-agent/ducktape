@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: Use pygit2.Repository directly, avoid gitdir variable
 
 I.issue(
   rationale=|||

@@ -1,17 +1,8 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: parse_response_messages should not exist, callers should type correctly
-
-I.issue(
-  rationale=|||
-    parse_response_messages accepts Any and converts to list[ResponseOutputMessage]
-    (openai_typing.py:111-123):
-
-    def parse_response_messages(messages: Any) -> list[ResponseOutputMessage] | None:
-        if not messages:
-            return None
-        return TypeAdapter(list[ResponseOutputMessage]).validate_python(messages)
-
+I.issueMulti(
+  rationale= |||
+    parse_response_messages accepts Any and converts to list[ResponseOutputMessage].
     This function exists because callers hold untyped data and need runtime validation.
 
     Problem: This defers type safety to runtime. Callers should receive properly
@@ -35,11 +26,20 @@ I.issue(
 
     Same principle applies to parse_chat_messages.
   |||,
-
-  filesToRanges={
-    'adgn/src/adgn/llm/sysrw/openai_typing.py': [
-      [111, 123],   // parse_response_messages function
-      [136, 148],   // parse_chat_messages (same pattern)
-    ],
-  }
+  occurrences=[
+    {
+      files: {
+        'adgn/src/adgn/llm/sysrw/openai_typing.py': [[111, 123]],
+      },
+      note: 'parse_response_messages function',
+      expect_caught_from: [['adgn/src/adgn/llm/sysrw/openai_typing.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/llm/sysrw/openai_typing.py': [[136, 148]],
+      },
+      note: 'parse_chat_messages function',
+      expect_caught_from: [['adgn/src/adgn/llm/sysrw/openai_typing.py']],
+    },
+  ],
 )

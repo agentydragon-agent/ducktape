@@ -8,8 +8,6 @@ Includes MCP server for prompt evaluation (run_critic/run_grader tools).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
 import logging
 import os
 from pathlib import Path
@@ -32,17 +30,15 @@ from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
-from adgn.props.db import get_session
+from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.snapshot_registry import SnapshotRegistry
-from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +115,7 @@ class RunGraderOutput(BaseModel):
 async def build_server(
     *,
     client: OpenAIModelProto,
+    registry: SnapshotRegistry,
     name: str = "prompt_eval",
     prompt_optimization_run_id: UUID,
     workspace_root: Path,
@@ -144,16 +141,19 @@ async def build_server(
 
     Args:
         client: OpenAI client for running evaluations
+        registry: Snapshot registry (required, no default)
         name: MCP server name
         prompt_optimization_run_id: Optional ID of the optimization run for tracking prompts
+        workspace_root: Working directory for reading prompt files
+        verbose: Verbose output flag
 
     Returns:
         MCP server with upsert_prompt, run_critic and run_grader tools
     """
     # Ensure snapshots and issues tables are synced on server startup
     with get_session() as session:
-        sync_snapshots_to_db(session)
-        sync_issues_to_db(session)
+        sync_snapshots_to_db(session, registry=registry)
+        sync_issues_to_db(session, registry=registry)
 
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
@@ -199,9 +199,6 @@ async def build_server(
         prompt_sha256 = hash_and_upsert_prompt(prompt_text, prompt_optimization_run_id)
 
         return UpsertPromptOutput(prompt_sha256=prompt_sha256)
-
-    # Create registry once for the MCP server
-    registry = SnapshotRegistry.from_package_resources()
 
     @mcp.tool(flat=True)
     async def run_critic(payload: CriticInput) -> RunCriticOutput:
@@ -292,7 +289,7 @@ async def build_server(
         # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
         with get_session() as session:
             grader_run_id = await grade_critique_by_id(
-                session=session, critique_id=payload.critique_id, client=client, verbose=verbose
+                session=session, critique_id=payload.critique_id, client=client, registry=registry, verbose=verbose
             )
 
         return RunGraderOutput(grader_run_id=grader_run_id)
@@ -305,46 +302,28 @@ async def build_server(
 # ============================================================================
 
 
-@asynccontextmanager
-async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path]]:
-    """Hydrate all train specimens and keep them alive for direct Docker mounting.
-
-    Uses AsyncExitStack to keep all specimens hydrated until context exits.
-    No copying - mount each specimen and its definitions directly as separate Docker volumes.
-    """
-    specimen_paths: dict[str, Path] = {}
-    defs_root = specimens_definitions_root()
-    registry = SnapshotRegistry.from_package_resources()
-
-    async with AsyncExitStack() as stack:
-        train_specimens = registry.get_snapshots_by_split(Split.TRAIN)
-        logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
-
-        for slug in train_specimens:
-            # Load and hydrate specimen, keep alive for Docker mounting
-            hydrated = await stack.enter_async_context(registry.load_and_hydrate(slug))
-            # No copying - mount hydrated path directly as separate Docker volume
-            specimen_paths[slug] = hydrated.content_root
-            logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /specimens/{slug})")
-
-        # Return base definitions directory - consumer mounts defs_root/{slug} for each train specimen
-        logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
-
-        yield specimen_paths, defs_root
-        # AsyncExitStack will cleanup all hydrated specimens automatically
-
-
 async def run_prompt_optimizer(
-    budget: float, ctx: RunsContext, out_dir: Path | None = None, model: str = "gpt-5", verbose: bool = False
+    budget: float,
+    ctx: RunsContext,
+    registry: SnapshotRegistry,
+    out_dir: Path | None = None,
+    model: str = "gpt-5",
+    verbose: bool = False,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt.
+
+    Args:
+        budget: Dollar budget for optimization
+        ctx: Runs context for path derivation
+        registry: Snapshot registry (required, no default - caller must provide)
+        out_dir: Optional output directory
+        model: Model to use (default gpt-5)
+        verbose: Verbose output flag
 
     Hydrates train specimens and mounts them with definitions via Docker.
     The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
     """
     # Render system prompt with compiled SQL queries from builders
-    from adgn.props.db import query_builders as qb
-
     system = render_prompt_template(
         "prompt_optimizer_system.j2.md",
         sql_list_train=qb.compile_to_sql(qb.list_train_snapshots()),
@@ -375,7 +354,7 @@ async def run_prompt_optimizer(
         session_dir = session_dir.resolve()
 
     # Hydrate train specimens and keep alive for Docker mounting
-    async with hydrate_train_specimens() as (train_specimens, defs_root):
+    async with registry.hydrate_train_specimens() as (train_specimens, _defs_root):
         # Build extra volumes for Docker (specimens + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
@@ -431,6 +410,7 @@ async def run_prompt_optimizer(
         # Create and mount prompt_eval server, keeping reference for introspection
         prompt_eval_server = await build_server(
             client=build_client(model),
+            registry=registry,
             name=PROMPT_EVAL_SERVER_NAME,
             prompt_optimization_run_id=prompt_optimization_run_id,
             workspace_root=session_dir,

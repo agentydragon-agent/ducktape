@@ -40,7 +40,7 @@ Last updated: 2025-09-10T01:52:00Z (sha=60a21bad)
     - resolution: dict[finding_id: str -> dict[occurrence_id: str -> {addressed: bool, note: str | None}]]
     - additional_fixed_findings: list[Finding] | None
 
-- specimen-grade (grade critique vs ground truth)
+- snapshot-grade (grade critique vs ground truth)
   - Input: (CodebaseWorkspace, PropertiesMount, SpecimenGroundTruth, critique: list[Finding])
   - Output: GradeSummary
     - recall: float

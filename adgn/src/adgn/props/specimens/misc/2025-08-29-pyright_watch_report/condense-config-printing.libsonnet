@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-017: Condense and de-duplicate config printing
 
 I.issue(
   rationale=|||

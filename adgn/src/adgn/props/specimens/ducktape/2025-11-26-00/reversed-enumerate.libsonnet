@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-017: Use reversed(enumerate(...)) instead of manual reverse iteration
 
 I.issue(
   rationale= |||

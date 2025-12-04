@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-023: Inconsistent proposal_id type - converting int to str unnecessarily
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-015: Final dump error handling should not swallow exceptions
 
 I.issue(
   rationale=|||

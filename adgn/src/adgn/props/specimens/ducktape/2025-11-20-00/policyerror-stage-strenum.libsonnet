@@ -17,9 +17,6 @@ I.issue(
     from code, it's redundant.
   |||,
   filesToRanges={
-    'adgn/src/adgn/agent/models/policy_error.py': [
-      15,
-      [9, 11],
-    ],
+    'adgn/src/adgn/agent/models/policy_error.py': [15],
   },
 )

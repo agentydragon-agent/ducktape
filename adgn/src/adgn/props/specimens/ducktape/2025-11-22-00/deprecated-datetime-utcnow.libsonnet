@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-020: Deprecated datetime.utcnow() usage
 
 I.issue(
   rationale= |||

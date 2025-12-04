@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-043: duplicated agent lookup logic
 
 I.issue(
   rationale= |||

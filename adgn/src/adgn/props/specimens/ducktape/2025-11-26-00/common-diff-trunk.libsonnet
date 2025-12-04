@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-027: Move common repo.diff line outside if/else branches
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-026: Inline single-use variable 'tb'
 
 I.issue(
   rationale=|||

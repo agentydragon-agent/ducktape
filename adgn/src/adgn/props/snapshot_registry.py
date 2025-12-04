@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from importlib import resources
 import json
@@ -13,7 +13,7 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse
 from urllib.request import urlopen
@@ -29,13 +29,11 @@ from .ids import BaseIssueID, FalsePositiveID, SnapshotSlug, TruePositiveID, spl
 from .models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from .models.true_positive import FalsePositiveOccurrence, IssueCore, SnapshotIssuesLoadError, TruePositiveOccurrence
 from .paths import FileType, classify_path
+from .prop_utils import specimens_definitions_root
 from .rationale import Rationale
+from .snapshot_hydrated import HydratedSnapshot
 from .splits import Split
 from .validation_context import SpecimenContext
-
-if TYPE_CHECKING:
-    # Import for type annotations only to avoid circular dependency
-    from .hydrated import HydratedSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -736,9 +734,6 @@ class SnapshotRegistry:
                 all_discovered_files=all_discovered_files,  # Store for complete validation contexts
             )
 
-            # Runtime import to avoid circular dependency (type annotation uses TYPE_CHECKING)
-            from adgn.props.snapshot_hydrated import HydratedSnapshot
-
             # Yield hydrated snapshot - single object with record + content root
             yield HydratedSnapshot(record=rec, content_root=hydrated_root)
         finally:
@@ -806,6 +801,36 @@ class SnapshotRegistry:
             if manifest.split == split:
                 result.add(slug)
         return result
+
+    @asynccontextmanager
+    async def hydrate_train_specimens(self) -> AsyncIterator[tuple[dict[str, Path], Path]]:
+        """Hydrate all train specimens and keep them alive for direct Docker mounting.
+
+        Uses AsyncExitStack to keep all specimens hydrated until context exits.
+        No copying - mount each specimen and its definitions directly as separate Docker volumes.
+
+        Yields:
+            Tuple of (specimen_paths dict, defs_root path)
+        """
+        specimen_paths: dict[str, Path] = {}
+        defs_root = specimens_definitions_root()
+
+        async with AsyncExitStack() as stack:
+            train_specimens = self.get_snapshots_by_split(Split.TRAIN)
+            logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
+
+            for slug in train_specimens:
+                # Load and hydrate specimen, keep alive for Docker mounting
+                hydrated = await stack.enter_async_context(self.load_and_hydrate(slug))
+                # No copying - mount hydrated path directly as separate Docker volume
+                specimen_paths[slug] = hydrated.content_root
+                logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /specimens/{slug})")
+
+            # Return base definitions directory - consumer mounts defs_root/{slug} for each train specimen
+            logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
+
+            yield specimen_paths, defs_root
+            # AsyncExitStack will cleanup all hydrated specimens automatically
 
 
 # Backwards compatibility aliases (deprecated)

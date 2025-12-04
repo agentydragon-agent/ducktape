@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-047: Duplicated ToolCallRecord lifecycle states documentation
 
 I.issue(
   rationale=|||

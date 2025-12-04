@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-037: RunPhase duplicates and supersedes less comprehensive enums
 
 I.issue(
   rationale= |||

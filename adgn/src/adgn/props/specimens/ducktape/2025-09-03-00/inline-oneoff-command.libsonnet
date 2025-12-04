@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-025: Inline one-off 'command = shell' when passing to StdioServerParameters
 I.issue(
   rationale=|||
     A short-lived variable used only to forward to a single call (e.g., `command = shell; StdioServerParameters(command=command, ...)`) adds noise without value.

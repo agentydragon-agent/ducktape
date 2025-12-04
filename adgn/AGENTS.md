@@ -93,7 +93,7 @@ See `README.md` for a shorter overview.
   - `adgn-mini-codex` → MiniCodex UI/REPL
   - `adgn-llm-edit` → `adgn.llm.llm_edit:app`
   - `adgn-sysrw` → `adgn.llm.sysrw.cli:app`
-  - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties2` Typer UI)
+  - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties` Typer UI)
   - `git-commit-ai` → `adgn.git_commit_ai.cli:main`
   - `sandbox-jupyter` → `adgn.mcp.sandboxed_jupyter.wrapper:main`
   - Other helpers: `adgn-openai-probe`, `adgn-sandboxer`, `adgn-mcp-*`, `adgn-matrix-bot`
@@ -105,7 +105,7 @@ See `README.md` for a shorter overview.
   - @src/adgn/llm/properties/specimen_registry.py
 - Authoring guide:
   - @src/adgn/props/CLAUDE.md
-- Examples: `adgn-properties specimen-shell <specimen-id>`
+- Examples: `adgn-properties snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
 - Typical: `direnv exec adgn pytest -q -m "not live_llm"`

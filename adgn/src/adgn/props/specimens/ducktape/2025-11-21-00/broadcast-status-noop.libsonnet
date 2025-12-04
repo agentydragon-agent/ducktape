@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Delete broadcast_status no-op method and all call sites
 
 I.issue(
   rationale=|||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-050: ApprovalTimeline subscribes to unimplemented WebSocket endpoint
 
 I.issue(
   rationale= |||

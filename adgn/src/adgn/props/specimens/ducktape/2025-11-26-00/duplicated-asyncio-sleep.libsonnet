@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-029: DRY up duplicated asyncio.sleep(0) calls
 
 I.issue(
   rationale=|||

@@ -21,7 +21,7 @@ from uuid import uuid4
 import pytest
 
 from adgn.props.db import get_session, query_builders as qb
-from adgn.props.db.models import CriticRun, Critique, Event, GraderRun, Prompt, Snapshot
+from adgn.props.db.models import CriticRun, Critique, Event, FalsePositive, GraderRun, Prompt, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -40,8 +40,6 @@ def query_test_data(test_db):
     - 3 grader runs (2 train, 1 valid)
     - Event records (tool_call and function_call_output events)
     """
-    from adgn.props.db.models import FalsePositive, TruePositive
-
     with get_session() as session:
         # Create snapshots
         snapshots = [

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-027: Inline small kernelspec container construction at call site
 I.issue(
   rationale=|||
     The call site constructs a tiny literal object only to pass it to write_text; prefer inlining the single-line construction at the call site for concision and to avoid one-off temporary names.

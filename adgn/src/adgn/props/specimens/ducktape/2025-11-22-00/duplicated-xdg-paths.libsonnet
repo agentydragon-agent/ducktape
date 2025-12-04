@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-022: Duplicated XDG user data directory path construction
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: Mixed conventions for signaling exit codes
 
 I.issue(
   rationale= |||

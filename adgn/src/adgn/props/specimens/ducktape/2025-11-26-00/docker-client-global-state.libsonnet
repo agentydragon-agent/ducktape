@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-012: docker_client should be local variable, not app.state global
 
 I.issue(
   rationale= |||

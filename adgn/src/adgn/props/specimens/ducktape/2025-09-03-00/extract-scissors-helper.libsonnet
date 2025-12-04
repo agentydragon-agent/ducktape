@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-065: Extract scissors/empty-message parsing into a small helper
 I.issue(
   rationale=|||
     The loop that strips everything below the Git scissors line and collects non-comment, non-blank lines

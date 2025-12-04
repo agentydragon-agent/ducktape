@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-014: Use comprehension + seen-update pattern for per-include unique counts
 
 I.issue(
   rationale=|||

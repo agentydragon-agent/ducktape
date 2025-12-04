@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-013: Remove docstring Args sections that restate obvious type information
 
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py']],

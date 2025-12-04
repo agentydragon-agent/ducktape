@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-035: Remove empty message check, let Git handle it
 
 I.issue(
   rationale=|||

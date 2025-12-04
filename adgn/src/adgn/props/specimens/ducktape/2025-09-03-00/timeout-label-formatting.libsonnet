@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-040: Avoid unnecessary timeout_label formatting; log value directly
 I.issue(
   rationale=|||
     The code builds a derived label for timeout:

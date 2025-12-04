@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-048: Use full commit hash instead of short commitish for cache key
 
 I.issue(
   rationale=|||

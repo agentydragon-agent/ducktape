@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-008: Normalize patterns in one place
 
 I.issue(
   rationale=|||

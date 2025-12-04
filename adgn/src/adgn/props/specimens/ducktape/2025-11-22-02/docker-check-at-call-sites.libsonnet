@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-028: docker_client None check should be inside self_check, not at call sites
 
 I.issue(
   rationale= |||

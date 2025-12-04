@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-023: Unmounted resource URIs in resources.py
 
 I.issue(
   rationale= |||

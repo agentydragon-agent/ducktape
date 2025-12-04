@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-034: Should not catch exceptions explicitly, use default handling or middleware
 
 I.issue(
   rationale=|||

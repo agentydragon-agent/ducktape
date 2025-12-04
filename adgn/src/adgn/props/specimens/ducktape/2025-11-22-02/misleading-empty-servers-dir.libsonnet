@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-046: servers/ directory contains no servers, __init__.py is misleading
 
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/__init__.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/types.py']],

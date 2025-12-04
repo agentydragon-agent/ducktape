@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-018: Unnecessary no-op method overrides in NotificationsHandler
 
 I.issue(
   rationale= |||

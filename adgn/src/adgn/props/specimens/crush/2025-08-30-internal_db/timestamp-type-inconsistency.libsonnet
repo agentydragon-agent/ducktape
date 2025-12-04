@@ -1,13 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-003-timestamps
-// Timestamps: Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
-//
-// Instances:
-// - internal/llm/tools/: download.go (`Timeout`/`maxTimeout`), fetch.go (`Timeout int`), tools.go (`StartedAt`/`UpdatedAt int64` ms epoch)
-// - internal/message/: content.go (`{Started,Finished,Created,Updated}At`, `Finish.Time`), message.go (Watermarks.*TS and Message timestamps; UpdatedAt microseconds)
-// - internal/history/file.go: CreatedAt/UpdatedAt int64
-// - internal/tui/components/chat/: chat.go (lastUserMessageTime int64 epoch seconds), messages/renderer.go (timeout int seconds)
 // - internal/pubsub/broker.go: now := time.Now().UnixMilli()
 // - internal/session/session.go: CreatedAt/UpdatedAt int64
 // - internal/transform/transform.go: CreatedAt int64

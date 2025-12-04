@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-044: Remove boolean parameter from _get_previous_message_if_amend
 
 I.issue(
   rationale=|||

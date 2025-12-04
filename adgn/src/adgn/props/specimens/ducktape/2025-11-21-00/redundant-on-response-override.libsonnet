@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-005: Delete redundant on_response override in ConnectionManager
 
 I.issue(
   rationale=|||

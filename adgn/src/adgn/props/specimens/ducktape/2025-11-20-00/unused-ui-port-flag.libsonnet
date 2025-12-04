@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Unused --ui-port flag misleads users about non-existent Management UI
 
 I.issue(
   rationale=|||

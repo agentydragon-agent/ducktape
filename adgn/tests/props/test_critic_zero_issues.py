@@ -96,7 +96,7 @@ def critic_test_db_setup(test_trivial_specimen, test_db):
 
 
 def _make_critic_response_sequence() -> list:
-    """Create response sequence for critic that finds zero issues and calls submit(issues=0)."""
+    """Create response sequence for critic that finds zero issues and calls submit(issues_count=0)."""
     factory = ResponsesFactory("gpt-5-nano")
 
     return [
@@ -105,7 +105,7 @@ def _make_critic_response_sequence() -> list:
             "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
         ),
         # 2. Call submit with zero issues
-        factory.make(factory.tool_call("critic_submit_submit", {"issues": 0})),
+        factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
     ]
 
 
@@ -178,8 +178,8 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
         factory.make_mcp_tool_call(
             "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
         ),
-        # After reading file, should call submit(issues=0), NOT more docker_exec
-        factory.make(factory.tool_call("critic_submit_submit", {"issues": 0})),
+        # After reading file, should call submit(issues_count=0), NOT more docker_exec
+        factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
     ]
 
     client = make_openai_client(responses)

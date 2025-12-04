@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-033: Merge adjacent debug logging blocks (combine to one if)
 I.issue(
   rationale=|||
     Two adjacent `if known.debug:` blocks perform closely related logging/setup:

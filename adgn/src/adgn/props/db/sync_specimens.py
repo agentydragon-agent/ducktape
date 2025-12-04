@@ -107,7 +107,7 @@ async def sync_snapshots() -> SyncStats:
         # Issue file tracking is now done via the Issue/FalsePositive tables.
         for slug in source_slugs:
             split = registry.get_split(slug)
-            manifest_path, manifest = registry.load_manifest_only(slug)
+            _manifest_path, manifest = registry.load_manifest_only(slug)
 
             if slug not in db_slugs:
                 logger.debug(f"  Adding snapshot: {slug} (split={split.value})")

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-033: Leaking environment variable handling into downstream components
 
 I.issue(
   rationale= |||

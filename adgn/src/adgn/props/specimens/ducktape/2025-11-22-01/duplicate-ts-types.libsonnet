@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-015: TypeScript types in channels.ts duplicate Python Pydantic models
 
 I.issue(
   rationale=|||

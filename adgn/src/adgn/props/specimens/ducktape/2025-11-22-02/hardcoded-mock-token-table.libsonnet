@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-050: TOKEN_TABLE uses hardcoded mock data instead of file-based configuration
 
 I.issue(
   rationale=|||

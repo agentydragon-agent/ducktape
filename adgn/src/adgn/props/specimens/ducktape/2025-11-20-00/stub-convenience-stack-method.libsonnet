@@ -1,9 +1,8 @@
 local I = import '../../lib.libsonnet';
 
-// iss-023: Server stub should provide convenience method for stack context
 
-I.issue(
-  rationale=|||
+I.issueMulti(
+  rationale= |||
     Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
 
     reader_client = Client(reader_server)
@@ -36,10 +35,20 @@ I.issue(
     This suggests base class method or helper function in server stub framework.
   |||,
 
-  filesToRanges={
-    'adgn/src/adgn/agent/runtime/infrastructure.py': [
-      [180, 182],   // PolicyReaderStub creation
-      [184, 186],   // PolicyApproverStub creation
-    ],
-  }
+  occurrences=[
+    {
+      files: {
+        'adgn/src/adgn/agent/runtime/infrastructure.py': [[180, 182]],
+      },
+      note: 'PolicyReaderStub creation boilerplate',
+      expect_caught_from: [['adgn/src/adgn/agent/runtime/infrastructure.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/runtime/infrastructure.py': [[184, 186]],
+      },
+      note: 'PolicyApproverStub creation boilerplate',
+      expect_caught_from: [['adgn/src/adgn/agent/runtime/infrastructure.py']],
+    },
+  ],
 )

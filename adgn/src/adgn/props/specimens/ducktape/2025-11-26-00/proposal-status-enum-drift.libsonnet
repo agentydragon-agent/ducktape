@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-010: ProposalStatus(rec.status) conversion suggests enum drift/duplication
 
 I.issue(
   rationale= |||

@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-046: Do not silently ignore non-file pre-commit hook; simplify check
 I.issue(
   rationale=|||
     Current guard hides misconfiguration and adds branching:

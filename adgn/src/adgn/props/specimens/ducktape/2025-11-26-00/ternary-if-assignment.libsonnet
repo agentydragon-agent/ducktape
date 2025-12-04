@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-014: Use ternary instead of imperative if-assignment for details
 
 I.issue(
   rationale= |||

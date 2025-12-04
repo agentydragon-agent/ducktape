@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-055: Remove unused master_fd parameter from ParallelTaskRunner.__init__ (or store and use it)
 I.issue(
   rationale=|||
     `ParallelTaskRunner.__init__(..., master_fd)` accepts `master_fd` but never stores or uses it; the FD is

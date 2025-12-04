@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-013: Imperative for-loop should be list comprehension, redundant conversions
 
 I.issue(
   rationale= |||

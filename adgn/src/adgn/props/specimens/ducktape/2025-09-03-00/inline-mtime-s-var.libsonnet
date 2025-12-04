@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-058: Inline one-off variable mtime_s in cache prune loop
 I.issue(
   rationale=|||
     `mtime_s = path.stat().st_mtime` is used once immediately in the condition; inline the expression to

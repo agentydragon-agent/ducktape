@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-003: Unnecessary intermediate variables should be inlined
 
 I.issueMulti(
   rationale= |||

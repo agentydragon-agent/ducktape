@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-056: _derive_server should raise exception instead of returning "unknown"
 
 I.issue(
   rationale=|||

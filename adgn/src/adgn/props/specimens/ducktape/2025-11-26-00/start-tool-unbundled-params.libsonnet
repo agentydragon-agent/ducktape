@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-016: start_tool takes unbundled params instead of ToolCall object
 
 I.issue(
   rationale= |||

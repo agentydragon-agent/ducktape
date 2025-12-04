@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-022: Squash trivial wrapper that only delegates to wrapper.main()
 I.issue(
   rationale=|||
     The CLI `main()` in `mcp/sandboxed_jupyter_mcp/cli.py` merely delegates to `wrapper.main()` without adding any value (no argument transformation, validation, or help text).

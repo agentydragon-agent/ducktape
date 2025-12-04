@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-019: EventRecord and TypedPayload import should not have noqa and should be at top
 
 I.issue(
   rationale=|||

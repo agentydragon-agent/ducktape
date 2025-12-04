@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 
 from adgn.props.ids import FalsePositiveID, TruePositiveID
@@ -66,8 +67,6 @@ class HydratedSnapshot:
         Returns:
             Set of relative paths mentioned in issues or false_positives.
         """
-        from itertools import chain
-
         tp_files = (
             occurrence.files.keys()
             for issue_record in self.true_positives.values()

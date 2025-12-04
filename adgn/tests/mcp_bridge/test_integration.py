@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastmcp import FastMCP
 from fastmcp.mcp_config import MCPConfig
 import pytest
 from starlette.applications import Starlette
@@ -41,8 +42,6 @@ def mock_compositor():
 @pytest.fixture
 def mock_container():
     """Create mock agent container for verifying close calls."""
-    from fastmcp import FastMCP
-
     container = MagicMock()
     container.agent_id = "test-agent-1"
     container._compositor = MagicMock()
@@ -365,7 +364,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_shutdown_agent_raises_without_compositor(self, registry):
         """shutdown_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
+        with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.shutdown_agent("unknown-id")
 
     @pytest.mark.asyncio
@@ -438,7 +437,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_boot_agent_raises_without_compositor(self, registry):
         """boot_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
+        with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.boot_agent("nonexistent-agent")
 
     @pytest.mark.asyncio
@@ -456,7 +455,7 @@ class TestInfrastructureRegistry:
     @pytest.mark.asyncio
     async def test_create_external_agent_raises_without_compositor(self, registry):
         """create_external_agent raises RuntimeError without global compositor."""
-        with pytest.raises(RuntimeError, match="(?i)global compositor not initialized"):
+        with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.create_external_agent("test-agent-1")
 
     @pytest.mark.asyncio

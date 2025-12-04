@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-031: Inline builder into return statement
 
 I.issue(
   rationale=|||

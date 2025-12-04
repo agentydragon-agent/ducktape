@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-002: Scoped try/except should not swallow errors
 I.issueMulti(
   rationale=|||
     Scoped try/except blocks swallow errors instead of failing loudly.

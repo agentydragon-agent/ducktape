@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-016: Move imports to module level (avoid function-local imports unless justified)
 I.issueMulti(
   rationale=|||
     Function-local imports hide dependencies and impede static analysis and import-time reasoning. Move imports to module level unless there's a compelling runtime justification (e.g., optional heavy dependency, import-time side effects to avoid, or to break import cycles).

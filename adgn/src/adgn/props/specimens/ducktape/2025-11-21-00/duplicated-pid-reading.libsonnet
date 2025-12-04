@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-011: Duplicated PID file reading logic in wt client
 
 I.issue(
   expect_caught_from=[

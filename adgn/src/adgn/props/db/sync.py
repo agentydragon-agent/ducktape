@@ -7,13 +7,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from pathlib import Path
 
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from adgn.props.db.models import FalsePositive, Snapshot, TruePositive
+from adgn.props.ids import SnapshotSlug
 from adgn.props.loaders.filesystem import FilesystemLoader
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -33,25 +34,24 @@ class SyncStats:
         return f"{self.total} total (+{self.added}, ~{self.updated}, -{self.deleted})"
 
 
-def sync_snapshots_to_db(session: Session) -> SyncStats:
+def sync_snapshots_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats:
     """Sync snapshots from filesystem to database.
 
     Loads snapshots from specimens/snapshots.yaml and upserts to snapshots table.
 
     Args:
         session: SQLAlchemy session
+        registry: Registry to sync from
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
-    # Get specimens directory from package resources
-    specimens_dir = Path(__file__).resolve().parent.parent / "specimens"
-    if not specimens_dir.exists():
-        raise FileNotFoundError(f"Specimens directory not found: {specimens_dir}")
 
-    # Load snapshots from filesystem
-    loader = FilesystemLoader(specimens_dir)
-    snapshots = loader.load_snapshots()
+    # Load snapshots from registry
+    snapshots = {}
+    for slug in registry.snapshot_slugs:
+        _snapshot_path, manifest = registry.load_manifest_only(slug)
+        snapshots[slug] = manifest
 
     # Get existing snapshots from DB
     existing = {s.slug: s for s in session.query(Snapshot).all()}
@@ -70,18 +70,18 @@ def sync_snapshots_to_db(session: Session) -> SyncStats:
         deleted += 1
 
     # Add/update snapshots from source
-    for slug, snapshot in snapshots.items():
+    for slug, manifest in snapshots.items():
         # Convert Pydantic model to dict for upsert
         snapshot_data = {
-            "slug": snapshot.slug,
-            "split": snapshot.split,
-            "source": snapshot.source.model_dump(mode="json"),
-            "bundle": snapshot.bundle.model_dump(mode="json") if snapshot.bundle else None,
+            "slug": slug,
+            "split": manifest.split,
+            "source": manifest.source.model_dump(mode="json"),
+            "bundle": manifest.bundle.model_dump(mode="json") if manifest.bundle else None,
         }
 
         if slug not in db_slugs:
             # New snapshot - insert
-            logger.debug(f"Adding snapshot: {slug} (split={snapshot.split})")
+            logger.debug(f"Adding snapshot: {slug} (split={manifest.split})")
             stmt = insert(Snapshot).values(**snapshot_data)
             session.execute(stmt)
             added += 1
@@ -90,19 +90,19 @@ def sync_snapshots_to_db(session: Session) -> SyncStats:
             existing_snap = existing[slug]
             needs_update = False
 
-            if existing_snap.split != snapshot.split:
-                logger.info(f"Updating snapshot split: {slug} ({existing_snap.split} -> {snapshot.split})")
+            if existing_snap.split != manifest.split:
+                logger.info(f"Updating snapshot split: {slug} ({existing_snap.split} -> {manifest.split})")
                 needs_update = True
 
             # For source/bundle comparison, use model_dump for consistent comparison
             existing_source = existing_snap.source
-            new_source = snapshot.source.model_dump(mode="json")
+            new_source = manifest.source.model_dump(mode="json")
             if existing_source != new_source:
                 logger.debug(f"Updating snapshot source: {slug}")
                 needs_update = True
 
             existing_bundle = existing_snap.bundle
-            new_bundle = snapshot.bundle.model_dump(mode="json") if snapshot.bundle else None
+            new_bundle = manifest.bundle.model_dump(mode="json") if manifest.bundle else None
             if existing_bundle != new_bundle:
                 logger.debug(f"Updating snapshot bundle: {slug}")
                 needs_update = True
@@ -122,7 +122,7 @@ def sync_snapshots_to_db(session: Session) -> SyncStats:
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def sync_issues_to_db(session: Session) -> SyncStats:
+def sync_issues_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats:
     """Sync issues and false positives from filesystem to database.
 
     For each snapshot, loads issues from specimens/{slug}/*.libsonnet
@@ -130,18 +130,17 @@ def sync_issues_to_db(session: Session) -> SyncStats:
 
     Args:
         session: SQLAlchemy session
+        registry: Registry to sync from
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
-    # Get specimens directory from package resources
-    specimens_dir = Path(__file__).resolve().parent.parent / "specimens"
-    if not specimens_dir.exists():
-        raise FileNotFoundError(f"Specimens directory not found: {specimens_dir}")
 
-    # Load snapshots to get list of slugs
-    loader = FilesystemLoader(specimens_dir)
-    snapshots = loader.load_snapshots()
+    # Get snapshot slugs from registry
+    snapshots = list(registry.snapshot_slugs)
+
+    # Load issues from registry's base path
+    loader = FilesystemLoader(registry.base_path)
 
     # Track stats across both TPs and FPs
     total = 0
@@ -150,7 +149,6 @@ def sync_issues_to_db(session: Session) -> SyncStats:
     deleted = 0
 
     # Get existing issues and FPs from DB
-    from adgn.props.ids import SnapshotSlug
 
     existing_issues = {(SnapshotSlug(i.snapshot_slug), i.tp_id): i for i in session.query(TruePositive).all()}
     existing_fps = {(SnapshotSlug(fp.snapshot_slug), fp.fp_id): fp for fp in session.query(FalsePositive).all()}

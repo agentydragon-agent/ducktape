@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-025: Simplify TokenMapping loading with Pydantic TypeAdapter
 
 I.issue(
   rationale=|||

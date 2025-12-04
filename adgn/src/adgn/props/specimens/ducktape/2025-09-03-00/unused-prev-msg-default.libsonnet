@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-039: Remove unused default for previous_message (tighten API)
 I.issue(
   rationale=|||
     The parameter is declared with a default that callers never use:

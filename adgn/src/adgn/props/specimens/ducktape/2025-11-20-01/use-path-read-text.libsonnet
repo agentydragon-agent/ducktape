@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-019: Use Path.read_text() instead of open() with manual read
 
 I.issue(
   rationale=|||

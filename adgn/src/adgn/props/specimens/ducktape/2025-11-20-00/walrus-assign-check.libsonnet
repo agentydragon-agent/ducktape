@@ -3,7 +3,7 @@ local I = import '../../lib.libsonnet';
 // Merged: walrus-assign-check-none, walrus-get-local-runtime, walrus-token-remove-comment
 // All describe assign-and-check patterns that should use walrus operator
 
-I.issue(
+I.issueMulti(
   rationale= |||
     Code uses assign-then-check patterns where walrus operator (:=) would be
     clearer and more concise. Common patterns include:
@@ -45,44 +45,90 @@ I.issue(
     Note: Not applicable when variable is reassigned inside conditional block.
   |||,
 
-  filesToRanges={
-    'adgn/src/adgn/agent/runtime/registry.py': [
-      [93, 95],     // get_agent then check None
-    ],
-    'adgn/src/adgn/agent/approvals.py': [
-      [243, 245],   // get_policy_proposal then check None
-    ],
-    'adgn/src/adgn/agent/agent.py': [
-      [335, 336],   // results.get then check None
-    ],
-    'adgn/src/adgn/agent/server/state.py': [
-      [131, 133],   // _find_last_tool_index then check None
-      [151, 153],
-      [176, 178],
-    ],
-    'adgn/src/adgn/agent/mcp_bridge/auth.py': [
-      [93, 95],     // get_agent_id then check None
-    ],
-    'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [
-      [327, 329],   // get_local_runtime then check None
-      [351, 353],
-      [374, 376],
-    ],
-    'adgn/src/adgn/agent/mcp_bridge/server.py': [
-      [162, 163],   // Assign for ternary expression
-    ],
-    'adgn/src/adgn/agent/server/mcp_routing.py': [
-      [107, 111],   // Dict.get with useless "Look up token" comment
-    ],
-  },
-  expect_caught_from=[
-    ['adgn/src/adgn/agent/runtime/registry.py'],
-    ['adgn/src/adgn/agent/approvals.py'],
-    ['adgn/src/adgn/agent/agent.py'],
-    ['adgn/src/adgn/agent/server/state.py'],
-    ['adgn/src/adgn/agent/mcp_bridge/auth.py'],
-    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
-    ['adgn/src/adgn/agent/mcp_bridge/server.py'],
-    ['adgn/src/adgn/agent/server/mcp_routing.py'],
+  occurrences=[
+    {
+      files: {
+        'adgn/src/adgn/agent/runtime/registry.py': [[93, 95]],
+      },
+      note: 'In get_agent() - assign agent row then check None',
+      expect_caught_from: [['adgn/src/adgn/agent/runtime/registry.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/approvals.py': [[243, 245]],
+      },
+      note: 'In get_policy_proposal() - assign proposal then check None',
+      expect_caught_from: [['adgn/src/adgn/agent/approvals.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/agent.py': [[335, 336]],
+      },
+      note: 'In agent.py - assign results.get() then check None',
+      expect_caught_from: [['adgn/src/adgn/agent/agent.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/server/state.py': [[131, 133]],
+      },
+      note: 'In state.py - assign _find_last_tool_index then check None (occurrence 1)',
+      expect_caught_from: [['adgn/src/adgn/agent/server/state.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/server/state.py': [[151, 153]],
+      },
+      note: 'In state.py - assign _find_last_tool_index then check None (occurrence 2)',
+      expect_caught_from: [['adgn/src/adgn/agent/server/state.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/server/state.py': [[176, 178]],
+      },
+      note: 'In state.py - assign _find_last_tool_index then check None (occurrence 3)',
+      expect_caught_from: [['adgn/src/adgn/agent/server/state.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/mcp_bridge/auth.py': [[93, 95]],
+      },
+      note: 'In get_agent_id() - assign token lookup then check None',
+      expect_caught_from: [['adgn/src/adgn/agent/mcp_bridge/auth.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [[327, 329]],
+      },
+      note: 'In servers/agents.py - assign get_local_runtime then check None (occurrence 1)',
+      expect_caught_from: [['adgn/src/adgn/agent/mcp_bridge/servers/agents.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [[351, 353]],
+      },
+      note: 'In servers/agents.py - assign get_local_runtime then check None (occurrence 2)',
+      expect_caught_from: [['adgn/src/adgn/agent/mcp_bridge/servers/agents.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [[374, 376]],
+      },
+      note: 'In servers/agents.py - assign get_local_runtime then check None (occurrence 3)',
+      expect_caught_from: [['adgn/src/adgn/agent/mcp_bridge/servers/agents.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/mcp_bridge/server.py': [[162, 163]],
+      },
+      note: 'In server.py - assign for ternary expression',
+      expect_caught_from: [['adgn/src/adgn/agent/mcp_bridge/server.py']],
+    },
+    {
+      files: {
+        'adgn/src/adgn/agent/server/mcp_routing.py': [[107, 111]],
+      },
+      note: 'In mcp_routing.py - dict.get with useless "Look up token" comment',
+      expect_caught_from: [['adgn/src/adgn/agent/server/mcp_routing.py']],
+    },
   ],
 )

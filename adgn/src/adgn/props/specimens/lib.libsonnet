@@ -17,6 +17,9 @@
 
 // Normalize a line spec into a LineRange object.
 // Accepts either an int (single line) or a [start,end] array; also accepts objects that already have start_line/end_line.
+// TODO: Support per-range notes/context: [[10, 20, 'note about this range'], [30, 40, 'note about that range']]
+//       Currently only occurrence-level notes are supported; inline comments are for human readers only.
+//       Per-range notes would help explain why specific line ranges matter within one occurrence.
 local toRange(x) =
   if std.type(x) == 'number' then { start_line: x }
   else if std.type(x) == 'array' && std.length(x) == 2 then { start_line: x[0], end_line: x[1] }

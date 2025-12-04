@@ -1,6 +1,5 @@
 local I = import '../../lib.libsonnet';
 
-// iss-026: Should return result directly, not reconstruct as dict
 
 I.issue(
   rationale=|||
