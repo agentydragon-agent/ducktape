@@ -15,48 +15,30 @@
 - **CLI Snapshot Subcommands**: `snapshot exec`, `snapshot dump`, `snapshot capture-ducktape`, `snapshot-discover`, `snapshot-grade`
 - **Filtering Logic**: `should_catch_occurrence()` and `should_show_fp_occurrence()` helpers
 
-### TODOs
+### Remaining TODOs
 
-#### High Priority (Code Cleanup)
+#### Low Priority (Optional Cleanup)
 
-1. **Delete SpecimenRegistry class**
-   - File: `src/adgn/props/specimens/registry.py` - delete entirely
-   - Update all imports to use `FilesystemLoader` instead
-   - Files affected: `main.py`, `grader.py`, `critic.py`, `eval_harness.py`, `lint_issue.py`, etc.
+1. **Rename hydrated.py file** (optional)
+   - File: `src/adgn/props/specimens/hydrated.py` could be moved to `hydration.py`
+   - Class is already renamed: `HydratedSpecimen` → `HydratedSnapshot`
+   - Backwards compat alias provided
 
-2. **Rename HydratedSpecimen to SnapshotHydrator**
-   - File: `src/adgn/props/specimens/hydrated.py` → rename to `hydration.py`
-   - Class: `HydratedSpecimen` → `SnapshotHydrator`
-   - Update all imports and usages
+2. **ORM SnapshotSlug type annotations** (optional)
+   - DB models use `String` for slug columns (works fine, NewType is Python-only)
+   - Could add type comments for documentation purposes
 
-3. **Propagate `specimen_slug` → `snapshot_slug` terminology**
-   - Files with `specimen_slug` references:
-     - `grader/grader.py`
-     - `gepa/gepa_adapter.py`
-     - `cluster_unknowns.py`
-     - `cli_app/main.py` (variable `specimen_slug` in `_exec_agent`)
-     - `cli_app/cmd_detector.py` (has `--specimen` flag, should be `--snapshot`)
-   - DB models: Column names already use `snapshot_slug` but printed output says "Specimen" (line 369 in main.py)
+### Recently Completed
 
-4. **SnapshotSlug NewType propagation**
-   - ORM models (`db/models.py`): Use `SnapshotSlug` instead of `String` for slug columns
-   - Pydantic models (`models/issue.py`): `Issue.snapshot_slug` and `FalsePositive.snapshot_slug` should use `SnapshotSlug`
-
-#### Medium Priority (New Features)
-
-5. **TrainingExample API**
-   - Create `models/training_example.py` with `TrainingExample` model
-   - Implement `get_examples_for_split(split)` and `get_examples_for_snapshot(slug)` functions
-   - Wire into GEPA adapter
-
-#### Low Priority (Documentation)
-
-6. **Update documentation**
-   - `docs/authoring.md`: Update with new helper examples
-   - `docs/quality-checklist.md`: Update terminology
-   - `README.md`: Update CLI examples
-   - `AGENTS.md`: Update snapshot commands
-   - `.claude/commands/*.md`: Update references
+- **SnapshotRegistry**: Renamed from SpecimenRegistry (backwards compat alias provided)
+- **HydratedSnapshot**: Renamed from HydratedSpecimen (backwards compat alias provided)
+- **SnapshotRecord**: Renamed from SnapshotRecord (backwards compat alias provided)
+- **SnapshotIssuesLoadError**: Renamed from SpecimenIssuesLoadError (backwards compat alias provided)
+- **snapshot_slug terminology**: All Python code uses `snapshot_slug` instead of `specimen_slug`
+- **SnapshotSlug NewType**: Used in `Issue`, `FalsePositive`, `Snapshot` models
+- **TrainingExample model**: Created with `get_training_example()`, `get_examples_for_split()`, `get_all_examples()` methods in FilesystemLoader
+- **GEPA integration**: Added `load_training_examples()` function for lightweight dataset loading
+- **Documentation**: Updated `authoring.md` and `quality-checklist.md` with new terminology and helpers
 
 ---
 

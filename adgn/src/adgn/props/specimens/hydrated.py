@@ -1,4 +1,4 @@
-"""Hydrated specimen - single object containing record + content root."""
+"""Hydrated snapshot - single object containing record + content root."""
 
 from __future__ import annotations
 
@@ -9,22 +9,20 @@ from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.paths import FileType
 
 # Direct import - circular dependency is broken by deferred import in registry.py
-from adgn.props.specimens.registry import IssueRecord, SpecimenRecord
+from adgn.props.specimens.registry import IssueRecord, SnapshotRecord
 
 
 @dataclass
-class HydratedSpecimen:
-    """Single object containing specimen record + hydrated content root.
+class HydratedSnapshot:
+    """Single object containing snapshot record + hydrated content root.
 
     Replaces awkward tuple unpacking from load_and_hydrate().
-    Provides convenient access to specimen data and the hydrated working tree.
-
-    TODO: Rename to HydratedSnapshot when unbundling specimen concept.
+    Provides convenient access to snapshot data and the hydrated working tree.
 
     Example:
-        registry = SpecimenRegistry()
+        registry = SnapshotRegistry()
         async with registry.load_and_hydrate("ducktape/2025-11-20") as hydrated:
-            # Access specimen data
+            # Access snapshot data
             files = hydrated.all_discovered_files
             issues = hydrated.issues
 
@@ -32,7 +30,7 @@ class HydratedSpecimen:
             wiring = properties_docker_spec(hydrated.content_root, ...)
     """
 
-    record: SpecimenRecord
+    record: SnapshotRecord
     content_root: Path
 
     # Convenience properties (delegate to record)
@@ -76,3 +74,7 @@ class HydratedSpecimen:
                 for occurrence in issue_record.instances
             )
         )
+
+
+# Backwards compatibility alias (deprecated)
+HydratedSpecimen = HydratedSnapshot

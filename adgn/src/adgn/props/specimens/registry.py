@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict
 import yaml
 
 from ..ids import FalsePositiveID, TruePositiveID
-from ..models.issue import FalsePositiveOccurrence, IssueCore, IssueOccurrence, SpecimenIssuesLoadError
+from ..models.issue import FalsePositiveOccurrence, IssueCore, IssueOccurrence, SnapshotIssuesLoadError
 from ..models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from ..paths import FileType, classify_path
 from ..rationale import Rationale
@@ -35,7 +35,7 @@ from ..validation_context import SpecimenContext
 
 if TYPE_CHECKING:
     # Import for type annotations only to avoid circular dependency
-    from .hydrated import HydratedSpecimen
+    from .hydrated import HydratedSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -144,11 +144,11 @@ def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, di
         "<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
     )
     if not isinstance(raw_obj, str):
-        raise SpecimenIssuesLoadError(["flat: Jsonnet returned non-string"])
+        raise SnapshotIssuesLoadError(["flat: Jsonnet returned non-string"])
 
     all_issues = json.loads(raw_obj)
     if not isinstance(all_issues, dict):
-        raise SpecimenIssuesLoadError([f"flat: Expected dict, got {type(all_issues)}"])
+        raise SnapshotIssuesLoadError([f"flat: Expected dict, got {type(all_issues)}"])
 
     # Split into TPs and FPs based on occurrence structure
     true_positives: dict[str, dict] = {}
@@ -221,7 +221,7 @@ def _validate_issues_from_dicts(
             continue
 
     if errors and strict:
-        raise SpecimenIssuesLoadError(errors)
+        raise SnapshotIssuesLoadError(errors)
     return IssuesLoadResult(items=items, errors=errors)
 
 
@@ -447,11 +447,8 @@ def resolve_source_root(man: SnapshotDoc, snapshot_path: Path) -> Path:
 
 
 @dataclass(frozen=True)
-class SpecimenRecord:
-    """A specimen = snapshot + issues + false positives.
-
-    TODO: Unbundle into separate Snapshot and IssueSet types when refactoring.
-    """
+class SnapshotRecord:
+    """A snapshot record = source snapshot + issues + false positives."""
 
     slug: str
     snapshot_path: Path  # Synthetic path to snapshot directory (for URL resolution)
@@ -530,36 +527,34 @@ class SpecimenRecord:
         ]
 
 
-class SpecimenRegistry:
-    """Entry point for listing and obtaining specimen records (code-only facade).
+class SnapshotRegistry:
+    """Entry point for listing and obtaining snapshot records (code-only facade).
 
     DI-friendly: pass in a preloaded mapping for tests; use from_base_path() factory in app code.
 
-    Specimens are defined in snapshots.yaml at the specimens directory root.
-
-    TODO: Rename to SnapshotRegistry when unbundling specimen concept.
+    Snapshots are defined in snapshots.yaml at the specimens directory root.
     """
 
     def __init__(
         self,
-        specimens: dict[str, SpecimenRecord | None],
+        snapshots: dict[str, SnapshotRecord | None],
         base_path: Path,
         manifests: dict[str, SnapshotDoc],
     ) -> None:
         # No I/O here; accept fully materialized data
-        self._specimens = specimens
+        self._snapshots = snapshots
         self._base_path = base_path
         self._manifests = manifests
 
     @classmethod
-    def from_base_path(cls, base: Path) -> SpecimenRegistry:
+    def from_base_path(cls, base: Path) -> SnapshotRegistry:
         """Factory method to create a registry from a specific base directory.
 
         Args:
             base: Specimens base directory (must contain snapshots.yaml)
 
         Returns:
-            SpecimenRegistry instance
+            SnapshotRegistry instance
 
         Raises:
             FileNotFoundError: If snapshots.yaml doesn't exist
@@ -568,22 +563,22 @@ class SpecimenRegistry:
         if not snapshots_yaml.exists():
             raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
 
-        specimens: dict[str, SpecimenRecord | None] = {}
+        snapshots: dict[str, SnapshotRecord | None] = {}
         manifests: dict[str, SnapshotDoc] = {}
 
         raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
         for slug, data in raw.items():
-            specimens[slug] = None
+            snapshots[slug] = None
             manifests[slug] = SnapshotDoc.model_validate(data)
 
-        return cls(specimens=specimens, base_path=base, manifests=manifests)
+        return cls(snapshots=snapshots, base_path=base, manifests=manifests)
 
     @classmethod
-    def from_package_resources(cls) -> SpecimenRegistry:
+    def from_package_resources(cls) -> SnapshotRegistry:
         """Factory method to create a registry from package resources.
 
         Returns:
-            SpecimenRegistry instance with specimens from package resources
+            SnapshotRegistry instance with snapshots from package resources
         """
         # Resolve from package resources
         traversable = resources.files("adgn.props").joinpath("specimens")
@@ -594,13 +589,13 @@ class SpecimenRegistry:
 
     @property
     def base_path(self) -> Path:
-        """Base directory where specimens are located."""
+        """Base directory where snapshots are located."""
         return self._base_path
 
     @property
     def snapshot_slugs(self) -> list[str]:
         """List of snapshot slugs in this registry."""
-        return sorted(self._specimens.keys())
+        return sorted(self._snapshots.keys())
 
     def _get_snapshot_path(self, slug: str) -> Path:
         """Get snapshot directory path for a slug.
@@ -618,23 +613,21 @@ class SpecimenRegistry:
         return (self._base_path / slug.replace("/", os.sep) / "_snapshot").resolve()
 
     @asynccontextmanager
-    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
-        """Load specimen with validation and yield hydrated specimen object.
+    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSnapshot]:
+        """Load snapshot with validation and yield hydrated snapshot object.
 
-        Avoids double-hydration when caller needs both loaded issues and hydrated specimen.
-
-        TODO: Rename to load_and_hydrate_snapshot when unbundling specimen concept.
+        Avoids double-hydration when caller needs both loaded issues and hydrated snapshot.
 
         Args:
             slug: Snapshot slug like "ducktape/2025-11-20-00"
 
         Yields:
-            HydratedSpecimen: Single object containing specimen record + hydrated content root
+            HydratedSnapshot: Single object containing snapshot record + hydrated content root
 
         Example:
-            registry = SpecimenRegistry.from_base_path()
+            registry = SnapshotRegistry.from_base_path()
             async with registry.load_and_hydrate("ducktape/2025-11-20-00") as hydrated:
-                # Access specimen data: hydrated.all_discovered_files, hydrated.issues
+                # Access snapshot data: hydrated.all_discovered_files, hydrated.issues
                 # Access content root: hydrated.content_root
                 pass
         """
@@ -647,7 +640,7 @@ class SpecimenRegistry:
         # Evaluate Jsonnet to raw dicts (no validation yet)
         result = _jsonnet_evaluate_all(snapshot_dir)
         if result is None:
-            raise SpecimenIssuesLoadError([f"No issues found under: {snapshot_dir}"])
+            raise SnapshotIssuesLoadError([f"No issues found under: {snapshot_dir}"])
         raw_issues, raw_fps = result
 
         # Hydrate snapshot to build complete validation context
@@ -668,10 +661,10 @@ class SpecimenRegistry:
             res_fp = _validate_issues_from_dicts(raw_fps, context_dict, strict=True, is_true_positive=False)
 
             if res_pos.errors or res_fp.errors:
-                raise SpecimenIssuesLoadError([*res_pos.errors, *res_fp.errors])
+                raise SnapshotIssuesLoadError([*res_pos.errors, *res_fp.errors])
 
             # Create record with stored file map
-            rec = SpecimenRecord(
+            rec = SnapshotRecord(
                 slug=slug,
                 snapshot_path=snapshot_path,
                 manifest=man,
@@ -681,10 +674,10 @@ class SpecimenRegistry:
             )
 
             # Runtime import to avoid circular dependency (type annotation uses TYPE_CHECKING)
-            from adgn.props.specimens.hydrated import HydratedSpecimen  # noqa: PLC0415
+            from adgn.props.specimens.hydrated import HydratedSnapshot  # noqa: PLC0415
 
-            # Yield hydrated specimen - single object with record + content root
-            yield HydratedSpecimen(record=rec, content_root=hydrated_root)
+            # Yield hydrated snapshot - single object with record + content root
+            yield HydratedSnapshot(record=rec, content_root=hydrated_root)
         finally:
             # Clean up hydrated snapshot
             shutil.rmtree(
@@ -710,43 +703,48 @@ class SpecimenRegistry:
         return (snapshot_path, self._manifests[slug])
 
     def list_all(self) -> set[str]:
-        """List all specimen names in hierarchical format (repo/name).
+        """List all snapshot slugs in hierarchical format (repo/name).
 
-        Returns specimen IDs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
+        Returns snapshot slugs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
 
         Returns:
-            Set of specimen IDs in format "repo/name"
+            Set of snapshot slugs in format "repo/name"
         """
-        return set(self._specimens.keys())
+        return set(self._snapshots.keys())
 
     def get_split(self, slug: str) -> Split:
-        """Get the train/valid/test split for a specimen from its manifest.
+        """Get the train/valid/test split for a snapshot from its manifest.
 
         Args:
-            slug: Specimen identifier (e.g., "ducktape/2025-11-20-00")
+            slug: Snapshot slug (e.g., "ducktape/2025-11-20-00")
 
         Returns:
             Split.TRAIN, Split.VALID, or Split.TEST
 
         Raises:
-            FileNotFoundError: If specimen manifest doesn't exist
+            FileNotFoundError: If snapshot manifest doesn't exist
             ValidationError: If manifest is malformed or missing split field
         """
         _, manifest = self.load_manifest_only(slug)
         return manifest.split
 
-    def get_specimens_by_split(self, split: Split) -> list[str]:
-        """Get all specimen slugs for a given split.
+    def get_snapshots_by_split(self, split: Split) -> list[str]:
+        """Get all snapshot slugs for a given split.
 
         Args:
             split: The split to filter by (TRAIN, VALID, or TEST)
 
         Returns:
-            List of specimen slugs in the given split, sorted alphabetically
+            List of snapshot slugs in the given split, sorted alphabetically
         """
         result = []
-        for slug in sorted(self._specimens.keys()):
+        for slug in sorted(self._snapshots.keys()):
             _, manifest = self.load_manifest_only(slug)
             if manifest.split == split:
                 result.append(slug)
         return result
+
+
+# Backwards compatibility aliases (deprecated)
+SpecimenRegistry = SnapshotRegistry
+SpecimenRecord = SnapshotRecord

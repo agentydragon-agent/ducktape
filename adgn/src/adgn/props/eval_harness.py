@@ -24,7 +24,7 @@ from adgn.props.ids import BaseIssueID
 from adgn.props.models.issue import IssueCore, Occurrence
 from adgn.props.models.lint import extract_corrections
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 from .lint_issue import lint_issue_run
 
@@ -158,7 +158,7 @@ async def eval_issue_spec(
     spec: IssueEvalSpec,
     *,
     client: OpenAIModelProto,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     out_dir: Path | str | None = None,
     ctx: RunsContext,
 ) -> SampleRunSummary:
@@ -306,7 +306,7 @@ def _load_samples() -> list[IssueEvalSpec]:
 async def run_all_evals(
     *,
     client: OpenAIModelProto,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     root_out: Path | None = None,
     concurrency: int = 4,
     ctx: RunsContext,

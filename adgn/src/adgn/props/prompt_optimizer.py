@@ -41,7 +41,7 @@ from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -201,7 +201,7 @@ async def build_server(
         return UpsertPromptOutput(prompt_sha256=prompt_sha256)
 
     # Create registry once for the MCP server
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
 
     @mcp.tool(flat=True)
     async def run_critic(payload: CriticInput) -> RunCriticOutput:
@@ -314,7 +314,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
     """
     specimen_paths: dict[str, Path] = {}
     defs_root = specimens_definitions_root()
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
 
     async with AsyncExitStack() as stack:
         train_specimens = registry.get_specimens_by_split(Split.TRAIN)

@@ -27,6 +27,7 @@ from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -41,7 +42,9 @@ from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as D
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput, GradeSubmitInput
-from adgn.props.specimens.registry import IssueRecord, SpecimenRegistry
+from adgn.props.loaders.filesystem import FilesystemLoader
+from adgn.props.models.training_example import TrainingExample
+from adgn.props.specimens.registry import IssueRecord, SnapshotRegistry
 from adgn.props.splits import Split
 import gepa
 
@@ -54,8 +57,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class SpecimenInput:
-    """Input for a single specimen evaluation."""
+class SnapshotInput:
+    """Input for a single snapshot evaluation."""
 
     slug: str
     target_files: list[str]
@@ -67,7 +70,7 @@ class SpecimenInput:
 class CriticTrajectory:
     """Execution trajectory for a critic run."""
 
-    specimen_slug: str
+    snapshot_slug: str
     transcript_id: UUID
     events: list[EventType]
     critique_payload: CriticSubmitPayload
@@ -77,7 +80,7 @@ class CriticTrajectory:
 class CriticOutput:
     """Output from a critic evaluation."""
 
-    specimen_slug: str
+    snapshot_slug: str
     issues_found: list[ReportedIssue]
     grader_output: GradeSubmitInput | None
     recall: float
@@ -122,14 +125,14 @@ def serialize_events(events: list[EventType], max_events: int = 50) -> list[dict
 # =============================================================================
 
 
-class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutput]):
+class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutput]):
     """GEPA adapter for the props critic.
 
     Implements the GEPAAdapter protocol to allow GEPA to optimize
     the critic system prompt using your existing infrastructure.
     """
 
-    def __init__(self, registry: SpecimenRegistry, client: OpenAIModelProto, verbose: bool = False):
+    def __init__(self, registry: SnapshotRegistry, client: OpenAIModelProto, verbose: bool = False):
         self.registry = registry
         self.client = client
         self.verbose = verbose
@@ -137,12 +140,12 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
         self.propose_new_texts = None
 
     def evaluate(
-        self, batch: list[SpecimenInput], candidate: dict[str, str], capture_traces: bool = False
+        self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool = False
     ) -> gepa.EvaluationBatch[CriticTrajectory, CriticOutput]:
         """Evaluate a prompt candidate on a batch of specimens.
 
         Args:
-            batch: List of SpecimenInput to evaluate
+            batch: List of SnapshotInput to evaluate
             candidate: {"system_prompt": "..."} - the prompt to evaluate
             capture_traces: Whether to capture execution traces
 
@@ -181,7 +184,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
         return gepa.EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
     async def _evaluate_one_specimen(
-        self, specimen_input: SpecimenInput, prompt_sha256: str, capture_traces: bool
+        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool
     ) -> EvaluationResult:
         """Evaluate a single specimen (for parallel execution)."""
         slug = specimen_input.slug
@@ -221,7 +224,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
             grader_output = GraderOutput.model_validate(grader_run.output)
 
         output = CriticOutput(
-            specimen_slug=slug,
+            snapshot_slug=slug,
             issues_found=critic_output.result.issues,
             grader_output=grader_output.grade,
             recall=grader_output.recall,
@@ -229,7 +232,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
 
         trajectory = (
             CriticTrajectory(
-                specimen_slug=slug, transcript_id=transcript_id, events=events, critique_payload=critic_output.result
+                snapshot_slug=slug, transcript_id=transcript_id, events=events, critique_payload=critic_output.result
             )
             if capture_traces
             else None
@@ -238,7 +241,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
         return EvaluationResult(output=output, score=grader_output.recall, trajectory=trajectory)
 
     async def _evaluate_async(
-        self, batch: list[SpecimenInput], candidate: dict[str, str], capture_traces: bool
+        self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool
     ) -> list[EvaluationResult]:
         """Async implementation of evaluate - runs specimens in parallel."""
         system_prompt = candidate["system_prompt"]
@@ -278,7 +281,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
                     component_name="system_prompt",
                     current_text=candidate["system_prompt"],
                     score=score,
-                    specimen=output.specimen_slug,
+                    specimen=output.snapshot_slug,
                     issues_found=output.issues_found,
                     events=trajectory.events,
                     critique_payload=trajectory.critique_payload,
@@ -297,29 +300,59 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
 # =============================================================================
 
 
-async def load_datasets(registry: SpecimenRegistry) -> tuple[list[SpecimenInput], list[SpecimenInput]]:
+async def load_datasets(registry: SnapshotRegistry) -> tuple[list[SnapshotInput], list[SnapshotInput]]:
     """Load train and validation datasets for GEPA.
 
-    Returns:
-        (trainset, valset) tuple of SpecimenInput lists
-    """
-    train_slugs = registry.get_specimens_by_split(Split.TRAIN)
-    valid_slugs = registry.get_specimens_by_split(Split.VALID)
+    This function hydrates snapshots to discover target files and uses the registry's
+    IssueRecord format which is compatible with the grader.
 
-    async def load_specimen(slug: str) -> SpecimenInput:
+    For source-of-truth data models, see TrainingExample and FilesystemLoader.
+
+    Returns:
+        (trainset, valset) tuple of SnapshotInput lists
+    """
+    train_slugs = registry.get_snapshots_by_split(Split.TRAIN)
+    valid_slugs = registry.get_snapshots_by_split(Split.VALID)
+
+    async def load_snapshot(slug: str) -> SnapshotInput:
         async with registry.load_and_hydrate(slug) as hydrated:
             target_files = [str(f) for f in hydrated.files_with_issues()]
 
-            return SpecimenInput(
+            return SnapshotInput(
                 slug=slug,
                 target_files=target_files,
                 ground_truth_issues=hydrated.issues,
                 known_false_positives=hydrated.false_positives,
             )
 
-    trainset = [await load_specimen(slug) for slug in train_slugs]
-    valset = [await load_specimen(slug) for slug in valid_slugs]
+    trainset = [await load_snapshot(slug) for slug in train_slugs]
+    valset = [await load_snapshot(slug) for slug in valid_slugs]
 
+    return trainset, valset
+
+
+def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[TrainingExample], list[TrainingExample]]:
+    """Load train and validation TrainingExamples from filesystem.
+
+    This is a synchronous, lightweight alternative to load_datasets() that returns
+    TrainingExample objects directly from the filesystem without hydration.
+
+    Args:
+        specimens_dir: Path to specimens directory. If None, uses package resources.
+
+    Returns:
+        (trainset, valset) tuple of TrainingExample lists
+    """
+    from importlib import resources
+
+    if specimens_dir is None:
+        traversable = resources.files("adgn.props").joinpath("specimens")
+        with resources.as_file(traversable) as p:
+            specimens_dir = p
+
+    loader = FilesystemLoader(specimens_dir)
+    trainset = loader.get_examples_for_split(Split.TRAIN)
+    valset = loader.get_examples_for_split(Split.VALID)
     return trainset, valset
 
 
@@ -330,7 +363,7 @@ async def load_datasets(registry: SpecimenRegistry) -> tuple[list[SpecimenInput]
 
 async def optimize_with_gepa(
     initial_prompt: str,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     client: OpenAIModelProto,
     *,
     reflection_model: str = "gpt-4o",
@@ -341,7 +374,7 @@ async def optimize_with_gepa(
 
     Args:
         initial_prompt: Starting system prompt
-        registry: SpecimenRegistry instance
+        registry: SnapshotRegistry instance
         client: LLM client for critic/grader execution
         reflection_model: Model for GEPA's reflection
         max_metric_calls: Budget for evaluations

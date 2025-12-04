@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from adgn.props.ids import BaseIssueID
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 
@@ -143,7 +143,7 @@ class Issue(BaseModel):
     """
 
     issue_id: str = Field(description="Derived from filename by loader")
-    snapshot_slug: str = Field(description="From Jsonnet 'snapshot' field")
+    snapshot_slug: SnapshotSlug = Field(description="From Jsonnet 'snapshot' field")
     rationale: Rationale
     occurrences: list[IssueOccurrence]
 
@@ -165,7 +165,7 @@ class FalsePositive(BaseModel):
     """
 
     fp_id: str = Field(description="Derived from filename by loader")
-    snapshot_slug: str = Field(description="From Jsonnet 'snapshot' field")
+    snapshot_slug: SnapshotSlug = Field(description="From Jsonnet 'snapshot' field")
     rationale: Rationale
     occurrences: list[FalsePositiveOccurrence]
 
@@ -180,13 +180,11 @@ class FalsePositive(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class SpecimenIssuesLoadError(Exception):
+class SnapshotIssuesLoadError(Exception):
     """Raised when per-issue Jsonnet evaluation/validation yields any errors in strict mode.
 
     Carries a list of human-readable error lines. __str__ joins them with newlines
     so pytest and CLIs surface a readable summary.
-
-    TODO: Rename to SnapshotIssuesLoadError when unbundling specimen concept.
     """
 
     def __init__(self, errors: list[str]):
@@ -194,7 +192,11 @@ class SpecimenIssuesLoadError(Exception):
         super().__init__(str(self))
 
     def __str__(self) -> str:  # pragma: no cover - exercised via message rendering
-        return "Specimen issue loading errors:\n" + "\n".join(self.errors)
+        return "Snapshot issue loading errors:\n" + "\n".join(self.errors)
+
+
+# Backwards compatibility alias (deprecated)
+SpecimenIssuesLoadError = SnapshotIssuesLoadError
 
 
 # Strongly-typed identifiers with validation

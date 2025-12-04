@@ -43,8 +43,8 @@ from adgn.props.grader.models import CritiqueInputIssue, GraderInput, GraderOutp
 from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.prompts.builder import build_grade_from_json_prompt
-from adgn.props.specimens.hydrated import HydratedSpecimen
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.hydrated import HydratedSnapshot
+from adgn.props.specimens.registry import SnapshotRegistry
 
 # Avoid circular imports:
 # - prompts.builder imports from here
@@ -76,7 +76,7 @@ class GradeSubmitState:
 class GradeInputs:
     """Grading context: specimen and critique."""
 
-    specimen: HydratedSpecimen
+    specimen: HydratedSnapshot
     critique: CriticSubmitPayload
 
 
@@ -95,7 +95,7 @@ class GradeValidationContext:
 
     @classmethod
     def from_specimen_and_critique(
-        cls, specimen: HydratedSpecimen, critique: CriticSubmitPayload
+        cls, specimen: HydratedSnapshot, critique: CriticSubmitPayload
     ) -> GradeValidationContext:
         """Build validation context from specimen and critique."""
         # Collect files from canonical TPs and critique issues
@@ -210,7 +210,7 @@ async def run_grader(
     *,
     input_data: GraderInput,
     client: OpenAIModelProto,
-    hydrated_specimen: HydratedSpecimen,
+    hydrated_specimen: HydratedSnapshot,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
 ) -> tuple[GraderOutput, UUID]:
@@ -224,7 +224,7 @@ async def run_grader(
         db_run = DBGraderRun(
             id=run_id,
             transcript_id=transcript_id,
-            specimen_slug=input_data.snapshot_slug,
+            snapshot_slug=input_data.snapshot_slug,
             model=client.model,
             critique_id=input_data.critique_id,
             prompt_optimization_run_id=input_data.prompt_optimization_run_id,
@@ -233,7 +233,7 @@ async def run_grader(
         session.add(db_run)
         session.commit()
         logger.info(
-            f"Created initial grader run in DB: {run_id=}, {transcript_id=}, specimen_slug={input_data.snapshot_slug}"
+            f"Created initial grader run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
         )
 
         # Fetch critique from database
@@ -313,7 +313,7 @@ async def run_grader(
         assert found_run is not None, f"Grader run {run_id} not found in database"
         found_run.output = output.model_dump(mode="json")
         session.commit()
-        logger.info(f"Updated grader run in DB: {transcript_id=}, specimen_slug={input_data.snapshot_slug}")
+        logger.info(f"Updated grader run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
 
     return (output, run_id)
 
@@ -339,7 +339,7 @@ async def grade_critique_by_id(
     grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)
 
     # Load and hydrate specimen once, then execute
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(snapshot_slug) as hydrated:
         # Execute grader run
         _grader_output, grader_run_id = await run_grader(

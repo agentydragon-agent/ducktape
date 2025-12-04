@@ -76,7 +76,7 @@ from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -206,7 +206,7 @@ async def _run_snapshot_minicodex_async(
     output_final_message: Path | None,
     client: OpenAIModelProto,
     files: list[str] | None = None,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
 ) -> int:
     # Load and hydrate snapshot (single hydration for both dry-run and real run)
     async with registry.load_and_hydrate(snapshot) as hydrated:
@@ -268,7 +268,7 @@ async def cmd_snapshot_discover(
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     names = sorted(registry.list_all())
     if snapshot not in names:
         typer.echo(f"Unknown snapshot slug: {snapshot}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
@@ -366,7 +366,7 @@ async def snapshot_grade(
         typer.echo(f"Graded critique {critique_id}")
         typer.echo(f"Grader run ID: {grader_run_id}")
         typer.echo(f"Grader run transcript_id: {db_grader_run.transcript_id}")
-        typer.echo(f"Snapshot: {db_grader_run.specimen_slug}")
+        typer.echo(f"Snapshot: {db_grader_run.snapshot_slug}")
         typer.echo("")
         typer.echo(output.model_dump_json(indent=2))
 
@@ -424,7 +424,7 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     await run_all_evals(client=build_client("gpt-5"), registry=registry, ctx=RunsContext.from_pkg_dir())
 
 
@@ -461,7 +461,7 @@ def _render_prompt_with_context(
 
 @asynccontextmanager
 async def _open_run_context(
-    path: Path | None, snapshot: str | None, files: list[str] | None, registry: SpecimenRegistry
+    path: Path | None, snapshot: str | None, files: list[str] | None, registry: SnapshotRegistry
 ):
     """Yield (wiring, files_spec, label) for either a local path or a hydrated snapshot.
 
@@ -469,7 +469,7 @@ async def _open_run_context(
         path: Local directory path (mutually exclusive with snapshot)
         snapshot: Snapshot slug (mutually exclusive with path)
         files: Optional file filter (only for snapshots)
-        registry: SpecimenRegistry instance (always required, instantiated at CLI entry point)
+        registry: SnapshotRegistry instance (always required, instantiated at CLI entry point)
 
     Yields:
         (wiring, files_spec, label) tuple where files_spec is FileScopeSpec
@@ -495,9 +495,9 @@ async def _exec_agent(
     output_final_message: Path | None,
     final_only: bool,
     label: str,
-    specimen_slug: str | None,
+    snapshot_slug: str | None,
     files_spec: FileScopeSpec | None,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     dry_run: bool = False,
 ) -> None:
     # Dry-run: save prompt and exit (before any agent/DB/compositor setup)
@@ -512,11 +512,11 @@ async def _exec_agent(
 
     # Structured mode: use run_critic for execution and DB persistence
     if structured:
-        assert specimen_slug is not None, "structured mode requires specimen_slug"
+        assert snapshot_slug is not None, "structured mode requires snapshot_slug"
         assert files_spec is not None, "structured mode requires files_spec"
         critic_output, _critic_run_id, _critique_id = await run_critic(
             input_data=CriticInput(
-                snapshot_slug=specimen_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
+                snapshot_slug=snapshot_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
             ),
             client=build_client(model),
             content_root=wiring.working_dir,
@@ -658,7 +658,7 @@ async def cmd_run(
         raise typer.Exit(2)
 
     # Create registry once at CLI entry point (always, even for path mode - lightweight)
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
 
     # Enter workspace context and run (same path for dry-run and real execution)
     async with _open_run_context(path, snapshot, files, registry) as (wiring, files_spec, label):
@@ -678,7 +678,7 @@ async def cmd_run(
             output_final_message=output_final_message,
             final_only=final_only,
             label=label,
-            specimen_slug=snapshot,
+            snapshot_slug=snapshot,
             files_spec=files_spec if snapshot is not None else None,
             registry=registry,
             dry_run=dry_run,
@@ -698,7 +698,7 @@ async def snapshot_dump(
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
     """Dump a snapshot's full structure as JSON (manifest, all issues, occurrences)."""
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     try:
         async with registry.load_and_hydrate(snapshot) as hydrated:
             rec = hydrated.record
@@ -750,7 +750,7 @@ async def snapshot_exec(
     ensure_critic_image()
 
     # Load and hydrate snapshot (keep hydrated for entire container lifetime)
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(snapshot) as hydrated:
         try:
             _ = next(hydrated.content_root.iterdir())
@@ -812,13 +812,13 @@ def snapshot_capture_ducktape(
     # Generate slug if not provided
     if slug is None:
         today = datetime.now().strftime("%Y-%m-%d")
-        registry = SpecimenRegistry.from_package_resources()
+        registry = SnapshotRegistry.from_package_resources()
         existing = sorted([name for name in registry.list_all() if name.startswith(f"ducktape/{today}")])
         next_num = len(existing)
         slug = f"ducktape/{today}-{next_num:02d}"
 
     # Create snapshot directory
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     specimens_dir = registry.base_path
     snapshot_dir = specimens_dir / slug
     snapshot_dir.mkdir(parents=True, exist_ok=False)

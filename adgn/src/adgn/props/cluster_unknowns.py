@@ -80,8 +80,8 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
     ]
 
 
-async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path, model: str) -> None:
-    """Run clustering agent for a single specimen."""
+async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path, model: str) -> None:
+    """Run clustering agent for a single snapshot."""
     out_root.mkdir(parents=True, exist_ok=True)
     result: list[ClusterSpec] | None = None
 
@@ -92,7 +92,7 @@ async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path,
     def submit_result(payload: ClusterSubmitPayload) -> str:
         nonlocal result
         seen = {it for c in payload.clusters for it in c.issues}
-        all_keys = {u.issue_id for u in specimen_issues}
+        all_keys = {u.issue_id for u in snapshot_issues}
         missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.issue_id))
         if missing:
             raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
@@ -101,7 +101,7 @@ async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path,
 
     await comp.mount_inproc("cluster_submit", srv)
     system = "Cluster semantically equivalent issues. Reference issues by their issue_id."
-    input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in specimen_issues)
+    input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
@@ -123,19 +123,19 @@ async def _cluster_specimen(specimen_issues: list[UnknownIssue], out_root: Path,
 
 
 async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None, ctx: RunsContext) -> Path:
-    """Cluster unknowns per specimen in parallel using an LLM (one run per specimen).
+    """Cluster unknowns per snapshot in parallel using an LLM (one run per snapshot).
 
     Loads unknown issues from grader runs in the database (using Pydantic).
-    Partitions unknowns by specimen and launches an in-proc MCP clustering agent per specimen concurrently.
-    Each specimen writes clusters.json under runs/cluster/<ts>/{specimen}/.
+    Partitions unknowns by snapshot and launches an in-proc MCP clustering agent per snapshot concurrently.
+    Each snapshot writes clusters.json under runs/cluster/<ts>/{snapshot}/.
     """
-    # Load unknown issues from grader runs in database, partitioned by specimen
+    # Load unknown issues from grader runs in database, partitioned by snapshot
     by_spec: dict[str, list[UnknownIssue]] = defaultdict(list)
     with get_session() as session:
         # Join GraderRun with Critique to avoid N+1 queries
         results = session.query(GraderRun, Critique).join(Critique, GraderRun.critique_id == Critique.id).all()
         for db_run, critique in results:
-            by_spec[db_run.specimen_slug].extend(_extract_unknowns_from_run(db_run, critique))
+            by_spec[db_run.snapshot_slug].extend(_extract_unknowns_from_run(db_run, critique))
 
     if not by_spec:
         raise RuntimeError("no unknown issues found in grader runs in database")
@@ -147,10 +147,10 @@ async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None,
         root = ctx.base_dir / "cluster" / timestamp
     root.mkdir(parents=True, exist_ok=True)
 
-    # Run clustering tasks in parallel (one per specimen)
+    # Run clustering tasks in parallel (one per snapshot)
     tasks = []
     for spec, items in by_spec.items():
         out_spec = root / spec
-        tasks.append(_cluster_specimen(items, out_spec, model))
+        tasks.append(_cluster_snapshot(items, out_spec, model))
     await asyncio.gather(*tasks)
     return root

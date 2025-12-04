@@ -54,7 +54,7 @@ from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.issue import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -350,14 +350,14 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 
 async def resolve_critic_scope(
-    snapshot_slug: SnapshotSlug, files: FileScopeSpec, registry: SpecimenRegistry
+    snapshot_slug: SnapshotSlug, files: FileScopeSpec, registry: SnapshotRegistry
 ) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
 
     Args:
         snapshot_slug: Target snapshot
         files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
-        registry: SpecimenRegistry instance (required, always threaded explicitly)
+        registry: SnapshotRegistry instance (required, always threaded explicitly)
 
     Returns:
         Resolved file set (guaranteed non-empty)
@@ -389,7 +389,7 @@ async def run_critic(
     input_data: CriticInput,
     client: OpenAIModelProto,
     content_root,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,

@@ -22,7 +22,7 @@ from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, FileSco
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 
 @dataclass
@@ -32,8 +32,8 @@ class DetectorCoverage:
     filename: str
     prompt_sha256: str
     total_runs: int
-    evaluated_specimens: list[str]
-    missing_specimens: list[str]
+    evaluated_snapshots: list[str]
+    missing_snapshots: list[str]
 
 
 @dataclass
@@ -80,7 +80,7 @@ def _build_detector_coverage(session, filename: str, prompt_sha256: str, all_spe
     """Build coverage data for a single detector."""
     # Get all specimens this detector has been run against
     evaluated_specimens = (
-        session.query(CriticRun.specimen_slug).filter(CriticRun.prompt_sha256 == prompt_sha256).distinct().all()
+        session.query(CriticRun.snapshot_slug).filter(CriticRun.prompt_sha256 == prompt_sha256).distinct().all()
     )
     evaluated_set = {row[0] for row in evaluated_specimens}
     missing_specimens = [s for s in all_specimens if s not in evaluated_set]
@@ -134,20 +134,20 @@ def collect_missing_pairs(coverage_data: list[DetectorCoverage]) -> list[tuple[s
 
 
 async def run_detector_on_specimen(
-    detector_filename: str, specimen_slug: str, *, client: OpenAIModelProto, verbose: bool
+    detector_filename: str, snapshot_slug: str, *, client: OpenAIModelProto, verbose: bool
 ) -> tuple[str, str, bool]:
     """Run a single detector on a specimen.
 
     Returns:
-        (detector_filename, specimen_slug, success)
+        (detector_filename, snapshot_slug, success)
     """
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
-    registry = SpecimenRegistry.from_package_resources()
-    async with registry.load_and_hydrate(specimen_slug) as hydrated:
+    registry = SnapshotRegistry.from_package_resources()
+    async with registry.load_and_hydrate(snapshot_slug) as hydrated:
         await run_critic(
             registry=registry,
             input_data=CriticInput(
-                snapshot_slug=specimen_slug,
+                snapshot_slug=snapshot_slug,
                 files=set(hydrated.all_discovered_files.keys()),
                 prompt_sha256=prompt_sha256,
             ),
@@ -156,7 +156,7 @@ async def run_detector_on_specimen(
             mount_properties=False,
             verbose=verbose,
         )
-    return (detector_filename, specimen_slug, True)
+    return (detector_filename, snapshot_slug, True)
 
 
 async def run_missing_evaluations(
@@ -196,7 +196,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     # Discover all detectors and specimens
     detector_filenames = discover_detector_prompts()
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     all_specimens = sorted(registry.list_all())
 
     # Fetch current coverage
@@ -301,7 +301,7 @@ async def cmd_run_detector(
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(specimen) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(

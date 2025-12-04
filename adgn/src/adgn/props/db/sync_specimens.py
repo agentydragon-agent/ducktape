@@ -1,4 +1,4 @@
-"""Sync specimens table from specimen manifest splits."""
+"""Sync snapshots table from snapshots.yaml."""
 
 from __future__ import annotations
 
@@ -9,14 +9,14 @@ from pathlib import Path
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.snapshots.registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
 
 @dataclass
 class SyncStats:
-    """Statistics from a specimen sync operation."""
+    """Statistics from a snapshot sync operation."""
 
     total: int
     added: int
@@ -26,15 +26,15 @@ class SyncStats:
     @property
     def summary_text(self) -> str:
         """Format as human-readable summary."""
-        return f"{self.total} specimens (+{self.added}, ~{self.updated}, -{self.deleted})"
+        return f"{self.total} snapshots (+{self.added}, ~{self.updated}, -{self.deleted})"
 
 
-async def _load_all_labeled_files(slugs: list[str], registry: SpecimenRegistry) -> dict[str, set[Path]]:
-    """Load labeled_files (files with ground truth issues) for all specimens in parallel.
+async def _load_all_labeled_files(slugs: list[str], registry: SnapshotRegistry) -> dict[str, set[Path]]:
+    """Load labeled_files (files with ground truth issues) for all snapshots in parallel.
 
     Args:
         slugs: List of specimen slugs to load
-        registry: SpecimenRegistry instance for loading specimens
+        registry: SnapshotRegistry instance for loading snapshots
 
     Returns:
         Dict mapping slug -> set of file paths that appear in issue definitions
@@ -56,13 +56,13 @@ async def _load_all_labeled_files(slugs: list[str], registry: SpecimenRegistry) 
                 hydrated.record.false_positives
             )
 
-    # Load all specimens in parallel
+    # Load all snapshots in parallel
     results = await asyncio.gather(*[load_one(slug) for slug in slugs])
     return dict(results)
 
 
-async def sync_specimens() -> SyncStats:
-    """Sync specimens table from specimen manifests.
+async def sync_snapshots() -> SyncStats:
+    """Sync snapshots table from specimen manifests.
 
     Ensures database exactly matches the source of truth (manifest files).
 
@@ -70,7 +70,7 @@ async def sync_specimens() -> SyncStats:
         Statistics about what changed
     """
     # Create registry once at the start
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
 
     # Get all snapshot slugs and build split mapping
     source_slugs = set(registry.snapshot_slugs)

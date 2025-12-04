@@ -35,7 +35,7 @@ from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
 from adgn.props.runs_context import format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
@@ -278,7 +278,7 @@ async def lint_issue_run(
     client: OpenAIModelProto,
     handlers: Sequence[BaseHandler] = (),
     content_root: Path | None = None,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
@@ -384,7 +384,7 @@ async def run_specimen_lint_issue_async(
     client: OpenAIModelProto,
 ) -> int:
     # Load and hydrate once (avoids rehydration in lint_issue_run)
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(specimen) as hydrated:
         irec = hydrated.issues[issue_id]
 

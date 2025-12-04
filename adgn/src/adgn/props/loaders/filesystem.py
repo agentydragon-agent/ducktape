@@ -11,6 +11,8 @@ import yaml
 
 from adgn.props.models.issue import FalsePositive, Issue
 from adgn.props.models.snapshot import Snapshot, SnapshotSlug
+from adgn.props.models.training_example import TrainingExample
+from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
@@ -178,5 +180,74 @@ class FilesystemLoader:
 
         return issues, false_positives
 
+    def get_training_example(self, slug: SnapshotSlug) -> TrainingExample:
+        """Get a complete training example for a snapshot.
 
-__all__ = ["FilesystemLoader"]
+        Args:
+            slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
+
+        Returns:
+            TrainingExample with snapshot metadata, issues, and false positives
+        """
+        snapshots = self.load_snapshots()
+        if slug not in snapshots:
+            raise KeyError(f"Snapshot '{slug}' not found in snapshots.yaml")
+
+        snapshot = snapshots[slug]
+        issues, false_positives = self.load_issues_for_snapshot(slug)
+
+        return TrainingExample(
+            snapshot_slug=slug,
+            split=snapshot.split,
+            issues=issues,
+            false_positives=false_positives,
+        )
+
+    def get_examples_for_split(self, split: Split) -> list[TrainingExample]:
+        """Get all training examples for a given split.
+
+        Args:
+            split: The split to filter by (TRAIN, VALID, or TEST)
+
+        Returns:
+            List of TrainingExample objects for snapshots in the given split
+        """
+        snapshots = self.load_snapshots()
+        examples = []
+
+        for slug, snapshot in snapshots.items():
+            if snapshot.split == split:
+                issues, fps = self.load_issues_for_snapshot(slug)
+                example = TrainingExample(
+                    snapshot_slug=slug,
+                    split=split,
+                    issues=issues,
+                    false_positives=fps,
+                )
+                examples.append(example)
+
+        return sorted(examples, key=lambda e: e.snapshot_slug)
+
+    def get_all_examples(self) -> list[TrainingExample]:
+        """Get all training examples across all splits.
+
+        Returns:
+            List of all TrainingExample objects, sorted by slug
+        """
+        snapshots = self.load_snapshots()
+        examples = []
+
+        for slug, snapshot in snapshots.items():
+            issues, fps = self.load_issues_for_snapshot(slug)
+            example = TrainingExample(
+                snapshot_slug=slug,
+                split=snapshot.split,
+                issues=issues,
+                false_positives=fps,
+            )
+            examples.append(example)
+
+        return sorted(examples, key=lambda e: e.snapshot_slug)
+
+
+__all__ = ["FilesystemLoader", "TrainingExample"]

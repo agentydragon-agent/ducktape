@@ -15,7 +15,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.props.db import init_db
 from adgn.props.db.config import get_production_config
 from adgn.props.gepa import optimize_with_gepa
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ async def main():
 
     # Create specimen registry
     logger.info("Creating specimen registry")
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
 
     # Create OpenAI client
     logger.info(f"Creating OpenAI client with model: {model}")
