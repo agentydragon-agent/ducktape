@@ -3,117 +3,21 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||
-    Four Svelte components each create their own MCP client connections instead of
-    using a shared client instance. This violates the 2-level compositor architecture,
-    wastes resources, creates inconsistent state, and duplicates connection management.
+    Four Svelte components create independent MCP client connections: AgentsSidebar (line 85), ChatPane
+    (lines 87-91 and 124-128 - TWO separate clients in same component), MessageComposer (lines 16-20),
+    and GlobalApprovalsList (lines 69-71 targeting non-existent /api/mcp endpoint).
 
-    **Problem: Separate client per component**
+    Each client creation involves handshake, auth, session setup, and dedicated connection. This wastes
+    resources (multiple WebSocket/HTTP connections, repeated handshakes, memory/file descriptors), violates
+    2-level compositor architecture (intended: UI → shared client → compositor; actual: parallel connections),
+    creates inconsistent state (separate sessions don't coordinate, race conditions), and duplicates connection
+    management (multiple reconnection paths, error handling, token refresh).
 
-    Components creating independent MCP clients:
-    1. **AgentsSidebar** - creates client to list agents
-    2. **ChatPane** - creates TWO separate clients (list agents, abort agent)
-    3. **MessageComposer** - creates client per message send
-    4. **GlobalApprovalsList** - creates client to `/api/mcp` (non-existent endpoint)
+    Create global MCP client store/context (e.g., `stores/mcp-client.ts` with `mcpClient` writable), initialize
+    once at app startup, and have all components import and use the shared client. This provides single connection,
+    consistent state, centralized reconnection, and proper resource subscriptions.
 
-    Each creation involves handshake, authentication, session setup, and dedicated connection.
-
-    **Why this is problematic:**
-
-    **Resource waste:**
-    - Multiple WebSocket/HTTP connections to same backend
-    - Repeated handshake + auth + session setup
-    - Memory overhead per client instance
-    - File descriptor consumption
-
-    **Architectural violation:**
-    - Intended: Single 2-level compositor (UI → shared client → compositor → agents)
-    - Actual: Parallel connections bypassing shared architecture
-    - GlobalApprovalsList targets non-existent `/api/mcp` endpoint
-
-    **Inconsistent state:**
-    - Separate sessions don't see each other's state
-    - Resource subscriptions on different connections
-    - Race conditions between clients
-    - No coordination on updates
-
-    **Maintenance burden:**
-    - Multiple reconnection logic paths
-    - Error handling duplicated
-    - Token refresh per client
-    - Hard to track connection status
-
-    **ChatPane creates multiple independent clients:**
-    Creates TWO clients in the same component - one to list agents,
-    another to abort agents. Even without shared infrastructure, these
-    operations could reuse a single client instance.
-
-    **The correct approach: Shared MCP client**
-
-    **Architecture: Single client per application**
-
-    Create global MCP client store/context:
-    ```typescript
-    // stores/mcp-client.ts
-    import { writable } from 'svelte/store'
-    import type { Client } from '@modelcontextprotocol/sdk/client/index.js'
-
-    export const mcpClient = writable<Client | null>(null)
-    export const mcpClientStatus = writable<'disconnected' | 'connecting' | 'connected'>('disconnected')
-
-    export async function connectMCP(url: string, token: string) {
-      mcpClientStatus.set('connecting')
-      try {
-        const client = await createMCPClient({ name: 'app-client', url, token })
-        mcpClient.set(client)
-        mcpClientStatus.set('connected')
-        return client
-      } catch (e) {
-        mcpClientStatus.set('disconnected')
-        throw e
-      }
-    }
-    ```
-
-    **Initialize once at app startup:**
-    ```typescript
-    // App.svelte
-    onMount(async () => {
-      const token = getOrExtractToken()
-      if (token) {
-        await connectMCP(`${backendOrigin()}/mcp`, token)
-      }
-    })
-    ```
-
-    **Components use shared client:**
-    ```typescript
-    // Any component
-    import { mcpClient } from '../stores/mcp-client'
-
-    $: client = $mcpClient
-
-    async function fetchData() {
-      if (!client) throw new Error('MCP not connected')
-      const contents = await readResource(client, uri)
-      return parseContents(contents)
-    }
-    ```
-
-    **Benefits:**
-    - Single connection for all operations
-    - Connection reuse (no repeated handshakes)
-    - Consistent state across components
-    - Centralized reconnection logic
-    - Easy to track connection status
-    - Resource subscriptions work correctly
-
-    **GlobalApprovalsList special case:**
-    Component attempts to connect to `/api/mcp` endpoint that doesn't exist.
-    Backend comments indicate feature not ready. Should either:
-    1. Delete component until backend supports it, OR
-    2. Expose global approvals resource through shared compositor
-
-    User notes suggest deleting is cleaner until feature is complete.
+    GlobalApprovalsList: delete component until backend supports it, or expose global approvals through shared compositor.
   |||,
   occurrences=[
     {

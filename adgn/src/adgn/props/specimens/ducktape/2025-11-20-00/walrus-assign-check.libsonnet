@@ -5,44 +5,16 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||
-    Code uses assign-then-check patterns where walrus operator (:=) would be
-    clearer and more concise. Common patterns include:
+    Twelve locations use assign-then-check patterns instead of walrus operator (:=). Common patterns:
+    assign value then check if None (registry.py:93-95, approvals.py:243-245, agent.py:335-336),
+    assign for ternary/conditional (server.py:162-163), dict.get with None check (mcp_routing.py:107-111
+    with useless "Look up token" comment), and multiple occurrences of assign-then-None-check in
+    state.py (lines 131-133, 151-153, 176-178) and servers/agents.py (lines 327-329, 351-353, 374-376).
 
-    1. Assign value, then check if None:
-       row = await self.persistence.get_agent(agent_id)
-       if row is None:
-           raise KeyError(...)
-
-    2. Assign for ternary/conditional:
-       agent = self._agents[agent_id].agent
-       return agent.local_runtime if agent else None
-
-    3. Dict.get with None check (often with useless comment):
-       # Look up token
-       token_info = self.token_table.get(token)
-       if not token_info:
-           return Response(...)
-
-    All should use walrus operator (PEP 572):
-    - More concise: combines assignment and condition
-    - Clearer scope: variable exists only where needed
-    - Standard Python idiom for assign-and-check
-    - Reduces line count without hurting readability
-
-    Examples of conversion:
-
-    Pattern 1 (assign + None check):
-    if (row := await self.persistence.get_agent(agent_id)) is None:
-        raise KeyError(...)
-
-    Pattern 2 (assign + ternary):
-    return agent.local_runtime if (agent := self._agents[agent_id].agent) else None
-
-    Pattern 3 (dict.get + None check):
-    if not (token_info := self.token_table.get(token)):
-        return Response(...)
-
-    Note: Not applicable when variable is reassigned inside conditional block.
+    Use walrus operator to combine assignment and condition: `if (row := await get_agent(...)) is None`,
+    `return x.y if (x := expr) else None`, `if not (info := dict.get(...)): ...`. This is more concise
+    (combines two lines into one), clearer scope (variable exists only where needed), and standard Python
+    idiom (PEP 572). Not applicable when variable is reassigned inside conditional block.
   |||,
 
   occurrences=[

@@ -3,136 +3,20 @@ local I = import '../../lib.libsonnet';
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/approvals.py'], ['adgn/src/adgn/agent/persist/__init__.py']],
   rationale= |||
-    There are two overlapping enums representing approval outcomes, and a converter between them
-    that systematically loses information via an error-hiding fallback.
+    Two overlapping enums exist: `ApprovalOutcome` (persist/__init__.py:36 with values like `POLICY_ALLOW`,
+    `USER_APPROVE`, etc.) and `ApprovalStatus` (approvals.py:70-76 with values `PENDING`, `APPROVED`, `REJECTED`,
+    etc.). Lines 175-181 define `map_outcome_to_status()` converter that tries `ApprovalStatus(outcome.value)`,
+    catches ValueError, and returns `REJECTED` as fallback.
 
-    **ApprovalOutcome enum (persist/__init__.py, line 36):**
-    ```python
-    class ApprovalOutcome(StrEnum):
-        POLICY_ALLOW = "policy_allow"
-        POLICY_DENY_CONTINUE = "policy_deny_continue"
-        POLICY_DENY_ABORT = "policy_deny_abort"
-        USER_APPROVE = "user_approve"
-        USER_DENY_CONTINUE = "user_deny_continue"
-        USER_DENY_ABORT = "user_deny_abort"
-    ```
+    Converter ALWAYS fails: tries to construct `ApprovalStatus("policy_allow")` which doesn't exist in enum,
+    silently returns REJECTED for every input. This causes systematic information loss: `ApprovalOutcome`
+    captures WHAT (allow/deny/abort) and WHO (POLICY_/USER_ prefix), but `ApprovalStatus` loses WHO information.
+    Can't distinguish "policy auto-approved" from "user explicitly approved after review" - breaks audit trails,
+    analytics, debugging, and compliance.
 
-    **ApprovalStatus enum (approvals.py, lines 70-76):**
-    ```python
-    class ApprovalStatus(StrEnum):
-        """Status of an approval (pending or decided)."""
-        PENDING = "pending"
-        APPROVED = "approved"
-        REJECTED = "rejected"
-        DENIED = "denied"
-        ABORTED = "aborted"
-    ```
-
-    **The broken converter (approvals.py, lines 175-181):**
-    ```python
-    def map_outcome_to_status(outcome: ApprovalOutcome) -> ApprovalStatus:
-        """Map ApprovalOutcome to ApprovalStatus using value-based conversion."""
-        try:
-            return ApprovalStatus(outcome.value)
-        except ValueError:
-            # Fallback for unknown outcomes
-            return ApprovalStatus.REJECTED
-    ```
-
-    **Multiple problems:**
-
-    1. **The converter ALWAYS fails:** It tries to construct `ApprovalStatus("policy_allow")`,
-       which raises ValueError because that value doesn't exist in ApprovalStatus. The try/except
-       catches this and silently returns REJECTED for EVERY input.
-
-    2. **Systematic information loss:** ApprovalOutcome captures two orthogonal aspects:
-       - **What** was decided: allow/approve, deny_continue, deny_abort
-       - **Who** decided it: POLICY_ prefix (automatic) vs USER_ prefix (explicit human)
-
-       ApprovalStatus only has the "what" (approved/denied/aborted) without the "who".
-       Converting loses critical audit trail information.
-
-    3. **Silent error hiding:** The ValueError fallback masks the systematic conversion failure.
-       Every call to this function returns REJECTED regardless of input, and nobody notices
-       because there's no error or warning.
-
-    **Why information loss matters:**
-
-    1. **Audit trails**: Can't distinguish "policy auto-approved risky action" from
-       "user explicitly approved risky action after review"
-
-    2. **Analytics**: Can't measure how often policies auto-approve vs requiring user review
-
-    3. **Debugging**: Can't tell if a tool executed because policy allowed it or because
-       user overrode a deny-with-ask policy
-
-    4. **Compliance**: Some regulations require knowing if a human reviewed a decision
-
-    **The correct fix:**
-
-    There SHOULD be a single unified type (or set of types), but it must preserve both
-    the decision outcome AND the decision source.
-
-    **Option A: Single comprehensive enum**
-    ```python
-    class ApprovalStatus(StrEnum):
-        PENDING = "pending"
-        POLICY_APPROVED = "policy_approved"
-        USER_APPROVED = "user_approved"
-        POLICY_DENIED = "policy_denied"
-        USER_DENIED = "user_denied"
-        POLICY_ABORTED = "policy_aborted"
-        USER_ABORTED = "user_aborted"
-    ```
-
-    **Option B: Separate outcome and source fields**
-    ```python
-    class DecisionOutcome(StrEnum):
-        APPROVED = "approved"
-        DENIED = "denied"
-        ABORTED = "aborted"
-
-    class DecisionSource(StrEnum):
-        POLICY = "policy"
-        USER = "user"
-
-    class Decision(BaseModel):
-        outcome: DecisionOutcome
-        source: DecisionSource
-        decided_at: datetime
-        reason: str | None
-    ```
-
-    Either approach:
-    - Uses a single type definition (no duplication across layers)
-    - Preserves both "what" and "who" information
-    - Eliminates the need for converters with error-hiding fallbacks
-    - Makes impossible states unrepresentable (no silent failures)
-
-    **Migration path from ApprovalOutcome:**
-    ```python
-    # Option A mapping
-    POLICY_ALLOW → POLICY_APPROVED
-    USER_APPROVE → USER_APPROVED
-    POLICY_DENY_CONTINUE → POLICY_DENIED
-    USER_DENY_CONTINUE → USER_DENIED
-    POLICY_DENY_ABORT → POLICY_ABORTED
-    USER_DENY_ABORT → USER_ABORTED
-
-    # Option B mapping
-    POLICY_ALLOW → (APPROVED, POLICY)
-    USER_APPROVE → (APPROVED, USER)
-    POLICY_DENY_CONTINUE → (DENIED, POLICY)
-    USER_DENY_CONTINUE → (DENIED, USER)
-    POLICY_DENY_ABORT → (ABORTED, POLICY)
-    USER_DENY_ABORT → (ABORTED, USER)
-    ```
-
-    **Current impact:**
-
-    The converter silently returns REJECTED for all inputs, making it impossible to
-    distinguish between different decision outcomes or sources. All approval decisions
-    appear as REJECTED in the system.
+    Use single unified type preserving both outcome and source: either comprehensive enum with `POLICY_APPROVED`,
+    `USER_APPROVED`, etc., or separate `Decision(outcome: DecisionOutcome, source: DecisionSource)` model.
+    Eliminates need for converters with error-hiding fallbacks.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [
