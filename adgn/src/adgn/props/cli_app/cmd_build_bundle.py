@@ -339,7 +339,7 @@ def cmd_build_bundle(
 
     Args:
         specimens_dir: Base directory containing snapshots.yaml and snapshot subdirs (default: from package resources)
-        source_repo_path: Path to source git repository (default: /code/gitlab.com/agentydragon/ducktape)
+        source_repo_path: Path to source git repository (default: auto-discovered from current directory)
         output_bundle: Output path for bundle file (default: specimens_dir/ducktape/snapshots.bundle)
 
     Note: The default output path matches the relative URL in snapshots.yaml (file://../snapshots.bundle
@@ -349,7 +349,12 @@ def cmd_build_bundle(
     if specimens_dir is None:
         specimens_dir = get_specimens_dir()
     if source_repo_path is None:
-        source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
+        # Discover repository from current directory
+        discovered = pygit2.discover_repository(".")
+        if not discovered:
+            raise RuntimeError("Could not find git repository. Run from within ducktape repo.")
+        # pygit2.discover_repository returns path to .git directory, get parent
+        source_repo_path = Path(discovered).parent if discovered.endswith("/.git/") else Path(discovered).parent.parent
     if output_bundle is None:
         # Default to specimens/ducktape/snapshots.bundle to match snapshots.yaml URLs
         output_bundle = specimens_dir / "ducktape" / "snapshots.bundle"
