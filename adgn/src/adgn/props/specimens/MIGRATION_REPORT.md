@@ -13,6 +13,7 @@ Migration completed on 2025-12-04.
 - [x] All imports at the top of each file (standard Jsonnet style: `local I = import '../../lib.libsonnet';`)
 - [x] All multi-file issues have `expect_caught_from` specified
 - [x] Import paths corrected to `../../lib.libsonnet` for 2-level deep files
+- [x] **Snapshot auto-derived from path**: Removed `snapshot` parameter from Jsonnet helpers and all files. Snapshot slug is now derived at Python loader level from file path (e.g., `ducktape/2025-11-26-00/foo.libsonnet` → slug `ducktape/2025-11-26-00`)
 
 ### Remaining (Technical Debt)
 - [ ] **ORM SnapshotSlug typing**: All `snapshot_slug` columns in `db/models.py` should use `SnapshotSlug` NewType instead of bare `String`. Tables affected:
