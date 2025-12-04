@@ -1,0 +1,16 @@
+local I = import '../lib.libsonnet';
+
+// iss-023-permission-diff-history-block
+// Permission/diff/history block duplicated across createNewFile/deleteContent/replaceContent in edit.go
+
+I.issueMulti(
+  snapshot='crush/2025-08-30-internal_db',
+  rationale= |||
+    A ~30-line sequence (generate diff, build permission.CreatePermissionRequest, write file, history bookkeeping, recordFileWrite/read) is duplicated across multiple branches in internal/llm/tools/edit.go. Extract a single helper parameterized by action, description, and params to centralize permission, diff, write, history bookkeeping and avoid drift.
+  |||,
+  occurrences=[
+    { files: { 'internal/llm/tools/edit.go': [{ start_line: 226, end_line: 275 }] }, note: 'createNewFile branch: diff+permission+write+history+record bookkeeping.', expect_caught_from: [['internal/llm/tools/edit.go']] },
+    { files: { 'internal/llm/tools/edit.go': [{ start_line: 349, end_line: 406 }] }, note: 'deleteContent branch: diff+permission+write+history+record bookkeeping (similar pattern).', expect_caught_from: [['internal/llm/tools/edit.go']] },
+    { files: { 'internal/llm/tools/edit.go': [{ start_line: 488, end_line: 550 }] }, note: 'replaceContent branch: same sequence; extract helper EnsureWriteWithHistory(ctx, files, sessionID, filePath, oldContent, newContent, action, desc, params...).', expect_caught_from: [['internal/llm/tools/edit.go']] },
+  ],
+)
