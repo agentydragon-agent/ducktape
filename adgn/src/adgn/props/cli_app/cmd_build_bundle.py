@@ -260,23 +260,44 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
         print(f"  - {slug}")
     print()
 
+    # Check if bundle already exists for incremental building
+    existing_tags: set[str] = set()
+    if output_bundle.exists():
+        print(f"Existing bundle found: {output_bundle}")
+        # List tags in existing bundle
+        result = subprocess.run(
+            ["git", "bundle", "list-heads", str(output_bundle)], capture_output=True, text=True, check=True
+        )
+        if result.stdout.strip():
+            existing_tags = {line.split()[-1] for line in result.stdout.strip().split("\n") if line}
+        print(f"  Existing tags: {len(existing_tags)}")
+        print()
+
     # Create temporary bundle repository
     with tempfile.TemporaryDirectory(prefix="snapshots-bundle-") as tmpdir:
         bundle_repo_path = Path(tmpdir) / "bundle"
-        bundle_repo_path.mkdir()
 
-        # Initialize bundle repo
-        bundle_repo = pygit2.init_repository(str(bundle_repo_path))
+        # Initialize bundle repo (clone from existing bundle if present)
+        if output_bundle.exists():
+            print("Cloning existing bundle as base...")
+            # Clone directly into bundle_repo_path (git clone creates the directory)
+            subprocess.run(["git", "clone", str(output_bundle), str(bundle_repo_path)], check=True, capture_output=True)
+            bundle_repo = pygit2.Repository(str(bundle_repo_path))
+        else:
+            print("Creating new bundle from scratch...")
+            bundle_repo_path.mkdir()
+            bundle_repo = pygit2.init_repository(str(bundle_repo_path))
+            # Create base commit
+            sig = pygit2.Signature("Bundle Builder", "bundle@example.com")
+            tree_oid = bundle_repo.TreeBuilder().write()
+            base_commit_oid = bundle_repo.create_commit("refs/heads/main", sig, sig, "Bundle base commit", tree_oid, [])
+            print(f"Base commit: {base_commit_oid}")
 
-        # Create base commit
-        sig = pygit2.Signature("Bundle Builder", "bundle@example.com")
-        tree_oid = bundle_repo.TreeBuilder().write()
-        base_commit_oid = bundle_repo.create_commit("refs/heads/main", sig, sig, "Bundle base commit", tree_oid, [])
-        base_commit_obj = bundle_repo[base_commit_oid]
+        # Get base commit for new snapshots
+        base_commit_obj = bundle_repo[bundle_repo.head.target]
         if not isinstance(base_commit_obj, pygit2.Commit):
             raise TypeError(f"Expected Commit, got {type(base_commit_obj)}")
         base_commit = base_commit_obj
-        print(f"Base commit: {base_commit_oid}")
         print()
 
         # Process each snapshot
@@ -292,7 +313,13 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
             else:
                 tag_name = f"specimen-{slug.replace('/', '-')}"
 
-            # Create filtered commit
+            # Skip snapshots that already exist in the bundle
+            full_tag_ref = f"refs/tags/{tag_name}"
+            if full_tag_ref in existing_tags:
+                print(f"Skipping {tag_name} (already in bundle)")
+                continue
+
+            # Create filtered commit for new snapshot
             create_filtered_commit(
                 source_repo=source_repo,
                 bundle_repo=bundle_repo,
@@ -304,6 +331,9 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
             )
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)
+        # Remove existing bundle first (git bundle create doesn't have --force)
+        if output_bundle.exists():
+            output_bundle.unlink()
         subprocess.run(["git", "bundle", "create", str(output_bundle), "--all"], cwd=bundle_repo_path, check=True)
 
         # Show result

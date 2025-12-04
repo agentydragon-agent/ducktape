@@ -824,22 +824,26 @@ def snapshot_capture_ducktape(
     # Derive tag name from slug
     tag_name = f"specimen-{slug.replace('/', '-')}"
 
-    # Create manifest
-    manifest = {
+    # Add snapshot entry to snapshots.yaml (no manifest.yaml - that's deprecated)
+    snapshots_yaml_path = specimens_dir / "snapshots.yaml"
+    with snapshots_yaml_path.open() as f:
+        snapshots_data = yaml.safe_load(f) or {}
+
+    snapshots_data[slug] = {
         "source": {
             "vcs": "git",
-            "url": "file://../specimens.bundle",
+            "url": "file://../snapshots.bundle",
             "ref": f"refs/tags/{tag_name}",
             "commit": "<will be updated after bundle creation>",
         },
+        "split": "train",  # Default split, user can change manually
         "bundle": {"source_commit": source_commit, "include": list(include), "exclude": list(exclude)},
     }
 
-    manifest_path = snapshot_dir / "manifest.yaml"
-    with manifest_path.open("w") as f:
-        yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
+    with snapshots_yaml_path.open("w") as f:
+        yaml.dump(snapshots_data, f, default_flow_style=False, sort_keys=False)
 
-    typer.echo(f"Created manifest: {manifest_path}")
+    typer.echo(f"Added {slug} to snapshots.yaml")
     typer.echo(f"  Slug: {slug}")
     typer.echo(f"  Source commit: {source_commit}")
     typer.echo(f"  Tag: {tag_name}")
@@ -854,9 +858,11 @@ def snapshot_capture_ducktape(
     typer.echo()
     typer.echo(f"✓ Snapshot captured: {slug}")
     typer.echo(f"  Directory: {snapshot_dir}")
-    typer.echo(f"  Manifest: {manifest_path}")
+    typer.echo(f"  snapshots.yaml: {snapshots_yaml_path}")
     typer.echo()
     typer.echo("Next steps:")
-    typer.echo(f"  1. Update {manifest_path} with the correct 'source.commit' SHA from bundle")
+    typer.echo(f"  1. Update snapshots.yaml {slug} entry with the correct 'source.commit' SHA from bundle")
     typer.echo(f"  2. Add issues to {issues_dir}/")
-    typer.echo(f"  3. Commit changes: git add {snapshot_dir} adgn/src/adgn/props/specimens/ducktape/specimens.bundle")
+    typer.echo(
+        f"  3. Commit changes: git add {snapshot_dir} {snapshots_yaml_path} src/adgn/props/specimens/ducktape/snapshots.bundle"
+    )

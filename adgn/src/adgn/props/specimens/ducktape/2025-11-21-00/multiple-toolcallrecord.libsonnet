@@ -3,132 +3,19 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The `on_call_tool` method constructs multiple independent `ToolCallRecord` instances with
-    verbose redundant field assignments at each state transition. It should instead hold *one*
-    `ToolCallRecord` instance and progressively mutate it, saving updates as state changes.
+    The `on_call_tool` method constructs 8 independent ToolCallRecord instances at lines 150-158,
+    180-188, 195-205, 263-271, 278-286, 302-310, 317-327, and 339-347, each repeating the same
+    4-7 field assignments (call_id, run_id, agent_id, tool_call, decision, execution).
 
-    **Current pattern - multiple redundant constructions:**
+    This massive code duplication (~100 lines of redundancy) violates DRY. Field assignments
+    obscure the actual state transitions (PENDING → EXECUTING → COMPLETED, or DENIED paths).
+    When fields change, all 8 constructions must be updated, making maintenance error-prone.
 
-    The method constructs ToolCallRecord instances at 8 different locations, each repeating
-    the same verbose field assignments:
+    Create ONE mutable ToolCallRecord instance at the start. At each state transition, update only
+    the changed fields (set .decision or .execution), then save. This eliminates redundancy, makes
+    state transitions explicit, and ensures single source of truth for record fields.
 
-    **1. Line 150-158: Initial pending record**
-    ```python
-    pending_record = ToolCallRecord(
-        call_id=call_id,
-        run_id=str(self._run_id) if self._run_id is not None else None,
-        agent_id=self._agent_id,
-        tool_call=tool_call,
-        decision=None,
-        execution=None,
-    )
-    ```
-
-    **2. Line 180-188: ALLOW path - executing record**
-    ```python
-    executing_record = ToolCallRecord(
-        call_id=call_id,
-        run_id=str(self._run_id) if self._run_id is not None else None,
-        agent_id=self._agent_id,
-        tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
-        decision=decision_obj,
-        execution=None,
-    )
-    ```
-
-    **3. Line 195-205: ALLOW path - completed record**
-    ```python
-    completed_record = ToolCallRecord(
-        call_id=call_id,
-        run_id=str(self._run_id) if self._run_id is not None else None,
-        agent_id=self._agent_id,
-        tool_call=ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None),
-        decision=decision_obj,
-        execution=execution_obj,
-    )
-    ```
-
-    **4. Line 263-271: DENY_ABORT path**
-    **5. Line 278-286: DENY_CONTINUE path**
-    **6. Line 302-310: ASK/approved - executing record**
-    **7. Line 317-327: ASK/approved - completed record**
-    **8. Line 339-347: ASK/denied record**
-
-    All repeat the same pattern with redundant field assignments.
-
-    **Why this is problematic:**
-    - Massive code duplication (same 4-7 field assignments repeated 8 times)
-    - Obscures the actual state transitions (buried in verbose construction)
-    - Error-prone: easy to forget updating one construction when fields change
-    - Inefficient: creates multiple objects when one would suffice
-    - Hard to read: cognitive overhead from repeated verbose patterns
-    - Violates DRY principle
-
-    **Recommended approach:**
-
-    Create ONE record at the start and progressively mutate it:
-
-    ```python
-    async def on_call_tool(self, context: MiddlewareContext[Any], call_next: CallNext[Any, ToolResult]) -> ToolResult:
-        name = context.message.name
-        arguments = context.message.arguments
-        call_id = "pg:" + uuid.uuid4().hex
-
-        # Create tool call and record ONCE
-        tool_call = ToolCall(name=name, call_id=call_id, args_json=json.dumps(arguments) if arguments else None)
-        record = ToolCallRecord(
-            call_id=call_id,
-            run_id=str(self._run_id) if self._run_id is not None else None,
-            agent_id=self._agent_id,
-            tool_call=tool_call,
-            decision=None,
-            execution=None,
-        )
-
-        # Save initial PENDING state
-        await self._persistence.save_tool_call(record)
-
-        # ... evaluate policy decision ...
-
-        if decision is ApprovalDecision.ALLOW:
-            # Update decision, save EXECUTING state
-            record.decision = Decision(outcome=ApprovalOutcome.POLICY_ALLOW, decided_at=_now(), reason=rationale)
-            await self._persistence.save_tool_call(record)
-
-            try:
-                call_result = await call_next(context)
-
-                # Update execution, save COMPLETED state
-                record.execution = ToolCallExecution(completed_at=_now(), output=convert_fastmcp_result(call_result))
-                await self._persistence.save_tool_call(record)
-
-                # ... handle reserved codes ...
-                return call_result
-            except McpError as e:
-                _raise_if_reserved_code(e, name)
-                raise
-
-        if decision is ApprovalDecision.DENY_ABORT:
-            # Update decision, save DENIED state
-            record.decision = Decision(outcome=ApprovalOutcome.POLICY_DENY_ABORT, decided_at=_now(), reason=rationale)
-            await self._persistence.save_tool_call(record)
-            raise _policy_denied_error(ApprovalDecision.DENY_ABORT, name, rationale)
-
-        # ... similar pattern for other branches ...
-    ```
-
-    **Benefits:**
-    - Single source of truth for record fields
-    - Clear state transitions (just update what changed)
-    - Less code (eliminates ~100 lines of redundancy)
-    - Easier to maintain (field changes in one place)
-    - Clearer intent (mutations show what actually changed)
-    - More efficient (one object, multiple updates)
-
-    **Implementation notes:**
-    - ToolCallRecord needs to be mutable (dataclass with frozen=False, or Pydantic with frozen=False)
-    - Each save updates the same record reference
-    - State transitions become obvious: set .decision, save; set .execution, save
+    Requires ToolCallRecord to be mutable (dataclass with frozen=False, or Pydantic with frozen=False).
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/middleware.py': [

@@ -3,75 +3,17 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    The code uses `datetime.utcnow()` to generate timestamps, but this function is
-    deprecated as of Python 3.12 in favor of `datetime.now(timezone.utc)`.
+    Lines 45 and 52 use `datetime.utcnow().isoformat() + "Z"` for timestamp generation.
 
-    **Current implementation (transcript_handler.py, lines 45, 52):**
-    ```python
-    # Line 45:
-    json.dumps({"started": datetime.utcnow().isoformat() + "Z"}, indent=2)
+    `datetime.utcnow()` is deprecated as of Python 3.12 (scheduled for removal in future versions).
+    It returns a timezone-naive datetime, requiring manual "Z" suffix concatenation.
 
-    # Line 52:
-    out = {"ts": datetime.utcnow().isoformat() + "Z", **rec}
-    ```
+    Replace with `datetime.now(timezone.utc)` which returns a timezone-aware datetime. The `.isoformat()`
+    call automatically includes timezone offset (e.g., `2024-01-15T10:30:00+00:00`), eliminating the
+    manual suffix. If "Z" format is required, use `.replace("+00:00", "Z")`.
 
-    **Problems:**
-
-    1. **Deprecated**: `datetime.utcnow()` is deprecated in Python 3.12+
-    2. **Naive datetime**: Returns a timezone-naive datetime object, requiring manual "Z" suffix
-    3. **Error-prone**: Easy to forget the "Z" suffix or use wrong timezone
-    4. **Inconsistent**: Mix of naive datetime + manual suffix instead of timezone-aware
-    5. **Future incompatibility**: Will be removed in future Python versions
-
-    **Python 3.12 deprecation warning:**
-    ```
-    DeprecationWarning: datetime.utcnow() is deprecated and scheduled for removal in
-    a future version. Use timezone-aware objects to represent datetimes in UTC:
-    datetime.now(timezone.utc).
-    ```
-
-    **The correct approach:**
-
-    Use `datetime.now(timezone.utc)` which returns a timezone-aware datetime:
-
-    ```python
-    from datetime import datetime, timezone
-
-    # Line 45:
-    json.dumps({"started": datetime.now(timezone.utc).isoformat()}, indent=2)
-
-    # Line 52:
-    out = {"ts": datetime.now(timezone.utc).isoformat(), **rec}
-    ```
-
-    **Benefits:**
-
-    1. **Not deprecated**: Uses the recommended Python 3.12+ API
-    2. **Timezone-aware**: Returns datetime with UTC timezone information
-    3. **Automatic formatting**: `.isoformat()` includes timezone offset automatically
-       (e.g., `2024-01-15T10:30:00+00:00`)
-    4. **No manual suffix**: No need to append "Z"
-    5. **Type-safe**: Datetime knows it's UTC, not just a naive timestamp
-    6. **Future-proof**: Won't break in future Python versions
-
-    **Note on ISO format:**
-
-    Both approaches produce valid ISO 8601 timestamps, but the timezone-aware version
-    is more explicit:
-    - Naive + "Z": `2024-01-15T10:30:00.123456Z`
-    - Aware: `2024-01-15T10:30:00.123456+00:00`
-
-    If you need the "Z" format specifically, you can convert:
-    ```python
-    datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    ```
-
-    But the `+00:00` format is equally valid and more explicit about timezone.
-
-    **Related deprecated functions:**
-
-    - `datetime.utcnow()` → `datetime.now(timezone.utc)`
-    - `datetime.utcfromtimestamp(ts)` → `datetime.fromtimestamp(ts, tz=timezone.utc)`
+    Timezone-aware datetime provides type safety (datetime knows it's UTC, not just a naive timestamp)
+    and prevents accidentally forgetting the timezone suffix or using the wrong timezone.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/transcript_handler.py': [

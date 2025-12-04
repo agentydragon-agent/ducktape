@@ -118,3 +118,16 @@ misc/2025-08-29-pyright_watch_report:
     root: code
   split: train
   bundle: null
+ducktape/2025-12-04-00:
+  source:
+    vcs: git
+    url: file://../snapshots.bundle
+    ref: refs/tags/specimen-ducktape-2025-12-04-00
+    commit: 558809fddecdc9514c0d1922887ccb72e8093553
+  split: train
+  bundle:
+    source_commit: ab7e9d6f15a67bb4d1e43b3e43fdfb4ce6ce4cad
+    include:
+    - adgn/
+    exclude:
+    - adgn/src/adgn/props/specimens/

@@ -3,56 +3,13 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The `proposals_list` resource handler should use a direct list comprehension instead of
-    assigning the database query result to a `proposals` variable first.
+    Line 151 assigns database query result to `proposals` variable, which is used exactly once
+    in the list comprehension on lines 152-160. Single-use variables add cognitive overhead
+    without providing value.
 
-    **Current code (lines 148-160):**
-    ```python
-    @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
-    async def proposals_list() -> list[ProposalDescriptor]:
-        """List all policy proposals with status and timestamps."""
-        proposals = await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
-        return [
-            ProposalDescriptor(
-                id=p.id,
-                status=ProposalStatus(p.status),
-                created_at=p.created_at,
-                decided_at=p.decided_at,
-            )
-            for p in proposals
-        ]
-    ```
-
-    **Why this is problematic:**
-    - `proposals` variable is only used once in the list comprehension
-    - Unnecessary intermediate variable that doesn't add clarity
-    - Extra line of code that provides no value
-
-    **Recommended fix:**
-    Inline the database query directly into the list comprehension:
-    ```python
-    @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/list", name="proposals_list", mime_type="application/json")
-    async def proposals_list() -> list[ProposalDescriptor]:
-        """List all policy proposals with status and timestamps."""
-        return [
-            ProposalDescriptor(
-                id=p.id,
-                status=ProposalStatus(p.status),
-                created_at=p.created_at,
-                decided_at=p.decided_at,
-            )
-            for p in await self._engine.persistence.list_policy_proposals(self._engine.agent_id)
-        ]
-    ```
-
-    **Benefits:**
-    - One less variable to track
-    - More concise (11 lines → 10 lines)
-    - Clearer that the query result is only used for the comprehension
-    - Consistent with Python best practices for single-use iterables
-
-    **Note:**
-    The `await` expression in the comprehension is valid Python syntax and doesn't hurt readability.
+    Inline the query directly into the comprehension: move the `await` expression into the
+    `for p in ...` clause. This is valid Python syntax and makes it clearer that the query
+    result is only used for the comprehension.
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/approval_policy/server.py': [

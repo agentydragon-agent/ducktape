@@ -12,5 +12,8 @@ I.issue(
     'internal/db/sql/messages.sql': [[6, 11]],
     'internal/db/messages.sql.go': [[105, 113]],
   },
-  expect_caught_from=[['internal/db/sql/messages.sql', 'internal/db/messages.sql.go']],
+  expect_caught_from=[
+    ['internal/db/sql/messages.sql'],
+    ['internal/db/messages.sql.go'],
+  ],
 )

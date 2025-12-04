@@ -54,7 +54,7 @@ Each `.libsonnet` file contains:
 
 **True Positive (issue that should be caught):**
 ```jsonnet
-local I = import 'lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale='Dead code should be removed',
@@ -65,7 +65,7 @@ I.issue(
 
 **Multi-file issue (requires explicit expect_caught_from):**
 ```jsonnet
-local I = import 'lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale='Duplicated enum definitions',
@@ -82,7 +82,7 @@ I.issue(
 
 **Multiple occurrences:**
 ```jsonnet
-local I = import 'lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale='Imperative list building should use comprehensions',
@@ -103,7 +103,7 @@ I.issueMulti(
 
 **False Positive:**
 ```jsonnet
-local I = import 'lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.falsePositive(
   rationale='Intentional duplication for visual consistency',
@@ -115,7 +115,51 @@ I.falsePositive(
 )
 ```
 
-### 3. Detection Standard for `expect_caught_from`
+### 3. Range Format Specifications
+
+**Three valid formats for line ranges:**
+
+```jsonnet
+filesToRanges={
+  'file.py': [
+    // Format 1: Bare number (single line)
+    38,
+
+    // Format 2: Two-element array (range)
+    [40, 45],     // Lines 40-45 inclusive
+    [50, 50],     // Single line (start = end)
+
+    // Format 3: Object (explicit fields)
+    {start_line: 60},                    // Single line (no end_line)
+    {start_line: 70, end_line: 75},      // Range with end_line
+  ]
+}
+```
+
+**Invalid format:**
+```jsonnet
+filesToRanges={'file.py': [
+  [38],  // ❌ INVALID - arrays must have exactly 2 elements
+]}
+```
+
+**Auto-inference rules:**
+
+**For `issue()` (single occurrence):**
+- If `filesToRanges` has 1 file: `expect_caught_from` auto-inferred as `[[that_file]]`
+- If `filesToRanges` has >1 file: Must provide explicit `expect_caught_from` (will error if missing)
+
+**For `falsePositive()` (single occurrence):**
+- If `relevant_files` not provided: Auto-inferred from keys of `filesToRanges`
+
+**For `issueMulti()` (multiple occurrences):**
+- All occurrences MUST have `note` field
+- If total unique files across ALL occurrences > 1:
+  - EVERY occurrence must have explicit `expect_caught_from`
+  - This applies even to single-file occurrences within the multi-file issue
+- Example: If occurrence 1 uses `file_a.py` and occurrence 2 uses `file_b.py`, both need `expect_caught_from`
+
+### 4. Detection Standard for `expect_caught_from`
 
 **The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
 
@@ -183,7 +227,7 @@ Examples:
   - The file IS the problem (broken promise), not just "unused affordance"
   - Contrast with: Tests not using `server.py` fixture → fixture is fine, tests are the problem
 
-### 4. Issue Organization: Logical Problems, Not Locations
+### 5. Issue Organization: Logical Problems, Not Locations
 
 **CRITICAL PRINCIPLE: Group by LOGICAL ISSUE, not by location.**
 
@@ -204,7 +248,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 3. **Same problem across locations** = single issue with multiple occurrences
 4. **Different problems** = separate issues even if in adjacent lines
 
-### 5. Objectivity in Issue Descriptions
+### 6. Objectivity in Issue Descriptions
 
 **Avoid subjective phrasing** - describe problems objectively:
 
@@ -220,7 +264,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 
 Present facts and technical rationale, not opinions or attributed suggestions.
 
-### 6. Research First: No Open Questions
+### 7. Research First: No Open Questions
 
 **Snapshots must not leave open research questions.** All investigation should be completed before authoring the issue.
 
@@ -243,7 +287,7 @@ rationale=|||
 |||
 ```
 
-### 7. Verifiable External References
+### 8. Verifiable External References
 
 **When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
 
@@ -257,7 +301,7 @@ rationale=|||
 - Standard libraries: Python stdlib, Node.js core modules
 - Well-known tools: pytest, Jest, Docker, PostgreSQL
 
-### 8. Code Citation Guidelines
+### 9. Code Citation Guidelines
 
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line ranges, briefly summarize what's there.
 

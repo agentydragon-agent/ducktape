@@ -1,10 +1,10 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  expect_caught_from=[
-    ['llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py'],
-    ['llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py'],
-  ],
+  expect_caught_from=[[
+    'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py',
+    'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/jupyter_sandbox_compose.py',
+  ]],
   rationale=|||
     The helper `_ensure_dir(p: Path) -> None` is a trivial passthrough around `p.mkdir(parents=True, exist_ok=True)`.
     Such single-line wrappers add indirection without adding durable abstraction, and they increase the cognitive load for readers who must jump to see what the helper actually does.
