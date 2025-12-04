@@ -3,50 +3,25 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||
-    Five Svelte components have import statements that are not at the top of the
-    `<script>` block. Imports appear after comments, state declarations, or other
-    code, violating JavaScript/TypeScript convention and linter expectations.
-
-    **Problem: Imports scattered throughout script blocks**
-
-    Convention: All imports at top of file, immediately after `<script>` tag.
-    Imports scattered throughout make dependencies harder to track.
+    Five Svelte components have imports scattered after comments, state declarations,
+    or logic instead of at the top of the `<script>` block.
 
     **Examples:**
-    - **AgentsSidebar** (line 35): `import { onMount, onDestroy }` after comments, far below other imports (lines 2-13)
-    - **ApprovalsPanel** (lines 27, 32): Two imports after comments and code
-    - **JsonDisclosure** (line 11): `import { onMount }` after other imports and declarations
-    - **ToolJson** (line 25): `import { z }` from zod after comments and logic
-    - **ServersPanel** (line 20): `import JSONFormatter` after comments and state
+    - AgentsSidebar line 35: `import { onMount, onDestroy }` far below other imports (lines 2-13)
+    - ApprovalsPanel lines 27, 32: two imports after comments/code
+    - JsonDisclosure line 11: `import { onMount }` after other imports/declarations
+    - ToolJson line 25: `import { z }` after comments/logic
+    - ServersPanel line 20: `import JSONFormatter` after comments/state
 
-    **Why problematic:**
-    1. **Readability**: Readers expect all imports at top; scattered imports require scanning entire file
-    2. **Convention violation**: Every JS/TS style guide mandates imports first
-    3. **Linter conflicts**: ESLint/Prettier rules enforce import ordering
-    4. **Dependency tracking**: Tools analyzing dependencies expect imports at top
-    5. **Mental overhead**: "Is this an import or runtime code?" ambiguity
+    **Problems:**
+    - Violates JS/TS convention (all imports at top)
+    - Harder to track dependencies (must scan entire file)
+    - Conflicts with ESLint/Prettier import ordering rules
+    - Mental overhead distinguishing imports from runtime code
 
-    **Correct approach: Move all imports to top**
-
-    Standard structure:
-    ```typescript
-    <script lang="ts">
-      // All imports here
-      import { onMount } from 'svelte'
-      import { other } from './other'
-      import Component from './Component.svelte'
-
-      // Then state, logic, etc.
-      let state = ...
-    ```
-
-    **Standard import ordering:**
-    1. External libraries (svelte, third-party)
-    2. Internal modules (features/*, shared/*)
-    3. Components (*.svelte)
-    4. Types (type imports)
-
-    ESLint `import/order` rule can enforce this automatically.
+    **Fix:** Move all imports immediately after `<script>` tag. Standard order:
+    external libraries, internal modules, components, types. ESLint `import/order`
+    can enforce automatically.
   |||,
   occurrences=[
     {

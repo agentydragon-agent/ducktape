@@ -9,64 +9,29 @@ I.issue(
     ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
   ],
   rationale=|||
-    The notifier callback pattern (ApprovalHub, ApprovalPolicyEngine, AgentRegistry, sessions)
-    has 5 design problems making it brittle:
+    The notifier callback pattern across ApprovalHub, ApprovalPolicyEngine, AgentRegistry, and
+    sessions has five design problems making it brittle:
 
-    **Problem 1: 0-or-1 receivers, not N**
+    Problem 1: Single `_notifier` field replaced by `set_notifier()` supports only one listener
+    at a time (not proper observer/pub-sub). Multiple consumers require manual wrappers.
+    Examples: ApprovalHub._notifier (line 82), ApprovalPolicyEngine._notify (line 156).
 
-    Single notifier field (`_notifier`, `_notify`) replaced by `set_notifier()`. Only one listener
-    at a time - not proper observer/pub-sub. Multiple consumers require manual wrapper functions.
-
-    Examples: ApprovalHub._notifier (line 82), ApprovalPolicyEngine._notify (line 156),
-    AgentRegistry._notifier (server.py:92).
-
-    **Problem 2: Mixed sync/async with awkward contract**
-
-    Notifiers typed as sync but documented "sync and non-blocking (may schedule async work)"
-    (approvals.py:87, 165). AgentRegistry expects async. Forces `loop.create_task()` wrappers
+    Problem 2: Notifiers typed as sync but documented "sync and non-blocking (may schedule async
+    work)" (approvals.py:87, 165). AgentRegistry expects async, forcing `create_task()` wrappers
     (approval_policy/server.py:96-100).
 
-    **Problem 3: Exception swallowing**
+    Problem 3: Fire-and-forget `create_task()` swallows or only logs exceptions (agents.py:844-851).
+    approval_policy/server.py:100 accesses exception only to prevent asyncio warnings.
 
-    Fire-and-forget `create_task()` swallows or only logs exceptions (agents.py:844-851).
-    Caller never knows if broadcast_resource_updated fails. approval_policy/server.py:100
-    accesses exception only to prevent asyncio warnings - doesn't handle or log.
+    Problem 4: Notifiers called without try/except (approvals.py:101-102, 109-110, 178-181). If
+    notifier throws, crashes whole operation.
 
-    **Problem 4: No exception handling at call sites**
+    Problem 5: Inconsistent patterns - some use `if self._notifier:`, others use intermediate `cb`
+    variable (lines 204-206, 209-211) that's pointless.
 
-    Notifiers called without try/except (approvals.py:101-102, 109-110, 178-181). If notifier
-    throws, crashes whole operation.
-
-    **Problem 5: Inconsistent patterns**
-
-    Some use `if self._notifier:`, others use intermediate `cb` variable (lines 204-206, 209-211).
-    Intermediate variable pointless.
-
-    **Fix:**
-
-    Replace with async observer pattern:
-
-    ```python
-    class ApprovalHub:
-        def __init__(self):
-            self._observers: list[Callable[[str], Awaitable[None]]] = []
-
-        def add_observer(self, observer: Callable[[str], Awaitable[None]]) -> None:
-            self._observers.append(observer)
-
-        async def _notify_observers(self, uri: str) -> None:
-            for observer in self._observers:
-                try:
-                    await observer(uri)
-                except Exception as e:
-                    logger.warning(f"Observer notification failed for {uri}: {e}", exc_info=True)
-    ```
-
-    **Benefits:** Multiple observers, granular URI notifications, consistent async/await,
-    explicit exception handling per observer, type-safe.
-
-    **Impact:** ApprovalHub (2 call sites), ApprovalPolicyEngine (5+ call sites), AgentRegistry
-    (1 call site), session notifiers, wiring code (agents.py:833-932).
+    Replace with async observer pattern: list of async observers, `add_observer()` method,
+    `_notify_observers()` that iterates with try/except per observer. Benefits: multiple observers,
+    consistent async/await, explicit exception handling, type-safe.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/approvals.py': [

@@ -3,77 +3,19 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The with_ui conditional logic is split into two separate blocks unnecessarily:
+    Lines 70-72 and 84-86 split with_ui conditional logic unnecessarily. First
+    block creates ui_bus and connection_manager, then builder.start() executes,
+    then second block attaches UI sidecar. These operations are independent and
+    could be consolidated.
 
-    ```python
-    ui_bus: ServerBus | None = None
-    connection_manager: ConnectionManager | None = None
-    if with_ui:
-        ui_bus = ServerBus()
-        connection_manager = ConnectionManager()
+    **Problem:** Split conditional increases cognitive load and makes control flow
+    harder to follow. The two if with_ui blocks could be merged, or consolidated
+    entirely by moving ConnectionManager construction inline and creating ui_bus
+    only when needed.
 
-    builder = MCPInfrastructure(
-        agent_id=agent_id,
-        persistence=persistence,
-        docker_client=docker_client,
-        initial_policy=initial_policy,
-        connection_manager=connection_manager,
-    )
-
-    running = await builder.start(mcp_config)
-
-    if with_ui:
-        assert ui_bus is not None
-        await running.attach_sidecar(UISidecar(ui_bus))
-    ```
-
-    The two if with_ui blocks are independent and could be merged. The ordering doesn't
-    matter - the UI sidecar attachment could happen immediately after initialization,
-    or both operations could be moved after builder.start().
-
-    Fix: Merge both with_ui operations into a single block:
-
-    ```python
-    ui_bus: ServerBus | None = None
-    connection_manager: ConnectionManager | None = None
-    if with_ui:
-        ui_bus = ServerBus()
-        connection_manager = ConnectionManager()
-
-    builder = MCPInfrastructure(
-        agent_id=agent_id,
-        persistence=persistence,
-        docker_client=docker_client,
-        initial_policy=initial_policy,
-        connection_manager=connection_manager,
-    )
-
-    running = await builder.start(mcp_config)
-
-    if with_ui:
-        assert ui_bus is not None
-        await running.attach_sidecar(UISidecar(ui_bus))
-    ```
-
-    Actually, even better would be to consolidate into one block after builder.start():
-
-    ```python
-    builder = MCPInfrastructure(
-        agent_id=agent_id,
-        persistence=persistence,
-        docker_client=docker_client,
-        initial_policy=initial_policy,
-        connection_manager=ConnectionManager() if with_ui else None,
-    )
-
-    running = await builder.start(mcp_config)
-
-    if with_ui:
-        ui_bus = ServerBus()
-        await running.attach_sidecar(UISidecar(ui_bus))
-    ```
-
-    This eliminates the split conditional and reduces cognitive load.
+    **Fix:** Consolidate into single block after builder.start() by using inline
+    conditional for connection_manager and creating ui_bus only in the final if
+    block. Eliminates split conditional.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/runtime/builder.py': [

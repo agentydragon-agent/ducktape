@@ -9,60 +9,27 @@ I.issue(
     ['adgn/src/adgn/agent/persist/__init__.py'],
   ],
   rationale= |||
-    Multiple locations have comments that add no value: either restating obvious
-    code operations or providing misleading/incorrect information about field requirements.
+    Comments that add no value: either restating obvious code or providing
+    incorrect information about field requirements.
 
-    **Pattern 1: Comments restating obvious code** (agents.py:785-792):
-    ```python
-    # Generate unique agent ID
-    agent_id = AgentID(f"agent-{uuid4().hex[:8]}")
+    **Pattern 1: Obvious operation comments** (agents.py:785-792)
+    Lines 785-792 have three comments that merely restate simple operations:
+    generating an agent ID, calling create_agent, and returning a brief.
+    Function already has a docstring; these add noise without information.
 
-    # Create infrastructure for the agent
-    await registry.create_agent(agent_id)
+    **Pattern 2: Incorrect "REQUIRED" comments** (persist/__init__.py)
+    Three Pydantic models claim "All fields are REQUIRED" but have optional
+    fields with defaults (e.g., Decision.reason has default None). Pydantic
+    type annotations already define requirements; comments contradict the code.
 
-    # Return agent brief with the created agent's ID
-    return AgentBrief(id=agent_id)
-    ```
+    **Problems:**
+    - Noise obscures actual code
+    - Comments become stale/incorrect as code evolves
+    - Redundant: code and type annotations already show what's required
+    - Maintenance burden keeping comments synchronized
 
-    Problems:
-    - Each comment just restates what the code does
-    - Function already has comprehensive docstring
-    - Empty lines between simple statements add no value
-
-    **Pattern 2: Misleading "All fields are REQUIRED" comments** (persist/__init__.py):
-    ```python
-    class Decision(BaseModel):
-        """Decision made about a tool call.
-
-        All fields are REQUIRED. The entire Decision object is optional on ToolCallRecord.
-        """
-        outcome: ApprovalOutcome
-        decided_at: datetime
-        reason: str | None = None
-    ```
-
-    Problems:
-    - Comment claims "All fields are REQUIRED" but `reason` has a default (optional)
-    - In Pydantic, fields without defaults are required by definition
-    - Comment contradicts the code
-
-    Similar issue in ToolCallExecution and agent_id field comments.
-
-    **Why these are problematic:**
-    - **Noise**: Make code harder to scan without adding information
-    - **Maintenance burden**: Must be kept in sync as code changes
-    - **Misleading**: Some comments are factually incorrect
-    - **Redundant**: Code and type annotations already convey the information
-
-    **Recommended fix:**
-    Remove all these comments. For simple operations, the code is self-documenting.
-    For Pydantic models, type annotations define requirements.
-
-    **Benefits:**
-    - More concise code
-    - No risk of comments becoming outdated/incorrect
-    - Trusts reader to understand simple operations
-    - Follows principle: comments should explain WHY, not WHAT
+    **Fix:** Delete these comments. Code operations and Pydantic annotations
+    are self-documenting. Comments should explain WHY, not restate WHAT.
   |||,
 
   filesToRanges={

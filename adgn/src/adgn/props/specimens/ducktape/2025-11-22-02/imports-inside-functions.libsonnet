@@ -4,79 +4,20 @@ local I = import '../../lib.libsonnet';
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py'], ['adgn/src/adgn/agent/runtime/builder.py'], ['adgn/src/adgn/agent/runtime/infrastructure.py'], ['adgn/src/adgn/agent/runtime/local_runtime.py'], ['adgn/src/adgn/agent/server/mcp_routing.py']],
   rationale= |||
-    Multiple files have imports inside functions instead of at the top of the file.
-    This violates PEP 8 style guidelines.
+    Six files have imports inside functions instead of at module top, violating PEP 8:
+    auth.py line 180 imports json inside `_create_error_response`; server.py lines
+    438-439 and 475-476 import FastAPI/auth modules inside functions; builder.py,
+    infrastructure.py, local_runtime.py, and mcp_routing.py have similar patterns.
 
-    Examples:
+    Problems: Violates PEP 8 style guidelines, hides dependencies (harder to see all
+    imports at a glance), import errors caught at runtime instead of module load time,
+    worse for static analysis tools, usually indicates bad module organization or
+    premature optimization.
 
-    auth.py line 180:
-    ```python
-    def _create_error_response(self, status_code: int, detail: str) -> dict:
-        """Create error response dict."""
-        import json  # <-- Should be at top
-        body = json.dumps({"detail": detail}).encode()
-    ```
-
-    server.py lines 438-439:
-    ```python
-    async def create_management_ui_app(...):
-        from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware, generate_ui_token
-        from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
-        # ... rest of function
-    ```
-
-    server.py lines 475-476:
-    ```python
-    if static_files_dir and static_files_dir.exists():
-        from fastapi.staticfiles import StaticFiles
-        from fastapi.responses import FileResponse
-    ```
-
-    Note: Some TYPE_CHECKING imports are at the top (correctly guarded), but these
-    are runtime imports that should also be at the top.
-
-    Common reasons for in-function imports (and why they're usually wrong):
-    1. "Avoid circular imports" - Usually indicates bad module organization
-    2. "Lazy loading" - Premature optimization, import time is negligible
-    3. "Optional dependencies" - Should use try/except at module level
-    4. "Conditional imports" - Rare legitimate use case (e.g., platform-specific)
-
-    Move all imports to the top of the file.
-
-    For auth.py:
-    ```python
-    # At top of file
-    import json
-    import logging
-    import os
-    # ... other imports
-
-    # Remove from function
-    def _create_error_response(self, status_code: int, detail: str) -> dict:
-        """Create error response dict."""
-        body = json.dumps({"detail": detail}).encode()
-        # ... rest
-    ```
-
-    For server.py:
-    ```python
-    # At top of file
-    from adgn.agent.mcp_bridge.auth import UITokenAuthMiddleware, generate_ui_token
-    from adgn.agent.mcp_bridge.compositor_factory import create_global_compositor
-    from fastapi.staticfiles import StaticFiles
-    from fastapi.responses import FileResponse
-    ```
-
-    If avoiding circular imports:
-    - Restructure modules to eliminate the cycle
-    - Or use TYPE_CHECKING guard for type annotations
-    - Only resort to in-function imports as absolute last resort
-
-    Benefits of top-level imports:
-    - PEP 8 compliance
-    - Easier to see all dependencies at a glance
-    - Import errors caught at module load time, not runtime
-    - Better for static analysis tools (linters, type checkers)
+    Move all runtime imports to the top of each file. If avoiding circular imports,
+    restructure modules to eliminate the cycle or use TYPE_CHECKING guards for type
+    annotations only. Benefits: PEP 8 compliance, immediate import error detection,
+    clearer dependency visibility, better static analysis.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [

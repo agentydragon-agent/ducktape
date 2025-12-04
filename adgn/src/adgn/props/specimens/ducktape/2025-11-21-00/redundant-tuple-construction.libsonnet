@@ -3,73 +3,24 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The code builds a list of tuples `(function_call, function_call.arguments)` when the
-    `arguments` field is already part of the `FunctionCallItem` object. This is redundant
-    data duplication.
+    Lines 255-258 build `calls: list[tuple[FunctionCallItem, str | None]]` duplicating
+    `function_call.arguments` when it's already in the `FunctionCallItem` object.
 
-    **Current code (lines 255-258):**
-    ```python
-    function_calls: list[FunctionCallItem] = list(self.pending_function_calls)
-    calls: list[tuple[FunctionCallItem, str | None]] = [
-        (function_call, function_call.arguments) for function_call in function_calls
-    ]
-    ```
+    Current: constructs tuples `(function_call, function_call.arguments)`, then passes
+    both `calls` (tuples) and `function_calls` (original list) to
+    `_run_tool_calls_parallel` and `_run_tool_calls_sequential` (lines 291, 293).
 
-    **Why it's redundant:**
-    - `FunctionCallItem` already has `arguments: str | None` field (model.py:77)
-    - The tuple just duplicates data that's already in the object
-    - Both `_run_tool_calls_parallel` and `_run_tool_calls_sequential` immediately unpack
-      the tuple and could just access `function_call.arguments` directly
+    Sequential usage (line 336): `for i, (function_call, args_json) in enumerate(calls):`
+    then `invoker(function_call, args_json)`. Could iterate `function_calls` directly
+    and access `function_call.arguments`.
 
-    **Usage patterns:**
+    Parallel usage (line 305): `runner(fc: FunctionCallItem, aj: str | None)` then
+    unpacks tuples at line 310. Could take only `FunctionCallItem` and access
+    `fc.arguments` inside.
 
-    Line 291: `await self._run_tool_calls_parallel(calls, function_calls, _invoke)`
-    Line 293: `await self._run_tool_calls_sequential(calls, function_calls, _invoke)`
-
-    Both methods receive BOTH `calls` (tuples) AND `function_calls` (original list).
-
-    **Sequential usage (line 336):**
-    ```python
-    for i, (function_call, args_json) in enumerate(calls):
-        outcome = await invoker(function_call, args_json)
-    ```
-    Could be:
-    ```python
-    for i, function_call in enumerate(function_calls):
-        outcome = await invoker(function_call, function_call.arguments)
-    ```
-
-    **Parallel usage (line 305):**
-    ```python
-    async def runner(fc: FunctionCallItem, aj: str | None) -> None:
-    ```
-    Then line 310: `for fc, aj in calls:`
-
-    Could be:
-    ```python
-    async def runner(fc: FunctionCallItem) -> None:
-    ```
-    Then line 310: `for fc in function_calls:`
-    And access `fc.arguments` inside runner.
-
-    **Correct approach:**
-    1. Delete the `calls` tuple construction (lines 256-258)
-    2. Update `_run_tool_calls_parallel` signature to take only `function_calls`
-    3. Update `_run_tool_calls_sequential` signature to take only `function_calls`
-    4. Access `function_call.arguments` directly in both methods
-    5. Delete the tuple unpacking, iterate over `function_calls` directly
-
-    **Benefits:**
-    - No data duplication
-    - Simpler code - iterate over the actual objects
-    - One less list to construct
-    - Clearer that we're working with FunctionCallItem objects
-    - Less confusion about "why are there two lists?"
-
-    **Note:**
-    Both methods currently receive `calls` AND `function_calls`, which is further evidence
-    of redundancy. The `function_calls` list is used for error handling/cleanup (line 340),
-    while `calls` is iterated. This could all be done with just `function_calls`.
+    **Fix:** Delete tuple construction, pass only `function_calls` to both methods,
+    access `.arguments` directly, remove tuple unpacking. Benefits: no duplication,
+    simpler code, one less list, clearer that we're working with objects.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/agent.py': [

@@ -14,67 +14,28 @@ I.issue(
     ['adgn/tests/mcp/test_mcp_flat_model_helper.py'],
   ],
   rationale=|||
-    Multiple test files define helper functions (with `def _...`) that create test
-    servers or resources. These are basic factories that don't depend on test-specific
-    logic and should be pytest fixtures instead.
+    Multiple test files define helper functions (`def _...`) that create test servers or
+    resources. These basic factories should be pytest fixtures instead of directly-called
+    functions.
 
-    **Pattern:**
-    ```python
-    def _make_origin() -> tuple[FastMCP, SubscriptionRecorder]:
-        m = NotifyingFastMCP("origin")
-        recorder = install_subscription_recorder(m)
-        # ... configure resource ...
-        return m, recorder
-
-    async def test_something():
-        origin, hooks = _make_origin()  # Called directly in test
-        # ... use origin ...
-    ```
+    **Pattern:** Functions like `_make_origin()`, `_backend()`, `_make_server()` are called
+    directly in tests instead of using pytest's dependency injection.
 
     **Problems:**
-    1. Functions are called directly in tests instead of using pytest's dependency injection
+    1. Called directly instead of using pytest's dependency injection
     2. Not reusable across test files without duplication
     3. Can't easily override or mock for specific test scenarios
-    4. Doesn't follow pytest best practices for test setup
+    4. Doesn't follow pytest best practices
 
-    **Fix:**
-    ```python
-    @pytest.fixture
-    def origin_with_recorder():
-        """Origin server with subscription recorder attached."""
-        m = NotifyingFastMCP("origin")
-        recorder = install_subscription_recorder(m)
-        # ... configure resource ...
-        return m, recorder
+    **Fix:** Convert to `@pytest.fixture` decorated functions. Tests receive them as
+    parameters instead of calling directly. Benefits: follows pytest conventions, reusable
+    via conftest.py, easy to override with fixture scope, can be parameterized, better
+    test isolation.
 
-    async def test_something(origin_with_recorder):
-        origin, hooks = origin_with_recorder  # Injected by pytest
-        # ... use origin ...
-    ```
-
-    **Benefits:**
-    1. Follows pytest conventions - clear fixture dependencies
-    2. Reusable across test files via conftest.py
-    3. Easy to override with fixture scope
-    4. Can be parameterized using @pytest.mark.parametrize on fixtures
-    5. Better test isolation and setup/teardown management
-
-    **Affected functions:**
-    - `_make_origin()` - Creates NotifyingFastMCP origin with recorder (2 occurrences)
-    - `_backend()` - Creates FastMCP backend server
-    - `_make_notifier()` - Creates NotifyingFastMCP instance
-    - `_make_backend()` - Creates FastMCP backend server (2 occurrences)
-    - `_make_server()` - Creates exec server
-    - `create_chat_servers()` - Creates chat servers with shared store
-    - `make_echo_server()` - Creates echo server for testing
-
-    All these are simple factories that don't depend on test-specific state and should
-    be converted to fixtures.
-
-    **Note:** Some similar functions are already fixtures (e.g., `bus()` in test_ui_server.py)
-    or take fixture parameters (e.g., `open_seatbelt_session(sqlite_persistence)`) and
-    are correctly implemented. This issue only covers plain factory functions that should
-    be fixtures but aren't.
+    **Affected functions across 9 files:** `_make_origin()` (2x), `_backend()`, `_make_notifier()`,
+    `_make_backend()` (2x), `_make_server()`, `create_chat_servers()`, `make_echo_server()`.
+    Note: some similar functions are already fixtures (e.g., `bus()` in test_ui_server.py)
+    or take fixture parameters and are correctly implemented.
   |||,
   filesToRanges={
     'adgn/tests/mcp/test_resources_subscriptions_index.py': [

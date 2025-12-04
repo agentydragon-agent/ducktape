@@ -8,54 +8,19 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    UI code uses empty catch blocks or silent error handling that swallows exceptions
-    without logging, making failures invisible to users and developers.
+    Seven UI modules use empty catch blocks without logging, making failures invisible:
+    stores.ts lines 36-38 (agent polling), channels.ts lines 76-77 (WebSocket ops),
+    stores_channels.ts line 120 (error handling itself), prefs.ts lines 27/35
+    (localStorage), token.ts lines 11/23/35/46 (token parsing), markdown.ts lines 6/36
+    (syntax highlighting), schema.ts line 49 (JSON parsing).
 
-    **Pattern: Empty catch blocks without logging**
+    Problems: Users see degraded functionality with no error indication, developers
+    cannot diagnose failures (API problems, storage issues, validation errors),
+    debugging requires adding logging and reproducing the issue, silent failures mask
+    root causes.
 
-    This anti-pattern appears across 7 UI modules:
-
-    **1. Agent polling (stores.ts:36-38)**
-    ```javascript
-    try {
-      await listAgents()
-    } catch { /* empty */ }
-    ```
-    When agents list endpoint fails, UI displays stale data with no indication polling stopped.
-
-    **2. WebSocket operations (channels.ts:76-77)**
-    Empty catch blocks for WebSocket close and send without debug/warning logging.
-
-    **3. Error handling infrastructure (stores_channels.ts:120)**
-    Empty catch block in error handling code itself.
-
-    **4. localStorage operations (prefs.ts:27, 35)**
-    localStorage read/write failures swallowed. In private browsing, quota exceeded, or
-    disabled storage, users don't know why preferences aren't persisting.
-
-    **5. Token parsing/validation (token.ts:11, 23, 35, 46)**
-    Four empty catch blocks make it impossible to diagnose auth/token validation failures.
-
-    **6. Syntax highlighting (markdown.ts:6, 36)**
-    Highlighting registration failures are silent - users get uncolored code blocks with
-    no indication why.
-
-    **7. JSON parsing (schema.ts:49)**
-    Parse failure with silent fallback; no debug logging to diagnose malformed JSON.
-
-    **Problems with silent exception handling:**
-    - Users see degraded functionality with no error indication
-    - Developers cannot diagnose failures without logging
-    - Silent failures mask API problems, storage issues, validation errors
-    - Debugging requires adding logging and reproducing the issue
-
-    **Correct approach: Log all exceptions**
-
-    At minimum, add contextual logging:
-    - Critical failures: `console.error('Failed to fetch agents:', err)`
-    - Expected but notable: `console.warn('WebSocket operation failed:', err)`
-    - Graceful degradation: `console.debug('JSON parse failed, using fallback:', err)`
-
+    Add contextual logging to all catch blocks: console.error for critical failures,
+    console.warn for expected but notable issues, console.debug for graceful degradation.
     Better: combine logging with user-visible feedback (toasts, error indicators) for
     operations affecting user experience.
   |||,

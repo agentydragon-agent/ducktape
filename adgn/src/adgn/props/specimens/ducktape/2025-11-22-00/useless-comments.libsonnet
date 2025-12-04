@@ -6,48 +6,30 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    Comments that add no value: redundant, obvious, historical breadcrumbs, or noise.
-    Good comments explain non-obvious decisions; these comments should be deleted.
+    Comments that add no value: redundant, obvious, historical, or noise.
 
-    **Four categories of useless comments:**
+    **Four categories:**
 
-    **1. Redundant "Default: no-op" docstrings (handler.py)**
-    Six hook methods have "Default: no-op" in docstrings when implementation shows
-    `return` (obviously a no-op). Base class hooks are conventionally no-ops by design.
-    Keep the one-line explanation of what the hook does, delete the redundant statement.
+    **1. Redundant "Default: no-op" docstrings** (handler.py, 6 methods)
+    Hook methods with "Default: no-op" in docstrings when implementation is just
+    `return`. Base class hooks are conventionally no-ops; stating this is redundant.
 
-    **2. Separator lines and vague section labels (cli.py)**
-    Six locations with useless separators and obvious/vague labels:
-    - "# -------------" separator with no section content
-    - "# ---------- constants" restates what all-caps naming already shows
-    - "# Core logic" is vague, adds no information
-    - Comments that merely restate following code
+    **2. Separator lines and vague labels** (cli.py, 6 locations)
+    Empty "# -------" separators, "# constants" restating obvious naming, and vague
+    "# Core logic" that adds no information.
 
-    **3. Historical breadcrumbs about moved functions (container.py)**
-    Comment noting `run_policy_source` was moved to another module. Git history is the
-    source of truth for when/where functions moved. Use `git log`/`git blame` instead
-    of leaving stale breadcrumbs.
+    **3. Historical breadcrumbs** (container.py:58)
+    Comment noting function was moved. Git history is the source of truth for moves.
 
-    **4. Documenting removed code (sqlite.py)**
-    Four-line comment block listing old method names that no longer exist. Git commit
-    messages should document what was removed and why. Comments about historical removals
-    add noise without actionable information.
+    **4. Documenting removed code** (sqlite.py:530-533)
+    Four-line block listing old method names that no longer exist. Git commit messages
+    should document removals.
 
-    **Problems with useless comments:**
-    - Add cognitive load when scanning code
-    - Become stale as code evolves (wrong/outdated information)
-    - Duplicate what's already visible (code structure, naming, implementation)
-    - Replace proper documentation (git history, commit messages)
-    - Make it harder to find valuable comments
+    **Problems:** Add cognitive load, become stale, duplicate visible information,
+    replace proper documentation (git), obscure valuable comments.
 
-    **Correct approach: Delete useless comments**
-
-    Comments should explain non-obvious decisions, edge cases, or rationale not visible
-    in code. Delete comments that:
-    - Restate what code/naming already shows
-    - Are vague section labels with no specific guidance
-    - Track historical changes (use git history)
-    - Are separator lines for visual grouping
+    **Fix:** Delete these comments. Keep only comments explaining non-obvious decisions
+    or rationale not visible in code/naming.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/handler.py': [

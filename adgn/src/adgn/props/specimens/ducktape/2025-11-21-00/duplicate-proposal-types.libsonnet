@@ -7,80 +7,23 @@ I.issue(
     ['adgn/src/adgn/agent/persist/__init__.py'],
   ],
   rationale=|||
-    The `ProposalDetail` model (server.py:47-54) and `PolicyProposal` model (persist/__init__.py:82-87)
-    are duplicates with identical fields. They should be merged into a single type to eliminate redundancy.
+    `ProposalDetail` (server.py:47-54) and `PolicyProposal` (persist/__init__.py:82-87) are
+    duplicate models with identical fields: id, status, created_at, decided_at, content (5 fields,
+    same types, same defaults, same semantics).
 
-    **Current duplication:**
+    Problems: (1) Identical definitions in two places. (2) Changes to proposal structure require
+    updating both. (3) Violates DRY principle. (4) Creates confusion about which to use where.
+    (5) PolicyProposal already defined in persistence layer (the right place).
 
-    **ProposalDetail (adgn/src/adgn/mcp/approval_policy/server.py:47-54):**
-    ```python
-    class ProposalDetail(BaseModel):
-        """Full proposal details including content and metadata."""
+    Fix: Delete ProposalDetail from server.py, import PolicyProposal from adgn.agent.persist,
+    replace uses: proposal_detail function return type (line 163) and construction (lines 168-174).
 
-        id: str
-        status: ProposalStatus
-        created_at: datetime
-        decided_at: datetime | None = None
-        content: str
-    ```
+    Benefits: Single source of truth, eliminates 8 lines of duplication, clearer type hierarchy
+    (persistence types used by API layer), changes happen in one place, consistent with how other
+    persistence types are reused.
 
-    **PolicyProposal (adgn/src/adgn/agent/persist/__init__.py:82-87):**
-    ```python
-    class PolicyProposal(BaseModel):
-        id: str
-        status: ProposalStatus
-        created_at: datetime
-        decided_at: datetime | None = None
-        content: str
-    ```
-
-    **Why this is problematic:**
-    - Identical field definitions in two places (5 fields each)
-    - Same field types, same defaults, same semantics
-    - Changes to proposal structure require updating both types
-    - Violates DRY principle
-    - Creates confusion about which type to use where
-    - PolicyProposal is already defined in the persistence layer (the right place)
-
-    **Recommended fix:**
-
-    1. Delete ProposalDetail from server.py
-    2. Import PolicyProposal from adgn.agent.persist in server.py
-    3. Replace all uses of ProposalDetail with PolicyProposal:
-       - proposal_detail function return type (line 163)
-       - ProposalDetail construction (lines 168-174)
-
-    **Updated code:**
-    ```python
-    # At top of server.py
-    from adgn.agent.persist import PolicyProposal
-
-    # ...
-
-    @self.resource(APPROVAL_POLICY_PROPOSALS_INDEX_URI + "/{id}", name="proposal_detail", mime_type="application/json")
-    async def proposal_detail(id: str) -> PolicyProposal:
-        """Get full proposal details including content and metadata."""
-        if (got := await self._engine.persistence.get_policy_proposal(self._engine.agent_id, id)) is None:
-            raise KeyError(id)
-        return PolicyProposal(
-            id=got.id,
-            status=ProposalStatus(got.status),
-            created_at=got.created_at,
-            decided_at=got.decided_at,
-            content=got.content,
-        )
-    ```
-
-    **Benefits:**
-    - Single source of truth for proposal type
-    - Eliminates 8 lines of duplicate code
-    - Clearer type hierarchy (persistence types used by API layer)
-    - Changes to proposal structure happen in one place
-    - Consistent with how other persistence types are reused
-
-    **Note:**
-    ProposalDescriptor (server.py:40-44) is different from PolicyProposal - it's a lightweight
-    descriptor WITHOUT content field, so it should remain separate.
+    Note: ProposalDescriptor (server.py:40-44) is different - lightweight descriptor WITHOUT
+    content field, should remain separate.
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/approval_policy/server.py': [

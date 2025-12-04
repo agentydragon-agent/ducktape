@@ -3,81 +3,20 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    Multiple methods duplicate the same "get agent or raise KeyError" logic:
+    Methods `get_agent_mode` (lines 168-177), `get_infrastructure` (lines 158-165), and
+    `remove_agent` (lines 224-237) duplicate the same "get agent or raise KeyError" logic.
 
-    get_agent_mode (lines 168-177):
-    ```python
-    def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
-        """Raises KeyError if agent not in registry or not yet initialized."""
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-        agent = self._agents[agent_id].agent
-        if agent is None:
-            raise KeyError(f"Agent {agent_id} mode not yet initialized")
-        return agent.mode
-    ```
+    Each method: (1) Checks if agent_id in self._agents. (2) Gets self._agents[agent_id].agent.
+    (3) Checks if agent is None. (4) Raises KeyError with similar messages. Only difference is
+    what field they return (agent.mode vs agent.running) or what they do with the agent.
 
-    get_infrastructure (lines 158-165):
-    ```python
-    async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
-        """Raises KeyError if agent not in registry or not yet initialized."""
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-        agent = self._agents[agent_id].agent
-        if agent is None:
-            raise KeyError(f"Agent {agent_id} infrastructure not yet initialized")
-        return agent.running
-    ```
+    Classic code duplication. Extract common helper `_get_agent_or_raise(agent_id) -> RunningAgent`
+    that consolidates the lookup logic and raises KeyError if not found/initialized. Then simplify
+    all callers to one-liners: `return self._get_agent_or_raise(agent_id).mode`,
+    `return self._get_agent_or_raise(agent_id).running`, etc.
 
-    Both methods:
-    1. Check if agent_id in self._agents
-    2. Get self._agents[agent_id].agent
-    3. Check if agent is None
-    4. Raise KeyError with similar messages
-
-    This is classic code duplication - the only difference is what field they return
-    (agent.mode vs agent.running).
-
-    Extract a common helper method:
-
-    ```python
-    def _get_agent_or_raise(self, agent_id: AgentID) -> RunningAgent:
-        """Get RunningAgent or raise KeyError if not found/initialized."""
-        if agent_id not in self._agents:
-            raise KeyError(f"Agent {agent_id} not found in registry")
-        if (agent := self._agents[agent_id].agent) is None:
-            raise KeyError(f"Agent {agent_id} not yet initialized")
-        return agent
-    ```
-
-    Then simplify all callers:
-
-    ```python
-    def get_agent_mode(self, agent_id: AgentID) -> AgentMode:
-        """Get agent mode. Raises KeyError if not found."""
-        return self._get_agent_or_raise(agent_id).mode
-
-    async def get_infrastructure(self, agent_id: AgentID) -> RunningInfrastructure:
-        """Get infrastructure. Raises KeyError if not found."""
-        return self._get_agent_or_raise(agent_id).running
-
-    def get_local_runtime(self, agent_id: AgentID) -> LocalAgentRuntime | None:
-        """Get local runtime or None if bridge agent. Raises KeyError if not found."""
-        return self._get_agent_or_raise(agent_id).local_runtime
-
-    async def remove_agent(self, agent_id: AgentID) -> None:
-        """Remove and clean up agent infrastructure."""
-        agent = self._get_agent_or_raise(agent_id)
-        await agent.running.close()
-        del self._agents[agent_id]
-        await self.notify_agents_list_changed()
-    ```
-
-    Benefits:
-    - DRY - single implementation of lookup logic
-    - Consistent error messages
-    - Easier to maintain
-    - Could even inline some of these one-liners if they're called in few places
+    Benefits: DRY - single implementation of lookup logic, consistent error messages, easier to
+    maintain. Could even inline some one-liners if called in few places.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/server.py': [

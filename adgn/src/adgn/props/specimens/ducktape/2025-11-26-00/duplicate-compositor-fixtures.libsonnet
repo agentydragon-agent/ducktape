@@ -2,39 +2,20 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale=|||
-    Tests create `Compositor("comp")` instances directly instead of using shared
-    pytest fixtures. This violates DRY and makes it harder to mock or configure
-    the compositor consistently across tests.
+    Eight test files create Compositor instances directly (e.g., `comp = Compositor("comp")`)
+    instead of using shared pytest fixtures. Occurrences in test_chat_notifications.py,
+    test_resources_subscriptions_index.py, test_notifications.py, test_subscriptions_index.py,
+    test_pinned_unmount.py, test_stdio_notifications_envelope.py,
+    test_list_changes_subscriptions.py (creates two: "comp" and "comp2"),
+    test_subscribe.py.
 
-    **Pattern found repeatedly:**
-    ```python
-    async def test_something():
-        comp = Compositor("comp")
-        async with Client(comp) as client:
-            # ... test logic ...
-    ```
+    Problems: Code duplication across test files, inconsistent naming (most use "comp",
+    one uses "compositor", one uses "comp2"), hard to mock (can't inject test doubles
+    at fixture level), no reuse (every test creates own instance).
 
-    **Problems:**
-    1. Code duplication - same pattern repeated across test files
-    2. Inconsistent - some use "comp", one uses "compositor", one uses "comp2"
-    3. Hard to mock - can't inject test doubles at fixture level
-    4. No reuse - every test creates its own instance
-
-    **Fix:** Use shared pytest fixtures (or create them if they don't exist):
-    ```python
-    # Before: async def test_something(): comp = Compositor("comp"); ...
-    # After:  async def test_something(compositor): ...
-    ```
-
-    Note: Conftest files that create Compositor instances within fixture factories
-    are fine - that's their job. The issue is test files that should be using
-    fixtures but aren't.
-
-    **Benefits:**
-    1. Single source of truth for test compositor creation
-    2. Easy to mock/configure globally
-    3. Consistent naming and setup
-    4. Follows pytest best practices
+    Use shared pytest fixtures. Benefits: single source of truth for test compositor
+    creation, easy to mock/configure globally, consistent naming and setup, follows
+    pytest best practices.
   |||,
   occurrences=[
     {

@@ -10,71 +10,20 @@ I.issue(
     ['adgn/src/adgn/agent/web/src/components/ChatPane.svelte'],
   ],
   rationale= |||
-    Multiple locations in both Python and TypeScript have comments that merely restate
-    what the code obviously does, providing no additional value or context.
+    Three files have comments that merely restate what the code obviously does. Python
+    examples in cli.py lines 484, 717-719, 722: "Capture -a/--all", "Parse flags from
+    passthru", "Logging and config" just describe the next lines. TypeScript examples
+    in AgentsSidebar.svelte lines 73, 86, 89 and ChatPane.svelte lines 79, 84, 107:
+    "Get singleton MCP client" → getMCPClient(), "Subscribe to agents list updates"
+    → subscribeToResource, etc.
 
-    **Python examples** (cli.py):
-    ```python
-    # Capture -a/--all (staging flag) to remove from passthru
-    # Logging and config
-    # Parse flags from passthru (those not handled by argparse)
-    ```
+    Problems: Noise makes code harder to scan, redundant with well-named functions,
+    maintenance burden (must update when code changes), no added value (don't explain
+    rationale, caveats, or non-obvious behavior).
 
-    Problems:
-    - "Capture -a/--all" documents historical behavior, not current code
-    - "Logging and config" just restates what the next lines do
-    - "Parse flags" is misleading (some flags are from argparse, not passthru)
-
-    **TypeScript examples** (AgentsSidebar.svelte, ChatPane.svelte):
-    ```typescript
-    // Get singleton MCP client
-    mcpClient = await getMCPClient()
-
-    // Subscribe to agents list updates
-    await subscribeToResource(mcpClient, MCPUris.agentsListUri)
-
-    // Fetch initial list
-    await fetchAgentsList()
-
-    // Parse the resource contents
-    if (Array.isArray(contents) && contents.length > 0) {
-    ```
-
-    Problems:
-    - Comments literally just describe the function name
-    - "Get singleton MCP client" → `getMCPClient()`
-    - "Subscribe to agents list updates" → `subscribeToResource(...agentsListUri)`
-    - No explanation of WHY, WHEN, or any subtlety
-
-    **Why these are problematic:**
-    - **Noise**: Make code harder to scan without providing information
-    - **Redundant**: Well-named functions are self-documenting
-    - **Maintenance burden**: Must update comments when code changes
-    - **No added value**: They don't explain rationale, caveats, or non-obvious behavior
-
-    **Recommended fix:**
-    Delete all these comments. Function names and code structure are sufficient.
-
-    Only add comments when they explain:
-    - **Why** something is done (rationale/context)
-    - **Caveats** or non-obvious behavior
-    - **Workarounds** for bugs or limitations
-    - **Complex** logic that isn't self-evident
-
-    **Good comment examples (not in this code):**
-    ```typescript
-    // Retry on 503 because backend needs time to warm up cold instances
-    await retryRequest()
-
-    // HACK: Resource list doesn't update on its own; must poll
-    setInterval(fetchList, 5000)
-    ```
-
-    **Benefits:**
-    - Cleaner, more scannable code
-    - No maintenance overhead for obvious comments
-    - Focus on actual insights when comments are present
-    - Follows principle: comments should explain WHY, not WHAT
+    Delete all these comments. Only add comments explaining WHY something is done,
+    caveats, workarounds, or complex logic that isn't self-evident. Benefits: cleaner
+    scannable code, no maintenance overhead, focus on actual insights when present.
   |||,
 
   filesToRanges={
