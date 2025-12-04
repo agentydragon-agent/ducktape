@@ -86,6 +86,10 @@ logger = logging.getLogger(__name__)
 
 app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_completion=False)
 
+# Snapshot subcommand group
+snapshot_app = typer.Typer(help="Snapshot commands")
+app.add_typer(snapshot_app, name="snapshot")
+
 
 @app.callback()
 def _init_logging() -> None:
@@ -158,7 +162,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
     """Filter available files to requested subset, with validation.
 
     Args:
-        all_files: All available files from specimen
+        all_files: All available files from snapshot
         requested_files: Optional list of relative paths to filter to
 
     Returns:
@@ -178,7 +182,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
     invalid = requested_set - available
 
     if invalid:
-        typer.echo("Error: The following files are not in the specimen:", err=True)
+        typer.echo("Error: The following files are not in the snapshot:", err=True)
         for f in sorted(str(p) for p in invalid):
             typer.echo(f"  - {f}", err=True)
         typer.echo(f"\nAvailable files ({len(all_files)}):", err=True)
@@ -192,8 +196,8 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
     return requested_set & available
 
 
-async def _run_specimen_minicodex_async(
-    specimen: str,
+async def _run_snapshot_minicodex_async(
+    snapshot: str,
     *,
     dry_run: bool,
     embed_paths: list[Path] | None,
@@ -204,15 +208,15 @@ async def _run_specimen_minicodex_async(
     files: list[str] | None = None,
     registry: SpecimenRegistry,
 ) -> int:
-    # Load and hydrate specimen (single hydration for both dry-run and real run)
-    async with registry.load_and_hydrate(specimen) as hydrated:
+    # Load and hydrate snapshot (single hydration for both dry-run and real run)
+    async with registry.load_and_hydrate(snapshot) as hydrated:
         supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
         # Filter files if requested (returns FileScopeSpec: sentinel or explicit set)
         files_spec = _filter_files(hydrated.all_discovered_files, files)
 
         # Resolve files for prompt rendering
-        resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec, registry=registry)
+        resolved_files = await resolve_critic_scope(specimen_slug=snapshot, files=files_spec, registry=registry)
 
         # Load preset template based on mode
         preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
@@ -227,7 +231,7 @@ async def _run_specimen_minicodex_async(
         if dry_run:
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
             tmpdir.mkdir(parents=True, exist_ok=True)
-            prompt_file = tmpdir / f"codex_prompt_specimen_{mode}.md"
+            prompt_file = tmpdir / f"codex_prompt_snapshot_{mode}.md"
             prompt_file.write_text(prompt, encoding="utf-8")
             typer.echo(f"Prompt saved to: {prompt_file}")
             return 0
@@ -235,7 +239,7 @@ async def _run_specimen_minicodex_async(
         # Use run_critic for structured execution and DB persistence
         critic_output, _critic_run_id, _critique_id = await run_critic(
             input_data=CriticInput(
-                specimen_slug=specimen, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
+                specimen_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
             ),
             client=client,
             content_root=hydrated.content_root,
@@ -254,31 +258,31 @@ async def _run_specimen_minicodex_async(
         return 0
 
 
-@app.command("specimen-discover")
+@app.command("snapshot-discover")
 @async_run
-async def cmd_specimen_discover(
-    specimen: str = opt.ARG_SPECIMEN,
+async def cmd_snapshot_discover(
+    snapshot: str = opt.ARG_SNAPSHOT,
     dry_run: bool = opt.OPT_DRY_RUN,
     final_only: bool = opt.OPT_FINAL_ONLY,
     output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
-    """Discover only-new issues vs specimen notes (covered/not_covered_yet)."""
+    """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
     registry = SpecimenRegistry.from_package_resources()
     names = sorted(registry.list_all())
-    if specimen not in names:
-        typer.echo(f"Unknown specimen slug: {specimen}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
+    if snapshot not in names:
+        typer.echo(f"Unknown snapshot slug: {snapshot}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
         raise typer.Exit(2)
     # TODO: Remove this manual path wrangling. The covered.md/not_covered_yet.md files
-    # should be deprecated and removed, along with specimen-discover command and related paths.
-    spec_dir = registry.base_path / specimen
+    # should be deprecated and removed, along with snapshot-discover command and related paths.
+    spec_dir = registry.base_path / snapshot
     embed_paths: list[Path] | None = [
         p for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
     ]
     if not embed_paths:
         embed_paths = None
-    rc = await _run_specimen_minicodex_async(
-        specimen,
+    rc = await _run_snapshot_minicodex_async(
+        snapshot,
         dry_run=dry_run,
         embed_paths=embed_paths,
         mode="discover",
@@ -300,7 +304,7 @@ async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None 
     """
     init_db()
     root = await cluster_unknowns(model=model, out_dir=out_dir, ctx=RunsContext.from_pkg_dir())
-    typer.echo(f"Clusters written to: {root}/<specimen>/clusters.json")
+    typer.echo(f"Clusters written to: {root}/<snapshot>/clusters.json")
 
 
 @app.command("prompt-optimize")
@@ -318,12 +322,12 @@ async def prompt_optimize(
 @app.command("prompt-eval")
 @async_run
 async def prompt_eval(
-    prompt: str = typer.Argument(..., help="Candidate critic system prompt to evaluate across specimens"),
+    prompt: str = typer.Argument(..., help="Candidate critic system prompt to evaluate across snapshots"),
     out_dir: Path | None = opt.OPT_OUTPUT_DIR,
     model: str = opt.OPT_MODEL,
     debug: bool = typer.Option(False, help="Log raw OpenAI HTTP to JSONL for diagnostics"),
 ) -> None:
-    """Evaluate a critic system prompt across all known specimens and emit metrics list.
+    """Evaluate a critic system prompt across all known snapshots and emit metrics list.
 
     DEPRECATED: This command is being replaced by the database-backed workflow.
     Use the prompt_eval MCP server or database queries instead.
@@ -332,15 +336,15 @@ async def prompt_eval(
     typer.echo("", err=True)
     typer.echo("The prompt-eval workflow has been migrated to database-backed runs.", err=True)
     typer.echo("Use one of these alternatives:", err=True)
-    typer.echo("  1. prompt_eval MCP server: run_critic(specimen, files, prompt_text, model)", err=True)
+    typer.echo("  1. prompt_eval MCP server: run_critic(snapshot, files, prompt_text, model)", err=True)
     typer.echo("  2. Database queries: Query critic_runs and grader_runs tables", err=True)
-    typer.echo("  3. CLI: adgn-properties2 run --specimen <slug> --structured true --prompt-text '<prompt>'", err=True)
+    typer.echo("  3. CLI: adgn-properties2 run --snapshot <slug> --structured true --prompt-text '<prompt>'", err=True)
     raise typer.Exit(1)
 
 
-@app.command("specimen-grade")
+@app.command("snapshot-grade")
 @async_run
-async def specimen_grade(
+async def snapshot_grade(
     critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"), model: str = opt.OPT_MODEL
 ) -> None:
     """Grade a critique by database ID against canonical findings.
@@ -362,7 +366,7 @@ async def specimen_grade(
         typer.echo(f"Graded critique {critique_id}")
         typer.echo(f"Grader run ID: {grader_run_id}")
         typer.echo(f"Grader run transcript_id: {db_grader_run.transcript_id}")
-        typer.echo(f"Specimen: {db_grader_run.specimen_slug}")
+        typer.echo(f"Snapshot: {db_grader_run.specimen_slug}")
         typer.echo("")
         typer.echo(output.model_dump_json(indent=2))
 
@@ -405,14 +409,14 @@ def cmd_fix(
 @app.command("lint-issue")
 @async_run
 async def cmd_lint_issue(
-    specimen: str = typer.Argument(..., help="Specimen slug (under properties/specimens)"),
+    snapshot: str = typer.Argument(..., help="Snapshot slug (under properties/specimens)"),
     issue_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
     occurrence: int = typer.Argument(..., help="0-based occurrence index"),
     model: str = opt.OPT_MODEL,
     dry_run: bool = opt.OPT_DRY_RUN,
 ) -> None:
     rc = await run_specimen_lint_issue_async(
-        specimen, issue_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
+        snapshot, issue_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
     )
     raise typer.Exit(code=rc)
 
@@ -457,14 +461,14 @@ def _render_prompt_with_context(
 
 @asynccontextmanager
 async def _open_run_context(
-    path: Path | None, specimen: str | None, files: list[str] | None, registry: SpecimenRegistry
+    path: Path | None, snapshot: str | None, files: list[str] | None, registry: SpecimenRegistry
 ):
-    """Yield (wiring, files_spec, label) for either a local path or a hydrated specimen.
+    """Yield (wiring, files_spec, label) for either a local path or a hydrated snapshot.
 
     Args:
-        path: Local directory path (mutually exclusive with specimen)
-        specimen: Specimen slug (mutually exclusive with path)
-        files: Optional file filter (only for specimens)
+        path: Local directory path (mutually exclusive with snapshot)
+        snapshot: Snapshot slug (mutually exclusive with path)
+        files: Optional file filter (only for snapshots)
         registry: SpecimenRegistry instance (always required, instantiated at CLI entry point)
 
     Yields:
@@ -475,8 +479,8 @@ async def _open_run_context(
         all_files = enumerate_files_from_path(path)
         yield wiring, all_files, path.name
         return
-    # Load and hydrate specimen (single hydration, avoid wasteful re-hydrate)
-    async with registry.load_and_hydrate(specimen or "") as hydrated:
+    # Load and hydrate snapshot (single hydration, avoid wasteful re-hydrate)
+    async with registry.load_and_hydrate(snapshot or "") as hydrated:
         wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         yield wiring, files_spec, hydrated.slug
@@ -591,7 +595,7 @@ def _load_preset_text(name: str) -> str:
 async def cmd_run(
     # Scope (exactly one)
     path: Path | None = opt.OPT_RUNBOOK_PATH,
-    specimen: str | None = opt.OPT_RUNBOOK_SPECIMEN,
+    snapshot: str | None = opt.OPT_RUNBOOK_SNAPSHOT,
     # Prompt source (at most one; default by mode)
     preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name; see --list-presets"),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
@@ -609,7 +613,7 @@ async def cmd_run(
     list_presets: bool = typer.Option(False, "--list-presets", help="List available built-in presets and exit"),
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
 ) -> None:
-    """Unified runner: specimen|path + structured|freeform + preset|prompt-file|text.
+    """Unified runner: snapshot|path + structured|freeform + preset|prompt-file|text.
 
     Defaults:
     - structured=false: preset=open (if no prompt source provided)
@@ -624,8 +628,8 @@ async def cmd_run(
         init_db()
 
     # Validate scope
-    if (path is None and specimen is None) or (path is not None and specimen is not None):
-        print("ERROR: Provide exactly one of --path or --specimen.")
+    if (path is None and snapshot is None) or (path is not None and snapshot is not None):
+        print("ERROR: Provide exactly one of --path or --snapshot.")
         raise typer.Exit(2)
     # Validate prompt source
     sources = [x is not None for x in (preset, prompt_file, prompt_text)]
@@ -643,24 +647,24 @@ async def cmd_run(
     else:
         prompt_raw = prompt_text or ""
 
-    # Validate --files only works with specimens
+    # Validate --files only works with snapshots
     if files and path is not None:
-        print("ERROR: --files only works with --specimen, not --path.")
+        print("ERROR: --files only works with --snapshot, not --path.")
         raise typer.Exit(2)
 
-    # Validate structured mode requires specimen (for DB persistence)
+    # Validate structured mode requires snapshot (for DB persistence)
     if structured and path is not None:
-        print("ERROR: --structured requires --specimen (not --path) for database persistence.")
+        print("ERROR: --structured requires --snapshot (not --path) for database persistence.")
         raise typer.Exit(2)
 
     # Create registry once at CLI entry point (always, even for path mode - lightweight)
     registry = SpecimenRegistry.from_package_resources()
 
     # Enter workspace context and run (same path for dry-run and real execution)
-    async with _open_run_context(path, specimen, files, registry) as (wiring, files_spec, label):
-        # Resolve files for prompt rendering (specimen mode resolves sentinel, path mode is already explicit)
-        if specimen is not None:
-            resolved_files = await resolve_critic_scope(specimen_slug=specimen, files=files_spec, registry=registry)
+    async with _open_run_context(path, snapshot, files, registry) as (wiring, files_spec, label):
+        # Resolve files for prompt rendering (snapshot mode resolves sentinel, path mode is already explicit)
+        if snapshot is not None:
+            resolved_files = await resolve_critic_scope(specimen_slug=snapshot, files=files_spec, registry=registry)
         else:
             # Path mode: files_spec is already set[Path]
             resolved_files = files_spec  # type: ignore[assignment]
@@ -674,8 +678,8 @@ async def cmd_run(
             output_final_message=output_final_message,
             final_only=final_only,
             label=label,
-            specimen_slug=specimen,
-            files_spec=files_spec if specimen is not None else None,
+            specimen_slug=snapshot,
+            files_spec=files_spec if snapshot is not None else None,
             registry=registry,
             dry_run=dry_run,
         )
@@ -687,16 +691,16 @@ def cmd_list_presets() -> None:
     _print_presets()
 
 
-@app.command("specimen-dump")
+@snapshot_app.command("dump")
 @async_run
-async def specimen_dump(
-    specimen: str = typer.Argument(..., help="Specimen slug to dump as JSON"),
+async def snapshot_dump(
+    snapshot: str = typer.Argument(..., help="Snapshot slug to dump as JSON"),
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
-    """Dump a specimen's full structure as JSON (manifest, all issues, occurrences)."""
+    """Dump a snapshot's full structure as JSON (manifest, all issues, occurrences)."""
     registry = SpecimenRegistry.from_package_resources()
     try:
-        async with registry.load_and_hydrate(specimen) as hydrated:
+        async with registry.load_and_hydrate(snapshot) as hydrated:
             rec = hydrated.record
 
             # Use existing Pydantic model_dump() for all structured data
@@ -722,20 +726,20 @@ async def specimen_dump(
             indent = 2 if pretty else None
             print(json.dumps(output, indent=indent))
     except Exception as e:
-        typer.echo(f"ERROR: Failed to load specimen '{specimen}': {e}")
+        typer.echo(f"ERROR: Failed to load snapshot '{snapshot}': {e}")
         raise typer.Exit(2) from e
 
 
-@app.command("specimen-exec")
+@snapshot_app.command("exec")
 @async_run
-async def specimen_exec(
-    specimen: str = typer.Argument(..., help="Specimen name/path or manifest"),
+async def snapshot_exec(
+    snapshot: str = typer.Argument(..., help="Snapshot name/path or manifest"),
     workdir: Path = opt.OPT_WORKDIR_CRITIC,
     interactive: bool = opt.OPT_INTERACTIVE,
     tty_exec: bool = opt.OPT_TTY_EXEC,
     cmd: list[str] = opt.ARG_CMD_LIST,
 ) -> None:
-    """Execute a command in a container with hydrated specimen mounted at /workspace (RW)."""
+    """Execute a command in a container with hydrated snapshot mounted at /workspace (RW)."""
     # Docker sanity
     try:
         dclient = docker.from_env()
@@ -745,13 +749,13 @@ async def specimen_exec(
         raise typer.Exit(2) from e
     ensure_critic_image()
 
-    # Load and hydrate specimen (keep hydrated for entire container lifetime)
+    # Load and hydrate snapshot (keep hydrated for entire container lifetime)
     registry = SpecimenRegistry.from_package_resources()
-    async with registry.load_and_hydrate(specimen) as hydrated:
+    async with registry.load_and_hydrate(snapshot) as hydrated:
         try:
             _ = next(hydrated.content_root.iterdir())
         except StopIteration:
-            typer.echo(f"ERROR: hydrated specimen is empty: {hydrated.content_root}")
+            typer.echo(f"ERROR: hydrated snapshot is empty: {hydrated.content_root}")
             raise typer.Exit(2) from None
         name = f"adgn_spec_shell_{int(time.time())}"
         volumes, _defs = build_critic_volumes(hydrated.content_root, mount_properties=True, workspace_mode="rw")
@@ -782,20 +786,20 @@ async def specimen_exec(
             container.stop()
 
 
-@app.command("capture-ducktape-specimen")
-def cmd_capture_ducktape_specimen(
+@snapshot_app.command("capture-ducktape")
+def snapshot_capture_ducktape(
     slug: Annotated[
-        str | None, typer.Option(help="Specimen slug (e.g., 'ducktape/2025-11-30-00'); auto-generated if not provided")
+        str | None, typer.Option(help="Snapshot slug (e.g., 'ducktape/2025-11-30-00'); auto-generated if not provided")
     ] = None,
     include: Annotated[list[str] | None, typer.Option(help="Paths to include in bundle (repeatable)")] = None,
     exclude: Annotated[list[str] | None, typer.Option(help="Paths to exclude from bundle (repeatable)")] = None,
 ) -> None:
-    """Capture current ducktape repo state as a new specimen and add to bundle.
+    """Capture current ducktape repo state as a new snapshot and add to bundle.
 
     Creates manifest.yaml with bundle metadata and regenerates the specimens.bundle
     to include the new snapshot.
     """
-    # Set defaults for mutable list arguments (match recent ducktape specimens)
+    # Set defaults for mutable list arguments (match recent ducktape snapshots)
     if include is None:
         include = ["adgn/"]
     if exclude is None:
@@ -813,12 +817,12 @@ def cmd_capture_ducktape_specimen(
         next_num = len(existing)
         slug = f"ducktape/{today}-{next_num:02d}"
 
-    # Create specimen directory
+    # Create snapshot directory
     registry = SpecimenRegistry.from_package_resources()
     specimens_dir = registry.base_path
-    specimen_dir = specimens_dir / slug
-    specimen_dir.mkdir(parents=True, exist_ok=False)
-    issues_dir = specimen_dir / "issues"
+    snapshot_dir = specimens_dir / slug
+    snapshot_dir.mkdir(parents=True, exist_ok=False)
+    issues_dir = snapshot_dir / "issues"
     issues_dir.mkdir()
 
     # Derive tag name from slug
@@ -835,7 +839,7 @@ def cmd_capture_ducktape_specimen(
         "bundle": {"source_commit": source_commit, "include": list(include), "exclude": list(exclude)},
     }
 
-    manifest_path = specimen_dir / "manifest.yaml"
+    manifest_path = snapshot_dir / "manifest.yaml"
     with manifest_path.open("w") as f:
         yaml.dump(manifest, f, default_flow_style=False, sort_keys=False)
 
@@ -846,17 +850,17 @@ def cmd_capture_ducktape_specimen(
     typer.echo(f"  Include: {include}")
     typer.echo(f"  Exclude: {exclude}")
     typer.echo()
-    typer.echo("Rebuilding bundle with new specimen...")
+    typer.echo("Rebuilding bundle with new snapshot...")
 
-    # Rebuild bundle with new specimen
+    # Rebuild bundle with new snapshot
     cmd_build_bundle(specimens_dir=specimens_dir)
 
     typer.echo()
-    typer.echo(f"✓ Specimen captured: {slug}")
-    typer.echo(f"  Directory: {specimen_dir}")
+    typer.echo(f"✓ Snapshot captured: {slug}")
+    typer.echo(f"  Directory: {snapshot_dir}")
     typer.echo(f"  Manifest: {manifest_path}")
     typer.echo()
     typer.echo("Next steps:")
     typer.echo(f"  1. Update {manifest_path} with the correct 'source.commit' SHA from bundle")
     typer.echo(f"  2. Add issues to {issues_dir}/")
-    typer.echo(f"  3. Commit changes: git add {specimen_dir} adgn/src/adgn/props/specimens/ducktape/specimens.bundle")
+    typer.echo(f"  3. Commit changes: git add {snapshot_dir} adgn/src/adgn/props/specimens/ducktape/specimens.bundle")

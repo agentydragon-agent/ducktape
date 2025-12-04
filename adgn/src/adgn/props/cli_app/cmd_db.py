@@ -7,10 +7,10 @@ from dataclasses import dataclass
 import typer
 
 from adgn.props.cli_app.decorators import async_run
-from adgn.props.db import init_db, recreate_database
+from adgn.props.db import get_session, init_db, recreate_database
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
+from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata
-from adgn.props.db.sync_specimens import SyncStats, sync_specimens
 
 
 @dataclass
@@ -23,9 +23,10 @@ class DetectorPromptSyncResult:
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing specimens, detector prompts, and model metadata."""
+    """Combined result from syncing snapshots, issues, detector prompts, and model metadata."""
 
-    specimen_stats: SyncStats
+    snapshot_stats: SyncStats
+    issue_stats: SyncStats
     detector_prompts: list[DetectorPromptSyncResult]
     model_metadata_stats: ModelMetadataSyncStats
 
@@ -42,44 +43,54 @@ def sync_detector_prompts() -> list[DetectorPromptSyncResult]:
     ]
 
 
-async def sync_all() -> FullSyncResult:
-    """Sync specimens, detector prompts, and model metadata in a single operation.
+def sync_all() -> FullSyncResult:
+    """Sync snapshots, issues, detector prompts, and model metadata in a single operation.
 
     Returns:
         Combined results from all sync operations
     """
+    with get_session() as session:
+        snapshot_stats = sync_snapshots_to_db(session)
+        issue_stats = sync_issues_to_db(session)
+
     return FullSyncResult(
-        specimen_stats=await sync_specimens(),
+        snapshot_stats=snapshot_stats,
+        issue_stats=issue_stats,
         detector_prompts=sync_detector_prompts(),
         model_metadata_stats=sync_model_metadata(),
     )
 
 
-async def recreate_database_schema() -> SyncStats:
+def recreate_database_schema() -> tuple[SyncStats, SyncStats]:
     """Recreate database from scratch (destructive).
 
-    Drops all tables/views/policies, creates fresh schema, and syncs specimens.
+    Drops all tables/views/policies, creates fresh schema, and syncs snapshots/issues.
 
     Returns:
-        Statistics about specimens synced after recreation
+        Tuple of (snapshot_stats, issue_stats) after recreation
     """
     # Recreate schema (tables, RLS, roles)
     recreate_database()
 
-    # Sync specimens into fresh database
-    return await sync_specimens()
+    # Sync snapshots and issues into fresh database
+    with get_session() as session:
+        snapshot_stats = sync_snapshots_to_db(session)
+        issue_stats = sync_issues_to_db(session)
+
+    return snapshot_stats, issue_stats
 
 
 @async_run
 async def cmd_sync() -> None:
-    """Sync specimens, detector prompts, and model metadata from source to DB."""
+    """Sync snapshots, issues, detector prompts, and model metadata from source to DB."""
     init_db()
 
     # Sync all data sources
-    typer.echo("Syncing specimens...")
-    result = await sync_all()
+    typer.echo("Syncing snapshots and issues...")
+    result = sync_all()
 
-    typer.echo(f"  {result.specimen_stats.summary_text}")
+    typer.echo(f"  Snapshots: {result.snapshot_stats.summary_text}")
+    typer.echo(f"  Issues:    {result.issue_stats.summary_text}")
 
     typer.echo("\nSyncing detector prompts...")
     for detector in result.detector_prompts:
@@ -98,7 +109,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     2. Create agent_user role (read-only with RLS)
     3. Create tables from ORM models
     4. Enable Row-Level Security policies
-    5. Sync specimens from splits.py
+    5. Sync snapshots and issues from filesystem
 
     Requires PROPS_DB_URL environment variable (postgres superuser connection).
     """
@@ -109,8 +120,10 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
             typer.echo("Aborted")
             raise typer.Exit(1)
 
-    # Connect and recreate (includes specimen sync)
+    # Connect and recreate (includes snapshot/issue sync)
     init_db()
     typer.echo("Recreating database schema...")
-    stats = await recreate_database_schema()
-    typer.echo(f"✓ Database recreated with {stats.summary_text}")
+    snapshot_stats, issue_stats = recreate_database_schema()
+    typer.echo(f"✓ Database recreated:")
+    typer.echo(f"  Snapshots: {snapshot_stats.summary_text}")
+    typer.echo(f"  Issues:    {issue_stats.summary_text}")

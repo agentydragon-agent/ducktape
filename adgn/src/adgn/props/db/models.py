@@ -61,27 +61,156 @@ class Base(DeclarativeBase):
     type_annotation_map: ClassVar[dict[type, Any]] = {dict[str, Any]: JSONB, UUID: PG_UUID(as_uuid=True)}
 
 
-class Specimen(Base):
-    """Specimen with its split assignment and known files.
+class Snapshot(Base):
+    """Code snapshot with split assignment.
 
-    Single source of truth for specimen→split mapping and file lists.
+    Source of truth for snapshot→split mapping.
+    Issues/false_positives reference snapshots by slug.
     """
 
-    __tablename__ = "specimens"
+    __tablename__ = "snapshots"
 
-    specimen_slug: Mapped[str] = mapped_column("specimen", String, primary_key=True)
+    slug: Mapped[str] = mapped_column(String, primary_key=True)
     split: Mapped[str] = mapped_column(String, CheckConstraint("split IN ('train', 'valid', 'test')"), nullable=False)
-    labeled_files: Mapped[list[str]] = mapped_column(
-        JSONB,
-        nullable=False,
-        server_default="[]",
-        comment="Files referenced in ground truth issue definitions (TPs and FPs). Used for critic scope validation.",
+    source: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="GitSource/GitHubSource/LocalSource")
+    bundle: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True, comment="BundleConfig (source_commit, include, exclude)"
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
-    critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="specimen_obj", cascade="all, delete-orphan")
-    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="specimen_obj", cascade="all, delete-orphan")
-    critiques: Mapped[list[Critique]] = relationship(back_populates="specimen_obj", cascade="all, delete-orphan")
+    issues: Mapped[list[Issue]] = relationship(back_populates="snapshot_obj", cascade="all, delete-orphan")
+    false_positives: Mapped[list[FalsePositive]] = relationship(
+        back_populates="snapshot_obj", cascade="all, delete-orphan"
+    )
+    critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
+    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
+    critiques: Mapped[list[Critique]] = relationship(back_populates="snapshot_obj")
+
+    @classmethod
+    def get(cls, slug: str) -> Snapshot | None:
+        """Get snapshot by slug."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
+
+    @classmethod
+    def get_by_split(cls, split: str) -> list[Snapshot]:
+        """Get all snapshots for a split (train/valid/test)."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
+
+
+class Issue(Base):
+    """True positive issue (expected findings).
+
+    Composite primary key: (snapshot_slug, issue_id).
+    Each issue has one or more occurrences with expect_caught_from semantics.
+    """
+
+    __tablename__ = "issues"
+
+    snapshot_slug: Mapped[str] = mapped_column(
+        String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+    )
+    issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    occurrences: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, comment="IssueOccurrence objects (files, note, expect_caught_from)"
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="issues")
+
+    @classmethod
+    def get(cls, snapshot_slug: str, issue_id: str) -> Issue | None:
+        """Get issue by composite key."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return session.execute(
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.issue_id == issue_id)
+        ).scalar_one_or_none()
+
+    @classmethod
+    def get_for_snapshot(cls, snapshot_slug: str) -> list[Issue]:
+        """Get all issues for a snapshot."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
+
+
+class FalsePositive(Base):
+    """Known false positive (issue that looks like a problem but isn't).
+
+    Composite primary key: (snapshot_slug, fp_id).
+    Each FP has one or more occurrences with relevant_files semantics.
+    """
+
+    __tablename__ = "false_positives"
+
+    snapshot_slug: Mapped[str] = mapped_column(
+        String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+    )
+    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    occurrences: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, nullable=False, comment="FalsePositiveOccurrence objects (files, note, relevant_files)"
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="false_positives")
+
+    @classmethod
+    def get(cls, snapshot_slug: str, fp_id: str) -> FalsePositive | None:
+        """Get false positive by composite key."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return session.execute(
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
+        ).scalar_one_or_none()
+
+    @classmethod
+    def get_for_snapshot(cls, snapshot_slug: str) -> list[FalsePositive]:
+        """Get all false positives for a snapshot."""
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
 
 
 class Prompt(Base):
@@ -133,7 +262,7 @@ class PromptOptimizationRun(Base):
 
 
 class Critique(Base):
-    """Critique result (list of issues) for a specimen.
+    """Critique result (list of issues) for a snapshot.
 
     May come from a critic run (via critic_runs.critique_id FK)
     or be manually created/imported.
@@ -144,7 +273,7 @@ class Critique(Base):
     __tablename__ = "critiques"
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    specimen_slug: Mapped[str] = mapped_column("specimen", String, ForeignKey("specimens.specimen"), nullable=False)
+    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="CriticSubmitPayload as dict")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -152,7 +281,7 @@ class Critique(Base):
     )
 
     # Relationships
-    specimen_obj: Mapped[Specimen] = relationship(back_populates="critiques")
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critiques")
     critic_run: Mapped[CriticRun | None] = relationship(
         back_populates="critique_obj", foreign_keys="CriticRun.critique_id"
     )
@@ -170,7 +299,7 @@ class CriticRun(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     prompt_sha256: Mapped[str] = mapped_column(String(64), ForeignKey("prompts.prompt_sha256"), nullable=False)
-    specimen_slug: Mapped[str] = mapped_column("specimen", String, ForeignKey("specimens.specimen"), nullable=False)
+    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=True)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
@@ -185,7 +314,7 @@ class CriticRun(Base):
 
     # Relationships
     prompt_obj: Mapped[Prompt] = relationship(back_populates="critic_runs")
-    specimen_obj: Mapped[Specimen] = relationship(back_populates="critic_runs")
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critic_runs")
     critique_obj: Mapped[Critique | None] = relationship(
         back_populates="critic_run", foreign_keys=[critique_id], post_update=True
     )
@@ -193,7 +322,7 @@ class CriticRun(Base):
 
 
 class GraderRun(Base):
-    """Single grader run (critique + specimen → metrics).
+    """Single grader run (critique + snapshot → metrics).
 
     No direct prompt link; linked via critique → critic_run → prompt.
     """
@@ -202,7 +331,7 @@ class GraderRun(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    specimen_slug: Mapped[str] = mapped_column("specimen", String, ForeignKey("specimens.specimen"), nullable=False)
+    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=False)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
@@ -215,7 +344,7 @@ class GraderRun(Base):
     )
 
     # Relationships
-    specimen_obj: Mapped[Specimen] = relationship(back_populates="grader_runs")
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="grader_runs")
     critique_obj: Mapped[Critique] = relationship(back_populates="grader_runs")
     prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="grader_runs")
 

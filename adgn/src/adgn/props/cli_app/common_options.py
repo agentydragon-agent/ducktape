@@ -9,11 +9,11 @@ from adgn.props.docker_env import WORKING_DIR as CRITIC_WORKDIR
 # Arguments
 ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)
 ARG_SCOPE = typer.Argument(..., help="Freeform scope description (e.g. 'all files under src/**')")
-ARG_SPECIMEN = typer.Argument(..., help="Specimen slug (under properties/specimens)")
+ARG_SNAPSHOT = typer.Argument(..., help="Snapshot slug (under properties/specimens)")
 ARG_ISSUE_ID = typer.Argument(..., help="Issue id to lint (must have should_flag=true)")
 ARG_OCCURRENCE = typer.Argument(..., help="0-based occurrence index")
 ARG_CMD_LIST = typer.Argument(..., help="Command to run inside container")
-ARG_PROMPT = typer.Argument(..., help="Candidate critic system prompt to evaluate across specimens")
+ARG_PROMPT = typer.Argument(..., help="Candidate critic system prompt to evaluate across snapshots")
 
 # Options - General
 OPT_MODEL = typer.Option("gpt-5", help="Model id")
@@ -31,8 +31,8 @@ OPT_CONTEXT = typer.Option(
 )
 OPT_WORKDIR_CRITIC = typer.Option(CRITIC_WORKDIR, "--workdir", help="Container working dir (default: /workspace)")
 
-# Options - Specimen & Files
-OPT_SPECIMEN = typer.Option(None, "--specimen", help="Specimen slug")
+# Options - Snapshot & Files
+OPT_SNAPSHOT = typer.Option(None, "--snapshot", help="Snapshot slug")
 OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific files (relative paths)")
 
 # Options - Grading & Critique
@@ -53,6 +53,6 @@ OPT_RUNBOOK_PATH = typer.Option(
     resolve_path=True,
     help="Local code path to mount as /workspace (read-only)",
 )
-OPT_RUNBOOK_SPECIMEN = typer.Option(
-    None, "--specimen", help="Specimen slug to hydrate and mount as /workspace (read-only)"
+OPT_RUNBOOK_SNAPSHOT = typer.Option(
+    None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)"
 )

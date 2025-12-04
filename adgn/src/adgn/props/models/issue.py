@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
@@ -65,6 +66,120 @@ class Occurrence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class IssueOccurrence(BaseModel):
+    """One occurrence of a true positive Issue (post-migration).
+
+    For true positives, each occurrence tracks minimal file sets required for detection.
+    """
+
+    files: dict[Path, list[LineRange] | None] = Field(
+        description="Maps file paths to line ranges or None for unspecified anchor"
+    )
+    note: str | None = Field(default=None, description="Occurrence-specific note")
+    expect_caught_from: set[frozenset[Path]] = Field(
+        description=(
+            "Minimal file sets for detection (AND/OR logic). "
+            "Outer set = alternatives (OR), inner frozenset = required together (AND). "
+            "Must be non-empty."
+        )
+    )
+
+    @field_serializer("expect_caught_from")
+    def serialize_expect_caught_from(self, value: set[frozenset[Path]]) -> list[list[str]]:
+        """Convert set[frozenset[Path]] to JSON: list[list[str]]."""
+        return [[str(p) for p in fs] for fs in value]
+
+    @field_serializer("files", when_used="json")
+    def _serialize_files(self, value: dict[Path, list[LineRange] | None]) -> dict[str, Any]:
+        """Convert Path keys to strings for JSON serialization."""
+        return {str(k): v for k, v in value.items()}
+
+    @model_validator(mode="after")
+    def validate_non_empty(self) -> IssueOccurrence:
+        if not self.expect_caught_from:
+            raise ValueError("expect_caught_from must be non-empty")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class FalsePositiveOccurrence(BaseModel):
+    """One occurrence of a false positive.
+
+    For false positives, we track which files make this occurrence relevant.
+    """
+
+    files: dict[Path, list[LineRange] | None] = Field(
+        description="Maps file paths to line ranges or None for unspecified anchor"
+    )
+    note: str | None = Field(default=None, description="Occurrence-specific note")
+    relevant_files: set[Path] = Field(
+        description="Files that make this FP relevant (ANY logic). Must be non-empty."
+    )
+
+    @field_serializer("relevant_files")
+    def serialize_relevant_files(self, value: set[Path]) -> list[str]:
+        """Convert set[Path] to JSON: list[str]."""
+        return [str(p) for p in value]
+
+    @field_serializer("files", when_used="json")
+    def _serialize_files(self, value: dict[Path, list[LineRange] | None]) -> dict[str, Any]:
+        """Convert Path keys to strings for JSON serialization."""
+        return {str(k): v for k, v in value.items()}
+
+    @model_validator(mode="after")
+    def validate_non_empty(self) -> FalsePositiveOccurrence:
+        if not self.relevant_files:
+            raise ValueError("relevant_files must be non-empty")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class Issue(BaseModel):
+    """True positive issue (post-migration).
+
+    Represents a real problem that should be detected by critics.
+    """
+
+    issue_id: str = Field(description="Derived from filename by loader")
+    snapshot_slug: str = Field(description="From Jsonnet 'snapshot' field")
+    rationale: Rationale
+    occurrences: list[IssueOccurrence]
+
+    @model_validator(mode="after")
+    def validate_multi_occurrence_notes(self) -> Issue:
+        if len(self.occurrences) > 1:
+            for occ in self.occurrences:
+                if occ.note is None:
+                    raise ValueError("note required for multi-occurrence issues")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class FalsePositive(BaseModel):
+    """False positive (post-migration).
+
+    Represents a pattern that looks like an issue but isn't.
+    """
+
+    fp_id: str = Field(description="Derived from filename by loader")
+    snapshot_slug: str = Field(description="From Jsonnet 'snapshot' field")
+    rationale: Rationale
+    occurrences: list[FalsePositiveOccurrence]
+
+    @model_validator(mode="after")
+    def validate_multi_occurrence_notes(self) -> FalsePositive:
+        if len(self.occurrences) > 1:
+            for occ in self.occurrences:
+                if occ.note is None:
+                    raise ValueError("note required for multi-occurrence issues")
+        return self
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class SpecimenIssuesLoadError(Exception):
     """Raised when per-issue Jsonnet evaluation/validation yields any errors in strict mode.
 
@@ -93,7 +208,22 @@ class IssueCore(BaseModel):
     """
 
     id: BaseIssueID
-    should_flag: bool
     rationale: Rationale
 
     model_config = ConfigDict(extra="forbid")
+
+
+def should_catch_occurrence(occ: IssueOccurrence, reviewed_files: set[Path]) -> bool:
+    """Check if occurrence should be caught given reviewed files.
+
+    Returns True if any alternative file set is a subset of reviewed files.
+    """
+    return any(alt.issubset(reviewed_files) for alt in occ.expect_caught_from)
+
+
+def should_show_fp_occurrence(occ: FalsePositiveOccurrence, reviewed_files: set[Path]) -> bool:
+    """Check if FP occurrence is relevant given reviewed files.
+
+    Returns True if there's any overlap between relevant files and reviewed files.
+    """
+    return bool(occ.relevant_files & reviewed_files)

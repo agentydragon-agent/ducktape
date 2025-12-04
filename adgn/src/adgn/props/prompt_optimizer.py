@@ -35,7 +35,7 @@ from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import agent_queries, get_session
 from adgn.props.db.models import PromptOptimizationRun, Specimen
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.sync_specimens import sync_specimens
+from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
@@ -150,8 +150,10 @@ async def build_server(
     Returns:
         MCP server with upsert_prompt, run_critic and run_grader tools
     """
-    # Ensure specimens table is synced on server startup
-    await sync_specimens()
+    # Ensure snapshots and issues tables are synced on server startup
+    with get_session() as session:
+        sync_snapshots_to_db(session)
+        sync_issues_to_db(session)
 
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
