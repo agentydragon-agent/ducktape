@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-025: model_str parsing has common trunk that can be simplified
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 86-90 parse model_str with branching logic, but both branches call `.strip()`
     on the result. The stripping is common trunk that should be factored out.

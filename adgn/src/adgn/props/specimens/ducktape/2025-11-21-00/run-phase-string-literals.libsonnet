@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-027: run_phase should be an enum instead of string literals
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `run_phase` field in `list_agents` uses string literals ("idle", "waiting_approval", "sampling")
     instead of a proper enum. This loses type safety and makes it easy to introduce typos or inconsistencies.

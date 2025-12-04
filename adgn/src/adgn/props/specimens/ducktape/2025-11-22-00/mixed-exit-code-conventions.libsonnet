@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-012: Mixed conventions for signaling exit codes
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Functions inconsistently mix two conventions for signaling exit codes: some
     functions declare `-> int` return types but actually raise `ExitWithCode`

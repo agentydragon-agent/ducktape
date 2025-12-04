@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: Complex nested loop assertion should use hamcrest matchers
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     A complex 12-line assertion with nested loops, boolean flag, and break statements
     should be replaced with a single declarative hamcrest matcher.

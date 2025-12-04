@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-048: Prefer GitPython query over shelling out to `git var`
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     `_get_editor` shells out via `asyncio.create_subprocess_exec("git", "var", "GIT_EDITOR", ...)` to
     obtain the editor. Prefer using the repo API directly (e.g., `repo.git.var("GIT_EDITOR")`) or a

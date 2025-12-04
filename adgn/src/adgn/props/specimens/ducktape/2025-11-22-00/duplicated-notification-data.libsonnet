@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-026: Duplicated notification data and redundant data structures
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The notifications module duplicates data in two ways:
 

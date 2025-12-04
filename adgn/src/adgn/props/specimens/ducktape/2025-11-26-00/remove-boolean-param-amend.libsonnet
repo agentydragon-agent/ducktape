@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-044: Remove boolean parameter from _get_previous_message_if_amend
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 539-547 define `_get_previous_message_if_amend()` which takes `is_amend: bool`
     and returns None if False. This is the same antipattern as issues 043.

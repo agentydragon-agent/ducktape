@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Line 31 creates unnecessary res_server intermediate variable.
 

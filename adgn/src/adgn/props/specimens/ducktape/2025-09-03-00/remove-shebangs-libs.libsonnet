@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-043: Remove shebangs from library modules exposed via console_scripts
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Modules under packages that are executed via console_scripts should not carry a `#!/usr/bin/env python3`
     shebang or be executable; the packaging shim handles invocation. Keeping shebangs on importable modules

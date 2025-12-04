@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Both `resolve()` and `await_decision()` silently handle missing call_ids instead of failing fast.
 

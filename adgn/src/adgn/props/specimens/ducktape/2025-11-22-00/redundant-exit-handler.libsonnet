@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: Redundant exception handler that only re-exits
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The top-level `async_main()` function has a try-except handler that catches
     `ExitWithCode` exceptions only to immediately call `sys.exit()` with the same

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     LSPConfig.Disabled field has inverted JSON serialization: the Go field is named `Disabled` but serializes as `"enabled"` in JSON.
 

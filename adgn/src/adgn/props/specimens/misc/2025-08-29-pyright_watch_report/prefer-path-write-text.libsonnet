@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: Prefer Path.write_text for concise dump writing
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Prefer Path.write_text for concise dump writing when appropriate.
 

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     slog calls with positional arguments instead of structured key-value pairs.
 

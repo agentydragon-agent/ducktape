@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-039: Agents infrastructure is overcomplicated, should use compositor pattern
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
     ['adgn/src/adgn/agent/mcp_bridge/server.py'],

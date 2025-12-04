@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Iteration catches KeyError when agent isn't initialized (lines 245-249):
     ```python

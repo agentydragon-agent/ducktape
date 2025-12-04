@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-039: Remove unused default for previous_message (tighten API)
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The parameter is declared with a default that callers never use:
 

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-019: Prefer pathlib.Path APIs over os.path/os.getcwd for clearer semantics
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Prefer using pathlib.Path methods (e.g., Path.exists(), Path.cwd(), Path.is_file()) instead of the older os.path / os.getcwd helpers.
 

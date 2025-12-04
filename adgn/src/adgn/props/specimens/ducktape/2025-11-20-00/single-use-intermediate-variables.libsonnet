@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // Consolidated issue: Variables assigned once and used immediately should be inlined
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Multiple locations create intermediate variables that are assigned once and
     used immediately afterward. These variables add no semantic value and should

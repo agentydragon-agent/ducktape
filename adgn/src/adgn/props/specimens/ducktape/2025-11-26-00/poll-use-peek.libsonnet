@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-054: Make poll() use peek(), inline _build_resources if called once
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 62-72 define `poll()` and `peek()` which both call `_build_resources()`.
     These should be refactored to avoid duplication.

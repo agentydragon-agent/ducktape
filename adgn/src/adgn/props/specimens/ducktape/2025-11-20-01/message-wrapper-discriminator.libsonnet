@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Message types should use wrapper pattern with kind discriminator
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The input message types (`AssistantMessage`, `UserMessage`, `SystemMessage`) embed the
     discriminator field (`role`) directly in the message class. This mixes API-level concerns

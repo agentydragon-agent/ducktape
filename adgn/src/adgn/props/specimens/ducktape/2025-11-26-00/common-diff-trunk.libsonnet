@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-027: Move common repo.diff line outside if/else branches
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 130-139 have `repo.diff(...).patch or ""` duplicated in both branches.
     Only the base commit differs. Factor out the common diff call.

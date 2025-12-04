@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-017: _run_in_sandbox is misleading and a security risk when it silently runs unsandboxed
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The helper `_run_in_sandbox` (and the public `run_in_sandbox` wrapper) claim to run commands in a sandbox, but on non-Linux systems or when bubblewrap (bwrap) is missing they silently fall back to running the command unsandboxed.
 

@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: DeleteSessionMessages early-bailout suggestion is unnecessary
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A reviewer suggested converting a small loop that performs a conditional delete
     into an early-bailout (continue) style to save one indentation level:

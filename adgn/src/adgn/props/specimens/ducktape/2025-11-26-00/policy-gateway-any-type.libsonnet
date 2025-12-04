@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-001: _policy_gateway uses Any type instead of PolicyGatewayMiddleware
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Line 197 in container.py types `_policy_gateway` as `Any | None` with a comment
     indicating it should be `PolicyGatewayMiddleware`, but doesn't use the proper type.

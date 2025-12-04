@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-007: Remove redundant tuple construction - arguments already in FunctionCallItem
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The code builds a list of tuples `(function_call, function_call.arguments)` when the
     `arguments` field is already part of the `FunctionCallItem` object. This is redundant

@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: cleanup loop early-bailout rewrite not necessary
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A reviewer suggested refactoring the cleanup loop in internal/app/app.go from:
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-007: _invoke takes redundant args_json parameter (already in function_call.arguments)
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `_invoke` local function takes both `function_call: FunctionCallItem` and
     `args_json: str | None` as separate parameters, but `args_json` is always

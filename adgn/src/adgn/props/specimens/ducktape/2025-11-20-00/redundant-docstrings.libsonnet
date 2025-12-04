@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Kept only the docstring duplication issues (useless comment moved to separate file)
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Docstrings duplicate information already present in type system, creating maintenance
     burden without adding information.

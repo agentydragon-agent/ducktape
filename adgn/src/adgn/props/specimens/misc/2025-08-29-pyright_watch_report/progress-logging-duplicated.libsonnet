@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: Repeated periodic progress-logging block
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Repeated periodic progress-logging block.
 

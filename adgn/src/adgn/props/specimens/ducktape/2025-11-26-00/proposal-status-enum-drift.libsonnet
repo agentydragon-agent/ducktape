@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: ProposalStatus(rec.status) conversion suggests enum drift/duplication
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The code converts `rec.status` (from persistence) to `ProposalStatus` enum, which
     suggests there may be multiple versions of the same enum or semantic drift between

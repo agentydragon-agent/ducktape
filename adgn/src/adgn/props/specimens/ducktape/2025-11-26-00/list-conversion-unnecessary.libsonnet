@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-066: Unnecessary list() conversion - _build_window_payload should accept iterable
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     The code calls `list(res.contents)` only to pass it to `_build_window_payload()`.
     This creates an unnecessary intermediate list when the function could accept any iterable.

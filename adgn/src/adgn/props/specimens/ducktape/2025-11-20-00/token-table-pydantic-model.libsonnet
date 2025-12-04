@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-030: TOKEN_TABLE should use Pydantic model, not untyped dict
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     TOKEN_TABLE uses nested untyped dicts (mcp_routing.py:37-40):
 

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Run phase determination logic is duplicated across `list_agents()` resource
     (lines 255-267) and `get_agent_info()` resource (lines 296-304).

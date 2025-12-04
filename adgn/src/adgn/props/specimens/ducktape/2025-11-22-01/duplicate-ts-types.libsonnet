@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-015: TypeScript types in channels.ts duplicate Python Pydantic models
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `channels.ts` file manually defines TypeScript types for WebSocket messages:
 

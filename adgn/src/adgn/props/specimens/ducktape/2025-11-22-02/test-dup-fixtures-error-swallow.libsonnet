@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-054: Duplicated test fixtures and error-swallowing in test_mcp_edge_cases.py
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     The test_mcp_edge_cases.py file has similar issues to test_mcp_errors.py and test_mcp_concurrent.py:
 

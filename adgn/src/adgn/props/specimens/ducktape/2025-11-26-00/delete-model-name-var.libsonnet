@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-047: Delete unnecessary model_name variable and useless comment
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 743-744 extract `model_name` from config with a comment saying "Model parsing
     handled by AppConfig.resolve". Both the variable and comment are unnecessary.

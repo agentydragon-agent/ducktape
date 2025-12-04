@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: combining IsDir + ShouldSkip into one guard is not required
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A reviewer suggested refactoring the following code in internal/fsext/ls.go
     to combine the nested dir check and skip check into a single condition.

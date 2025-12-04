@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Dead API: ListLatestSessionFiles is defined and wired through the DB layer but has no production callers; it is referenced only by a test fake.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: create_global_compositor should use mount_agent_compositor_dynamically
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `create_global_compositor` function duplicates the logic from
     `mount_agent_compositor_dynamically` when mounting existing agents at startup.

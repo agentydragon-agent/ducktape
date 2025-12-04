@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-001: backend_key is stringly typed, should use TokenInfo as dict key
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `_backend_apps` dict uses string keys ("human" or f"agent:{agent_id}") when it
     should use TokenInfo objects directly as keys. This is stringly typed and error-prone.

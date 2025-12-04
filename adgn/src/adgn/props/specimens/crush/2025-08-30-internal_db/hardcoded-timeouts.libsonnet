@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Centralize hardcoded timeouts/intervals/limits: name them and centralize per-subsystem.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Hardcoded timeouts, intervals, and numeric limits are scattered across subsystems (LSP client, diff runner, app, watcher, agent, sourcegraph). Name these values and centralize them (either as package-level consts or configurable options) to make tuning, consistency, and discovery easier. Where appropriate, consider making them configuration options (with safe defaults). Preserve local comments about semantics when migrating to named constants.',
   occurrences=[
     {

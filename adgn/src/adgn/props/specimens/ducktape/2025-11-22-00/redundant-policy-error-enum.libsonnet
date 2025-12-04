@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-025: Redundant PolicyErrorCode enum duplicating PolicyErrorStage
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code defines two enums, `PolicyErrorCode` and `PolicyErrorStage`, which are
     subset-related and redundant. `PolicyErrorCode` has values `READ_ERROR` and

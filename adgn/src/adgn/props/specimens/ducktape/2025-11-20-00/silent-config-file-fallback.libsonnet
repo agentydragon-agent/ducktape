@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-003: Silent failure when --mcp-config or --initial-policy file doesn't exist
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     When user provides --mcp-config with a non-existent file path, the code silently falls
     back to empty config without error message or notification.

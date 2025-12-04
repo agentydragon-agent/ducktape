@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-034: Avoid mutable module-level singletons for Docker client/container
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Module-level `_DOCKER_CLIENT` and `_CONTAINER_REF` introduce mutable global state that couples requests
     through hidden, process-wide singletons. This makes behavior order-dependent, complicates testing,

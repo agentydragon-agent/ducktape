@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Duplicated CSS/styling patterns across UI components that should be extracted
     into common stylesheet/module.

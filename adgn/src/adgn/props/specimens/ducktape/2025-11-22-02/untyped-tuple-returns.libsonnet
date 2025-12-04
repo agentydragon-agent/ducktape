@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-045: untyped tuple returns instead of structured types
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The policy persistence methods have non-obvious return types:
 

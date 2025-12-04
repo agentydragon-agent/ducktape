@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: test_policy_resources.py tests non-existent API functionality
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The test file `adgn/tests/mcp/approval_policy/test_policy_resources.py` tests a policy
     CRUD API that was never implemented in the production code.

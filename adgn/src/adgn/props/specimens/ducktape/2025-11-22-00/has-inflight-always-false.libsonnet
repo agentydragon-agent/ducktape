@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-039: has_inflight always False indicates unimplemented feature
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     `mcp_has_inflight` parameter is always `False` with comments "Tool inflight detection
     is not exposed", making `RunPhase.TOOLS_RUNNING` unreachable. Either implement or remove.

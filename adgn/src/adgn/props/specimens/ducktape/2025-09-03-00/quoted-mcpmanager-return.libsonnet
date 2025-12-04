@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-061: Replace quoted return annotations with real type (annotations future enabled)
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The module already enables postponed evaluation of annotations via `from __future__ import annotations`,
     but still uses quoted return annotations:

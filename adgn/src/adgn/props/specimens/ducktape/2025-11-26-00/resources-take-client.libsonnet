@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-059: Resources server should take Client, not Compositor
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 238-241 create a `Client(compositor)` internally, but the resources server
     should receive the Client as a parameter instead of the Compositor.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-029: DRY up duplicated asyncio.sleep(0) calls
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 314-327 have `await asyncio.sleep(0)` duplicated in both branches. This
     should be on common trunk.

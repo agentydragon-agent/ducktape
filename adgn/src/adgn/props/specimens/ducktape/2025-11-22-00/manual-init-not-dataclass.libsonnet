@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Class uses manual `__init__` for simple field initialization when `@dataclass`
     would be more concise and provide additional benefits.

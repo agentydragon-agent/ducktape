@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-043: Inline _stage_all_if_requested - boolean-guarded no-op functions are antipattern
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 532-536 define `_stage_all_if_requested()` which takes a boolean and is
     a no-op if the boolean is False. This is an antipattern.

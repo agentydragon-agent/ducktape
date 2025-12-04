@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-012: docker_client should be local variable, not app.state global
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Lines 155, 160, and 188 in app.py store `docker_client` in `app.state` but only
     use it locally within the same function where it's created.

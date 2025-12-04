@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-033: Leaking environment variable handling into downstream components
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Infrastructure code manually reads `ADGN_AGENT_PRESETS_DIR` and passes it to
     `discover_presets()`. The discovery helper should own all environment variable

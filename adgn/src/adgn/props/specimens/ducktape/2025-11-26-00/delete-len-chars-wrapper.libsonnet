@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-049: Delete trivial _len_chars wrapper, use len() directly
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 14-15 define `_len_chars(s: str) -> int` which just returns `len(s)`. This
     is a trivial wrapper that should be deleted.

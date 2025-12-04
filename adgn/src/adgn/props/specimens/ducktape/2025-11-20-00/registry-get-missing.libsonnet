@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     InfrastructureRegistry.get() method is called but does not exist in the class definition.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-022: Duplicated XDG user data directory path construction
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code constructs XDG user data directory paths (using `user_data_dir("adgn", ...)`)
     in multiple places instead of defining these paths once in a central location.

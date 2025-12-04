@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-004: Useless docstrings that restate function signatures or provide no value
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Several functions have docstrings that add no information beyond what the function
     signature already provides. These docstrings are noise and should be deleted.

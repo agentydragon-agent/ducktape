@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Self-describing names: replace terse single-letter or ambiguous variable names with explicit names (address/storedAddr, compressEnabled, CRUSH_PROFILE/pstr -> descriptive names)
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Ambiguous or overly terse local/var names reduce readability. Prefer descriptive names that encode units/meaning (e.g., address/storedAddr, compressEnabled, CRUSH_PROFILE env var semantics).
   |||,

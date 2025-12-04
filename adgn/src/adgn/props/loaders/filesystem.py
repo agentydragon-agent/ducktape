@@ -131,10 +131,7 @@ class FilesystemLoader:
             if not isinstance(issue_dict, dict):
                 raise ValueError(f"{issue_file}: Jsonnet must return an object, got {type(issue_dict)}")
 
-            # Validate snapshot field matches
-            returned_snapshot = issue_dict.get("snapshot")
-            if returned_snapshot != str(slug):
-                raise ValueError(f"{issue_file}: snapshot field '{returned_snapshot}' doesn't match expected '{slug}'")
+            # snapshot is auto-derived from file path (not in Jsonnet)
 
             # Determine if TP or FP by checking occurrence structure
             occurrences = issue_dict.get("occurrences", [])

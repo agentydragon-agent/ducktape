@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-017: Condense and de-duplicate config printing
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Condense and de-duplicate config printing.
 

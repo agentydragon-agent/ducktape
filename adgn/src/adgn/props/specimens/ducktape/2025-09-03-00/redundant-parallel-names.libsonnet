@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // Redundant parallel names in editor flow (final_text vs content_before)
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale= |||
     The editor flow uses redundant parallel variable names (`final_text` and `content_before`) that mirror each other
     without adding clarity. Keep a single source variable to reduce cognitive load and avoid confusion about which

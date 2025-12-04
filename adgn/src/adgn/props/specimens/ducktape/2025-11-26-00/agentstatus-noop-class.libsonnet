@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-007: AgentStatus is noop class, should be deleted
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     AgentStatus is a noop class that should be deleted.
 

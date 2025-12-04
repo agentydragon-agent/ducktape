@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The invoker callback is called with both a FunctionCall object and its arguments as separate parameters:
     ```python

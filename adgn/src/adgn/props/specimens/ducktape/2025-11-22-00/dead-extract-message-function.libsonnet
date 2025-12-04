@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-004: Dead code - unused _extract_message_from_text function
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The function `_extract_message_from_text()` (lines 260-263) appears to be
     unused dead code. A project-wide search shows:

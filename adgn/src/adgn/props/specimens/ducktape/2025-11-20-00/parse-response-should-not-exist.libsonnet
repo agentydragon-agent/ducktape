@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-039: parse_response_messages should not exist, callers should type correctly
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     parse_response_messages accepts Any and converts to list[ResponseOutputMessage]
     (openai_typing.py:111-123):

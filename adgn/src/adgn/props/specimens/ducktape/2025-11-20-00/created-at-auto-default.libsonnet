@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     SQLAlchemy models define created_at fields without default values, requiring every
     creation site to manually pass created_at=datetime.now(). SQLAlchemy supports automatic

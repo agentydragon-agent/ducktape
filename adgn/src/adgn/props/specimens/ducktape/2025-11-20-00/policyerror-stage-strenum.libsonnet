@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     PolicyError.stage uses Literal["read", "parse", "tests"] instead of StrEnum
     for consistency with the rest of the codebase.

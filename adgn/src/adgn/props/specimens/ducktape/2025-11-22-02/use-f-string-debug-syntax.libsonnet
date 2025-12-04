@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-038: use f"{variable=}" debug syntax
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py']],
   rationale= |||
     Python 3.8+ supports f"{variable=}" syntax which is more concise than f"variable={variable}":

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Multiple trivial wrapper functions that add no abstraction value.
 

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     LSPConfig.Disabled flag doesn't prevent LSP initialization - disabled LSP servers still start and run.
 

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     The `ensure_schema` method unconditionally drops ALL tables before recreating them,
     destroying all persisted data on every call. The function name suggests safe,

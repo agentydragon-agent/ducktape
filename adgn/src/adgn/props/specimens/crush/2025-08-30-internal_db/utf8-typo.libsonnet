@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Identifier typo: `isValidUt8` -> `isValidUTF8` in fetch.go/view.go
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Identifier typo: `isValidUt8` appears to be a misspelling of `isValidUTF8` (typo of UTF8). Correct identifier improves clarity/truthfulness of code and avoids confusion.
   |||,

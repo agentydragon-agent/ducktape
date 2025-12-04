@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-042: Repeated type casting to any instead of using typed content models
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `ToolExec.svelte` and `ToolJson.svelte` components repeatedly cast
     `item.content` to `any` instead of using the proper typed TypeScript models

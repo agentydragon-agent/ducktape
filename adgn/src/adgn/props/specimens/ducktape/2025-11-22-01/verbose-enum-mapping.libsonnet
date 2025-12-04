@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: _register_resources contains identity mapping encoded as long if-else chain
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `get_approvals` resource function in `_register_resources()` contains a verbose
     if-elif-else chain that maps `ApprovalOutcome` enum values to `ApprovalStatus` enum

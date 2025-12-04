@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-018: Delete unused dead code functions (0 call sites)
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Three functions have zero call sites in the codebase and should be deleted as dead code.
 

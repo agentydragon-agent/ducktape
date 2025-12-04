@@ -5,7 +5,6 @@ local I = import '../../lib.libsonnet';
 // All describe comments that add no value and should be deleted
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Comments that add no value: redundant, obvious, historical breadcrumbs, or noise.
     Good comments explain non-obvious decisions; these comments should be deleted.

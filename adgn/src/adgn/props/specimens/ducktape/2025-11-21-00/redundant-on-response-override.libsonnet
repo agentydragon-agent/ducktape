@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-005: Delete redundant on_response override in ConnectionManager
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `on_response` method in `ConnectionManager` (lines 167-168) is a redundant override
     that should be deleted.

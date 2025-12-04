@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // All describe assign-and-check patterns that should use walrus operator
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Code uses assign-then-check patterns where walrus operator (:=) would be
     clearer and more concise. Common patterns include:

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-035: Deduplicate try/except for instruction_block; extract helper
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The `try/except` around `mcp_manager.instruction_block()` appears twice with identical logic
     (once in the plain-turn path and once in the tool-call path). Extract a small helper (e.g.,

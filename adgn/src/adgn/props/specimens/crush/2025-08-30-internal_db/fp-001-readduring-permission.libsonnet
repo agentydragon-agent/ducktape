@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: double-read before vs after permission request in internal/llm/tools/write.go
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A past critique flagged the two reads surrounding the permission gate in write.go as an
     "unnecessary re-read". This is a false positive. The first read is a lightweight early

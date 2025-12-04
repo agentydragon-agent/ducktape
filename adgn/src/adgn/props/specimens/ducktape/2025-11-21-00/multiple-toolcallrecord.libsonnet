@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-014: on_call_tool should progressively mutate one ToolCallRecord, not construct N independent instances
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `on_call_tool` method constructs multiple independent `ToolCallRecord` instances with
     verbose redundant field assignments at each state transition. It should instead hold *one*

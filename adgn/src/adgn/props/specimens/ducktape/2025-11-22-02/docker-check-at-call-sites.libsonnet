@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-028: docker_client None check should be inside self_check, not at call sites
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The pattern `if self.docker_client is not None: self.self_check(...)` appears
     twice (lines 344-345, 360-361). This conditional is repeated at every call site.

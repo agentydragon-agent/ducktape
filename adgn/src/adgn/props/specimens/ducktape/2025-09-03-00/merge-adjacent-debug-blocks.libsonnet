@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-033: Merge adjacent debug logging blocks (combine to one if)
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Two adjacent `if known.debug:` blocks perform closely related logging/setup:
 

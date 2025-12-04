@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-052: Error-swallowing exception handler and duplicated responses_create fixture pattern
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     Two issues in test_mcp_concurrent.py (and across the test suite):
 

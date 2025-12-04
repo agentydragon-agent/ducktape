@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-049: Unnecessarily split with_ui conditional blocks
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     The with_ui conditional logic is split into two separate blocks unnecessarily:
 

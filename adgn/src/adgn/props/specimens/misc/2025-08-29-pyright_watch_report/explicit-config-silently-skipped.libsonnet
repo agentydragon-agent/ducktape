@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-006: Explicit --config flag silently skipped if broken
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     If `load_config` is run with explicit `--config=<file>`, it will *silently skip it* if it's broken and instead potentially use other autodiscovered candidates, which (A) *discards user intent* despite the *explicit flags*, and (B) does so *silently*, without announcing any kind of error.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-038: McpState, PolicyState, and pending_approvals redundant with 2-layer compositor
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     `McpState`, `PolicyState`, and `pending_approvals` in `AgentStatusCore` duplicate
     information available via the 2-layer compositor exposing MCP server state.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-015: Final dump error handling should not swallow exceptions
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Final dump error handling should not swallow exceptions.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: Do not silently swallow config read/parse errors
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Do not silently swallow config read/parse errors.
 

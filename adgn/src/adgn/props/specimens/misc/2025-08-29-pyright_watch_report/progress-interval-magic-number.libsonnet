@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Progress interval magic number
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Progress interval is encoded as a magic float literal `1.0` (seconds) in multiple places, which makes the unit implicit.
     Either:

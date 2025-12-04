@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The shim.py module docstring (lines 14-17) says "Keep this tiny and dependency-free; only stdlib is used" but this is misleading. While the shim itself uses only stdlib, policy programs routinely import and use types/enums from the `adgn` package, which is installed in the container image.
 

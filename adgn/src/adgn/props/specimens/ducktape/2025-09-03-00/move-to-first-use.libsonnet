@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-064: Move declaration to first use to improve locality
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     `commit_msg_path = Path(repo.git_dir) / "COMMIT_EDITMSG"` is declared many lines before its only use.
     Declare variables as close as possible to their first use to improve locality and reduce mental overhead.

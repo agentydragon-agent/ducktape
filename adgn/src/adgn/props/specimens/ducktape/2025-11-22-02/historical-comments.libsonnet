@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Comments reference historical code states or duplicates log messages.
 

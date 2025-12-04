@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Overuse of nil-pointer config checks at call sites: centralize nil handling or use DI.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Call-sites frequently chain nil checks (cfg != nil && cfg.Options != nil && cfg.Options.X != nil ...) which is noisy and error-prone. Centralize nil-safe accessors on Config (nil-receiver-safe methods) or pass *config.Config by DI to eliminate repetitive pointer chains and consolidate defaults.',
   occurrences=[
     {

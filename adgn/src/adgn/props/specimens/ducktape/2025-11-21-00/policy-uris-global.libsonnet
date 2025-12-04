@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-038: Approval policy URIs are global but should be agent-scoped
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/mcp/_shared/constants.py'],
     ['adgn/src/adgn/agent/mcp_bridge/resources.py'],

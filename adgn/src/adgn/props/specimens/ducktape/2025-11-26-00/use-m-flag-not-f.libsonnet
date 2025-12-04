@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-037: Use -m flag instead of -F after extracting commit content
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 641-647 extract the commit message from the editor file (removing scissors
     and comments), then pass the file path to `git commit -F ... --cleanup=strip`.

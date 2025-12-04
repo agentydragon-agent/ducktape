@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: Duplicated PID file reading logic in wt client
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['wt/src/wt/client/wt_client.py'],
     ['wt/src/wt/client/handlers.py'],

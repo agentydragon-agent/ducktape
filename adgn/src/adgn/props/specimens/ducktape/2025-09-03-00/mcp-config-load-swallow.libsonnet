@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-029: Do not swallow MCP config load errors during initialization; fail loudly
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The code currently conditionally reads an MCP config only if the file exists. That’s fine. The problem is the broad except that silently ignores *errors parsing or using the file*. If the .mcp.json exists but is malformed or otherwise unusable, the program must crash loudly so operator/CI notices and fixes the problem; do NOT silently ignore a present-but-broken config file.
 

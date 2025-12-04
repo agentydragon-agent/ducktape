@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-001: _global_compositor should not be optional in AgentRegistryBridgeServer
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `_global_compositor` parameter in `AgentRegistryBridgeServer.__init__` is typed
     as `Compositor | None`, making it optional. However, the server's core functionality

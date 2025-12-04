@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-052: Use handlers.append() instead of handlers.insert(0, ...)
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Uses `handlers.insert(0, DisplayEventsHandler(...))` to prepend the handler, but
     this is unnecessary because DisplayEventsHandler is a pure observer with no ordering

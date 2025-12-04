@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Ordering drift: SQL orders ListMessagesBySession by created_at, id (messages.sql lines 6–11),
     but generated code orders by created_at, rowid (messages.sql.go lines ~105–113). This changes

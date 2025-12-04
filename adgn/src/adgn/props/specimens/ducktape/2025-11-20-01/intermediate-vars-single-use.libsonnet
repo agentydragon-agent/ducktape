@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-009: Unnecessary intermediate variables before single-use assertions
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Multiple test files extract values into variables and then immediately use them once
     in an assertion. These should be inlined directly into the assertion.

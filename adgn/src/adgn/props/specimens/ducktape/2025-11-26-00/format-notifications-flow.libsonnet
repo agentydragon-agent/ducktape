@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-024: Refactor format_notifications_message awkward flow
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/reducer.py'],
     ['adgn/src/adgn/agent/server/mode_handler.py'],

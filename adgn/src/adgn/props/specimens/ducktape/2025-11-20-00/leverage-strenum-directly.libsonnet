@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Code explicitly calls .value on StrEnum instances throughout sqlite.py and
     history.py, but StrEnum automatically coerces to its string value in string

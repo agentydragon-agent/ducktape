@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     MCP abort_agent tool calls agent.abort() method that doesn't exist on MiniCodex.
 

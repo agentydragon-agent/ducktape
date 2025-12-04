@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-050: Refactor _cap_append - forces callers to think about truncation
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 18-29 define `_cap_append()` which mutates a parts list and handles truncation.
     This forces callers to think about truncation details at each append.

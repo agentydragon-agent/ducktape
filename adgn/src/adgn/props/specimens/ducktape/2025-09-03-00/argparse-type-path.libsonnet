@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-013: Use argparse type=Path for filesystem args to avoid late Path(...) casts
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Argparse can directly parse filesystem arguments into pathlib.Path objects by using `type=Path` on add_argument.
     Prefer declaring `ap.add_argument('--foo', type=Path, ...)` so callers receive a Path immediately and avoid scattershot `Path(args.foo)` conversions later.

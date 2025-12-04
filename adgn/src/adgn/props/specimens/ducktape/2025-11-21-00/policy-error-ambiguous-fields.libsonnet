@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-020: PolicyError index and length fields are ambiguous and should be removed
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `index` and `length` fields in `PolicyError` claim to indicate where an error occurred, but
     they don't specify whether they're character indices or token indices, making them useless.

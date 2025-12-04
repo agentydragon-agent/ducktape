@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-032: Delete abort_run alias - unnecessary wrapper with verbose docstring
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `abort_run` function (lines 672-689) is a trivial alias that wraps `abort_agent` (lines 642-651), adding only a `SimpleOk` return value. It should be deleted. The 15-line docstring makes the function appear more substantial than the 2-line implementation.
 

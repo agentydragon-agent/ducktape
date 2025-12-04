@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-003: Delete comment and inline status variable
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The code has a comment explaining strict validation behavior and an intermediate
     variable that should be inlined.

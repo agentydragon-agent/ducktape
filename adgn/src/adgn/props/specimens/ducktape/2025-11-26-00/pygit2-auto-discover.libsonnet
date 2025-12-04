@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-039: Use pygit2.Repository directly, avoid gitdir variable
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 700-704 manually discover the git directory using `pygit2.discover_repository()`,
     then check if it's None, then create the Repository. Per pygit2 documentation

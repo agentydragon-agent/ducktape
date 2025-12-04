@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Factor outside-working-directory gating (relPath check + permission request) into a helper.
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Both View and LS tools perform the same relative-path check and permission request when the target is outside the working directory. Factor this into a shared helper to avoid duplication and ensure consistent permission behavior and messaging.',
   filesToRanges={
     'internal/llm/tools/view.go': [[146, 169]],

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-060: Factor out URI-to-server translation, check if FastMCP has it
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/mcp/resources/server.py'],
     ['adgn/src/adgn/mcp/notifications/buffer.py'],

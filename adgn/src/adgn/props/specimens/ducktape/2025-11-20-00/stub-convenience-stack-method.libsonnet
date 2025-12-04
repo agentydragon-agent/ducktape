@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-023: Server stub should provide convenience method for stack context
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Creating typed server stubs requires verbose boilerplate (infrastructure.py:180-186):
 

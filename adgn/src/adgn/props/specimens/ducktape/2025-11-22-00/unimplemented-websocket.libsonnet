@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-054: Multiple components create separate MCP clients instead of using shared client
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Four Svelte components each create their own MCP client connections instead of
     using a shared client instance. This violates the 2-level compositor architecture,

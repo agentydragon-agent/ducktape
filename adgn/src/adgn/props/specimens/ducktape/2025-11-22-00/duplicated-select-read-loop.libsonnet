@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-007: Duplicated select-read-sleep loop pattern
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code contains two nearly-identical `select-read-sleep` loops within the same
     function (`_stream_output`), differing only in their termination condition.

@@ -1,10 +1,11 @@
 // Jsonnet helpers for concise, DRY specimen issue definitions.
 // Produces data compatible with adgn.props models (Issue, FalsePositive).
 //
+// Note: `snapshot` is auto-derived from file path at Python loader level.
+//
 // Usage example:
-//   local I = import '../lib.libsonnet';
+//   local I = import '../../lib.libsonnet';
 //   I.issue(
-//     snapshot='ducktape/2025-11-26-00',
 //     rationale='Dead code should be removed',
 //     filesToRanges={'src/cli.py': [[145, 167]]},
 //     // expect_caught_from auto-inferred: [['src/cli.py']] (single file)
@@ -41,7 +42,6 @@ local normFiles(files) = {
 // Single occurrence true positive issue.
 //
 // Parameters:
-//   snapshot: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
 //   rationale: Full explanation of what's wrong and recommended fix
 //   filesToRanges: Dict of file paths → array of line ranges
 //   expect_caught_from: (optional) List of alternative file sets for detection
@@ -55,15 +55,14 @@ local normFiles(files) = {
 //   - If filesToRanges has >1 file AND expect_caught_from not provided:
 //     Raises error (author must specify minimal detection sets)
 //
-// Returns: {snapshot, rationale, occurrences: [{files, expect_caught_from}]}
-local issue(snapshot, rationale, filesToRanges, expect_caught_from=null) =
+// Returns: {rationale, occurrences: [{files, expect_caught_from}]}
+local issue(rationale, filesToRanges, expect_caught_from=null) =
   local files_list = std.objectFields(filesToRanges);
   local inferred_expect_caught_from =
     if expect_caught_from != null then expect_caught_from
     else if std.length(files_list) == 1 then [[files_list[0]]]
     else error 'Multi-file issue requires explicit expect_caught_from. Specify minimal file sets required to detect this issue (AND/OR semantics). Files: ' + std.manifestJson(files_list);
   {
-    snapshot: snapshot,
     rationale: rationale,
     occurrences: [{
       files: normFiles(filesToRanges),
@@ -74,7 +73,6 @@ local issue(snapshot, rationale, filesToRanges, expect_caught_from=null) =
 // Multiple occurrences true positive issue.
 //
 // Parameters:
-//   snapshot: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
 //   rationale: Full explanation of what's wrong and recommended fix
 //   occurrences: List of occurrence objects, each with:
 //     - files: {file: [ranges]|null} dict
@@ -87,8 +85,8 @@ local issue(snapshot, rationale, filesToRanges, expect_caught_from=null) =
 //     EVERY occurrence must have explicit 'expect_caught_from'
 //     (Even single-file occurrences need it when total > 1)
 //
-// Returns: {snapshot, rationale, occurrences}
-local issueMulti(snapshot, rationale, occurrences) =
+// Returns: {rationale, occurrences}
+local issueMulti(rationale, occurrences) =
   // Validate all occurrences have notes
   local missing_notes = [
     i
@@ -119,7 +117,6 @@ local issueMulti(snapshot, rationale, occurrences) =
     else true;
 
   {
-    snapshot: snapshot,
     rationale: rationale,
     occurrences: [
       {
@@ -138,7 +135,6 @@ local issueMulti(snapshot, rationale, occurrences) =
 // Single occurrence false positive.
 //
 // Parameters:
-//   snapshot: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
 //   rationale: Explanation of why this looks like an issue but isn't
 //   filesToRanges: Dict of file paths → array of line ranges
 //   relevant_files: (optional) List of files to show this FP for
@@ -146,13 +142,12 @@ local issueMulti(snapshot, rationale, occurrences) =
 //
 // Semantics: Show this FP to grader if critic reviewed ANY of relevant_files
 //
-// Returns: {snapshot, rationale, occurrences: [{files, relevant_files}]}
-local falsePositive(snapshot, rationale, filesToRanges, relevant_files=null) =
+// Returns: {rationale, occurrences: [{files, relevant_files}]}
+local falsePositive(rationale, filesToRanges, relevant_files=null) =
   local inferred_relevant_files =
     if relevant_files != null then relevant_files
     else std.objectFields(filesToRanges);
   {
-    snapshot: snapshot,
     rationale: rationale,
     occurrences: [{
       files: normFiles(filesToRanges),
@@ -163,7 +158,6 @@ local falsePositive(snapshot, rationale, filesToRanges, relevant_files=null) =
 // Multiple occurrences false positive.
 //
 // Parameters:
-//   snapshot: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
 //   rationale: Explanation of why this looks like an issue but isn't
 //   occurrences: List of occurrence objects, each with:
 //     - files: {file: [ranges]|null} dict
@@ -173,8 +167,8 @@ local falsePositive(snapshot, rationale, filesToRanges, relevant_files=null) =
 // Validation:
 //   - ALL occurrences must have 'note' field
 //
-// Returns: {snapshot, rationale, occurrences}
-local falsePositiveMulti(snapshot, rationale, occurrences) =
+// Returns: {rationale, occurrences}
+local falsePositiveMulti(rationale, occurrences) =
   // Validate all occurrences have notes
   local missing_notes = [
     i
@@ -186,7 +180,6 @@ local falsePositiveMulti(snapshot, rationale, occurrences) =
     else true;
 
   {
-    snapshot: snapshot,
     rationale: rationale,
     occurrences: [
       {

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Code uses assign-then-check pattern with `.scalar_one_or_none()` where walrus
     operator (:=) would be more concise.

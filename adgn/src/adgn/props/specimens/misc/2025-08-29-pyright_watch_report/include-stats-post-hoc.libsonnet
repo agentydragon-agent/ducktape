@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-007: Compute include impacts during the scan (not post-hoc)
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Account include and exclude pattern hits symmetrically: accumulate include stats inside the main walk instead of reconstructing later.
     This avoids a second pass and keeps ordering semantics obvious.

@@ -5,7 +5,6 @@ local I = import '../../lib.libsonnet';
 // All describe unused gateway-related infrastructure that should be deleted
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/tests/mcp/resources/test_list_changes_subscriptions.py'],
     ['adgn/tests/mcp/resources/test_subscriptions_index.py'],

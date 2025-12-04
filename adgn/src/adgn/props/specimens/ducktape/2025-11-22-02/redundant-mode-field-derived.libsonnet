@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-041: redundant stored field that should be derived
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The RunningAgent dataclass stores `mode` as a field:
 

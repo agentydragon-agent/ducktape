@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: MCPConfig(servers={}) is wrong parameter name, creates extra unwanted field
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The code uses `MCPConfig(servers={})` but the correct parameter name is `mcpServers`,
     not `servers`. This creates an extra unwanted field in the config object.

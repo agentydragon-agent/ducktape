@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Approval policy tests lack typed test infrastructure (server stubs + fixture factories) used by other MCP components.
 

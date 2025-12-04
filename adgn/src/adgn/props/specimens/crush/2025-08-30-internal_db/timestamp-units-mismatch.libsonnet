@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Timestamp units are inconsistent across SQL sources, generated sqlc code, and (by extension) calling Go code.
 

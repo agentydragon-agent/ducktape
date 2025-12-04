@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: Test fixture using plain dict instead of Pydantic and low-value enum assertions
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Two issues in test_mcp_routing.py related to test quality:
 

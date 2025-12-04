@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: Duplicated task creation across if-else branches
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code creates identical tasks (`update_task`, `runner`, and `output_task`) in
     both branches of an if-else, with the runner construction being the only thing

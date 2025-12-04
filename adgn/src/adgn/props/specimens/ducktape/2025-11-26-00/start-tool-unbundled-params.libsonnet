@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: start_tool takes unbundled params instead of ToolCall object
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The `start_tool` function takes individual `tool`, `call_id` parameters and then
     fabricates a `ToolCall` object internally. It should take a `ToolCall` directly,

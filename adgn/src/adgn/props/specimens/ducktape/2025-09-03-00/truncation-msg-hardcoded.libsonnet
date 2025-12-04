@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-049: Unify truncation message; avoid hardcoded size string
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The truncation note is hardcoded as "[Context truncated to 100 KiB]" in multiple places, while the cap
     is driven by MAX_PROMPT_CONTEXT_BYTES. This duplicates the limit in string form and risks drift.

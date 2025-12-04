@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-050: TOKEN_TABLE uses hardcoded mock data instead of file-based configuration
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     The TOKEN_TABLE in mcp_routing.py contains hardcoded mock data instead of using
     proper file-based configuration:

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-040: Avoid unnecessary timeout_label formatting; log value directly
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The code builds a derived label for timeout:
 

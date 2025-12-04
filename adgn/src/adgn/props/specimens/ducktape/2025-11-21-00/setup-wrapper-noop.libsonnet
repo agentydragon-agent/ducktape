@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-006: Delete _setup_wrapper no-op method and its call site
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `_setup_wrapper` method (lines 578-585) is an explicit no-op kept "for future
     extensibility" but provides no current value and should be deleted.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: event_count should be derived from events table, not stored
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Run model stores event_count: Mapped[int] (models.py:65) that duplicates information
     already available from the events relationship.

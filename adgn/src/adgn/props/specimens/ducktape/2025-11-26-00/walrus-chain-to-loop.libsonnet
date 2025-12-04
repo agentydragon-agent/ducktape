@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-038: Refactor walrus operator chain into for-loop
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 687-695 use a chain of walrus operators to check editor candidates. This
     should be refactored into a for-loop for better readability.

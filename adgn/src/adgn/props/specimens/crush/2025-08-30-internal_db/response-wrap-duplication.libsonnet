@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Centralize "Text + metadata" tool response wrapping into a small helper to remove duplicated call shape.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Many tools duplicate the pattern `WithResponseMetadata(NewTextResponse(text), SomeResponseMetadata{...})`. Introduce a small helper (e.g., WrapTextWithMeta(text string, meta any) (ToolResponse, error)) and per-tool unexported constructors to reduce duplication and clarify metadata shaping.
   |||,

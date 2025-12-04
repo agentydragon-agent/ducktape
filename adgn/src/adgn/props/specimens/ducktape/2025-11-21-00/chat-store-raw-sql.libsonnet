@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-012: ChatStorePersisted should use SQLAlchemy ORM instead of raw SQL
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `ChatStorePersisted` class in `adgn/src/adgn/mcp/chat/server.py` uses raw aiosqlite queries
     instead of SQLAlchemy ORM, making it inconsistent with the rest of the persistence layer.

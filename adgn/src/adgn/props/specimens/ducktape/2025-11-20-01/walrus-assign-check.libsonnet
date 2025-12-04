@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // All describe assign-and-check patterns that should use walrus operator
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Multiple locations extract values and immediately test or use them, where the
     walrus operator (:=) would combine assignment and usage more idiomatically.

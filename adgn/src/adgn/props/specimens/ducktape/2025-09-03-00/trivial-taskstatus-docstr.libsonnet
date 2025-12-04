@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-056: Remove trivial docstring that repeats the class name
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The docstring "Status of a task." adds no information beyond the class name `TaskStatus` and repeats
     the obvious. Trivial docstrings like this create noise without signal; remove them.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-032: ApprovalHub and ApprovalPolicyEngine methods should be inlined into MCP tools/resources
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Several methods in ApprovalHub and ApprovalPolicyEngine are called ONLY by their
     corresponding MCP tools/resources, and nowhere else in production code:

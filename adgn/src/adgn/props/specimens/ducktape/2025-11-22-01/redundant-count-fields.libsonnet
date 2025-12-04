@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: pending_count should not be computed separately in approvals_bridge
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `pending_count` field in `ApprovalsResponse` is redundant because it's derived
     information that can be computed from the already-returned `approvals` list by counting

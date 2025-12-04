@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // All describe intermediate variables used only once that should be inlined
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Multiple locations create intermediate variables that are used only once in the
     immediately following statement. These add no clarity and should be inlined.

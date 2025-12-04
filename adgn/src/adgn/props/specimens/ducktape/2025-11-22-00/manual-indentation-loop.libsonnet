@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Manual loop to indent lines instead of using `textwrap.indent()` from standard library.
 

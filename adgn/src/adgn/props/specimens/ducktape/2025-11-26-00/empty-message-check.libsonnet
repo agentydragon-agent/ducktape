@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-035: Remove empty message check, let Git handle it
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 588-590 check if the AI message is empty and abort with a custom error.
     This duplicates Git's built-in behavior - Git already rejects empty commit messages.

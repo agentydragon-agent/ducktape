@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-030: Inline mcp_config_obj into uvicorn.Server call
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The code extracts mcp_config_obj and immediately uses it once to create uvicorn.Server.
     This intermediate variable should be inlined.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: Misleading circular dependency comment - no actual circular dependency
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The code has a comment claiming imports are placed inline "to avoid circular dependency
     with registry setup", but there is NO actual circular dependency.

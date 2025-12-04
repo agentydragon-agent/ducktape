@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: ApprovalPolicyAdminServerStub should be a shared pytest fixture
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     Every test function in `test_policy_validation_reload.py` creates an
     `ApprovalPolicyAdminServerStub` instance inline using the same pattern:

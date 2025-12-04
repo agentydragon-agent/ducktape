@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-037: RunPhase duplicates and supersedes less comprehensive enums
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Three run phase/status enums exist with different granularity. The most comprehensive
     (`status_shared.py` RunPhase) should be canonical, replacing less detailed versions.

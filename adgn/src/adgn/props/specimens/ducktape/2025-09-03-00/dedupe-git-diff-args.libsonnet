@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-044: Deduplicate git diff arg construction; compute once and reuse
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Multiple locations build nearly-identical git diff invocations, differing only by a single flag
     (HEAD vs --cached) while repeating common flags like --name-status / --unified=0 / --stat.

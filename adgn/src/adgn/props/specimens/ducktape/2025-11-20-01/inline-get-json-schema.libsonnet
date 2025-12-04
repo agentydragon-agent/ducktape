@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-020: Inline adapter and delete get_json_schema helper
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `get_json_schema` helper function (lines 183-186) has exactly one call site and should
     be inlined and deleted.

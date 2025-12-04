@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Unused --ui-port flag misleads users about non-existent Management UI
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     The --ui-port flag is defined and accepted but misleads users about a non-existent Management UI.
 

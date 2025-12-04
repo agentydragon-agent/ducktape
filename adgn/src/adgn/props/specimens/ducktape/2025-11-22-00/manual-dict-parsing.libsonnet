@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-027: Manual dictionary parsing instead of Pydantic discriminated unions
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `parse_event()` function manually parses event dictionaries using if-elif
     chains that inspect the `type` field and construct the appropriate payload class.

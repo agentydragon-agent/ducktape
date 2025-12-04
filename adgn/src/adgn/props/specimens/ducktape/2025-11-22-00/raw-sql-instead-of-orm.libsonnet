@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Query uses raw SQL with `text()` instead of SQLAlchemy ORM constructs, reducing
     type safety and portability.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-022: Dead code - batch.resources empty check can be deleted
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 185-186 check `if not batch.resources: return None`. This is dead code
     because `batch.resources` is a dict, and the next check (lines 189-193) already

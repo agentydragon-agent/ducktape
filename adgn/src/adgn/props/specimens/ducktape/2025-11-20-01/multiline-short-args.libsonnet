@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Unnecessary multi-line formatting for short Pydantic model arguments
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Throughout test_policy_resources.py, short Pydantic model instantiations (2-3 simple
     arguments) are unnecessarily split across multiple lines when they would easily fit

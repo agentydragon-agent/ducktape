@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-005: Clarify accounting mode (first-match vs all-matches)
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Clarify accounting: first‑match vs all‑matches
 

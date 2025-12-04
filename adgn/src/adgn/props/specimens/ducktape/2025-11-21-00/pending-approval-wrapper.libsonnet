@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-021: Delete PendingApproval wrapper and _convert_pending_approvals, return ToolCall list directly
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `PendingApproval` wrapper class and `_convert_pending_approvals` function add unnecessary
     indirection and a misleading timestamp. The function should be deleted and callers should return

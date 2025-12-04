@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-004: Do not substitute stdout when --output-last-message file read fails
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The contract of --output-last-message is that the final output exists only in the designated file.
     Falling back to stdout silently violates that contract and can mask real errors.

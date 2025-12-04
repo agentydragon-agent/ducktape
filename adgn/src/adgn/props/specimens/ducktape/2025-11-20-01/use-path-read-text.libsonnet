@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-019: Use Path.read_text() instead of open() with manual read
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The code uses `open()` with manual read when `Path.read_text()` is cleaner and more idiomatic.
 

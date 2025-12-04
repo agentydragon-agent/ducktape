@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-053: Consolidate pre-commit PTY read into a single drain loop
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The PTY reader uses two loops (a poll loop until task.done() and a final drain loop). Since the
     drain loop already consumes remaining data until EOF/error, a single `while True` drain with

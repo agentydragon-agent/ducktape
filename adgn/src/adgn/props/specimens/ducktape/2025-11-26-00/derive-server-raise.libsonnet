@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-056: _derive_server should raise exception instead of returning "unknown"
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 105-115 return `"unknown"` when no server matches the URI. This is error-prone.
 

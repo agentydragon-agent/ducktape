@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-015: approval_policy appears both as sibling and inside details bundle (duplication)
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/server/runtime.py'],
     ['adgn/src/adgn/agent/server/protocol.py'],

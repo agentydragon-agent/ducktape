@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-023: Unmounted resource URIs in resources.py
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `resources.py` module defines ten parameterized resource URI helper functions
     (agent_state, agent_snapshot, agent_mcp_state, agent_approvals_pending, agent_approvals_history,

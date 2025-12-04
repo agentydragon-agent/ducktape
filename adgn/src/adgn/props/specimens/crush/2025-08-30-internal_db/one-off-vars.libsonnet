@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // No one-off vars and trivial wrappers: inline single-use temporaries and avoid throwaway locals.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Inline single-use temporaries and trivial wrapper locals (prefer struct literals or direct expressions) to reduce noise and make intent clearer.
   |||,

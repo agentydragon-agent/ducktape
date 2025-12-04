@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-030: Refactor to avoid tracking master_fd_for_runner variable
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 340-371 create `master_fd_for_runner` variable to pass to runner and
     output_task. This can be refactored to avoid the extra variable.

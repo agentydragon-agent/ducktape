@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Remove docstring Args sections that restate obvious type information
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py']],
   rationale=|||
     Many functions have Args sections in docstrings that simply restate information

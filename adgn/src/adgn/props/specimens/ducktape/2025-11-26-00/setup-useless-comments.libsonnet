@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Lines 29-30 contain useless comments documenting historical implementation details.
 

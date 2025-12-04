@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-043: duplicated agent lookup logic
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Multiple methods duplicate the same "get agent or raise KeyError" logic:
 

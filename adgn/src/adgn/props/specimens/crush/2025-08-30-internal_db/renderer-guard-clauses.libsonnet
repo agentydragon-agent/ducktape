@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Prefer guard-clause (early bailout) style when unmarshalling params in renderer Render methods
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Many renderer.Render implementations decode JSON params with `if err := json.Unmarshal(...); err == nil { ... }` and then build args inside the success branch. Prefer failing-fast guard clauses (if err := json.Unmarshal(...); err != nil { return fallback } ) and proceed on the happy path to reduce nesting and improve readability. The Bash renderer already uses the guard-clause style.
   |||,

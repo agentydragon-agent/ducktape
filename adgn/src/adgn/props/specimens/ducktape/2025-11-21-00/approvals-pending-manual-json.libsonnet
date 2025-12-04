@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-029: approvals_pending_global hand-constructs JSON instead of using Pydantic
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `approvals_pending_global` function (lines 395-424) manually constructs JSON dicts
     using `json.dumps()` instead of Pydantic models, losing type safety and validation.

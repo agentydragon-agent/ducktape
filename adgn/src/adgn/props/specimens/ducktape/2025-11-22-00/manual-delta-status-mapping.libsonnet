@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Manual delta status mapping instead of using pygit2's status_char()
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code manually maps pygit2 delta status constants to single-letter codes
     (A/M/D/R/T) in two places, but pygit2 provides a built-in method for this:

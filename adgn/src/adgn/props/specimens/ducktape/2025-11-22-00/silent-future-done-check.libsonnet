@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale=|||
     approve() and reject() tools in ApprovalHub check if a future is already done,
     but silently ignore this case instead of raising an error.

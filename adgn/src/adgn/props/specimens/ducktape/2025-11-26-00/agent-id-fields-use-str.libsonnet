@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe fields that represent agent IDs using str instead of AgentID newtype
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Multiple fields that semantically represent agent IDs use generic str type instead
     of the AgentID newtype from adgn.agent.types.

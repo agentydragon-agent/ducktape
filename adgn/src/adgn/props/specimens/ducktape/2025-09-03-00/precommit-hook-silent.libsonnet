@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-046: Do not silently ignore non-file pre-commit hook; simplify check
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Current guard hides misconfiguration and adds branching:
 

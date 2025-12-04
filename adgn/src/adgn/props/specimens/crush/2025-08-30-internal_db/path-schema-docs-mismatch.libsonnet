@@ -10,7 +10,6 @@ local I = import '../../lib.libsonnet';
 // Align docs/schema and code (either make code behave as docs/schema prescribe, or update docs/schema to match behavior).
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Path schema/docs are inconsistent with runtime behavior in internal/llm/tools; the spec (schema/docs) and implementation disagree. Resolve by aligning the declared contract with code or updating the code to meet the declared contract.
   |||,

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-021: Manual isinstance validation instead of Pydantic TypeAdapter
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `reload()` method manually validates that the loaded JSON is a dict with string
     keys and values using `isinstance()` checks, but this can be done automatically and

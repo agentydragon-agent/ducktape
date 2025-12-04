@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-050: ApprovalTimeline subscribes to unimplemented WebSocket endpoint
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `ApprovalTimeline.svelte` component attempts to subscribe to a WebSocket
     endpoint (`/ws/approvals`) that doesn't exist in the backend, resulting in

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-028: Redundant local_runtime None checks after verifying mode is LOCAL
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     Five functions check both `get_agent_mode(agent_id) != AgentMode.LOCAL` and then
     `get_local_runtime(agent_id) is None`. The second check is redundant - the invariant

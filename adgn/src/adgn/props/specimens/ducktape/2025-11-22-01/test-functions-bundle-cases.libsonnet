@@ -5,7 +5,6 @@ local I = import '../../lib.libsonnet';
 // All describe test functions that bundle multiple independent test cases
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale= |||
     Test functions bundle multiple independent test cases that should be split into
     separate test functions or parameterized.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: Replace parallel dicts in ApprovalHub with single dict to dataclass
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     ApprovalHub maintains two parallel dicts keyed by call_id (lines 75-78), which should
     be combined into one dict pointing to a dataclass.

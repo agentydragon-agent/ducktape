@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-029: Move directory creation into SQLitePersistence constructor
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Every caller of SQLitePersistence manually creates parent directories before
     instantiation. This should be handled internally by SQLitePersistence.

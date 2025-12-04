@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Inline pending_record variable in PolicyGatewayMiddleware
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `pending_record` variable in `on_call_tool` method is only used once and should be inlined
     to reduce unnecessary local variable assignments.

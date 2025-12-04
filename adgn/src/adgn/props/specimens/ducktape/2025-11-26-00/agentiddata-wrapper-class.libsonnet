@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     AgentIdData is a useless single-field wrapper class (lines 48-50).
 

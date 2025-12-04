@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-061: Duplicate Compositor test fixtures - should use shared fixtures
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/tests/conftest.py'],
     ['adgn/tests/mcp/conftest.py'],

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Duplicated git commit invocation across immediate and editor flows
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Both `_commit_immediately()` and `_run_editor_flow()` end by calling `git commit`
     with similar passthru argument handling. The commit logic is duplicated when it

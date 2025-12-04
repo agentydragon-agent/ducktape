@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-067: ASK-approved calls not tracked in _inflight during execution
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     When user approves an ASK-case tool call (ContinueDecision), the middleware executes
     it but does NOT track it in `self._inflight`. This makes it invisible to

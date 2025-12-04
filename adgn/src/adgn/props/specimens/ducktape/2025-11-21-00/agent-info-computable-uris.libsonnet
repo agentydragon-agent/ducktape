@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-022: AgentInfo URI fields can be computed from agent_id and should be removed
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `state_uri`, `approvals_uri`, and `policy_proposals_uri` fields in `AgentInfo` can always be
     computed from just the `agent_id`. These fields should not be exposed in the Pydantic model as they

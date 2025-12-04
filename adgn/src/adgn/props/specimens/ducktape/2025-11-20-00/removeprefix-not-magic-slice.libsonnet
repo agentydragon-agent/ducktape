@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-031: Should use removeprefix with constant, not magic number slice
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Code strips "Bearer " prefix using magic number slice (mcp_routing.py:72-73):
 

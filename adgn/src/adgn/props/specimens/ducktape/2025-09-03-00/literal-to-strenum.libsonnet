@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-021: Prefer StrEnum over Literal for string-valued tool policy
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     For small, closed sets of string-valued discriminants (e.g. the tool policy values "auto", "required", "none"), prefer a StrEnum rather than ad-hoc Literal annotations.
 

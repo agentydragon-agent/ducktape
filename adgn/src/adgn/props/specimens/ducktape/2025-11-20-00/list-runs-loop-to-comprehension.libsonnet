@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-019: list_runs should use list comprehension not loop with append
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     list_runs uses imperative loop-and-append pattern (sqlite.py:403-417):
 

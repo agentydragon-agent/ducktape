@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe unnecessary variable renames that add no clarity
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Variables are renamed without adding clarity or semantic meaning. Either use
     the semantic name from the start, or keep the original name.

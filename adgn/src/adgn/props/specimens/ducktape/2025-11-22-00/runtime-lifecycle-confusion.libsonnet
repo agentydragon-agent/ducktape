@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-034: LocalAgentRuntime lifecycle confusion and may-be-initialized antipattern
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     `LocalAgentRuntime` has lifecycle and initialization issues: missing type annotations,
     incomplete cleanup, "may be initialized" antipattern, and not being a proper context

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-025: ServerStatus and AgentInfoDetailed.status field is misleading for remote agents
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `ServerStatus` enum and `AgentInfoDetailed.status` field claim to represent "Agent server runtime
     status", but this is misleading. The field represents the status of a *locally running agent*, not a

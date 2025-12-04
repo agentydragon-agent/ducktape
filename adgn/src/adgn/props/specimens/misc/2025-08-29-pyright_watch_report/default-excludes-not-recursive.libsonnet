@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale= |||
     Default exclude patterns are not recursive, so nested files under these directories are still included.
 

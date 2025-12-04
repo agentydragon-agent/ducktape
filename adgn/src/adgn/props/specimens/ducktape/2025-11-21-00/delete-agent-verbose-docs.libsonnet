@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-034: delete_agent docstring is overly verbose and states the obvious
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `delete_agent` docstring is unnecessarily verbose, with most of it restating obvious
     information that doesn't add value. It should be pruned to just the essential information.

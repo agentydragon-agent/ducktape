@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Complex scissors+comment filtering logic buried inline instead of extracted to
     a reusable helper function.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: Use walrus operator for got variable in proposal_detail
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `proposal_detail` resource handler should use the walrus operator (`:=`) to combine
     the assignment and None check of the `got` variable into a single expression.

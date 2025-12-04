@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-037: Collapse duplicated Responses turn logic in CLI; delegate to agent
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     `responses_turn` and `responses_followup_with_tool_outputs` in the CLI duplicate ~20 lines of logic:
     assembling instructions (with optional MCP block), listing tools, building the payload, and

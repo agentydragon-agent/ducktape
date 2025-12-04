@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-046: servers/ directory contains no servers, __init__.py is misleading
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/__init__.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/types.py']],
   rationale=|||
     The `adgn/src/adgn/agent/mcp_bridge/servers/__init__.py` file contains the docstring

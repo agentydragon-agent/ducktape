@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Digit counting for line numbers: extract a shared Digits(n int) helper but preserve separate rendering behaviour for LLM vs human surfaces.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Duplicate digit-width logic exists: view.addLineNumbers uses a fixed 6-character width; renderer.renderCodeContent computes digits via getDigits. Extract a shared Digits helper in internal/format/lineno while keeping rendering differences (LLM vs human) separate.',
   occurrences=[
     {

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-032: Remove broad try/except around model_dump; fail loudly
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The code swallows all exceptions from model_dump and continues:
 

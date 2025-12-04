@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-028: Should raise ExceptionGroup instead of returning error strings
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     RunningInfrastructure.close() collects errors as strings and returns them
     in CloseResult, requiring callers to check return value (running.py:72-91).

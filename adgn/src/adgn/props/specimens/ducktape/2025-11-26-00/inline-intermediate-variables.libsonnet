@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-003: Unnecessary intermediate variables should be inlined
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Multiple locations create intermediate variables that are immediately consumed,
     adding no clarity. These single-use variables should be inlined.

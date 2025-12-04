@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-024: Delete unreachable AttributeError fallback - content blocks are always Pydantic models
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The AttributeError fallback in `_render_tool_result` can never be triggered and should be deleted.
 

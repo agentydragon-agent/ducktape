@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-036: Remove manual OPENAI_API_KEY plumbing; rely on SDK defaults or DI
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The OpenAI SDK already reads `OPENAI_API_KEY` and base URL env vars; hand-rolling a client factory that fetches
     env vars duplicates configuration paths and adds code surface without value.

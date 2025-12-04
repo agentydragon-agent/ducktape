@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-020: Deprecated datetime.utcnow() usage
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code uses `datetime.utcnow()` to generate timestamps, but this function is
     deprecated as of Python 3.12 in favor of `datetime.now(timezone.utc)`.

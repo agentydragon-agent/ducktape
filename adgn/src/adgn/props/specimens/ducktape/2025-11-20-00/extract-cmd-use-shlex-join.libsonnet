@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-043: Extract cmd/argv parsing and use shlex.join, not hand-rolled quoting
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Inline logic parses args_json to extract cmd from argv, using hand-rolled shell
     quoting (reducer.py:69-88):

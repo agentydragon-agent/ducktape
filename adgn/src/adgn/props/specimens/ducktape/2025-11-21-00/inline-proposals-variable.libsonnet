@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-015: proposals_list should use direct list comprehension with inlined proposals variable
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `proposals_list` resource handler should use a direct list comprehension instead of
     assigning the database query result to a `proposals` variable first.

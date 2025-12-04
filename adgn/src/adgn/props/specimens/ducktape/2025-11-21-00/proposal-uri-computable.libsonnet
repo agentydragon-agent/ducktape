@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-024: PolicyProposalInfo proposal_uri field is computable from id and should be removed
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `proposal_uri` field in `PolicyProposalInfo` can be trivially computed from the `id` field
     and should be removed to avoid redundancy.

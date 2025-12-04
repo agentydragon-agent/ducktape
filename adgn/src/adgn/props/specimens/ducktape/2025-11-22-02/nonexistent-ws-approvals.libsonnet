@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-051: Frontend tests reference non-existent /ws/approvals WebSocket endpoint
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   expect_caught_from=[['adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts'], ['adgn/src/adgn/agent/server/app.py']],
   rationale=|||
     The ApprovalTimeline tests reference a WebSocket endpoint `/ws/approvals` that doesn't

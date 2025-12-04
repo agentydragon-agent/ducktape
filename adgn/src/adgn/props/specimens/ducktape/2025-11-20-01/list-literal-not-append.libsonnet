@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-021: Use list literal instead of repeated append pattern
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The code constructs `ts_output` using repeated `.append()` calls when a list literal
     would be cleaner.

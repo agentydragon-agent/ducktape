@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-058: Delete install_policy_gateway wrapper function
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 279-298 define `install_policy_gateway()` which is just a wrapper around
     constructor + `add_middleware()`. This is unnecessary indirection.

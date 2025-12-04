@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale= |||
     Per-include stats are computed against the original, unexpanded include patterns, while the
     scan itself expands plain directory includes. This causes counts to be wrong (or zero) for

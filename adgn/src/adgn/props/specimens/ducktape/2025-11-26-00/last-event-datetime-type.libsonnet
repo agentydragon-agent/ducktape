@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-005: last_event_at should be datetime, not str
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The `last_event_at` field in agents_ws.py is typed as `str | None` but should be `datetime | None`.
     The field is later converted to ISO string for JSON serialization (line 81), which is

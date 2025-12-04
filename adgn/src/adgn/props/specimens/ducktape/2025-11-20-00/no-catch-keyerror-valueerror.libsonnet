@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-034: Should not catch exceptions explicitly, use default handling or middleware
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Middleware explicitly catches KeyError and ValueError, converting to 500 responses
     (mcp_routing.py:146-148):

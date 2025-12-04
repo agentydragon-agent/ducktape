@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-035: Duplicated Bearer token extraction logic should be unified
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Both TokenAuthMiddleware and UITokenAuthMiddleware duplicate the same
     Bearer token extraction logic:

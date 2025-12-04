@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-051: Inject pygit2 repository into generate_commit_message_minicodex
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 161-164 discover and create a pygit2 repository inside
     `generate_commit_message_minicodex()`. This violates dependency injection.

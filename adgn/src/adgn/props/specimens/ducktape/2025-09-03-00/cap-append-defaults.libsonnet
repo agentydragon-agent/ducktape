@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-052: Default cap/note inside _cap_append to avoid repetitive args
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Calls like `_cap_append(parts, chunk, MAX_PROMPT_CONTEXT_BYTES, "[Context truncated…]")` repeat the same
     constants at each site. Prefer giving `_cap_append` sensible defaults (or deriving the note from the cap)

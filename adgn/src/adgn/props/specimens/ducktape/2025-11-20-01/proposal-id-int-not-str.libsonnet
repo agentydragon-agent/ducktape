@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-023: Inconsistent proposal_id type - converting int to str unnecessarily
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `notify_proposal_change` method and its callers have inconsistent proposal_id types.
     The method signature accepts `str`, but callers have `int` and must convert with `str()`,

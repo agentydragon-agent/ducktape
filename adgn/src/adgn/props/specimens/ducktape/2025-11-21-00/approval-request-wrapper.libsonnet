@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-010: Delete ApprovalRequest wrapper, use ToolCall directly
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/approvals.py'],
     ['adgn/src/adgn/mcp/policy_gateway/middleware.py'],

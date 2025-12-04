@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-003b: Extension list is misleading and duplicated
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Extension list is misleading and duplicated.
     Printed list is hard-coded `.py/.pyi/.pyx` which does not match `CODE_EXTS` (set to `{'.py', '.pyi'}`).

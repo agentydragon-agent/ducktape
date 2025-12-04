@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-046: Replace _format_status_porcelain with simple boolean check
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/git_commit_ai/cli.py'],
     ['adgn/src/adgn/git_commit_ai/core.py'],

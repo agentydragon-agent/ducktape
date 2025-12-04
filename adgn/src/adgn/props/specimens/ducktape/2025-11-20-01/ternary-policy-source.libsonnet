@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-028: Use ternary operator for policy_source assignment
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The code initializes policy_source to None and then conditionally assigns a value.
     This should use a ternary operator for conciseness.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-046: GlobalApprovalsList manual JSON parsing should use Zod from Pydantic
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `GlobalApprovalsList.svelte` component uses manual `JSON.parse()` to parse
     tool call arguments instead of using Zod schemas that could be generated from

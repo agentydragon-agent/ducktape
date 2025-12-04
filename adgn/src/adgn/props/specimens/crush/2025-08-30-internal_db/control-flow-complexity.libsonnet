@@ -5,7 +5,6 @@ local I = import '../../lib.libsonnet';
 // Note: Several of these can also be addressed via guard-clauses; see Early bailout property.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Code can be simplified to shorten or reduce nesting without hurting readability. Prefer combining trivial nested conditionals, using early returns/continues, or small guard-clauses to make the happy path obvious (see Early bailout).',
   occurrences=[
     {

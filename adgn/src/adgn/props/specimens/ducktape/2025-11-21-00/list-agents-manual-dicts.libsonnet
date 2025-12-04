@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-026: list_agents constructs dict objects instead of using Pydantic models
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `list_agents` function manually constructs dict objects for the agent list response instead
     of using Pydantic models. This loses type safety, validation, and documentation benefits.

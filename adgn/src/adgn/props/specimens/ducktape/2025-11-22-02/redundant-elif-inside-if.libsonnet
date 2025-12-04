@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Confusing "elif live:" inside "if infra:" block (lines 264-267):
     ```python

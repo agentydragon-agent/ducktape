@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-057: ALLOW case mints two different IDs for same tool call - can't correlate
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 164-168 mint TWO different random IDs for the SAME tool call, making it
     impossible to correlate persistence records with in-flight tracking.

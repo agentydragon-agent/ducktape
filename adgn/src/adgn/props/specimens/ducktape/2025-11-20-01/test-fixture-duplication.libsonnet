@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-001: Test fixture and constant duplication in approval policy tests
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The test file `test_proposals_resources.py` has significant duplication that should be
     refactored into fixtures and constants:

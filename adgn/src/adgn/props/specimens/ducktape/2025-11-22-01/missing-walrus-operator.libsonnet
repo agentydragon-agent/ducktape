@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: await_decision should use walrus operator for pending lookup
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `await_decision` method uses a two-line pattern to get a value and check if
     it's None, when the walrus operator provides a cleaner one-line solution.

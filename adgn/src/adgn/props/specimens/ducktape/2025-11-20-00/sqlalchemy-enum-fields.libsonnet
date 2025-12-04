@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // SQLAlchemy models use Mapped[str] with enum comments instead of actual enum types
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     SQLAlchemy models declare fields as Mapped[str] with inline comments indicating
     they should be enum types, but don't use the actual enum types.

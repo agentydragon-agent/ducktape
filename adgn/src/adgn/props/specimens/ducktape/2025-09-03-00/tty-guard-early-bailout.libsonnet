@@ -6,7 +6,6 @@ local I = import '../../lib.libsonnet';
 // Better: bail out when not a TTY, then run the sizing logic at base level.
 // Benefits: flatter control flow, easier to read/maintain; consistent with Early Bailout property.
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The TTY guard should use an early bailout to avoid unnecessary nesting.
     Instead of nesting the main logic under `if sys.stdout.isatty(): ...`, invert the condition and return/skip when not a TTY, then run the terminal sizing at the base level.

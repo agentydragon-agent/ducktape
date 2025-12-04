@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // IDs: ambiguous parameter names that should be explicit (messageID, sessionID)
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Function parameters named generically `id` are ambiguous; prefer explicit names like `messageID` or `sessionID` to make intent/units obvious and avoid accidental misuses.',
   occurrences=[
     {

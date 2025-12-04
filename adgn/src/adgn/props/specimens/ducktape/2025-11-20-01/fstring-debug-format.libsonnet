@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-026: Use f-string debug format {agent_id=} instead of manual interpolation
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The logger.debug call manually constructs the debug message when f-string debug format
     is more concise.

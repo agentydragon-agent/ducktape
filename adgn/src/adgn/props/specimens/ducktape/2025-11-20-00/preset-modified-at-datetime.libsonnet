@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     AgentPreset.modified_at uses str for timestamp instead of datetime type. Timestamps
     should use datetime, not strings, for type safety, operations (comparison, arithmetic),

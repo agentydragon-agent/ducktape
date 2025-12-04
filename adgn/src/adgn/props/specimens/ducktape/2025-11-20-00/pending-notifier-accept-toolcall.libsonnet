@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-024: pending_notifier should accept ToolCall directly
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     _pending_notifier accepts three primitive parameters and reconstructs ToolCall
     (infrastructure.py:197-200):

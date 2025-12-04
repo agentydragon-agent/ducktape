@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // All describe imperative append() loops that should use list comprehensions
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py'], ['adgn/src/adgn/agent/server/runtime.py']],
   rationale= |||
     Multiple functions build lists imperatively using `append()` in loops when

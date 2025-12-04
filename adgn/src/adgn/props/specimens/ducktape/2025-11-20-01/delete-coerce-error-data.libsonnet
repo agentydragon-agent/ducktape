@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: Delete _coerce_error_data, use Pydantic model_validate directly
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `_coerce_error_data` function (lines 62-93) attempts to coerce various error
     representations to `mtypes.ErrorData` with extensive defensive fallback logic. This

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-025: Simplify TokenMapping loading with Pydantic TypeAdapter
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `reload()` method manually parses JSON and validates the dict[str, str] structure
     when Pydantic's TypeAdapter can do this more cleanly and with better error messages.

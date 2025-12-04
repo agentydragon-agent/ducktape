@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-009: Inline trivial temporaries and trivial wrappers
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Inline trivial temporaries and trivial wrappers. Avoid assigning a value to a variable if the only thing you do with it is immediately pass it on. If it does not hurt readability, just immediately inline the value where it gets used.
 

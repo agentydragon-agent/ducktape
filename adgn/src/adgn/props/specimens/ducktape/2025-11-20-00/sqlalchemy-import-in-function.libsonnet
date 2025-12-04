@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-012: SQLAlchemy import inside function should be at module top
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     File imports sqlalchemy.event inside __init__ method (sqlite.py:53), immediately
     before using it to register event listener.

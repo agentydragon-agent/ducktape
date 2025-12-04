@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-055: Useless comment about ModalBackdrop styling
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     AgentsSidebar component contains a useless comment about backdrop styling being
     "moved to ModalBackdrop component". This is a historical note that adds no value

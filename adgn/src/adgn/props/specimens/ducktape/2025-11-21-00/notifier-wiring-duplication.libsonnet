@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale= |||
     The notification wiring code (lines 833-932) contains 4 notifier factory functions that follow the exact same pattern with duplicated boilerplate. This common structure should be extracted into a helper function.
 

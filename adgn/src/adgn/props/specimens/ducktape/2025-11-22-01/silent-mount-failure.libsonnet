@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-003: failure to mount agent compositor should crash, not skip-and-continue
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `create_global_compositor` function catches and suppresses errors when mounting
     agent compositors, continuing to mount other agents. This creates an inconsistent

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-051: Enforce a single total prompt cap (track remaining across blocks)
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Current caps are applied per git output block (status / name-status / log / diff), so the assembled
     prompt can reach many× the nominal cap. Prefer a single accumulator-based total cap enforced over the

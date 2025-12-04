@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-011: Remove legacy PolicyConfig backcompat shim — tests alone don't justify keeping dead shims
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The wrapper contains a legacy PolicyConfig shim that exists only for import compatibility with older tests.
     Keeping dead shims because "tests still reference it" is not a sufficient reason to retain the code: tests should be updated to the canonical model or provided a test-only shim.

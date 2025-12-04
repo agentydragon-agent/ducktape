@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-018: Unnecessary no-op method overrides in NotificationsHandler
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     `NotificationsHandler` explicitly implements 7 no-op methods (lines 244-265) that
     just `return None`, but these are already provided by `BaseHandler`. There's no

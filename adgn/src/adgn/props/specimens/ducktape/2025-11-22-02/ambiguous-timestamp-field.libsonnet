@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The ApprovalItem model has a `timestamp` field whose meaning is ambiguous:
 

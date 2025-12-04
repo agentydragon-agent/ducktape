@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-006: Duplicated SQLite persistence fixtures across agent tests
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     Multiple test files in adgn/tests/agent create their own SQLite persistence instances
     instead of using a shared fixture. This leads to duplication and inconsistency.

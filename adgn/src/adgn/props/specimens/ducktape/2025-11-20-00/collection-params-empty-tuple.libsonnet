@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-025: Collection parameters should default to empty tuple, not None
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     Functions accept collection parameters as Optional, defaulting to None, then
     check for None and convert to empty collection.

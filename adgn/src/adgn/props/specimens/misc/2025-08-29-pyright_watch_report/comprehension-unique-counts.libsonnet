@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-014: Use comprehension + seen-update pattern for per-include unique counts
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Use comprehension + seen-update pattern for per-include unique counts to make the code shorter and less nested while remaining readable and correct.
 

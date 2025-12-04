@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-004: dump_path type annotation is misleading
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     `dump_path` type annotation is misleading - it types it as `Path | None`, but the rhs is never `None`:
 

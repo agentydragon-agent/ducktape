@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-037: exception handler swallows critical initialization errors
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The create_global_compositor function catches exceptions when mounting
     agent compositors and continues silently:

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-022: create_proposal notifies with wrong ID (placeholder instead of actual)
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `create_proposal` method notifies with a placeholder ID (0) instead of the actual ID
     returned by the persistence layer. This is a bug.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-012: Use dict comprehension for per_include_kept
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Use a dict comprehension for per_include_kept to reduce ephemeral state and make intent clear.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-026: Should return result directly, not reconstruct as dict
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     AgentContainer.close() deconstructs CloseResult to rebuild identical dict
     (registry.py:43-44):

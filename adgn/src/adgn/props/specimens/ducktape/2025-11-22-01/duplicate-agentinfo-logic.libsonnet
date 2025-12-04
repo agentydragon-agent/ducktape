@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-006: list_agents and get_agent_info duplicate AgentInfo computation logic
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `list_agents` and `get_agent_info` resource handlers duplicate identical logic
     for computing AgentInfo from registry state (lines 67-100 vs 108-135).

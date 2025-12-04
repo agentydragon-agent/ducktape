@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-040: Empty dedent string creates useless constant
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `_APPROVALS_AND_TOOLS` constant is defined as `dedent("").strip()`, which
     always evaluates to an empty string. This creates dead code and adds unnecessary

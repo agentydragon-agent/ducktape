@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-008: Normalize patterns in one place
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Specimen has many scattered calls to `normalize_pattern`; internal variables are a mix of normalized/un-normalized patterns:
 

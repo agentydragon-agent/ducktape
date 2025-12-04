@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Delete broadcast_status no-op method and all call sites
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `broadcast_status` method is a no-op (lines 223-225) with a comment saying
     "WebSocket status broadcasts removed". It should be deleted along with all its call sites.

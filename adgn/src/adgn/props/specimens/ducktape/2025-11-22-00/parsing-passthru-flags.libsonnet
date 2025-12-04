@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe manual parsing of CLI flags from passthru strings
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Multiple functions manually parse passthrough flag lists to determine if specific
     CLI flags were passed, instead of having explicit typed arguments that the CLI

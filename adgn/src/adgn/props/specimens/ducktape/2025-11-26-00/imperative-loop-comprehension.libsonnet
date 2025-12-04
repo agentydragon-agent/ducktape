@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Imperative for-loop should be list comprehension, redundant conversions
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Lines 220-226 in runtime.py use an imperative for-loop with `.append()` to build
     a list, when a list comprehension would be more Pythonic. Additionally, it has

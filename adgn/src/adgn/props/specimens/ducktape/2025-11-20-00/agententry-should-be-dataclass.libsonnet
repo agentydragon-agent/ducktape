@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-004: AgentEntry should be a dataclass
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     AgentEntry is a simple data container with only __init__ and no methods, making it
     an ideal candidate for dataclass conversion.

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-005: Unnecessary intermediate variables before assertions
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The test file extracts values from lists into intermediate variables (fc1, fco1, fc2, fco2)
     and then immediately uses them once in assertions. These should be inlined directly into

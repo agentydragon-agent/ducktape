@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-053: Tests for unimplemented UI features with error-swallowing fallbacks
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     The test_mcp_errors.py file contains multiple issues:
 

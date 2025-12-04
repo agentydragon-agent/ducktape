@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-026: Remove unused `workspace` parameter from _write_sandboxed_kernelspec
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The helper `_write_sandboxed_kernelspec(run_root: Path, workspace: Path, policy_yaml: Path, kernel_python: str, *, trace: bool)` declares a `workspace` parameter that is not used in the function body.
 

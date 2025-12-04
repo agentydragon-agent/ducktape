@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-055: Use mutable NotificationsBatch for accumulation instead of sets
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     The class uses sets (`_updates`, `_list_changed`) during accumulation, then converts
     to frozen structures in NotificationsBatch. This is clunky.

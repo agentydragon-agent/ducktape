@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-017: Use reversed(enumerate(...)) instead of manual reverse iteration
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     The `_find_last_tool_index` function manually iterates backwards with `range(..., -1, -1)`
     and a separate line to extract the item. It should use `reversed(enumerate(...))` for

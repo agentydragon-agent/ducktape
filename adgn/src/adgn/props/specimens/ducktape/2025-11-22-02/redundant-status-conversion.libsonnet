@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-030: ProposalStatus(p.status) redundant conversion suggests type inconsistency
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Both resource handlers convert p.status and got.status to ProposalStatus:
 

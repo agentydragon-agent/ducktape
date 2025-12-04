@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-011: Redundant str() conversion when calling discover_repository()
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code calls `str(Path.cwd())` before passing to `pygit2.discover_repository()`,
     but that function accepts both `str` and `Path` objects. The conversion is redundant.

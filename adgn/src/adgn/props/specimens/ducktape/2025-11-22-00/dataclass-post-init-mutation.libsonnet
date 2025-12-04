@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `AgentRuntime` dataclass has `_ui_manager` and `_ui_bus` fields, but `AgentRegistry.create()` sets them after construction instead of passing them to the constructor.
 

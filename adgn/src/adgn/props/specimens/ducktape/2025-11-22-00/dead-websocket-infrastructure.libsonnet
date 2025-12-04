@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The codebase contains extensive WebSocket-related code and documentation that is no longer used because WebSocket endpoints are no longer mounted.
 

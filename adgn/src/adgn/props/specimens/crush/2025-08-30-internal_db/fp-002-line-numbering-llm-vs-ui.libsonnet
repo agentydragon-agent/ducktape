@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: line-numbering for LLM vs human display are NOT duplication
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A past critique reported the LLM-facing in-band plaintext line numbering (internal/llm/tools/view.go)
     and the TUI's styled, width-aware line numbering (internal/tui/components/chat/messages/renderer.go) as

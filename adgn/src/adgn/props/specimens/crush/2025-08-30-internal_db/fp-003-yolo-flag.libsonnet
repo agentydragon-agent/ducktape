@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // False positive: CLI flag `--yolo` is acceptable branding and should not be renamed.
 
 I.falsePositive(
-  snapshot='crush/2025-08-30-internal_db',
   rationale=|||
     A past critique suggested renaming the CLI flag `--yolo` (and local variable `yolo`) to a more
     descriptive predicate such as `--skip-permission-requests`. This is a false positive.

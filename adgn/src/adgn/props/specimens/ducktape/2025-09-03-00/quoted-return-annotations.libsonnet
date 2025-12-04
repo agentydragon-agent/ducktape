@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-018: Prefer postponed/evaluated type annotations over quoted return annotations
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Avoid quoted return annotations (e.g. `-> "McpManager"`). Enable `from __future__ import annotations` at module top and use real types (e.g., `-> McpManager`) or PEP 604 unions where appropriate.
 

@@ -7,7 +7,6 @@ local I = import '../../lib.libsonnet';
 // All describe empty catch blocks without logging in UI code
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     UI code uses empty catch blocks or silent error handling that swallows exceptions
     without logging, making failures invisible to users and developers.

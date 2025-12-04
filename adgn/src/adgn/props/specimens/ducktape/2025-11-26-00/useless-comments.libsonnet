@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe comments that merely restate obvious code
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/git_commit_ai/cli.py'],
     ['adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte'],

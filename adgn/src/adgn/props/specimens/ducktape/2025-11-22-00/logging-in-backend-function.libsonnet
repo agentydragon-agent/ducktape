@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-016: Logging configuration in backend function instead of main
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `generate_commit_message_minicodex()` backend function calls `configure_logging()`
     and configures logger levels, but logging configuration should be done at the application

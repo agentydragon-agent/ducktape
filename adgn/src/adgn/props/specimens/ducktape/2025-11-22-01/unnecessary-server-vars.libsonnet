@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-004: create_agent_compositor should inline policy_server and approvals_server
 
 I.issue(
-  snapshot='ducktape/2025-11-22-01',
   rationale=|||
     The `create_agent_compositor` function creates intermediate variables
     `policy_server` and `approvals_server` that are used exactly once.

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Tests use multiple separate assertions instead of structured matchers (hamcrest or Pydantic model equality).
 

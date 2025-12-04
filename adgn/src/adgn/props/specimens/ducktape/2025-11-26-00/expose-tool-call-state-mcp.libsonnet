@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-002: Policy gateway tool call state should be exposed via MCP resources
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/runtime/container.py'],
     ['adgn/src/adgn/agent/server/runtime.py'],

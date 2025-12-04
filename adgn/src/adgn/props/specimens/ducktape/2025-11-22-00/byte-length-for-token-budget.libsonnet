@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-005: Using byte length for LLM token budget instead of character count
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code uses byte length (`_len_bytes()`) to cap context passed to LLMs,
     but LLM token budgets are better approximated by character count, not bytes.

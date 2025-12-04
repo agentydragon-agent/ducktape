@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Global PersistentShell singleton breaks session isolation and creates hard-to-reason-about shared state.
 

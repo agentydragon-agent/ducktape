@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Two functions declare parameters that are never used in the function body. These are vestigial parameters from previous implementations.
 

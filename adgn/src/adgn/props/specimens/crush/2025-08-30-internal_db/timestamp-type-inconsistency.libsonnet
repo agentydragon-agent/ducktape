@@ -15,7 +15,6 @@ local I = import '../../lib.libsonnet';
 // Align types: prefer time.Time / time.Duration or explicit unit-suffixed integer names.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     Use `time.Time` for timestamps, `time.Duration` for timeouts/durations (avoid bare ints; if you must use int, suffix units in names).
   |||,

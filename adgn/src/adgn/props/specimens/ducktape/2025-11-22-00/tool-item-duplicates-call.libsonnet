@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-036: ToolItem duplicates ToolCall structure
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `ToolItem` class in `server/state.py` duplicates structural information
     already present in `ToolCall` from `types.py`, creating redundant type definitions

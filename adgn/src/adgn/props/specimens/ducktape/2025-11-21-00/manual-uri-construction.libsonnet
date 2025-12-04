@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-030: approvals_pending_global constructs URIs manually instead of using constants
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
     ['adgn/src/adgn/mcp/_shared/constants.py'],

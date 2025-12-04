@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     Multiple unnecessary one-off variables should be inlined. Each variable is assigned once and used exactly once in the next line or expression, adding no value:
     - They're not reused elsewhere

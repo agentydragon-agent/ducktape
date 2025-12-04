@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Minimize nesting: prefer early returns/continues and loop-guard continues instead of wrapping the whole body.
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Prefer early returns/continues to reduce nesting and make happy-path obvious. Replace large wrapped bodies guarded by a single conditional with small guard-clauses (return/continue) at the top where appropriate.',
   occurrences=[
     {

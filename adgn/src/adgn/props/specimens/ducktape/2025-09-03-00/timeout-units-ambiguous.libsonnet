@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-023: Prefer timedelta or suffixes for numeric timeout constants
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Constants representing timeouts should carry units in their type or name. `_DEFAULT_TIMEOUT: float | None = None` is ambiguous about units.
 

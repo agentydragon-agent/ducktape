@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-033: total_tokens field is redundant - trivial sum of input_tokens + output_tokens
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The TokenUsage model has a total_tokens field that is a trivial sum of two other fields:
 

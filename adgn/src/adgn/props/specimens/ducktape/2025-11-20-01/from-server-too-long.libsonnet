@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-014: from_server method is too long and complex, extract loop body
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `TypedClient.from_server` classmethod is 69 lines long (lines 109-178), with a
     single for-loop body spanning 49 lines (lines 128-177). This makes the method difficult

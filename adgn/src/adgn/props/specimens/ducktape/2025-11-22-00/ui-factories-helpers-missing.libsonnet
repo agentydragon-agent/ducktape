@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-045: GlobalApprovalsList explicit constructions should use factories with defaults
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The `GlobalApprovalsList.svelte` component contains extensive explicit tool and
     resource constructions that should use factories or helper functions with

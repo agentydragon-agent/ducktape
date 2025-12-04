@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-023: AgentApprovalsHistory count field is redundant and should be removed
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `count` field in `AgentApprovalsHistory` is redundant - it's a trivial function of the
     `timeline` and `pending` lists already exposed in the response. It should be removed.

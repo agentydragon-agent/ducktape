@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-031: Duplicated "get proposal or raise KeyError" pattern should be extracted
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The "get proposal or raise KeyError if None" pattern appears twice:
 

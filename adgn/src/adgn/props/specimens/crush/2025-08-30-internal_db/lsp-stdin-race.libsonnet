@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale= |||
     LSP client performs unsynchronized concurrent writes to the server's stdin, risking interleaved headers/bodies and JSON‑RPC/LSP stream corruption.
 

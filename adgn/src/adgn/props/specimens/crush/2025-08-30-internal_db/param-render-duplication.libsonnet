@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Centralize parameter rendering (URL/FilePath/Timeout) used in tool header and copy-to-clipboard code.
 
 I.issue(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Multiple places in renderer/tool.go build nearly identical parameter display strings (URL, File Path via fsext.PrettyPath, Timeout as seconds->duration). Centralize into shared helpers (e.g., formatParamFilePath, formatParamURL, formatParamTimeout) or a per-tool registry to avoid duplicated formatting logic and ensure consistent presentation across copy-to-clipboard and headers.',
   filesToRanges={
     'internal/tui/components/chat/messages/tool.go': [[284, 292], [317, 322], [360, 368]],

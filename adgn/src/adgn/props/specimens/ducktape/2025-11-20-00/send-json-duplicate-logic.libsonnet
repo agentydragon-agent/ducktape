@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-037: send_json and _send_direct_all are complete duplicates
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale=|||
     send_json and _send_direct_all have identical logic except for how they send
     (runtime.py:119-128, 187-196).

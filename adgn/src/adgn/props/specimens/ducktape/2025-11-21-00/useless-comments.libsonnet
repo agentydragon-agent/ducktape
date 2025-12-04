@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe comments that add no value (obvious or misleading)
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
     ['adgn/src/adgn/agent/persist/__init__.py'],

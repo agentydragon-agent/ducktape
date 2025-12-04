@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-009: Tighten optional parameters that are never None
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Optional parameters should only be typed optional when None is a real, exercised state.
     When callers always pass a value (or a default is always resolved), drop `| None = None` to tighten contracts and avoid ambiguous call sites.

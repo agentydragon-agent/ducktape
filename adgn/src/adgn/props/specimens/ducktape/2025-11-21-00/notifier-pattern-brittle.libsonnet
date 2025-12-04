@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-037: Notifier pattern is brittle and has multiple design problems
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/approvals.py'],
     ['adgn/src/adgn/mcp/approval_policy/server.py'],

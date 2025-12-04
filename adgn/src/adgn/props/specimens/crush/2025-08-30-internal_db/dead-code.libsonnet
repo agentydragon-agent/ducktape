@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // No dead code: remove unreachable or redundant branches
 
 I.issueMulti(
-  snapshot='crush/2025-08-30-internal_db',
   rationale='Remove unreachable or redundant code paths (dead code). Delete unreachable branches and simplify conditionals that return identical results to avoid confusion and maintenance burden.',
   occurrences=[
     {

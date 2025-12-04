@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-036: ternary oneliner for simple conditional assignment
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale= |||
     The policy_source initialization uses two lines when it could be a single ternary expression:
 

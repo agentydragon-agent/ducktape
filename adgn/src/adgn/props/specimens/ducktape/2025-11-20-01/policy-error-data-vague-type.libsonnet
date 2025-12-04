@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-017: PolicyGatewayError.data field needs proper typing and documentation
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The `PolicyGatewayError` model (lines 33-37) has a `data` field with type
     `dict[str, Any] | None`, which is too vague. The field should be renamed and/or

@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-025: Inline one-off 'command = shell' when passing to StdioServerParameters
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     A short-lived variable used only to forward to a single call (e.g., `command = shell; StdioServerParameters(command=command, ...)`) adds noise without value.
 

@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-034: Make message an explicit required string parameter in _execute_git_commit
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     The function `_execute_git_commit()` (lines 571-584) takes `message_args: list[str]`
     which is always `["-m", msg]` or `["-F", path, "--cleanup=strip"]`.

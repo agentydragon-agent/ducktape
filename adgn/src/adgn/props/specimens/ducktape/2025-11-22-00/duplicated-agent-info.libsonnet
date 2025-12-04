@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-024: Duplicated agent info construction and thin wrapper methods
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     The code has two problems in server.py:
 

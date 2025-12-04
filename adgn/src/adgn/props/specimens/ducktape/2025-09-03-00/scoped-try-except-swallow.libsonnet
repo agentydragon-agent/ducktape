@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-002: Scoped try/except should not swallow errors
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Scoped try/except blocks swallow errors instead of failing loudly.
     Where there is no specific recovery/handling need, do not catch at all — let exceptions bubble normally.

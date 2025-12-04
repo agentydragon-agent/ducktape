@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     ORM field definitions use inline Python comments instead of SQLAlchemy's `comment=`
     parameter, preventing database schema documentation.

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Repeated admin_server creation should be a shared fixture.
 

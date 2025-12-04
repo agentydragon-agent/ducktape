@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   expect_caught_from=[['adgn/src/adgn/agent/approvals.py'], ['adgn/src/adgn/agent/persist/__init__.py']],
   rationale= |||
     There are two overlapping enums representing approval outcomes, and a converter between them

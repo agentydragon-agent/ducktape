@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-042: Delete unnecessary include_all variable, use args.stage_all directly
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Line 719 creates `include_all = args.stage_all`, then uses it throughout. This
     variable adds no value - just use `args.stage_all` directly.

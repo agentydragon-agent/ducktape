@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-026: Inline single-use variable 'tb'
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 136-137 create TreeBuilder, write it, and never use `tb` again. Inline:
 

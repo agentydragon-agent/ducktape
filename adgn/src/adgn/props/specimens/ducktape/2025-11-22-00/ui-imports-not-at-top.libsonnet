@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-052: Imports not at top of Svelte script blocks
 
 I.issueMulti(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     Five Svelte components have import statements that are not at the top of the
     `<script>` block. Imports appear after comments, state declarations, or other

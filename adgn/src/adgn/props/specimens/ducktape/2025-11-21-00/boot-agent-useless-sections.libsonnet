@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-035: boot_agent Args and Returns sections are useless and should be deleted
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The `boot_agent` docstring has Args and Returns sections that provide no useful information
     beyond what's obvious from the function signature. They should be deleted.

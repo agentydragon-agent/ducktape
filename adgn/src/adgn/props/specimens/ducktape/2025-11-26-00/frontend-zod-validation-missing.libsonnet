@@ -4,7 +4,6 @@ local I = import '../../lib.libsonnet';
 // Both describe missing Zod validation for Pydantic-derived types in frontend
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/src/adgn/agent/web/src/components/ToolExec.svelte'],
     ['adgn/src/adgn/agent/web/src/components/ToolJson.svelte'],

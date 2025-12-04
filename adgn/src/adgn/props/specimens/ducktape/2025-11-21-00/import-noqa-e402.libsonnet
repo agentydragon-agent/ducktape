@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-019: EventRecord and TypedPayload import should not have noqa and should be at top
 
 I.issue(
-  snapshot='ducktape/2025-11-21-00',
   rationale=|||
     The import `from .events import EventRecord, TypedPayload  # noqa: E402` should not use
     `# noqa: E402` and should be moved to the top of the file with other imports. If circular

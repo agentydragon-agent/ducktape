@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-068: SnapshotDetails all-or-nothing bundling is architecturally suspicious
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Lines 230-232 in runtime.py only include `details` if ALL three components
     (run_state, sampling, approval_policy) are present. If any one is missing,

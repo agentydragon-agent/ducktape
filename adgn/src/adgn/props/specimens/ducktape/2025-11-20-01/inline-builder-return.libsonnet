@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-031: Inline builder into return statement
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale=|||
     The code creates a builder and immediately uses it in the return statement.
     This intermediate variable should be inlined.

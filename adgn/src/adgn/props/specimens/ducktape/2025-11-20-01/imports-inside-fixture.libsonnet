@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Imports are placed inside a fixture function instead of at module top level.
 

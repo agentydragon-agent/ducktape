@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-019: Duplicate transcript files with nearly identical content
 
 I.issue(
-  snapshot='ducktape/2025-11-22-00',
   rationale= |||
     `TranscriptHandler` writes the same events to two nearly-identical files:
     `events.jsonl` (with timestamps) and `transcript.jsonl` (without timestamps).

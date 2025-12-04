@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-013: Use collections.Counter for tallying exclude-pattern hits
 
 I.issue(
-  snapshot='misc/2025-08-29-pyright_watch_report',
   rationale=|||
     Use collections.Counter for tallying exclude-pattern hits.
 

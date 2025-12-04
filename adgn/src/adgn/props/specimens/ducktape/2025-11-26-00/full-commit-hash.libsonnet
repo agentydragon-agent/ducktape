@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-048: Use full commit hash instead of short commitish for cache key
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Line 751 calls `get_short_commitish(repo)` to get a 7-character commit hash prefix
     for the cache key. There's no reason to use a shortened version.

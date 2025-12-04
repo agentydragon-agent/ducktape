@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-033: Use standard SystemExit instead of custom ExitWithCode
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale=|||
     Lines 560-568 define `ExitWithCode` exception for signaling exit codes. Python
     already has `SystemExit` built-in which serves exactly this purpose.

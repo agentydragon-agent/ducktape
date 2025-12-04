@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-003: Avoid exceptions for normal control flow; detect "first commit" positively
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Do not use try/except to detect normal, non-error conditions. Reserve exceptions for unexpected situations.
     The current "first commit" detection relies on catching a diff failure, which can also swallow unrelated errors.

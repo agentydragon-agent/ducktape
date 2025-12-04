@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
 I.issue(
-  snapshot='ducktape/2025-11-20-01',
   rationale= |||
     Single-use variable with redundant comment.
 

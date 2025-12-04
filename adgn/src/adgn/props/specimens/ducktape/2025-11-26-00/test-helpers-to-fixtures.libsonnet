@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-062: Test helper functions should be pytest fixtures
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   expect_caught_from=[
     ['adgn/tests/mcp/test_resources_subscriptions_index.py'],
     ['adgn/tests/mcp/resources/test_subscriptions_index.py'],

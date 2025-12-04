@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-015: Prefer PEP 604 unions and builtin generics over typing.Optional/List/Dict/Tuple/Iterator
 I.issueMulti(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     Modern Python (3.11+) prefers PEP 604-style unions (e.g., `str | None`) and builtin generics (`list[int]`, `dict[str, Any]`) instead of the legacy `typing.Optional`, `typing.List`, `typing.Dict`, `typing.Tuple`, `typing.Iterator`, etc.
 

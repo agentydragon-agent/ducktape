@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-065: Extract scissors/empty-message parsing into a small helper
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     The loop that strips everything below the Git scissors line and collects non-comment, non-blank lines
     is an ideal small helper for clarity and reuse:

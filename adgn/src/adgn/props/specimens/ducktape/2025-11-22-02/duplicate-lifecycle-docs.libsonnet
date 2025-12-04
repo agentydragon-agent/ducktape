@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-047: Duplicated ToolCallRecord lifecycle states documentation
 
 I.issue(
-  snapshot='ducktape/2025-11-22-02',
   rationale=|||
     The ToolCallRecord lifecycle states are documented in two places with identical text:
 

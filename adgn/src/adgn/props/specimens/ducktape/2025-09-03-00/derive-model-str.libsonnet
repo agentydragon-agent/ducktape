@@ -2,7 +2,6 @@ local I = import '../../lib.libsonnet';
 
 // iss-041: Derive model_str at point of use; avoid redundant state
 I.issue(
-  snapshot='ducktape/2025-09-03-00',
   rationale=|||
     `AppConfig.resolve` constructs `model_str` and also stores `provider` and `model_name` split from it, but
     later code reads the composite `model_str` only for logging/printing. Since `model_str` is trivially derivable

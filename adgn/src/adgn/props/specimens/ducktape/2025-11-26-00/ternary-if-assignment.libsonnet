@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // iss-014: Use ternary instead of imperative if-assignment for details
 
 I.issue(
-  snapshot='ducktape/2025-11-26-00',
   rationale= |||
     Lines 230-232 in runtime.py use an imperative if-statement to conditionally assign
     `details`, when a ternary expression would be clearer and more concise.

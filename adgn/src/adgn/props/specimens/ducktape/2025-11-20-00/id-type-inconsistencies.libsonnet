@@ -3,7 +3,6 @@ local I = import '../../lib.libsonnet';
 // ID fields use inconsistent types (str vs domain types). Should use domain types throughout.
 
 I.issue(
-  snapshot='ducktape/2025-11-20-00',
   rationale= |||
     Multiple ID fields use raw str types instead of domain-specific ID types, losing
     type safety and semantic meaning:
