@@ -798,7 +798,11 @@ def snapshot_capture_ducktape(
         exclude = ["adgn/src/adgn/props/"]
 
     # Get current commit SHA using pygit2
-    repo = pygit2.Repository("/code/gitlab.com/agentydragon/ducktape")
+    # Discover repository from current directory (should be within ducktape repo)
+    repo_path = pygit2.discover_repository(str(Path.cwd()))
+    if not repo_path:
+        raise typer.BadParameter("Could not find git repository. Run from within ducktape repo.")
+    repo = pygit2.Repository(repo_path)
     source_commit = str(repo.head.target)
 
     # Generate slug if not provided
