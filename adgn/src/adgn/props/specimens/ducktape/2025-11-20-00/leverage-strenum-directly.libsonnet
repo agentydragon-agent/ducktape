@@ -1,10 +1,9 @@
 local I = import '../../lib.libsonnet';
 
-I.issue(
-  rationale= |||
-    Code explicitly calls .value on StrEnum instances throughout sqlite.py and
-    history.py, but StrEnum automatically coerces to its string value in string
-    contexts.
+I.issueMulti(
+  rationale=|||
+    Code explicitly calls .value on StrEnum instances, but StrEnum automatically
+    coerces to its string value in string contexts.
 
     Pattern like PolicyStatus.ACTIVE.value in WHERE clauses is unnecessary
     verbosity. Should use PolicyStatus.ACTIVE directly in SQLAlchemy comparisons
@@ -15,25 +14,31 @@ I.issue(
     - Type safety: keeps enum type longer in data flow
     - Refactoring support: easier to rename enum members
   |||,
-  filesToRanges={
-    'adgn/src/adgn/agent/persist/sqlite.py': [
-      192,
-      207,
-      208,
-      213,
-      301,
-      302,
-      306,
-      342,
-      356,
-      381,
-    ],
-    'adgn/src/adgn/agent/server/history.py': [
-      36,
-    ],
-  },
-  expect_caught_from=[
-    ['adgn/src/adgn/agent/persist/sqlite.py'],
-    ['adgn/src/adgn/agent/server/history.py'],
+  occurrences=[
+    {
+      note: 'Multiple .value calls on PolicyStatus and ApprovalStatus enums in SQLAlchemy queries and assignments',
+      files: {
+        'adgn/src/adgn/agent/persist/sqlite.py': [
+          192,  // .value call
+          207,  // .value call
+          208,  // .value call
+          213,  // .value call
+          301,  // .value call
+          302,  // .value call
+          306,  // .value call
+          342,  // .value call
+          356,  // .value call
+          381,  // .value call
+        ],
+      },
+      expect_caught_from: [['adgn/src/adgn/agent/persist/sqlite.py']],
+    },
+    {
+      note: '.value call on StrEnum in history module',
+      files: {
+        'adgn/src/adgn/agent/server/history.py': [36],
+      },
+      expect_caught_from: [['adgn/src/adgn/agent/server/history.py']],
+    },
   ],
 )
