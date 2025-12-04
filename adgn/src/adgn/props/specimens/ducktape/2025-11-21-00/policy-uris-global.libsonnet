@@ -10,86 +10,22 @@ I.issue(
     ['adgn/src/adgn/mcp/approval_policy/server.py'],
   ],
   rationale=|||
-    The approval policy resource URIs use a global namespace (`resource://approval-policy/...`)
-    but should be scoped per agent like all other agent resources (`resource://agents/<id>/...`).
+    Approval policy URIs use global namespace (`resource://approval-policy/policy.py`,
+    `resource://approval-policy/proposals`) but should be agent-scoped like other resources
+    (`resource://agents/{id}/approvals/pending`, `/history`, `/policy/proposals`, `/policy/state`, etc.).
 
-    **Current global URIs:**
+    This creates architectural inconsistency (per-agent servers use global URIs), duplication (agents
+    server exposes `resource://agents/{id}/policy/proposals` but approval policy server uses global
+    namespace - which to use?), multi-agent ambiguity (global URI doesn't indicate which agent), redundant
+    notifications (approvals.py:178-181 notifies both global and agent-scoped URIs), and inconsistent
+    construction (manual f-strings and helpers both use global namespace).
 
-    ```python
-    APPROVAL_POLICY_RESOURCE_URI = "resource://approval-policy/policy.py"
-    APPROVAL_POLICY_PROPOSALS_INDEX_URI = "resource://approval-policy/proposals"
-    ```
-
-    **Agent-scoped URIs for comparison:**
-
-    All other agent resources are properly scoped:
-    - `resource://agents/{agent_id}/approvals/pending`
-    - `resource://agents/{agent_id}/approvals/history`
-    - `resource://agents/{agent_id}/approvals/{call_id}`
-    - `resource://agents/{agent_id}/policy/proposals`
-    - `resource://agents/{agent_id}/policy/state`
-    - `resource://agents/{agent_id}/session/state`
-    - `resource://agents/{agent_id}/ui/state`
-    - `resource://agents/{agent_id}/mcp/state`
-
-    **Why this is problematic:**
-
-    1. **Architectural inconsistency**: Every agent has its own approval policy server (documented
-       as "per-agent server"), so the URIs should be scoped per agent.
-
-    2. **Existing per-agent policy URIs**: The agents MCP server already exposes:
-       - `resource://agents/{agent_id}/policy/proposals`
-       - `resource://agents/{agent_id}/policy/state`
-
-       But the approval policy server itself uses global URIs. This creates duplication and confusion
-       about which URI to use.
-
-    3. **Multi-agent ambiguity**: In a system with multiple agents, global URIs like
-       `resource://approval-policy/policy.py` don't indicate which agent's policy is being referenced.
-
-    4. **Mixed notifications**: When policy changes, the code notifies BOTH URIs:
-       ```python
-       # approvals.py:178-181
-       if self._notify:
-           self._notify(APPROVAL_POLICY_RESOURCE_URI)  # Global: resource://approval-policy/policy.py
-           self._notify(AGENTS_POLICY_STATE_URI_FMT.format(agent_id=self.agent_id))  # Agent-scoped
-       ```
-       This is redundant and confusing.
-
-    5. **URI construction inconsistency**: Some places manually construct proposal URIs, others
-       use helper functions, but all use the global namespace:
-       ```python
-       # resources.py:67-69
-       def policy_proposal(proposal_id: str) -> str:
-           return f"resource://approval-policy/proposals/{proposal_id}"
-
-       # agents.py:470
-       proposal_uri=f"resource://approval-policy/proposals/{p.id}"
-       ```
-
-    **What should be done:**
-
-    Replace global approval policy URIs with agent-scoped URIs following the pattern `resource://agents/{agent_id}/approval-policy/...` used by other agent resources. Convert constants to functions taking `agent_id`.
-
-    **Update sites:**
-    - Constants definition in `mcp/_shared/constants.py` (lines 47-48)
-    - Helper functions in `agent/mcp_bridge/resources.py` (lines 12, 67-69)
-    - Notification calls in `agent/approvals.py` (line 179 - remove, keep only line 181)
-    - Manual URI construction in `agent/mcp_bridge/servers/agents.py` (line 470)
-    - MCP resource registration in `mcp/approval_policy/server.py` (lines 132, 142, 148, 161)
-    - All tests and documentation
-
-    **Benefits:**
-    - Consistent URI namespace (all agent resources under `resource://agents/{id}/...`)
-    - Clear ownership (URI clearly indicates which agent's policy)
-    - No redundant notifications (single agent-scoped URI instead of two)
-    - Easier to understand and maintain
-    - Matches the documented "per-agent server" architecture
-
-    **Note:**
-    This change also eliminates the need for the redundant agent-specific policy URIs that
-    currently exist separately (`AGENTS_POLICY_PROPOSALS_URI_FMT`, `AGENTS_POLICY_STATE_URI_FMT`),
-    as the approval policy server URIs will directly match the agent resource namespace.
+    Replace global URIs with agent-scoped pattern `resource://agents/{agent_id}/approval-policy/...`.
+    Convert constants to functions taking agent_id. Update sites: constants definition
+    (mcp/_shared/constants.py:47-48), helper functions (resources.py:12, 67-69), notification calls
+    (approvals.py:179 - remove), manual URI construction (agents.py:470), MCP resource registration
+    (approval_policy/server.py:132, 142, 148, 161). Provides consistent namespace, clear ownership,
+    no redundant notifications, matches "per-agent server" architecture.
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/_shared/constants.py': [

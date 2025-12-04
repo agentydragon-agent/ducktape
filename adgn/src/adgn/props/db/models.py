@@ -71,7 +71,8 @@ class PydanticColumn(TypeDecorator[T]):
         if value is None:
             return None
         # Use TypeAdapter.dump_python for all types (handles BaseModel and unions)
-        return self._adapter.dump_python(value, mode="json", by_alias=True)  # type: ignore[no-any-return]
+        # warnings=False suppresses harmless union variant checking warnings
+        return self._adapter.dump_python(value, mode="json", by_alias=True, warnings=False)  # type: ignore[no-any-return]
 
     def process_result_value(self, value: dict[str, Any] | None, dialect: Any) -> T | None:
         """Convert dict to Pydantic model after loading (DB → Python)."""
