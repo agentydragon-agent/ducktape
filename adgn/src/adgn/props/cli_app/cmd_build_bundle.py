@@ -12,7 +12,6 @@ import pygit2
 import yaml
 
 from adgn.props.models.specimen import GitSource, SpecimenDoc
-from adgn.props.specimens.registry import SpecimenRegistry
 
 
 def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
@@ -208,32 +207,30 @@ def create_filtered_commit(
 
 
 def discover_specimens_to_build(specimens_dir: Path) -> list[tuple[str, SpecimenDoc]]:
-    """Discover all specimens with bundle metadata.
+    """Discover all specimens with bundle metadata from snapshots.yaml.
 
     Returns:
         List of (specimen_id, SpecimenDoc) tuples for specimens that have bundle metadata.
     """
+    snapshots_yaml = specimens_dir / "snapshots.yaml"
+    if not snapshots_yaml.exists():
+        raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
+
+    with snapshots_yaml.open() as f:
+        snapshots_data = yaml.safe_load(f) or {}
+
     results = []
-    registry = SpecimenRegistry.from_base_path(specimens_dir)
-
-    for spec_id in registry.list_all():
-        manifest_path = specimens_dir / spec_id / "manifest.yaml"
-        if not manifest_path.exists():
-            continue
-
-        with manifest_path.open() as f:
-            manifest_data = yaml.safe_load(f)
-
+    for slug, snapshot_data in snapshots_data.items():
         # Skip specimens without bundle metadata
-        if "bundle" not in manifest_data or not manifest_data["bundle"]:
+        if not snapshot_data.get("bundle"):
             continue
 
-        # Parse and validate the full manifest (let validation errors propagate)
-        specimen = TypeAdapter(SpecimenDoc).validate_python(manifest_data)
+        # Parse and validate the specimen doc (let validation errors propagate)
+        specimen = TypeAdapter(SpecimenDoc).validate_python(snapshot_data)
 
         # Only include specimens with complete bundle metadata
         if specimen.bundle is not None:
-            results.append((spec_id, specimen))
+            results.append((slug, specimen))
 
     return results
 
@@ -324,22 +321,37 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
         print(f"Tags in bundle: {', '.join(tags)}")
 
 
+def get_specimens_dir() -> Path:
+    """Get the specimens directory from package resources."""
+    from importlib import resources
+
+    traversable = resources.files("adgn.props").joinpath("specimens")
+    with resources.as_file(traversable) as p:
+        if not p.exists() or not p.is_dir():
+            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
+        return p
+
+
 def cmd_build_bundle(
     specimens_dir: Path | None = None, source_repo_path: Path | None = None, output_bundle: Path | None = None
 ):
     """Build specimen bundle with per-specimen filters.
 
     Args:
-        specimens_dir: Base directory containing specimen manifests (default: from package resources)
+        specimens_dir: Base directory containing snapshots.yaml and specimen subdirs (default: from package resources)
         source_repo_path: Path to source git repository (default: /code/gitlab.com/agentydragon/ducktape)
         output_bundle: Output path for bundle file (default: specimens_dir/ducktape/specimens.bundle)
+
+    Note: The default output path matches the relative URL in snapshots.yaml (file://../specimens.bundle
+    resolved from specimens/ducktape/{snapshot}/ directories).
     """
     # Use defaults if not provided
     if specimens_dir is None:
-        specimens_dir = SpecimenRegistry.from_package_resources().base_path
+        specimens_dir = get_specimens_dir()
     if source_repo_path is None:
         source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
     if output_bundle is None:
+        # Default to specimens/ducktape/specimens.bundle to match snapshots.yaml URLs
         output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
 
     # Call internal implementation

@@ -152,6 +152,75 @@ def _jsonnet_evaluate_to_dict(spec_dir: Path, subdir: str, should_flag: bool) ->
     return all_issues
 
 
+def _jsonnet_evaluate_all_flat(spec_dir: Path) -> tuple[dict[str, dict], dict[str, dict]] | None:
+    """Evaluate all Jsonnet files in flat directory structure and split by type.
+
+    New format has all libsonnet files directly in specimen directory.
+    TPs and FPs are distinguished by content (expect_caught_from vs relevant_files).
+
+    Args:
+        spec_dir: Specimen directory containing libsonnet files
+
+    Returns:
+        Tuple of (true_positives, false_positives) dicts, or None if no files found.
+        Each dict maps issue_id -> raw dict (with id and should_flag injected).
+    """
+    if not spec_dir.is_dir():
+        return None
+
+    # Discover all libsonnet files in the directory
+    issue_files = sorted(spec_dir.glob("*.libsonnet"))
+    if not issue_files:
+        return None
+
+    # Build Jsonnet snippet to batch-load all files (without should_flag yet)
+    imports = []
+    for p in issue_files:
+        name = p.stem
+        abs_path = str(p.resolve())
+        imports.append(f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}}}")
+
+    snippet = "{\n" + ",\n".join(imports) + "\n}"
+
+    eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
+    raw_obj = eval_snippet(
+        "<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
+    )
+    if not isinstance(raw_obj, str):
+        raise SpecimenIssuesLoadError(["flat: Jsonnet returned non-string"])
+
+    all_issues = json.loads(raw_obj)
+    if not isinstance(all_issues, dict):
+        raise SpecimenIssuesLoadError([f"flat: Expected dict, got {type(all_issues)}"])
+
+    # Split into TPs and FPs based on occurrence structure
+    true_positives: dict[str, dict] = {}
+    false_positives: dict[str, dict] = {}
+
+    for issue_id, issue_dict in all_issues.items():
+        if not isinstance(issue_dict, dict):
+            continue
+
+        occurrences = issue_dict.get("occurrences", [])
+        if not occurrences:
+            continue
+
+        # Check first occurrence to determine type
+        first_occ = occurrences[0]
+        is_tp = "expect_caught_from" in first_occ
+        is_fp = "relevant_files" in first_occ
+
+        if is_tp:
+            issue_dict["should_flag"] = True
+            true_positives[issue_id] = issue_dict
+        elif is_fp:
+            issue_dict["should_flag"] = False
+            false_positives[issue_id] = issue_dict
+        # Skip issues that don't have either field (malformed)
+
+    return true_positives, false_positives
+
+
 def _validate_issues_from_dicts(
     raw_issues: dict[str, dict], validation_context: dict, strict: bool
 ) -> IssuesLoadResult:
@@ -493,16 +562,30 @@ class SpecimenRegistry:
     """Entry point for listing and obtaining specimen records (code-only facade).
 
     DI-friendly: pass in a preloaded mapping for tests; use from_base_path() factory in app code.
+
+    Supports two formats:
+    - New format: snapshots.yaml at specimens root (production)
+    - Legacy format: manifest.yaml per specimen (test fixtures)
     """
 
-    def __init__(self, specimens: dict[str, SpecimenRecord | None], base_path: Path) -> None:
+    def __init__(
+        self,
+        specimens: dict[str, SpecimenRecord | None],
+        base_path: Path,
+        manifests: dict[str, SpecimenDoc] | None = None,
+    ) -> None:
         # No I/O here; accept fully materialized data
         self._specimens = specimens
         self._base_path = base_path
+        # Pre-loaded manifests from snapshots.yaml (None for legacy format)
+        self._manifests = manifests or {}
 
     @classmethod
     def from_base_path(cls, base: Path) -> SpecimenRegistry:
         """Factory method to create a registry from a specific base directory.
+
+        Discovers specimens from snapshots.yaml (new format) or by walking directories
+        for manifest.yaml files (legacy format for test fixtures).
 
         Args:
             base: Specimens base directory (must be provided)
@@ -510,17 +593,28 @@ class SpecimenRegistry:
         Returns:
             SpecimenRegistry instance
         """
-        # Discover all specimen slugs upfront by walking directory structure
         specimens: dict[str, SpecimenRecord | None] = {}
-        for repo_dir in base.iterdir():
-            if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
-                continue
-            for specimen_dir in repo_dir.iterdir():
-                if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
-                    slug = f"{repo_dir.name}/{specimen_dir.name}"
-                    # Store None as placeholder - actual loading happens on demand via load_and_hydrate
-                    specimens[slug] = None
-        return cls(specimens=specimens, base_path=base)
+        manifests: dict[str, SpecimenDoc] = {}
+
+        # Try new format: snapshots.yaml at specimens root
+        snapshots_yaml = base / "snapshots.yaml"
+        if snapshots_yaml.exists():
+            raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
+            for slug, data in raw.items():
+                specimens[slug] = None
+                # Pre-load manifest data from snapshots.yaml
+                manifests[slug] = SpecimenDoc.model_validate(data)
+        else:
+            # Fallback: legacy format with manifest.yaml per specimen (for test fixtures)
+            for repo_dir in base.iterdir():
+                if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
+                    continue
+                for specimen_dir in repo_dir.iterdir():
+                    if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
+                        slug = f"{repo_dir.name}/{specimen_dir.name}"
+                        specimens[slug] = None
+
+        return cls(specimens=specimens, base_path=base, manifests=manifests)
 
     @classmethod
     def from_package_resources(cls) -> SpecimenRegistry:
@@ -547,16 +641,21 @@ class SpecimenRegistry:
         return sorted(self._specimens.keys())
 
     def _get_manifest_path(self, slug: str) -> Path:
-        """Get manifest.yaml path for a specimen slug.
+        """Get manifest path for a specimen slug.
 
-        DRY helper - used by load_and_hydrate and load_manifest_only.
+        For new format (snapshots.yaml): returns a synthetic path to the specimen directory
+        with a "manifest.yaml" suffix for compatibility with resolve_bundle_url().
+
+        For legacy format: returns actual manifest.yaml path.
 
         Args:
             slug: Specimen slug like "ducktape/2025-11-20-00"
 
         Returns:
-            Resolved absolute path to manifest.yaml
+            Resolved absolute path (to manifest.yaml or synthetic path)
         """
+        # Return path to specimen directory + "manifest.yaml" for URL resolution compatibility
+        # This works for both new format (synthetic) and legacy format (actual file)
         return (self._base_path / slug.replace("/", os.sep) / "manifest.yaml").resolve()
 
     @asynccontextmanager
@@ -579,19 +678,37 @@ class SpecimenRegistry:
                 pass
         """
         manifest_path = self._get_manifest_path(slug)
-        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
-        man = SpecimenDoc.model_validate(raw)
+
+        # Get manifest: from pre-loaded cache (new format) or file (legacy format)
+        if slug in self._manifests:
+            man = self._manifests[slug]
+        else:
+            # Legacy format: read from manifest.yaml file
+            raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
+            if not isinstance(raw, dict):
+                raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
+            man = SpecimenDoc.model_validate(raw)
+
+        # Determine specimen directory for issue loading
+        specimen_dir = manifest_path.parent
 
         # Evaluate Jsonnet to raw dicts (no validation yet)
-        raw_issues = _jsonnet_evaluate_to_dict(manifest_path.parent, "issues", should_flag=True)
-        raw_fps = _jsonnet_evaluate_to_dict(manifest_path.parent, "false_positives", should_flag=False)
-
-        if raw_issues is None:
-            raise SpecimenIssuesLoadError([f"No issues/ directory found under: {manifest_path.parent}"])
-        if raw_fps is None:
-            raw_fps = {}  # FPs are optional
+        # New format: issues are directly in specimen dir (*.libsonnet)
+        # Legacy format: issues are in issues/ subdirectory
+        if slug in self._manifests:
+            # New format: issues directly in specimen directory, split by content
+            result = _jsonnet_evaluate_all_flat(specimen_dir)
+            if result is None:
+                raise SpecimenIssuesLoadError([f"No issues found under: {specimen_dir}"])
+            raw_issues, raw_fps = result
+        else:
+            # Legacy format: issues in issues/ subdirectory
+            raw_issues = _jsonnet_evaluate_to_dict(specimen_dir, "issues", should_flag=True)
+            raw_fps = _jsonnet_evaluate_to_dict(specimen_dir, "false_positives", should_flag=False)
+            if raw_issues is None:
+                raise SpecimenIssuesLoadError([f"No issues/ directory found under: {specimen_dir}"])
+            if raw_fps is None:
+                raw_fps = {}  # FPs are optional
 
         # Hydrate specimen to build complete validation context
         hydrated_root = resolve_source_root(man, manifest_path)
@@ -648,6 +765,12 @@ class SpecimenRegistry:
             SystemExit on manifest errors
         """
         manifest_path = self._get_manifest_path(slug)
+
+        # Use pre-loaded manifest if available (new format)
+        if slug in self._manifests:
+            return (manifest_path, self._manifests[slug])
+
+        # Legacy format: read from manifest.yaml file
         raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
