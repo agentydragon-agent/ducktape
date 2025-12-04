@@ -15,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from adgn.props.ids import BaseIssueID
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import FileType, classify_path
 
 
@@ -35,7 +35,7 @@ class SpecimenContext:
 
     def __init__(
         self,
-        snapshot_slug: str,
+        snapshot_slug: SnapshotSlug,
         all_discovered_files: dict[Path, FileType],
         allowed_tp_ids: Iterable[BaseIssueID],
         allowed_fp_ids: Iterable[BaseIssueID],
@@ -48,7 +48,7 @@ class SpecimenContext:
     @classmethod
     def from_hydrated_specimen(
         cls,
-        snapshot_slug: str,
+        snapshot_slug: SnapshotSlug,
         hydrated_root: Path,
         specimen_issues: Iterable[BaseIssueID],
         specimen_fps: Iterable[BaseIssueID],

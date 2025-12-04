@@ -9,9 +9,9 @@ from typing import Any, cast
 import _jsonnet  # type: ignore[import-untyped]
 import yaml
 
-from adgn.props.models.issue import FalsePositive, Issue
 from adgn.props.models.snapshot import Snapshot, SnapshotSlug
 from adgn.props.models.training_example import TrainingExample
+from adgn.props.models.true_positive import FalsePositive, TruePositive
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -80,7 +80,7 @@ class FilesystemLoader:
 
         return snapshots
 
-    def load_issues_for_snapshot(self, slug: SnapshotSlug) -> tuple[list[Issue], list[FalsePositive]]:
+    def load_issues_for_snapshot(self, slug: SnapshotSlug) -> tuple[list[TruePositive], list[FalsePositive]]:
         """Evaluate specimens/{slug}/*.libsonnet → Issue/FP objects.
 
         Determines TP vs FP by evaluating the Jsonnet and checking output structure:
@@ -110,7 +110,7 @@ class FilesystemLoader:
         # Find all .libsonnet files directly in snapshot directory (not in subdirs)
         issue_files = sorted(snapshot_dir.glob("*.libsonnet"))
 
-        issues: list[Issue] = []
+        true_positives: list[TruePositive] = []
         false_positives: list[FalsePositive] = []
 
         for issue_file in issue_files:
@@ -160,13 +160,13 @@ class FilesystemLoader:
             if is_tp:
                 # True Positive
                 tp_dict = {
-                    "issue_id": file_id,
+                    "tp_id": file_id,
                     "snapshot_slug": str(slug),
                     "rationale": issue_dict["rationale"],
                     "occurrences": occurrences,
                 }
-                issue = Issue.model_validate(tp_dict)
-                issues.append(issue)
+                issue = TruePositive.model_validate(tp_dict)
+                true_positives.append(issue)
             else:
                 # False Positive
                 fp_dict = {
@@ -178,33 +178,66 @@ class FilesystemLoader:
                 fp = FalsePositive.model_validate(fp_dict)
                 false_positives.append(fp)
 
-        return issues, false_positives
+        return true_positives, false_positives
 
-    def get_training_example(self, slug: SnapshotSlug) -> TrainingExample:
-        """Get a complete training example for a snapshot.
+    def get_training_example(self, slug: SnapshotSlug, targeted_files: set[Path]) -> TrainingExample:
+        """Create a focused training example for specific files in a snapshot.
 
         Args:
             slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
+            targeted_files: Files to review (determines which TPs/FPs are included)
 
         Returns:
-            TrainingExample with snapshot metadata, issues, and false positives
+            TrainingExample with catchable TPs and relevant FPs for the targeted files
         """
         snapshots = self.load_snapshots()
         if slug not in snapshots:
             raise KeyError(f"Snapshot '{slug}' not found in snapshots.yaml")
 
         snapshot = snapshots[slug]
-        issues, false_positives = self.load_issues_for_snapshot(slug)
+        all_tps, all_fps = self.load_issues_for_snapshot(slug)
+
+        # Filter to catchable true positives
+        catchable_tps = [tp for tp in all_tps if TrainingExample.should_include_tp(tp, targeted_files)]
+
+        # Filter to relevant false positives
+        relevant_fps = [fp for fp in all_fps if TrainingExample.should_include_fp(fp, targeted_files)]
 
         return TrainingExample(
             snapshot_slug=slug,
             split=snapshot.split,
-            issues=issues,
-            false_positives=false_positives,
+            targeted_files=frozenset(targeted_files),
+            true_positives=catchable_tps,
+            false_positives=relevant_fps,
         )
 
+    @staticmethod
+    def _collect_all_files_from_issues(
+        true_positives: list[TruePositive], false_positives: list[FalsePositive]
+    ) -> set[Path]:
+        """Collect all files referenced in true positives and false positives.
+
+        Args:
+            true_positives: List of true positive issues
+            false_positives: List of false positive issues
+
+        Returns:
+            Set of all file paths referenced in any occurrence
+        """
+        all_files: set[Path] = set()
+        for tp in true_positives:
+            for tp_occ in tp.occurrences:
+                all_files.update(tp_occ.files.keys())
+        for fp in false_positives:
+            for fp_occ in fp.occurrences:
+                all_files.update(fp_occ.files.keys())
+        return all_files
+
     def get_examples_for_split(self, split: Split) -> list[TrainingExample]:
-        """Get all training examples for a given split.
+        """Get training examples for a given split (full snapshot review).
+
+        Each example targets ALL files in the snapshot (full review scenario).
+        For focused file subsets, use get_training_example(slug, targeted_files).
 
         Args:
             split: The split to filter by (TRAIN, VALID, or TEST)
@@ -217,19 +250,26 @@ class FilesystemLoader:
 
         for slug, snapshot in snapshots.items():
             if snapshot.split == split:
-                issues, fps = self.load_issues_for_snapshot(slug)
+                all_tps, all_fps = self.load_issues_for_snapshot(slug)
+                all_files = self._collect_all_files_from_issues(all_tps, all_fps)
+
+                # Create example targeting all files (full snapshot review)
                 example = TrainingExample(
                     snapshot_slug=slug,
                     split=split,
-                    issues=issues,
-                    false_positives=fps,
+                    targeted_files=frozenset(all_files),
+                    true_positives=all_tps,
+                    false_positives=all_fps,
                 )
                 examples.append(example)
 
         return sorted(examples, key=lambda e: e.snapshot_slug)
 
     def get_all_examples(self) -> list[TrainingExample]:
-        """Get all training examples across all splits.
+        """Get all training examples across all splits (full snapshot review).
+
+        Each example targets ALL files in the snapshot (full review scenario).
+        For focused file subsets, use get_training_example(slug, targeted_files).
 
         Returns:
             List of all TrainingExample objects, sorted by slug
@@ -238,12 +278,16 @@ class FilesystemLoader:
         examples = []
 
         for slug, snapshot in snapshots.items():
-            issues, fps = self.load_issues_for_snapshot(slug)
+            all_tps, all_fps = self.load_issues_for_snapshot(slug)
+            all_files = self._collect_all_files_from_issues(all_tps, all_fps)
+
+            # Create example targeting all files (full snapshot review)
             example = TrainingExample(
                 snapshot_slug=slug,
                 split=snapshot.split,
-                issues=issues,
-                false_positives=fps,
+                targeted_files=frozenset(all_files),
+                true_positives=all_tps,
+                false_positives=all_fps,
             )
             examples.append(example)
 

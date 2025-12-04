@@ -12,16 +12,16 @@ from adgn.props.splits import Split
 
 def pytest_generate_tests(metafunc):
     """Generate parametrized tests for all specimens."""
-    if "specimen_slug" in metafunc.fixturenames:
-        from adgn.props.specimens.registry import SpecimenRegistry
+    if "slug" in metafunc.fixturenames:
+        from adgn.props.specimens.registry import SnapshotRegistry
 
-        registry = SpecimenRegistry.from_package_resources()
-        metafunc.parametrize("specimen_slug", registry.snapshot_slugs, ids=lambda slug: slug)
+        registry = SnapshotRegistry.from_package_resources()
+        metafunc.parametrize("slug", registry.snapshot_slugs, ids=lambda slug: str(slug))
 
 
-def test_specimen_has_valid_split(production_specimens_registry, specimen_slug):
+def test_specimen_has_valid_split(production_specimens_registry, slug):
     """Verify specimen has a valid split in manifest (parametrized per specimen)."""
-    split = production_specimens_registry.get_split(specimen_slug)
+    split = production_specimens_registry.get_split(slug)
     assert_that(split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
@@ -62,7 +62,7 @@ async def test_split_issue_counts(production_specimens_registry):
 
     for slug in production_specimens_registry.snapshot_slugs:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
-            issue_counts[production_specimens_registry.get_split(slug)] += len(hydrated.record.issues)
+            issue_counts[production_specimens_registry.get_split(slug)] += len(hydrated.record.true_positives)
 
     # Primary constraint: valid and test must have >=50 issues each
     # (Relaxed from 60 as validation set currently has 57 issues)

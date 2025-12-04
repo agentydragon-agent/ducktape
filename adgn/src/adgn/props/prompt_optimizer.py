@@ -317,7 +317,7 @@ async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path
     registry = SnapshotRegistry.from_package_resources()
 
     async with AsyncExitStack() as stack:
-        train_specimens = registry.get_specimens_by_split(Split.TRAIN)
+        train_specimens = registry.get_snapshots_by_split(Split.TRAIN)
         logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
 
         for slug in train_specimens:

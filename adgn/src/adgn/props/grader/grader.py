@@ -101,13 +101,16 @@ class GradeValidationContext:
         # Collect files from canonical TPs and critique issues
         # Use specimen's convenience properties (delegates to .record)
         tp_files = {
-            f for issue_rec in specimen.issues.values() for instance in issue_rec.instances for f in instance.files
+            f
+            for issue_rec in specimen.true_positives.values()
+            for instance in issue_rec.occurrences
+            for f in instance.files
         }
 
         critique_files = {f for issue in critique.issues for occ in issue.occurrences for f in occ.files}
 
         return cls(
-            allowed_tp_ids={TruePositiveID(id) for id in specimen.issues},
+            allowed_tp_ids={TruePositiveID(id) for id in specimen.true_positives},
             allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
             tp_files=tp_files,
@@ -240,8 +243,8 @@ async def run_grader(
         critique = CriticSubmitPayload.model_validate(_get_required_critique(session, input_data.critique_id).payload)
 
     # Use specimen's canonical issues and false positives (via convenience properties)
-    canonical_typed = hydrated_specimen.record.canonical_issues
-    fp_typed = hydrated_specimen.record.known_false_positives
+    canonical_typed = hydrated_specimen.record.true_positive_issues
+    fp_typed = hydrated_specimen.record.known_false_positives_list
 
     # Convert critique issues to CritiqueInputIssue
     critique_typed = [
@@ -257,7 +260,7 @@ async def run_grader(
 
     wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
     prompt = build_grade_from_json_prompt(
-        canonical_issues=canonical_typed,
+        true_positive_issues=canonical_typed,
         critique_issues=critique_typed,
         known_fps=fp_typed,
         submit_tool_name=submit_tool_name,

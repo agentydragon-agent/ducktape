@@ -87,7 +87,7 @@ SUMMARY: The critic focused on runtime issues but neglected...
 
 ## Key Types
 
-- `SpecimenInput`: Input for evaluation (slug, target_files, ground_truth_issues)
+- `SnapshotInput`: Input for evaluation (slug, target_files, known_true_positives, known_false_positives)
 - `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload)
 - `CriticOutput`: Evaluation result (issues_found, grader_output, recall)
 - `CriticAdapter`: GEPA adapter wrapping MiniCodex + grader

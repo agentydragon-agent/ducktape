@@ -5,12 +5,13 @@ import re
 
 import pytest
 
+from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.specimens.registry import SnapshotRegistry
 
 
-def _all_specimens() -> list[str]:
-    registry = SpecimenRegistry.from_package_resources()
+def _all_specimens() -> set[SnapshotSlug]:
+    registry = SnapshotRegistry.from_package_resources()
     return registry.snapshot_slugs
 
 
@@ -24,7 +25,7 @@ async def test_specimen_issues_and_false_positives_load(specimen: str, productio
     except Exception as e:
         # Load failed - format error for display
         error_str = str(e)
-        print(f"Specimen '{specimen}' has invalid Jsonnet files:", flush=True)
+        print(f"Snapshot '{specimen}' has invalid Jsonnet files:", flush=True)
         print(error_str, flush=True)
 
         # Try to extract file path and line number for context
@@ -44,7 +45,7 @@ async def test_specimen_issues_and_false_positives_load(specimen: str, productio
         except Exception:
             pass
 
-        pytest.fail(f"Specimen '{specimen}' has invalid Jsonnet files: {e}")
+        pytest.fail(f"Snapshot '{specimen}' has invalid Jsonnet files: {e}")
 
 
 @pytest.mark.parametrize("specimen", _all_specimens())
@@ -70,7 +71,7 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
         file_references: dict[Path, set[tuple[int, int | None]]] = {}
 
         for issue in rec.issues.values():
-            for occurrence in issue.instances:
+            for occurrence in issue.occurrences:
                 for file_path, ranges in occurrence.files.items():
                     if file_path not in file_references:
                         file_references[file_path] = set()
@@ -81,7 +82,7 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
 
         # Also check false positives
         for fp in rec.false_positives.values():
-            for occurrence in fp.instances:
+            for occurrence in fp.occurrences:
                 for file_path, ranges in occurrence.files.items():
                     if file_path not in file_references:
                         file_references[file_path] = set()
@@ -92,7 +93,7 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
 
         # If no file references, skip validation
         if not file_references:
-            pytest.skip(f"Specimen '{specimen}' has no file references to validate")
+            pytest.skip(f"Snapshot '{specimen}' has no file references to validate")
 
         # Validate references using the already-hydrated content root (no double-hydration!)
         errors = []
@@ -132,6 +133,6 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
                 errors.append(f"Error reading {file_path}: {e}")
 
         if errors:
-            error_msg = f"Specimen '{specimen}' has invalid file references:\n"
+            error_msg = f"Snapshot '{specimen}' has invalid file references:\n"
             error_msg += "\n".join(f"  - {error}" for error in errors)
             pytest.fail(error_msg)

@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from adgn.props.models.snapshot import GitSource
-from adgn.props.specimens.registry import SpecimenRegistry, resolve_bundle_url
+from adgn.props.specimens.registry import SnapshotRegistry, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -18,7 +18,7 @@ MAX_BUNDLE_SIZE = 10 * 1024 * 1024
 @pytest.fixture(scope="session")
 def specimens_base_for_bundles() -> Path:
     """Base directory containing all specimens."""
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     return registry.base_path
 
 
@@ -44,7 +44,7 @@ def pytest_generate_tests(metafunc):
         return
 
     # Create registry at collection time (lightweight, no specimens loaded yet)
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     all_specimen_slugs = registry.snapshot_slugs
 
     # Filter to Git bundle specimens with file:// URLs
@@ -68,11 +68,11 @@ def pytest_generate_tests(metafunc):
 async def specimen_record(request, production_specimens_registry):
     """Fixture that loads a specimen record without hydration.
 
-    Parameter: specimen_slug (string)
-    Returns: SpecimenRecord
+    Parameter: slug (string)
+    Returns: SnapshotRecord
     """
-    specimen_slug = request.param
-    async with production_specimens_registry.load_and_hydrate(specimen_slug) as hydrated:
+    slug = request.param
+    async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
         return hydrated.record
 
 
@@ -222,7 +222,7 @@ async def test_specimen_respects_exclusion_patterns(specimen_record, hydrated_sp
                 violations.append((path_str, pattern))
 
     assert not violations, (
-        f"Specimen {specimen_record.slug} includes files matching exclusion patterns:\n"
+        f"Snapshot {specimen_record.slug} includes files matching exclusion patterns:\n"
         + "\n".join(f"  {path} matches pattern '{pattern}'" for path, pattern in violations[:10])
         + (f"\n  ... and {len(violations) - 10} more" if len(violations) > 10 else "")
     )

@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from adgn.props.ids import TruePositiveID, FalsePositiveID
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.paths import FileType
 
 # Direct import - circular dependency is broken by deferred import in registry.py
-from adgn.props.specimens.registry import IssueRecord, SnapshotRecord
+from adgn.props.specimens.registry import TruePositiveIssue, KnownFalsePositive, SnapshotRecord
 
 
 @dataclass
@@ -50,12 +51,12 @@ class HydratedSnapshot:
         return self.record.slug
 
     @property
-    def issues(self) -> dict[str, IssueRecord]:
+    def true_positives(self) -> dict[TruePositiveID, TruePositiveIssue]:
         """True positive issues (canonical ground truth)."""
-        return self.record.issues
+        return self.record.true_positives
 
     @property
-    def false_positives(self) -> dict[str, IssueRecord]:
+    def false_positives(self) -> dict[FalsePositiveID, KnownFalsePositive]:
         """Known false positives."""
         return self.record.false_positives
 
@@ -67,13 +68,17 @@ class HydratedSnapshot:
         """
         from itertools import chain
 
-        return set(
-            chain.from_iterable(
-                occurrence.files.keys()
-                for issue_record in chain(self.issues.values(), self.false_positives.values())
-                for occurrence in issue_record.instances
-            )
+        tp_files = (
+            occurrence.files.keys()
+            for issue_record in self.true_positives.values()
+            for occurrence in issue_record.occurrences
         )
+        fp_files = (
+            occurrence.files.keys()
+            for issue_record in self.false_positives.values()
+            for occurrence in issue_record.occurrences
+        )
+        return set(chain.from_iterable(chain(tp_files, fp_files)))
 
 
 # Backwards compatibility alias (deprecated)

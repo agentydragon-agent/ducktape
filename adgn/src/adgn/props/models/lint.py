@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from adgn.props.models.issue import LineRange
+from adgn.props.models.true_positive import LineRange
 from adgn.props.paths import SpecimenRelativePath
 
 

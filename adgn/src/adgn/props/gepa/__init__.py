@@ -22,9 +22,9 @@ from .gepa_adapter import (
     CriticAdapter,
     CriticOutput,
     CriticTrajectory,
-    SpecimenInput,
+    SnapshotInput,
     load_datasets,
     optimize_with_gepa,
 )
 
-__all__ = ["CriticAdapter", "CriticOutput", "CriticTrajectory", "SpecimenInput", "load_datasets", "optimize_with_gepa"]
+__all__ = ["CriticAdapter", "CriticOutput", "CriticTrajectory", "SnapshotInput", "load_datasets", "optimize_with_gepa"]

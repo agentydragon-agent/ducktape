@@ -12,7 +12,7 @@ from pathlib import Path
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from adgn.props.db.models import FalsePositive, Issue, Snapshot
+from adgn.props.db.models import FalsePositive, Snapshot, TruePositive
 from adgn.props.loaders.filesystem import FilesystemLoader
 
 logger = logging.getLogger(__name__)
@@ -150,17 +150,19 @@ def sync_issues_to_db(session: Session) -> SyncStats:
     deleted = 0
 
     # Get existing issues and FPs from DB
-    existing_issues = {(i.snapshot_slug, i.issue_id): i for i in session.query(Issue).all()}
-    existing_fps = {(fp.snapshot_slug, fp.fp_id): fp for fp in session.query(FalsePositive).all()}
+    from adgn.props.ids import SnapshotSlug
+
+    existing_issues = {(SnapshotSlug(i.snapshot_slug), i.tp_id): i for i in session.query(TruePositive).all()}
+    existing_fps = {(SnapshotSlug(fp.snapshot_slug), fp.fp_id): fp for fp in session.query(FalsePositive).all()}
 
     # Track which issues/FPs we've seen (to detect deletions)
     seen_issue_keys = set()
     seen_fp_keys = set()
 
     # Process each snapshot
-    for slug in snapshots.keys():
+    for slug in snapshots:
         try:
-            issues, false_positives = loader.load_issues_for_snapshot(slug)
+            true_positives, false_positives = loader.load_issues_for_snapshot(slug)
         except FileNotFoundError:
             # No issues directory for this snapshot - skip
             logger.debug(f"No issues found for snapshot: {slug}")
@@ -169,24 +171,24 @@ def sync_issues_to_db(session: Session) -> SyncStats:
             logger.error(f"Failed to load issues for {slug}: {e}")
             raise
 
-        # Sync true positives (issues)
-        for issue in issues:
-            key = (issue.snapshot_slug, issue.issue_id)
+        # Sync true positives
+        for issue in true_positives:
+            key = (issue.snapshot_slug, issue.tp_id)
             seen_issue_keys.add(key)
 
             # Convert Pydantic model to dict for upsert
             # Use model_dump() for JSONB fields to get proper serialization
             issue_data = {
                 "snapshot_slug": issue.snapshot_slug,
-                "issue_id": issue.issue_id,
+                "tp_id": issue.tp_id,
                 "rationale": issue.rationale,
                 "occurrences": [occ.model_dump(mode="json") for occ in issue.occurrences],
             }
 
             if key not in existing_issues:
                 # New issue - insert
-                logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.issue_id}")
-                stmt = insert(Issue).values(**issue_data)
+                logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
+                stmt = insert(TruePositive).values(**issue_data)
                 session.execute(stmt)
                 added += 1
                 total += 1
@@ -207,10 +209,10 @@ def sync_issues_to_db(session: Session) -> SyncStats:
 
                 if needs_update:
                     stmt = (
-                        insert(Issue)
+                        insert(TruePositive)
                         .values(**issue_data)
                         .on_conflict_do_update(
-                            index_elements=["snapshot_slug", "issue_id"],
+                            index_elements=["snapshot_slug", "tp_id"],
                             set_={"rationale": issue_data["rationale"], "occurrences": issue_data["occurrences"]},
                         )
                     )

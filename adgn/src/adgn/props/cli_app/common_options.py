@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import typer
 
+from adgn.props.cli_app.types import SNAPSHOT_SLUG
 from adgn.props.docker_env import WORKING_DIR as CRITIC_WORKDIR
 
 # Arguments
 ARG_WORKDIR = typer.Argument(..., exists=True, file_okay=False, resolve_path=True)
 ARG_SCOPE = typer.Argument(..., help="Freeform scope description (e.g. 'all files under src/**')")
-ARG_SNAPSHOT = typer.Argument(..., help="Snapshot slug (under properties/specimens)")
+ARG_SNAPSHOT = typer.Argument(..., help="Snapshot slug (under properties/specimens)", click_type=SNAPSHOT_SLUG)
 ARG_ISSUE_ID = typer.Argument(..., help="Issue id to lint (must have should_flag=true)")
 ARG_OCCURRENCE = typer.Argument(..., help="0-based occurrence index")
 ARG_CMD_LIST = typer.Argument(..., help="Command to run inside container")
@@ -54,5 +55,5 @@ OPT_RUNBOOK_PATH = typer.Option(
     help="Local code path to mount as /workspace (read-only)",
 )
 OPT_RUNBOOK_SNAPSHOT = typer.Option(
-    None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)"
+    None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)", click_type=SNAPSHOT_SLUG
 )

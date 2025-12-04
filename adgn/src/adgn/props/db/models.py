@@ -16,6 +16,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
+from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
+from adgn.props.models.snapshot import BundleFilter, Source
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -30,6 +32,9 @@ class PydanticColumn(TypeDecorator[T]):
     Or register in type_annotation_map for automatic mapping:
         type_annotation_map = {MyPydanticType: PydanticColumn(MyPydanticType)}
 
+    For union types or TypeAliases, pass the type directly (not as a class):
+        source: Mapped[Source] = mapped_column(PydanticColumn(Source))
+
     TODO: Apply this refactor to other JSONB columns in this file where appropriate.
     Candidates: fields that are currently Mapped[dict[str, Any]] but represent
     structured Pydantic models (e.g., input/output fields in CriticRun, GraderRun).
@@ -38,7 +43,12 @@ class PydanticColumn(TypeDecorator[T]):
     impl = JSONB
     cache_ok = True
 
-    def __init__(self, pydantic_type: type[T]):
+    def __init__(self, pydantic_type: type[T] | Any):
+        """Initialize with a Pydantic type or TypeAlias.
+
+        Args:
+            pydantic_type: Can be a Pydantic BaseModel class, or a TypeAlias like Source
+        """
         super().__init__()
         self._adapter: TypeAdapter[T] = TypeAdapter(pydantic_type)
 
@@ -46,7 +56,8 @@ class PydanticColumn(TypeDecorator[T]):
         """Convert Pydantic model to dict for storage (Python → DB)."""
         if value is None:
             return None
-        return value.model_dump(mode="json", by_alias=True)
+        # Use TypeAdapter.dump_python for all types (handles BaseModel and unions)
+        return self._adapter.dump_python(value, mode="json", by_alias=True)  # type: ignore[no-any-return]
 
     def process_result_value(self, value: dict[str, Any] | None, dialect: Any) -> T | None:
         """Convert dict to Pydantic model after loading (DB → Python)."""
@@ -55,10 +66,43 @@ class PydanticColumn(TypeDecorator[T]):
         return self._adapter.validate_python(value)
 
 
+class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
+    """SQLAlchemy column type for SnapshotSlug.
+
+    Stores as String in DB, validates and wraps as SnapshotSlug on load.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def __init__(self):
+        super().__init__()
+        self._adapter: TypeAdapter[_SnapshotSlugBase] = TypeAdapter(_SnapshotSlugBase)
+
+    def process_bind_param(self, value: SnapshotSlug | str | None, dialect: Any) -> str | None:
+        """Convert SnapshotSlug to string for storage (Python → DB)."""
+        if value is None:
+            return None
+        # SnapshotSlug is a NewType over validated string, so it's already a string at runtime
+        return str(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> SnapshotSlug | None:
+        """Convert string to SnapshotSlug after loading (DB → Python)."""
+        if value is None:
+            return None
+        # Validate and wrap in NewType
+        validated = self._adapter.validate_python(value)
+        return SnapshotSlug(validated)
+
+
 class Base(DeclarativeBase):
     """Base class for all models."""
 
-    type_annotation_map: ClassVar[dict[type, Any]] = {dict[str, Any]: JSONB, UUID: PG_UUID(as_uuid=True)}
+    type_annotation_map: ClassVar[dict[type, Any]] = {
+        dict[str, Any]: JSONB,
+        UUID: PG_UUID(as_uuid=True),
+        SnapshotSlug: SnapshotSlugColumn(),
+    }
 
 
 class Snapshot(Base):
@@ -70,19 +114,19 @@ class Snapshot(Base):
 
     __tablename__ = "snapshots"
 
-    slug: Mapped[str] = mapped_column(String, primary_key=True)
+    slug: Mapped[SnapshotSlug] = mapped_column(primary_key=True)
     split: Mapped[str] = mapped_column(String, CheckConstraint("split IN ('train', 'valid', 'test')"), nullable=False)
-    source: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="GitSource/GitHubSource/LocalSource")
-    bundle: Mapped[dict[str, Any] | None] = mapped_column(
-        JSONB, nullable=True, comment="BundleConfig (source_commit, include, exclude)"
-    )
+    source: Mapped[Source] = mapped_column(PydanticColumn(Source), nullable=False)
+    bundle: Mapped[BundleFilter | None] = mapped_column(PydanticColumn(BundleFilter), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
     # Relationships
-    issues: Mapped[list[Issue]] = relationship(back_populates="snapshot_obj", cascade="all, delete-orphan")
+    true_positives: Mapped[list[TruePositive]] = relationship(
+        back_populates="snapshot_obj", cascade="all, delete-orphan"
+    )
     false_positives: Mapped[list[FalsePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
@@ -91,7 +135,7 @@ class Snapshot(Base):
     critiques: Mapped[list[Critique]] = relationship(back_populates="snapshot_obj")
 
     @classmethod
-    def get(cls, slug: str) -> Snapshot | None:
+    def get(cls, slug: SnapshotSlug) -> Snapshot | None:
         """Get snapshot by slug."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
@@ -99,7 +143,8 @@ class Snapshot(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
+        return session.execute(select(cls).where(cls.slug == str(slug))).scalar_one_or_none()
 
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
@@ -113,22 +158,22 @@ class Snapshot(Base):
         return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
 
 
-class Issue(Base):
-    """True positive issue (expected findings).
+class TruePositive(Base):
+    """True positive (expected findings).
 
-    Composite primary key: (snapshot_slug, issue_id).
-    Each issue has one or more occurrences with expect_caught_from semantics.
+    Composite primary key: (snapshot_slug, tp_id).
+    Each true positive has one or more occurrences with expect_caught_from semantics.
     """
 
-    __tablename__ = "issues"
+    __tablename__ = "true_positives"
 
-    snapshot_slug: Mapped[str] = mapped_column(
-        String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
     )
-    issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
     occurrences: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=False, comment="IssueOccurrence objects (files, note, expect_caught_from)"
+        JSONB, nullable=False, comment="TruePositiveOccurrence objects (files, note, expect_caught_from)"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -136,31 +181,33 @@ class Issue(Base):
     )
 
     # Relationships
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="issues")
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="true_positives")
 
     @classmethod
-    def get(cls, snapshot_slug: str, issue_id: str) -> Issue | None:
-        """Get issue by composite key."""
+    def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
+        """Get true positive by composite key."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
         return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.issue_id == issue_id)
+            select(cls).where(cls.snapshot_slug == str(snapshot_slug), cls.tp_id == tp_id)
         ).scalar_one_or_none()
 
     @classmethod
-    def get_for_snapshot(cls, snapshot_slug: str) -> list[Issue]:
-        """Get all issues for a snapshot."""
+    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[TruePositive]:
+        """Get all true positives for a snapshot."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
 
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
+        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
 
 
 class FalsePositive(Base):
@@ -172,8 +219,8 @@ class FalsePositive(Base):
 
     __tablename__ = "false_positives"
 
-    snapshot_slug: Mapped[str] = mapped_column(
-        String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
     )
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
@@ -189,7 +236,7 @@ class FalsePositive(Base):
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="false_positives")
 
     @classmethod
-    def get(cls, snapshot_slug: str, fp_id: str) -> FalsePositive | None:
+    def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
         """Get false positive by composite key."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
@@ -197,12 +244,13 @@ class FalsePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
         return session.execute(
-            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)
+            select(cls).where(cls.snapshot_slug == str(snapshot_slug), cls.fp_id == fp_id)
         ).scalar_one_or_none()
 
     @classmethod
-    def get_for_snapshot(cls, snapshot_slug: str) -> list[FalsePositive]:
+    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[FalsePositive]:
         """Get all false positives for a snapshot."""
         from sqlalchemy import select
         from sqlalchemy.orm import Session
@@ -210,7 +258,8 @@ class FalsePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
+        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
 
 
 class Prompt(Base):
@@ -273,7 +322,9 @@ class Critique(Base):
     __tablename__ = "critiques"
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+    )
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="CriticSubmitPayload as dict")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -299,7 +350,9 @@ class CriticRun(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     prompt_sha256: Mapped[str] = mapped_column(String(64), ForeignKey("prompts.prompt_sha256"), nullable=False)
-    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+    )
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=True)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
@@ -331,7 +384,9 @@ class GraderRun(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    snapshot_slug: Mapped[str] = mapped_column(String, ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+    )
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=False)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(

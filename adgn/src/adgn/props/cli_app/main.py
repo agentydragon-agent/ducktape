@@ -1,7 +1,6 @@
 """Typer-based CLI entry for adgn-properties.
 
 Incremental migration target: we will gradually move subcommands here.
-Current scope: prompt-optimize (with --context) and prompt-eval will be added next.
 """
 
 from __future__ import annotations
@@ -69,8 +68,9 @@ from adgn.props.docker_env import (
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput
+from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
@@ -197,7 +197,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
 
 
 async def _run_snapshot_minicodex_async(
-    snapshot: str,
+    snapshot: SnapshotSlug,
     *,
     dry_run: bool,
     embed_paths: list[Path] | None,
@@ -261,7 +261,7 @@ async def _run_snapshot_minicodex_async(
 @app.command("snapshot-discover")
 @async_run
 async def cmd_snapshot_discover(
-    snapshot: str = opt.ARG_SNAPSHOT,
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     dry_run: bool = opt.OPT_DRY_RUN,
     final_only: bool = opt.OPT_FINAL_ONLY,
     output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
@@ -300,7 +300,7 @@ async def cmd_snapshot_discover(
 async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = opt.OPT_OUTPUT_DIR) -> None:
     """Cluster all 'unknown' issues across all prompt_optimize runs via an in-proc MCP tool.
 
-    The agent must submit a single payload of clusters: [{name: str, issues: [uid,...]}].
+    The agent must submit a single payload of clusters: [{name: str, true_positives: [uid,...]}].
     """
     init_db()
     root = await cluster_unknowns(model=model, out_dir=out_dir, ctx=RunsContext.from_pkg_dir())
@@ -317,29 +317,6 @@ async def prompt_optimize(
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
     await run_prompt_optimizer(budget=budget, ctx=RunsContext.from_pkg_dir(), model=model, verbose=verbose)
-
-
-@app.command("prompt-eval")
-@async_run
-async def prompt_eval(
-    prompt: str = typer.Argument(..., help="Candidate critic system prompt to evaluate across snapshots"),
-    out_dir: Path | None = opt.OPT_OUTPUT_DIR,
-    model: str = opt.OPT_MODEL,
-    debug: bool = typer.Option(False, help="Log raw OpenAI HTTP to JSONL for diagnostics"),
-) -> None:
-    """Evaluate a critic system prompt across all known snapshots and emit metrics list.
-
-    DEPRECATED: This command is being replaced by the database-backed workflow.
-    Use the prompt_eval MCP server or database queries instead.
-    """
-    typer.echo("Error: prompt-eval command is deprecated", err=True)
-    typer.echo("", err=True)
-    typer.echo("The prompt-eval workflow has been migrated to database-backed runs.", err=True)
-    typer.echo("Use one of these alternatives:", err=True)
-    typer.echo("  1. prompt_eval MCP server: run_critic(snapshot, files, prompt_text, model)", err=True)
-    typer.echo("  2. Database queries: Query critic_runs and grader_runs tables", err=True)
-    typer.echo("  3. CLI: adgn-properties2 run --snapshot <slug> --structured true --prompt-text '<prompt>'", err=True)
-    raise typer.Exit(1)
 
 
 @app.command("snapshot-grade")
@@ -409,14 +386,14 @@ def cmd_fix(
 @app.command("lint-issue")
 @async_run
 async def cmd_lint_issue(
-    snapshot: str = typer.Argument(..., help="Snapshot slug (under properties/specimens)"),
-    issue_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
+    tp_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
     occurrence: int = typer.Argument(..., help="0-based occurrence index"),
     model: str = opt.OPT_MODEL,
     dry_run: bool = opt.OPT_DRY_RUN,
 ) -> None:
     rc = await run_specimen_lint_issue_async(
-        snapshot, issue_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
+        snapshot, tp_id, model=model, dry_run=dry_run, occurrence_index=occurrence, client=build_client(model)
     )
     raise typer.Exit(code=rc)
 
@@ -461,7 +438,7 @@ def _render_prompt_with_context(
 
 @asynccontextmanager
 async def _open_run_context(
-    path: Path | None, snapshot: str | None, files: list[str] | None, registry: SnapshotRegistry
+    path: Path | None, snapshot: SnapshotSlug | None, files: list[str] | None, registry: SnapshotRegistry
 ):
     """Yield (wiring, files_spec, label) for either a local path or a hydrated snapshot.
 
@@ -480,7 +457,8 @@ async def _open_run_context(
         yield wiring, all_files, path.name
         return
     # Load and hydrate snapshot (single hydration, avoid wasteful re-hydrate)
-    async with registry.load_and_hydrate(snapshot or "") as hydrated:
+    assert snapshot is not None, "snapshot must be provided if path is None"
+    async with registry.load_and_hydrate(snapshot) as hydrated:
         wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         yield wiring, files_spec, hydrated.slug
@@ -495,7 +473,7 @@ async def _exec_agent(
     output_final_message: Path | None,
     final_only: bool,
     label: str,
-    snapshot_slug: str | None,
+    snapshot_slug: SnapshotSlug | None,
     files_spec: FileScopeSpec | None,
     registry: SnapshotRegistry,
     dry_run: bool = False,
@@ -595,7 +573,7 @@ def _load_preset_text(name: str) -> str:
 async def cmd_run(
     # Scope (exactly one)
     path: Path | None = opt.OPT_RUNBOOK_PATH,
-    snapshot: str | None = opt.OPT_RUNBOOK_SNAPSHOT,
+    snapshot: SnapshotSlug | None = opt.OPT_RUNBOOK_SNAPSHOT,
     # Prompt source (at most one; default by mode)
     preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name; see --list-presets"),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
@@ -694,7 +672,7 @@ def cmd_list_presets() -> None:
 @snapshot_app.command("dump")
 @async_run
 async def snapshot_dump(
-    snapshot: str = typer.Argument(..., help="Snapshot slug to dump as JSON"),
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     pretty: bool = typer.Option(True, help="Pretty-print JSON with indentation"),
 ) -> None:
     """Dump a snapshot's full structure as JSON (manifest, all issues, occurrences)."""
@@ -708,18 +686,18 @@ async def snapshot_dump(
                 "slug": rec.slug,
                 "manifest": rec.manifest.model_dump(mode="json"),
                 "issues": {
-                    issue_id: {
+                    tp_id: {
                         "core": issue.core.model_dump(mode="json"),
-                        "instances": [occ.model_dump(mode="json") for occ in issue.instances],
+                        "instances": [occ.model_dump(mode="json") for occ in issue.occurrences],
                     }
-                    for issue_id, issue in rec.issues.items()
+                    for tp_id, issue in rec.true_positives.items()
                 },
                 "false_positives": {
-                    issue_id: {
+                    tp_id: {
                         "core": issue.core.model_dump(mode="json"),
-                        "instances": [occ.model_dump(mode="json") for occ in issue.instances],
+                        "instances": [occ.model_dump(mode="json") for occ in issue.occurrences],
                     }
-                    for issue_id, issue in rec.false_positives.items()
+                    for tp_id, issue in rec.false_positives.items()
                 },
             }
 
@@ -733,7 +711,7 @@ async def snapshot_dump(
 @snapshot_app.command("exec")
 @async_run
 async def snapshot_exec(
-    snapshot: str = typer.Argument(..., help="Snapshot name/path or manifest"),
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     workdir: Path = opt.OPT_WORKDIR_CRITIC,
     interactive: bool = opt.OPT_INTERACTIVE,
     tty_exec: bool = opt.OPT_TTY_EXEC,

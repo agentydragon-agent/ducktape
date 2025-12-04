@@ -27,10 +27,10 @@ logger = logging.getLogger(__name__)
 
 
 class ClusteredIssueID(BaseModel):
-    """Unique identifier for an issue within a critique (critique_id, issue_id)."""
+    """Unique identifier for an issue within a critique (critique_id, tp_id)."""
 
     critique_id: UUID
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
 
     model_config = ConfigDict(frozen=True)
 
@@ -38,14 +38,14 @@ class ClusteredIssueID(BaseModel):
 class UnknownIssue(BaseModel):
     """Structured view of a single unknown issue extracted from grader runs."""
 
-    issue_id: ClusteredIssueID
+    tp_id: ClusteredIssueID
     rationale: Rationale
     files: set[Path]
 
 
 class ClusterSpec(BaseModel):
     name: str
-    issues: list[ClusteredIssueID]
+    issue_ids: list[ClusteredIssueID]
 
 
 class ClusterSubmitPayload(BaseModel):
@@ -70,7 +70,7 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
     # Extract unknown issues
     return [
         UnknownIssue(
-            issue_id=ClusteredIssueID(critique_id=critique_id, issue_id=input_id),
+            tp_id=ClusteredIssueID(critique_id=critique_id, tp_id=input_id),
             rationale=matching_issue.rationale,
             files={f for occ in matching_issue.occurrences for f in occ.files},
         )
@@ -91,16 +91,16 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
     @srv.tool()
     def submit_result(payload: ClusterSubmitPayload) -> str:
         nonlocal result
-        seen = {it for c in payload.clusters for it in c.issues}
-        all_keys = {u.issue_id for u in snapshot_issues}
-        missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.issue_id))
+        seen = {it for c in payload.clusters for it in c.issue_ids}
+        all_keys = {u.tp_id for u in snapshot_issues}
+        missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.tp_id))
         if missing:
             raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
         result = payload.clusters
         return "ok"
 
     await comp.mount_inproc("cluster_submit", srv)
-    system = "Cluster semantically equivalent issues. Reference issues by their issue_id."
+    system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
     input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
     async with Client(comp) as mcp_client:
         agent = await MiniCodex.create(
@@ -114,7 +114,7 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
             parallel_tool_calls=True,
             tool_policy=RequireAnyTool(),
         )
-        await agent.run("Cluster the following issues. Every issue_id must appear in >=1 cluster.\n\n" + input_lines)
+        await agent.run("Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines)
     if result is None:
         raise RuntimeError("cluster_submit.submit_result not called")
     (out_root / "clusters.json").write_text(

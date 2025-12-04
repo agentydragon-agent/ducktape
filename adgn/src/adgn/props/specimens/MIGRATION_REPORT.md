@@ -13,20 +13,14 @@ Migration completed on 2025-12-04.
 - [x] All imports at the top of each file (standard Jsonnet style: `local I = import '../../lib.libsonnet';`)
 - [x] All multi-file issues have `expect_caught_from` specified
 - [x] Import paths corrected to `../../lib.libsonnet` for 2-level deep files
-- [x] **Snapshot auto-derived from path**: Removed `snapshot` parameter from Jsonnet helpers and all files. Snapshot slug is now derived at Python loader level from file path (e.g., `ducktape/2025-11-26-00/foo.libsonnet` → slug `ducktape/2025-11-26-00`)
+- [x] **Snapshot auto-derived from path**: Removed `snapshot` parameter from Jsonnet helpers and all files. Snapshot slug is now derived at Python loader level from file path
+- [x] **SnapshotSlug NewType**: Converted from `TypeAlias` to `NewType` in `ids.py` for compile-time type safety
+- [x] **ORM SnapshotSlug typing**: All ORM method signatures in `db/models.py` use `SnapshotSlug` type with `str()` casting at SQLAlchemy comparison points. Tables: `Snapshot`, `TruePositive`, `FalsePositive`. Column definitions remain `Mapped[str]` (correct for SQLAlchemy).
+- [x] **Pydantic SnapshotSlug typing**: `TruePositive.snapshot_slug` and `FalsePositive.snapshot_slug` use `SnapshotSlug` NewType
+- [x] **PydanticColumn for Snapshot fields**: `Snapshot.source` (Source union) and `Snapshot.bundle` (BundleFilter) use `PydanticColumn` for automatic Pydantic serialization/deserialization
 
 ### Remaining (Technical Debt)
-- [ ] **ORM SnapshotSlug typing**: All `snapshot_slug` columns in `db/models.py` should use `SnapshotSlug` NewType instead of bare `String`. Tables affected:
-  - `snapshots.slug`
-  - `issues.snapshot_slug`
-  - `false_positives.snapshot_slug`
-  - `critiques.snapshot_slug`
-  - `critic_runs.snapshot_slug`
-  - `grader_runs.snapshot_slug`
-
-- [ ] **Pydantic SnapshotSlug typing**: All `snapshot_slug` fields in Pydantic models (`issue.py`) should use `SnapshotSlug` NewType from `models/snapshot.py` instead of bare `str`. Models affected:
-  - `Issue.snapshot_slug`
-  - `FalsePositive.snapshot_slug`
+None - all migration tasks completed as of 2025-12-04.
 
 ## expect_caught_from: Semantics and Reasoning
 

@@ -14,7 +14,7 @@ from adgn.mcp.exec.models import ExecInput
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, Specimen
+from adgn.props.db.models import CriticRun, Critique, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from tests.support.responses import ResponsesFactory
 
@@ -102,7 +102,7 @@ async def test_critic_zero_issues_submits_successfully(
 
     # Insert specimen into database
     with get_session() as session:
-        spec_record = Specimen(specimen_slug=slug, split="test", labeled_files=["subtract.py"])
+        spec_record = Snapshot(slug=slug, split="test", labeled_files=["subtract.py"])
         session.add(spec_record)
         session.commit()
 
@@ -114,7 +114,7 @@ async def test_critic_zero_issues_submits_successfully(
     client = make_openai_client(_make_critic_response_sequence())
 
     # Run critic
-    input_data = CriticInput(specimen_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+    input_data = CriticInput(snapshot_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
 
     # This should complete successfully without infinite loop
     output, critic_run_id, critique_id = await run_critic(
@@ -135,7 +135,7 @@ async def test_critic_zero_issues_submits_successfully(
     with get_session() as session:
         run = session.get(CriticRun, critic_run_id)
         assert run is not None
-        assert run.specimen_slug == slug
+        assert run.snapshot_slug == slug
         assert run.critique_id == critique_id
 
         critique = session.get(Critique, critique_id)
@@ -160,7 +160,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     # Setup database records (same as above)
     with get_session() as session:
-        spec_record = Specimen(specimen_slug=slug, split="test", labeled_files=["subtract.py"])
+        spec_record = Snapshot(slug=slug, split="test", labeled_files=["subtract.py"])
         session.add(spec_record)
         session.commit()
 
@@ -182,7 +182,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     client = make_openai_client(responses)
 
-    input_data = CriticInput(specimen_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+    input_data = CriticInput(snapshot_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
 
     # This should complete in 3 turns, not loop infinitely
     output, _, _ = await run_critic(

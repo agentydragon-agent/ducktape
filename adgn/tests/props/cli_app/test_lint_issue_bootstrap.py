@@ -17,7 +17,7 @@ from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
 from adgn.props.lint_issue import LintSubmitState, make_linter_handlers
-from adgn.props.models.issue import Occurrence
+from adgn.props.models.true_positive import Occurrence
 from tests.conftest import make_container_opts
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage as StepAssistantMessage, MakeCall

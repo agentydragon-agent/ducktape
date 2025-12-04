@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.props.ids import SnapshotSlug
+from adgn.props.ids import SnapshotSlug, split_snapshot_slug
 from adgn.props.splits import Split
 
 
@@ -75,24 +75,32 @@ class Snapshot(BaseModel):
     bundle: BundleFilter | None = None
     model_config = ConfigDict(extra="forbid")
 
+    def _repo_version(self) -> tuple[str, str]:
+        """Split slug into repo and version components.
+
+        Returns:
+            Tuple of (repo, version) e.g., ('ducktape', '2025-11-26-00')
+        """
+        return split_snapshot_slug(self.slug)
+
     @property
     def repo(self) -> str:
         """Extract repo from slug (e.g., 'ducktape/2025-11-26-00' → 'ducktape')"""
-        return self.slug.split("/", 1)[0]
+        return self._repo_version()[0]
 
     @property
     def version(self) -> str:
         """Extract version from slug (e.g., 'ducktape/2025-11-26-00' → '2025-11-26-00')"""
-        return self.slug.split("/", 1)[1]
+        return self._repo_version()[1]
 
 
 __all__ = [
-    "SnapshotSlug",
-    "GitSource",
-    "GitHubSource",
-    "LocalSource",
-    "Source",
     "BundleFilter",
-    "SnapshotDoc",
+    "GitHubSource",
+    "GitSource",
+    "LocalSource",
     "Snapshot",
+    "SnapshotDoc",
+    "SnapshotSlug",
+    "Source",
 ]

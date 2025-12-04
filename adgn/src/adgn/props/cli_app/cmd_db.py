@@ -124,6 +124,6 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     init_db()
     typer.echo("Recreating database schema...")
     snapshot_stats, issue_stats = recreate_database_schema()
-    typer.echo(f"✓ Database recreated:")
+    typer.echo("✓ Database recreated:")
     typer.echo(f"  Snapshots: {snapshot_stats.summary_text}")
     typer.echo(f"  Issues:    {issue_stats.summary_text}")

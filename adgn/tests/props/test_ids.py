@@ -7,7 +7,7 @@ from pydantic import ValidationError
 import pytest
 
 from adgn.props.grader.models import GradeSubmitInput
-from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
+from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePositiveID
 from adgn.props.paths import FileType
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 
@@ -173,14 +173,14 @@ class TestValidationContexts:
         (tmp_path / "subdir" / "file3.py").write_text("# test")
 
         ctx = SpecimenContext.from_hydrated_specimen(
-            specimen_slug="test/specimen",
+            snapshot_slug=SnapshotSlug("test/specimen"),
             hydrated_root=tmp_path,
             specimen_issues={"issue-001", "issue-002"},
             specimen_fps={"false-pos"},
         )
 
-        # Check specimen_slug
-        assert_that(ctx.specimen_slug, equal_to("test/specimen"))
+        # Check snapshot_slug
+        assert_that(ctx.snapshot_slug, equal_to(SnapshotSlug("test/specimen")))
 
         # Check allowed IDs
         assert_that(ctx.allowed_tp_ids, equal_to(frozenset(["issue-001", "issue-002"])))

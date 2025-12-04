@@ -13,8 +13,8 @@ from adgn.props.grader.models import (
     NovelIssueReasoning,
     ReportedIssueRatios,
 )
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
-from adgn.props.specimens.registry import CanonicalIssue, KnownFalsePositive
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
+from adgn.props.specimens.registry import KnownFalsePositive, TruePositiveIssue
 
 from .schemas import build_input_schemas_json
 from .util import render_prompt_template
@@ -38,7 +38,7 @@ def build_enforce_prompt(
 
 def build_grade_from_json_prompt(
     *,
-    canonical_issues: list[CanonicalIssue],
+    true_positive_issues: list[TruePositiveIssue],
     critique_issues: list[CritiqueInputIssue],
     known_fps: list[KnownFalsePositive],
     submit_tool_name: str,
@@ -62,7 +62,7 @@ def build_grade_from_json_prompt(
     )
 
     # Serialize lists to JSON strings before template rendering
-    canonical_json = TypeAdapter(list[CanonicalIssue]).dump_json(canonical_issues, indent=2).decode()
+    canonical_json = TypeAdapter(list[TruePositiveIssue]).dump_json(true_positive_issues, indent=2).decode()
     critique_json = TypeAdapter(list[CritiqueInputIssue]).dump_json(critique_issues, indent=2).decode()
     known_fps_json = TypeAdapter(list[KnownFalsePositive]).dump_json(known_fps, indent=2).decode()
 

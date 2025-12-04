@@ -8,7 +8,7 @@ from jinja2 import Environment, PackageLoader
 
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 
 

@@ -28,9 +28,9 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
-from adgn.props.ids import BaseIssueID
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import IssueLintFindingRecord, LintSubmitPayload, extract_corrections
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
@@ -118,7 +118,7 @@ def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit"
 @dataclass
 class LintConfig:
     specimen: str
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
     model: str = "gpt-5"
     dry_run: bool = False
 
@@ -136,7 +136,7 @@ def make_linter_bootstrap_calls(
 
     Args:
         wiring: Docker container wiring configuration
-        occ: Issue occurrence with files to inspect
+        occ: TruePositive occurrence with files to inspect
         content_root: Host path to specimen content
         prop_host_paths: Optional property definition files to read
 
@@ -300,7 +300,7 @@ async def lint_issue_run(
     if specimen is None:
         raise ValueError("Either specimen or content_root must be provided")
 
-    async with registry.load_and_hydrate(Path(specimen).name) as hydrated:
+    async with registry.load_and_hydrate(SnapshotSlug(Path(specimen).name)) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
             hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
         )
@@ -375,8 +375,8 @@ async def _lint_issue_run_with_hydrated_root(
 
 
 async def run_specimen_lint_issue_async(
-    specimen: str,
-    issue_id: BaseIssueID,
+    specimen: SnapshotSlug,
+    tp_id: BaseIssueID,
     *,
     model: str = "gpt-5",
     dry_run: bool = False,
@@ -386,12 +386,14 @@ async def run_specimen_lint_issue_async(
     # Load and hydrate once (avoids rehydration in lint_issue_run)
     registry = SnapshotRegistry.from_package_resources()
     async with registry.load_and_hydrate(specimen) as hydrated:
-        irec = hydrated.issues[issue_id]
+        irec = hydrated.true_positives[tp_id]
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue
-        if not (0 <= occurrence_index < len(irec.instances)):
-            raise SystemExit(f"occurrence_index out of range: {occurrence_index} (instances={len(irec.instances)})")
-        occ = irec.instances[occurrence_index]
+        if not (0 <= occurrence_index < len(irec.occurrences)):
+            raise SystemExit(f"occurrence_index out of range: {occurrence_index} (occurrences={len(irec.occurrences)})")
+        tp_occ = irec.occurrences[occurrence_index]
+        # Convert TruePositiveOccurrence to Occurrence (drop expect_caught_from field)
+        occ = Occurrence(files=tp_occ.files, note=tp_occ.note)
 
         # Build submit tool name for dry-run prompt
         submit_tool_name = build_mcp_function("lint_submit", "submit_result")
@@ -409,7 +411,7 @@ async def run_specimen_lint_issue_async(
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
             tmpdir.mkdir(parents=True, exist_ok=True)
             ts = format_timestamp_session()
-            outfile = tmpdir / f"lint_issue_{issue_id}_{ts}.md"
+            outfile = tmpdir / f"lint_issue_{tp_id}_{ts}.md"
             outfile.write_text(prompt, encoding="utf-8")
             print(f"[dry-run] Saved prompt: {outfile}")
             return 0

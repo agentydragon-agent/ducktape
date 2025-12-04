@@ -32,6 +32,7 @@ from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.agent.reducer import AbortIf
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
+from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
@@ -52,7 +53,7 @@ from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
-from adgn.props.models.issue import LineRange, Occurrence
+from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.specimens.registry import SnapshotRegistry
 
@@ -87,16 +88,6 @@ class CriticFailure(BaseModel):
 CriticOutput = Annotated[CriticSuccess | CriticFailure, Field(discriminator="tag")]
 
 
-class SubmitAck(BaseModel):
-    """Acknowledgment from submit tool."""
-
-    ok: bool = Field(default=True, description="Submit succeeded")
-    issues: int = Field(description="Number of issues submitted")
-    occurrences: int = Field(description="Total number of occurrences submitted")
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class ReportFailureInput(BaseModel):
     """Input for report_failure tool."""
 
@@ -110,14 +101,14 @@ class ReportFailureInput(BaseModel):
 # =============================================================================
 
 
-def _find_this_critique(work: CriticSubmitPayload, issue_id: BaseIssueID) -> tuple[int, ReportedIssue] | None:
+def _find_this_critique(work: CriticSubmitPayload, tp_id: BaseIssueID) -> tuple[int, ReportedIssue] | None:
     """Find an issue by ID in the work payload.
 
     Returns:
         Tuple of (index, issue) if found, None otherwise.
     """
     for idx, issue in enumerate(work.issues):
-        if issue.id == issue_id:
+        if issue.id == tp_id:
             return idx, issue
     return None
 
@@ -135,7 +126,7 @@ RangeAtom = int | list[int]
 class UpsertIssueInput(BaseModel):
     """Create or update an issue header (id + rationale)."""
 
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
     description: str = Field(description="Issue rationale/description")
 
     model_config = ConfigDict(extra="forbid")
@@ -144,7 +135,7 @@ class UpsertIssueInput(BaseModel):
 class CancelIssueInput(BaseModel):
     """Remove an issue and all its occurrences by id."""
 
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
 
     model_config = ConfigDict(extra="forbid")
 
@@ -156,7 +147,7 @@ class AddOccurrenceInput(BaseModel):
     Example: [123, [140,150]]
     """
 
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
         list[RangeAtom], Field(min_length=1, description="List of single lines (int) or spans [start,end]")
@@ -168,7 +159,7 @@ class AddOccurrenceInput(BaseModel):
 class SubmitInput(BaseModel):
     """Finalize: the model must state the number of issues it believes it created."""
 
-    issues: int = Field(
+    issues_count: int = Field(
         ge=0,
         description="Number of issues created. REQUIRED: Use 0 if no issues found. Must exactly match the count of issues you created via upsert_issue.",
     )
@@ -182,7 +173,7 @@ class AddOccurrenceFilesInput(BaseModel):
     files: map of file -> list of range atoms (int or [start,end]).
     """
 
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
     files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[RangeAtom]]
 
     model_config = ConfigDict(extra="forbid")
@@ -191,11 +182,11 @@ class AddOccurrenceFilesInput(BaseModel):
 CRITIC_MCP_INSTRUCTIONS = (
     "Critique builder: incrementally add issues and occurrences, then call submit(issues) when complete.\n\n"
     "Workflow:\n"
-    "1. For each distinct issue: upsert_issue(issue_id, description) with a concise rationale\n"
-    "2. Add occurrences: add_occurrence(issue_id, file, ranges) or add_occurrence_files for multi-file spans\n"
-    "3. When finished: ALWAYS call submit(issues=N) where N matches the number of issues created\n\n"
+    "1. For each distinct issue: upsert_issue(tp_id, description) with a concise rationale\n"
+    "2. Add occurrences: add_occurrence(tp_id, file, ranges) or add_occurrence_files for multi-file spans\n"
+    "3. When finished: ALWAYS call submit(true_positives =N) where N matches the number of issues created\n\n"
     "Important:\n"
-    "- If you found ZERO issues, call submit(issues=0) - this is required\n"
+    "- If you found ZERO issues, call submit(true_positives =0) - this is required\n"
     "- Do not send plain-text responses or summaries outside tool calls\n"
     "- The submit count must exactly match the number of issues you created\n"
     "- Use report_failure only when truly blocked (access issues, no files matched scope)\n"
@@ -218,34 +209,34 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
     @mcp.flat_model()
     async def upsert_issue(payload: UpsertIssueInput) -> str:
         """Create or update an issue header (id + rationale)."""
-        result = _find_this_critique(state.work, payload.issue_id)
+        result = _find_this_critique(state.work, payload.tp_id)
         if result is not None:
             idx, existing = result
             state.work.issues[idx] = ReportedIssue(
-                id=payload.issue_id, rationale=payload.description, occurrences=existing.occurrences
+                id=payload.tp_id, rationale=payload.description, occurrences=existing.occurrences
             )
         else:
-            state.work.issues.append(ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[]))
-        return f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
+            state.work.issues.append(ReportedIssue(id=payload.tp_id, rationale=payload.description, occurrences=[]))
+        return f"issue {payload.tp_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
 
     @mcp.flat_model()
     async def cancel_issue(payload: CancelIssueInput) -> str:
         """Remove an issue and all its occurrences by id."""
-        state.work.issues = [it for it in state.work.issues if it.id != payload.issue_id]
+        state.work.issues = [it for it in state.work.issues if it.id != payload.tp_id]
         after_issues = len(state.work.issues)
         after_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"issue {payload.issue_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
+        return f"issue {payload.tp_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
 
     @mcp.flat_model()
     async def add_occurrence(payload: AddOccurrenceInput) -> str:
         """Add one occurrence for an issue."""
-        result = _find_this_critique(state.work, payload.issue_id)
+        result = _find_this_critique(state.work, payload.tp_id)
         if result is None:
-            raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
+            raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
         issue = result[1]
         issue.occurrences.append(Occurrence(files={Path(payload.file): _parse_ranges(payload.ranges)}))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted."
+        return f"occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted."
 
     @mcp.tool()
     async def show_critique() -> CriticSubmitPayload:
@@ -254,18 +245,18 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
     @mcp.flat_model()
     async def add_occurrence_files(payload: AddOccurrenceFilesInput) -> str:
         """Add one occurrence spanning multiple files/ranges."""
-        result = _find_this_critique(state.work, payload.issue_id)
+        result = _find_this_critique(state.work, payload.tp_id)
         if result is None:
-            raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
+            raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
         issue = result[1]
         issue.occurrences.append(
             Occurrence(files={Path(p): _parse_ranges(r) for p, r in (payload.files or {}).items()})
         )
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"multi-file occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted."
+        return f"multi-file occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted."
 
     @mcp.flat_model()
-    async def submit(payload: SubmitInput) -> SubmitAck:
+    async def submit(payload: SubmitInput) -> SimpleOk:
         """Finalize critique and complete the review.
 
         ALWAYS call this when finished analyzing, even if you found zero issues.
@@ -279,11 +270,10 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
                 + ", ".join(str(x) for x in missing)
             )
         actual_issues = len(state.work.issues)
-        if payload.issues != actual_issues:
-            raise ToolError(f"Submit count mismatch: reported {payload.issues} but found {actual_issues}.")
+        if payload.issues_count != actual_issues:
+            raise ToolError(f"Submit count mismatch: reported {payload.issues_count} but found {actual_issues}.")
         state.result = state.work
-        occs = sum(len(i.occurrences) for i in state.work.issues)
-        return SubmitAck(issues=actual_issues, occurrences=occs)
+        return SimpleOk()
 
     @mcp.flat_model()
     async def report_failure(error: ReportFailureInput) -> str:

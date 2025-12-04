@@ -29,7 +29,7 @@ from adgn.props.db.agent_queries import (
     SQL_TOOLS_USED,
     SQL_VALID_AGGREGATES_VIEW,
 )
-from adgn.props.db.models import CriticRun, Critique, Event, GraderRun, Prompt, Specimen
+from adgn.props.db.models import CriticRun, Critique, Event, GraderRun, Prompt, Snapshot
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -49,11 +49,11 @@ def query_test_data(test_db):
     with get_session() as session:
         # Create specimens
         specimens = [
-            Specimen(specimen_slug="train/spec-a", split="train"),
-            Specimen(specimen_slug="train/spec-b", split="train"),
-            Specimen(specimen_slug="train/spec-c", split="train"),
-            Specimen(specimen_slug="valid/spec-a", split="valid"),
-            Specimen(specimen_slug="valid/spec-b", split="valid"),
+            Snapshot(slug="train/spec-a", split="train"),
+            Snapshot(slug="train/spec-b", split="train"),
+            Snapshot(slug="train/spec-c", split="train"),
+            Snapshot(slug="valid/spec-a", split="valid"),
+            Snapshot(slug="valid/spec-b", split="valid"),
         ]
         for spec in specimens:
             session.merge(spec)
@@ -70,12 +70,12 @@ def query_test_data(test_db):
         critiques = [
             Critique(
                 id=critique_a_id,
-                specimen_slug="train/spec-a",
+                slug="train/spec-a",
                 payload={"issues": [{"id": "issue-1", "rationale": "Test issue"}], "notes_md": ""},
             ),
             Critique(
                 id=critique_b_id,
-                specimen_slug="train/spec-b",
+                slug="train/spec-b",
                 payload={"issues": [{"id": "issue-2", "rationale": "Another issue"}], "notes_md": ""},
             ),
         ]
@@ -89,7 +89,7 @@ def query_test_data(test_db):
             CriticRun(
                 transcript_id=uuid4(),
                 prompt_sha256="a" * 64,
-                specimen_slug="train/spec-a",
+                slug="train/spec-a",
                 model="test-model",
                 critique_id=critique_a_id,
                 files=["test.py"],
@@ -98,7 +98,7 @@ def query_test_data(test_db):
             CriticRun(
                 transcript_id=uuid4(),
                 prompt_sha256="a" * 64,
-                specimen_slug="train/spec-b",
+                slug="train/spec-b",
                 model="test-model",
                 critique_id=critique_b_id,
                 files=["test.py"],
@@ -114,7 +114,7 @@ def query_test_data(test_db):
         grader_runs = [
             GraderRun(
                 transcript_id=uuid4(),
-                specimen_slug="train/spec-a",
+                slug="train/spec-a",
                 model="test-model-1",
                 critique_id=critique_a_id,
                 output={
@@ -127,7 +127,7 @@ def query_test_data(test_db):
             ),
             GraderRun(
                 transcript_id=uuid4(),
-                specimen_slug="train/spec-b",
+                slug="train/spec-b",
                 model="test-model-1",
                 critique_id=critique_b_id,
                 output={
@@ -140,7 +140,7 @@ def query_test_data(test_db):
             ),
             GraderRun(
                 transcript_id=uuid4(),
-                specimen_slug="valid/spec-a",
+                slug="valid/spec-a",
                 model="test-model-2",
                 critique_id=critique_a_id,
                 output={

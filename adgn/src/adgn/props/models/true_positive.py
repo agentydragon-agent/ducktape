@@ -34,14 +34,14 @@ class LineRange(BaseModel):
 
 
 class Occurrence(BaseModel):
-    """One occurrence of an Issue.
+    """One occurrence of a TruePositive.
 
     Authoring guidance:
-    - An Issue represents one logical problem (id, rationale, properties). Use
-      one Issue with multiple Occurrences when the same logical problem appears
+    - A TruePositive represents one logical problem (id, rationale, properties). Use
+      one TruePositive with multiple Occurrences when the same logical problem appears
       in several places but should be tracked together.
     - Prefer Occurrence-level notes for location-specific guidance; keep the
-      Issue.rationale for the global explanation and acceptance criteria.
+      TruePositive.rationale for the global explanation and acceptance criteria.
     """
 
     files: dict[SpecimenRelativePath, list[LineRange] | None] = Field(
@@ -66,8 +66,8 @@ class Occurrence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class IssueOccurrence(BaseModel):
-    """One occurrence of a true positive Issue (post-migration).
+class TruePositiveOccurrence(BaseModel):
+    """One occurrence of a true positive.
 
     For true positives, each occurrence tracks minimal file sets required for detection.
     """
@@ -95,7 +95,7 @@ class IssueOccurrence(BaseModel):
         return {str(k): v for k, v in value.items()}
 
     @model_validator(mode="after")
-    def validate_non_empty(self) -> IssueOccurrence:
+    def validate_non_empty(self) -> TruePositiveOccurrence:
         if not self.expect_caught_from:
             raise ValueError("expect_caught_from must be non-empty")
         return self
@@ -113,9 +113,7 @@ class FalsePositiveOccurrence(BaseModel):
         description="Maps file paths to line ranges or None for unspecified anchor"
     )
     note: str | None = Field(default=None, description="Occurrence-specific note")
-    relevant_files: set[Path] = Field(
-        description="Files that make this FP relevant (ANY logic). Must be non-empty."
-    )
+    relevant_files: set[Path] = Field(description="Files that make this FP relevant (ANY logic). Must be non-empty.")
 
     @field_serializer("relevant_files")
     def serialize_relevant_files(self, value: set[Path]) -> list[str]:
@@ -136,23 +134,23 @@ class FalsePositiveOccurrence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class Issue(BaseModel):
+class TruePositive(BaseModel):
     """True positive issue (post-migration).
 
     Represents a real problem that should be detected by critics.
     """
 
-    issue_id: str = Field(description="Derived from filename by loader")
+    tp_id: str = Field(description="Derived from filename by loader")
     snapshot_slug: SnapshotSlug = Field(description="From Jsonnet 'snapshot' field")
     rationale: Rationale
-    occurrences: list[IssueOccurrence]
+    occurrences: list[TruePositiveOccurrence]
 
     @model_validator(mode="after")
-    def validate_multi_occurrence_notes(self) -> Issue:
+    def validate_multi_occurrence_notes(self) -> TruePositive:
         if len(self.occurrences) > 1:
             for occ in self.occurrences:
                 if occ.note is None:
-                    raise ValueError("note required for multi-occurrence issues")
+                    raise ValueError("note required for multi-occurrence true positives")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -174,7 +172,7 @@ class FalsePositive(BaseModel):
         if len(self.occurrences) > 1:
             for occ in self.occurrences:
                 if occ.note is None:
-                    raise ValueError("note required for multi-occurrence issues")
+                    raise ValueError("note required for multi-occurrence false positives")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -204,7 +202,7 @@ SpecimenIssuesLoadError = SnapshotIssuesLoadError
 
 
 class IssueCore(BaseModel):
-    """Issue metadata without occurrences.
+    """True positive metadata without occurrences.
 
     Minimal header describing a logical problem.
     When sending or storing per-location data separately, pair an IssueCore with
@@ -217,7 +215,7 @@ class IssueCore(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def should_catch_occurrence(occ: IssueOccurrence, reviewed_files: set[Path]) -> bool:
+def should_catch_occurrence(occ: TruePositiveOccurrence, reviewed_files: set[Path]) -> bool:
     """Check if occurrence should be caught given reviewed files.
 
     Returns True if any alternative file set is a subset of reviewed files.

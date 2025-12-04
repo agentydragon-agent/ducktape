@@ -42,9 +42,10 @@ from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as D
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput, GradeSubmitInput
+from adgn.props.ids import FalsePositiveID, SnapshotSlug, TruePositiveID
 from adgn.props.loaders.filesystem import FilesystemLoader
 from adgn.props.models.training_example import TrainingExample
-from adgn.props.specimens.registry import IssueRecord, SnapshotRegistry
+from adgn.props.specimens.registry import KnownFalsePositive, SnapshotRegistry, TruePositiveIssue
 from adgn.props.splits import Split
 import gepa
 
@@ -60,17 +61,17 @@ logger = logging.getLogger(__name__)
 class SnapshotInput:
     """Input for a single snapshot evaluation."""
 
-    slug: str
-    target_files: list[str]
-    ground_truth_issues: dict[str, IssueRecord]
-    known_false_positives: dict[str, IssueRecord]
+    slug: SnapshotSlug
+    target_files: set[Path]
+    known_true_positives: dict[TruePositiveID, TruePositiveIssue]
+    known_false_positives: dict[FalsePositiveID, KnownFalsePositive]
 
 
 @dataclass
 class CriticTrajectory:
     """Execution trajectory for a critic run."""
 
-    snapshot_slug: str
+    snapshot_slug: SnapshotSlug
     transcript_id: UUID
     events: list[EventType]
     critique_payload: CriticSubmitPayload
@@ -80,7 +81,7 @@ class CriticTrajectory:
 class CriticOutput:
     """Output from a critic evaluation."""
 
-    snapshot_slug: str
+    snapshot_slug: SnapshotSlug
     issues_found: list[ReportedIssue]
     grader_output: GradeSubmitInput | None
     recall: float
@@ -304,7 +305,7 @@ async def load_datasets(registry: SnapshotRegistry) -> tuple[list[SnapshotInput]
     """Load train and validation datasets for GEPA.
 
     This function hydrates snapshots to discover target files and uses the registry's
-    IssueRecord format which is compatible with the grader.
+    TruePositiveIssue and KnownFalsePositive formats which are compatible with the grader.
 
     For source-of-truth data models, see TrainingExample and FilesystemLoader.
 
@@ -314,14 +315,12 @@ async def load_datasets(registry: SnapshotRegistry) -> tuple[list[SnapshotInput]
     train_slugs = registry.get_snapshots_by_split(Split.TRAIN)
     valid_slugs = registry.get_snapshots_by_split(Split.VALID)
 
-    async def load_snapshot(slug: str) -> SnapshotInput:
+    async def load_snapshot(slug: SnapshotSlug) -> SnapshotInput:
         async with registry.load_and_hydrate(slug) as hydrated:
-            target_files = [str(f) for f in hydrated.files_with_issues()]
-
             return SnapshotInput(
                 slug=slug,
-                target_files=target_files,
-                ground_truth_issues=hydrated.issues,
+                target_files=hydrated.files_with_issues(),
+                known_true_positives=hydrated.true_positives,
                 known_false_positives=hydrated.false_positives,
             )
 

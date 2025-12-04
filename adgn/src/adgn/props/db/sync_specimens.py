@@ -9,7 +9,8 @@ from pathlib import Path
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
-from adgn.props.snapshots.registry import SnapshotRegistry
+from adgn.props.ids import SnapshotSlug
+from adgn.props.specimens.registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,9 @@ class SyncStats:
         return f"{self.total} snapshots (+{self.added}, ~{self.updated}, -{self.deleted})"
 
 
-async def _load_all_labeled_files(slugs: list[str], registry: SnapshotRegistry) -> dict[str, set[Path]]:
+async def _load_all_labeled_files(
+    slugs: list[SnapshotSlug], registry: SnapshotRegistry
+) -> dict[SnapshotSlug, set[Path]]:
     """Load labeled_files (files with ground truth issues) for all snapshots in parallel.
 
     Args:
@@ -40,7 +43,7 @@ async def _load_all_labeled_files(slugs: list[str], registry: SnapshotRegistry) 
         Dict mapping slug -> set of file paths that appear in issue definitions
     """
 
-    async def load_one(slug: str) -> tuple[str, set[Path]]:
+    async def load_one(slug: SnapshotSlug) -> tuple[SnapshotSlug, set[Path]]:
         """Load labeled_files for a single specimen."""
         async with registry.load_and_hydrate(slug) as hydrated:
             # Extract all files referenced in issue definitions (TPs and FPs)
@@ -48,11 +51,11 @@ async def _load_all_labeled_files(slugs: list[str], registry: SnapshotRegistry) 
                 return {
                     file_path
                     for issue_record in records.values()
-                    for occurrence in issue_record.instances
+                    for occurrence in issue_record.occurrences
                     for file_path in occurrence.files
                 }
 
-            return slug, files_from_issue_records(hydrated.record.issues) | files_from_issue_records(
+            return slug, files_from_issue_records(hydrated.record.true_positives) | files_from_issue_records(
                 hydrated.record.false_positives
             )
 
@@ -73,7 +76,7 @@ async def sync_snapshots() -> SyncStats:
     registry = SnapshotRegistry.from_package_resources()
 
     # Get all snapshot slugs and build split mapping
-    source_slugs = set(registry.snapshot_slugs)
+    source_slugs = registry.snapshot_slugs
     source_count = len(source_slugs)
 
     with get_session() as session:
@@ -86,8 +89,7 @@ async def sync_snapshots() -> SyncStats:
         # Full sync: make DB exactly match source
         logger.info(f"Syncing snapshots table (source: {source_count} snapshots, DB: {existing_count})...")
 
-        db_snapshots = {s.slug: s for s in session.query(Snapshot).all()}
-        db_slugs = set(db_snapshots.keys())
+        db_slugs = {s.slug for s in session.query(Snapshot).all()}
 
         added = 0
         updated = 0
@@ -96,7 +98,8 @@ async def sync_snapshots() -> SyncStats:
         # Delete orphaned snapshots (in DB but not in source)
         for slug in db_slugs - source_slugs:
             logger.info(f"  Deleting orphaned snapshot: {slug}")
-            session.delete(db_snapshots[slug])
+            db_row = session.query(Snapshot).filter_by(slug=slug).one()
+            session.delete(db_row)
             deleted += 1
 
         # Add/update from source
@@ -108,21 +111,14 @@ async def sync_snapshots() -> SyncStats:
 
             if slug not in db_slugs:
                 logger.debug(f"  Adding snapshot: {slug} (split={split.value})")
-                session.add(Snapshot(
-                    slug=slug,
-                    split=split.value,
-                    source=manifest.source.model_dump(mode="json"),
-                    bundle=manifest.bundle.model_dump(mode="json") if manifest.bundle else None,
-                ))
+                session.add(Snapshot(slug=slug, split=split.value, source=manifest.source, bundle=manifest.bundle))
                 added += 1
             else:
-                # Update split if changed
-                needs_update = False
-                if db_snapshots[slug].split != split.value:
-                    logger.info(f"  Updating snapshot split: {slug} ({db_snapshots[slug].split} -> {split.value})")
-                    db_snapshots[slug].split = split.value
-                    needs_update = True
-                if needs_update:
+                # Existing snapshot - check if split needs update
+                db_row = session.query(Snapshot).filter_by(slug=slug).one()
+                if db_row.split != split.value:
+                    logger.info(f"  Updating snapshot split: {slug} ({db_row.split} -> {split.value})")
+                    db_row.split = split.value
                     updated += 1
 
         session.commit()

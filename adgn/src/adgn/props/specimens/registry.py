@@ -25,8 +25,13 @@ from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
 import yaml
 
-from ..ids import FalsePositiveID, TruePositiveID
-from ..models.issue import FalsePositiveOccurrence, IssueCore, IssueOccurrence, SnapshotIssuesLoadError
+from ..ids import BaseIssueID, FalsePositiveID, SnapshotSlug, TruePositiveID, split_snapshot_slug
+from ..models.true_positive import (
+    FalsePositiveOccurrence,
+    IssueCore,
+    SnapshotIssuesLoadError,
+    TruePositiveOccurrence,
+)
 from ..models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from ..paths import FileType, classify_path
 from ..rationale import Rationale
@@ -62,35 +67,55 @@ def _specimen_extract_filter(member: tarfile.TarInfo, path: str) -> tarfile.TarI
 
 
 # TODO: Consider generic Issue[IDType] to reduce duplication between these models
-class CanonicalIssue(BaseModel):
-    """Canonical true positive issue with typed namespaced ID."""
+class TruePositiveIssue(BaseModel):
+    """Canonical true positive issue with typed namespaced ID.
+
+    Uses TruePositiveOccurrence to preserve expect_caught_from metadata.
+    """
 
     id: TruePositiveID
     rationale: Rationale
-    occurrences: list[Occurrence]
+    occurrences: list[TruePositiveOccurrence]
 
     model_config = ConfigDict(frozen=True)
+
+    @property
+    def core(self) -> IssueCore:
+        """IssueCore for compatibility with code expecting nested structure.
+
+        TODO: This is ugly - we shouldn't be constructing IssueCore at runtime.
+        Consider refactoring consumers to use id/rationale directly or removing IssueCore entirely.
+        """
+        return IssueCore(id=BaseIssueID(str(self.id)), rationale=self.rationale)
 
 
 class KnownFalsePositive(BaseModel):
-    """Known false positive issue with typed namespaced ID."""
+    """Known false positive issue with typed namespaced ID.
+
+    Uses FalsePositiveOccurrence to preserve relevant_files metadata.
+    """
 
     id: FalsePositiveID
     rationale: Rationale
-    occurrences: list[Occurrence]
+    occurrences: list[FalsePositiveOccurrence]
 
     model_config = ConfigDict(frozen=True)
 
+    @property
+    def core(self) -> IssueCore:
+        """IssueCore for compatibility with code expecting nested structure."""
+        return IssueCore(id=BaseIssueID(str(self.id)), rationale=self.rationale)
+
 
 @dataclass(frozen=True)
-class IssueRecord:
-    core: IssueCore
-    instances: list[IssueOccurrence | FalsePositiveOccurrence]
+class TruePositivesLoadResult:
+    items: list[TruePositiveIssue]
+    errors: list[str]
 
 
 @dataclass(frozen=True)
-class IssuesLoadResult:
-    items: list[IssueRecord]
+class FalsePositivesLoadResult:
+    items: list[KnownFalsePositive]
     errors: list[str]
 
 
@@ -178,29 +203,23 @@ def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, di
     return true_positives, false_positives
 
 
-def _validate_issues_from_dicts(
+def _validate_true_positives_from_dicts(
     raw_issues: dict[str, dict],
     validation_context: dict,
     strict: bool,
-    *,
-    is_true_positive: bool = True,
-) -> IssuesLoadResult:
-    """Validate pre-evaluated issue dicts with complete context.
+) -> TruePositivesLoadResult:
+    """Validate true positive dicts with complete context.
 
     Args:
         raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
         validation_context: Complete validation context (specimen_context with files + IDs)
         strict: If True, raise on any validation errors
-        is_true_positive: If True, validate as IssueOccurrence; if False, as FalsePositiveOccurrence
 
     Returns:
-        IssuesLoadResult with validated items and errors
+        TruePositivesLoadResult with validated items and errors
     """
-    items: list[IssueRecord] = []
+    items: list[TruePositiveIssue] = []
     errors: list[str] = []
-
-    # Select occurrence model based on type
-    occurrence_model = IssueOccurrence if is_true_positive else FalsePositiveOccurrence
 
     for issue_id, issue_dict in raw_issues.items():
         if not isinstance(issue_dict, dict):
@@ -208,21 +227,78 @@ def _validate_issues_from_dicts(
             continue
 
         try:
-            # IssueCore validation (strip non-core fields)
+            # Extract fields (strip non-core fields)
             non_core_fields = {"instances", "occurrences", "should_flag"}
             core_fields = {k: v for k, v in issue_dict.items() if k not in non_core_fields}
             core = IssueCore.model_validate(core_fields, context=validation_context)
+
             # Occurrences may be named "instances" or "occurrences" depending on source
             inst_raw = issue_dict.get("instances") or issue_dict.get("occurrences", [])
-            instances = [occurrence_model.model_validate(inst, context=validation_context) for inst in inst_raw]
-            items.append(IssueRecord(core=core, instances=instances))
+            occurrences = [TruePositiveOccurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
+
+            items.append(
+                TruePositiveIssue(
+                    id=TruePositiveID(core.id),
+                    rationale=core.rationale,
+                    occurrences=occurrences,
+                )
+            )
         except Exception as e:
             errors.append(f"{issue_id}: {e}")
             continue
 
     if errors and strict:
         raise SnapshotIssuesLoadError(errors)
-    return IssuesLoadResult(items=items, errors=errors)
+    return TruePositivesLoadResult(items=items, errors=errors)
+
+
+def _validate_false_positives_from_dicts(
+    raw_issues: dict[str, dict],
+    validation_context: dict,
+    strict: bool,
+) -> FalsePositivesLoadResult:
+    """Validate false positive dicts with complete context.
+
+    Args:
+        raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
+        validation_context: Complete validation context (specimen_context with files + IDs)
+        strict: If True, raise on any validation errors
+
+    Returns:
+        FalsePositivesLoadResult with validated items and errors
+    """
+    items: list[KnownFalsePositive] = []
+    errors: list[str] = []
+
+    for issue_id, issue_dict in raw_issues.items():
+        if not isinstance(issue_dict, dict):
+            errors.append(f"{issue_id}: Not a dict (got {type(issue_dict)})")
+            continue
+
+        try:
+            # Extract fields (strip non-core fields)
+            non_core_fields = {"instances", "occurrences", "should_flag"}
+            core_fields = {k: v for k, v in issue_dict.items() if k not in non_core_fields}
+            core = IssueCore.model_validate(core_fields, context=validation_context)
+
+            # Occurrences may be named "instances" or "occurrences" depending on source
+            inst_raw = issue_dict.get("instances") or issue_dict.get("occurrences", [])
+            occurrences = [FalsePositiveOccurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
+
+            items.append(
+                KnownFalsePositive(
+                    id=FalsePositiveID(core.id),
+                    rationale=core.rationale,
+                    occurrences=occurrences,
+                )
+            )
+        except Exception as e:
+            errors.append(f"{issue_id}: {e}")
+            continue
+
+    if errors and strict:
+        raise SnapshotIssuesLoadError(errors)
+    return FalsePositivesLoadResult(items=items, errors=errors)
 
 
 def _xdg_cache_base() -> Path:
@@ -448,13 +524,13 @@ def resolve_source_root(man: SnapshotDoc, snapshot_path: Path) -> Path:
 
 @dataclass(frozen=True)
 class SnapshotRecord:
-    """A snapshot record = source snapshot + issues + false positives."""
+    """A snapshot record = source snapshot + true positives + false positives."""
 
     slug: str
     snapshot_path: Path  # Synthetic path to snapshot directory (for URL resolution)
     manifest: SnapshotDoc
-    issues: dict[str, IssueRecord]
-    false_positives: dict[str, IssueRecord]
+    true_positives: dict[TruePositiveID, TruePositiveIssue]
+    false_positives: dict[FalsePositiveID, KnownFalsePositive]
     all_discovered_files: dict[Path, FileType]  # File map from hydration (for complete validation contexts)
 
     @asynccontextmanager
@@ -507,24 +583,20 @@ class SnapshotRecord:
             shutil.rmtree(mount_root, ignore_errors=True)
 
     @property
-    def canonical_issues(self) -> list[CanonicalIssue]:
-        """Canonical true positive issues with typed namespaced IDs."""
-        return [
-            CanonicalIssue(
-                id=TruePositiveID(record.core.id), rationale=record.core.rationale, occurrences=record.instances
-            )
-            for record in self.issues.values()
-        ]
+    def true_positive_issues(self) -> list[TruePositiveIssue]:
+        """True positive issues with typed namespaced IDs.
+
+        Preserves expect_caught_from metadata for each occurrence.
+        """
+        return list(self.true_positives.values())
 
     @property
-    def known_false_positives(self) -> list[KnownFalsePositive]:
-        """Known false positive issues with typed namespaced IDs."""
-        return [
-            KnownFalsePositive(
-                id=FalsePositiveID(record.core.id), rationale=record.core.rationale, occurrences=record.instances
-            )
-            for record in self.false_positives.values()
-        ]
+    def known_false_positives_list(self) -> list[KnownFalsePositive]:
+        """Known false positive issues with typed namespaced IDs.
+
+        Preserves relevant_files metadata for each occurrence.
+        """
+        return list(self.false_positives.values())
 
 
 class SnapshotRegistry:
@@ -537,9 +609,9 @@ class SnapshotRegistry:
 
     def __init__(
         self,
-        snapshots: dict[str, SnapshotRecord | None],
+        snapshots: dict[SnapshotSlug, SnapshotRecord | None],
         base_path: Path,
-        manifests: dict[str, SnapshotDoc],
+        manifests: dict[SnapshotSlug, SnapshotDoc],
     ) -> None:
         # No I/O here; accept fully materialized data
         self._snapshots = snapshots
@@ -563,13 +635,14 @@ class SnapshotRegistry:
         if not snapshots_yaml.exists():
             raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
 
-        snapshots: dict[str, SnapshotRecord | None] = {}
-        manifests: dict[str, SnapshotDoc] = {}
+        snapshots: dict[SnapshotSlug, SnapshotRecord | None] = {}
+        manifests: dict[SnapshotSlug, SnapshotDoc] = {}
 
         raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
         for slug, data in raw.items():
-            snapshots[slug] = None
-            manifests[slug] = SnapshotDoc.model_validate(data)
+            snapshot_slug = SnapshotSlug(slug)
+            snapshots[snapshot_slug] = None
+            manifests[snapshot_slug] = SnapshotDoc.model_validate(data)
 
         return cls(snapshots=snapshots, base_path=base, manifests=manifests)
 
@@ -593,11 +666,11 @@ class SnapshotRegistry:
         return self._base_path
 
     @property
-    def snapshot_slugs(self) -> list[str]:
-        """List of snapshot slugs in this registry."""
-        return sorted(self._snapshots.keys())
+    def snapshot_slugs(self) -> set[SnapshotSlug]:
+        """Set of snapshot slugs in this registry."""
+        return set(self._snapshots.keys())
 
-    def _get_snapshot_path(self, slug: str) -> Path:
+    def _get_snapshot_path(self, slug: SnapshotSlug) -> Path:
         """Get snapshot directory path for a slug.
 
         Returns a synthetic path used for bundle URL resolution. The path points
@@ -610,10 +683,11 @@ class SnapshotRegistry:
         Returns:
             Resolved absolute path inside snapshot directory (for URL resolution)
         """
-        return (self._base_path / slug.replace("/", os.sep) / "_snapshot").resolve()
+        repo, version = split_snapshot_slug(slug)
+        return (self._base_path / repo / version / "_snapshot").resolve()
 
     @asynccontextmanager
-    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSnapshot]:
+    async def load_and_hydrate(self, slug: SnapshotSlug) -> AsyncIterator[HydratedSnapshot]:
         """Load snapshot with validation and yield hydrated snapshot object.
 
         Avoids double-hydration when caller needs both loaded issues and hydrated snapshot.
@@ -657,8 +731,8 @@ class SnapshotRegistry:
             context_dict = {"specimen_context": ctx}
 
             # Validate with complete context (both paths and IDs)
-            res_pos = _validate_issues_from_dicts(raw_issues, context_dict, strict=True, is_true_positive=True)
-            res_fp = _validate_issues_from_dicts(raw_fps, context_dict, strict=True, is_true_positive=False)
+            res_pos = _validate_true_positives_from_dicts(raw_issues, context_dict, strict=True)
+            res_fp = _validate_false_positives_from_dicts(raw_fps, context_dict, strict=True)
 
             if res_pos.errors or res_fp.errors:
                 raise SnapshotIssuesLoadError([*res_pos.errors, *res_fp.errors])
@@ -668,8 +742,8 @@ class SnapshotRegistry:
                 slug=slug,
                 snapshot_path=snapshot_path,
                 manifest=man,
-                issues={it.core.id: it for it in res_pos.items},
-                false_positives={it.core.id: it for it in res_fp.items},
+                true_positives={it.id: it for it in res_pos.items},
+                false_positives={it.id: it for it in res_fp.items},
                 all_discovered_files=all_discovered_files,  # Store for complete validation contexts
             )
 
@@ -685,7 +759,7 @@ class SnapshotRegistry:
                 ignore_errors=True,
             )
 
-    def load_manifest_only(self, slug: str) -> tuple[Path, SnapshotDoc]:
+    def load_manifest_only(self, slug: SnapshotSlug) -> tuple[Path, SnapshotDoc]:
         """Load only the manifest (no Jsonnet issues) for fast collection.
 
         Args:
@@ -702,7 +776,7 @@ class SnapshotRegistry:
         snapshot_path = self._get_snapshot_path(slug)
         return (snapshot_path, self._manifests[slug])
 
-    def list_all(self) -> set[str]:
+    def list_all(self) -> set[SnapshotSlug]:
         """List all snapshot slugs in hierarchical format (repo/name).
 
         Returns snapshot slugs like "ducktape/2025-11-20-adgn", "crush/2025-08-30-internal_db"
@@ -712,7 +786,7 @@ class SnapshotRegistry:
         """
         return set(self._snapshots.keys())
 
-    def get_split(self, slug: str) -> Split:
+    def get_split(self, slug: SnapshotSlug) -> Split:
         """Get the train/valid/test split for a snapshot from its manifest.
 
         Args:
@@ -728,20 +802,20 @@ class SnapshotRegistry:
         _, manifest = self.load_manifest_only(slug)
         return manifest.split
 
-    def get_snapshots_by_split(self, split: Split) -> list[str]:
+    def get_snapshots_by_split(self, split: Split) -> set[SnapshotSlug]:
         """Get all snapshot slugs for a given split.
 
         Args:
             split: The split to filter by (TRAIN, VALID, or TEST)
 
         Returns:
-            List of snapshot slugs in the given split, sorted alphabetically
+            Set of snapshot slugs in the given split (unsorted)
         """
-        result = []
-        for slug in sorted(self._snapshots.keys()):
+        result = set()
+        for slug in self._snapshots.keys():
             _, manifest = self.load_manifest_only(slug)
             if manifest.split == split:
-                result.append(slug)
+                result.add(slug)
         return result
 
 

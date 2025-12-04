@@ -21,8 +21,9 @@ from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, Response
 from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, GraderRun, Specimen
+from adgn.props.db.models import CriticRun, GraderRun, Snapshot
 from adgn.props.grader.models import GradeSubmitInput
+from adgn.props.ids import SnapshotSlug
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,
@@ -45,20 +46,20 @@ TEST_SPECIMEN_SLUG = "test-fixtures/test-trivial"
 def get_critic_runs_for_slug(slug: str) -> list[CriticRun]:
     """Query all critic runs for a given specimen slug."""
     with get_session() as session:
-        return session.query(CriticRun).filter_by(specimen_slug=slug).all()
+        return session.query(CriticRun).filter_by(slug=slug).all()
 
 
 def get_grader_runs_for_slug(slug: str) -> list[GraderRun]:
     """Query all grader runs for a given specimen slug."""
     with get_session() as session:
-        return session.query(GraderRun).filter_by(specimen_slug=slug).all()
+        return session.query(GraderRun).filter_by(slug=slug).all()
 
 
 @pytest.fixture
 def test_specimen(test_db):
     """Create test specimen record (uses test_db fixture from tests/props/conftest.py)."""
     with get_session() as session:
-        specimen = Specimen(specimen_slug=TEST_SPECIMEN_SLUG, split="train", labeled_files=["subtract.py"])
+        specimen = Snapshot(slug=TEST_SPECIMEN_SLUG, split="train", labeled_files=["subtract.py"])
         session.merge(specimen)
         session.commit()
 
@@ -84,7 +85,9 @@ def po_agent_steps():
             lambda out: (
                 "prompt_eval",
                 "run_critic",
-                CriticInput(specimen_slug=TEST_SPECIMEN_SLUG, files="all", prompt_sha256=out.prompt_sha256),
+                CriticInput(
+                    snapshot_slug=SnapshotSlug(TEST_SPECIMEN_SLUG), files="all", prompt_sha256=out.prompt_sha256
+                ),
             ),
         ),
         ExtractThenCall(
@@ -100,16 +103,14 @@ def po_agent_steps():
 def critic_agent_steps():
     """Declarative steps for Critic agent - reports issues."""
     return [
-        MakeCall(
-            "critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue-001", description="Test issue")
-        ),
+        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(tp_id="test-issue-001", description="Test issue")),
         CheckThenCall(
             "critic_submit_upsert_issue",
             "critic_submit",
             "add_occurrence",
-            AddOccurrenceInput(issue_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
+            AddOccurrenceInput(tp_id="test-issue-001", file="adgn/README.md", ranges=[[10, 20]]),
         ),
-        CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues=1)),
+        CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues_count=1)),
     ]
 
 
@@ -224,7 +225,7 @@ async def test_full_workflow_po_agent_critic_grader(
 
     with (
         patch(
-            "adgn.props.specimens.registry.SpecimenRegistry.from_package_resources",
+            "adgn.props.specimens.registry.SnapshotRegistry.from_package_resources",
             return_value=test_specimens_registry,
         ),
         patch("adgn.props.prompt_optimizer.build_client", return_value=mock),

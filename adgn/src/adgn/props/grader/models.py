@@ -15,7 +15,7 @@ from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePosi
 
 if TYPE_CHECKING:
     from adgn.props.grader.grader import GradeValidationContext
-from adgn.props.models.issue import Occurrence
+from adgn.props.models.true_positive import Occurrence
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 

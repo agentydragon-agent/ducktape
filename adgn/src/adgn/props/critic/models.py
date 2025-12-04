@@ -13,7 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.props.ids import BaseIssueID, SnapshotSlug
-from adgn.props.models.issue import Occurrence
+from adgn.props.models.true_positive import Occurrence
 from adgn.props.rationale import Rationale
 
 # =============================================================================
