@@ -28,7 +28,7 @@ class SpecimenContext:
     - TruePositiveID (validates .id against allowed_tp_ids)
     - FalsePositiveID (validates .id against allowed_fp_ids)
 
-    Context key: "specimen_context"
+    Context key: "snapshots"
 
     TODO: Rename class to SnapshotContext when unbundling specimen concept.
     """

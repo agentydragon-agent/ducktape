@@ -150,10 +150,10 @@ Between steps, query the database to inspect results, understand failures, and d
 - Understand failure patterns before spending budget on new runs
 
 **2. Debug on train specimens:**
-- Pick 2-3 train specimens where best prompt struggled
+- Pick 2-3 train snapshots where best prompt struggled
 - Run file-level evaluations on specific files with issues
 - Iterate quickly to test hypotheses
-- Compare ground truth (`/specimen_defs/train/{slug}/issues/*.libsonnet`) to critique payload
+- Compare ground truth (query `true_positives` and `false_positives` for snapshot_slug) to critique payload
 - Query events table to analyze agent trajectory (which tools used, which files read, execution order)
 
 **3. Test on full train split when you have a candidate:**
@@ -189,9 +189,11 @@ Budget tracking is available via the `run_costs` view. Use the cost tracking que
 You have READ-ONLY database access as `agent_user`. Connection URL is in `DATABASE_URL` environment variable.
 
 **Key tables:**
-- `specimens`: specimen metadata (slug, split, labeled_files - files with ground truth issues)
+- `snapshots`: snapshot metadata (slug, split) - code snapshots with split assignment
+- `true_positives`: expected findings (composite key: snapshot_slug + tp_id, includes rationale and occurrences with expect_caught_from)
+- `false_positives`: known false positives (composite key: snapshot_slug + fp_id, includes rationale and occurrences with relevant_files)
 - `prompts`: prompt text by SHA256 hash
-- `critic_runs`: critic execution records (links to prompt, specimen, critique, transcript)
+- `critic_runs`: critic execution records (links to prompt, snapshot, critique, transcript)
 - `critiques`: reported issues from critic (payload JSONB)
 - `grader_runs`: grading results (output JSONB with recall/precision/metrics)
 - `events`: full agent execution traces (tool calls, outputs, reasoning) by transcript_id
@@ -215,8 +217,17 @@ You have READ-ONLY database access as `agent_user`. Connection URL is in `DATABA
 **Example queries:**
 
 ```sql
--- List train specimens
+-- List train snapshots
 {{ sql_list_train }}
+
+-- List all true positives for train split (with rationale)
+{{ sql_list_train_tps }}
+
+-- List all false positives for train split (with rationale)
+{{ sql_list_train_fps }}
+
+-- Count true positives and false positives per train snapshot
+{{ sql_count_issues_by_snapshot }}
 
 -- Recent grader results (last 10 train runs)
 {{ sql_recent_graders }}
@@ -228,22 +239,31 @@ You have READ-ONLY database access as `agent_user`. Connection URL is in `DATABA
 {{ sql_link_to_prompt }}
 ```
 
-### Filesystem (read-only mounts)
+### Filesystem Access
 
-**Train specimen source code:**
-- `/specimens/train/<project>/<date-nn>/` - hydrated git repositories with code
-- Example: `/specimens/train/ducktape/2025-11-20-00/`
+**Train snapshot source code** (read-only):
+- Mounted at `/snapshots/train/<project>/<date>/` - hydrated git repositories with code
+- Example: `/snapshots/train/ducktape/2025-11-20/`
+- Use to analyze code structure, run tools, and understand the codebase
 
-**Train specimen ground truth:**
-- `/specimen_defs/train/<project>/<date-nn>/manifest.yaml` - specimen metadata
-- `/specimen_defs/train/<project>/<date-nn>/issues/*.libsonnet` - ground truth issue definitions
-- `/specimen_defs/train/<project>/<date-nn>/README.md` - additional context (if present)
-- Example: `/specimen_defs/train/ducktape/2025-11-20-00/issues/sandbox-silent-fallback.libsonnet`
+**Your workspace** (read-write):
+- `/workspace/` - for writing prompt iterations and analysis notes
 
-Compare ground truth to critiques in database to identify what the agent missed or incorrectly reported.
+### Ground Truth Access (Database Only)
 
-**Your workspace:**
-- `/workspace/` - read-write, for writing prompt iterations
+**All ground truth is in the database** via the `true_positives` and `false_positives` tables.
+
+**To access ground truth:**
+- Query `true_positives` table for expected findings (includes rationale, occurrences with expect_caught_from)
+- Query `false_positives` table for known false positives (includes rationale, occurrences with relevant_files)
+- Use SQL queries above to list all TPs/FPs by snapshot or get counts
+- Join with `snapshots` table to filter by split (train/valid/test)
+
+**Comparing ground truth to agent output:**
+- Query `true_positives` for a snapshot to get expected findings
+- Query `critiques` table for same snapshot to see what agent reported
+- Compare to identify false negatives (missed issues) and false positives (incorrect reports)
+- Use `grader_runs` table for automated recall/precision metrics
 
 ## Analyzing Agent Trajectories
 
@@ -278,7 +298,7 @@ The `events` table contains full execution traces for critic and grader runs. Us
    - What was the sequence of operations?
 
 2. **Identify coverage gaps:**
-   - Read ground truth from filesystem: `/specimen_defs/train/<slug>/issues/*.libsonnet`
+   - Query ground truth from database: `true_positives` and `false_positives` tables for snapshot_slug
    - Query critiques table to see what was reported
    - For false negatives, query the trajectory: Did agent examine the relevant file? Run relevant tools? Which tools succeeded/failed?
 
@@ -385,8 +405,8 @@ Train and validation splits may already contain diverse specimens. Don't assume 
 - Which changes hurt generalization (improved train but hurt valid)?
 
 **Deep-dive on failures:**
-- Pick 2-3 train specimens where best prompt had low recall
-- Read their ground truth issues (`/specimen_defs/train/<slug>/issues/*.libsonnet`)
+- Pick 2-3 train snapshots where best prompt had low recall
+- Query their ground truth issues from database (`true_positives` and `false_positives` tables by snapshot_slug)
 - Query critiques table to see what was reported vs what was missed
 - **Analyze the trajectory**: Query events table to see full agent execution
   - Did agent examine relevant files? Run appropriate tools? In what order?

@@ -45,7 +45,7 @@ from adgn.props.grader.models import GraderOutput, GradeSubmitInput
 from adgn.props.ids import FalsePositiveID, SnapshotSlug, TruePositiveID
 from adgn.props.loaders.filesystem import FilesystemLoader
 from adgn.props.models.training_example import TrainingExample
-from adgn.props.specimens.registry import KnownFalsePositive, SnapshotRegistry, TruePositiveIssue
+from adgn.props.snapshot_registry import KnownFalsePositive, SnapshotRegistry, TruePositiveIssue
 from adgn.props.splits import Split
 import gepa
 

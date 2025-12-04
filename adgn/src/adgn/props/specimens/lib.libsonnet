@@ -49,6 +49,18 @@ local normFiles(files) = {
 //                       Semantics: Issue detectable from ANY of these file sets (OR logic)
 //                       Each inner list is files required together (AND logic)
 //
+// Detection standard for expect_caught_from:
+//   "If I gave a high-quality critic this file set to review, and they failed to
+//   find this issue, would that be a failure on their part?"
+//
+//   A thorough code review starting from these files naturally includes:
+//   - Following imports/calls to check APIs
+//   - Searching for existing helpers/patterns
+//   - Looking for duplication in the codebase
+//   - All normal code review activities
+//
+//   NOT: "Can you detect this reading only these files in isolation?"
+//
 // Auto-inference:
 //   - If filesToRanges has 1 file AND expect_caught_from not provided:
 //     Auto-infers expect_caught_from = [[that_single_file]]
@@ -78,6 +90,18 @@ local issue(rationale, filesToRanges, expect_caught_from=null) =
 //     - files: {file: [ranges]|null} dict
 //     - note: string (REQUIRED - explains this specific occurrence)
 //     - expect_caught_from: [[files...], ...] (REQUIRED if total files > 1)
+//
+// Detection standard for expect_caught_from (same as issue()):
+//   "If I gave a high-quality critic this file set to review, and they failed to
+//   find this issue, would that be a failure on their part?"
+//
+//   A thorough code review starting from these files naturally includes:
+//   - Following imports/calls to check APIs
+//   - Searching for existing helpers/patterns
+//   - Looking for duplication in the codebase
+//   - All normal code review activities
+//
+//   NOT: "Can you detect this reading only these files in isolation?"
 //
 // Validation:
 //   - ALL occurrences must have 'note' field

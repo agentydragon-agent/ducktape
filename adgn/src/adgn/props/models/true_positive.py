@@ -80,7 +80,13 @@ class TruePositiveOccurrence(BaseModel):
         description=(
             "Minimal file sets for detection (AND/OR logic). "
             "Outer set = alternatives (OR), inner frozenset = required together (AND). "
-            "Must be non-empty."
+            "Must be non-empty. "
+            "\n\n"
+            "Detection standard: 'If I gave a high-quality critic this file set to review, "
+            "and they failed to find this issue, would that be a failure on their part?' "
+            "A thorough code review starting from these files naturally includes following "
+            "imports/calls, checking for existing patterns, and searching for duplication. "
+            "Not 'can you detect this reading only these files in isolation'."
         )
     )
 

@@ -1,7 +1,6 @@
 local I = import '../../lib.libsonnet';
 
-// iss-017: _run_in_sandbox is misleading and a security risk when it silently runs unsandboxed
-I.issueMulti(
+I.issue(
   rationale=|||
     The helper `_run_in_sandbox` (and the public `run_in_sandbox` wrapper) claim to run commands in a sandbox, but on non-Linux systems or when bubblewrap (bwrap) is missing they silently fall back to running the command unsandboxed.
 
@@ -12,17 +11,14 @@ I.issueMulti(
       2) Or make the contract explicit by renaming the function to indicate the behavior (e.g., `run_with_optional_sandbox`) and documenting the conditions under which sandboxing is unavailable; prefer an explicit opt-in for unsandboxed dev-mode.
 
     Prefer failing loudly when security is expected; silent fallbacks lead to subtle and dangerous bugs.
+
+    The implementation is in local_tools.py (_run_in_sandbox, lines 49-56) and the public wrapper is in cli.py (run_in_sandbox, lines 124-133).
   |||,
-  occurrences=[
-    {
-      files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py': [[49, 56]] },
-      note: '_run_in_sandbox implementation: falls back to unsandboxed on non-Linux or missing bwrap',
-      expect_caught_from: [['llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py']],
-    },
-    {
-      files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[124, 133]] },
-      note: 'run_in_sandbox wrapper: public-facing name promises sandboxing but behavior weakens on some platforms',
-      expect_caught_from: [['llm/adgn_llm/src/adgn_llm/mini_codex/cli.py']],
-    },
+  filesToRanges={
+    'llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py': [[49, 56]],
+    'llm/adgn_llm/src/adgn_llm/mini_codex/cli.py': [[124, 133]],
+  },
+  expect_caught_from=[
+    ['llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py'],
   ],
 )

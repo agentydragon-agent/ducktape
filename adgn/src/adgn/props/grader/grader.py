@@ -43,8 +43,8 @@ from adgn.props.grader.models import CritiqueInputIssue, GraderInput, GraderOutp
 from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.prompts.builder import build_grade_from_json_prompt
-from adgn.props.specimens.hydrated import HydratedSnapshot
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_hydrated import HydratedSnapshot
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 # Avoid circular imports:
 # - prompts.builder imports from here

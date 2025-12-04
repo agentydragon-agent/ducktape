@@ -10,7 +10,7 @@ from pathlib import Path
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.ids import SnapshotSlug
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 

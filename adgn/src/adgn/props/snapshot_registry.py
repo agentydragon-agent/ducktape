@@ -25,18 +25,13 @@ from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
 import yaml
 
-from ..ids import BaseIssueID, FalsePositiveID, SnapshotSlug, TruePositiveID, split_snapshot_slug
-from ..models.true_positive import (
-    FalsePositiveOccurrence,
-    IssueCore,
-    SnapshotIssuesLoadError,
-    TruePositiveOccurrence,
-)
-from ..models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
-from ..paths import FileType, classify_path
-from ..rationale import Rationale
-from ..splits import Split
-from ..validation_context import SpecimenContext
+from .ids import BaseIssueID, FalsePositiveID, SnapshotSlug, TruePositiveID, split_snapshot_slug
+from .models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
+from .models.true_positive import FalsePositiveOccurrence, IssueCore, SnapshotIssuesLoadError, TruePositiveOccurrence
+from .paths import FileType, classify_path
+from .rationale import Rationale
+from .splits import Split
+from .validation_context import SpecimenContext
 
 if TYPE_CHECKING:
     # Import for type annotations only to avoid circular dependency
@@ -165,9 +160,7 @@ def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, di
     snippet = "{\n" + ",\n".join(imports) + "\n}"
 
     eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
-    raw_obj = eval_snippet(
-        "<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
-    )
+    raw_obj = eval_snippet("<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer)
     if not isinstance(raw_obj, str):
         raise SnapshotIssuesLoadError(["flat: Jsonnet returned non-string"])
 
@@ -198,21 +191,25 @@ def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, di
         elif is_fp:
             issue_dict["should_flag"] = False
             false_positives[issue_id] = issue_dict
-        # Skip issues that don't have either field (malformed)
+        else:
+            raise SnapshotIssuesLoadError(
+                [
+                    f"Issue {issue_id!r}: First occurrence is malformed - "
+                    f"must have either 'expect_caught_from' (TP) or 'relevant_files' (FP), got keys: {list(first_occ.keys())}"
+                ]
+            )
 
     return true_positives, false_positives
 
 
 def _validate_true_positives_from_dicts(
-    raw_issues: dict[str, dict],
-    validation_context: dict,
-    strict: bool,
+    raw_issues: dict[str, dict], validation_context: dict, strict: bool
 ) -> TruePositivesLoadResult:
     """Validate true positive dicts with complete context.
 
     Args:
         raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
-        validation_context: Complete validation context (specimen_context with files + IDs)
+        validation_context: Complete validation context (snapshots with files + IDs)
         strict: If True, raise on any validation errors
 
     Returns:
@@ -237,11 +234,7 @@ def _validate_true_positives_from_dicts(
             occurrences = [TruePositiveOccurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
 
             items.append(
-                TruePositiveIssue(
-                    id=TruePositiveID(core.id),
-                    rationale=core.rationale,
-                    occurrences=occurrences,
-                )
+                TruePositiveIssue(id=TruePositiveID(core.id), rationale=core.rationale, occurrences=occurrences)
             )
         except Exception as e:
             errors.append(f"{issue_id}: {e}")
@@ -253,15 +246,13 @@ def _validate_true_positives_from_dicts(
 
 
 def _validate_false_positives_from_dicts(
-    raw_issues: dict[str, dict],
-    validation_context: dict,
-    strict: bool,
+    raw_issues: dict[str, dict], validation_context: dict, strict: bool
 ) -> FalsePositivesLoadResult:
     """Validate false positive dicts with complete context.
 
     Args:
         raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
-        validation_context: Complete validation context (specimen_context with files + IDs)
+        validation_context: Complete validation context (snapshots with files + IDs)
         strict: If True, raise on any validation errors
 
     Returns:
@@ -283,14 +274,12 @@ def _validate_false_positives_from_dicts(
 
             # Occurrences may be named "instances" or "occurrences" depending on source
             inst_raw = issue_dict.get("instances") or issue_dict.get("occurrences", [])
-            occurrences = [FalsePositiveOccurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
+            occurrences = [
+                FalsePositiveOccurrence.model_validate(inst, context=validation_context) for inst in inst_raw
+            ]
 
             items.append(
-                KnownFalsePositive(
-                    id=FalsePositiveID(core.id),
-                    rationale=core.rationale,
-                    occurrences=occurrences,
-                )
+                KnownFalsePositive(id=FalsePositiveID(core.id), rationale=core.rationale, occurrences=occurrences)
             )
         except Exception as e:
             errors.append(f"{issue_id}: {e}")
@@ -728,7 +717,7 @@ class SnapshotRegistry:
                 allowed_tp_ids=list(raw_issues.keys()),  # IDs from Jsonnet (strings)
                 allowed_fp_ids=list(raw_fps.keys()),  # IDs from Jsonnet (strings)
             )
-            context_dict = {"specimen_context": ctx}
+            context_dict = {"snapshots": ctx}
 
             # Validate with complete context (both paths and IDs)
             res_pos = _validate_true_positives_from_dicts(raw_issues, context_dict, strict=True)
@@ -748,7 +737,7 @@ class SnapshotRegistry:
             )
 
             # Runtime import to avoid circular dependency (type annotation uses TYPE_CHECKING)
-            from adgn.props.specimens.hydrated import HydratedSnapshot  # noqa: PLC0415
+            from adgn.props.snapshot_hydrated import HydratedSnapshot
 
             # Yield hydrated snapshot - single object with record + content root
             yield HydratedSnapshot(record=rec, content_root=hydrated_root)
@@ -812,7 +801,7 @@ class SnapshotRegistry:
             Set of snapshot slugs in the given split (unsorted)
         """
         result = set()
-        for slug in self._snapshots.keys():
+        for slug in self._snapshots:
             _, manifest = self.load_manifest_only(slug)
             if manifest.split == split:
                 result.add(slug)

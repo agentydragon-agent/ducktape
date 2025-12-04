@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(production_specimens_registry) -> None:

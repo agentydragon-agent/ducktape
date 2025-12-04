@@ -14,7 +14,7 @@ from adgn.props.grader.models import (
     ReportedIssueRatios,
 )
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
-from adgn.props.specimens.registry import KnownFalsePositive, TruePositiveIssue
+from adgn.props.snapshot_registry import KnownFalsePositive, TruePositiveIssue
 
 from .schemas import build_input_schemas_json
 from .util import render_prompt_template

@@ -24,7 +24,7 @@ from adgn.props.ids import BaseIssueID
 from adgn.props.models.lint import extract_corrections
 from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 from .lint_issue import lint_issue_run
 

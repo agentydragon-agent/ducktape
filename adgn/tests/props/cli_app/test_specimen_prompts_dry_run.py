@@ -26,7 +26,7 @@ def _read(path: Path) -> str:
 @pytest.mark.parametrize("allow_general", [False, True])
 def test_run_specimen_dry_run_renders(allow_general):
     # Use the unified runner for dry-run prompt rendering
-    argv = ["run", "--specimen", SPECIMEN_NAME, "--dry-run"]
+    argv = ["run", "--snapshot", SPECIMEN_NAME, "--dry-run"]
     # Map 'allow_general' to the 'open' preset; else default 'find'
     if allow_general:
         argv.extend(["--preset", "open"])
@@ -48,7 +48,7 @@ def test_run_specimen_dry_run_renders(allow_general):
 
 def test_run_specimen_discover_dry_run_renders():
     runner = CliRunner()
-    result = runner.invoke(app, ["run", "--specimen", SPECIMEN_NAME, "--preset", "discover", "--dry-run"])
+    result = runner.invoke(app, ["run", "--snapshot", SPECIMEN_NAME, "--preset", "discover", "--dry-run"])
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)
@@ -61,7 +61,7 @@ def test_run_specimen_discover_dry_run_renders():
 def test_run_specimen_grade_dry_run_renders(tmp_path: Path):
     # For prompt rendering checks, validate that run --dry-run composes schemas.
     runner = CliRunner()
-    result = runner.invoke(app, ["run", "--specimen", SPECIMEN_NAME, "--preset", "find", "--dry-run"])
+    result = runner.invoke(app, ["run", "--snapshot", SPECIMEN_NAME, "--preset", "find", "--dry-run"])
     assert result.exit_code == 0, result.output
     out = result.output
     saved = _extract_saved_prompt_path(out)

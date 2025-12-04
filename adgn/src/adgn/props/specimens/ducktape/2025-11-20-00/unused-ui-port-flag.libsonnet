@@ -40,6 +40,5 @@ I.issue(
   },
   expect_caught_from=[
     ['adgn/src/adgn/agent/mcp_bridge/cli.py'],
-    ['adgn/src/adgn/agent/mcp_bridge/server.py'],
   ],
 )

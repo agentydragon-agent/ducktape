@@ -214,16 +214,26 @@ def _enable_rls() -> None:
         existing_policies = {(row[0], row[1]) for row in result}
 
     # RLS-enabled tables
-    rls_table_names = ["specimens", "critiques", "critic_runs", "grader_runs", "events"]
+    rls_table_names = [
+        "snapshots",
+        "true_positives",
+        "false_positives",
+        "critiques",
+        "critic_runs",
+        "grader_runs",
+        "events",
+    ]
     rls_tables = {Base.metadata.tables[name] for name in rls_table_names}
 
     # Define agent access rules per table
     agent_access_rules = {
-        "specimens": "FOR SELECT TO agent_user USING (true)",
-        "critiques": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split = 'train'))",
-        "critic_runs": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split = 'train'))",
-        "grader_runs": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split IN ('train', 'valid')))",
-        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE specimen IN (SELECT specimen FROM specimens WHERE split = 'train')))",
+        "snapshots": "FOR SELECT TO agent_user USING (true)",
+        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split IN ('train', 'valid')))",
+        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train')))",
     }
 
     with _engine.begin() as conn:
@@ -264,7 +274,7 @@ def _create_views() -> None:
                 """
                 CREATE VIEW valid_full_specimen_grader_metrics AS
                 SELECT
-                    g.specimen,
+                    g.snapshot_slug,
                     (g.output->'grade'->>'recall')::float as recall,
                     (g.output->'grade'->>'precision')::float as precision,
                     (g.output->'grade'->'metrics'->>'true_positives')::int as tp,
@@ -273,7 +283,7 @@ def _create_views() -> None:
                     g.model,
                     g.created_at
                 FROM grader_runs g
-                JOIN specimens s ON g.specimen = s.specimen
+                JOIN snapshots s ON g.snapshot_slug = s.slug
                 WHERE s.split = 'valid'
                 """
             )

@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, cast
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
@@ -55,7 +55,7 @@ from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -355,6 +355,7 @@ async def resolve_critic_scope(
     Raises:
         ValueError: If sentinel is used but snapshot has no files with issues
     """
+    resolved_files: set[Path]
     if files == ALL_FILES_WITH_ISSUES:
         async with registry.load_and_hydrate(snapshot_slug) as hydrated:
             resolved_files = hydrated.files_with_issues()
@@ -364,7 +365,8 @@ async def resolve_critic_scope(
                     f"Cannot use '{ALL_FILES_WITH_ISSUES}' sentinel."
                 )
     else:
-        resolved_files = files
+        # Type narrowing: if not ALL_FILES_WITH_ISSUES, must be set[Path]
+        resolved_files = cast(set[Path], files)
 
     return resolved_files
 

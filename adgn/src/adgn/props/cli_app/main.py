@@ -76,7 +76,7 @@ from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -89,6 +89,18 @@ app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_com
 # Snapshot subcommand group
 snapshot_app = typer.Typer(help="Snapshot commands")
 app.add_typer(snapshot_app, name="snapshot")
+
+
+@snapshot_app.command("list")
+def cmd_snapshot_list() -> None:
+    """List all valid snapshot slugs."""
+    from adgn.props.snapshot_registry import SnapshotRegistry
+
+    registry = SnapshotRegistry.from_package_resources()
+    slugs = sorted(registry.list_all())
+
+    for slug in slugs:
+        typer.echo(str(slug))
 
 
 @app.callback()

@@ -55,14 +55,14 @@ def test_classify_nonexistent_returns_other(tmp_path: Path):
 @pytest.mark.parametrize("path_str", ["src/module.py", "README.md", "a/b/c/d/file.txt"])
 def test_valid_relative_paths(specimen_relative_path_model, mock_specimen_context: SpecimenContext, path_str: str):
     """Valid relative paths should be accepted with context."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m = specimen_relative_path_model.model_validate({"path": path_str}, context=ctx)
     assert_that(str(m.path), equal_to(path_str))
 
 
 def test_accepts_string_or_path_input(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """SnapshotRelativePath should accept both string and Path inputs."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
 
     # String input
     m1 = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
@@ -92,7 +92,7 @@ def test_rejects_invalid_format(specimen_relative_path_model, path_str, error_ma
 
 
 def test_validation_without_context_skips_existence_check(specimen_relative_path_model):
-    """Without specimen_context, validation skips existence check (allows standalone parsing).
+    """Without snapshots, validation skips existence check (allows standalone parsing).
 
     This enables parsing critiques without loading full specimen context.
     Format validation (relative path, no ..) still applies.
@@ -103,15 +103,15 @@ def test_validation_without_context_skips_existence_check(specimen_relative_path
 
 
 def test_validation_with_wrong_context_key_skips_existence_check(specimen_relative_path_model):
-    """With context dict but no specimen_context key, existence check is skipped."""
+    """With context dict but no snapshots key, existence check is skipped."""
     # Should succeed - format validation passes, existence check skipped
     result = specimen_relative_path_model.model_validate({"path": "nonexistent.py"}, context={"other_key": "value"})
     assert str(result.path) == "nonexistent.py"
 
 
 def test_validation_with_context_checks_existence(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
-    """With specimen_context, paths must exist in known_files."""
-    ctx = {"specimen_context": mock_specimen_context}
+    """With snapshots, paths must exist in known_files."""
+    ctx = {"snapshots": mock_specimen_context}
 
     # Existing file should pass
     m = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
@@ -135,7 +135,7 @@ def test_validation_rejects_symlinks(specimen_relative_path_model, tmp_path: Pat
     )
 
     with pytest.raises(ValidationError, match="regular file"):
-        specimen_relative_path_model.model_validate({"path": "link.py"}, context={"specimen_context": ctx_obj})
+        specimen_relative_path_model.model_validate({"path": "link.py"}, context={"snapshots": ctx_obj})
 
 
 def test_validation_rejects_directories(specimen_relative_path_model, tmp_path: Path):
@@ -147,12 +147,12 @@ def test_validation_rejects_directories(specimen_relative_path_model, tmp_path: 
     )
 
     with pytest.raises(ValidationError, match="regular file"):
-        specimen_relative_path_model.model_validate({"path": "src"}, context={"specimen_context": ctx_obj})
+        specimen_relative_path_model.model_validate({"path": "src"}, context={"snapshots": ctx_obj})
 
 
 def test_validation_multiple_files_in_known_files(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """Test validation with multiple files in known_files."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
 
     # All regular files should pass
     specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
@@ -169,7 +169,7 @@ def test_validation_multiple_files_in_known_files(specimen_relative_path_model, 
 
 def test_json_serialization(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """SnapshotRelativePath should serialize to string in JSON mode."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
     json_data = m.model_dump(mode="json")
     assert_that(json_data["path"], equal_to("src/module.py"))
@@ -177,7 +177,7 @@ def test_json_serialization(specimen_relative_path_model, mock_specimen_context:
 
 def test_python_serialization_returns_path(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """SnapshotRelativePath should return Path in Python mode."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
     python_data = m.model_dump(mode="python")
     assert_that(python_data["path"], equal_to(Path("src/module.py")))
@@ -185,7 +185,7 @@ def test_python_serialization_returns_path(specimen_relative_path_model, mock_sp
 
 def test_round_trip(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """SnapshotRelativePath should round-trip through JSON."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m1 = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
     json_str = m1.model_dump_json()
     m2 = specimen_relative_path_model.model_validate_json(json_str, context=ctx)
@@ -194,7 +194,7 @@ def test_round_trip(specimen_relative_path_model, mock_specimen_context: Specime
 
 def test_round_trip_via_dict(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """SnapshotRelativePath can round-trip through dict (workaround for JSON issue)."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m1 = specimen_relative_path_model.model_validate({"path": "src/module.py"}, context=ctx)
     json_dict = m1.model_dump(mode="json")
     m2 = specimen_relative_path_model.model_validate(json_dict, context=ctx)
@@ -207,21 +207,21 @@ def test_round_trip_via_dict(specimen_relative_path_model, mock_specimen_context
 
 def test_single_component_path(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """Single component paths should work (e.g., README.md)."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m = specimen_relative_path_model.model_validate({"path": "README.md"}, context=ctx)
     assert_that(m.path, equal_to(Path("README.md")))
 
 
 def test_path_with_dots_in_filename(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """Paths with dots in filename (not ..) should work."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     m = specimen_relative_path_model.model_validate({"path": "src/file.test.py"}, context=ctx)
     assert_that(m.path, equal_to(Path("src/file.test.py")))
 
 
 def test_path_normalization(specimen_relative_path_model, mock_specimen_context: SpecimenContext):
     """Path should be normalized (extra slashes removed)."""
-    ctx = {"specimen_context": mock_specimen_context}
+    ctx = {"snapshots": mock_specimen_context}
     # Path constructor normalizes this
     m = specimen_relative_path_model.model_validate({"path": "src//module.py"}, context=ctx)
     # Path normalizes to src/module.py

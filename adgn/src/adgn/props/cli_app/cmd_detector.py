@@ -23,7 +23,7 @@ from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
 from adgn.props.ids import SnapshotSlug
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @dataclass

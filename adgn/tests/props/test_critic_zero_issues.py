@@ -16,6 +16,7 @@ from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.models.snapshot import LocalSource
 from tests.support.responses import ResponsesFactory
 
 # Trivial clean Python code that should have zero issues
@@ -73,6 +74,27 @@ Focus on concrete, actionable findings with specific line numbers.
 # which loads from tests/props/fixtures/specimens/test-trivial/
 
 
+@pytest.fixture
+def critic_test_db_setup(test_trivial_specimen, test_db):
+    """Set up database records for critic testing: Snapshot + prompt.
+
+    Returns:
+        tuple[str, str]: (snapshot_slug, prompt_sha256)
+    """
+    slug = test_trivial_specimen.slug
+
+    # Insert snapshot into database
+    with get_session() as session:
+        spec_record = Snapshot(slug=slug, split="test", source=LocalSource(vcs="local", root="."))
+        session.add(spec_record)
+        session.commit()
+
+    # Upsert prompt using proper helper
+    prompt_sha256 = hash_and_upsert_prompt(SIMPLE_MAX_RECALL_PROMPT)
+
+    return slug, prompt_sha256
+
+
 def _make_critic_response_sequence() -> list:
     """Create response sequence for critic that finds zero issues and calls submit(issues=0)."""
     factory = ResponsesFactory("gpt-5-nano")
@@ -90,25 +112,15 @@ def _make_critic_response_sequence() -> list:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_zero_issues_submits_successfully(
-    test_trivial_specimen, make_openai_client, production_specimens_registry, test_db
+    test_trivial_specimen, make_openai_client, production_specimens_registry, critic_test_db_setup
 ):
     """Test that critic successfully calls submit(issues=0) when finding no issues.
 
     This is a regression test for the infinite loop bug where RequireAnyTool()
     forced the agent to call dummy tools instead of completing with submit(issues=0).
     """
-    slug = test_trivial_specimen.slug
+    slug, prompt_sha256 = critic_test_db_setup
     specimen_dir = test_trivial_specimen.content_root
-
-    # Insert specimen into database
-    with get_session() as session:
-        spec_record = Snapshot(slug=slug, split="test", labeled_files=["subtract.py"])
-        session.add(spec_record)
-        session.commit()
-
-    # Upsert prompt using proper helper
-    prompt_text = SIMPLE_MAX_RECALL_PROMPT
-    prompt_sha256 = hash_and_upsert_prompt(prompt_text)
 
     # Create fake OpenAI client with expected tool call sequence
     client = make_openai_client(_make_critic_response_sequence())
@@ -148,25 +160,15 @@ async def test_critic_zero_issues_submits_successfully(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    test_trivial_specimen, make_openai_client, production_specimens_registry, test_db
+    test_trivial_specimen, make_openai_client, production_specimens_registry, critic_test_db_setup
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
     Before the fix, RequireAnyTool() would force dummy docker_exec calls indefinitely.
     After the fix, the agent calls submit(issues=0) and the loop terminates via GateUntil.
     """
-    slug = test_trivial_specimen.slug
+    slug, prompt_sha256 = critic_test_db_setup
     specimen_dir = test_trivial_specimen.content_root
-
-    # Setup database records (same as above)
-    with get_session() as session:
-        spec_record = Snapshot(slug=slug, split="test", labeled_files=["subtract.py"])
-        session.add(spec_record)
-        session.commit()
-
-    # Upsert prompt using proper helper
-    prompt_text = SIMPLE_MAX_RECALL_PROMPT
-    prompt_sha256 = hash_and_upsert_prompt(prompt_text)
 
     # Create response sequence with LIMITED docker_exec calls
     # If the bug exists, this will fail because agent keeps calling docker_exec

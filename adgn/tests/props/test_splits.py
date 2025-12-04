@@ -13,7 +13,7 @@ from adgn.props.splits import Split
 def pytest_generate_tests(metafunc):
     """Generate parametrized tests for all specimens."""
     if "slug" in metafunc.fixturenames:
-        from adgn.props.specimens.registry import SnapshotRegistry
+        from adgn.props.snapshot_registry import SnapshotRegistry
 
         registry = SnapshotRegistry.from_package_resources()
         metafunc.parametrize("slug", registry.snapshot_slugs, ids=lambda slug: str(slug))
@@ -39,9 +39,9 @@ def test_split_distribution(production_specimens_registry):
     This test just ensures all splits have at least one specimen.
     """
     # Each split should have at least one specimen
-    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.TRAIN)), greater_than_or_equal_to(1))
-    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.VALID)), greater_than_or_equal_to(1))
-    assert_that(len(production_specimens_registry.get_specimens_by_split(Split.TEST)), greater_than_or_equal_to(1))
+    assert_that(len(production_specimens_registry.get_snapshots_by_split(Split.TRAIN)), greater_than_or_equal_to(1))
+    assert_that(len(production_specimens_registry.get_snapshots_by_split(Split.VALID)), greater_than_or_equal_to(1))
+    assert_that(len(production_specimens_registry.get_snapshots_by_split(Split.TEST)), greater_than_or_equal_to(1))
 
 
 async def test_all_specimens_in_splits_can_load(production_specimens_registry):
@@ -49,7 +49,7 @@ async def test_all_specimens_in_splits_can_load(production_specimens_registry):
     for slug in production_specimens_registry.snapshot_slugs:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
             assert_that(hydrated.record, not_none())
-            assert_that(len(hydrated.record.issues), greater_than_or_equal_to(1))
+            assert_that(len(hydrated.record.true_positives), greater_than_or_equal_to(1))
 
 
 async def test_split_issue_counts(production_specimens_registry):

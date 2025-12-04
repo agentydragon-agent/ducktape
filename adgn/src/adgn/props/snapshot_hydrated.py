@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from adgn.props.ids import TruePositiveID, FalsePositiveID
+from adgn.props.ids import FalsePositiveID, TruePositiveID
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.paths import FileType
 
 # Direct import - circular dependency is broken by deferred import in registry.py
-from adgn.props.specimens.registry import TruePositiveIssue, KnownFalsePositive, SnapshotRecord
+from adgn.props.snapshot_registry import KnownFalsePositive, SnapshotRecord, TruePositiveIssue
 
 
 @dataclass

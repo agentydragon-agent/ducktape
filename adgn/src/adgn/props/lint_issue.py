@@ -35,7 +35,7 @@ from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
 from adgn.props.runs_context import format_timestamp_session
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 

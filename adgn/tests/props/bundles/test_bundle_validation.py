@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from adgn.props.models.snapshot import GitSource
-from adgn.props.specimens.registry import SnapshotRegistry, resolve_bundle_url
+from adgn.props.snapshot_registry import SnapshotRegistry, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024

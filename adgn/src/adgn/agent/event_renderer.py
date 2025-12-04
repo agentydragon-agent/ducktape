@@ -77,7 +77,7 @@ class DisplayEventsHandler(BaseHandler):
 
     def _render_tool_result(self, call: ToolCall | None, output: ToolCallOutput) -> str:
         result = output.result
-        structured = result.structured_content
+        structured = result.structuredContent
         if structured is not None:
             data: Any = structured
         elif result.content:

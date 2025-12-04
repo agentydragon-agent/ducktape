@@ -115,7 +115,75 @@ I.falsePositive(
 )
 ```
 
-### 3. Issue Organization: Logical Problems, Not Locations
+### 3. Detection Standard for `expect_caught_from`
+
+**The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
+
+**What "reviewing a file" includes:**
+- Reading the file thoroughly line by line
+- Following imports and calls to check APIs
+- Searching the codebase for existing helpers/patterns
+- Looking for duplication or similar patterns
+- All normal thorough code review activities
+
+**What it does NOT mean:**
+- "Can you detect this reading ONLY these files in complete isolation?"
+- "Without following any imports or doing any searches?"
+
+**Examples:**
+
+**Example 1: Test creating `Compositor("comp")` directly**
+- File: `test_notifications.py` with `comp = Compositor("comp")`
+- Question: "Should this use a pytest fixture?"
+- Expected action: Critic searches for existing fixtures and patterns
+- Result: Finds 12 other instances, flags duplication
+- `expect_caught_from: [['test_notifications.py']]` ✓
+
+**Example 2: Wrapper calling implementation with silent fallback**
+- Files: `cli.py` (wrapper) and `local_tools.py` (implementation with fallback logic)
+- From `cli.py` alone: See wrapper name, but not fallback behavior
+- From `local_tools.py` alone: See the silent fallback directly
+- Result: Only detectable from implementation file
+- `expect_caught_from: [['local_tools.py']]` ✓
+
+**Example 3: Unused CLI flag**
+- File: `cli.py` defines `--ui-port` flag with logs saying "Management UI available"
+- Question: "Does this flag actually work?"
+- Expected action: Critic traces code to verify the flag is properly wired up
+- Result: Discovers server serves only stubs, flag misleads users
+- `expect_caught_from: [['cli.py']]` ✓
+
+**Example 4: Cross-file duplication of enum definitions**
+- Files: `types.py` and `persist.py` both define same enum
+- From either file alone: Cannot detect duplication (only see one instance)
+- Need both files: See duplicate definitions
+- `expect_caught_from: [['types.py', 'persist.py']]` ✓ (AND logic)
+
+**General principle: Include problem code, not reference/solution code**
+
+When an issue is about "absence of use" or "should use existing X":
+- **Include:** Code that needs to change (the violators/problems)
+- **Don't include:** Code that's already correct and just needs to be used/referenced
+
+Examples:
+- Tests not using fixtures → Include test files, not conftest
+- Code not using helper function → Include duplicated code, not the helper module
+- Code not using base class → Include implementations, not the base class
+- Code duplicating utility logic → Include duplicators, not the utility module
+- Code reinventing stdlib feature → Include reinvention, not stdlib
+- Code with hardcoded values → Include literals, not the constants file
+- Code not following pattern → Include non-conforming code, not the exemplar
+- Code not calling cleanup → Include leaky code, not the cleanup util
+
+**Exceptions - include the "solution" file when:**
+- It itself has a problem (broken/misleading API, incomplete implementation, missing docs)
+- The issue is about improving the solution, not just using it
+- **Internal contradiction:** File's docstring/comments promise something the code doesn't deliver
+  - Example: `server.py` docstring says "provides Management UI" but code only has stubs
+  - The file IS the problem (broken promise), not just "unused affordance"
+  - Contrast with: Tests not using `server.py` fixture → fixture is fine, tests are the problem
+
+### 4. Issue Organization: Logical Problems, Not Locations
 
 **CRITICAL PRINCIPLE: Group by LOGICAL ISSUE, not by location.**
 
@@ -136,7 +204,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 3. **Same problem across locations** = single issue with multiple occurrences
 4. **Different problems** = separate issues even if in adjacent lines
 
-### 4. Objectivity in Issue Descriptions
+### 5. Objectivity in Issue Descriptions
 
 **Avoid subjective phrasing** - describe problems objectively:
 
@@ -152,7 +220,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 
 Present facts and technical rationale, not opinions or attributed suggestions.
 
-### 5. Research First: No Open Questions
+### 6. Research First: No Open Questions
 
 **Snapshots must not leave open research questions.** All investigation should be completed before authoring the issue.
 
@@ -175,7 +243,7 @@ rationale=|||
 |||
 ```
 
-### 6. Verifiable External References
+### 7. Verifiable External References
 
 **When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
 
@@ -189,7 +257,7 @@ rationale=|||
 - Standard libraries: Python stdlib, Node.js core modules
 - Well-known tools: pytest, Jest, Docker, PostgreSQL
 
-### 7. Code Citation Guidelines
+### 8. Code Citation Guidelines
 
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line ranges, briefly summarize what's there.
 

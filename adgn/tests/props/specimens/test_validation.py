@@ -7,7 +7,7 @@ import pytest
 
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 def _all_specimens() -> set[SnapshotSlug]:
@@ -70,7 +70,8 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
         # Collect all file references and their line ranges from issues
         file_references: dict[Path, set[tuple[int, int | None]]] = {}
 
-        for issue in rec.issues.values():
+        # Check true positives
+        for issue in rec.true_positives.values():
             for occurrence in issue.occurrences:
                 for file_path, ranges in occurrence.files.items():
                     if file_path not in file_references:

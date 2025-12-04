@@ -24,6 +24,7 @@ from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Snapshot
 from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.snapshot import LocalSource
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,
@@ -59,7 +60,7 @@ def get_grader_runs_for_slug(slug: str) -> list[GraderRun]:
 def test_specimen(test_db):
     """Create test specimen record (uses test_db fixture from tests/props/conftest.py)."""
     with get_session() as session:
-        specimen = Snapshot(slug=TEST_SPECIMEN_SLUG, split="train", labeled_files=["subtract.py"])
+        specimen = Snapshot(slug=TEST_SPECIMEN_SLUG, split="train", source=LocalSource(vcs="local", root="."))
         session.merge(specimen)
         session.commit()
 

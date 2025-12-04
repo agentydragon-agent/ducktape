@@ -32,7 +32,7 @@ from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
-from adgn.props.db import agent_queries, get_session
+from adgn.props.db import get_session
 from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
@@ -41,7 +41,7 @@ from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -342,21 +342,27 @@ async def run_prompt_optimizer(
     Hydrates train specimens and mounts them with definitions via Docker.
     The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
     """
-    # Render system prompt with query constants
+    # Render system prompt with compiled SQL queries from builders
+    from adgn.props.db import query_builders as qb
+
     system = render_prompt_template(
         "prompt_optimizer_system.j2.md",
-        sql_list_train=agent_queries.SQL_LIST_TRAIN_SPECIMENS,
-        sql_recent_graders=agent_queries.SQL_RECENT_GRADER_RESULTS,
-        sql_valid_agg_view=agent_queries.SQL_VALID_AGGREGATES_VIEW,
-        sql_critique_for_specimen=agent_queries.SQL_CRITIQUE_FOR_SPECIMEN,
-        sql_link_to_prompt=agent_queries.SQL_LINK_GRADER_TO_PROMPT,
-        sql_tools_used=agent_queries.SQL_TOOLS_USED,
-        sql_tool_sequence=agent_queries.SQL_TOOL_SEQUENCE,
-        sql_failed_tools=agent_queries.SQL_FAILED_TOOLS,
-        sql_blocked_valid_critiques=agent_queries.SQL_BLOCKED_VALID_CRITIQUES,
-        sql_blocked_valid_grader_runs=agent_queries.SQL_BLOCKED_VALID_GRADER_RUNS,
-        sql_blocked_valid_events=agent_queries.SQL_BLOCKED_VALID_EVENTS,
-        sql_po_run_costs=agent_queries.SQL_PO_RUN_COSTS,
+        sql_list_train=qb.compile_to_sql(qb.list_train_snapshots()),
+        sql_list_train_tps=qb.compile_to_sql(qb.list_train_true_positives()),
+        sql_list_train_fps=qb.compile_to_sql(qb.list_train_false_positives()),
+        sql_count_issues_by_snapshot=qb.compile_to_sql(qb.count_issues_by_snapshot(split="train")),
+        sql_recent_graders=qb.compile_to_sql(qb.recent_grader_results(limit=10)),
+        sql_valid_agg_view=qb.compile_to_sql(qb.valid_aggregates_view()),
+        # Parameterized queries - compile with placeholders for agent to fill in
+        sql_critique_for_specimen=qb.compile_to_sql_with_placeholders(qb.critiques_for_snapshot_parameterized()),
+        sql_link_to_prompt=qb.compile_to_sql_with_placeholders(qb.link_grader_to_prompt_parameterized()),
+        sql_tools_used=qb.compile_to_sql_with_placeholders(qb.tools_used_by_transcript_parameterized()),
+        sql_tool_sequence=qb.compile_to_sql_with_placeholders(qb.tool_sequence_by_transcript_parameterized()),
+        sql_failed_tools=qb.compile_to_sql_with_placeholders(qb.failed_tools_by_transcript_parameterized()),
+        sql_blocked_valid_critiques=qb.compile_to_sql(qb.blocked_valid_critiques()),
+        sql_blocked_valid_grader_runs=qb.compile_to_sql(qb.blocked_valid_grader_runs()),
+        sql_blocked_valid_events=qb.compile_to_sql(qb.blocked_valid_events()),
+        sql_po_run_costs=qb.compile_to_sql_with_placeholders(qb.po_run_costs_parameterized()),
     )
 
     # Session directory (inline adhoc_run_dir - only called here)
@@ -374,16 +380,12 @@ async def run_prompt_optimizer(
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
 
-        # Train specimens source code (ro) - mount each separately
+        # Train snapshots source code (ro) - mount each separately
         for slug, path in train_specimens.items():
-            extra_volumes[str(path.resolve())] = {"bind": f"/specimens/train/{slug}", "mode": "ro"}
+            extra_volumes[str(path.resolve())] = {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
 
-        # Mount train specimen definitions separately (ground truth issues)
-        # This prevents leaking test/valid split data to the optimization agent
-        for slug in train_specimens:
-            def_path = defs_root / slug
-            if def_path.exists():
-                extra_volumes[str(def_path.resolve())] = {"bind": f"/specimen_defs/train/{slug}", "mode": "ro"}
+        # Ground truth issues (TPs/FPs) are now accessed via database
+        # No longer mount libsonnet definitions from filesystem
 
         # Get agent_user database URL from environment
         agent_db_url = os.environ.get("PROPS_AGENT_DB_URL")

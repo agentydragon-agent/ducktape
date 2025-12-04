@@ -15,7 +15,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.props.db import init_db
 from adgn.props.db.config import get_production_config
 from adgn.props.gepa import optimize_with_gepa
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 

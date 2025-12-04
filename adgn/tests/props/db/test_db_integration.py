@@ -22,10 +22,28 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
-from adgn.props.db import agent_queries, get_session, init_db
+from adgn.props.db import get_session, init_db, query_builders as qb
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot
+from adgn.props.ids import SnapshotSlug
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+
+# Test-specific SQL queries for RLS validation (should be blocked by agent_user)
+SQL_BLOCKED_VALID_CRITIQUES = """
+SELECT id, payload FROM critiques WHERE snapshot_slug LIKE 'valid/%' LIMIT 1;
+"""
+
+SQL_BLOCKED_VALID_GRADER_RUNS = """
+SELECT id, snapshot_slug FROM grader_runs WHERE snapshot_slug LIKE 'valid/%' LIMIT 1;
+"""
+
+SQL_BLOCKED_VALID_EVENTS = """
+SELECT e.transcript_id, e.event_type
+FROM events e
+JOIN critic_runs cr ON e.transcript_id = cr.transcript_id
+WHERE cr.snapshot_slug LIKE 'valid/%'
+LIMIT 1;
+"""
 
 
 # NOTE: DB write tests for critic/grader runs were removed during refactoring.
@@ -60,7 +78,7 @@ def test_rls_blocks_test_split_for_agent_user(test_db):
         test_run = CriticRun(
             transcript_id=uuid4(),
             prompt_sha256="a" * 64,
-            slug="crush/test-specimen",
+            snapshot_slug="crush/test-specimen",
             model="test-model",
             files=["test.py"],
             output={"tag": "failure", "error": "test"},
@@ -109,7 +127,7 @@ def test_rls_allows_train_split_for_agent_user(test_db):
         train_run = CriticRun(
             transcript_id=train_run_id,
             prompt_sha256="b" * 64,
-            slug="ducktape/2025-11-26-00",
+            snapshot_slug="ducktape/2025-11-26-00",
             model="test-model",
             files=["test.py"],
             output={"tag": "failure", "error": "test"},
@@ -156,7 +174,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         # Create a critique for the valid specimen
         valid_critique = Critique(
             id=valid_critique_id,
-            slug="valid/spec-test",
+            snapshot_slug="valid/spec-test",
             payload={"issues": [{"id": "issue-1", "rationale": "Secret valid rationale"}], "notes_md": ""},
         )
         session.add(valid_critique)
@@ -166,7 +184,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         valid_critic_run = CriticRun(
             transcript_id=valid_run_id,
             prompt_sha256="c" * 64,
-            slug="valid/spec-test",
+            snapshot_slug="valid/spec-test",
             model="test-model",
             critique_id=valid_critique_id,
             files=["test.py"],
@@ -178,7 +196,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         # Create a grader run for the valid specimen (to test grader access works)
         valid_grader_run = GraderRun(
             transcript_id=uuid4(),
-            slug="valid/spec-test",
+            snapshot_slug="valid/spec-test",
             model="test-model",
             critique_id=valid_critique_id,
             output={
@@ -216,22 +234,20 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         assert result[0].precision == 0.9
 
         # Test the blocked SQL from prompt: attempt to get critique details
-        result = session.execute(text(agent_queries.SQL_BLOCKED_VALID_CRITIQUES)).fetchall()
+        result = session.execute(text(SQL_BLOCKED_VALID_CRITIQUES)).fetchall()
         assert len(result) == 0, "Query for valid critiques should return 0 rows (RLS blocks)"
 
         # Test the blocked SQL from prompt: attempt to query grader_runs directly for valid
-        result = session.execute(text(agent_queries.SQL_BLOCKED_VALID_GRADER_RUNS)).fetchall()
+        result = session.execute(text(SQL_BLOCKED_VALID_GRADER_RUNS)).fetchall()
         assert len(result) == 0, "Query for valid grader_runs should return 0 rows (RLS blocks)"
 
         # Test the blocked SQL from prompt: attempt to trace back to prompt
-        # Use the parameterized query with valid/spec-test specimen
-        result = session.execute(
-            text(agent_queries.SQL_LINK_GRADER_TO_PROMPT.replace("'ducktape/2025-11-20-00'", "'valid/spec-test'"))
-        ).fetchall()
+        # Use query builder with valid/spec-test specimen
+        result = session.execute(qb.link_grader_to_prompt(SnapshotSlug("valid/spec-test"), limit=1)).fetchall()
         assert len(result) == 0, (
             "Query tracing valid specimen to prompt should return 0 rows (RLS blocks critic_runs join)"
         )
 
         # Test the blocked SQL from prompt: attempt to get execution events
-        result = session.execute(text(agent_queries.SQL_BLOCKED_VALID_EVENTS)).fetchall()
+        result = session.execute(text(SQL_BLOCKED_VALID_EVENTS)).fetchall()
         assert len(result) == 0, "Query for valid execution events should return 0 rows (RLS blocks)"

@@ -19,7 +19,7 @@ from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from adgn.props.specimens.registry import SnapshotRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
 

@@ -25,7 +25,9 @@ Before committing a snapshot, verify all of these criteria:
 
 ### True Positive Issues
 - [ ] **expect_caught_from**: Single-file issues auto-infer; multi-file issues have explicit `expect_caught_from`
+- [ ] **Detection standard applied**: Each file set in `expect_caught_from` passes the test: "If a high-quality critic reviewed these files (including following imports, searching for patterns, etc.), would failing to find this issue be a failure on their part?"
 - [ ] **Multi-occurrence notes**: Issues with multiple occurrences have a `note` for each occurrence
+- [ ] **Problem code only**: For "absence of use" issues, include only code that needs to change (violators), not reference/solution code (helpers, fixtures, base classes, constants, patterns, etc.) - unless the solution itself is broken
 
 ### False Positive Issues
 - [ ] **relevant_files**: FPs have `relevant_files` (auto-inferred from filesToRanges, or explicit for `falsePositiveMulti`)
