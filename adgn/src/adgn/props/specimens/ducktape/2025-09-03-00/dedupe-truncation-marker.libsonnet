@@ -1,8 +1,12 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-038: Deduplicate truncation and ensure TIMEOUT marker survives
 I.issue(
   snapshot='ducktape/2025-09-03-00',
+  expect_caught_from=[
+    ['llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py'],
+    ['llm/adgn_llm/src/adgn_llm/mini_codex/cli.py'],
+  ],
   rationale=|||
     Truncation/timeout handling is duplicated and can lose the TIMEOUT marker:
     - Both modules implement `_truncate_bytes` and call it in success/timeout branches.

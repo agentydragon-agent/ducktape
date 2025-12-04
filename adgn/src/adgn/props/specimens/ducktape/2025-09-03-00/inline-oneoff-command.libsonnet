@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-025: Inline one-off 'command = shell' when passing to StdioServerParameters
 I.issue(

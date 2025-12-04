@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-060: Deduplicate commit-message prompt templates (amend vs new)
 I.issue(

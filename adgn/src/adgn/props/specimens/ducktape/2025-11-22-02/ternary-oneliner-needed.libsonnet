@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-036: ternary oneliner for simple conditional assignment
 

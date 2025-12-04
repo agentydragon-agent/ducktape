@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: test-unused-stub-gateway-classes, test-unused-gw-context-manager,
 // setup-unused-gateway-param
@@ -6,6 +6,13 @@ local I = import '../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/tests/mcp/resources/test_list_changes_subscriptions.py'],
+    ['adgn/tests/mcp/resources/test_subscriptions_index.py'],
+    ['adgn/tests/mcp/test_resources_subscriptions_index.py'],
+    ['adgn/tests/mcp/resources/test_notifications.py'],
+    ['adgn/src/adgn/mcp/compositor/setup.py'],
+  ],
   rationale= |||
     Unused gateway-related infrastructure (stub classes, variables, parameters) that
     should be deleted. Dead code adds maintenance burden without providing value.

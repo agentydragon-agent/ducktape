@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-001: Test fixture and constant duplication in approval policy tests
 

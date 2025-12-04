@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-029: Move directory creation into SQLitePersistence constructor
 
@@ -67,4 +67,9 @@ I.issue(
       [44, 50],  // SQLitePersistence.__init__ - should handle mkdir internally
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/cli.py'],
+    ['adgn/src/adgn/agent/server/app.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+  ],
 )

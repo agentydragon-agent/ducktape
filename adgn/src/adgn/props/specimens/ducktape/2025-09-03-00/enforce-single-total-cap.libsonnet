@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-051: Enforce a single total prompt cap (track remaining across blocks)
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-006-no-oneoff-vars
 // No one-off vars and trivial wrappers: inline single-use temporaries and avoid throwaway locals.

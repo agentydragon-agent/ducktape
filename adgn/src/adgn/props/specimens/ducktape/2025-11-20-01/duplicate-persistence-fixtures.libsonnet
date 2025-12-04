@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-006: Duplicated SQLite persistence fixtures across agent tests
 
@@ -79,4 +79,9 @@ I.issue(
       [20, 27],  // Duplicate persistence creation in infrastructure_registry
     ],
   },
+  expect_caught_from=[
+    ['adgn/tests/agent/test_policy_validation_reload.py'],
+    ['adgn/tests/agent/mcp_bridge/test_separated_servers.py'],
+    ['adgn/tests/agent/mcp_bridge/test_ui_auth.py'],
+  ],
 )

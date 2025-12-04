@@ -1,10 +1,14 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: create-agent-useless-comments, misleading-required-comments
 // Both describe comments that add no value (obvious or misleading)
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/agent/persist/__init__.py'],
+  ],
   rationale= |||
     Multiple locations have comments that add no value: either restating obvious
     code operations or providing misleading/incorrect information about field requirements.

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: thin-wrapper-apply-preset, ui-thin-wrapper-open-method
 // Both describe single-use thin wrapper functions that should be inlined
@@ -71,4 +71,8 @@ I.issue(
       [254, 257],  // Call sites (inconsistent with direct setAgentId calls elsewhere)
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/web/src/components/ServersPanel.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte'],
+  ],
 )

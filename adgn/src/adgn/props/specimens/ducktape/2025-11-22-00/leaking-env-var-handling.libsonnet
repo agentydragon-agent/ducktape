@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-033: Leaking environment variable handling into downstream components
 
@@ -63,4 +63,8 @@ I.issue(
       [59, 78],  // discover_presets should read env var internally
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/infrastructure.py'],
+    ['adgn/src/adgn/agent/presets.py'],
+  ],
 )

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-028: Redundant local_runtime None checks after verifying mode is LOCAL
 

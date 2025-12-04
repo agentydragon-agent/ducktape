@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-004-minimize-nesting
 // Minimize nesting: prefer early returns/continues and loop-guard continues instead of wrapping the whole body.

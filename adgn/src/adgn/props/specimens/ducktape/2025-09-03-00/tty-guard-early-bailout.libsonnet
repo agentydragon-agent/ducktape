@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-001: Flip TTY guard to early bailout
 // Rationale: Prefer early bailout to reduce nesting and make the happy path clearer.

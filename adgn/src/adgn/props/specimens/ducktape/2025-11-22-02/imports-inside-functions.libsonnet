@@ -1,9 +1,10 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-039: imports inside functions instead of at module top
 
 I.issue(
   snapshot='ducktape/2025-11-22-02',
+  expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py'], ['adgn/src/adgn/agent/runtime/builder.py'], ['adgn/src/adgn/agent/runtime/infrastructure.py'], ['adgn/src/adgn/agent/runtime/local_runtime.py'], ['adgn/src/adgn/agent/server/mcp_routing.py']],
   rationale= |||
     Multiple files have imports inside functions instead of at the top of the file.
     This violates PEP 8 style guidelines.

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='crush/2025-08-30-internal_db',
@@ -24,4 +24,5 @@ I.issue(
     'internal/config/config.go': [[127, 127]],
     'internal/tui/components/lsp/lsp.go': [[63, 63]],
   },
+  expect_caught_from=[['internal/config/config.go']],
 )

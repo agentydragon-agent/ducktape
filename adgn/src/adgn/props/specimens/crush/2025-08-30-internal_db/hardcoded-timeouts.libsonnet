@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-032-timeouts-and-constants
 // Centralize hardcoded timeouts/intervals/limits: name them and centralize per-subsystem.

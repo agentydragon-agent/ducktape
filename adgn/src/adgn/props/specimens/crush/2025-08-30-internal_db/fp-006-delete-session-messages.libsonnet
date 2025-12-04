@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // fp-006-delete-session-messages
 // False positive: DeleteSessionMessages early-bailout suggestion is unnecessary

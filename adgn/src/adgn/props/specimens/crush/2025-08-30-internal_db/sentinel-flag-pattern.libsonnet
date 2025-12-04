@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-029-argumentsblocker-labeled-continue
 // ArgumentsBlocker: use labeled continue instead of sentinel flag in inner loop to reduce nesting/noise

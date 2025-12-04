@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: Manual delta status mapping instead of using pygit2's status_char()
 
@@ -42,4 +42,8 @@ I.issue(
       [99, 108],  // _status_char: manual delta status→letter mapping (3rd occurrence)
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/git_commit_ai/core.py'],
+    ['adgn/src/adgn/mcp/git_ro/formatting.py'],
+  ],
 )

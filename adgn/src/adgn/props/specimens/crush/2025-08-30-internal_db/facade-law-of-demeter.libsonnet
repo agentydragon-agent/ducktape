@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-013-app-facade-reachthrough
 // App façade vs reach-through: TUI frequently reaches through app to inner services (CoderAgent/Sessions/Permissions), creating a leaky façade and Law-of-Demeter violations.

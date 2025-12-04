@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-053: Consolidate pre-commit PTY read into a single drain loop
 I.issue(

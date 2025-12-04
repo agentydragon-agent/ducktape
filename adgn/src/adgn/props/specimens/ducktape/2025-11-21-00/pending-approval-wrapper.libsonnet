@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-021: Delete PendingApproval wrapper and _convert_pending_approvals, return ToolCall list directly
 

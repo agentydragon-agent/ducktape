@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-044: Deduplicate git diff arg construction; compute once and reuse
 I.issue(

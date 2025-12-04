@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-010: Test fixture using plain dict instead of Pydantic and low-value enum assertions
 

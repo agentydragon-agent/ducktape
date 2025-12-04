@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016: Logging configuration in backend function instead of main
 
@@ -98,4 +98,8 @@ I.issue(
       [675, 675],  // Call to _init_logging in async_main
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/git_commit_ai/minicodex_backend.py'],
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+  ],
 )

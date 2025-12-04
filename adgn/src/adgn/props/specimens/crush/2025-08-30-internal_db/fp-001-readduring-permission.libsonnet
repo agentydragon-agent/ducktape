@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // fp-001-readduring-permission
 // False positive: double-read before vs after permission request in internal/llm/tools/write.go

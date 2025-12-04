@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030-digit-counting
 // Digit counting for line numbers: extract a shared Digits(n int) helper but preserve separate rendering behaviour for LLM vs human surfaces.

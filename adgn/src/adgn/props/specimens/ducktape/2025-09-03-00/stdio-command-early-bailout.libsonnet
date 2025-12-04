@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-024: Invert stdio command handling to early-bailout and reduce nesting
 I.issue(

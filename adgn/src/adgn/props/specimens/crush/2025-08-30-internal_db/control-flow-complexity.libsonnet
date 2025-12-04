@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-005-simplify-control-flow
 // Simplify control flow: reduce unnecessary nesting by using guard-clauses (early return/continue) and combining trivial nested conditionals.

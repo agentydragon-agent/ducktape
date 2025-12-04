@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-053: Tests for unimplemented UI features with error-swallowing fallbacks
 

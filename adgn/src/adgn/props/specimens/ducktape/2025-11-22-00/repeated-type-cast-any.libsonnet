@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-042: Repeated type casting to any instead of using typed content models
 
@@ -96,4 +96,8 @@ I.issue(
       [33, 33],   // (c as any).content_kind and (c as any).result
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/web/src/components/ToolExec.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/ToolJson.svelte'],
+  ],
 )

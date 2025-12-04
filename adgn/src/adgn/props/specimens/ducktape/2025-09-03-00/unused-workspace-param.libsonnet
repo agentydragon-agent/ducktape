@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-026: Remove unused `workspace` parameter from _write_sandboxed_kernelspec
 I.issue(

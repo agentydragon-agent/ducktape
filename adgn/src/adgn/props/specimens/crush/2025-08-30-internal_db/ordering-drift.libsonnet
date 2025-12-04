@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='crush/2025-08-30-internal_db',
@@ -13,4 +13,5 @@ I.issue(
     'internal/db/sql/messages.sql': [[6, 11]],
     'internal/db/messages.sql.go': [[105, 113]],
   },
+  expect_caught_from=[['internal/db/sql/messages.sql', 'internal/db/messages.sql.go']],
 )

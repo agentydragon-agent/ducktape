@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: Scoped try/except should not swallow errors
 I.issueMulti(

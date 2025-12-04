@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016-unmarshal-dedup
 // Deduplicate repeated Unmarshal+append patterns when decoding ContentPart wrappers.

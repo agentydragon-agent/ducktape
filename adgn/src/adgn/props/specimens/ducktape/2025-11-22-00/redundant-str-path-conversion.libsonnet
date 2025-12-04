@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-011: Redundant str() conversion when calling discover_repository()
 
@@ -58,4 +58,8 @@ I.issue(
       [163, 163],  // str(Path.cwd()) in discover_repository call
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+    ['adgn/src/adgn/git_commit_ai/minicodex_backend.py'],
+  ],
 )

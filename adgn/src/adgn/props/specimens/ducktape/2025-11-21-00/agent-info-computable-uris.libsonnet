@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-022: AgentInfo URI fields can be computed from agent_id and should be removed
 

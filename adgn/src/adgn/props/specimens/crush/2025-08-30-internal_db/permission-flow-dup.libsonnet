@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-023-permission-diff-history-block
 // Permission/diff/history block duplicated across createNewFile/deleteContent/replaceContent in edit.go

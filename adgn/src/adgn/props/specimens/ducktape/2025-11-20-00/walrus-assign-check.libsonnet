@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: walrus-assign-check-none, walrus-get-local-runtime, walrus-token-remove-comment
 // All describe assign-and-check patterns that should use walrus operator
@@ -76,4 +76,14 @@ I.issue(
       [107, 111],   // Dict.get with useless "Look up token" comment
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/registry.py'],
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/agent/agent.py'],
+    ['adgn/src/adgn/agent/server/state.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/auth.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/server.py'],
+    ['adgn/src/adgn/agent/server/mcp_routing.py'],
+  ],
 )

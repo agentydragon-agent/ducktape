@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Extracted from redundant-documentation.libsonnet (useless break comment)
 

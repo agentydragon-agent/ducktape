@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-009: Unnecessary intermediate variables before single-use assertions
 
@@ -130,4 +130,10 @@ I.issue(
       [29, 30],  // done_result extraction + assertion
     ],
   },
+  expect_caught_from=[
+    ['adgn/tests/agent/test_loop_reducer_skip_sampling.py'],
+    ['adgn/tests/agent/test_aggregating_inserts.py'],
+    ['adgn/tests/agent/test_exec_roundtrip.py'],
+    ['adgn/tests/agent/test_editor_inproc.py'],
+  ],
 )

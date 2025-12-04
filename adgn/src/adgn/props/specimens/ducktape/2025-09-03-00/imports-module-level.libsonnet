@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016: Move imports to module level (avoid function-local imports unless justified)
 I.issueMulti(

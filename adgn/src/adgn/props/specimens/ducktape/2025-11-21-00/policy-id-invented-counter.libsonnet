@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-009: _policy_id maintains invented counter instead of tracking actual database ID
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+  ],
   rationale=|||
     The `ApprovalPolicyEngine._policy_id` field maintains a separate invented counter
     instead of tracking the ACTUAL policy ID from the database. This creates two conflicting

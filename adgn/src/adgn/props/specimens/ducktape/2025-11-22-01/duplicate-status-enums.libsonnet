@@ -1,9 +1,10 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-005: PolicyStatus and ProposalStatus are duplicate enums causing type confusion
 
 I.issue(
   snapshot='ducktape/2025-11-22-01',
+  expect_caught_from=[['adgn/src/adgn/agent/models/proposal_status.py'], ['adgn/src/adgn/agent/persist/__init__.py'], ['adgn/src/adgn/agent/persist/models.py'], ['adgn/src/adgn/agent/persist/sqlite.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approval_policy_bridge.py']],
   rationale=|||
     Two enums exist for policy status: PolicyStatus and ProposalStatus. The codebase
     mixes them inconsistently, using runtime string conversion to mask type mismatches.

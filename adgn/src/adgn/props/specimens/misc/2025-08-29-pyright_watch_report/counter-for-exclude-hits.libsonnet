@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-013: Use collections.Counter for tallying exclude-pattern hits
 

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: walrus-env-token, walrus-eval-index, walrus-models-getattr
 // All describe assign-and-check patterns that should use walrus operator
@@ -54,4 +54,9 @@ I.issue(
       [181, 183],  // Same pattern in error method
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/auth.py'],
+    ['adgn/src/adgn/props/eval_harness.py'],
+    ['adgn/src/adgn/mcp/stubs/typed_stubs.py'],
+  ],
 )

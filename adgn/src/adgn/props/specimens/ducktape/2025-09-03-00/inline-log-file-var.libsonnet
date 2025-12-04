@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-059: Inline one-off log_file when constructing FileHandler
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-009: Tighten optional parameters that are never None
 I.issueMulti(

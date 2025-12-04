@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: redundant-default-noop-comments, useless-separator-block-comments,
 // useless-moved-function-comment, useless-removed-code-comment
@@ -74,4 +74,10 @@ I.issue(
       [530, 533],  // Four-line block documenting removed code
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/handler.py'],
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+    ['adgn/src/adgn/agent/policy_eval/container.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+  ],
 )

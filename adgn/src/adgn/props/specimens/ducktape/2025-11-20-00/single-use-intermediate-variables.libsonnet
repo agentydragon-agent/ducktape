@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Consolidated issue: Variables assigned once and used immediately should be inlined
 
@@ -71,4 +71,12 @@ I.issue(
       [133, 136],   // result_model assignment and immediate use
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/local_runtime.py'],
+    ['adgn/src/adgn/agent/server/mcp_routing.py'],
+    ['adgn/src/adgn/agent/server/runtime.py'],
+    ['adgn/src/adgn/agent/server/reducer.py'],
+    ['adgn/src/adgn/agent/runtime/sidecars.py'],
+    ['adgn/src/adgn/agent/persist/handler.py'],
+  ],
 )

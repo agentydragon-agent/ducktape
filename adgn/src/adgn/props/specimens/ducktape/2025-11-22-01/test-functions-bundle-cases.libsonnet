@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: test-bundles-five-subtests, test-bundles-four-plus-subtests,
 // test-uses-loop-not-parametrize

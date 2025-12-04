@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: ui-swallowed-agent-polling-errors, ui-swallowed-websocket-errors,
 // ui-swallowed-error-stores-channels, ui-swallowed-localstorage-errors,
@@ -88,4 +88,13 @@ I.issue(
       [49, 49],  // JSON parse: empty catch with silent fallback
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/web/src/features/agents/stores.ts'],
+    ['adgn/src/adgn/agent/web/src/features/chat/channels.ts'],
+    ['adgn/src/adgn/agent/web/src/features/chat/stores_channels.ts'],
+    ['adgn/src/adgn/agent/web/src/shared/prefs.ts'],
+    ['adgn/src/adgn/agent/web/src/shared/token.ts'],
+    ['adgn/src/adgn/agent/web/src/shared/markdown.ts'],
+    ['adgn/src/adgn/agent/web/src/features/mcp/schema.ts'],
+  ],
 )

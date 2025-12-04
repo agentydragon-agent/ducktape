@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-048: Prefer GitPython query over shelling out to `git var`
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-007-no-dead-code
 // No dead code: remove unreachable or redundant branches

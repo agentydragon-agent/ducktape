@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-021: Manual isinstance validation instead of Pydantic TypeAdapter
 

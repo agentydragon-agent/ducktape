@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-026: Use f-string debug format {agent_id=} instead of manual interpolation
 

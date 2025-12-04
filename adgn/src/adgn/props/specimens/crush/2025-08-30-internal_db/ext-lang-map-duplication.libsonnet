@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-025-ext-to-lang-mapping
 // Deduplicate extension -> language mapping in tool parameter/result formatting (tool.go)

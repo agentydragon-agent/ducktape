@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-004: create_agent_compositor should inline policy_server and approvals_server
 

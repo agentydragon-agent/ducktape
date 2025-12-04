@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-032: ApprovalHub and ApprovalPolicyEngine methods should be inlined into MCP tools/resources
 

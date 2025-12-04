@@ -1,9 +1,15 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-063: Tests manually create resources server instead of using shared fixtures
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/tests/mcp/resources/test_list_changes_subscriptions.py'],
+    ['adgn/tests/mcp/resources/test_subscriptions_index.py'],
+    ['adgn/tests/mcp/test_resources_subscriptions_index.py'],
+    ['adgn/tests/mcp/resources/test_notifications.py'],
+  ],
   rationale=|||
     Tests manually create resources servers with `make_resources_server(name="resources", compositor=comp)`
     instead of using the shared fixtures (`resources_server`, `resources_client`, `typed_resources_client`).

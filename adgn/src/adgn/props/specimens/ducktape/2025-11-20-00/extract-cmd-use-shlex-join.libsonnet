@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-043: Extract cmd/argv parsing and use shlex.join, not hand-rolled quoting
 

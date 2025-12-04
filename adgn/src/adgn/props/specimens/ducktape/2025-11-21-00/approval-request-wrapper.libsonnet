@@ -1,9 +1,14 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-010: Delete ApprovalRequest wrapper, use ToolCall directly
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/mcp/policy_gateway/middleware.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+  ],
   rationale=|||
     The `ApprovalRequest` class (approvals.py:63-64) is a pointless single-field Pydantic wrapper
     around `ToolCall`. It serves no purpose and should be deleted, with all uses replaced by

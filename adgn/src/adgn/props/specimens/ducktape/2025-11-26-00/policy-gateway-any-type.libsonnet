@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-001: _policy_gateway uses Any type instead of PolicyGatewayMiddleware
 

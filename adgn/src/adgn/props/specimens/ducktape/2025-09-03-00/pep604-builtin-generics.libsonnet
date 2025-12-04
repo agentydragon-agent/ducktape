@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-015: Prefer PEP 604 unions and builtin generics over typing.Optional/List/Dict/Tuple/Iterator
 I.issueMulti(

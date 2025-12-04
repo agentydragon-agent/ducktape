@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-012: Pass pathlib.Path objects to PathLike-accepting APIs; avoid redundant str(path) casts
 I.issueMulti(

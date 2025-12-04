@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-022: Squash trivial wrapper that only delegates to wrapper.main()
 I.issue(

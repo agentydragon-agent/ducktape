@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-004: Remove ApprovalKind type alias, use UserApprovalDecision directly
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/state.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+  ],
   rationale=|||
     The `ApprovalKind` type alias (line 41) is unnecessary and should be removed.
     All usages should be replaced with `UserApprovalDecision` directly.

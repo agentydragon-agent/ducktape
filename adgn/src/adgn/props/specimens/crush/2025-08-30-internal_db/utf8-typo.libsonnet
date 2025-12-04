@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-009-truthfulness-identifier-typo
 // Identifier typo: `isValidUt8` -> `isValidUTF8` in fetch.go/view.go

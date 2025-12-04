@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016: ApprovalPolicyAdminServerStub should be a shared pytest fixture
 

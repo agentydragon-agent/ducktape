@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-027-outside-workingdir-gate
 // Factor outside-working-directory gating (relPath check + permission request) into a helper.
@@ -10,4 +10,5 @@ I.issue(
     'internal/llm/tools/view.go': [[146, 169]],
     'internal/llm/tools/ls.go': [[134, 167]],
   },
+  expect_caught_from=[['internal/llm/tools/view.go'], ['internal/llm/tools/ls.go']],
 )

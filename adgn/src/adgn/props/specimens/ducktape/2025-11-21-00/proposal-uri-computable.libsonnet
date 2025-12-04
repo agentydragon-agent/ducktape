@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-024: PolicyProposalInfo proposal_uri field is computable from id and should be removed
 

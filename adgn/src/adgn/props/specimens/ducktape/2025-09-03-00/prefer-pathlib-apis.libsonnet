@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-019: Prefer pathlib.Path APIs over os.path/os.getcwd for clearer semantics
 I.issueMulti(

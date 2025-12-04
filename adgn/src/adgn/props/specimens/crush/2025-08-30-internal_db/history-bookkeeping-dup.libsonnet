@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-022-history-lsp-bookkeeping
 // History/LSP bookkeeping: extract helper to DRY repeated "get/create/createVersion" sequences.
@@ -10,4 +10,5 @@ I.issue(
     'internal/llm/tools/edit.go': [[379, 400], [518, 538]],
     'internal/llm/tools/write.go': [[204, 224]],
   },
+  expect_caught_from=[['internal/llm/tools/edit.go'], ['internal/llm/tools/write.go']],
 )

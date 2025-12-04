@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-049: Unify truncation message; avoid hardcoded size string
 I.issue(

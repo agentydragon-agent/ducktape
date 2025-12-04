@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-025: Collection parameters should default to empty tuple, not None
 
@@ -59,4 +59,10 @@ I.issue(
       141,          // patch_agent_specs protocol signature
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/local_runtime.py'],
+    ['adgn/src/adgn/agent/policies/scaffold.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+    ['adgn/src/adgn/agent/persist/__init__.py'],
+  ],
 )

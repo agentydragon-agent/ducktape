@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-017: ProposalDetail and PolicyProposal types duplicate each other and should be merged
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/mcp/approval_policy/server.py'],
+    ['adgn/src/adgn/agent/persist/__init__.py'],
+  ],
   rationale=|||
     The `ProposalDetail` model (server.py:47-54) and `PolicyProposal` model (persist/__init__.py:82-87)
     are duplicates with identical fields. They should be merged into a single type to eliminate redundancy.

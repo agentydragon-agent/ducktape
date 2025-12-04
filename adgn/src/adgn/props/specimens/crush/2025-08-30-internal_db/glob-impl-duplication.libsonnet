@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-018-glob-dedup
 // Deduplicate glob matching: standardize on doublestar.Match or isolate matching behind a helper.
@@ -10,4 +10,5 @@ I.issue(
     'internal/lsp/watcher/watcher.go': [[583, 672]],
     'internal/fsext/fileutil.go': [[1, 196]],
   },
+  expect_caught_from=[['internal/lsp/watcher/watcher.go'], ['internal/fsext/fileutil.go']],
 )

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-010-remove-deadcode-comment
 // Not-useful historical comment: remove "deadcode pruned: emitStage1 was unused" from e2e/mock_openai_responses.go

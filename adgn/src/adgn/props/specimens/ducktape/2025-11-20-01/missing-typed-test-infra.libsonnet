@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-20-01',
@@ -48,4 +48,8 @@ I.issue(
       149,
     ],
   },
+  expect_caught_from=[
+    ['adgn/tests/mcp/approval_policy/test_policy_resources.py'],
+    ['adgn/tests/agent/test_policy_validation_reload.py'],
+  ],
 )

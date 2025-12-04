@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-042: Fold consecutive comment lines into a single concise line
 I.issue(

@@ -1,9 +1,15 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: Policy gateway tool call state should be exposed via MCP resources
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/container.py'],
+    ['adgn/src/adgn/agent/server/runtime.py'],
+    ['adgn/src/adgn/agent/server/status_shared.py'],
+    ['adgn/src/adgn/mcp/policy_gateway/middleware.py'],
+  ],
   rationale= |||
     The policy gateway tracks in-flight tool calls via direct field access
     (`_policy_gateway.has_inflight_calls()`), but this breaks the architectural pattern

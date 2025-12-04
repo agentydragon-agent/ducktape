@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-061: Replace quoted return annotations with real type (annotations future enabled)
 I.issue(

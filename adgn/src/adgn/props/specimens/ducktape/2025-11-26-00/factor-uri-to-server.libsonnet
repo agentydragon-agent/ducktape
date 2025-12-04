@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-060: Factor out URI-to-server translation, check if FastMCP has it
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/mcp/resources/server.py'],
+    ['adgn/src/adgn/mcp/notifications/buffer.py'],
+  ],
   rationale=|||
     Multiple locations loop through mount names to translate a resource URI back to
     its origin server name. This should be factored out and potentially already exists

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-037: Collapse duplicated Responses turn logic in CLI; delegate to agent
 I.issue(

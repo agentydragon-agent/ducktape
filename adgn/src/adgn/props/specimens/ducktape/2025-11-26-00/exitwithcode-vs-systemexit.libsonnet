@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-033: Use standard SystemExit instead of custom ExitWithCode
 

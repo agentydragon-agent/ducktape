@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-050: ApprovalTimeline subscribes to unimplemented WebSocket endpoint
 
@@ -108,4 +108,8 @@ I.issue(
       [1, 1],     // TODO placeholder for WebSocket routes (actual line varies)
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/web/src/components/ApprovalTimeline.svelte'],
+    ['adgn/src/adgn/agent/server/app.py'],
+  ],
 )

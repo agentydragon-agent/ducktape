@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: Unnecessary multi-line formatting for short Pydantic model arguments
 

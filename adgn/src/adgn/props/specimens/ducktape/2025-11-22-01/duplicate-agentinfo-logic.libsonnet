@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-006: list_agents and get_agent_info duplicate AgentInfo computation logic
 

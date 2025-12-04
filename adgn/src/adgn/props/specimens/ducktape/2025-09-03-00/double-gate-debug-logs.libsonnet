@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-054: Avoid double-gating debug logs; rely on logger configuration
 I.issue(

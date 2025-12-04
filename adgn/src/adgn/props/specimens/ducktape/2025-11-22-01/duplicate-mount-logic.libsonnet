@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: create_global_compositor should use mount_agent_compositor_dynamically
 

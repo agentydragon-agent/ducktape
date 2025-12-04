@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030: Inline mcp_config_obj into uvicorn.Server call
 

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-028: Diagnostics broad catch prints and continues; fail loudly instead
 I.issue(

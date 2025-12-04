@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030: Inconsistent policy evaluation API layers and dict middle ground
 
@@ -90,4 +90,9 @@ I.issue(
       [310, 313], // Direct call to run_policy_source with manual dict
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/policy_eval/runner.py'],
+    ['adgn/src/adgn/agent/policy_eval/container.py'],
+    ['adgn/src/adgn/agent/approvals.py'],
+  ],
 )

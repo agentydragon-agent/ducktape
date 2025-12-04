@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-056: Remove trivial docstring that repeats the class name
 I.issue(

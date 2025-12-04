@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: unnecessary-intermediate-vars, intermediate-var-single-use-path, unnecessary-intermediate-boolean, unnecessary-policies-variable
 // All describe intermediate variables used only once that should be inlined
@@ -95,4 +95,9 @@ I.issue(
       [246, 246], // policies query result intermediate var
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/policy_eval/runner.py'],
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+  ],
 )

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-007: _invoke takes redundant args_json parameter (already in function_call.arguments)
 

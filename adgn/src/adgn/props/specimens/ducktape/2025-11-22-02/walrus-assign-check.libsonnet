@@ -1,10 +1,11 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: assign-then-test-no-walrus, builder-var-missing-walrus
 // Both describe assign-and-check patterns that should use walrus operator
 
 I.issue(
   snapshot='ducktape/2025-11-22-02',
+  expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/auth.py'], ['adgn/src/adgn/agent/mcp_bridge/server.py']],
   rationale= |||
     Multiple locations assign a variable and immediately test it, where the walrus
     operator (:=) would combine assignment and conditional test more idiomatically.

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030: TOKEN_TABLE should use Pydantic model, not untyped dict
 

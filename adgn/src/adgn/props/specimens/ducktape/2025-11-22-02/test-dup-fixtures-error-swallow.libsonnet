@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-054: Duplicated test fixtures and error-swallowing in test_mcp_edge_cases.py
 

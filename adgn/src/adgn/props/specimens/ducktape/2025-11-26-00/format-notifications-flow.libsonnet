@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-024: Refactor format_notifications_message awkward flow
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/reducer.py'],
+    ['adgn/src/adgn/agent/server/mode_handler.py'],
+  ],
   rationale=|||
     The function creates an optional UserMessage, then checks if it's None. This is
     backwards - we should decide whether to create a message first, then create it

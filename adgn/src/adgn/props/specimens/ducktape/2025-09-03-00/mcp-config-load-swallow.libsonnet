@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-029: Do not swallow MCP config load errors during initialization; fail loudly
 I.issue(

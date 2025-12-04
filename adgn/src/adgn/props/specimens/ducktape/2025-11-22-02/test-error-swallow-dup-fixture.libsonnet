@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-052: Error-swallowing exception handler and duplicated responses_create fixture pattern
 

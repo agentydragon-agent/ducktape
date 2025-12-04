@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-028-newline-tab-sanitizer
 // Centralize newline/tab sanitization used in Bash command formatting.
@@ -10,4 +10,5 @@ I.issue(
     'internal/tui/components/chat/messages/tool.go': [[276, 280]],
     'internal/tui/components/chat/messages/renderer.go': [[218, 220]],
   },
+  expect_caught_from=[['internal/tui/components/chat/messages/tool.go'], ['internal/tui/components/chat/messages/renderer.go']],
 )

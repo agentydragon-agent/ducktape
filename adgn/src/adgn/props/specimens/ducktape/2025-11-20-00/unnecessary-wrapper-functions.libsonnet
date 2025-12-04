@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-20-00',
@@ -29,4 +29,8 @@ I.issue(
       269,
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/llm/sysrw/openai_typing.py'],
+    ['adgn/src/adgn/agent/agent.py'],
+  ],
 )

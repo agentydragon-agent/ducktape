@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='crush/2025-08-30-internal_db',
@@ -29,4 +29,5 @@ I.issue(
     // Test-only usage (fake)
     'internal/llm/tools/multiedit_test.go': [[92, 93]],
   },
+  expect_caught_from=[['internal/history/file.go'], ['internal/db/querier.go'], ['internal/db/db.go'], ['internal/db/files.sql.go']],
 )

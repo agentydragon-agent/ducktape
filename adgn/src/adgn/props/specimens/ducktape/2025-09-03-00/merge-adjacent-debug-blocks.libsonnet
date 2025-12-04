@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-033: Merge adjacent debug logging blocks (combine to one if)
 I.issue(

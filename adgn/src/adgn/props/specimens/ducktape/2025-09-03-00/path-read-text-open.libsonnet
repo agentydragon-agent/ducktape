@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-020: Prefer Path.read_text()/Path.open() over open(str(path), ...)
 I.issue(

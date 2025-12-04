@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // ID fields use inconsistent types (str vs domain types). Should use domain types throughout.
 
@@ -76,5 +76,15 @@ I.issue(
       [76, 97],     // _get_backend_app with role+agent_id parameters
       86,           // Runtime check: if not agent_id
     ],
-  }
+  },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/persist/models.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+    ['adgn/src/adgn/agent/persist/__init__.py'],
+    ['adgn/src/adgn/agent/server/runtime.py'],
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/resources.py'],
+    ['adgn/src/adgn/agent/server/mcp_routing.py'],
+  ],
 )

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: archaeology-comment, trivial-amend-detection-comment,
 // trivial-build-status-comment, trivial-print-comment

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='crush/2025-08-30-internal_db',
@@ -28,4 +28,5 @@ I.issue(
     'internal/config/provider_empty_test.go': [[20, 20], [33, 33]],
     'internal/config/provider_test.go': [[30, 30], [44, 44], [69, 69]],
   },
+  expect_caught_from=[['internal/diff/word_inline.go'], ['internal/cmd/root.go'], ['e2e/scenario_live_basic_test.go'], ['internal/config/provider_empty_test.go'], ['internal/config/provider_test.go']],
 )

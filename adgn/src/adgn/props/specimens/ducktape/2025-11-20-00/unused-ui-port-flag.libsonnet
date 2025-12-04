@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002: Unused --ui-port flag misleads users about non-existent Management UI
 
@@ -39,4 +39,8 @@ I.issue(
       [283, 289],   // Unimplemented /ws/mcp WebSocket stub
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/cli.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/server.py'],
+  ],
 )

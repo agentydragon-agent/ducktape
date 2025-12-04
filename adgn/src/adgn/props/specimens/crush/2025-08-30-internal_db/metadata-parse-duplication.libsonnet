@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-020-metadata-parse-fallback
 // Centralize metadata parsing fallback in renderer: repeated `unmarshalParams(...,&meta) { return renderPlainContent(...) }`.

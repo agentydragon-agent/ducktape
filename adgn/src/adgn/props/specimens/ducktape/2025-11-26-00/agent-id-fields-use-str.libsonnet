@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: agentbrief-id-type, agentstatusdata-id-type
 // Both describe fields that represent agent IDs using str instead of AgentID newtype

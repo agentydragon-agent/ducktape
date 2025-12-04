@@ -1,9 +1,16 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-038: Approval policy URIs are global but should be agent-scoped
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/mcp/_shared/constants.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/resources.py'],
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/mcp/approval_policy/server.py'],
+  ],
   rationale=|||
     The approval policy resource URIs use a global namespace (`resource://approval-policy/...`)
     but should be scoped per agent like all other agent resources (`resource://agents/<id>/...`).

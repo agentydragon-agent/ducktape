@@ -1,9 +1,21 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-061: Duplicate Compositor test fixtures - should use shared fixtures
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/tests/conftest.py'],
+    ['adgn/tests/mcp/conftest.py'],
+    ['adgn/tests/mcp/test_chat_notifications.py'],
+    ['adgn/tests/mcp/test_resources_subscriptions_index.py'],
+    ['adgn/tests/mcp/resources/test_notifications.py'],
+    ['adgn/tests/mcp/resources/test_subscriptions_index.py'],
+    ['adgn/tests/mcp/compositor/test_pinned_unmount.py'],
+    ['adgn/tests/mcp/test_stdio_notifications_envelope.py'],
+    ['adgn/tests/mcp/resources/test_list_changes_subscriptions.py'],
+    ['adgn/tests/mcp/resources/test_subscribe.py'],
+  ],
   rationale=|||
     Tests create `Compositor("comp")` instances directly in 13 locations instead of
     using shared pytest fixtures. This violates DRY and makes it harder to mock or

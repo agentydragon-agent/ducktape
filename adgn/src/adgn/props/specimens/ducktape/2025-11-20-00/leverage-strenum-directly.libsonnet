@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-20-00',
@@ -33,4 +33,8 @@ I.issue(
       36,
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+    ['adgn/src/adgn/agent/server/history.py'],
+  ],
 )

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-036: Remove manual OPENAI_API_KEY plumbing; rely on SDK defaults or DI
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-015: Spawning subprocess to get GIT_EDITOR instead of using pygit2
 

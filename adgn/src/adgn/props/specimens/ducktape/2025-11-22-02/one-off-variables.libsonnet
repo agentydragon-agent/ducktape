@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   snapshot='ducktape/2025-11-22-02',

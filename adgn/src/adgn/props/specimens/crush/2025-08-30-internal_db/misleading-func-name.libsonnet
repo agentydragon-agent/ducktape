@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-001-getfileextension
 // Misleading name/doc: `getFileExtension` returns synthesized file names (fake paths),

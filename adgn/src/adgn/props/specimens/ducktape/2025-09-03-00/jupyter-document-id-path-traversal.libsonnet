@@ -1,17 +1,16 @@
-{
-  rationale: |||
+local I = import '../../lib.libsonnet';
+
+I.falsePositive(
+  snapshot='ducktape/2025-09-03-00',
+  rationale=|||
     False positive: document_id is CLI-controlled (wrapper --document-id), not an MCP tool input.
     The value is used to create a notebook path under the configured workspace; this is an internal
     parameter under our control rather than an untrusted input.
   |||,
-  instances: [
-    {
-      files: {
-        'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [
-          { start_line: 37, end_line: 52 },
-          { start_line: 480, end_line: 506 },
-        ],
-      },
-    },
-  ],
-}
+  filesToRanges={
+    'llm/adgn_llm/src/adgn_llm/mcp/sandboxed_jupyter_mcp/wrapper.py': [
+      [37, 52],
+      [480, 506],
+    ],
+  },
+)

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-002-path-schema-docs-inconsistent
 // Path schema/docs inconsistent with behavior

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-029: approvals_pending_global hand-constructs JSON instead of using Pydantic
 

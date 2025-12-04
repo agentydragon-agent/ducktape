@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-052: Default cap/note inside _cap_append to avoid repetitive args
 I.issue(

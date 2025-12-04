@@ -1,9 +1,15 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-037: Notifier pattern is brittle and has multiple design problems
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/approvals.py'],
+    ['adgn/src/adgn/mcp/approval_policy/server.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/server.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+  ],
   rationale=|||
     The notifier callback pattern (ApprovalHub, ApprovalPolicyEngine, AgentRegistry, sessions)
     has 5 design problems making it brittle:

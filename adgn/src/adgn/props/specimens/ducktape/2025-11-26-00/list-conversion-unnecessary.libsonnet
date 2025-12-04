@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-066: Unnecessary list() conversion - _build_window_payload should accept iterable
 

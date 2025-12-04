@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Extracted from redundant-documentation.libsonnet
 // Kept only the docstring duplication issues (useless comment moved to separate file)
@@ -41,4 +41,8 @@ I.issue(
       [135, 145],  // Docstring duplicating PolicyStatus enum
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/reducer.py'],
+    ['adgn/src/adgn/agent/persist/models.py'],
+  ],
 )

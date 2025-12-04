@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-049: Delete trivial _len_chars wrapper, use len() directly
 

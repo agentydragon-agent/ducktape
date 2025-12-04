@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-031-spinning-simplify
 // Simplify ToolCallCmp.Spinning(): early-return when nested is spinning, then return m.spinning

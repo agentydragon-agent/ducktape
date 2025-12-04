@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-037: RunPhase duplicates and supersedes less comprehensive enums
 
@@ -71,4 +71,9 @@ I.issue(
       [80, 87],   // RunStatus (different granularity, possibly different concern)
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/status_shared.py'],
+    ['adgn/src/adgn/agent/mcp_bridge/types.py'],
+    ['adgn/src/adgn/agent/server/protocol.py'],
+  ],
 )

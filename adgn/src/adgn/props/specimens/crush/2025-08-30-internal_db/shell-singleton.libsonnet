@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='crush/2025-08-30-internal_db',
@@ -7,7 +7,7 @@ I.issue(
 
     Summary
     - A process‑wide singleton shell (sync.Once) carries cwd/env/blockers across tool runs.
-    - New callers mutate the same global instance (SetWorkingDir, SetBlockFuncs), so one session’s state leaks into another.
+    - New callers mutate the same global instance (SetWorkingDir, SetBlockFuncs), so one session's state leaks into another.
     - This design prevents per‑session invariants and makes concurrency behavior unpredictable.
 
     Risks
@@ -24,4 +24,5 @@ I.issue(
     'internal/shell/persistent.go': [[13, 36]],     // singleton definition + GetPersistentShell
     'internal/llm/tools/bash.go': [[314, 322]],     // GetPersistentShell + mutation via SetWorkingDir/SetBlockFuncs
   },
+  expect_caught_from=[['internal/shell/persistent.go'], ['internal/llm/tools/bash.go']],
 )

@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-015: approval_policy appears both as sibling and inside details bundle (duplication)
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/runtime.py'],
+    ['adgn/src/adgn/agent/server/protocol.py'],
+  ],
   rationale= |||
     The `approval_policy` field is included BOTH as a direct sibling field in Snapshot
     AND inside the `details.SnapshotDetails` bundle. This is redundant duplication.

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-22-00',
@@ -46,4 +46,8 @@ I.issue(
       [135, 135],
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/runtime/registry.py'],
+    ['adgn/src/adgn/agent/server/runtime.py'],
+  ],
 )

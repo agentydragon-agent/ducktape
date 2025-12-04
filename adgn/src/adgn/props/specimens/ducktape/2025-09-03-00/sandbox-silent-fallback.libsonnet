@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-017: _run_in_sandbox is misleading and a security risk when it silently runs unsandboxed
 I.issueMulti(

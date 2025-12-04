@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-008-ambiguous-ids
 // IDs: ambiguous parameter names that should be explicit (messageID, sessionID)

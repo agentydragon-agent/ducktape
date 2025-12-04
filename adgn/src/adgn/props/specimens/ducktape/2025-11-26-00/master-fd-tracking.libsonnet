@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030: Refactor to avoid tracking master_fd_for_runner variable
 

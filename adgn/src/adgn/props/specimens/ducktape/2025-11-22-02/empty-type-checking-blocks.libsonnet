@@ -1,7 +1,8 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-22-02',
+  expect_caught_from=[['adgn/src/adgn/agent/approvals.py'], ['adgn/src/adgn/agent/agent.py']],
   rationale= |||
     Two files contain TYPE_CHECKING blocks that only contain `pass`, serving no purpose:
 

@@ -1,10 +1,11 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: imperative-list-building, imperative-approvals-list, imperative-proposals-list
 // All describe imperative append() loops that should use list comprehensions
 
 I.issue(
   snapshot='ducktape/2025-11-22-01',
+  expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py'], ['adgn/src/adgn/agent/server/runtime.py']],
   rationale= |||
     Multiple functions build lists imperatively using `append()` in loops when
     list comprehensions would be more concise, readable, and Pythonic.

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016: event_count should be derived from events table, not stored
 
@@ -34,4 +34,8 @@ I.issue(
       415,          // event_count usage in list_runs
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/persist/models.py'],
+    ['adgn/src/adgn/agent/persist/sqlite.py'],
+  ],
 )

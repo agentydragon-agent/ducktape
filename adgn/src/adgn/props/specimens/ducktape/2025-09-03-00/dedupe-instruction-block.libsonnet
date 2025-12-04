@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-035: Deduplicate try/except for instruction_block; extract helper
 I.issue(

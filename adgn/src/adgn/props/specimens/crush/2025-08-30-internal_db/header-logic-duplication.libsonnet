@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-017-renderer-dedup
 // Deduplicate duplicated header-building logic in renderer.go

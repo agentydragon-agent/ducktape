@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-022: create_proposal notifies with wrong ID (placeholder instead of actual)
 

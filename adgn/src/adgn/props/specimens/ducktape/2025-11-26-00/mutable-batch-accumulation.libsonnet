@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-055: Use mutable NotificationsBatch for accumulation instead of sets
 

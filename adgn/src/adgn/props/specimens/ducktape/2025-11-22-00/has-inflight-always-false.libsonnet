@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-039: has_inflight always False indicates unimplemented feature
 
@@ -73,4 +73,8 @@ I.issue(
       [162, 163],   // has_inflight = False with comment "not exposed here"
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/runtime.py'],
+    ['adgn/src/adgn/agent/server/status_shared.py'],
+  ],
 )

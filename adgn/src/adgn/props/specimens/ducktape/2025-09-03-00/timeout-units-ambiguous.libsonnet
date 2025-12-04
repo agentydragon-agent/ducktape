@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-023: Prefer timedelta or suffixes for numeric timeout constants
 I.issue(

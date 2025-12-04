@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-058: Inline one-off variable mtime_s in cache prune loop
 I.issue(

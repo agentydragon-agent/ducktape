@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-004: Do not substitute stdout when --output-last-message file read fails
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-018: Prefer postponed/evaluated type annotations over quoted return annotations
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-013: Use argparse type=Path for filesystem args to avoid late Path(...) casts
 I.issue(

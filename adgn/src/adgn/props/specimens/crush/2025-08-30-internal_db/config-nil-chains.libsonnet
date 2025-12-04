@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-015-config-nil-chains
 // Overuse of nil-pointer config checks at call sites: centralize nil handling or use DI.

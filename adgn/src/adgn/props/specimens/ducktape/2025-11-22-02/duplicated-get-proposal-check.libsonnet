@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-031: Duplicated "get proposal or raise KeyError" pattern should be extracted
 

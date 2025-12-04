@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-012-collapse-blanklines
 // Collapse double blank lines in struct Options: keep at most one blank line between logical groups.

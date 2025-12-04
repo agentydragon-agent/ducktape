@@ -1,10 +1,15 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: useless-comments (Python), useless-ts-comments (TypeScript)
 // Both describe comments that merely restate obvious code
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+    ['adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/ChatPane.svelte'],
+  ],
   rationale= |||
     Multiple locations in both Python and TypeScript have comments that merely restate
     what the code obviously does, providing no additional value or context.

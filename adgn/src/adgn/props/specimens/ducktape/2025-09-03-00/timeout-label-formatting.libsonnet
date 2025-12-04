@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-040: Avoid unnecessary timeout_label formatting; log value directly
 I.issue(

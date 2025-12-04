@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-021: Prefer StrEnum over Literal for string-valued tool policy
 I.issue(

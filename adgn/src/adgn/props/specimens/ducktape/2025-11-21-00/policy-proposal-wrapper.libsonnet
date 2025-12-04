@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-031: agent_policy_proposals should return PolicyProposal objects directly, not PolicyProposalInfo wrapper
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/agent/persist/__init__.py'],
+  ],
   rationale=|||
     The `agent_policy_proposals` function converts `PolicyProposal` objects from the database into
     `PolicyProposalInfo` objects, adding a computable `proposal_uri` field and creating unnecessary

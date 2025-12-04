@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-034: LocalAgentRuntime lifecycle confusion and may-be-initialized antipattern
 

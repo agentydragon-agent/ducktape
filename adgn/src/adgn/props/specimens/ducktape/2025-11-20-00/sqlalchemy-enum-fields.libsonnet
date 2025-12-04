@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // SQLAlchemy models use Mapped[str] with enum comments instead of actual enum types
 

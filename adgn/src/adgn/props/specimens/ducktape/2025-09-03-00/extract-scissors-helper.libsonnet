@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-065: Extract scissors/empty-message parsing into a small helper
 I.issue(

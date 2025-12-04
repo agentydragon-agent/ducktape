@@ -1,9 +1,10 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-048: Useless docstring on get_tool_call method
 
 I.issue(
   snapshot='ducktape/2025-11-22-02',
+  expect_caught_from=[['adgn/src/adgn/agent/persist/__init__.py'], ['adgn/src/adgn/agent/persist/sqlite.py']],
   rationale=|||
     The get_tool_call method has a docstring that provides zero value beyond what's
     already obvious from the method signature:

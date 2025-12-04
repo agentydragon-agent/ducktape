@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-015: proposals_list should use direct list comprehension with inlined proposals variable
 

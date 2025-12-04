@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-026-create-replace-fallthrough
 // Create-then-replace fall-through bug in internal/llm/tools/edit.go

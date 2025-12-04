@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-017: PolicyGatewayError.data field needs proper typing and documentation
 

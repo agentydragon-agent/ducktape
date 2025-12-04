@@ -1,9 +1,20 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-062: Test helper functions should be pytest fixtures
 
 I.issue(
   snapshot='ducktape/2025-11-26-00',
+  expect_caught_from=[
+    ['adgn/tests/mcp/test_resources_subscriptions_index.py'],
+    ['adgn/tests/mcp/resources/test_subscriptions_index.py'],
+    ['adgn/tests/mcp/compositor/test_pinned_unmount.py'],
+    ['adgn/tests/mcp/test_notifications_envelope.py'],
+    ['adgn/tests/mcp/compositor/test_meta_inproc_proxies.py'],
+    ['adgn/tests/mcp/compositor/test_admin_client.py'],
+    ['adgn/tests/mcp/exec/test_docker_unit.py'],
+    ['adgn/tests/mcp/test_chat_server.py'],
+    ['adgn/tests/mcp/test_mcp_flat_model_helper.py'],
+  ],
   rationale=|||
     Multiple test files define helper functions (with `def _...`) that create test
     servers or resources. These are basic factories that don't depend on test-specific

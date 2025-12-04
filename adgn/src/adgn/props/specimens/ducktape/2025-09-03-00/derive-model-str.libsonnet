@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-041: Derive model_str at point of use; avoid redundant state
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: walrus-cache-get, walrus-include-verbose, walrus-inline-checks, walrus-subprocess-rc
 // All describe assign-and-check/assign-and-test patterns that should use walrus operator

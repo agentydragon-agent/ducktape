@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-003: Silent failure when --mcp-config or --initial-policy file doesn't exist
 

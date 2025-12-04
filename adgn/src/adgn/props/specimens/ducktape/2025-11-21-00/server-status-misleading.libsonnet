@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-025: ServerStatus and AgentInfoDetailed.status field is misleading for remote agents
 

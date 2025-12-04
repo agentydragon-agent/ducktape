@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-018: Delete unused dead code functions (0 call sites)
 
@@ -75,4 +75,8 @@ I.issue(
       [110, 110],  // Line with "NOTE: This function is currently unused"
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/openai_utils/model.py'],
+    ['adgn/src/adgn/mcp/policy_gateway/signals.py'],
+  ],
 )

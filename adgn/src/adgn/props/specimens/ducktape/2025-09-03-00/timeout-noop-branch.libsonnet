@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-031: Remove no-op timeout branch (dead code)
 I.issue(

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-055: Remove unused master_fd parameter from ParallelTaskRunner.__init__ (or store and use it)
 I.issue(

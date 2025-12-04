@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-043: Remove shebangs from library modules exposed via console_scripts
 I.issueMulti(

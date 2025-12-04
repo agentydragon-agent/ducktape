@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issue(
   snapshot='ducktape/2025-11-22-00',
@@ -47,4 +47,13 @@ I.issue(
     'adgn/src/adgn/agent/web/src/components/ChatPane.svelte': [[3, 7], [30, 32]],
     'adgn/src/adgn/agent/web/src/components/ProposalCard.svelte': [[5, 8]],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/web/src/components/AgentsSidebar.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/GlobalApprovalsList.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/ServersPanel.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/PolicyEditorPane.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/MessageComposer.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/ChatPane.svelte'],
+    ['adgn/src/adgn/agent/web/src/components/ProposalCard.svelte'],
+  ],
 )

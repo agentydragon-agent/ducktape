@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-051: Inject pygit2 repository into generate_commit_message_minicodex
 

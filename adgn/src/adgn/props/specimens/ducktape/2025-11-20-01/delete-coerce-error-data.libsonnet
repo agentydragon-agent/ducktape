@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-016: Delete _coerce_error_data, use Pydantic model_validate directly
 

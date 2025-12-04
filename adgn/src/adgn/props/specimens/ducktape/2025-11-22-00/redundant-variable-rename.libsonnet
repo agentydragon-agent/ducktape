@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Merged: redundant-variable-rename, needless-variable-rename
 // Both describe unnecessary variable renames that add no clarity
@@ -71,4 +71,8 @@ I.issue(
       [581, 581], // content_before = final_text
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/policy_eval/runner.py'],
+    ['adgn/src/adgn/git_commit_ai/cli.py'],
+  ],
 )

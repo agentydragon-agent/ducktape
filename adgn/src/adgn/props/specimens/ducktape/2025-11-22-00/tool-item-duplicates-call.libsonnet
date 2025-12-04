@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-036: ToolItem duplicates ToolCall structure
 
@@ -146,4 +146,8 @@ I.issue(
       [20, 25],   // Canonical ToolCall definition
     ],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/state.py'],
+    ['adgn/src/adgn/agent/types.py'],
+  ],
 )

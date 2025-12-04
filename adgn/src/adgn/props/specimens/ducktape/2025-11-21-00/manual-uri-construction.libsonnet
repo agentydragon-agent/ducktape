@@ -1,9 +1,13 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-030: approvals_pending_global constructs URIs manually instead of using constants
 
 I.issue(
   snapshot='ducktape/2025-11-21-00',
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/mcp_bridge/servers/agents.py'],
+    ['adgn/src/adgn/mcp/_shared/constants.py'],
+  ],
   rationale=|||
     The `approvals_pending_global` function manually constructs resource URIs using f-strings
     instead of using centralized constants from `_shared/constants.py`. URIs in this codebase

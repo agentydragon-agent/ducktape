@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-011: MCPConfig(servers={}) is wrong parameter name, creates extra unwanted field
 

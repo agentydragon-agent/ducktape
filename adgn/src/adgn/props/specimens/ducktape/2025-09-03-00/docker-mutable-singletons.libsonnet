@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-034: Avoid mutable module-level singletons for Docker client/container
 I.issue(

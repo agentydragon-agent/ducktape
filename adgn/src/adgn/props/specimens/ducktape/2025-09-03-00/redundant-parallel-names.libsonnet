@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // Redundant parallel names in editor flow (final_text vs content_before)
 I.issue(

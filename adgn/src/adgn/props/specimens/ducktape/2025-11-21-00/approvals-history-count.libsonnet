@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-023: AgentApprovalsHistory count field is redundant and should be removed
 

@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-005: Branch-specific duplication when creating runner; prefer shared trunk with early bailout
 I.issue(

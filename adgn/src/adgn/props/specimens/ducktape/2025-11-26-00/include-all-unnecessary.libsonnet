@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-042: Delete unnecessary include_all variable, use args.stage_all directly
 

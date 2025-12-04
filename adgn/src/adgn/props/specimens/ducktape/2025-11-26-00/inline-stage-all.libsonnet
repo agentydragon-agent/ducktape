@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-043: Inline _stage_all_if_requested - boolean-guarded no-op functions are antipattern
 

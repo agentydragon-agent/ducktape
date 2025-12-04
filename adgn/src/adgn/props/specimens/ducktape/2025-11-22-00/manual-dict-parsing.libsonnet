@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-027: Manual dictionary parsing instead of Pydantic discriminated unions
 

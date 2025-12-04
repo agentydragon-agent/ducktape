@@ -1,4 +1,4 @@
-local I = import '../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 // iss-050: Clarify and scope the MAX_PROMPT_CONTEXT_BYTES cap name (or make it global)
 I.issue(
