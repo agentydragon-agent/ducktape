@@ -54,11 +54,12 @@ I.issue(
     Create abstractions when you have multiple uses, not "in case we need it later."
     Start inline, extract to function when second use appears.
 
-    **Related note (ServersPanel):**
+    **Related issue (ServersPanel):**
 
-    User mentioned component should use types generated from Python Pydantic models
-    instead of manually copying fields. Use TypeScript types auto-generated from backend
-    ServerSpec via `adgn/scripts/generate_types.py` (commit 7c6cae7ad) to prevent drift.
+    The component manually copies fields instead of using types generated from Python
+    Pydantic models. TypeScript types can be auto-generated from backend ServerSpec via
+    `adgn/scripts/generate_types.py` (commit 7c6cae7ad) to prevent drift between frontend
+    and backend type definitions.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ServersPanel.svelte': [

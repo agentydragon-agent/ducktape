@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from itertools import chain
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from adgn.props.ids import FalsePositiveID, TruePositiveID
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.paths import FileType
 
-# Direct import - circular dependency is broken by deferred import in registry.py
-from adgn.props.snapshot_registry import KnownFalsePositive, SnapshotRecord, TruePositiveIssue
+if TYPE_CHECKING:
+    from adgn.props.snapshot_registry import KnownFalsePositive, SnapshotRecord, TruePositiveIssue
 
 
 @dataclass

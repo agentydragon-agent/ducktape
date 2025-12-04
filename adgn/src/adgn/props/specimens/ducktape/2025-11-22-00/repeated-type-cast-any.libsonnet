@@ -52,16 +52,15 @@ I.issue(
     of using discriminated union type guard. Should check `content_kind === 'Json'`
     first, then TypeScript narrows the type automatically.
 
-    **User mentioned "pretty mechanism for parsing Pydantic models":**
+    **Type generation from Pydantic models:**
 
-    The project should have (or should create) a tool to generate TypeScript types from
-    Pydantic models:
+    Generating TypeScript types from Pydantic models would prevent this class of issues:
     - Export Pydantic models to JSON Schema
     - Generate TypeScript types from JSON Schema
     - Use those types instead of manual `as any` or Zod schemas
 
     Tools like `pydantic-to-typescript`, `json-schema-to-typescript`, or custom scripts
-    can automate this.
+    can automate this process.
 
     **Why duplication happened:**
 
