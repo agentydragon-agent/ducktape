@@ -4,56 +4,13 @@ local I = import '../../lib.libsonnet';
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts'], ['adgn/src/adgn/agent/server/app.py']],
   rationale=|||
-    The ApprovalTimeline tests reference a WebSocket endpoint `/ws/approvals` that doesn't
-    exist in the backend:
+    ApprovalTimeline tests (lines 486, 512, 538, 601) reference WebSocket endpoint `/ws/approvals` that doesn't exist in the backend.
 
-    ```typescript
-    const wsUrl = `ws://localhost/ws/approvals?agent_id=${encodeURIComponent(mockAgentId)}`
-    const ws = new MockWebSocket(wsUrl)
-    ```
+    Backend evidence (app.py:332): WebSocket routes commented out and never registered (`# register_agents_ws(app)`).
 
-    This appears in multiple test cases (lines 486, 512, 538, 601).
+    Code comments in stores_channels.ts indicate `/ws/approvals` was intentionally replaced by MCP resource `resource://agents/{agentId}/approvals/pending`.
 
-    However, the backend doesn't have this endpoint. In app.py lines 320-321:
-
-    ```python
-    # TODO: Register websocket routes (placeholder)
-    # register_agents_ws(app)
-    ```
-
-    The WebSocket routes are commented out and never registered!
-
-    Additionally, comments in stores_channels.ts indicate this endpoint was supposed to
-    be replaced by MCP resources:
-
-    ```typescript
-    // - resource://agents/{agentId}/approvals/pending - pending approvals (replaces /ws/approvals)
-    ```
-
-    and
-
-    ```typescript
-    // Subscribe to approvals via MCP resource (replaces /ws/approvals)
-    ```
-
-    and
-
-    ```typescript
-    // Replaces WebSocket /ws/approvals channel with resource://agents/{agentId}/approvals/pending
-    ```
-
-    So the tests are testing against:
-    1. An endpoint that doesn't exist in the backend
-    2. An endpoint that was intentionally replaced by MCP resources
-
-    Fix:
-    1. Update tests to use MCP resources instead of WebSocket endpoints
-    2. Remove all references to the old /ws/approvals endpoint
-    3. If WebSocket support is still needed, either:
-       - Implement the backend endpoint (uncomment register_agents_ws), or
-       - Remove the TODO comment if WebSocket is no longer planned
-
-    This is a case of dead test code testing against a non-existent/deprecated API.
+    Tests are testing against a non-existent, deprecated API that was replaced by MCP resources. Either update tests to use MCP resources or implement the backend endpoint (uncomment register_agents_ws), but current state is broken.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/web/src/components/ApprovalTimeline.test.ts': [

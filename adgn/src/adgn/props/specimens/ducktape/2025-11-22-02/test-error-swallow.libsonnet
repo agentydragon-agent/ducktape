@@ -2,38 +2,19 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale=|||
-    Tests swallow all exceptions with bare `except Exception:` blocks, hiding real errors.
+    Tests use bare `except Exception:` blocks that swallow all errors, hiding real failures.
 
-    **Pattern variations:**
-    ```python
-    # Variant 1: except Exception: break
-    for _ in range(15):
-        try:
-            approve_btn = page.get_by_role("button", name="Approve").first
-            if approve_btn.count() > 0:
-                approve_btn.click()
-                page.wait_for_timeout(100)
-        except Exception:
-            break
+    Two pattern variations: `except Exception: break` in retry loops (lines 75-82 in
+    test_mcp_concurrent.py) and `except Exception: pass` for optional operations (lines 171-175,
+    251-255 in test_mcp_edge_cases.py).
 
-    # Variant 2: except Exception: pass
-    try:
-        wait_for_pending_approvals(page, count=1, timeout=5000)
-        approve_first_pending(page)
-    except Exception:
-        pass  # No approval needed
-    ```
+    This hides actual errors during test execution. If operations fail for real reasons (element
+    not found, page crashed, network failure, timeout), the test silently continues and may pass
+    when it should fail.
 
-    **Why this is problematic:**
-    This hides actual errors that might occur during test execution. If operations fail
-    for real reasons (element not found, page crashed, network failure, timeout), the
-    test silently continues and may pass when it should fail.
-
-    **Correct approach:**
-    - Remove try/except entirely if operation should succeed
-    - Catch only specific expected exceptions (e.g., TimeoutError, ElementNotFoundError)
-    - Let real errors propagate to fail the test
-    - If approvals are optional, explicitly check conditions rather than swallowing all errors
+    Remove try/except entirely if operation should succeed, or catch only specific expected
+    exceptions (TimeoutError, ElementNotFoundError). Let real errors propagate. If approvals are
+    optional, check conditions explicitly rather than swallowing all errors.
   |||,
   occurrences=[
     {

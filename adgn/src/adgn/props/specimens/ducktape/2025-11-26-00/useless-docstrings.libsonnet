@@ -4,50 +4,23 @@ local I = import '../../lib.libsonnet';
 I.issueMulti(
   rationale= |||
     Several functions have docstrings that add no information beyond what the function
-    signature already provides. These docstrings are noise and should be deleted.
+    signature already provides. These are noise.
 
-    **Occurrences:**
+    **Examples:**
+    1. handlers.py:25-27 `build_handlers()`: "Returns (handlers, persist_handler)" just
+       restates the return type annotation.
+    2. app.py:50-52 `default_client_factory()`: "Default LLM client factory" restates the
+       function name with no added value.
+    3. container.py:128-129 `default_client_factory()`: "Default LLM client factory used
+       when no custom factory is provided" - first part redundant, second part slightly
+       useful but could be condensed.
 
-    1. **build_handlers (handlers.py:25-27)**
-       ```python
-       def build_handlers(...) -> tuple[list[BaseHandler], RunPersistenceHandler]:
-           """Construct the standard handler stack for an agent.
+    **Principle:** Docstrings should explain WHY, not WHAT. "Returns X" when signature says
+    "-> X" is noise. Restating the function name in prose is useless. Type annotations
+    already document the "what".
 
-           Returns (handlers, persist_handler).
-           """
-       ```
-       Problem: The "Returns" line just restates the return type annotation.
-       Fix: Delete the "Returns" line, or delete the entire docstring if first line adds no value.
-
-    2. **default_client_factory (app.py:50-52)**
-       ```python
-       def default_client_factory(model: str) -> OpenAIModelProto:
-           """Default LLM client factory."""
-           return build_client(model, enable_debug_logging=True)
-       ```
-       Problem: Docstring just restates the function name. Provides zero additional information.
-       Fix: Delete the docstring entirely.
-
-    3. **default_client_factory (container.py:128-129)**
-       ```python
-       def default_client_factory(model: str) -> OpenAIModelProto:
-           """Default LLM client factory used when no custom factory is provided."""
-       ```
-       Problem: The "when no custom factory is provided" part is slightly useful, but the
-       "Default LLM client factory" part is redundant.
-       Fix: Could be condensed to just "Used when no custom factory is provided." or deleted.
-
-    **General principle:**
-    - Docstrings should add information not obvious from the signature
-    - "Returns X" when signature says "-> X" is pure noise
-    - Restating the function name in sentence form is useless
-    - Keep docstrings only when they explain WHY, not WHAT
-
-    **Benefits of removal:**
-    1. Less noise to maintain
-    2. Clearer signal-to-noise ratio in codebase
-    3. Encourages writing meaningful docstrings when needed
-    4. Type annotations already document the "what"
+    **Fix:** Delete useless docstrings entirely. Where partial value exists, condense to
+    only the non-redundant part.
   |||,
   occurrences=[
     {

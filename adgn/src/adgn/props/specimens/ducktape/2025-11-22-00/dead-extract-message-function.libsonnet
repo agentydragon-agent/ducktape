@@ -3,51 +3,20 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    The function `_extract_message_from_text()` (lines 260-263) appears to be
-    unused dead code. A project-wide search shows:
+    core.py _extract_message_from_text() (lines 260-263) appears to be unused dead
+    code. The function extracts text between <message> tags using regex.
 
-    **Definition:**
-    ```python
-    def _extract_message_from_text(text: str) -> str:
-        if match := re.search(r"<message>\s*(.*?)\s*</message>", text, re.DOTALL):
-            return match.group(1).strip()
-        return text.strip()
-    ```
+    Project-wide search shows zero usages (only the definition appears). The current
+    prompt in build_prompt() instructs the AI to wrap messages in <message> tags,
+    but backends don't appear to use this helper for parsing. Extraction was likely
+    moved elsewhere or backends parse tags directly.
 
-    **Usages found:** 0 (only appears in its definition)
+    Delete the function. Keeping unused code: (1) misleads readers about how
+    messages are extracted, (2) clutters the codebase, (3) creates maintenance
+    burden, (4) causes doubt about whether it should be called.
 
-    **Context:**
-
-    The function extracts text between `<message>` tags, which suggests it was used
-    to parse AI-generated responses that wrapped commit messages in XML tags.
-
-    Looking at the current prompt in `build_prompt()`, the AI is instructed to:
-    - "Output ONLY the commit message between <message> and </message> tags"
-    - But the backends don't appear to use `_extract_message_from_text()` to parse
-      the response
-
-    This suggests either:
-    1. The extraction was moved elsewhere and this is leftover code, or
-    2. The backends parse the tags directly without using this helper
-
-    **The correct approach:**
-
-    Delete the function. If it's truly unused, keeping it:
-    1. **Misleads readers**: Implies this is how messages are extracted
-    2. **Clutters the codebase**: Dead code obscures live code
-    3. **Maintenance burden**: May get inadvertently "fixed" or updated
-    4. **Creates doubt**: Readers wonder if they should be calling it
-
-    If the extraction logic is actually needed somewhere, the deletion will
-    cause an import error that makes the dependency explicit.
-
-    **Verification:**
-
-    To confirm it's unused:
-    ```bash
-    git grep -n '_extract_message_from_text' --
-    # Should only show the definition
-    ```
+    If extraction logic is actually needed, deletion will cause an import error that
+    makes the dependency explicit.
   |||,
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/core.py': [

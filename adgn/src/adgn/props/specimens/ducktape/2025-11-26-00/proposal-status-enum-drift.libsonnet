@@ -3,48 +3,20 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    The code converts `rec.status` (from persistence) to `ProposalStatus` enum, which
-    suggests there may be multiple versions of the same enum or semantic drift between
-    the persistence layer and the application layer.
+    Line 293 converts `rec.status` to `ProposalStatus` enum, suggesting the persistence
+    layer and application layer use different types for the same concept.
 
-    **Current implementation (app.py:293):**
-    ```python
-    ProposalRow(
-        id=rec.id, status=ProposalStatus(rec.status), created_at=rec.created_at, decided_at=rec.decided_at
-    )
-    ```
+    **The issue:** `PolicyProposal.status` (persist/__init__.py) is typed as `str`, not
+    `ProposalStatus`. Line 293 must convert at the application boundary. This creates drift
+    risk: invalid status strings in the database won't be caught by the type system, and
+    runtime errors occur if the database contains unexpected values.
 
-    **Problems:**
-    1. `rec.status` comes from persistence as a string (or another enum)
-    2. It's being converted to `ProposalStatus` enum
-    3. This suggests the persistence layer and application layer use different types
-    4. Multiple representations of the same concept = drift risk
+    **Fix:** Change `PolicyProposal.status` from `str` to `ProposalStatus` enum. Pydantic
+    validates on construction. No conversion needed at line 293 - persistence layer enforces
+    the enum, application layer receives typed values.
 
-    **Root cause (verified):**
-    The `PolicyProposal` model (adgn/src/adgn/agent/persist/__init__.py) has `status: str`,
-    not `status: ProposalStatus`. The conversion `ProposalStatus(rec.status)` happens at
-    the application boundary (line 293).
-
-    This creates potential for:
-    - Invalid status strings in database (not caught by type system)
-    - Drift between valid database values and enum values
-    - Runtime errors if database contains unexpected status strings
-
-    **Correct approach:**
-    Change `PolicyProposal.status` from `str` to `ProposalStatus` enum. Pydantic will
-    automatically validate on construction. Then line 293 becomes:
-    ```python
-    ProposalRow(id=rec.id, status=rec.status, ...)  # Already ProposalStatus
-    ```
-
-    No conversion needed - persistence layer enforces the enum, application layer receives
-    typed values.
-
-    **Benefits:**
-    1. Single source of truth for valid status values
-    2. Type safety throughout the stack
-    3. No runtime conversion errors
-    4. Database constraints match application constraints
+    Benefits: single source of truth, type safety throughout stack, no runtime conversion
+    errors.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/server/app.py': [

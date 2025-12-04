@@ -4,43 +4,16 @@ local I = import '../../lib.libsonnet';
 I.issue(
   rationale=|||
     Lines 161-164 discover and create a pygit2 repository inside
-    `generate_commit_message_minicodex()`. This violates dependency injection.
+    `generate_commit_message_minicodex()`, violating dependency injection.
+    The function creates its own dependencies instead of receiving them.
 
-    **Current:**
-    ```python
-    async def generate_commit_message_minicodex(model: str, *, debug: bool = False, amend: bool = False) -> str:
-        # Wire an in-proc read-only Git MCP server bound to the current repo
-        gitdir = pygit2.discover_repository(Path.cwd())
-        assert gitdir, "Unable to locate git repository"
-        repo = pygit2.Repository(gitdir)
-        repo_root = Path(repo.workdir or Path(gitdir).parent)
-        # ... uses repo internally ...
-    ```
+    Problems: harder to test (can't inject test repository), duplicates
+    discovery logic (caller at cli.py:704 already has repo), tight coupling
+    to current working directory.
 
-    **Problems:**
-    1. Function creates its own dependencies instead of receiving them
-    2. Harder to test - can't inject a test repository
-    3. Duplicates repository discovery logic (caller might already have repo)
-    4. Tight coupling to current working directory
-
-    **Fix:**
-    ```python
-    async def generate_commit_message_minicodex(
-        repo: pygit2.Repository,
-        model: str,
-        *,
-        debug: bool = False,
-        amend: bool = False
-    ) -> str:
-        """Run MiniCodex with docker_exec + submit_commit_message MCP servers."""
-        repo_root = Path(repo.workdir or repo.path).parent
-        # ... rest of function ...
-    ```
-
-    Caller already has the repo (cli.py:704), so just pass it through.
-
-    **Also refactor:** The MCP server it creates internally should also use this
-    injected repository instead of discovering its own.
+    Fix: accept `repo: pygit2.Repository` parameter and pass it through from
+    the caller. The MCP server created internally should also use the injected
+    repository instead of discovering its own.
   |||,
   filesToRanges={
     'adgn/src/adgn/git_commit_ai/minicodex_backend.py': [

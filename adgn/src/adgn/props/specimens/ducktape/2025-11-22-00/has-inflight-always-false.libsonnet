@@ -3,63 +3,21 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    `mcp_has_inflight` parameter is always `False` with comments "Tool inflight detection
-    is not exposed", making `RunPhase.TOOLS_RUNNING` unreachable. Either implement or remove.
+    `mcp_has_inflight` parameter is always `False` (runtime.py:249,
+    status_shared.py:162) with comments "not exposed", making
+    `RunPhase.TOOLS_RUNNING` unreachable. The `determine_run_phase()`
+    function checks this parameter but it's always False.
 
-    **Problem: Dead parameter prevents TOOLS_RUNNING state**
+    Impact: unreachable enum value, misleading signature (suggests detection
+    works), documentation claims "MCP tools executing" but never happens,
+    UI may show wrong phase.
 
-    Two call sites (runtime.py:249, status_shared.py:162) pass `mcp_has_inflight=False`.
-    The `determine_run_phase()` function checks this parameter but it's always False, so
-    `RunPhase.TOOLS_RUNNING` can never be returned.
+    Options: (1) implement tracking (McpManager tracks inflight calls in a
+    set, add/remove on call_tool entry/exit), or (2) remove feature (delete
+    TOOLS_RUNNING enum value and mcp_has_inflight parameter).
 
-    **Impact:**
-    - Unreachable enum value exists but can't be reached
-    - Function signature misleading (suggests inflight detection works)
-    - Documentation claims "MCP tools executing" but never happens
-    - UI may show wrong phase
-
-    **Decision tree:**
-
-    | Is TOOLS_RUNNING valuable? | Is implementation feasible? | Action |
-    |----------------------------|----------------------------|--------|
-    | Yes (UI feedback/telemetry) | Yes (can track tool calls) | **Implement** |
-    | No or unclear | Any | **Remove** |
-
-    **Option 1: Implement tracking**
-
-    ```python
-    class McpManager:
-        def __init__(self):
-            self._inflight_calls: set[str] = set()
-
-        async def call_tool(...):
-            call_id = uuid.uuid4().hex
-            self._inflight_calls.add(call_id)
-            try:
-                return await self._do_call(...)
-            finally:
-                self._inflight_calls.discard(call_id)
-
-        def has_inflight(self) -> bool:
-            return len(self._inflight_calls) > 0
-
-    # In runtime.py:
-    has_inflight = self._mcp_manager.has_inflight()  # Actually computed
-    ```
-
-    **Option 2: Remove feature**
-
-    ```python
-    # Remove TOOLS_RUNNING from RunPhase enum
-    # Remove mcp_has_inflight parameter from determine_run_phase()
-    def determine_run_phase(*, active_run_id, pending_approvals) -> RunPhase:
-        if active_run_id is None: return RunPhase.IDLE
-        if pending_approvals > 0: return RunPhase.WAITING_APPROVAL
-        return RunPhase.SAMPLING
-    ```
-
-    **Principle:** No dead parameters. If a parameter is always constant, either implement
-    the varying logic or remove it. Don't keep speculative parameters with hardcoded values.
+    Principle: no dead parameters. If a parameter is always constant, either
+    implement the varying logic or remove it.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/server/runtime.py': [

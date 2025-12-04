@@ -3,58 +3,21 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The `approvals_pending_global` function (lines 395-424) manually constructs JSON dicts
-    using `json.dumps()` instead of Pydantic models, losing type safety and validation.
+    Lines 395-424 define `approvals_pending_global` that manually constructs JSON dicts with
+    string keys and `json.dumps()` instead of using Pydantic models.
 
-    **Problems:**
+    Problems: manual dict construction doesn't catch typos (`{"call_idd": x}`); no validation
+    (wrong types like `{"call_id": 123}` slip through); hard to evolve (field changes require
+    manual updates across dict literals); inconsistent with codebase (other functions use
+    Pydantic like AgentApprovalsPending); nested tool_call dict manually constructed despite
+    existing ToolCall model; no IDE autocomplete or type checking.
 
-    1. Manual dict construction with string keys - typos aren't caught (`{"call_idd": x}`)
-    2. No validation - wrong types slip through (`{"call_id": 123}` should be str)
-    3. Manual `json.dumps()` instead of Pydantic serialization
-    4. Hard to evolve - field changes require manual updates
-    5. Inconsistent with codebase - other functions use Pydantic (AgentApprovalsPending, etc.)
-    6. Nested tool_call dict manually constructed when ToolCall model exists
-    7. No IDE autocomplete or type checking
+    Lines 411-419 manually build pending_list dicts; lines 421-424 manually construct result
+    dicts with json.dumps.
 
-    **Fix:**
-
-    Define Pydantic models and use them:
-
-    ```python
-    class PendingApprovalItem(BaseModel):
-        call_id: str
-        tool_call: ToolCall
-
-    class AgentPendingApprovalsBlock(BaseModel):
-        agent_id: AgentID
-        pending: list[PendingApprovalItem]
-
-    class ResourceBlock(BaseModel):
-        uri: str
-        mimeType: str
-        text: str
-
-    async def approvals_pending_global() -> list[ResourceBlock]:
-        result: list[ResourceBlock] = []
-        for agent_id in registry.known_agents():
-            # ... check infra ...
-            pending_items = [
-                PendingApprovalItem(call_id=call_id, tool_call=tc)
-                for call_id, tc in pending.items()
-            ]
-            agent_block = AgentPendingApprovalsBlock(agent_id=agent_id, pending=pending_items)
-            result.append(ResourceBlock(
-                uri=f"resource://agents/{agent_id}/approvals/pending",
-                mimeType="application/json",
-                text=agent_block.model_dump_json()
-            ))
-        return result
-    ```
-
-    **Benefits:** Type safety, automatic validation, IDE support, consistent with codebase,
-    uses existing ToolCall model, framework handles serialization.
-
-    **Related:** Issue 026 (list_agents manual JSON) - both should be refactored together.
+    Replace with Pydantic models (PendingApprovalItem, AgentPendingApprovalsBlock, ResourceBlock)
+    and use model_dump_json() for serialization. Benefits: type safety, automatic validation,
+    IDE support, reuses existing ToolCall model, framework handles serialization.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/agents.py': [

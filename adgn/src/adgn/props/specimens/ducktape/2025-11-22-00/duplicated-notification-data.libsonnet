@@ -3,52 +3,24 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    The notifications module duplicates data in two ways:
+    notifications/types.py duplicates data in two ways: (1) NotificationsBatch
+    (lines 14-30) stores both parsed fields (resources_updated, resource_list_changed)
+    and raw MCP notifications, creating redundancy and unclear source of truth;
+    (2) NotificationsBatch and NotificationsForModel (lines 33-51) represent the same
+    data in different shapes (flat lists vs grouped by server).
 
-    **Problem 1: NotificationsBatch stores parsed and raw data**
+    Problems: Parsed fields are derivable from raw, creating sync risk. Two classes
+    for the same data. Manual deduplication. No single source of truth.
 
-    `NotificationsBatch` (types.py:14-30) has three fields: `resources_updated` (parsed),
-    `resource_list_changed` (parsed), and `raw` (original MCP notifications). Parsed
-    fields are derivable from `raw`, creating redundant storage, sync risk, and unclear
-    source of truth.
+    Replace with single grouped representation: one class with dict[server, notices],
+    parse once at construction via from_raw() classmethod, use frozenset for
+    deduplication. Remove NotificationsForModel entirely.
 
-    **Problem 2: Two redundant representations**
+    Benefits: Single source of truth (derived from raw on construction), no
+    duplication, efficient lookups (grouped by server), helper methods for access
+    patterns.
 
-    Both `NotificationsBatch` and `NotificationsForModel` (types.py:33-51) represent the
-    same notification data in different shapes:
-    - `NotificationsBatch`: flat lists
-    - `NotificationsForModel`: grouped by server
-
-    **Solution: Single grouped representation**
-
-    | Aspect | Current | Correct |
-    |--------|---------|---------|
-    | Storage | 3 fields (parsed + raw) | 1 grouped dict |
-    | Types | 2 classes | 1 class |
-    | Deduplication | Manual | frozenset[str] |
-    | Parsing | On access | Via `from_raw()` classmethod |
-
-    Keep only the efficient grouped shape:
-
-    ```python
-    class NotificationsBatch(BaseModel):
-        resources: dict[str, ResourcesServerNotice]  # {server: {updated, list_changed}}
-
-        @classmethod
-        def from_raw(cls, notifications) -> NotificationsBatch:
-            # Parse once at construction, derive grouped structure
-    ```
-
-    **Benefits:**
-    - Single source of truth (derived from raw on construction)
-    - No duplication (parsed data not stored alongside raw)
-    - Efficient lookups (grouped by server, frozenset deduplication)
-    - Helper methods for access patterns (iter_updated_uris, get_servers_with_list_changes)
-
-    **Migration:** Remove `NotificationsForModel`, replace `NotificationsBatch` with merged
-    shape, update callers to use grouped structure.
-
-    **Principle:** Store data in ONE efficient representation, derive views on-demand.
+    Principle: Store data in ONE efficient representation, derive views on-demand.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/notifications/types.py': [

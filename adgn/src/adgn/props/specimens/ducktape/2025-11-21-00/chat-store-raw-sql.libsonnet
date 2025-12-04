@@ -3,61 +3,26 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The `ChatStorePersisted` class in `adgn/src/adgn/mcp/chat/server.py` uses raw aiosqlite queries
-    instead of SQLAlchemy ORM, making it inconsistent with the rest of the persistence layer.
+    Lines 171-283 define `ChatStorePersisted` using raw aiosqlite queries via `_persistence._open()`
+    instead of SQLAlchemy ORM, inconsistent with the rest of the persistence layer.
 
-    **Current state:**
-    The ChatStorePersisted class (lines 171-283) uses raw aiosqlite queries via `self._persistence._open()` instead of SQLAlchemy ORM:
-    - `last_id_async` (lines 182-189): raw SELECT MAX query
-    - `get_last_read_async` (lines 191-200): raw SELECT with agent_id + server_name filter
-    - `append` (lines 202-213): raw INSERT returning lastrowid
-    - `get_message_async` (lines 215-229): raw SELECT by id with manual row conversion
-    - `read_pending_and_advance` (lines 237-283): multiple raw queries with manual transaction handling
+    Five methods use raw SQL: `last_id_async` (SELECT MAX), `get_last_read_async` (SELECT with
+    filters), `append` (INSERT returning lastrowid), `get_message_async` (SELECT by id),
+    `read_pending_and_advance` (multiple queries with manual transaction handling).
 
-    **Why this is problematic:**
+    Problems: inconsistent with codebase patterns (rest of persistence uses SQLAlchemy ORM with
+    `_session()` context manager); ORM models (`ChatMessage`, `ChatLastRead`) already exist in
+    persist/models.py but aren't used; manual row parsing via `_row_to_message(row: Row)`
+    (line 29) instead of automatic ORM mapping; raw SQL with string-based queries is error-prone
+    (no type checking); schema changes require manual updates to query strings and row parsers;
+    uses private `_open()` method instead of proper `_session()` context manager.
 
-    1. **Inconsistent with codebase patterns**: The rest of the persistence layer uses SQLAlchemy ORM:
-       ```python
-       async with self._session() as session:
-           result = await session.execute(select(Agent).where(Agent.id == agent_id))
-           agent = result.scalar_one_or_none()
-       ```
+    Line 5 imports aiosqlite.Row only for raw SQL approach. Lines 29-37 define the manual
+    converter.
 
-    2. **ORM models already exist**: `ChatMessage` and `ChatLastRead` models are defined in
-       `adgn/src/adgn/agent/persist/models.py` (lines 197-225) but not being used.
-
-    3. **Manual row parsing**: Uses `_row_to_message(row: Row)` converter (line 29) instead of
-       automatic ORM object mapping.
-
-    4. **Type safety**: Raw SQL with string-based queries is more error-prone than ORM with
-       type-checked model attributes.
-
-    5. **Maintenance**: SQL schema changes require manual updates to query strings and row
-       parsers, while ORM models provide a single source of truth.
-
-    6. **Raw database access**: Uses `_persistence._open()` (private method) instead of the
-       proper `_session()` async context manager.
-
-    **Recommended fix:**
-
-    Refactor ChatStorePersisted to use SQLAlchemy ORM with `self._persistence._session()`:
-    - Use `select(func.max(ChatMessage.id))` for `last_id_async`
-    - Use `select(ChatLastRead.last_id)` with filters for `get_last_read_async`
-    - Create ORM model instances for `append`, call `session.add()` and `commit()`
-    - Use `select(ChatMessageModel)` for `get_message_async`, then convert ORM object to Pydantic ChatMessage
-
-    **Benefits:**
-    - Consistent with rest of codebase (follows established patterns)
-    - Uses existing ORM models (single source of truth for schema)
-    - Type-safe attribute access instead of string-based column names
-    - Automatic schema migration support via Alembic
-    - Easier to maintain and refactor
-    - Better IDE support (autocomplete, type checking)
-    - No manual row parsing needed
-
-    **Note:**
-    Line 5 imports `from aiosqlite import Row` and line 29 defines `_row_to_message(row: Row)`.
-    These should be removed after migration to ORM, as they're only needed for raw SQL approach.
+    Refactor to use SQLAlchemy ORM: `select(func.max(...))`, `select(...).where(...)`, ORM model
+    instances with `session.add()`/`commit()`. Benefits: consistency, uses existing models (single
+    source of truth), type-safe attribute access, Alembic migration support, better IDE support.
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/chat/server.py': [

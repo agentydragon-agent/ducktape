@@ -4,67 +4,19 @@ local I = import '../../lib.libsonnet';
 I.issue(
   expect_caught_from=[['adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py'], ['adgn/src/adgn/agent/mcp_bridge/servers/approvals_bridge.py']],
   rationale=|||
-    Many functions have Args sections in docstrings that simply restate information
-    already obvious from type annotations:
+    Multiple functions have Args sections in docstrings that simply restate information
+    already obvious from type annotations and parameter names.
 
-    ```python
-    async def create_agent(agent_id: AgentID) -> dict:
-        """Create a new agent and mount its compositor.
+    Examples: `create_agent(agent_id: AgentID)` documents "Unique identifier for the new
+    agent" (obvious from type and name), `approve(call_id: str, reasoning: str | None)`
+    documents "ID of the tool call" and "Optional reasoning" (obvious from types).
 
-        Args:
-            agent_id: Unique identifier for the new agent  # OBVIOUS from AgentID type
+    Args sections should explain WHY or HOW, not WHAT (already clear from signature).
+    Remove Args that restate type info. Keep only Args that add non-obvious semantic
+    information (e.g., retry behavior, validation rules, side effects).
 
-        Returns:
-            Dictionary with agent_id and status
-        """
-    ```
-
-    Another example:
-    ```python
-    async def approve(call_id: str, reasoning: str | None = None) -> dict:
-        """Approve a pending tool call.
-
-        Args:
-            call_id: ID of the tool call to approve  # OBVIOUS: str parameter named call_id
-            reasoning: Optional reasoning for the approval  # OBVIOUS from str | None type
-
-        Returns:
-            Dictionary confirming the approval
-        """
-    ```
-
-    These Args sections provide no additional value beyond the type annotations and
-    parameter names. Good documentation should explain WHY or HOW, not WHAT (which
-    is already clear from the signature).
-
-    Fix - remove Args sections that simply restate type information. Keep the one-line
-    summary and Returns section:
-
-    ```python
-    async def create_agent(agent_id: AgentID) -> dict:
-        """Create a new agent and mount its compositor.
-
-        Returns:
-            Dictionary with agent_id and status
-        """
-    ```
-
-    Only document parameters when there's non-obvious semantic information:
-    ```python
-    async def process_batch(items: list[str], max_retries: int = 3) -> dict:
-        """Process a batch of items with automatic retry.
-
-        Args:
-            max_retries: Number of retry attempts before failing (default: 3).
-                         Exponential backoff is applied between retries.
-
-        Returns:
-            Dictionary with success count and failed items
-        """
-    ```
-
-    In this case, `max_retries` is documented because it explains the retry behavior,
-    not just the type.
+    Affected: registry_bridge.py lines 142-143, 170-171; approvals_bridge.py lines 125-127,
+    141-143.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/servers/registry_bridge.py': [

@@ -3,71 +3,19 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The `reload()` method manually parses JSON and validates the dict[str, str] structure
-    when Pydantic's TypeAdapter can do this more cleanly and with better error messages.
+    Lines 44-56 manually parse JSON and validate dict[str, str] structure with explicit
+    isinstance checks and an imperative loop. This should use Pydantic's TypeAdapter
+    for cleaner code and better error messages.
 
-    **Current code (lines 44-56):**
-    ```python
-    data = json.loads(self.path.read_text())
-    if not isinstance(data, dict):
-        raise ValueError("Token mapping must be a JSON object")
+    Current approach: json.loads + manual dict check + loop with isinstance checks for
+    each key/value pair. Problems: verbose (10 lines vs 3), generic error messages
+    don't specify which field failed, duplicates validation logic Pydantic provides.
 
-    # Validate all values are strings and convert to AgentID
-    mapping: dict[str, AgentID] = {}
-    for token, agent_id in data.items():
-        if not isinstance(token, str) or not isinstance(agent_id, str):
-            raise ValueError(f"Invalid mapping: {token} -> {agent_id}")
-        mapping[token] = AgentID(agent_id)
+    Replace with TypeAdapter: 3 lines using adapter.validate_json() + dict comprehension
+    to convert to AgentID. Benefits: integrated JSON parsing and validation, detailed
+    validation errors with locations, no manual isinstance checks, more Pythonic.
 
-    self._mapping = mapping
-    logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
-    ```
-
-    **Should be (using TypeAdapter):**
-    ```python
-    from pydantic import TypeAdapter
-
-    adapter = TypeAdapter(dict[str, str])
-    data = adapter.validate_json(self.path.read_text())
-    self._mapping = {token: AgentID(agent_id) for token, agent_id in data.items()}
-    logger.info(f"Loaded {len(self._mapping)} token mappings from {self.path}")
-    ```
-
-    **Why TypeAdapter is better:**
-    - **Cleaner code**: 3 lines instead of 10
-    - **Better validation**: Pydantic provides detailed validation errors with locations
-    - **JSON parsing integrated**: `validate_json()` handles both parsing and validation
-    - **Type safety**: TypeAdapter ensures dict[str, str] structure at runtime
-    - **Better error messages**: Instead of "Invalid mapping: foo -> 123", get:
-      ```
-      ValidationError: 1 validation error for dict[str, str]
-      value.foo
-        Input should be a valid string [type=string_type, input_value=123]
-      ```
-    - **No manual isinstance checks**: Pydantic handles all type checking
-    - **No manual loop**: Dict comprehension is more Pythonic than imperative loop
-
-    **Current problems with manual validation:**
-    - Lines 45-46: Manual dict check duplicates what Pydantic does
-    - Lines 50-52: Manual isinstance checks are verbose and error-prone
-    - Line 52: Generic error message doesn't say WHAT is wrong (is token not a string? is agent_id not a string?)
-    - Line 44: Requires separate `json` import when Pydantic can handle JSON directly
-
-    **Note on AgentID:**
-    `AgentID` is a `NewType("AgentID", str)` (types.py:7), so it's essentially `str`.
-    The dict comprehension converts str → AgentID, which is safe and preserves type safety.
-
-    **Possible further simplification:**
-    If Pydantic's TypeAdapter supports NewType directly (needs testing), could use:
-    ```python
-    adapter = TypeAdapter(dict[str, AgentID])
-    self._mapping = adapter.validate_json(self.path.read_text())
-    ```
-    But the dict comprehension version is safer and more explicit.
-
-    **Imports to add:**
-    - Line 11: Can remove `import json` if it's not used elsewhere
-    - Need to add: `from pydantic import TypeAdapter`
+    AgentID is NewType("AgentID", str), so dict comprehension conversion is safe.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/mcp_bridge/auth.py': [

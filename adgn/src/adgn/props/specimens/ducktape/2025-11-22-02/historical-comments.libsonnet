@@ -2,35 +2,15 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||
-    Comments reference historical code states or duplicates log messages.
+    Comments reference historical code states or duplicate log messages/method names.
 
-    Pattern 1: "now an MCP server" comments:
-    ```python
-    # Mount approval policy engine (now an MCP server)
-    await comp.mount_inproc("policy", infra.approval_engine)
-    logger.info(f"Mounted approval policy engine for agent {agent_id}")
-    ```
+    Pattern 1 (compositor_factory.py:40, 45): "Mount...engine (now an MCP server)" references historical refactoring state irrelevant after completion.
 
-    Pattern 2: "Notify that..." comments duplicating log messages:
-    ```python
-    # Notify that agent list changed
-    await self.notify_agents_list_changed()
-    ```
+    Pattern 2 (server.py:209, 237, 361, 363): "Notify that..." comments duplicate what method names/log messages already convey.
 
-    Pattern 3: Confusing middleware comments:
-    ```python
-    # Add UI token authentication (applies to all routes except /mcp which has its own auth)
-    # Actually, we want auth on /mcp too, so add middleware
-    app.add_middleware(UITokenAuthMiddleware, expected_token=ui_token)
-    ```
+    Pattern 3 (server.py:416): Confusing middleware comment with "except... Actually, we want..." contradicts itself instead of stating what it does.
 
-    Problems:
-    - Historical references ("now an MCP server") are irrelevant after refactoring is complete
-    - Comments duplicate what log messages or method names already convey
-    - Confused language ("except... Actually, we want...") should just state what it does
-    - Maintenance burden: must be updated as code changes
-
-    Delete these comments. Log messages and method names are sufficient.
+    These comments create maintenance burden and must be updated as code changes. Delete them; log messages and method names are sufficient.
   |||,
   occurrences=[
     {

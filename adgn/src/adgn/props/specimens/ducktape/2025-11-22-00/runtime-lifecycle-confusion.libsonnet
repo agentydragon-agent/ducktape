@@ -3,69 +3,23 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    `LocalAgentRuntime` has lifecycle and initialization issues: missing type annotations,
-    incomplete cleanup, "may be initialized" antipattern, and not being a proper context
-    manager despite `start()`/`close()` methods.
+    `LocalAgentRuntime` has lifecycle issues: missing type annotations
+    (ui_bus, connection_manager at 81-82), "may be initialized" antipattern
+    (session/agent nullable at 85-88, runtime checks at 155-158), incomplete
+    cleanup (close() doesn't null fields at 160-165), and not being a proper
+    context manager despite having start()/close() methods.
 
-    **Problems:**
+    "May be initialized" antipattern impact: object exists but isn't usable
+    (half-initialized), every method must check initialization, type system
+    can't help (fields are `T | None`), easy to forget start() call.
 
-    | Issue | Lines | Impact |
-    |-------|-------|--------|
-    | Missing type annotations | 81-82 | `ui_bus`, `connection_manager` untyped |
-    | May-be-initialized antipattern | 85-88 | `session`/`agent` nullable, runtime checks |
-    | Incomplete cleanup | 160-165 | `close()` doesn't null fields |
-    | Not a context manager | - | Has `start()`/`close()` but no `__aenter__`/`__aexit__` |
-    | Runtime checks | 155-158 | `if self.agent is None: raise RuntimeError` |
+    Solutions: (1) async context manager (move start() logic to __aenter__,
+    cleanup to __aexit__, automatic lifecycle, strong types, guaranteed
+    cleanup), or (2) factory pattern (classmethod create() with async init,
+    manual lifecycle but strong types).
 
-    **Impact of "may be initialized" antipattern:**
-    - Object exists but isn't usable (half-initialized)
-    - Every method must check if initialized
-    - Type system can't help (fields are `T | None`)
-    - Easy to forget `start()` call
-
-    **Solution 1: Async context manager (preferred)**
-
-    ```python
-    async def __aenter__(self):
-        # Move start() logic here
-        self.session = ...  # Set non-nullable fields
-        self.agent = ...
-        return self
-
-    async def __aexit__(self, ...):
-        if self.session:
-            await self.session.cancel_active_run()
-        self.session = None
-        self.agent = None
-
-    async def run(self, user_text: str) -> AgentResult:
-        # No None check needed - always initialized in context
-        return await self.agent.run(user_text)
-    ```
-
-    **Solution 2: Factory pattern**
-
-    ```python
-    @classmethod
-    async def create(...) -> LocalAgentRuntime:
-        instance = cls.__new__(cls)
-        # Perform async init
-        instance.session = ...  # Non-nullable
-        instance.agent = ...
-        return instance
-    ```
-
-    **Comparison:**
-
-    | Approach | Lifecycle | Type safety | Cleanup |
-    |----------|-----------|-------------|---------|
-    | Current | Manual, unclear | Weak (nullable) | Incomplete |
-    | Context manager | Automatic, clear | Strong | Guaranteed |
-    | Factory | Manual | Strong | Manual |
-
-    **Additional fixes:**
-    1. Add type annotations: `ui_bus: ServerBus | None`, `connection_manager: ConnectionManager | None`
-    2. Document session vs run relationship
+    Current approach: manual unclear lifecycle, weak type safety, incomplete
+    cleanup.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/runtime/local_runtime.py': [

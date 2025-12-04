@@ -3,56 +3,23 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    Lines 164-168 mint TWO different random IDs for the SAME tool call, making it
-    impossible to correlate persistence records with in-flight tracking.
+    Lines 164-168 mint TWO different random IDs for the SAME tool call, making correlation
+    between persistence records and in-flight tracking impossible.
 
-    **Current (ALLOW case):**
-    Line 164: `await self._record("pg:" + uuid.uuid4().hex, ...)` - ID #1 for persistence
-    Line 167: `call_id = uuid.uuid4().hex` - ID #2 for _inflight tracking (no prefix!)
-    Line 225: `self._inflight.pop(call_id, None)` - removes using ID #2
+    **The problem:**
+    Line 164 creates ID #1 ("pg:" + uuid) for persistence record.
+    Line 167 creates ID #2 (bare uuid) for _inflight tracking.
+    Line 225 removes using ID #2, breaking the correlation chain.
 
-    **Problem:** Can't correlate the lifecycle of the same call:
-    1. Persistence record uses ID_A ("pg:" prefix)
-    2. In-flight tracking uses ID_B (no prefix, different UUID)
-    3. When call completes, can't record outcome with same ID used at start
-    4. Inconsistent prefix usage (some "pg:", some bare)
+    Cannot track: persistence → in-flight → completion under a single ID.
+    Also inconsistent prefix usage ("pg:" vs bare).
 
-    **Compare to ASK case (line 238) - done correctly:**
-    Line 238: `call_id = "pg:" + uuid.uuid4().hex` - mints ONCE
-    Then uses same `call_id` for: ApprovalHub, notifications, persistence (lines 254, 262)
+    **Contrast with ASK case (line 238):** Mints call_id ONCE, then uses it consistently
+    for ApprovalHub, notifications, and persistence (lines 254, 262).
 
-    **Correct approach:**
-    Mint call_id ONCE in common trunk (after decision, before branching), then all paths use it:
-    ```python
-    # After policy decision
-    logger.debug("Policy decision: %s → %s", name, decision, ...)
-
-    # Mint once for all paths
-    call_id = "pg:" + uuid.uuid4().hex
-
-    if decision is ALLOW:
-        if self._record: await self._record(call_id, ...)
-        self._inflight[call_id] = tool_key
-        try:
-            result = await call_next(context)
-        finally:
-            self._inflight.pop(call_id, None)
-
-    elif decision is DENY_ABORT:
-        if self._record: await self._record(call_id, ...)
-        raise ...
-
-    elif decision is DENY_CONTINUE:
-        if self._record: await self._record(call_id, ...)
-        raise ...
-
-    elif decision is ASK:
-        # Use same call_id
-        req = ApprovalRequest(...ApprovalToolCall(call_id=call_id, ...))
-        ...
-    ```
-
-    This eliminates all ID duplication and inconsistency - one mint, all paths use it.
+    **Fix:** Mint call_id once after policy decision, before branching. All paths (ALLOW,
+    DENY_ABORT, DENY_CONTINUE, ASK) use the same ID for persistence, tracking, and cleanup.
+    This eliminates duplication and ensures consistent prefix usage.
   |||,
   filesToRanges={
     'adgn/src/adgn/mcp/policy_gateway/middleware.py': [

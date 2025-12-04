@@ -3,59 +3,24 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    Three run phase/status enums exist with different granularity. The most comprehensive
-    (`status_shared.py` RunPhase) should be canonical, replacing less detailed versions.
+    Three run phase/status enums exist with different granularity, causing name
+    collisions, unclear subset relationships, and lost information when converting.
 
-    **Problem: Multiple enums with inconsistent granularity**
+    status_shared.py RunPhase (7 states): distinguishes TOOLS_RUNNING from SAMPLING
+    via determine_run_phase() logic (lines 42-56). mcp_bridge/types.py RunPhase
+    (3 states): cannot make this distinction. protocol.py RunStatus (7 states):
+    lifecycle-focused (STARTING/FINISHED) rather than execution phase.
 
-    | Location | States | Distinguishes TOOLS_RUNNING? |
-    |----------|--------|------------------------------|
-    | `status_shared.py` RunPhase | 7 (IDLE, SAMPLING, WAITING_TOOL, TOOLS_RUNNING, WAITING_APPROVAL, SENDING_OUTPUT, ERROR) | Yes |
-    | `mcp_bridge/types.py` RunPhase | 3 (IDLE, SAMPLING, WAITING_APPROVAL) | No |
-    | `protocol.py` RunStatus | 7 (IDLE, STARTING, RUNNING, AWAITING_APPROVAL, ABORTING, FINISHED, ERROR) | No (lifecycle-focused) |
+    Impact: Name collision (two RunPhase enums), conversion overhead, coarser enums
+    lose information (can't distinguish tool execution from sampling).
 
-    **Impact:**
-    - Name collision (two `RunPhase` enums)
-    - Subset relationships unclear
-    - Conversion overhead between enums
-    - Lost information (coarser enums can't distinguish tool execution from sampling)
+    Use status_shared.RunPhase everywhere. Delete mcp_bridge RunPhase. If RunStatus
+    tracks a different dimension (lifecycle vs execution phase), rename to clarify
+    (e.g., AgentLifecycle). For code needing coarser granularity, write mapping
+    functions from the comprehensive enum.
 
-    **Evidence for status_shared.RunPhase:**
-
-    The `determine_run_phase()` function (status_shared.py:42-56) has explicit logic to
-    distinguish fine-grained states based on run ID, pending approvals, and inflight tools.
-    `mcp_bridge` version cannot distinguish `TOOLS_RUNNING` from `SAMPLING`.
-
-    **Solution: Use comprehensive version everywhere**
-
-    ```python
-    # Canonical: status_shared.py RunPhase (7 states)
-    # Delete: mcp_bridge/types.py RunPhase
-    # Rename or merge: protocol.py RunStatus (if lifecycle vs phase distinction needed)
-    ```
-
-    If `protocol.RunStatus` tracks a different dimension (lifecycle: STARTING/FINISHED vs
-    execution phase: SAMPLING/TOOLS_RUNNING), separate them:
-
-    ```python
-    class AgentLifecycle(StrEnum):
-        STARTING = "starting"
-        READY = "ready"
-        STOPPING = "stopping"
-
-    class RunPhase(StrEnum):  # Fine-grained execution state
-        IDLE = "idle"
-        SAMPLING = "sampling"
-        TOOLS_RUNNING = "tools_running"
-        WAITING_APPROVAL = "waiting_approval"
-        ERROR = "error"
-    ```
-
-    For code needing coarser granularity, write mapping functions from fine-grained enum.
-
-    **Principle:** One enum per dimension, most granular wins. Don't create multiple enums
-    for the same dimension with different granularity. If coarser projections are needed,
-    derive them from the comprehensive version.
+    Principle: One enum per dimension, most granular wins. Derive coarser projections
+    rather than maintaining multiple enums.
   |||,
   filesToRanges={
     'adgn/src/adgn/agent/server/status_shared.py': [

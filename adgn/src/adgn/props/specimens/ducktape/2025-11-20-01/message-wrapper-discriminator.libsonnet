@@ -3,49 +3,23 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale=|||
-    The input message types (`AssistantMessage`, `UserMessage`, `SystemMessage`) embed the
-    discriminator field (`role`) directly in the message class. This mixes API-level concerns
-    with the message content structure.
+    model.py input message types (AssistantMessage, UserMessage, SystemMessage lines
+    26-53) embed the discriminator field (role) directly in the message class,
+    mixing API-level concerns with content structure.
 
-    **Current structure (lines 26-29):**
-    ```python
-    class AssistantMessage(BaseModel):
-        role: Literal["assistant"] = "assistant"
-        content: list[InputTextPart] | None = None
-    ```
+    Current inconsistency: input messages use "role" as discriminator, other input
+    items use "type" (ReasoningItem, FunctionCallItem), output messages use "kind"
+    (AssistantMessageOut line 172-182). This creates three different discriminator
+    naming conventions.
 
-    **Desired structure:**
-    The message should be separated from its discriminator using a wrapper pattern:
-    ```python
-    class AssistantMessage(BaseModel):
-        content: list[InputTextPart] | None = None
+    Separate message from discriminator using wrapper pattern: message class contains
+    content only, wrapper class contains discriminator "kind" plus message. This
+    matches the output pattern (AssistantMessageOut) and enables clearer type
+    discrimination for union types (InputItem line 93).
 
-    class AssistantMessageIn(BaseModel):
-        kind: Literal["assistant_message"] = "assistant_message"
-        message: AssistantMessage
-    ```
-
-    Or following the output pattern, if keeping fields flat:
-    ```python
-    AssistantMessageOut = {
-        kind: "assistant_message",
-        assistant_message: AssistantMessage
-    }
-    ```
-
-    **Why separate?**
-    - Consistent discriminator naming (`kind` vs `role` vs `type` - currently mixed)
-    - Separates transport/API concerns from message content structure
-    - Similar to how `AssistantMessageOut` uses `kind` discriminator
-    - Enables clearer type discrimination for union types (InputItem)
-    - Message content can evolve independently from serialization format
-
-    **Current inconsistency:**
-    - Input messages use `role` as discriminator
-    - Other input items use `type` as discriminator (ReasoningItem, FunctionCallItem)
-    - Output messages use `kind` as discriminator (AssistantMessageOut)
-
-    This should be unified using wrapper pattern with consistent `kind` discriminators.
+    Benefits: Consistent discriminator naming, separates transport/API concerns from
+    content structure, message content can evolve independently from serialization
+    format.
   |||,
   filesToRanges={
     'adgn/src/adgn/openai_utils/model.py': [
