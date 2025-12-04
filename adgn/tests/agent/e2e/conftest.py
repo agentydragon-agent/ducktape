@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 import os
 from typing import TYPE_CHECKING, Any
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
@@ -113,8 +114,6 @@ class E2EPageHelper:
 
     def extract_agent_id_from_url(self) -> AgentID:
         """Extract agent_id query parameter from current URL."""
-        from urllib.parse import parse_qs, urlparse
-
         qs = parse_qs(urlparse(self.page.url).query)
         agent_id: str | None = qs.get("agent_id", [None])[0]
         if not agent_id:

@@ -22,7 +22,7 @@ def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[st
     so the result can be deserialized as a valid CallToolResult.
     """
     if isinstance(res, FMCallToolResult):
-        res = to_pydantic(res)
+        res = fastmcp_to_mcp_result(res)
 
     if not isinstance(res, mcp_types.CallToolResult):  # pragma: no cover - defensive
         raise TypeError(f"Expected CallToolResult, got {type(res).__name__}")
@@ -37,7 +37,7 @@ def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[st
     return payload
 
 
-def to_pydantic(res: FMCallToolResult) -> mcp_types.CallToolResult:
+def fastmcp_to_mcp_result(res: FMCallToolResult) -> mcp_types.CallToolResult:
     """Convert a FastMCP CallToolResult to mcp.types.CallToolResult.
 
     Builds a minimal payload with alias field names (structuredContent, isError).
@@ -71,7 +71,7 @@ def extract_structured_content[T](result: mcp_types.CallToolResult | FMCallToolR
     """
     # Normalize to Pydantic type if needed
     if isinstance(result, FMCallToolResult):
-        result = to_pydantic(result)
+        result = fastmcp_to_mcp_result(result)
 
     # Direct attribute access on Pydantic model
     # Pydantic models expose both the alias (isError) and Python name (is_error)

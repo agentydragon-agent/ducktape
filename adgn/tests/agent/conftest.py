@@ -4,6 +4,7 @@ import asyncio
 from collections.abc import AsyncIterator, Callable, Iterable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 from typing import Any
 
@@ -12,26 +13,27 @@ from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
+import mcp.types
 from pydantic import BaseModel
 import pytest
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.events import EventType, ToolCall, ToolCallOutput, UserText
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loggers import RecordingHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload, ToolCallPayload, UserTextPayload
+from adgn.agent.persist.events import EventRecord
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
+from adgn.agent.recording_handler import RecordingHandler
 from adgn.agent.server.app import create_app
-from adgn.agent.server.protocol import FunctionCallOutput, ToolCall
+from adgn.agent.server.protocol import FunctionCallOutput
 from adgn.agent.server.state import new_state
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import make_editor_server
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.mcp.testing.simple_servers import SendMessageInput
-from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -352,23 +354,36 @@ def fresh_ui_state():
 
 
 @pytest.fixture
-def make_tool_call() -> Callable[..., ToolCall]:
-    """Factory for creating ToolCall instances with defaults."""
-    factory = ItemFactory(call_id_prefix="test_call")
+def call_id_gen() -> Callable[[], str]:
+    """Lightweight call_id generator for tests."""
+    counter = {"count": 0}
 
-    def _make(server: str, tool: str, call_id: str | None = None, args: dict[str, Any] | None = None) -> ToolCall:
-        item = factory.tool_call(name=build_mcp_function(server, tool), arguments=args or {}, call_id=call_id)
-        return ToolCall(name=item.name, call_id=item.call_id, args_json=item.arguments)
+    def _gen() -> str:
+        counter["count"] += 1
+        return f"test_call:{counter['count']}"
+
+    return _gen
+
+
+@pytest.fixture
+def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
+    """Factory for ToolCall events with auto call_id generation."""
+
+    def _make(server: str, tool: str, args: dict[str, Any] | None = None, args_json: str | None = None) -> ToolCall:
+        # Support both args (dict) and args_json (string) for backwards compatibility
+        if args_json is None and args is not None:
+            args_json = json.dumps(args)
+        return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
 
 
 @pytest.fixture
-def make_call_result() -> Callable[..., Any]:
-    """Factory for creating pydantic CallToolResult with sensible defaults."""
+def make_call_result() -> Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult]:
+    """Factory for MCP CallToolResult."""
 
-    def _make(structured_content: dict[str, Any] | None = None, *, is_error: bool = False):
-        return to_pydantic(
+    def _make(structured_content: dict[str, Any] | None = None, is_error: bool = False) -> mcp.types.CallToolResult:
+        return fastmcp_to_mcp_result(
             CallToolResult(content=[], structured_content=structured_content or {}, is_error=is_error, meta=None)
         )
 
@@ -376,13 +391,27 @@ def make_call_result() -> Callable[..., Any]:
 
 
 @pytest.fixture
-def make_function_output(make_call_result) -> Callable[..., FunctionCallOutput]:
-    """Factory for FunctionCallOutput with defaults."""
+def make_tool_call_output(
+    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
+) -> Callable[[str, dict[str, Any] | None, bool], ToolCallOutput]:
+    """Factory for ToolCallOutput events."""
+
+    def _make(call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False) -> ToolCallOutput:
+        return ToolCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
+
+    return _make
+
+
+@pytest.fixture
+def make_function_output(
+    make_call_result: Callable[[dict[str, Any] | None, bool], mcp.types.CallToolResult],
+) -> Callable[[str, dict[str, Any] | None, bool], FunctionCallOutput]:
+    """Factory for protocol FunctionCallOutput (not EventRecord)."""
 
     def _make(
-        call_id: str, structured_content: dict[str, Any] | None = None, *, is_error: bool = False
+        call_id: str, structured_content: dict[str, Any] | None = None, is_error: bool = False
     ) -> FunctionCallOutput:
-        return FunctionCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error=is_error))
+        return FunctionCallOutput(call_id=call_id, result=make_call_result(structured_content, is_error))
 
     return _make
 
@@ -392,50 +421,56 @@ def make_function_output(make_call_result) -> Callable[..., FunctionCallOutput]:
 
 @pytest.fixture
 def event_ts() -> datetime:
-    """Shared timestamp for event records in tests."""
+    """Shared timestamp for EventRecord tests."""
     return datetime.now(UTC)
 
 
 @pytest.fixture
-def make_user_text_event(event_ts) -> Callable[[int, str], EventRecord]:
+def make_event_record(event_ts: datetime) -> Callable[[EventType, int | None], EventRecord]:
+    """Wrap any EventType in an EventRecord with auto-sequencing."""
+    seq_counter = {"count": 0}
+
+    def _wrap(payload: EventType, seq: int | None = None) -> EventRecord:
+        if seq is None:
+            seq_counter["count"] += 1
+            seq = seq_counter["count"]
+        return EventRecord(seq=seq, ts=event_ts, payload=payload)
+
+    return _wrap
+
+
+@pytest.fixture
+def make_user_text_event(
+    make_event_record: Callable[[EventType, int | None], EventRecord],
+) -> Callable[[int, str], EventRecord]:
     """Factory for UserText EventRecord."""
 
     def _make(seq: int, text: str) -> EventRecord:
-        return EventRecord(seq=seq, ts=event_ts, payload=UserTextPayload(text=text))
+        return make_event_record(UserText(text=text), seq)
 
     return _make
 
 
 @pytest.fixture
-def make_tool_call_event(event_ts) -> Callable[..., EventRecord]:
+def make_tool_call_event(
+    make_event_record: Callable[[EventType, int | None], EventRecord], make_tool_call: Callable[..., ToolCall]
+) -> Callable[..., EventRecord]:
     """Factory for ToolCall EventRecord."""
-    factory = ItemFactory(call_id_prefix="test_event_call")
 
-    def _make(
-        seq: int, server: str, tool: str, call_id: str | None = None, args_json: str | None = None
-    ) -> EventRecord:
-        # Use ItemFactory for consistent call_id generation
-        item = factory.tool_call(name=build_mcp_function(server, tool), arguments={}, call_id=call_id)
-        return EventRecord(
-            seq=seq,
-            ts=event_ts,
-            payload=ToolCallPayload(name=item.name, args_json=args_json, call_id=item.call_id),
-            call_id=item.call_id,
-        )
+    def _make(seq: int, server: str, tool: str, args_json: str | None = None) -> EventRecord:
+        return make_event_record(make_tool_call(server, tool, args_json=args_json), seq)
 
     return _make
 
 
 @pytest.fixture
-def make_function_output_event(event_ts, make_call_result) -> Callable[..., EventRecord]:
-    """Factory for FunctionCallOutput EventRecord."""
+def make_function_output_event(
+    make_event_record: Callable[[EventType, int | None], EventRecord],
+    make_tool_call_output: Callable[[str, dict[str, Any] | None, bool], ToolCallOutput],
+) -> Callable[[int, str, dict[str, Any] | None], EventRecord]:
+    """Factory for ToolCallOutput EventRecord."""
 
     def _make(seq: int, call_id: str, structured_content: dict[str, Any] | None = None) -> EventRecord:
-        return EventRecord(
-            seq=seq,
-            ts=event_ts,
-            payload=FunctionCallOutputPayload(call_id=call_id, result=make_call_result(structured_content)),
-            call_id=call_id,
-        )
+        return make_event_record(make_tool_call_output(call_id, structured_content, False), seq)
 
     return _make

@@ -17,7 +17,8 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli_app import common_options as opt
 from adgn.props.cli_app.decorators import async_run
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec, run_critic
+from adgn.props.critic.critic import run_critic
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt

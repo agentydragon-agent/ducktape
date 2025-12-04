@@ -6,7 +6,7 @@ from hamcrest import assert_that, equal_to, has_length, instance_of, only_contai
 from pydantic import ValidationError
 import pytest
 
-from adgn.props.grader import GradeSubmitInput
+from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.ids import FalsePositiveID, InputIssueID, TruePositiveID
 from adgn.props.paths import FileType
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext

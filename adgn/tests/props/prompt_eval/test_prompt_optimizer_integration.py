@@ -18,10 +18,11 @@ import pytest
 
 from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-from adgn.props.critic import AddOccurrenceInput, CriticInput, SubmitInput, UpsertIssueInput
+from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Specimen
-from adgn.props.grader import GradeSubmitInput
+from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.prompt_optimizer import (
     RunCriticOutput,
     RunGraderInput,

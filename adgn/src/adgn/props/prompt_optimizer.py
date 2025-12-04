@@ -30,12 +30,14 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import agent_queries, get_session
+from adgn.props.db.models import PromptOptimizationRun, Specimen
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync_specimens import sync_specimens
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.grader import grade_critique_by_id
+from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
@@ -220,9 +222,6 @@ async def build_server(
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
         # Check specimen split and enforce validation restriction
-        from adgn.props.db import get_session
-        from adgn.props.db.models import Specimen
-
         with get_session() as session:
             db_specimen = session.query(Specimen).filter_by(specimen_slug=payload.specimen_slug).first()
             if db_specimen is None:
@@ -289,7 +288,10 @@ async def build_server(
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
         # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
-        grader_run_id = await grade_critique_by_id(critique_id=payload.critique_id, client=client, verbose=verbose)
+        with get_session() as session:
+            grader_run_id = await grade_critique_by_id(
+                session=session, critique_id=payload.critique_id, client=client, verbose=verbose
+            )
 
         return RunGraderOutput(grader_run_id=grader_run_id)
 
@@ -407,7 +409,6 @@ async def run_prompt_optimizer(
         )
 
         # Create PromptOptimizationRun record for tracking
-        from adgn.props.db.models import PromptOptimizationRun
 
         with get_session() as session:
             po_run = PromptOptimizationRun(

@@ -11,7 +11,8 @@ from pathlib import Path
 import pytest
 
 from adgn.mcp.exec.models import ExecInput
-from adgn.props.critic import CriticInput, run_critic
+from adgn.props.critic.critic import run_critic
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, Specimen
 from adgn.props.db.prompts import hash_and_upsert_prompt

@@ -46,7 +46,7 @@ async def read_text_json(session: ClientSession, uri: str) -> Any:
 T = TypeVar("T")
 
 
-async def read_text_json_typed(session: ClientSession, uri: str, model: type[T]) -> T:
+async def read_text_json_typed[T](session: ClientSession, uri: str, model: type[T]) -> T:
     """Read a text JSON resource and parse it as the given Pydantic model/type.
 
     - Validates exactly one text part

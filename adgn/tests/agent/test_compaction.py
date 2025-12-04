@@ -8,7 +8,8 @@ import pytest
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.compaction import CompactionHandler
-from adgn.agent.handler import BaseHandler, GroundTruthUsage, Response
+from adgn.agent.events import GroundTruthUsage, Response
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Compact, NoAction, RequireAnyTool
 from adgn.openai_utils.model import AssistantMessage, AssistantMessageOut, OutputText, UserMessage
 

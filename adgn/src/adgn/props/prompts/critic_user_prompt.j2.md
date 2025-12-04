@@ -1,11 +1,9 @@
 Analyze the mounted repository under /workspace.
 
-Files in scope:
+Analyze all of the following files:
 {% for file in files %}
 - {{ file }}
 {% endfor %}
-
-Report issues only for the files listed above.
 
 Instructions:
 - Read files as needed using available tools

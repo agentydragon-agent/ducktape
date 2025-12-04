@@ -12,6 +12,7 @@ import shlex
 import socket
 import subprocess
 import sys
+from urllib.parse import urlunparse
 
 import docker
 import yaml
@@ -300,8 +301,6 @@ def _seatbelt(
     proc, actual_port = _start_jupyter_server(workspace, jpy_token, jupyter_port, run_root, env, kernel_default_name)
 
     # Launch stdio MCP server bound to our stdio to drive the Jupyter server
-    from urllib.parse import urlunparse
-
     mcp_url = urlunparse(("http", f"127.0.0.1:{actual_port}", "", "", "", ""))
     mcp_cmd = [
         "jupyter-mcp-server",

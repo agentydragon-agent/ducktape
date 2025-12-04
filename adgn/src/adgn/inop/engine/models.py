@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+import os
+from pathlib import Path
 from typing import Annotated, Any, Literal, NewType, Self
 
 from pydantic import BaseModel, Field, ValidationInfo, field_serializer, field_validator, model_validator
@@ -374,9 +376,6 @@ class WorkspaceEnvironment(BaseModel):
         Returns:
             Dictionary mapping relative file paths to contents
         """
-        import os
-        from pathlib import Path
-
         files: dict[str, str] = {}
         directory_path = Path(self.workspace_path)
 

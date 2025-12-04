@@ -10,6 +10,8 @@ from platformdirs import user_config_dir
 from pydantic import BaseModel, Field
 import yaml
 
+from adgn.agent.persist import AgentMetadata
+
 if TYPE_CHECKING:
     from adgn.agent.persist.sqlite import SQLitePersistence
     from adgn.agent.types import AgentID
@@ -107,8 +109,6 @@ async def create_agent_from_preset(
     Returns:
         Tuple of (agent_id, mcp_config, system_prompt)
     """
-    from adgn.agent.persist import AgentMetadata
-
     # Load preset
     presets = discover_presets()
     preset = presets.get(preset_name or "default") or presets["default"]

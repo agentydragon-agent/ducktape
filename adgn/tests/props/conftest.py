@@ -1,19 +1,20 @@
 """Shared test fixtures for props tests."""
 
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
-from adgn.props.critic import CriticSubmitPayload, CriticSuccess
+from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import get_session, init_db, recreate_database
 from adgn.props.db.config import get_test_config
 from adgn.props.db.models import Prompt
-from adgn.props.grader import GraderInput
+from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
@@ -227,8 +228,6 @@ def test_db(request):
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
     """
-    from sqlalchemy import create_engine
-
     from adgn.props.db.config import DatabaseConfig
 
     # Generate unique database name for this test
@@ -238,8 +237,6 @@ def test_db(request):
     # Get base config and parse admin URL
     base_config = get_test_config()
     # Parse admin URL to get connection params (connect to postgres db to create new db)
-    from urllib.parse import urlparse, urlunparse
-
     parsed = urlparse(base_config.admin_url)
     postgres_url = urlunparse((parsed.scheme, parsed.netloc, "/postgres", "", "", ""))
 

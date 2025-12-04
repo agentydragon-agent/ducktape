@@ -152,15 +152,6 @@ def _post_json(url: str, token: str, payload: dict[str, Any] | None = None, *, t
     return requests.post(url, headers=_headers(token), json=payload or {}, timeout=timeout)
 
 
-def _get_json(url: str, token: str, *, timeout: int = 15) -> dict[str, Any]:
-    resp = requests.get(url, headers=_headers(token), timeout=timeout)
-    resp.raise_for_status()
-    data = resp.json()
-    if not isinstance(data, dict):  # narrow type for mypy and correctness
-        raise MirrorError("Expected JSON object from Gitea API")
-    return cast(dict[str, Any], data)
-
-
 class _UserInfo(BaseModel):
     login: str
 
@@ -172,8 +163,15 @@ class _UserInfo(BaseModel):
 T_Model = TypeVar("T_Model", bound=BaseModel)
 
 
-def _get_typed_json(url: str, token: str, model_type: type[T_Model], *, timeout: int = 15) -> T_Model:
-    payload = _get_json(url, token, timeout=timeout)
+def _get_typed_json[T_Model: BaseModel](
+    url: str, token: str, model_type: type[T_Model], *, timeout: int = 15
+) -> T_Model:
+    resp = requests.get(url, headers=_headers(token), timeout=timeout)
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, dict):  # narrow type for mypy and correctness
+        raise MirrorError("Expected JSON object from Gitea API")
+    payload = cast(dict[str, Any], data)
     try:
         return model_type.model_validate(payload)
     except ValidationError as exc:  # pragma: no cover - exercised via tests

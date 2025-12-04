@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -373,8 +374,6 @@ class Compositor(FastMCP):
         returns mcp.server.lowlevel.helper_types.ReadResourceContents which must be converted to
         proper MCP protocol types (TextResourceContents | BlobResourceContents).
         """
-        import base64
-
         raw_contents = await self._read_resource_mcp(uri)
         # Convert FastMCP's internal ReadResourceContents to MCP protocol types
         return [

@@ -54,7 +54,8 @@ from adgn.props.cli_app.shared import (
     save_prompt_to_tmp,
 )
 from adgn.props.cluster_unknowns import cluster_unknowns
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec, resolve_critic_scope, run_critic
+from adgn.props.critic.critic import resolve_critic_scope, run_critic
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import GraderRun as DBGraderRun
 from adgn.props.db.prompts import hash_and_upsert_prompt
@@ -66,7 +67,8 @@ from adgn.props.docker_env import (
     properties_docker_spec,
 )
 from adgn.props.eval_harness import run_all_evals
-from adgn.props.grader import GraderOutput, grade_critique_by_id
+from adgn.props.grader.grader import grade_critique_by_id
+from adgn.props.grader.models import GraderOutput
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.issue import IssueCore, LineRange, Occurrence
 from adgn.props.prompt_optimizer import run_prompt_optimizer
@@ -347,10 +349,9 @@ async def specimen_grade(
     """
     init_db()
 
-    grader_run_id = await grade_critique_by_id(UUID(critique_id), build_client(model))
-
-    # Query database for the grader run
+    # Query database and grade critique in single session
     with get_session() as session:
+        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model))
         db_grader_run = session.get(DBGraderRun, grader_run_id)
         if db_grader_run is None:
             raise RuntimeError(f"Grader run {grader_run_id} not found in database")

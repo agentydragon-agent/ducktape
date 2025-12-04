@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from pydantic import TypeAdapter
 
-from adgn.props.critic import CriticSubmitPayload, ReportedIssue
+from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import PropertiesDockerWiring
-from adgn.props.grader import (
+from adgn.props.grader.models import (
     CanonicalFPCoverage,
     CanonicalTPCoverage,
     CritiqueInputIssue,

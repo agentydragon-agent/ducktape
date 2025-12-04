@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 import types
-from typing import Any, Generic, TypeVar, cast, get_origin
+from typing import Any, TypeVar, cast, get_origin
 
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
@@ -11,7 +11,7 @@ from mcp import types as mcp_types
 from mcp.types import CallToolResult
 from pydantic import BaseModel, TypeAdapter
 
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.client_helpers import extract_error_detail
 
 # We use the concrete FastMCP Client type for sessions in tests
@@ -27,7 +27,7 @@ def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, 
     return TypeAdapter(dict[str, Any]).validate_python(sc)
 
 
-class ToolStub(Generic[T_Out]):
+class ToolStub[T_Out]:
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
     def __init__(self, session: Client, name: str, out_type: type[T_Out], *, exclude_none: bool = True) -> None:
@@ -208,7 +208,7 @@ class TypedClient:
             # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
                 raw = await session.call_tool(name=name, arguments=args_dict)
-                result = to_pydantic(raw)
+                result = fastmcp_to_mcp_result(raw)
             except Exception as exc:
                 return str(exc)
             if not result.isError:

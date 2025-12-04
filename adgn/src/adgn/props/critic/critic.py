@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, Literal
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
@@ -38,114 +38,30 @@ from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
+from adgn.props.critic.models import (
+    ALL_FILES_WITH_ISSUES,
+    CriticInput,
+    CriticSubmitPayload,
+    CriticSuccess,
+    FileScopeSpec,
+    ReportedIssue,
+    ResolvedFileScope,
+)
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.ids import BaseIssueID, SpecimenSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.issue import LineRange, Occurrence
-from adgn.props.rationale import Rationale
-
-# Deferred import to avoid circular dependency (SpecimenRegistry imports from this module)
-if TYPE_CHECKING:
-    from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.prompts.util import render_prompt_template
+from adgn.props.specimens.registry import SpecimenRegistry
 
 logger = logging.getLogger(__name__)
 
 
 # =============================================================================
-# File Scope Types and Constants
+# Internal State and Tool Models
 # =============================================================================
-
-ALL_FILES_WITH_ISSUES: Literal["all"] = "all"
-"""Sentinel value: scope critic to all files with ground truth TP/FP issues."""
-
-type FileScopeSpec = set[Path] | Literal["all"]
-"""File scope specification - either explicit file set or ALL_FILES_WITH_ISSUES sentinel.
-Requires resolution via resolve_critic_scope() to produce ResolvedFileScope."""
-
-type ResolvedFileScope = set[Path]
-"""Resolved file scope - guaranteed to be an explicit set of paths (no sentinels)."""
-
-
-# =============================================================================
-# Critic Scope and Run Models
-# =============================================================================
-
-
-class CriticInput(BaseModel):
-    """Input for a critic run (codebase → candidate issues).
-
-    Files can be specified as:
-    - ALL_FILES_WITH_ISSUES sentinel: resolved to files with ground truth TP/FP issues
-    - Explicit set[Path]: specific files to review
-
-    Resolution happens inside run_critic().
-    """
-
-    specimen_slug: SpecimenSlug = Field(description="Specimen slug (e.g., ducktape/2025-11-26-00)")
-    files: FileScopeSpec = Field(
-        description=f'Files to review: explicit set or "{ALL_FILES_WITH_ISSUES}" sentinel for ground truth files'
-    )
-    prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")
-    prompt_optimization_run_id: UUID | None = Field(
-        default=None, description="Optional link to prompt optimization session"
-    )
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class CriticSuccess(BaseModel):
-    """Successful critic output."""
-
-    tag: Literal["success"] = "success"
-    result: CriticSubmitPayload = Field(description="Successful critique with issues and optional notes")
-
-    model_config = ConfigDict(frozen=True)
-
-
-class CriticFailure(BaseModel):
-    """Failed critic output."""
-
-    tag: Literal["failure"] = "failure"
-    error: str = Field(description="Error message explaining why critique failed")
-
-    model_config = ConfigDict(frozen=True)
-
-
-# Discriminated union for critic output
-CriticOutput = Annotated[CriticSuccess | CriticFailure, Field(discriminator="tag")]
-
-
-# =============================================================================
-# Critic Submit Models
-# =============================================================================
-
-
-class ReportedIssue(BaseModel):
-    """Candidate issue reported by the critic (flattened header).
-
-    Exposes only id and rationale; internal-only fields like should_flag are not part of the critic schema.
-
-    Note: occurrences may be empty while the critique is being built incrementally; the submit tool enforces ≥1.
-    """
-
-    id: BaseIssueID
-    rationale: Rationale
-    occurrences: list[Occurrence] = Field(default_factory=list)
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class CriticSubmitPayload(BaseModel):
-    """Structured critic output."""
-
-    issues: list[ReportedIssue] = Field(default_factory=list, description="Issues found")
-    notes_md: str | None = Field(
-        default=None,
-        description="Optional Markdown note. Only for info not represented in structured form in `issues`.",
-    )
-    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass
@@ -158,7 +74,22 @@ class CriticSubmitState:
     work: CriticSubmitPayload = field(default_factory=CriticSubmitPayload)
 
 
+class CriticFailure(BaseModel):
+    """Failed critic output (not used in current API but kept for potential future use)."""
+
+    tag: Literal["failure"] = "failure"
+    error: str = Field(description="Error message explaining why critique failed")
+
+    model_config = ConfigDict(frozen=True)
+
+
+# Discriminated union for critic output (not currently used but defined for completeness)
+CriticOutput = Annotated[CriticSuccess | CriticFailure, Field(discriminator="tag")]
+
+
 class SubmitAck(BaseModel):
+    """Acknowledgment from submit tool."""
+
     ok: bool = Field(default=True, description="Submit succeeded")
     issues: int = Field(description="Number of issues submitted")
     occurrences: int = Field(description="Total number of occurrences submitted")
@@ -172,6 +103,11 @@ class ReportFailureInput(BaseModel):
     message: str = Field(description="Error message explaining why critique could not be completed")
 
     model_config = ConfigDict(extra="forbid")
+
+
+# =============================================================================
+# Internal Helper Functions
+# =============================================================================
 
 
 def _find_this_critique(work: CriticSubmitPayload, issue_id: BaseIssueID) -> tuple[int, ReportedIssue] | None:
@@ -467,9 +403,6 @@ async def run_critic(
     Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
     from within an MCP tool that outlives the session.
     """
-    # Import here to avoid circular dependency at module load time
-    from adgn.props.prompts.util import render_prompt_template
-
     # Fetch system prompt from DB using prompt_sha256 (primary key lookup)
     with get_session() as session:
         prompt_obj = session.get(Prompt, input_data.prompt_sha256)

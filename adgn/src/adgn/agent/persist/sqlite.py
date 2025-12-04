@@ -11,6 +11,7 @@ import aiosqlite
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
 
+from adgn.agent.events import EventType as Event, ToolCall, ToolCallOutput
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.persist import PolicyProposal
 from adgn.agent.runtime.auto_attach import filter_persistable_servers
@@ -372,20 +373,15 @@ WHERE agent_id = ? AND id = ?
     # Seatbelt templates are volume-backed via Docker; no DB APIs in final shape
 
     # Events and approvals ----------------------------------------------------
-    async def append_event(
-        self,
-        *,
-        agent_id: AgentID,
-        seq: int,
-        ts: datetime,
-        payload: dict[str, JsonValue],
-        call_id: str | None = None,
-        tool_key: str | None = None,
-    ) -> None:
-        # Extract type from payload (discriminated union field)
-        event_type = payload.get("type")
-        if event_type is None:
-            raise ValueError("payload must contain 'type' field")
+    async def append_event(self, *, agent_id: AgentID, seq: int, ts: datetime, event: Event) -> None:
+        # Serialize Pydantic event to dict with aliases
+        payload = event.model_dump(mode="json", by_alias=True, exclude_none=True)
+        event_type = payload["type"]
+
+        # Derive indexable fields from event type
+        call_id = event.call_id if isinstance(event, ToolCall | ToolCallOutput) else None
+        tool_key = event.name if isinstance(event, ToolCall) else None
+
         # Apply hard limit per event payload (serialized JSON)
         s = json.dumps(payload, ensure_ascii=False)
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:

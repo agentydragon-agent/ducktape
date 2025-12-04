@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -202,7 +203,7 @@ def docker_exec_call(
     Returns:
         FunctionCallItem for docker_exec call
     """
-    return builder.call(server, "docker_exec", ExecInput(cmd=cmd, timeout_ms=timeout_ms))
+    return builder.call(server, RUNTIME_EXEC_TOOL_NAME, ExecInput(cmd=cmd, timeout_ms=timeout_ms))
 
 
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)

@@ -7,6 +7,7 @@ from typing import Protocol
 from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
+from adgn.agent.events import EventType as Event
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.types import AgentID
 
@@ -69,16 +70,7 @@ class Persistence(Protocol):
     async def delete_agent(self, agent_id: AgentID) -> None: ...
 
     # Events and approvals -----------------------------------------------------
-    async def append_event(
-        self,
-        *,
-        agent_id: AgentID,
-        seq: int,
-        ts: datetime,
-        payload: dict[str, JsonValue],
-        call_id: str | None = None,
-        tool_key: str | None = None,
-    ) -> None: ...
+    async def append_event(self, *, agent_id: AgentID, seq: int, ts: datetime, event: Event) -> None: ...
 
     async def record_approval(
         self,

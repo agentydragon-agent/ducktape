@@ -10,7 +10,8 @@ from datetime import UTC, datetime
 import logging
 from uuid import UUID
 
-from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText, to_jsonl_record
+from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.openai_utils.model import ReasoningItem
 from adgn.props.db import get_session
 from adgn.props.db.models import Event
@@ -47,20 +48,17 @@ class DatabaseEventHandler(BaseHandler):
         Args:
             evt: Event object to persist
         """
-        # Convert event to JSONL record (adds 'kind' field)
-        rec = to_jsonl_record(evt)
+        # Extract type for event_type column (all EventType variants have this field)
+        event_type = evt.type
 
-        # Extract kind and remove from payload (stored separately in event_type column)
-        event_type = rec.pop("kind")
-
-        # Write to database
+        # Write to database - the Event model's EventTypeColumn handles serialization
         with get_session() as session:
             event = Event(
                 transcript_id=self.transcript_id,
                 sequence_num=self._sequence_num,
                 event_type=event_type,
                 timestamp=datetime.now(UTC),
-                payload=rec,  # Event data without 'kind' (stored in event_type column)
+                payload=evt,  # Pass EventType directly - ORM serializes automatically
             )
             session.add(event)
             session.flush()

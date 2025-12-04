@@ -15,10 +15,10 @@ from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.client_factory import build_client
-from adgn.props.critic import CriticSubmitPayload
+from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun
-from adgn.props.grader import GraderOutput
+from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import BaseIssueID
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session

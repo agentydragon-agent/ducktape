@@ -9,7 +9,8 @@ from pydantic import BaseModel
 # TODO(mpokorny): Consider supporting ResponseFunctionWebSearch (type="function_web_search")
 # as a first-class input item so the agent can initiate web search via Responses
 # without custom tool plumbing.
-from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, Compact, InjectItems, LoopDecision, NoAction
 from adgn.openai_utils.model import ReasoningItem
 

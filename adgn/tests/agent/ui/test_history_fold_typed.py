@@ -12,7 +12,7 @@ def test_fold_events_typed_ui_message(make_user_text_event, make_tool_call_event
     events = [
         make_user_text_event(1, "hi"),
         tool_call_event,
-        make_function_output_event(3, tool_call_event.call_id, ui_message_content),
+        make_function_output_event(3, tool_call_event.payload.call_id, ui_message_content),
     ]
 
     state = fold_events_to_ui_state(events)

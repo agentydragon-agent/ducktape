@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 from typing import IO
+from urllib.parse import urlunparse
 
 from adgn.util.net import wait_for_port
 
@@ -125,8 +126,6 @@ def run_jupyter_mcp(
     if not (shutil.which("jupyter") and shutil.which("jupyter-mcp-server")):
         print("jupyter-mcp-launch: 'jupyter' and/or 'jupyter-mcp-server' not found on PATH", file=sys.stderr)
         return 3
-
-    from urllib.parse import urlunparse
 
     jpy_url = urlunparse(("http", f"127.0.0.1:{eff_port}", "", "", "", ""))
     print(f"[launch] jupyter @ {jpy_url} token=REDACTED", file=sys.stderr)

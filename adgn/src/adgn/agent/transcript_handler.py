@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from adgn.agent.handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText, to_jsonl_record
+from adgn.agent.events import AssistantText, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.openai_utils.model import ReasoningItem
 
 
@@ -21,7 +22,7 @@ class TranscriptHandler(BaseHandler):
     """Unified transcript writer for MiniCodex runs.
 
     Writes a JSONL stream to the specified events file path.
-    Each record is timestamped: {"ts": ISO8601, ...to_jsonl_record(evt)...}
+    Each record is timestamped and includes the event's discriminated type field.
 
     The parent directory must already exist (created by run managers).
 
@@ -40,7 +41,7 @@ class TranscriptHandler(BaseHandler):
 
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:
-        rec = to_jsonl_record(evt)
+        rec = evt.model_dump(mode="json", exclude_none=True)
         # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.now(UTC).isoformat(), **rec}
         with self._events_path.open("a", encoding="utf-8") as f:

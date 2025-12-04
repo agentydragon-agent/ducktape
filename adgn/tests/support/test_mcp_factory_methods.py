@@ -183,5 +183,5 @@ def test_mcp_tool_call_composes_with_make(responses_factory: ResponsesFactory):
     )
 
     assert_that(result.output, has_length(3))
-    reasoning, call, text = result.output
+    _reasoning, call, _text = result.output
     assert_that(call, has_properties(name="server_tool"))

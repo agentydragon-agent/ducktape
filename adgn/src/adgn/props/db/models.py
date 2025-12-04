@@ -6,12 +6,53 @@ Maps to the schema defined in docs/eval_results_db.md.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, ClassVar
+from typing import Any, ClassVar, TypeVar
 from uuid import UUID, uuid4
 
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.types import TypeDecorator
+
+from adgn.agent.events import EventType
+
+T = TypeVar("T", bound=BaseModel)
+
+
+class PydanticColumn(TypeDecorator[T]):
+    """SQLAlchemy column type that automatically serializes/deserializes any Pydantic model.
+
+    Usage:
+        class MyModel(Base):
+            data: Mapped[MyPydanticType] = mapped_column(PydanticColumn(MyPydanticType))
+
+    Or register in type_annotation_map for automatic mapping:
+        type_annotation_map = {MyPydanticType: PydanticColumn(MyPydanticType)}
+
+    TODO: Apply this refactor to other JSONB columns in this file where appropriate.
+    Candidates: fields that are currently Mapped[dict[str, Any]] but represent
+    structured Pydantic models (e.g., input/output fields in CriticRun, GraderRun).
+    """
+
+    impl = JSONB
+    cache_ok = True
+
+    def __init__(self, pydantic_type: type[T]):
+        super().__init__()
+        self._adapter: TypeAdapter[T] = TypeAdapter(pydantic_type)
+
+    def process_bind_param(self, value: T | None, dialect: Any) -> dict[str, Any] | None:
+        """Convert Pydantic model to dict for storage (Python → DB)."""
+        if value is None:
+            return None
+        return value.model_dump(mode="json", by_alias=True)
+
+    def process_result_value(self, value: dict[str, Any] | None, dialect: Any) -> T | None:
+        """Convert dict to Pydantic model after loading (DB → Python)."""
+        if value is None:
+            return None
+        return self._adapter.validate_python(value)
 
 
 class Base(DeclarativeBase):
@@ -203,6 +244,9 @@ class Event(Base):
     """Agent execution event.
 
     Linked to critic/grader runs via shared transcript_id.
+
+    The payload column automatically serializes/deserializes EventType via EventTypeColumn.
+    Access event.payload to get a typed EventType instance, set it to store.
     """
 
     __tablename__ = "events"
@@ -216,7 +260,7 @@ class Event(Base):
     sequence_num: Mapped[int] = mapped_column(nullable=False)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    payload: Mapped[EventType] = mapped_column(PydanticColumn(EventType), nullable=False)  # type: ignore[arg-type]
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()

@@ -22,7 +22,7 @@ from pydantic import TypeAdapter
 
 # Import models to export
 from adgn.agent.approvals import ApprovalRequest
-from adgn.agent.handler import ToolCall
+from adgn.agent.events import ToolCall
 from adgn.agent.mcp_bridge.agents import AgentInfo
 from adgn.agent.persist import ApprovalOutcome, EventType
 from adgn.agent.server.protocol import AgentStatus

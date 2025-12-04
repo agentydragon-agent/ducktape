@@ -9,7 +9,7 @@ Implements GEPAAdapter protocol to integrate with your existing infrastructure:
 Usage:
     pip install adgn[gepa]
 
-    from adgn.props.dspy_opt import optimize_with_gepa
+    from adgn.props.gepa import optimize_with_gepa
 
     optimized_prompt, result = await optimize_with_gepa(
         initial_prompt=initial_prompt,
@@ -27,11 +27,4 @@ from .gepa_adapter import (
     optimize_with_gepa,
 )
 
-__all__ = [
-    "CriticAdapter",
-    "CriticOutput",
-    "CriticTrajectory",
-    "SpecimenInput",
-    "load_datasets",
-    "optimize_with_gepa",
-]
+__all__ = ["CriticAdapter", "CriticOutput", "CriticTrajectory", "SpecimenInput", "load_datasets", "optimize_with_gepa"]

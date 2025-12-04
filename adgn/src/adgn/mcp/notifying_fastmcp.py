@@ -11,6 +11,7 @@ import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from fastmcp.server import FastMCP
 from fastmcp.server.low_level import LowLevelServer
+from mcp import types as mcp_types
 from mcp.server.lowlevel.server import InitializationOptions, NotificationOptions
 from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
@@ -95,8 +96,6 @@ class _CapturingServer(LowLevelServer):
     def get_capabilities(
         self, notification_options: NotificationOptions, experimental_capabilities: dict[str, dict[str, Any]]
     ):
-        from mcp import types as mcp_types
-
         caps = super().get_capabilities(notification_options, experimental_capabilities)
         # Advertise resources.subscribe if a subscribe handler is registered
         if mcp_types.SubscribeRequest in self.request_handlers:

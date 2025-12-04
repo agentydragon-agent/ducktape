@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Generic, Protocol, TypeVar
+from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
@@ -51,7 +51,7 @@ class CheckThenCall:
 
 
 @dataclass
-class ExtractThenCall(Generic[T]):
+class ExtractThenCall[T: BaseModel]:
     """Extract typed output from previous call, use in next call."""
 
     expected_tool: str

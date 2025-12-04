@@ -1,65 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated, Any, Literal
+from typing import Any
 
-from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-
-# Canonical typed payloads per event type
-class UserTextPayload(BaseModel):
-    type: Literal["user_text"] = "user_text"
-    text: str
-
-
-class AssistantTextPayload(BaseModel):
-    type: Literal["assistant_text"] = "assistant_text"
-    text: str
-
-
-class ToolCallPayload(BaseModel):
-    type: Literal["tool_call"] = "tool_call"
-    name: str
-    args_json: str | None = None
-    call_id: str
-
-
-class FunctionCallOutputPayload(BaseModel):
-    type: Literal["function_call_output"] = "function_call_output"
-    call_id: str
-    # Embed Pydantic MCP CallToolResult (full content when available)
-    result: mcp_types.CallToolResult
-
-
-class ReasoningPayload(BaseModel):
-    type: Literal["reasoning"] = "reasoning"
-    text: str
-
-
-class ResponsePayload(BaseModel):
-    type: Literal["response"] = "response"
-    # Minimal placeholder; expand as needed
-    content: Any | None = None
-
-
-TypedPayload = Annotated[
-    UserTextPayload
-    | AssistantTextPayload
-    | ToolCallPayload
-    | FunctionCallOutputPayload
-    | ReasoningPayload
-    | ResponsePayload,
-    Field(discriminator="type"),
-]
+from adgn.agent.events import EventType
 
 
 class EventRecord(BaseModel):
+    """Event record: sequence number, timestamp, and typed event.
+
+    The EventType payload already contains all relevant fields (call_id, tool_key, etc.).
+    """
+
     seq: int
     ts: datetime
-    payload: TypedPayload
-    call_id: str | None = None
-    tool_key: str | None = None
+    payload: EventType
 
     model_config = ConfigDict(extra="forbid")
 

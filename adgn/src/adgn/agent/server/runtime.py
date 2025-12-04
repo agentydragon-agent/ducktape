@@ -8,7 +8,8 @@ from typing import Any
 import uuid
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
@@ -29,7 +30,6 @@ from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.server.status_shared import RunPhase, determine_run_phase
 from adgn.agent.types import AgentID
-from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp.approval_policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
@@ -96,8 +96,8 @@ class ConnectionManager(BaseHandler):
     # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        # FastMCP CallToolResult is not a Pydantic model; project minimal fields
-        fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
+        # evt.result is already a Pydantic mcp.types.CallToolResult
+        fco = FunctionCallOutput(call_id=evt.call_id, result=evt.result)
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
 

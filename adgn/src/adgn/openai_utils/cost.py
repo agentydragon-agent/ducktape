@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from adgn.agent.handler import GroundTruthUsage
+from adgn.agent.events import GroundTruthUsage
 from adgn.openai_utils.model_metadata import get_model_metadata
 
 logger = logging.getLogger(__name__)

@@ -8,8 +8,8 @@ from uuid import uuid4
 
 from hamcrest import assert_that, equal_to
 
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticFailure, CriticInput, CriticSubmitPayload, CriticSuccess
-from adgn.props.grader import GraderInput, GraderOutput, GradeSubmitInput
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticSubmitPayload, CriticSuccess
+from adgn.props.grader.models import GraderInput, GraderOutput, GradeSubmitInput
 
 
 class TestCriticModels:
@@ -42,27 +42,6 @@ class TestCriticModels:
         assert_that(success.tag, equal_to("success"))
         assert_that(success.result, equal_to(result))
         assert_that(isinstance(success, CriticSuccess))
-
-    def test_critic_failure_variant(self):
-        """CriticFailure should wrap error result."""
-        error = "Failed to analyze"
-        failure = CriticFailure(error=error)
-
-        assert_that(failure.tag, equal_to("failure"))
-        assert_that(failure.error, equal_to(error))
-        assert_that(isinstance(failure, CriticFailure))
-
-    def test_critic_output_discriminated_union(self):
-        """CriticOutput should be a discriminated union of success/failure."""
-        # Success case
-        result = CriticSubmitPayload(issues=[], notes_md="Done")
-        success = CriticSuccess(result=result)
-        assert_that(isinstance(success, CriticSuccess))
-
-        # Failure case
-        error = "Error"
-        failure = CriticFailure(error=error)
-        assert_that(isinstance(failure, CriticFailure))
 
 
 class TestGraderModels:

@@ -5,16 +5,10 @@ import logging
 
 from pydantic import BaseModel, TypeAdapter
 
-from adgn.agent.persist.events import EventRecord, FunctionCallOutputPayload
+from adgn.agent.events import ToolCall, ToolCallOutput as RuntimeToolCallOutput, UserText
+from adgn.agent.persist.events import EventRecord
 from adgn.agent.server.bus import UiBusItemStructured, UiEndTurn, UiMessage
-from adgn.agent.server.protocol import (
-    FunctionCallOutput,
-    ToolCall,
-    UiEndTurnEvt,
-    UiMessageEvt,
-    UiMessagePayload,
-    UserText,
-)
+from adgn.agent.server.protocol import FunctionCallOutput, UiEndTurnEvt, UiMessageEvt, UiMessagePayload
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 
@@ -33,23 +27,12 @@ def fold_events_to_ui_state(events: Sequence[EventRecord]) -> UiState:
     """
     state = new_state()
     for ev in events:
-        et = ev.payload.type
-        payload = ev.payload.model_dump(mode="json")
-        if et == "user_text":
-            state = reduce_ui_state(state, UserText(text=str(payload.get("text", ""))))
+        # UserText and ToolCall from events are already compatible with ServerMessage union
+        if isinstance(ev.payload, UserText | ToolCall):
+            state = reduce_ui_state(state, ev.payload)
             continue
-        if et == "tool_call":
-            state = reduce_ui_state(
-                state,
-                ToolCall(
-                    name=payload.get("name", ""),
-                    args_json=payload.get("args_json"),
-                    call_id=payload.get("call_id") or ev.call_id or "",
-                ),
-            )
-            continue
-        if et == "function_call_output" and isinstance(ev.payload, FunctionCallOutputPayload):
-            # Safely narrow to FunctionCallOutputPayload and avoid casts
+        if isinstance(ev.payload, RuntimeToolCallOutput):
+            # Safely narrow to ToolCallOutput (runtime type) and avoid casts
             structured = ev.payload.result.structuredContent
             # Live in-proc tools may return Pydantic models directly in
             # structured_content; persisted events always store JSON. Normalize
@@ -73,7 +56,7 @@ def fold_events_to_ui_state(events: Sequence[EventRecord]) -> UiState:
             # CallToolResult is not a Pydantic model; project a compact JSON
             # envelope with the native fields we rely on.
             # Embed full MCP Pydantic CallToolResult in the protocol object
-            state = reduce_ui_state(state, FunctionCallOutput(call_id=ev.call_id or "", result=ev.payload.result))
+            state = reduce_ui_state(state, FunctionCallOutput(call_id=ev.payload.call_id, result=ev.payload.result))
             continue
         # ignore assistant_text, reasoning, response in UI projection for now
     return state

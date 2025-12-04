@@ -47,7 +47,7 @@ def _calc_window(total: int, start: int, size: int) -> tuple[int, int, bool, int
     return s, e, truncated, next_offset
 
 
-def apply_list_slice(items: Sequence[T], slicer: ListSlice) -> tuple[list[T], bool, int | None, int]:
+def apply_list_slice[T](items: Sequence[T], slicer: ListSlice) -> tuple[list[T], bool, int | None, int]:
     total = len(items)
     s, e, truncated, next_offset = _calc_window(total, slicer.offset, slicer.limit)
     return list(items[s:e]), truncated, next_offset, total

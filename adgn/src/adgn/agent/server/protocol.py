@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.agent.events import AssistantText, ToolCall, UserText
 from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
@@ -74,29 +75,7 @@ class AgentStatus(StrEnum):
 # --------------------------
 # Transcript items
 # --------------------------
-
-
-class UserText(BaseModel):
-    type: Literal["user_text"] = "user_text"
-    text: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class AssistantText(BaseModel):
-    type: Literal["assistant_text"] = "assistant_text"
-    text: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class ToolCall(BaseModel):
-    type: Literal["tool_call"] = "tool_call"
-    name: str
-    args_json: str | None = None
-    call_id: str
-
-    model_config = ConfigDict(extra="forbid")
+# UserText, AssistantText, ToolCall imported from adgn.agent.events
 
 
 class FunctionCallOutput(BaseModel):
