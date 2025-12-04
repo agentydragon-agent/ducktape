@@ -51,10 +51,10 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 
 
 # =============================================================================
-# Specimen Slug
+# Snapshot Slug
 # =============================================================================
 
-# Specimen slug type with validated pattern enforcing exactly one slash
+# Snapshot slug type with validated pattern enforcing exactly one slash
 # Pattern: {project}/{date-sequence}
 #   - project: lowercase alphanumeric, underscore, hyphen (e.g., "ducktape", "crush", "misc")
 #   - date-sequence: typically YYYY-MM-DD-NN or YYYY-MM-DD-name (e.g., "2025-11-26-00", "2025-08-30-internal_db")
@@ -75,7 +75,7 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 #   [a-z0-9_-]+$  - date-sequence part (1+ chars)
 #
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility
-SpecimenSlug: TypeAlias = Annotated[  # type: ignore[valid-type]
+SnapshotSlug: TypeAlias = Annotated[  # type: ignore[valid-type]
     constr(
         pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",
         min_length=3,  # Minimum: "a/b"

@@ -11,7 +11,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
-from adgn.props.ids import FalsePositiveID, InputIssueID, SpecimenSlug, TruePositiveID
+from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePositiveID
 
 if TYPE_CHECKING:
     from adgn.props.grader.grader import GradeValidationContext
@@ -35,7 +35,7 @@ RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 class GraderInput(BaseModel):
     """Input for a grader run (critique + specimen → metrics)."""
 
-    specimen_slug: SpecimenSlug = Field(description="Specimen being graded")
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot being graded")
     critique_id: UUID = Field(description="Database ID of critique to grade")
     prompt_optimization_run_id: UUID | None = Field(
         default=None, description="Optional link to prompt optimization session"

@@ -147,7 +147,7 @@ async def run_detector_on_specimen(
         await run_critic(
             registry=registry,
             input_data=CriticInput(
-                specimen_slug=specimen_slug,
+                snapshot_slug=specimen_slug,
                 files=set(hydrated.all_discovered_files.keys()),
                 prompt_sha256=prompt_sha256,
             ),
@@ -285,7 +285,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
 @async_run
 async def cmd_run_detector(
     filename: str = typer.Argument(..., help="Detector filename (e.g., 'dead_code.md')"),
-    specimen: str | None = opt.OPT_SPECIMEN,
+    specimen: str | None = opt.OPT_SNAPSHOT,
     files: list[str] | None = opt.OPT_FILES_FILTER,
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
@@ -306,7 +306,7 @@ async def cmd_run_detector(
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
             registry=registry,
-            input_data=CriticInput(specimen_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
+            input_data=CriticInput(snapshot_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
             content_root=hydrated.content_root,
             mount_properties=False,

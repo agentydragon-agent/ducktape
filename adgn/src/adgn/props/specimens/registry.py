@@ -27,7 +27,7 @@ import yaml
 
 from ..ids import FalsePositiveID, TruePositiveID
 from ..models.issue import FalsePositiveOccurrence, IssueCore, IssueOccurrence, SpecimenIssuesLoadError
-from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
+from ..models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from ..paths import FileType, classify_path
 from ..rationale import Rationale
 from ..splits import Split
@@ -110,13 +110,13 @@ def _jsonnet_importer(base: str, rel: str) -> tuple[str, bytes]:
 
 
 def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, dict]] | None:
-    """Evaluate all Jsonnet files in specimen directory and split by type.
+    """Evaluate all Jsonnet files in snapshot directory and split by type.
 
-    All libsonnet files are directly in specimen directory.
+    All libsonnet files are directly in the snapshot directory.
     TPs and FPs are distinguished by content (expect_caught_from vs relevant_files).
 
     Args:
-        spec_dir: Specimen directory containing libsonnet files
+        spec_dir: Snapshot directory containing libsonnet files
 
     Returns:
         Tuple of (true_positives, false_positives) dicts, or None if no files found.
@@ -228,13 +228,13 @@ def _validate_issues_from_dicts(
 def _xdg_cache_base() -> Path:
     # Prefer shared cache dir alongside existing helpers
 
-    root = Path(user_cache_dir(appname="adgn-llm", appauthor=False)) / "specimens"
+    root = Path(user_cache_dir(appname="adgn-llm", appauthor=False)) / "snapshots"
     root.mkdir(parents=True, exist_ok=True)
     return root
 
 
 def _extract_tar_gz_to_temp(archive: Path) -> Path:
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-extract-"))
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-extract-"))
     with tarfile.open(archive, "r:gz") as tf:
         tf.extractall(tmpdir, filter=_specimen_extract_filter)
     for p in tmpdir.iterdir():
@@ -298,7 +298,7 @@ def _download_github_to(owner: str, repo: str, ref: str, dest: Path) -> bool:
 
 
 def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
-    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-git-"))
+    tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-git-"))
 
     try:
         # Check if URL points to a bundle file
@@ -337,25 +337,25 @@ def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def ensure_archive_for_specimen_slug(man: SpecimenDoc, specimen_path: Path) -> Path:
-    """Ensure a cached archive exists for the specimen.
+def ensure_archive_for_snapshot(man: SnapshotDoc, snapshot_path: Path) -> Path:
+    """Ensure a cached archive exists for the snapshot.
 
-    The slug is computed from the specimen path as repo/name.
-    For GitSource with commit SHA: ~/.cache/adgn-llm/specimens/{repo}/{name}-{commit}.tar.gz
-    Otherwise: ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
+    The slug is computed from the snapshot path as repo/name.
+    For GitSource with commit SHA: ~/.cache/adgn-llm/snapshots/{repo}/{name}-{commit}.tar.gz
+    Otherwise: ~/.cache/adgn-llm/snapshots/{repo}/{name}.tar.gz
 
     Uses a lock file to prevent concurrent cache creation from multiple processes.
     """
-    # Extract hierarchical slug from path: specimens/{repo}/{name}/_specimen -> repo/name
-    specimen_dir = specimen_path.parent
-    repo_name = specimen_dir.parent.name
-    specimen_name = specimen_dir.name
-    slug = f"{repo_name}/{specimen_name}"
+    # Extract hierarchical slug from path: specimens/{repo}/{name}/_snapshot -> repo/name
+    snapshot_dir = snapshot_path.parent
+    repo_name = snapshot_dir.parent.name
+    snapshot_name = snapshot_dir.name
+    slug = f"{repo_name}/{snapshot_name}"
 
     # Include commit SHA in cache key for GitSource to avoid staleness
-    cache_filename = specimen_name
+    cache_filename = snapshot_name
     if isinstance(man.source, GitSource) and man.source.commit:
-        cache_filename = f"{specimen_name}-{man.source.commit}"
+        cache_filename = f"{snapshot_name}-{man.source.commit}"
 
     # Cache hierarchically
     out = _xdg_cache_base() / repo_name / f"{cache_filename}.tar.gz"
@@ -401,45 +401,45 @@ def ensure_archive_for_specimen_slug(man: SpecimenDoc, specimen_path: Path) -> P
                 if len(parts) >= 2 and _download_github_to(parts[0], parts[1], git_ref, out):
                     _repack_tar_with_mtime(out, mtime=0)
                     return out
-            # Resolve relative file:// URLs relative to the specimen directory
-            url = resolve_bundle_url(specimen_path, man.source.url)
+            # Resolve relative file:// URLs relative to the snapshot directory
+            url = resolve_bundle_url(snapshot_path, man.source.url)
 
             if _create_archive_from_git(url, git_ref, out) and out.exists():
                 return out
         elif isinstance(man.source, LocalSource):
-            src = (specimen_path.parent / man.source.root).resolve()
+            src = (snapshot_path.parent / man.source.root).resolve()
             _repack_dir_with_mtime(src, out, mtime=0)
             return out
-        raise SystemExit(f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ")
+        raise SystemExit(f"Can't archive snapshot cache for '{slug}' (source={type(man.source).__name__}); ")
 
 
-def resolve_bundle_url(specimen_path: Path, source_url: str) -> str:
+def resolve_bundle_url(snapshot_path: Path, source_url: str) -> str:
     """Resolve bundle URL, handling relative file:// paths.
 
     Args:
-        specimen_path: Path inside specimen directory (for relative URL resolution)
-        source_url: Source URL from specimen (may be relative file://)
+        snapshot_path: Path inside snapshot directory (for relative URL resolution)
+        source_url: Source URL from snapshot (may be relative file://)
 
     Returns:
-        Absolute URL (file:// URLs are resolved relative to specimen directory)
+        Absolute URL (file:// URLs are resolved relative to snapshot directory)
     """
     url = source_url
     if url.startswith("file://"):
         file_path = url.removeprefix("file://")
         if not file_path.startswith("/"):
-            resolved_path = (specimen_path.parent / file_path).resolve()
+            resolved_path = (snapshot_path.parent / file_path).resolve()
             url = f"file://{resolved_path}"
     return url
 
 
-def resolve_source_root(man: SpecimenDoc, specimen_path: Path) -> Path:
+def resolve_source_root(man: SnapshotDoc, snapshot_path: Path) -> Path:
     if isinstance(man.source, GitHubSource | GitSource):
-        archive = ensure_archive_for_specimen_slug(man, specimen_path)
+        archive = ensure_archive_for_snapshot(man, snapshot_path)
         return _extract_tar_gz_to_temp(archive)
     if isinstance(man.source, LocalSource):
         # Use existing local copy helper for consistency
-        src = (specimen_path.parent / man.source.root).resolve()
-        tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-local-"))
+        src = (snapshot_path.parent / man.source.root).resolve()
+        tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-local-"))
         dest = tmpdir / src.name
         shutil.copytree(src, dest)
         return dest
@@ -448,9 +448,14 @@ def resolve_source_root(man: SpecimenDoc, specimen_path: Path) -> Path:
 
 @dataclass(frozen=True)
 class SpecimenRecord:
+    """A specimen = snapshot + issues + false positives.
+
+    TODO: Unbundle into separate Snapshot and IssueSet types when refactoring.
+    """
+
     slug: str
-    specimen_path: Path  # Synthetic path to specimen directory (for URL resolution)
-    manifest: SpecimenDoc
+    snapshot_path: Path  # Synthetic path to snapshot directory (for URL resolution)
+    manifest: SnapshotDoc
     issues: dict[str, IssueRecord]
     false_positives: dict[str, IssueRecord]
     all_discovered_files: dict[Path, FileType]  # File map from hydration (for complete validation contexts)
@@ -473,24 +478,24 @@ class SpecimenRecord:
         # Materialize contents into mount_root according to source
         try:
             if isinstance(self.manifest.source, GitHubSource | GitSource):
-                archive = ensure_archive_for_specimen_slug(self.manifest, self.specimen_path)
+                archive = ensure_archive_for_snapshot(self.manifest, self.snapshot_path)
                 with tarfile.open(archive, "r:gz") as tf:
                     members = [m for m in tf.getmembers() if ".git" not in m.name.split("/")]
-                    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+                    if os.environ.get("ADGN_DEBUG_SNAPSHOT") == "1":
                         total = len(tf.getmembers())
                         filtered = len(members)
-                        logger.debug("[specimen] extracting %s members=%s/%s (filtered .git)", archive, filtered, total)
+                        logger.debug("[snapshot] extracting %s members=%s/%s (filtered .git)", archive, filtered, total)
                     tf.extractall(mount_root, members=members, filter=_specimen_extract_filter)
-                    if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
+                    if os.environ.get("ADGN_DEBUG_SNAPSHOT") == "1":
                         git_dirs = list((mount_root).rglob(".git"))
-                        logger.debug("[specimen] post-extract .git dirs: %d", len(git_dirs))
+                        logger.debug("[snapshot] post-extract .git dirs: %d", len(git_dirs))
                         for p in git_dirs[:10]:
                             logger.debug("    %s", p)
             elif isinstance(self.manifest.source, LocalSource):
-                src = (self.specimen_path.parent / self.manifest.source.root).resolve()
-                # For local specimens, materialize directly into mount_root (no extra subdir)
+                src = (self.snapshot_path.parent / self.manifest.source.root).resolve()
+                # For local snapshots, materialize directly into mount_root (no extra subdir)
                 shutil.copytree(src, mount_root, dirs_exist_ok=True)
-            else:  # pragma: no cover - guarded by SpecimenDoc model
+            else:  # pragma: no cover - guarded by SnapshotDoc model
                 raise SystemExit(f"Unsupported source type: {type(self.manifest.source)}")
 
             # Determine content root:
@@ -531,13 +536,15 @@ class SpecimenRegistry:
     DI-friendly: pass in a preloaded mapping for tests; use from_base_path() factory in app code.
 
     Specimens are defined in snapshots.yaml at the specimens directory root.
+
+    TODO: Rename to SnapshotRegistry when unbundling specimen concept.
     """
 
     def __init__(
         self,
         specimens: dict[str, SpecimenRecord | None],
         base_path: Path,
-        manifests: dict[str, SpecimenDoc],
+        manifests: dict[str, SnapshotDoc],
     ) -> None:
         # No I/O here; accept fully materialized data
         self._specimens = specimens
@@ -562,12 +569,12 @@ class SpecimenRegistry:
             raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
 
         specimens: dict[str, SpecimenRecord | None] = {}
-        manifests: dict[str, SpecimenDoc] = {}
+        manifests: dict[str, SnapshotDoc] = {}
 
         raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
         for slug, data in raw.items():
             specimens[slug] = None
-            manifests[slug] = SpecimenDoc.model_validate(data)
+            manifests[slug] = SnapshotDoc.model_validate(data)
 
         return cls(specimens=specimens, base_path=base, manifests=manifests)
 
@@ -591,24 +598,24 @@ class SpecimenRegistry:
         return self._base_path
 
     @property
-    def specimen_ids(self) -> list[str]:
-        """List of specimen slugs in this registry."""
+    def snapshot_slugs(self) -> list[str]:
+        """List of snapshot slugs in this registry."""
         return sorted(self._specimens.keys())
 
-    def _get_specimen_path(self, slug: str) -> Path:
-        """Get specimen directory path for a slug.
+    def _get_snapshot_path(self, slug: str) -> Path:
+        """Get snapshot directory path for a slug.
 
         Returns a synthetic path used for bundle URL resolution. The path points
-        to a synthetic file inside the specimen directory to maintain consistent
+        to a synthetic file inside the snapshot directory to maintain consistent
         resolution behavior for relative URLs.
 
         Args:
-            slug: Specimen slug like "ducktape/2025-11-20-00"
+            slug: Snapshot slug like "ducktape/2025-11-20-00"
 
         Returns:
-            Resolved absolute path inside specimen directory (for URL resolution)
+            Resolved absolute path inside snapshot directory (for URL resolution)
         """
-        return (self._base_path / slug.replace("/", os.sep) / "_specimen").resolve()
+        return (self._base_path / slug.replace("/", os.sep) / "_snapshot").resolve()
 
     @asynccontextmanager
     async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
@@ -616,8 +623,10 @@ class SpecimenRegistry:
 
         Avoids double-hydration when caller needs both loaded issues and hydrated specimen.
 
+        TODO: Rename to load_and_hydrate_snapshot when unbundling specimen concept.
+
         Args:
-            slug: Specimen slug like "ducktape/2025-11-20-00"
+            slug: Snapshot slug like "ducktape/2025-11-20-00"
 
         Yields:
             HydratedSpecimen: Single object containing specimen record + hydrated content root
@@ -629,25 +638,25 @@ class SpecimenRegistry:
                 # Access content root: hydrated.content_root
                 pass
         """
-        specimen_path = self._get_specimen_path(slug)
+        snapshot_path = self._get_snapshot_path(slug)
         man = self._manifests[slug]
 
-        # Determine specimen directory for issue loading
-        specimen_dir = specimen_path.parent
+        # Determine snapshot directory for issue loading
+        snapshot_dir = snapshot_path.parent
 
         # Evaluate Jsonnet to raw dicts (no validation yet)
-        result = _jsonnet_evaluate_all(specimen_dir)
+        result = _jsonnet_evaluate_all(snapshot_dir)
         if result is None:
-            raise SpecimenIssuesLoadError([f"No issues found under: {specimen_dir}"])
+            raise SpecimenIssuesLoadError([f"No issues found under: {snapshot_dir}"])
         raw_issues, raw_fps = result
 
-        # Hydrate specimen to build complete validation context
-        hydrated_root = resolve_source_root(man, specimen_path)
+        # Hydrate snapshot to build complete validation context
+        hydrated_root = resolve_source_root(man, snapshot_path)
         try:
             # Build complete context: files from hydration + IDs from Jsonnet
             all_discovered_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
             ctx = SpecimenContext(
-                specimen_slug=slug,
+                snapshot_slug=slug,
                 all_discovered_files=all_discovered_files,
                 allowed_tp_ids=list(raw_issues.keys()),  # IDs from Jsonnet (strings)
                 allowed_fp_ids=list(raw_fps.keys()),  # IDs from Jsonnet (strings)
@@ -664,7 +673,7 @@ class SpecimenRegistry:
             # Create record with stored file map
             rec = SpecimenRecord(
                 slug=slug,
-                specimen_path=specimen_path,
+                snapshot_path=snapshot_path,
                 manifest=man,
                 issues={it.core.id: it for it in res_pos.items},
                 false_positives={it.core.id: it for it in res_fp.items},
@@ -677,23 +686,28 @@ class SpecimenRegistry:
             # Yield hydrated specimen - single object with record + content root
             yield HydratedSpecimen(record=rec, content_root=hydrated_root)
         finally:
-            # Clean up hydrated specimen
+            # Clean up hydrated snapshot
             shutil.rmtree(
-                hydrated_root.parent if hydrated_root.parent.name.startswith("adgn-specimen-") else hydrated_root,
+                hydrated_root.parent if hydrated_root.parent.name.startswith("adgn-snapshot-") else hydrated_root,
                 ignore_errors=True,
             )
 
-    def load_manifest_only(self, slug: str) -> tuple[Path, SpecimenDoc]:
+    def load_manifest_only(self, slug: str) -> tuple[Path, SnapshotDoc]:
         """Load only the manifest (no Jsonnet issues) for fast collection.
 
         Args:
-            slug: Specimen slug like "ducktape/2025-11-20-00"
+            slug: Snapshot slug like "ducktape/2025-11-20-00"
 
         Returns:
-            Tuple of (specimen_path, manifest_doc)
+            Tuple of (snapshot_path, manifest_doc)
+
+        Raises:
+            FileNotFoundError: If snapshot doesn't exist in registry
         """
-        specimen_path = self._get_specimen_path(slug)
-        return (specimen_path, self._manifests[slug])
+        if slug not in self._manifests:
+            raise FileNotFoundError(f"Snapshot '{slug}' not found in registry")
+        snapshot_path = self._get_snapshot_path(slug)
+        return (snapshot_path, self._manifests[slug])
 
     def list_all(self) -> set[str]:
         """List all specimen names in hierarchical format (repo/name).

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from adgn.props.models.specimen import SpecimenDoc
+from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.paths import FileType
 
 # Direct import - circular dependency is broken by deferred import in registry.py
@@ -18,6 +18,8 @@ class HydratedSpecimen:
 
     Replaces awkward tuple unpacking from load_and_hydrate().
     Provides convenient access to specimen data and the hydrated working tree.
+
+    TODO: Rename to HydratedSnapshot when unbundling specimen concept.
 
     Example:
         registry = SpecimenRegistry()
@@ -35,8 +37,8 @@ class HydratedSpecimen:
 
     # Convenience properties (delegate to record)
     @property
-    def manifest(self) -> SpecimenDoc:
-        """Specimen manifest (source, bundle)."""
+    def manifest(self) -> SnapshotDoc:
+        """Snapshot manifest (source, bundle)."""
         return self.record.manifest
 
     @property
@@ -46,7 +48,7 @@ class HydratedSpecimen:
 
     @property
     def slug(self) -> str:
-        """Specimen slug (e.g., 'ducktape/2025-11-20')."""
+        """Snapshot slug (e.g., 'ducktape/2025-11-20')."""
         return self.record.slug
 
     @property

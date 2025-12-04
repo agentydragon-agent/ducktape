@@ -8,7 +8,7 @@ import logging
 from pathlib import Path
 
 from adgn.props.db import get_session
-from adgn.props.db.models import Specimen
+from adgn.props.db.models import Snapshot
 from adgn.props.specimens.registry import SpecimenRegistry
 
 logger = logging.getLogger(__name__)
@@ -72,64 +72,60 @@ async def sync_specimens() -> SyncStats:
     # Create registry once at the start
     registry = SpecimenRegistry.from_package_resources()
 
-    # Get all specimen slugs and build split mapping
-    source_slugs = set(registry.specimen_ids)
+    # Get all snapshot slugs and build split mapping
+    source_slugs = set(registry.snapshot_slugs)
     source_count = len(source_slugs)
 
     with get_session() as session:
         # Fast path: if count matches, assume synced
-        existing_count = session.query(Specimen).count()
+        existing_count = session.query(Snapshot).count()
         if existing_count == source_count:
-            logger.debug(f"Specimens already synced ({existing_count} specimens)")
+            logger.debug(f"Snapshots already synced ({existing_count} snapshots)")
             return SyncStats(added=0, updated=0, deleted=0, total=existing_count)
 
         # Full sync: make DB exactly match source
-        logger.info(f"Syncing specimens table (source: {source_count} specimens, DB: {existing_count})...")
+        logger.info(f"Syncing snapshots table (source: {source_count} snapshots, DB: {existing_count})...")
 
-        db_specimens = {s.specimen_slug: s for s in session.query(Specimen).all()}
-        db_slugs = set(db_specimens.keys())
+        db_snapshots = {s.slug: s for s in session.query(Snapshot).all()}
+        db_slugs = set(db_snapshots.keys())
 
         added = 0
         updated = 0
         deleted = 0
 
-        # Delete orphaned specimens (in DB but not in source)
+        # Delete orphaned snapshots (in DB but not in source)
         for slug in db_slugs - source_slugs:
-            logger.info(f"  Deleting orphaned specimen: {slug}")
-            session.delete(db_specimens[slug])
+            logger.info(f"  Deleting orphaned snapshot: {slug}")
+            session.delete(db_snapshots[slug])
             deleted += 1
 
-        # Add/update from source (populate labeled_files from issue definitions)
-        # Batch load all labeled_files upfront
-        all_labeled_files_paths = await _load_all_labeled_files(list(source_slugs), registry)
-
+        # Add/update from source
+        # NOTE: labeled_files sync is disabled - Snapshot model doesn't have this field.
+        # Issue file tracking is now done via the Issue/FalsePositive tables.
         for slug in source_slugs:
             split = registry.get_split(slug)
-            labeled_files_paths = all_labeled_files_paths.get(slug, set())
-            # Convert to sorted list of strings for database storage
-            labeled_files = sorted(str(p) for p in labeled_files_paths)
+            manifest_path, manifest = registry.load_manifest_only(slug)
 
             if slug not in db_slugs:
-                logger.debug(f"  Adding specimen: {slug} (split={split.value}, {len(labeled_files)} files)")
-                session.add(Specimen(specimen_slug=slug, split=split.value, labeled_files=labeled_files))
+                logger.debug(f"  Adding snapshot: {slug} (split={split.value})")
+                session.add(Snapshot(
+                    slug=slug,
+                    split=split.value,
+                    source=manifest.source.model_dump(mode="json"),
+                    bundle=manifest.bundle.model_dump(mode="json") if manifest.bundle else None,
+                ))
                 added += 1
             else:
-                # Update split or labeled_files if changed
+                # Update split if changed
                 needs_update = False
-                if db_specimens[slug].split != split.value:
-                    logger.info(f"  Updating specimen split: {slug} ({db_specimens[slug].split} -> {split.value})")
-                    db_specimens[slug].split = split.value
-                    needs_update = True
-                if db_specimens[slug].labeled_files != labeled_files:
-                    logger.debug(
-                        f"  Updating labeled_files: {slug} ({len(db_specimens[slug].labeled_files)} -> {len(labeled_files)} files)"
-                    )
-                    db_specimens[slug].labeled_files = labeled_files
+                if db_snapshots[slug].split != split.value:
+                    logger.info(f"  Updating snapshot split: {slug} ({db_snapshots[slug].split} -> {split.value})")
+                    db_snapshots[slug].split = split.value
                     needs_update = True
                 if needs_update:
                     updated += 1
 
         session.commit()
 
-        logger.info(f"Specimens synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={source_count} total")
+        logger.info(f"Snapshots synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={source_count} total")
         return SyncStats(added=added, updated=updated, deleted=deleted, total=source_count)

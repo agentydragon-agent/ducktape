@@ -185,6 +185,8 @@ class SpecimenIssuesLoadError(Exception):
 
     Carries a list of human-readable error lines. __str__ joins them with newlines
     so pytest and CLIs surface a readable summary.
+
+    TODO: Rename to SnapshotIssuesLoadError when unbundling specimen concept.
     """
 
     def __init__(self, errors: list[str]):

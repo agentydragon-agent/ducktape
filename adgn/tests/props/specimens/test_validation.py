@@ -5,13 +5,13 @@ import re
 
 import pytest
 
-from adgn.props.models.specimen import LocalSource
+from adgn.props.models.snapshot import LocalSource
 from adgn.props.specimens.registry import SpecimenRegistry
 
 
 def _all_specimens() -> list[str]:
     registry = SpecimenRegistry.from_package_resources()
-    return registry.specimen_ids
+    return registry.snapshot_slugs
 
 
 @pytest.mark.parametrize("specimen", _all_specimens())

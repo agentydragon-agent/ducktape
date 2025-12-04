@@ -216,7 +216,7 @@ async def _run_snapshot_minicodex_async(
         files_spec = _filter_files(hydrated.all_discovered_files, files)
 
         # Resolve files for prompt rendering
-        resolved_files = await resolve_critic_scope(specimen_slug=snapshot, files=files_spec, registry=registry)
+        resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec, registry=registry)
 
         # Load preset template based on mode
         preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
@@ -239,7 +239,7 @@ async def _run_snapshot_minicodex_async(
         # Use run_critic for structured execution and DB persistence
         critic_output, _critic_run_id, _critique_id = await run_critic(
             input_data=CriticInput(
-                specimen_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
+                snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
             ),
             client=client,
             content_root=hydrated.content_root,
@@ -516,7 +516,7 @@ async def _exec_agent(
         assert files_spec is not None, "structured mode requires files_spec"
         critic_output, _critic_run_id, _critique_id = await run_critic(
             input_data=CriticInput(
-                specimen_slug=specimen_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
+                snapshot_slug=specimen_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
             ),
             client=build_client(model),
             content_root=wiring.working_dir,
@@ -664,7 +664,7 @@ async def cmd_run(
     async with _open_run_context(path, snapshot, files, registry) as (wiring, files_spec, label):
         # Resolve files for prompt rendering (snapshot mode resolves sentinel, path mode is already explicit)
         if snapshot is not None:
-            resolved_files = await resolve_critic_scope(specimen_slug=snapshot, files=files_spec, registry=registry)
+            resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec, registry=registry)
         else:
             # Path mode: files_spec is already set[Path]
             resolved_files = files_spec  # type: ignore[assignment]

@@ -16,7 +16,7 @@ def pytest_generate_tests(metafunc):
         from adgn.props.specimens.registry import SpecimenRegistry
 
         registry = SpecimenRegistry.from_package_resources()
-        metafunc.parametrize("specimen_slug", registry.specimen_ids, ids=lambda slug: slug)
+        metafunc.parametrize("specimen_slug", registry.snapshot_slugs, ids=lambda slug: slug)
 
 
 def test_specimen_has_valid_split(production_specimens_registry, specimen_slug):
@@ -46,7 +46,7 @@ def test_split_distribution(production_specimens_registry):
 
 async def test_all_specimens_in_splits_can_load(production_specimens_registry):
     """Verify every specimen can be loaded without errors."""
-    for slug in production_specimens_registry.specimen_ids:
+    for slug in production_specimens_registry.snapshot_slugs:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
             assert_that(hydrated.record, not_none())
             assert_that(len(hydrated.record.issues), greater_than_or_equal_to(1))
@@ -60,7 +60,7 @@ async def test_split_issue_counts(production_specimens_registry):
     """
     issue_counts: Counter[Split] = Counter()
 
-    for slug in production_specimens_registry.specimen_ids:
+    for slug in production_specimens_registry.snapshot_slugs:
         async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
             issue_counts[production_specimens_registry.get_split(slug)] += len(hydrated.record.issues)
 

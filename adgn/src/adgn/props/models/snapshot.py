@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal, NewType
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
-
-
-SnapshotSlug = NewType("SnapshotSlug", str)  # Format: "{repo}/{version}" e.g. "ducktape/2025-11-26-00"
 
 
 class GitSource(BaseModel):
@@ -48,6 +46,22 @@ class BundleFilter(BaseModel):
     exclude: list[str] | None = None
 
 
+class SnapshotDoc(BaseModel):
+    """Snapshot document: source, bundle filters, and split assignment.
+
+    This is the schema for entries in snapshots.yaml. Issues are loaded separately
+    from *.libsonnet files in the snapshot directory.
+
+    Bundle is optional - only required for snapshots that use git bundles.
+    Split is required - every snapshot must be assigned to train/valid/test.
+    """
+
+    source: Source
+    split: Split = Field(description="Train/valid/test split assignment for this snapshot")
+    bundle: BundleFilter | None = None
+    model_config = ConfigDict(extra="forbid")
+
+
 class Snapshot(BaseModel):
     """Snapshot: source code + split assignment (decoupled from issues).
 
@@ -79,5 +93,6 @@ __all__ = [
     "LocalSource",
     "Source",
     "BundleFilter",
+    "SnapshotDoc",
     "Snapshot",
 ]

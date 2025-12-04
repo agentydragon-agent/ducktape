@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.props.ids import BaseIssueID, SpecimenSlug
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.issue import Occurrence
 from adgn.props.rationale import Rationale
 
@@ -46,7 +46,7 @@ class CriticInput(BaseModel):
     Resolution happens inside run_critic().
     """
 
-    specimen_slug: SpecimenSlug = Field(description="Specimen slug (e.g., ducktape/2025-11-26-00)")
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
     files: FileScopeSpec = Field(
         description=f'Files to review: explicit set or "{ALL_FILES_WITH_ISSUES}" sentinel for ground truth files'
     )

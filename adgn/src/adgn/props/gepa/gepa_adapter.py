@@ -188,7 +188,7 @@ class CriticAdapter(gepa.GEPAAdapter[SpecimenInput, CriticTrajectory, CriticOutp
 
         # Run critic
         async with self.registry.load_and_hydrate(slug) as hydrated:
-            critic_input = CriticInput(specimen_slug=slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=prompt_sha256)
+            critic_input = CriticInput(snapshot_slug=slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=prompt_sha256)
 
             critic_output, critic_run_id, critique_id = await run_critic(
                 input_data=critic_input,

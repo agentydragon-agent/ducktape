@@ -33,7 +33,7 @@ from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import agent_queries, get_session
-from adgn.props.db.models import PromptOptimizationRun, Specimen
+from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
@@ -223,32 +223,32 @@ async def build_server(
 
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
-        # Check specimen split and enforce validation restriction
+        # Check snapshot split and enforce validation restriction
         with get_session() as session:
-            db_specimen = session.query(Specimen).filter_by(specimen_slug=payload.specimen_slug).first()
-            if db_specimen is None:
-                raise ValueError(f"Specimen '{payload.specimen_slug}' not found in database")
+            db_snapshot = session.query(Snapshot).filter_by(slug=payload.snapshot_slug).first()
+            if db_snapshot is None:
+                raise ValueError(f"Snapshot '{payload.snapshot_slug}' not found in database")
 
             # Validation split: must use files=ALL_FILES_WITH_ISSUES
-            if db_specimen.split == "valid" and payload.files != ALL_FILES_WITH_ISSUES:
+            if db_snapshot.split == "valid" and payload.files != ALL_FILES_WITH_ISSUES:
                 raise ValueError(
-                    f"Validation split specimen '{payload.specimen_slug}' must use files=\"{ALL_FILES_WITH_ISSUES}\" (full specimen evaluation only). "
+                    f"Validation split snapshot '{payload.snapshot_slug}' must use files=\"{ALL_FILES_WITH_ISSUES}\" (full specimen evaluation only). "
                     f"Cannot run on subset of files."
                 )
 
         # Resolve files for prompt rendering and validation
         resolved_files = await resolve_critic_scope(
-            specimen_slug=payload.specimen_slug, files=payload.files, registry=registry
+            snapshot_slug=payload.snapshot_slug, files=payload.files, registry=registry
         )
 
         # Load and hydrate specimen for content_root
-        async with registry.load_and_hydrate(payload.specimen_slug) as hydrated:
+        async with registry.load_and_hydrate(payload.snapshot_slug) as hydrated:
             # Validate explicit files exist (when not using sentinel)
             if payload.files != ALL_FILES_WITH_ISSUES:
                 specimen_files = set(hydrated.all_discovered_files.keys())
                 if invalid_files := resolved_files - specimen_files:
                     raise ValueError(
-                        f"Invalid files for specimen '{payload.specimen_slug}': {sorted(str(f) for f in invalid_files)}. "
+                        f"Invalid files for specimen '{payload.snapshot_slug}': {sorted(str(f) for f in invalid_files)}. "
                         f"Available files: {sorted(str(f) for f in specimen_files)[:10]}..."
                     )
 

@@ -16,7 +16,7 @@ ducktape/2025-09-03-00:
 ducktape/2025-11-20-00:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-20-adgn
     commit: 20d446fc735cecd865127aae52db466bccc309d6
   split: train
@@ -31,7 +31,7 @@ ducktape/2025-11-20-00:
 ducktape/2025-11-20-01:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-20-repo
     commit: 023db0b8da0f0211b268c7ebe27d38f46215be30
   split: test
@@ -46,7 +46,7 @@ ducktape/2025-11-20-01:
 ducktape/2025-11-21-00:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-21-repo
     commit: bf7fbc52075ccce94fb79cfe2e049e00f40d6083
   split: valid
@@ -61,7 +61,7 @@ ducktape/2025-11-21-00:
 ducktape/2025-11-22-00:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-22-post-fixes
     commit: 74936f07c1009eecefe25ccc1d240399eb1f6a6b
   split: valid
@@ -74,7 +74,7 @@ ducktape/2025-11-22-00:
 ducktape/2025-11-22-01:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-22-repo
     commit: 3561e7e59d91f487dbaaa4bfa99a8dd3d97b07ef
   split: valid
@@ -88,7 +88,7 @@ ducktape/2025-11-22-01:
 ducktape/2025-11-22-02:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-22-repo-2
     commit: e81d92265969f98e4eef41207e295e84ffda05f7
   split: test
@@ -102,7 +102,7 @@ ducktape/2025-11-22-02:
 ducktape/2025-11-26-00:
   source:
     vcs: git
-    url: file://../specimens.bundle
+    url: file://../snapshots.bundle
     ref: refs/tags/specimen-2025-11-26-code-quality
     commit: 593813ea3db62bc9f9004e05dae236ae43f9ce2f
   split: valid

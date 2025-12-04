@@ -1,4 +1,4 @@
-"""Build-bundle command: create git bundles with filtered specimen snapshots."""
+"""Build-bundle command: create git bundles with filtered code snapshots."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 import pygit2
 import yaml
 
-from adgn.props.models.specimen import GitSource, SpecimenDoc
+from adgn.props.models.snapshot import GitSource, SnapshotDoc
 
 
 def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
@@ -206,11 +206,11 @@ def create_filtered_commit(
     return new_commit_oid
 
 
-def discover_specimens_to_build(specimens_dir: Path) -> list[tuple[str, SpecimenDoc]]:
-    """Discover all specimens with bundle metadata from snapshots.yaml.
+def discover_snapshots_to_build(specimens_dir: Path) -> list[tuple[str, SnapshotDoc]]:
+    """Discover all snapshots with bundle metadata from snapshots.yaml.
 
     Returns:
-        List of (specimen_id, SpecimenDoc) tuples for specimens that have bundle metadata.
+        List of (snapshot_slug, SnapshotDoc) tuples for snapshots that have bundle metadata.
     """
     snapshots_yaml = specimens_dir / "snapshots.yaml"
     if not snapshots_yaml.exists():
@@ -221,16 +221,16 @@ def discover_specimens_to_build(specimens_dir: Path) -> list[tuple[str, Specimen
 
     results = []
     for slug, snapshot_data in snapshots_data.items():
-        # Skip specimens without bundle metadata
+        # Skip snapshots without bundle metadata
         if not snapshot_data.get("bundle"):
             continue
 
-        # Parse and validate the specimen doc (let validation errors propagate)
-        specimen = TypeAdapter(SpecimenDoc).validate_python(snapshot_data)
+        # Parse and validate the snapshot doc (let validation errors propagate)
+        snapshot = TypeAdapter(SnapshotDoc).validate_python(snapshot_data)
 
-        # Only include specimens with complete bundle metadata
-        if specimen.bundle is not None:
-            results.append((slug, specimen))
+        # Only include snapshots with complete bundle metadata
+        if snapshot.bundle is not None:
+            results.append((slug, snapshot))
 
     return results
 
@@ -239,28 +239,28 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
     """Internal bundle building implementation.
 
     Args:
-        specimens_dir: Base directory containing specimen manifests
+        specimens_dir: Base directory containing snapshot definitions
         source_repo_path: Path to source git repository
         output_bundle: Output path for bundle file
     """
     # Open source repository
     source_repo = pygit2.Repository(str(source_repo_path))
 
-    # Discover specimens with bundle metadata
-    specimens_to_build = discover_specimens_to_build(specimens_dir)
+    # Discover snapshots with bundle metadata
+    snapshots_to_build = discover_snapshots_to_build(specimens_dir)
 
-    if not specimens_to_build:
-        print("No specimens with bundle metadata found")
+    if not snapshots_to_build:
+        print("No snapshots with bundle metadata found")
         return
 
-    print("=== Building specimen bundle ===")
-    print(f"Found {len(specimens_to_build)} specimens with bundle metadata:")
-    for spec_id, _ in specimens_to_build:
-        print(f"  - {spec_id}")
+    print("=== Building snapshot bundle ===")
+    print(f"Found {len(snapshots_to_build)} snapshots with bundle metadata:")
+    for slug, _ in snapshots_to_build:
+        print(f"  - {slug}")
     print()
 
     # Create temporary bundle repository
-    with tempfile.TemporaryDirectory(prefix="specimens-bundle-") as tmpdir:
+    with tempfile.TemporaryDirectory(prefix="snapshots-bundle-") as tmpdir:
         bundle_repo_path = Path(tmpdir) / "bundle"
         bundle_repo_path.mkdir()
 
@@ -278,27 +278,28 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
         print(f"Base commit: {base_commit_oid}")
         print()
 
-        # Process each specimen
-        for spec_id, specimen in specimens_to_build:
-            # specimens_to_build only contains specimens with bundle metadata (filtered by discover_specimens_to_build)
-            assert specimen.bundle is not None
+        # Process each snapshot
+        for slug, snapshot in snapshots_to_build:
+            # snapshots_to_build only contains snapshots with bundle metadata
+            assert snapshot.bundle is not None
 
             # Derive tag name from ref in manifest
-            if isinstance(specimen.source, GitSource) and specimen.source.ref:
-                ref = specimen.source.ref
+            # TODO: migrate git tags from specimen-* to snapshot-* prefix
+            if isinstance(snapshot.source, GitSource) and snapshot.source.ref:
+                ref = snapshot.source.ref
                 tag_name = ref.removeprefix("refs/tags/") if ref.startswith("refs/tags/") else ref
             else:
-                tag_name = f"specimen-{spec_id.replace('/', '-')}"
+                tag_name = f"specimen-{slug.replace('/', '-')}"
 
             # Create filtered commit
             create_filtered_commit(
                 source_repo=source_repo,
                 bundle_repo=bundle_repo,
-                source_commit_sha=specimen.bundle.source_commit,
+                source_commit_sha=snapshot.bundle.source_commit,
                 tag_name=tag_name,
                 base_commit=base_commit,
-                include=specimen.bundle.include,
-                exclude=specimen.bundle.exclude,
+                include=snapshot.bundle.include,
+                exclude=snapshot.bundle.exclude,
             )
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)
@@ -335,14 +336,14 @@ def get_specimens_dir() -> Path:
 def cmd_build_bundle(
     specimens_dir: Path | None = None, source_repo_path: Path | None = None, output_bundle: Path | None = None
 ):
-    """Build specimen bundle with per-specimen filters.
+    """Build snapshot bundle with per-snapshot filters.
 
     Args:
-        specimens_dir: Base directory containing snapshots.yaml and specimen subdirs (default: from package resources)
+        specimens_dir: Base directory containing snapshots.yaml and snapshot subdirs (default: from package resources)
         source_repo_path: Path to source git repository (default: /code/gitlab.com/agentydragon/ducktape)
-        output_bundle: Output path for bundle file (default: specimens_dir/ducktape/specimens.bundle)
+        output_bundle: Output path for bundle file (default: specimens_dir/ducktape/snapshots.bundle)
 
-    Note: The default output path matches the relative URL in snapshots.yaml (file://../specimens.bundle
+    Note: The default output path matches the relative URL in snapshots.yaml (file://../snapshots.bundle
     resolved from specimens/ducktape/{snapshot}/ directories).
     """
     # Use defaults if not provided
@@ -351,8 +352,8 @@ def cmd_build_bundle(
     if source_repo_path is None:
         source_repo_path = Path("/code/gitlab.com/agentydragon/ducktape")
     if output_bundle is None:
-        # Default to specimens/ducktape/specimens.bundle to match snapshots.yaml URLs
-        output_bundle = specimens_dir / "ducktape" / "specimens.bundle"
+        # Default to specimens/ducktape/snapshots.bundle to match snapshots.yaml URLs
+        output_bundle = specimens_dir / "ducktape" / "snapshots.bundle"
 
     # Call internal implementation
     _build_bundle_internal(specimens_dir, source_repo_path, output_bundle)

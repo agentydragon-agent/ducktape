@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.props.models.specimen import GitSource
+from adgn.props.models.snapshot import GitSource
 from adgn.props.specimens.registry import SpecimenRegistry, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
@@ -45,7 +45,7 @@ def pytest_generate_tests(metafunc):
 
     # Create registry at collection time (lightweight, no specimens loaded yet)
     registry = SpecimenRegistry.from_package_resources()
-    all_specimen_slugs = registry.specimen_ids
+    all_specimen_slugs = registry.snapshot_slugs
 
     # Filter to Git bundle specimens with file:// URLs
     bundle_specimen_slugs = []
@@ -91,7 +91,7 @@ def test_bundle_exists(specimen_record) -> None:
     """Verify bundle file exists for specimen."""
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.specimen_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.snapshot_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     assert bundle_path.exists(), f"Bundle not found at {bundle_path}"
@@ -163,7 +163,7 @@ async def test_bundle_excludes_bundle_files(specimen_record, hydrated_specimen) 
         [
             str(f.relative_to(hydrated_specimen))
             for f in hydrated_specimen.rglob("*")
-            if f.is_file() and "specimens.bundle" in f.name
+            if f.is_file() and "snapshots.bundle" in f.name
         ]
     )
 
@@ -180,7 +180,7 @@ def test_bundle_size_reasonable(specimen_record) -> None:
     """
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.specimen_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.snapshot_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     bundle_size = bundle_path.stat().st_size

@@ -224,7 +224,7 @@ async def run_grader(
         db_run = DBGraderRun(
             id=run_id,
             transcript_id=transcript_id,
-            specimen_slug=input_data.specimen_slug,
+            specimen_slug=input_data.snapshot_slug,
             model=client.model,
             critique_id=input_data.critique_id,
             prompt_optimization_run_id=input_data.prompt_optimization_run_id,
@@ -233,7 +233,7 @@ async def run_grader(
         session.add(db_run)
         session.commit()
         logger.info(
-            f"Created initial grader run in DB: {run_id=}, {transcript_id=}, specimen_slug={input_data.specimen_slug}"
+            f"Created initial grader run in DB: {run_id=}, {transcript_id=}, specimen_slug={input_data.snapshot_slug}"
         )
 
         # Fetch critique from database
@@ -280,7 +280,7 @@ async def run_grader(
         AbortIf(should_abort=lambda: grader_state.result is not None),
         *build_props_handlers(
             transcript_id=transcript_id,
-            verbose_prefix=f"[GRADER {input_data.specimen_slug}] " if verbose else None,
+            verbose_prefix=f"[GRADER {input_data.snapshot_slug}] " if verbose else None,
             servers=servers,
         ),
         *extra_handlers,
@@ -313,7 +313,7 @@ async def run_grader(
         assert found_run is not None, f"Grader run {run_id} not found in database"
         found_run.output = output.model_dump(mode="json")
         session.commit()
-        logger.info(f"Updated grader run in DB: {transcript_id=}, specimen_slug={input_data.specimen_slug}")
+        logger.info(f"Updated grader run in DB: {transcript_id=}, specimen_slug={input_data.snapshot_slug}")
 
     return (output, run_id)
 
@@ -332,15 +332,15 @@ async def grade_critique_by_id(
     Returns:
         Grader run ID
     """
-    # Fetch specimen_slug from critique
-    specimen_slug = _get_required_critique(session, critique_id).specimen_slug
+    # Fetch snapshot_slug from critique
+    snapshot_slug = _get_required_critique(session, critique_id).snapshot_slug
 
     # Create grader input
-    grader_input = GraderInput(specimen_slug=specimen_slug, critique_id=critique_id)
+    grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)
 
     # Load and hydrate specimen once, then execute
     registry = SpecimenRegistry.from_package_resources()
-    async with registry.load_and_hydrate(specimen_slug) as hydrated:
+    async with registry.load_and_hydrate(snapshot_slug) as hydrated:
         # Execute grader run
         _grader_output, grader_run_id = await run_grader(
             input_data=grader_input, client=client, hydrated_specimen=hydrated, verbose=verbose

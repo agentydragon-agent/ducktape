@@ -50,7 +50,7 @@ from adgn.props.critic.models import (
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.ids import BaseIssueID, SpecimenSlug
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.issue import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
@@ -350,12 +350,12 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 
 async def resolve_critic_scope(
-    specimen_slug: SpecimenSlug, files: FileScopeSpec, registry: SpecimenRegistry
+    snapshot_slug: SnapshotSlug, files: FileScopeSpec, registry: SpecimenRegistry
 ) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
 
     Args:
-        specimen_slug: Target specimen
+        snapshot_slug: Target snapshot
         files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
         registry: SpecimenRegistry instance (required, always threaded explicitly)
 
@@ -363,14 +363,14 @@ async def resolve_critic_scope(
         Resolved file set (guaranteed non-empty)
 
     Raises:
-        ValueError: If sentinel is used but specimen has no files with issues
+        ValueError: If sentinel is used but snapshot has no files with issues
     """
     if files == ALL_FILES_WITH_ISSUES:
-        async with registry.load_and_hydrate(specimen_slug) as hydrated:
+        async with registry.load_and_hydrate(snapshot_slug) as hydrated:
             resolved_files = hydrated.files_with_issues()
             if not resolved_files:
                 raise ValueError(
-                    f"Specimen '{specimen_slug}' has no files with ground truth issues. "
+                    f"Snapshot '{snapshot_slug}' has no files with ground truth issues. "
                     f"Cannot use '{ALL_FILES_WITH_ISSUES}' sentinel."
                 )
     else:
@@ -411,7 +411,7 @@ async def run_critic(
         system_prompt = prompt_obj.prompt_text
 
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel)
-    resolved_files = await resolve_critic_scope(input_data.specimen_slug, input_data.files, registry)
+    resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files, registry)
 
     # Build user prompt from resolved files
     user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))
@@ -426,7 +426,7 @@ async def run_critic(
             id=run_id,
             transcript_id=transcript_id,
             prompt_sha256=input_data.prompt_sha256,
-            specimen_slug=input_data.specimen_slug,
+            snapshot_slug=input_data.snapshot_slug,
             model=client.model,
             critique_id=None,  # Will be set in Phase 2 if successful
             prompt_optimization_run_id=input_data.prompt_optimization_run_id,
@@ -436,7 +436,7 @@ async def run_critic(
         session.add(db_run)
         session.commit()
         logger.info(
-            f"Created initial critic run in DB: {run_id=}, {transcript_id=}, specimen_slug={input_data.specimen_slug}"
+            f"Created initial critic run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
         )
 
     # Set up critic submit server and state
@@ -466,7 +466,7 @@ async def run_critic(
         bootstrap,
         *build_props_handlers(
             transcript_id=transcript_id,
-            verbose_prefix=f"[CRITIC {input_data.specimen_slug}] " if verbose else None,
+            verbose_prefix=f"[CRITIC {input_data.snapshot_slug}] " if verbose else None,
             servers=servers,
         ),
         AbortIf(should_abort=_ready_state),
@@ -500,7 +500,7 @@ async def run_critic(
         # Create critique if successful
         critique_id = None
         if isinstance(output, CriticSuccess):
-            critique = Critique(specimen_slug=input_data.specimen_slug, payload=output.result.model_dump(mode="json"))
+            critique = Critique(snapshot_slug=input_data.snapshot_slug, payload=output.result.model_dump(mode="json"))
             session.add(critique)
             session.flush()
             critique_id = critique.id
@@ -515,7 +515,7 @@ async def run_critic(
         # Extract IDs before session closes (never return ORM objects from functions)
         result_id = found_run.id
         result_critique_id = found_run.critique_id
-        logger.info(f"Updated critic run in DB: {transcript_id=}, specimen_slug={input_data.specimen_slug}")
+        logger.info(f"Updated critic run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
 
     # Return plain IDs, not ORM objects (SQLAlchemy best practice: never return ORM objects from
     # functions that manage their own sessions - they become detached and cause errors)
