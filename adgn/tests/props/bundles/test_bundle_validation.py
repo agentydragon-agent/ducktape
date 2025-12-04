@@ -91,7 +91,7 @@ def test_bundle_exists(specimen_record) -> None:
     """Verify bundle file exists for specimen."""
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.manifest_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.specimen_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     assert bundle_path.exists(), f"Bundle not found at {bundle_path}"
@@ -116,7 +116,7 @@ async def test_bundle_excludes_libsonnet_files(specimen_record, hydrated_specime
 
 @pytest.mark.asyncio
 async def test_bundle_excludes_specimen_metadata(specimen_record, hydrated_specimen) -> None:
-    """Verify no specimen metadata files (manifest.yaml, README.md in specimens/) are included.
+    """Verify no specimen metadata files (libsonnet issues, snapshots.yaml) are included.
 
     This ensures the specimens/ directory itself is not in the bundle.
     """
@@ -180,7 +180,7 @@ def test_bundle_size_reasonable(specimen_record) -> None:
     """
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.manifest_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.specimen_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     bundle_size = bundle_path.stat().st_size
@@ -196,7 +196,7 @@ def test_bundle_size_reasonable(specimen_record) -> None:
 async def test_specimen_respects_exclusion_patterns(specimen_record, hydrated_specimen) -> None:
     """Verify no specimen includes files matching its exclusion patterns.
 
-    This ensures bundle.exclude patterns in manifest.yaml are properly respected.
+    This ensures bundle.exclude patterns in snapshots.yaml are properly respected.
     """
     bundle_config = specimen_record.manifest.bundle
     if not bundle_config or not bundle_config.exclude:

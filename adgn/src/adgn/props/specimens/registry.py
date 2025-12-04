@@ -26,7 +26,7 @@ from pydantic import BaseModel, ConfigDict
 import yaml
 
 from ..ids import FalsePositiveID, TruePositiveID
-from ..models.issue import IssueCore, Occurrence, SpecimenIssuesLoadError
+from ..models.issue import FalsePositiveOccurrence, IssueCore, IssueOccurrence, SpecimenIssuesLoadError
 from ..models.specimen import GitHubSource, GitSource, LocalSource, SpecimenDoc
 from ..paths import FileType, classify_path
 from ..rationale import Rationale
@@ -85,7 +85,7 @@ class KnownFalsePositive(BaseModel):
 @dataclass(frozen=True)
 class IssueRecord:
     core: IssueCore
-    instances: list[Occurrence]
+    instances: list[IssueOccurrence | FalsePositiveOccurrence]
 
 
 @dataclass(frozen=True)
@@ -109,53 +109,10 @@ def _jsonnet_importer(base: str, rel: str) -> tuple[str, bytes]:
     raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
 
 
-def _jsonnet_evaluate_to_dict(spec_dir: Path, subdir: str, should_flag: bool) -> dict[str, dict] | None:
-    """Evaluate Jsonnet files to raw dicts without Pydantic validation.
+def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, dict]] | None:
+    """Evaluate all Jsonnet files in specimen directory and split by type.
 
-    Returns:
-        Dict mapping issue_id -> raw dict (with id, should_flag injected), or None if directory missing.
-    """
-    dir_path = spec_dir / subdir
-    if not dir_path.is_dir():
-        return None
-
-    # Discover all libsonnet files
-    issue_files = sorted(dir_path.glob("*.libsonnet"))
-    if not issue_files:
-        return {}
-
-    # Optimization: batch-load all issues in single Jsonnet evaluation
-    # Jsonnet requires static import paths, so we compose the aggregator in Python
-    # Each import is merged with {id, should_flag} to produce complete issue objects
-    # Use absolute paths since evaluate_snippet has no base file for relative imports
-    imports = []
-    for p in issue_files:
-        name = p.stem
-        abs_path = str(p.resolve())
-        imports.append(
-            f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}, should_flag: {json.dumps(should_flag)}}}"
-        )
-
-    snippet = "{\n" + ",\n".join(imports) + "\n}"
-
-    eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
-    raw_obj = eval_snippet(
-        f"<batch:{subdir}>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer
-    )
-    if not isinstance(raw_obj, str):
-        raise SpecimenIssuesLoadError([f"{subdir}: Jsonnet returned non-string"])
-
-    all_issues = json.loads(raw_obj)
-    if not isinstance(all_issues, dict):
-        raise SpecimenIssuesLoadError([f"{subdir}: Expected dict, got {type(all_issues)}"])
-
-    return all_issues
-
-
-def _jsonnet_evaluate_all_flat(spec_dir: Path) -> tuple[dict[str, dict], dict[str, dict]] | None:
-    """Evaluate all Jsonnet files in flat directory structure and split by type.
-
-    New format has all libsonnet files directly in specimen directory.
+    All libsonnet files are directly in specimen directory.
     TPs and FPs are distinguished by content (expect_caught_from vs relevant_files).
 
     Args:
@@ -222,7 +179,11 @@ def _jsonnet_evaluate_all_flat(spec_dir: Path) -> tuple[dict[str, dict], dict[st
 
 
 def _validate_issues_from_dicts(
-    raw_issues: dict[str, dict], validation_context: dict, strict: bool
+    raw_issues: dict[str, dict],
+    validation_context: dict,
+    strict: bool,
+    *,
+    is_true_positive: bool = True,
 ) -> IssuesLoadResult:
     """Validate pre-evaluated issue dicts with complete context.
 
@@ -230,6 +191,7 @@ def _validate_issues_from_dicts(
         raw_issues: Dict mapping issue_id -> raw dict (from Jsonnet evaluation)
         validation_context: Complete validation context (specimen_context with files + IDs)
         strict: If True, raise on any validation errors
+        is_true_positive: If True, validate as IssueOccurrence; if False, as FalsePositiveOccurrence
 
     Returns:
         IssuesLoadResult with validated items and errors
@@ -237,17 +199,22 @@ def _validate_issues_from_dicts(
     items: list[IssueRecord] = []
     errors: list[str] = []
 
+    # Select occurrence model based on type
+    occurrence_model = IssueOccurrence if is_true_positive else FalsePositiveOccurrence
+
     for issue_id, issue_dict in raw_issues.items():
         if not isinstance(issue_dict, dict):
             errors.append(f"{issue_id}: Not a dict (got {type(issue_dict)})")
             continue
 
         try:
-            # IssueCore validation (copy dict, drop instances field)
-            core_fields = {k: v for k, v in issue_dict.items() if k != "instances"}
+            # IssueCore validation (strip non-core fields)
+            non_core_fields = {"instances", "occurrences", "should_flag"}
+            core_fields = {k: v for k, v in issue_dict.items() if k not in non_core_fields}
             core = IssueCore.model_validate(core_fields, context=validation_context)
-            inst_raw = issue_dict.get("instances", [])
-            instances = [Occurrence.model_validate(inst, context=validation_context) for inst in inst_raw]
+            # Occurrences may be named "instances" or "occurrences" depending on source
+            inst_raw = issue_dict.get("instances") or issue_dict.get("occurrences", [])
+            instances = [occurrence_model.model_validate(inst, context=validation_context) for inst in inst_raw]
             items.append(IssueRecord(core=core, instances=instances))
         except Exception as e:
             errors.append(f"{issue_id}: {e}")
@@ -370,17 +337,17 @@ def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def ensure_archive_for_specimen_slug(man: SpecimenDoc, manifest_path: Path) -> Path:
+def ensure_archive_for_specimen_slug(man: SpecimenDoc, specimen_path: Path) -> Path:
     """Ensure a cached archive exists for the specimen.
 
-    The slug is computed from the manifest path as repo/name.
+    The slug is computed from the specimen path as repo/name.
     For GitSource with commit SHA: ~/.cache/adgn-llm/specimens/{repo}/{name}-{commit}.tar.gz
     Otherwise: ~/.cache/adgn-llm/specimens/{repo}/{name}.tar.gz
 
     Uses a lock file to prevent concurrent cache creation from multiple processes.
     """
-    # Extract hierarchical slug from path: specimens/{repo}/{name}/manifest.yaml -> repo/name
-    specimen_dir = manifest_path.parent
+    # Extract hierarchical slug from path: specimens/{repo}/{name}/_specimen -> repo/name
+    specimen_dir = specimen_path.parent
     repo_name = specimen_dir.parent.name
     specimen_name = specimen_dir.name
     slug = f"{repo_name}/{specimen_name}"
@@ -434,44 +401,44 @@ def ensure_archive_for_specimen_slug(man: SpecimenDoc, manifest_path: Path) -> P
                 if len(parts) >= 2 and _download_github_to(parts[0], parts[1], git_ref, out):
                     _repack_tar_with_mtime(out, mtime=0)
                     return out
-            # Resolve relative file:// URLs relative to the manifest directory
-            url = resolve_bundle_url(manifest_path, man.source.url)
+            # Resolve relative file:// URLs relative to the specimen directory
+            url = resolve_bundle_url(specimen_path, man.source.url)
 
             if _create_archive_from_git(url, git_ref, out) and out.exists():
                 return out
         elif isinstance(man.source, LocalSource):
-            src = (manifest_path.parent / man.source.root).resolve()
+            src = (specimen_path.parent / man.source.root).resolve()
             _repack_dir_with_mtime(src, out, mtime=0)
             return out
         raise SystemExit(f"Can't archive specimen cache for '{slug}' (source={type(man.source).__name__}); ")
 
 
-def resolve_bundle_url(manifest_path: Path, source_url: str) -> str:
+def resolve_bundle_url(specimen_path: Path, source_url: str) -> str:
     """Resolve bundle URL, handling relative file:// paths.
 
     Args:
-        manifest_path: Path to manifest.yaml file
-        source_url: Source URL from manifest (may be relative file://)
+        specimen_path: Path inside specimen directory (for relative URL resolution)
+        source_url: Source URL from specimen (may be relative file://)
 
     Returns:
-        Absolute URL (file:// URLs are resolved relative to manifest directory)
+        Absolute URL (file:// URLs are resolved relative to specimen directory)
     """
     url = source_url
     if url.startswith("file://"):
         file_path = url.removeprefix("file://")
         if not file_path.startswith("/"):
-            resolved_path = (manifest_path.parent / file_path).resolve()
+            resolved_path = (specimen_path.parent / file_path).resolve()
             url = f"file://{resolved_path}"
     return url
 
 
-def resolve_source_root(man: SpecimenDoc, manifest_path: Path) -> Path:
+def resolve_source_root(man: SpecimenDoc, specimen_path: Path) -> Path:
     if isinstance(man.source, GitHubSource | GitSource):
-        archive = ensure_archive_for_specimen_slug(man, manifest_path)
+        archive = ensure_archive_for_specimen_slug(man, specimen_path)
         return _extract_tar_gz_to_temp(archive)
     if isinstance(man.source, LocalSource):
         # Use existing local copy helper for consistency
-        src = (manifest_path.parent / man.source.root).resolve()
+        src = (specimen_path.parent / man.source.root).resolve()
         tmpdir = Path(tempfile.mkdtemp(prefix="adgn-specimen-local-"))
         dest = tmpdir / src.name
         shutil.copytree(src, dest)
@@ -482,7 +449,7 @@ def resolve_source_root(man: SpecimenDoc, manifest_path: Path) -> Path:
 @dataclass(frozen=True)
 class SpecimenRecord:
     slug: str
-    manifest_path: Path
+    specimen_path: Path  # Synthetic path to specimen directory (for URL resolution)
     manifest: SpecimenDoc
     issues: dict[str, IssueRecord]
     false_positives: dict[str, IssueRecord]
@@ -506,7 +473,7 @@ class SpecimenRecord:
         # Materialize contents into mount_root according to source
         try:
             if isinstance(self.manifest.source, GitHubSource | GitSource):
-                archive = ensure_archive_for_specimen_slug(self.manifest, self.manifest_path)
+                archive = ensure_archive_for_specimen_slug(self.manifest, self.specimen_path)
                 with tarfile.open(archive, "r:gz") as tf:
                     members = [m for m in tf.getmembers() if ".git" not in m.name.split("/")]
                     if os.environ.get("ADGN_DEBUG_SPECIMEN") == "1":
@@ -520,7 +487,7 @@ class SpecimenRecord:
                         for p in git_dirs[:10]:
                             logger.debug("    %s", p)
             elif isinstance(self.manifest.source, LocalSource):
-                src = (self.manifest_path.parent / self.manifest.source.root).resolve()
+                src = (self.specimen_path.parent / self.manifest.source.root).resolve()
                 # For local specimens, materialize directly into mount_root (no extra subdir)
                 shutil.copytree(src, mount_root, dirs_exist_ok=True)
             else:  # pragma: no cover - guarded by SpecimenDoc model
@@ -563,56 +530,44 @@ class SpecimenRegistry:
 
     DI-friendly: pass in a preloaded mapping for tests; use from_base_path() factory in app code.
 
-    Supports two formats:
-    - New format: snapshots.yaml at specimens root (production)
-    - Legacy format: manifest.yaml per specimen (test fixtures)
+    Specimens are defined in snapshots.yaml at the specimens directory root.
     """
 
     def __init__(
         self,
         specimens: dict[str, SpecimenRecord | None],
         base_path: Path,
-        manifests: dict[str, SpecimenDoc] | None = None,
+        manifests: dict[str, SpecimenDoc],
     ) -> None:
         # No I/O here; accept fully materialized data
         self._specimens = specimens
         self._base_path = base_path
-        # Pre-loaded manifests from snapshots.yaml (None for legacy format)
-        self._manifests = manifests or {}
+        self._manifests = manifests
 
     @classmethod
     def from_base_path(cls, base: Path) -> SpecimenRegistry:
         """Factory method to create a registry from a specific base directory.
 
-        Discovers specimens from snapshots.yaml (new format) or by walking directories
-        for manifest.yaml files (legacy format for test fixtures).
-
         Args:
-            base: Specimens base directory (must be provided)
+            base: Specimens base directory (must contain snapshots.yaml)
 
         Returns:
             SpecimenRegistry instance
+
+        Raises:
+            FileNotFoundError: If snapshots.yaml doesn't exist
         """
+        snapshots_yaml = base / "snapshots.yaml"
+        if not snapshots_yaml.exists():
+            raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
+
         specimens: dict[str, SpecimenRecord | None] = {}
         manifests: dict[str, SpecimenDoc] = {}
 
-        # Try new format: snapshots.yaml at specimens root
-        snapshots_yaml = base / "snapshots.yaml"
-        if snapshots_yaml.exists():
-            raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
-            for slug, data in raw.items():
-                specimens[slug] = None
-                # Pre-load manifest data from snapshots.yaml
-                manifests[slug] = SpecimenDoc.model_validate(data)
-        else:
-            # Fallback: legacy format with manifest.yaml per specimen (for test fixtures)
-            for repo_dir in base.iterdir():
-                if not repo_dir.is_dir() or repo_dir.name.startswith(("_", ".")):
-                    continue
-                for specimen_dir in repo_dir.iterdir():
-                    if specimen_dir.is_dir() and (specimen_dir / "manifest.yaml").exists():
-                        slug = f"{repo_dir.name}/{specimen_dir.name}"
-                        specimens[slug] = None
+        raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
+        for slug, data in raw.items():
+            specimens[slug] = None
+            manifests[slug] = SpecimenDoc.model_validate(data)
 
         return cls(specimens=specimens, base_path=base, manifests=manifests)
 
@@ -640,23 +595,20 @@ class SpecimenRegistry:
         """List of specimen slugs in this registry."""
         return sorted(self._specimens.keys())
 
-    def _get_manifest_path(self, slug: str) -> Path:
-        """Get manifest path for a specimen slug.
+    def _get_specimen_path(self, slug: str) -> Path:
+        """Get specimen directory path for a slug.
 
-        For new format (snapshots.yaml): returns a synthetic path to the specimen directory
-        with a "manifest.yaml" suffix for compatibility with resolve_bundle_url().
-
-        For legacy format: returns actual manifest.yaml path.
+        Returns a synthetic path used for bundle URL resolution. The path points
+        to a synthetic file inside the specimen directory to maintain consistent
+        resolution behavior for relative URLs.
 
         Args:
             slug: Specimen slug like "ducktape/2025-11-20-00"
 
         Returns:
-            Resolved absolute path (to manifest.yaml or synthetic path)
+            Resolved absolute path inside specimen directory (for URL resolution)
         """
-        # Return path to specimen directory + "manifest.yaml" for URL resolution compatibility
-        # This works for both new format (synthetic) and legacy format (actual file)
-        return (self._base_path / slug.replace("/", os.sep) / "manifest.yaml").resolve()
+        return (self._base_path / slug.replace("/", os.sep) / "_specimen").resolve()
 
     @asynccontextmanager
     async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
@@ -677,41 +629,20 @@ class SpecimenRegistry:
                 # Access content root: hydrated.content_root
                 pass
         """
-        manifest_path = self._get_manifest_path(slug)
-
-        # Get manifest: from pre-loaded cache (new format) or file (legacy format)
-        if slug in self._manifests:
-            man = self._manifests[slug]
-        else:
-            # Legacy format: read from manifest.yaml file
-            raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-            if not isinstance(raw, dict):
-                raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
-            man = SpecimenDoc.model_validate(raw)
+        specimen_path = self._get_specimen_path(slug)
+        man = self._manifests[slug]
 
         # Determine specimen directory for issue loading
-        specimen_dir = manifest_path.parent
+        specimen_dir = specimen_path.parent
 
         # Evaluate Jsonnet to raw dicts (no validation yet)
-        # New format: issues are directly in specimen dir (*.libsonnet)
-        # Legacy format: issues are in issues/ subdirectory
-        if slug in self._manifests:
-            # New format: issues directly in specimen directory, split by content
-            result = _jsonnet_evaluate_all_flat(specimen_dir)
-            if result is None:
-                raise SpecimenIssuesLoadError([f"No issues found under: {specimen_dir}"])
-            raw_issues, raw_fps = result
-        else:
-            # Legacy format: issues in issues/ subdirectory
-            raw_issues = _jsonnet_evaluate_to_dict(specimen_dir, "issues", should_flag=True)
-            raw_fps = _jsonnet_evaluate_to_dict(specimen_dir, "false_positives", should_flag=False)
-            if raw_issues is None:
-                raise SpecimenIssuesLoadError([f"No issues/ directory found under: {specimen_dir}"])
-            if raw_fps is None:
-                raw_fps = {}  # FPs are optional
+        result = _jsonnet_evaluate_all(specimen_dir)
+        if result is None:
+            raise SpecimenIssuesLoadError([f"No issues found under: {specimen_dir}"])
+        raw_issues, raw_fps = result
 
         # Hydrate specimen to build complete validation context
-        hydrated_root = resolve_source_root(man, manifest_path)
+        hydrated_root = resolve_source_root(man, specimen_path)
         try:
             # Build complete context: files from hydration + IDs from Jsonnet
             all_discovered_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
@@ -724,8 +655,8 @@ class SpecimenRegistry:
             context_dict = {"specimen_context": ctx}
 
             # Validate with complete context (both paths and IDs)
-            res_pos = _validate_issues_from_dicts(raw_issues, context_dict, strict=True)
-            res_fp = _validate_issues_from_dicts(raw_fps, context_dict, strict=True)
+            res_pos = _validate_issues_from_dicts(raw_issues, context_dict, strict=True, is_true_positive=True)
+            res_fp = _validate_issues_from_dicts(raw_fps, context_dict, strict=True, is_true_positive=False)
 
             if res_pos.errors or res_fp.errors:
                 raise SpecimenIssuesLoadError([*res_pos.errors, *res_fp.errors])
@@ -733,7 +664,7 @@ class SpecimenRegistry:
             # Create record with stored file map
             rec = SpecimenRecord(
                 slug=slug,
-                manifest_path=manifest_path,
+                specimen_path=specimen_path,
                 manifest=man,
                 issues={it.core.id: it for it in res_pos.items},
                 false_positives={it.core.id: it for it in res_fp.items},
@@ -759,24 +690,10 @@ class SpecimenRegistry:
             slug: Specimen slug like "ducktape/2025-11-20-00"
 
         Returns:
-            Tuple of (manifest_path, manifest_doc)
-
-        Raises:
-            SystemExit on manifest errors
+            Tuple of (specimen_path, manifest_doc)
         """
-        manifest_path = self._get_manifest_path(slug)
-
-        # Use pre-loaded manifest if available (new format)
-        if slug in self._manifests:
-            return (manifest_path, self._manifests[slug])
-
-        # Legacy format: read from manifest.yaml file
-        raw = yaml.safe_load(manifest_path.read_text(encoding="utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise SystemExit(f"Manifest must be a mapping: {manifest_path}")
-
-        manifest = SpecimenDoc.model_validate(raw)
-        return (manifest_path, manifest)
+        specimen_path = self._get_specimen_path(slug)
+        return (specimen_path, self._manifests[slug])
 
     def list_all(self) -> set[str]:
         """List all specimen names in hierarchical format (repo/name).

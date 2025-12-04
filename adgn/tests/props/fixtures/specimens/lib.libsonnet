@@ -1,0 +1,1 @@
+/home/user/ducktape/adgn/src/adgn/props/specimens/lib.libsonnet

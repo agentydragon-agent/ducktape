@@ -1,7 +1,7 @@
-local I = import '../../specimens/lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
-I.issueOneOccurrence(
-  rationale= |||
+I.issue(
+  rationale=|||
     Test issue for integration testing.
     This is a minimal issue to satisfy specimen validation.
   |||,
