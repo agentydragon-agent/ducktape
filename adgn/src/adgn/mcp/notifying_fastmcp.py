@@ -123,8 +123,9 @@ class NotifyingFastMCP(FlatModelFastMCP):
         instructions: str | None = None,
         lifespan: Callable[[FastMCP], AbstractAsyncContextManager[Any]] | None = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        auth: Any | None = None,
     ) -> None:
-        super().__init__(name=name, instructions=instructions, lifespan=lifespan)
+        super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth)
         self._sessions: WeakSet[ServerSession] = WeakSet()
         self._pending_uris: list[str] = []
         self._pending_list_changed: bool = False

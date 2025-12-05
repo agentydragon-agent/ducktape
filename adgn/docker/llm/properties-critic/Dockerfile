@@ -34,6 +34,7 @@ COPY pyproject.toml /opt/adgn/
 ENV PYTHONPATH="/opt/adgn/src"
 
 # Python tools used by runbooks (install as wheels)
+# MCP SDK is included for HTTP server connectivity (Phase 1: MCP over Docker network)
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python -m pip install --upgrade pip \
  && PIP_NO_CACHE_DIR=0 python -m pip install \
@@ -59,7 +60,8 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         flynt \
         pydocstyle \
         interrogate \
-        diff-cover
+        diff-cover \
+        mcp>=1.0.0
 
 # Node-based tools
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
