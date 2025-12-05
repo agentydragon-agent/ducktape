@@ -114,6 +114,7 @@ async def launch_mcp_http_server(
             with asyncio.suppress(asyncio.CancelledError):
                 await server_task
         except asyncio.CancelledError:
+            # Suppress cancellation during shutdown; this is expected if the task is cancelled.
             pass
 
         logger.info(f"MCP HTTP server on port {port} shut down")
