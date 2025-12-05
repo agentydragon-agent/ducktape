@@ -9,15 +9,13 @@
 {% block body %}
 ## Goal
 - Maximize number of distinct, well‑anchored issues within scope while staying precise enough to be useful for automated scoring and review.
-- Operate strictly in the structured critic flow using the provided MCP tools (incremental build + submit). Do not print plaintext summaries.
 
 ## Output Discipline (Critic Tools)
 - Create many small, specific issues rather than a few large ones.
-- Use short, objective rationales (≤ 1–2 sentences). Cite the violated property when applicable by name in text (e.g., “violates python/pathlike: …”).
+- Use short, objective rationales (≤ 1–2 sentences). Cite the violated property when applicable by name in text (e.g., "violates python/pathlike: …").
 - Add multiple occurrences to the same issue only when they are the same root cause/pattern in closely similar contexts; otherwise make a new issue.
 - Use precise 1‑based line ranges; avoid huge spans. Prefer the minimal node that demonstrates the problem.
 - Issue id format: kebab/slug, stable and descriptive. Recommended: `<family>-<hint>-<nnn>` (e.g., `python-pathlike-cast-001`).
-- When done, call `submit(issues=<N>)` with the exact count you created.
 
 ## High‑Recall Strategy (Analyze First, Then Reason)
 1) Run fast analyzers and spotters (no dumps in the final message; keep short notes internally):

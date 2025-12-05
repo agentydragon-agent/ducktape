@@ -179,16 +179,17 @@ class AddOccurrenceFilesInput(BaseModel):
 
 
 CRITIC_MCP_INSTRUCTIONS = (
-    "Critique builder: incrementally add issues and occurrences, then call submit(issues) when complete.\n\n"
+    "Critique builder: incrementally add issues and occurrences, then call submit() when complete.\n\n"
     "Workflow:\n"
     "1. For each distinct issue: upsert_issue(tp_id, description) with a concise rationale\n"
     "2. Add occurrences: add_occurrence(tp_id, file, ranges) or add_occurrence_files for multi-file spans\n"
-    "3. When finished: ALWAYS call submit(true_positives =N) where N matches the number of issues created\n\n"
+    "3. When finished reviewing: ALWAYS call submit(true_positives=N) where N matches the number of issues created\n\n"
     "Important:\n"
-    "- If you found ZERO issues, call submit(true_positives =0) - this is required\n"
+    "- If you found ZERO issues, call submit(true_positives=0) - this is required\n"
     "- Do not send plain-text responses or summaries outside tool calls\n"
     "- The submit count must exactly match the number of issues you created\n"
     "- Use report_failure only when truly blocked (access issues, no files matched scope)\n"
+    "- When done with your analysis, call submit() to finalize your critique\n"
 )
 
 
@@ -235,7 +236,10 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         issue = result[1]
         issue.occurrences.append(Occurrence(files={Path(payload.file): _parse_ranges(payload.ranges)}))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted."
+        return (
+            f"occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
+            f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
+        )
 
     @mcp.tool()
     async def show_critique() -> CriticSubmitPayload:
@@ -252,7 +256,10 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
             Occurrence(files={Path(p): _parse_ranges(r) for p, r in (payload.files or {}).items()})
         )
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"multi-file occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted."
+        return (
+            f"multi-file occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
+            f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
+        )
 
     @mcp.flat_model()
     async def submit(payload: SubmitInput) -> SimpleOk:
