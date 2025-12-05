@@ -32,12 +32,12 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 import logging
-import os
 
 from sqlalchemy import DDL, create_engine, inspect, text
 import sqlalchemy.exc
 from sqlalchemy.orm import Session, sessionmaker
 
+from adgn.props.db.config import DatabaseConfig, get_production_config
 from adgn.props.db.models import Base
 
 logger = logging.getLogger(__name__)
@@ -46,25 +46,55 @@ _engine = None
 _SessionLocal = None
 
 
-def init_db(url: str | None = None) -> None:
-    """Connect to database (lightweight, idempotent).
+def init_db(config: DatabaseConfig | None = None) -> None:
+    """Connect to database and verify connection (fail fast).
 
     Args:
-        url: Database URL (defaults to PROPS_DB_URL env var, expects postgres superuser)
+        config: Database configuration (defaults to production config from env vars)
 
     Raises:
-        ValueError: If url is None and PROPS_DB_URL env var not set
+        ValueError: If config is None and required env vars not set (run from devenv shell)
+        sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
     """
     global _engine, _SessionLocal  # noqa: PLW0603
 
-    if url is None:
-        url = os.environ.get("PROPS_DB_URL")
-        if url is None:
-            raise ValueError("PROPS_DB_URL environment variable not set and no url provided")
+    if config is None:
+        config = get_production_config()
 
-    logger.info(f"Connecting to database: {url.split('@')[-1]}")  # Log without credentials
+    url = config.admin_url()
+    logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
     _engine = create_engine(url, echo=False)
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
+
+    # Verify connection immediately
+    check_connection(timeout_secs=2)
+
+
+def check_connection(timeout_secs: int = 2) -> None:
+    """Validate database connection (fail fast if DB not reachable).
+
+    Args:
+        timeout_secs: Connection timeout in seconds (default: 2)
+
+    Raises:
+        RuntimeError: If database not initialized (call init_db() first)
+        sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
+    """
+    if _engine is None:
+        raise RuntimeError("Database not initialized. Call init_db() first.")
+
+    logger.debug(f"Validating database connection (timeout: {timeout_secs}s)...")
+    # Create a temporary engine with connection timeout for quick validation
+    # Use render_as_string to properly preserve credentials
+    test_engine = create_engine(
+        _engine.url.render_as_string(hide_password=False), echo=False, connect_args={"connect_timeout": timeout_secs}
+    )
+    try:
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.debug("Database connection validated")
+    finally:
+        test_engine.dispose()
 
 
 def recreate_database() -> None:

@@ -58,9 +58,8 @@ class CreateKeyRequest(BaseModel):
 class FrameRecordModel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    ordinal: int
+    sequence_number: int
     frame_type: str
-    event_id: int
     created_at: datetime
     typed_frame: ResponseStreamEvent
 
@@ -208,7 +207,7 @@ async def get_frames(
     after: int | None = Query(None, ge=0),
     db: ResponsesDB = Depends(get_db),
 ) -> FrameListModel:
-    frames = await db.get_frames(identifier, limit=limit, after_ordinal=after)
+    frames = await db.get_frames(identifier, limit=limit, after_sequence_number=after)
     return FrameListModel(
         items=[FrameRecordModel.model_validate(frame) for frame in frames], count=len(frames), limit=limit, after=after
     )

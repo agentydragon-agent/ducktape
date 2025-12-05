@@ -27,9 +27,8 @@ from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import TypedBootstrapBuilder
-from adgn.agent.handler import BaseHandler, SequenceHandler
+from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
-from adgn.agent.reducer import AbortIf
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
@@ -49,7 +48,7 @@ from adgn.props.critic.models import (
     ResolvedFileScope,
 )
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt
+from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt, Snapshot
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
@@ -339,15 +338,14 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 # =============================================================================
 
 
-async def resolve_critic_scope(
-    snapshot_slug: SnapshotSlug, files: CriticScopeSpec, registry: SnapshotRegistry
-) -> ResolvedFileScope:
+async def resolve_critic_scope(snapshot_slug: SnapshotSlug, files: CriticScopeSpec) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
+
+    Loads files with issues from database (no jsonnet evaluation).
 
     Args:
         snapshot_slug: Target snapshot
         files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
-        registry: SnapshotRegistry instance (required, always threaded explicitly)
 
     Returns:
         Resolved file set (guaranteed non-empty)
@@ -357,8 +355,10 @@ async def resolve_critic_scope(
     """
     resolved_files: set[Path]
     if files == ALL_FILES_WITH_ISSUES:
-        async with registry.load_and_hydrate(snapshot_slug) as hydrated:
-            resolved_files = hydrated.files_with_issues()
+        # Load files with issues from database (not from jsonnet!)
+        with get_session() as session:
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+            resolved_files = snapshot.files_with_issues()
             if not resolved_files:
                 raise ValueError(
                     f"Snapshot '{snapshot_slug}' has no files with ground truth issues. "
@@ -402,8 +402,8 @@ async def run_critic(
             raise ValueError(f"Prompt not found in database: {input_data.prompt_sha256}")
         system_prompt = prompt_obj.prompt_text
 
-    # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel)
-    resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files, registry)
+    # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel - loads from DB)
+    resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files)
 
     # Build user prompt from resolved files
     user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))

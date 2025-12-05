@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.agent.notifications.types import NotificationsBatch

@@ -233,10 +233,8 @@ async def build_server(
                     f"Cannot run on subset of files."
                 )
 
-        # Resolve files for prompt rendering and validation
-        resolved_files = await resolve_critic_scope(
-            snapshot_slug=payload.snapshot_slug, files=payload.files, registry=registry
-        )
+        # Resolve files for prompt rendering and validation (loads from DB)
+        resolved_files = await resolve_critic_scope(snapshot_slug=payload.snapshot_slug, files=payload.files)
 
         # Load and hydrate specimen for content_root
         async with registry.load_and_hydrate(payload.snapshot_slug) as hydrated:
@@ -290,7 +288,7 @@ async def build_server(
         with get_session() as session:
             return RunGraderOutput(
                 grader_run_id=await grade_critique_by_id(
-                    session=session, critique_id=payload.critique_id, client=client, registry=registry, verbose=verbose
+                    session=session, critique_id=payload.critique_id, client=client, verbose=verbose
                 )
             )
 

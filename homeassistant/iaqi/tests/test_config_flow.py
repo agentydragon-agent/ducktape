@@ -21,7 +21,8 @@ async def test_import_flow(hass):
     result = await _init_config_flow(hass, data=test_data)
 
     # Check that it created the entry
-    assert_that(result, has_entries(type="create_entry", title=contains_string("imported via YAML"), data=test_data))
+    assert_that(result, has_entries(type="create_entry", data=test_data))
+    assert_that(result["title"], contains_string("imported via YAML"))
 
     # Check that the entry got the right unique ID
     assert_that(result["result"].unique_id, equal_to("indoor_aqi_yaml_import"))

@@ -55,6 +55,7 @@ async def _load_all_labeled_files(
                     for file_path in occurrence.files
                 }
 
+            assert hydrated.record is not None, "HydratedSnapshot from SnapshotRegistry must have record"
             return slug, files_from_issue_records(hydrated.record.true_positives) | files_from_issue_records(
                 hydrated.record.false_positives
             )

@@ -5,15 +5,15 @@ This module defines the BaseHandler interface and loop control decisions.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal
 
 from pydantic import BaseModel
 
 from adgn.agent.events import AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import LoopDecision, NoAction
+from adgn.agent.loop_control import Abort, LoopDecision, NoAction
 
-__all__ = ["AbortTurnDecision", "BaseHandler", "ContinueDecision", "SequenceHandler"]
+__all__ = ["AbortIf", "AbortTurnDecision", "BaseHandler", "ContinueDecision", "SequenceHandler"]
 
 
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
@@ -113,3 +113,25 @@ class SequenceHandler(BaseHandler):
         action = self._actions[self._index]
         self._index += 1
         return action
+
+
+class AbortIf(BaseHandler):
+    """Loop controller: abort if condition is met, otherwise continue.
+
+    Pass a should_abort callable that returns True when the agent should stop
+    (e.g., submit_state.result is set).
+
+    In the sequential evaluation model, handler ordering matters. Place AbortIf
+    after any bootstrap handlers in the handler list to ensure bootstrap completes first.
+
+    Note: The agent's tool_policy (typically RequireAnyTool) is configured at
+    construction time and applies throughout the agent's lifetime.
+    """
+
+    def __init__(self, should_abort: Callable[[], bool]) -> None:
+        self._should_abort = should_abort
+
+    def on_before_sample(self) -> LoopDecision:
+        if self._should_abort():
+            return Abort()
+        return NoAction()

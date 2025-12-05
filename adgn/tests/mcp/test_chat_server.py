@@ -1,5 +1,5 @@
 import asyncio
-from typing import Any, cast
+from typing import Any
 
 from fastmcp.client import Client
 from hamcrest import anything, assert_that, contains, empty, has_properties, is_not, none
@@ -34,20 +34,18 @@ def user_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Ma
     """Matcher for user markdown messages."""
     if id is None:
         id = anything()
-    # hamcrest has_properties returns untyped Matcher; cast to preserve type safety
-    return cast(
-        Matcher[ChatMessage], has_properties(author=ChatAuthor.USER, mime="text/markdown", content=content, id=id)
-    )
+    matcher: Matcher[ChatMessage] = has_properties(author=ChatAuthor.USER, mime="text/markdown", content=content, id=id)
+    return matcher
 
 
 def assistant_markdown_message(content: str, *, id: Matcher[str] | None = None) -> Matcher[ChatMessage]:
     """Matcher for assistant markdown messages."""
     if id is None:
         id = anything()
-    # hamcrest has_properties returns untyped Matcher; cast to preserve type safety
-    return cast(
-        Matcher[ChatMessage], has_properties(author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id)
+    matcher: Matcher[ChatMessage] = has_properties(
+        author=ChatAuthor.ASSISTANT, mime="text/markdown", content=content, id=id
     )
+    return matcher
 
 
 async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
@@ -68,7 +66,14 @@ async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
 
         # Assistant reads pending (should get both user messages once)
         page = await a.read_pending_messages(ReadPendingInput(limit=100))
-        assert_that(page.messages, contains(user_markdown_message("hello"), user_markdown_message("world")))
+        messages = page.messages
+        assert len(messages) == 2
+        assert messages[0].author == ChatAuthor.USER
+        assert messages[0].mime == "text/markdown"
+        assert messages[0].content == "hello"
+        assert messages[1].author == ChatAuthor.USER
+        assert messages[1].mime == "text/markdown"
+        assert messages[1].content == "world"
 
         # Second read should be empty (HWM advanced)
         page2 = await a.read_pending_messages(ReadPendingInput(limit=100))

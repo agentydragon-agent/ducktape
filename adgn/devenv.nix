@@ -4,7 +4,19 @@
   config,
   inputs,
   ...
-}: {
+}: let
+  # PostgreSQL configuration (single source of truth)
+  pgConfig = {
+    host = "127.0.0.1";
+    port = "5433";
+    containerName = "props-postgres";
+    adminUser = "postgres";
+    adminPassword = "props_admin_pass";
+    agentUser = "agent_user";
+    agentPassword = "agent_password_changeme";
+    database = "eval_results";
+  };
+in {
   # Basic packages available in the shell
   # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, jsonnet, etc.
   packages = [pkgs.git pkgs.nodejs_20 pkgs.stdenv.cc.cc.lib pkgs.zlib];
@@ -32,26 +44,39 @@
   scripts."mini-codex-serve".exec = "python -m adgn.agent.cli serve --host 127.0.0.1 --port 8765";
   scripts."mini-codex-serve".description = "Start MiniCodex backend + FastAPI UI server (http://127.0.0.1:8765)";
 
-  # PostgreSQL container (replaces docker-compose.yml)
-  containers.postgres = {
-    name = "props-postgres";
-    image = "postgres:16";
-    ports = ["5433:5432"];
-    environment = {
-      POSTGRES_USER = "postgres";
-      POSTGRES_PASSWORD = "props_admin_pass";
-      # Note: Creates 'postgres' database by default
-      # Additional databases (eval_results, eval_results_test) created via init_db.sh
-    };
-    volumes = [
-      "props_eval_results_data:/var/lib/postgresql/data"
-    ];
-    networks = ["props_default"];
-    cmd = []; # Use default postgres startup command
-  };
-
   # Background processes (start with: `devenv up`)
   processes.vite.exec = "npm --prefix ./src/adgn/agent/web run dev -- --host 127.0.0.1 --port 5173";
+
+  # PostgreSQL Docker container (managed via processes)
+  # Network: props_default (created in enterShell, shared with prompt-optimizer agent containers)
+  # Container name: props-postgres (accessible from other containers on props_default network)
+  # Host access: localhost:5433
+  processes.postgres.exec = ''
+    # Stop and remove existing container if present
+    docker rm -f ${pgConfig.containerName} 2>/dev/null || true
+
+    # Run PostgreSQL container
+    docker run --rm \
+      --name ${pgConfig.containerName} \
+      --network props_default \
+      -p ${pgConfig.port}:5432 \
+      -e POSTGRES_USER=${pgConfig.adminUser} \
+      -e POSTGRES_PASSWORD=${pgConfig.adminPassword} \
+      -v props_eval_results_data:/var/lib/postgresql/data \
+      postgres:16
+  '';
+
+  # Environment variables (database connection parameters - single source of truth)
+  env = {
+    # Structured database configuration (preferred)
+    PROPS_DB_HOST = pgConfig.host;
+    PROPS_DB_PORT = pgConfig.port;
+    PROPS_DB_ADMIN_USER = pgConfig.adminUser;
+    PROPS_DB_ADMIN_PASSWORD = pgConfig.adminPassword;
+    PROPS_DB_AGENT_USER = pgConfig.agentUser;
+    PROPS_DB_AGENT_PASSWORD = pgConfig.agentPassword;
+    PROPS_DB_NAME = pgConfig.database;
+  };
 
   # On shell entry, ensure the project is installed (editable) with dev extras
   # Install into the active devenv-managed venv so `pytest`, `ruff`, etc. are on PATH
@@ -66,7 +91,16 @@
     export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
     export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
+    # Ensure Docker network exists for Postgres + agent containers
+    if command -v docker &> /dev/null; then
+      if ! docker network inspect props_default &> /dev/null; then
+        echo "Creating Docker network 'props_default' for container communication..."
+        docker network create props_default
+      fi
+    fi
+
     python --version
     echo "Tip: run 'devenv up' to start Vite UI dev server + PostgreSQL container in the background, or use 'ui-dev'/'mini-codex-serve' scripts."
+    echo "Props setup ready. Start PostgreSQL with: devenv up"
   '';
 }

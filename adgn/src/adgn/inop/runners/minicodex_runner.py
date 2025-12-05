@@ -15,7 +15,7 @@ from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler

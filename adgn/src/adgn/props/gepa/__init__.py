@@ -5,17 +5,6 @@ Implements GEPAAdapter protocol to integrate with your existing infrastructure:
 - run_critic(): MiniCodex + Docker MCP
 - grade_critique_by_id(): LLM grader
 - Traces from events table
-
-Usage:
-    pip install adgn[gepa]
-
-    from adgn.props.gepa import optimize_with_gepa
-
-    optimized_prompt, result = await optimize_with_gepa(
-        initial_prompt=initial_prompt,
-        registry=registry,
-        client=client,
-    )
 """
 
 from .gepa_adapter import (

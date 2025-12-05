@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
-from mcp.types import TextContent
+from mcp.types import TextResourceContents
 import pytest
 
 from adgn.agent.mcp_bridge.agents import AgentInfo, make_agents_server
@@ -55,7 +55,7 @@ class TestAgentsListResource:
             contents = await sess.read_resource("agents://list")
             assert contents is not None
             # Content should be a list (empty)
-            text_parts = [c for c in contents if isinstance(c, TextContent)]
+            text_parts = [c for c in contents if isinstance(c, TextResourceContents)]
             assert len(text_parts) >= 1
             # Validate structure - should be JSON list
             data = json.loads(text_parts[0].text)

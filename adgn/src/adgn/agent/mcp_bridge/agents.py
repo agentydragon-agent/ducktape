@@ -16,7 +16,8 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
+from adgn.mcp._shared.constants import AGENTS_LIST_URI, AGENTS_PRESETS_URI
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
@@ -89,7 +90,7 @@ class BootAgentOutput(BaseModel):
 # ---- Server factory ----------------------------------------------------------
 
 
-def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModelFastMCP:
+def make_agents_server(name: str, registry: InfrastructureRegistry) -> NotifyingFastMCP:
     """Create the agents management MCP server.
 
     Resources:
@@ -101,9 +102,9 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModel
     - delete_agent(agent_id) - Delete an agent
     - boot_agent(agent_id) - Boot existing agent from DB
     """
-    mcp = FlatModelFastMCP(name)
+    mcp = NotifyingFastMCP(name)
 
-    @mcp.resource("agents://list")
+    @mcp.resource(AGENTS_LIST_URI)
     async def list_agents() -> list[AgentInfo]:
         """List all agents with their state.
 
@@ -131,7 +132,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModel
 
         return agents
 
-    @mcp.resource("agents://presets")
+    @mcp.resource(AGENTS_PRESETS_URI)
     async def list_presets() -> list[PresetInfo]:
         """List available agent presets."""
         presets = discover_presets()
@@ -141,7 +142,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModel
     async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
         """Create a new agent from a preset and boot it."""
         container = await registry.create_agent(preset=input.preset)
-        await mcp.notify_resource_updated("agents://list")
+        await mcp.broadcast_resource_updated(AGENTS_LIST_URI)
         return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
 
     @mcp.tool(flat=True)
@@ -149,14 +150,14 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> FlatModel
         """Delete an agent."""
         await registry.shutdown_agent(input.agent_id)
         await registry.persistence.delete_agent(input.agent_id)
-        await mcp.notify_resource_updated("agents://list")
+        await mcp.broadcast_resource_updated(AGENTS_LIST_URI)
         return DeleteAgentOutput(id=input.agent_id, status="deleted")
 
     @mcp.tool(flat=True)
     async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
         """Boot an existing agent from the database."""
         container = await registry.boot_agent(input.agent_id)
-        await mcp.notify_resource_updated("agents://list")
+        await mcp.broadcast_resource_updated(AGENTS_LIST_URI)
         return BootAgentOutput(id=container.agent_id, status="booted")
 
     return mcp

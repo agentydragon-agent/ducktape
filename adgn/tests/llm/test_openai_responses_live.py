@@ -1,6 +1,9 @@
+from collections.abc import Sequence
 import os
+from typing import Any
 
 import openai
+from openai.types.responses import EasyInputMessageParam
 import pytest
 
 
@@ -18,13 +21,16 @@ async def test_responses_nonstreaming_live(tmp_path):
     client = openai.AsyncOpenAI()
     model = os.getenv("OPENAI_MODEL", "o4-mini")
 
-    # Minimal input that should be supported by Responses API
-    inp = [{"role": "user", "content": "Say hello in one short sentence."}]
+    # Use TypedDict (input type) directly
+    inp: Sequence[EasyInputMessageParam] = [
+        {"type": "message", "role": "user", "content": "Say hello in one short sentence."}
+    ]
 
     # Non-streaming call
     resp = await client.responses.create(model=model, input=inp)
 
     # Try to normalize to dict for assertions
+    data: dict[str, Any] | None
     try:
         data = resp.model_dump(exclude_none=True)
     except Exception:
@@ -49,7 +55,10 @@ async def test_responses_streaming_live(tmp_path):
     client = openai.AsyncOpenAI()
     model = os.getenv("OPENAI_MODEL", "o4-mini")
 
-    inp = [{"role": "user", "content": "Stream: say numbers 1..3 as separate events"}]
+    # Use TypedDict (input type) directly
+    inp: Sequence[EasyInputMessageParam] = [
+        {"type": "message", "role": "user", "content": "Stream: say numbers 1..3 as separate events"}
+    ]
 
     # The SDK may return a coroutine that yields an async iterator; await it first
     maybe_iter = await client.responses.create(model=model, input=inp, stream=True)

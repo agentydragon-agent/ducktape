@@ -117,8 +117,6 @@ npm --prefix src/adgn/agent/web run dev
 - On rare failure to flush pending writes during shutdown, the operation returns `{ ok: false, error: "drain_failed" }` and does not purge. The agent is closed and removed from the live registry; you can retry deletion once the issue is resolved (see server logs for details).
 
 ## Troubleshooting
-- MCP startup errors: if an MCP server fails to launch, MiniCodex continues with others; check terminal logs for the failing server
-- MCP connection issues: the UI shows a banner on connection error/close; browser console includes details
 - For production UI, rebuild assets:
   - `npm --prefix src/adgn/agent/web install`
   - `npm --prefix src/adgn/agent/web run build`

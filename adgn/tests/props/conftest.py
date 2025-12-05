@@ -2,7 +2,6 @@
 
 import hashlib
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from pydantic import BaseModel
@@ -13,8 +12,7 @@ from sqlalchemy import create_engine, text
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
 from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import init_db, recreate_database
-from adgn.props.db.config import DatabaseConfig, get_test_config
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.config import get_production_config
 from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
@@ -271,37 +269,32 @@ def test_db(request):
     Safe for parallel pytest-xdist execution - each test gets its own database.
 
     Database name is derived from the test node ID for better debuggability.
+
+    Yields:
+        DatabaseConfig for the test database (with both admin and agent credentials)
     """
     # Generate database name from test node ID
     test_node_id = request.node.nodeid
     sanitized_id = _sanitize_test_id(test_node_id)
     db_name = f"props_test_{sanitized_id}"
 
-    # Get base config and parse admin URL
-    base_config = get_test_config()
-    # Parse admin URL to get connection params (connect to postgres db to create new db)
-    parsed = urlparse(base_config.admin_url)
-    postgres_url = urlunparse((parsed.scheme, parsed.netloc, "/postgres", "", "", ""))
+    # Get base config (structured fields)
+    base_config = get_production_config()  # Uses env vars set by devenv
 
     # Connect to postgres database to create test database
-    postgres_engine = create_engine(postgres_url, isolation_level="AUTOCOMMIT")
+    postgres_config = base_config.with_database("postgres")
+    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
     with postgres_engine.connect() as conn:
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
 
-    # Build URLs for the new test database
-    test_admin_url = urlunparse((parsed.scheme, parsed.netloc, f"/{db_name}", "", "", ""))
-    test_agent_url = test_admin_url.replace("postgres:postgres", "agent_user:agent_password_changeme")
-    test_config = DatabaseConfig(admin_url=test_admin_url, agent_url=test_agent_url)
+    # Build config for the new test database
+    test_config = base_config.with_database(db_name)
 
     # Initialize schema in the new database
-    init_db(test_config.admin_url)
+    init_db(test_config)
     recreate_database()
 
-    # Create default test prompts using proper SHA256 computation
-    for prompt_name in ["test123", "unknown", "test", "train-test"]:
-        hash_and_upsert_prompt(f"Test prompt for {prompt_name}")
-
-    yield  # Test runs here
+    yield test_config  # Test runs here with access to config
 
     # Cleanup: drop the test database
     with postgres_engine.connect() as conn:

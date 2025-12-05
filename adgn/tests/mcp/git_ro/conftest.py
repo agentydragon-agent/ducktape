@@ -15,17 +15,17 @@ def _ensure_identity(repo: pygit2.Repository) -> None:
     cfg["user.email"] = "test@example.com"
 
 
-def _commit_all(repo: pygit2.Repository, message: str) -> str:
+def _commit_all(repo: pygit2.Repository, message: str) -> None:
     idx = repo.index
     idx.add_all()
     idx.write()
     tree = idx.write_tree()
-    parents: list[pygit2.Oid] = []
+    parents: list[pygit2.Oid | str] = []
     if not repo.head_is_unborn:
+        # repo.head.target is Oid | str (hex hash string)
         parents = [repo.head.target]
     author = committer = pygit2.Signature("Test", "test@example.com")
-    oid = repo.create_commit("HEAD", author, committer, message, tree, parents)
-    return str(oid)
+    repo.create_commit("HEAD", author, committer, message, tree, parents)
 
 
 @pytest.fixture

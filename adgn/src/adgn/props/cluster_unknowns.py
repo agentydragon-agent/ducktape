@@ -9,8 +9,8 @@ from fastmcp.client import Client
 from pydantic import BaseModel, ConfigDict
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import AbortIf
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AbortIf
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP

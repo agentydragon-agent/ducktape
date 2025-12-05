@@ -18,7 +18,7 @@ from typer.main import get_command
 import uvicorn
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.server.app import create_app

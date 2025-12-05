@@ -50,10 +50,10 @@ optimized_prompt, result = await optimize_with_gepa(
 
 ```bash
 # Default: full-snapshot examples
-python -m adgn.props.gepa.run_gepa_optimization --max-metric-calls 100
+adgn-properties gepa --max-metric-calls 100
 
 # Per-file mode: more training examples
-python -m adgn.props.gepa.run_gepa_optimization --use-per-file-examples --max-metric-calls 200
+adgn-properties gepa --use-per-file-examples --max-metric-calls 200
 ```
 
 ### Direct GEPA API

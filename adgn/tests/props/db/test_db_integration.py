@@ -1,13 +1,15 @@
 """Integration tests for PostgreSQL database access.
 
-These tests use the TEST database (eval_results_test) and require:
-- postgres container running (docker-compose up -d)
-- init_db.sh run to create test database
-- PROPS_TEST_DB_URL set (admin_user credentials for eval_results_test)
-- PROPS_TEST_AGENT_DB_URL set (agent_user credentials for eval_results_test)
+These tests use per-test isolated databases and require:
+- postgres container running (managed by devenv)
+- PROPS_DB_* environment variables set (admin and agent credentials)
 
-The test database is SEPARATE from production (eval_results).
-Tests can freely drop/recreate tables without affecting production data.
+Each test gets its own database (created and destroyed by test_db fixture).
+The test_db fixture returns a DatabaseConfig with both admin and agent credentials.
+
+For RLS testing, tests use:
+- admin_user (via get_session()) to write test data
+- agent_user (via agent_session(test_db)) to verify read-only RLS policies
 
 Note: These tests share a module-scoped fixture and work correctly with pytest-xdist
 because the project uses --dist=loadscope by default, which ensures all tests in
@@ -16,17 +18,44 @@ this module run in the same worker process.
 
 from __future__ import annotations
 
-import os
+from contextlib import contextmanager
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
-from adgn.props.db import get_session, init_db, query_builders as qb
+from adgn.props.db import get_session, query_builders as qb
+from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot
 from adgn.props.ids import SnapshotSlug
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
+
+
+@contextmanager
+def agent_session(config: DatabaseConfig):
+    """Context manager for agent_user database session (for RLS testing).
+
+    Args:
+        config: Database configuration with agent credentials
+
+    Yields:
+        Session connected as agent_user (read-only with RLS)
+    """
+    engine = create_engine(config.agent_url(), echo=False)
+    session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    session = session_local()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
+        engine.dispose()
+
 
 # Test-specific SQL queries for RLS validation (should be blocked by agent_user)
 SQL_BLOCKED_VALID_CRITIQUES = """
@@ -62,13 +91,7 @@ def test_rls_blocks_test_split_for_agent_user(test_db):
     Verify (as agent_user):
     - Cannot query critic runs for test split specimens
     """
-    admin_url = os.environ.get("PROPS_TEST_DB_URL")
-    agent_url = os.environ.get("PROPS_TEST_AGENT_DB_URL")
-    if not agent_url:
-        pytest.skip("PROPS_TEST_AGENT_DB_URL not set (agent_user credentials required)")
-
-    # Setup: Use admin_user to write test data
-    init_db(admin_url)
+    # Setup: Use admin_user to write test data (already connected via test_db fixture)
     with get_session() as session:
         test_specimen = Snapshot(slug="crush/test-specimen", split="test")
         session.merge(test_specimen)
@@ -87,8 +110,7 @@ def test_rls_blocks_test_split_for_agent_user(test_db):
         session.commit()
 
     # Verify: Connect as agent_user (read-only) and verify RLS blocks test split
-    init_db(agent_url)
-    with get_session() as session:
+    with agent_session(test_db) as session:
         test_runs = (
             session.query(CriticRun)
             .filter(
@@ -110,13 +132,7 @@ def test_rls_allows_train_split_for_agent_user(test_db):
     Verify (as agent_user):
     - Can query critic runs for train split specimens
     """
-    admin_url = os.environ.get("PROPS_TEST_DB_URL")
-    agent_url = os.environ.get("PROPS_TEST_AGENT_DB_URL")
-    if not agent_url:
-        pytest.skip("PROPS_TEST_AGENT_DB_URL not set")
-
-    # Setup: Use admin_user to write test data
-    init_db(admin_url)
+    # Setup: Use admin_user to write test data (already connected via test_db fixture)
     train_run_id = uuid4()
     with get_session() as session:
         train_specimen = Snapshot(slug="ducktape/2025-11-26-00", split="train")
@@ -136,8 +152,7 @@ def test_rls_allows_train_split_for_agent_user(test_db):
         session.commit()
 
     # Verify: Connect as agent_user (read-only) and verify RLS allows train split
-    init_db(agent_url)
-    with get_session() as session:
+    with agent_session(test_db) as session:
         train_runs = session.query(CriticRun).filter(CriticRun.transcript_id == train_run_id).all()
 
         assert len(train_runs) == 1, "agent_user should see train split data via RLS"
@@ -157,13 +172,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
     - CANNOT query critic_runs for valid specimens (returns 0 rows)
     - CAN query grader_runs for valid specimens (aggregate access allowed)
     """
-    admin_url = os.environ.get("PROPS_TEST_DB_URL")
-    agent_url = os.environ.get("PROPS_TEST_AGENT_DB_URL")
-    if not agent_url:
-        pytest.skip("PROPS_TEST_AGENT_DB_URL not set")
-
-    # Setup: Use admin_user to write test data
-    init_db(admin_url)
+    # Setup: Use admin_user to write test data (already connected via test_db fixture)
     valid_critique_id = uuid4()
     valid_run_id = uuid4()
     with get_session() as session:
@@ -211,8 +220,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         session.commit()
 
     # Verify: Connect as agent_user (read-only) and verify RLS blocks valid detail access
-    init_db(agent_url)
-    with get_session() as session:
+    with agent_session(test_db) as session:
         # Should NOT see critique details for valid specimen
         valid_critiques = session.query(Critique).filter(Critique.snapshot_slug == "valid/spec-test").all()
         assert len(valid_critiques) == 0, "agent_user should NOT see valid split critiques via RLS"

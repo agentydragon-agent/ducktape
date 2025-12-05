@@ -44,20 +44,25 @@ cat <<'EOF'
 
 === PRODUCTION DATABASE ===
 Database: eval_results
-Admin:    postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results
-Agent:    postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results
+Host:     localhost:5433
+Admin:    postgres / props_admin_pass
+Agent:    agent_user / agent_password_changeme
 
 === TEST DATABASE ===
 Database: eval_results_test
-Admin:    postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results_test
-Agent:    postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results_test
+Host:     localhost:5433
+Admin:    postgres / props_admin_pass
+Agent:    agent_user / agent_password_changeme
 
-Environment variables for tests:
-export PROPS_TEST_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results_test'
-export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results_test'
+NOTE: When using devenv shell, these environment variables are automatically set:
+  PROPS_DB_HOST=localhost
+  PROPS_DB_PORT=5433
+  PROPS_DB_ADMIN_USER=postgres
+  PROPS_DB_ADMIN_PASSWORD=props_admin_pass
+  PROPS_DB_AGENT_USER=agent_user
+  PROPS_DB_AGENT_PASSWORD=agent_password_changeme
+  PROPS_DB_NAME=eval_results
 
-Environment variables for production:
-export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
-export PROPS_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results'
+Tests construct their own DatabaseConfig with per-test database names.
 
 EOF

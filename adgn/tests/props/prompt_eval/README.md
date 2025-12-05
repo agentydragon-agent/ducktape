@@ -70,28 +70,7 @@ export PROPS_TEST_AGENT_DB_URL="postgresql://agent_user:password@localhost:5432/
 
 **Note**: These environment variables point to the TEST database (`eval_results_test`), which is separate from production (`eval_results`). Tests can freely drop/recreate tables without affecting production data.
 
-## Running the Tests
-
-### Run all prompt_eval tests
-
-```bash
-cd /code/gitlab.com/agentydragon/ducktape/adgn
-pytest tests/props/prompt_eval/ -v
-```
-
-### Run specific test file
-
-```bash
-pytest tests/props/prompt_eval/test_prompt_optimizer_integration.py -v
-```
-
-### Run specific test
-
-```bash
-pytest tests/props/prompt_eval/test_prompt_optimizer_integration.py::test_critic_run_writes_to_database -v
-```
-
-### Run with database environment
+## Run with database environment
 
 ```bash
 PROPS_TEST_DB_URL="postgresql://admin_user:pass@localhost:5432/eval_results_test" \
@@ -155,7 +134,7 @@ A complete end-to-end test would require:
 This is intentionally NOT included in these tests to keep them fast and deterministic.
 
 For actual tool execution tests, see:
-- `tests/props/cli_app/test_*.py`: CLI integration tests
+- `tests/props/cli/test_*.py`: CLI integration tests
 - `tests/agent/test_*.py`: Full agent flow tests
 
 ### Additional Coverage

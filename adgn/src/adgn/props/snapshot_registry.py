@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass
 from importlib import resources
-import json
 import logging
 import os
 from pathlib import Path
@@ -13,18 +12,17 @@ import subprocess
 import tarfile
 import tempfile
 import time
-from typing import Any, cast
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse
 from urllib.request import urlopen
 import uuid
 
-import _jsonnet  # type: ignore[import-untyped]
 from filelock import FileLock
 from platformdirs import user_cache_dir
 from pydantic import BaseModel, ConfigDict
 import yaml
 
+from .db.sync._jsonnet import evaluate_snapshot_issues
 from .ids import BaseIssueID, FalsePositiveID, SnapshotSlug, TruePositiveID, split_snapshot_slug
 from .models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from .models.true_positive import FalsePositiveOccurrence, IssueCore, SnapshotIssuesLoadError, TruePositiveOccurrence
@@ -110,94 +108,6 @@ class TruePositivesLoadResult:
 class FalsePositivesLoadResult:
     items: list[KnownFalsePositive]
     errors: list[str]
-
-
-# ---- Shared Jsonnet loader helpers ----
-JSONNET_LIBDIR = Path(__file__).resolve().parent
-
-
-def _jsonnet_importer(base: str, rel: str) -> tuple[str, bytes]:
-    cand1 = (Path(base) / rel).resolve()
-    if cand1.is_file():
-        return str(cand1), cand1.read_bytes()
-    rel_name = Path(rel).name
-    cand2 = (JSONNET_LIBDIR / rel_name).resolve()
-    if cand2.is_file():
-        return str(cand2), cand2.read_bytes()
-    raise RuntimeError(f"import not found: base={base!r} rel={rel!r}")
-
-
-def _jsonnet_evaluate_all(spec_dir: Path) -> tuple[dict[str, dict], dict[str, dict]] | None:
-    """Evaluate all Jsonnet files in snapshot directory and split by type.
-
-    All libsonnet files are directly in the snapshot directory.
-    TPs and FPs are distinguished by content (expect_caught_from vs relevant_files).
-
-    Args:
-        spec_dir: Snapshot directory containing libsonnet files
-
-    Returns:
-        Tuple of (true_positives, false_positives) dicts, or None if no files found.
-        Each dict maps issue_id -> raw dict (with id and should_flag injected).
-    """
-    if not spec_dir.is_dir():
-        return None
-
-    # Discover all libsonnet files in the directory
-    issue_files = sorted(spec_dir.glob("*.libsonnet"))
-    if not issue_files:
-        return None
-
-    # Build Jsonnet snippet to batch-load all files (without should_flag yet)
-    imports = []
-    for p in issue_files:
-        name = p.stem
-        abs_path = str(p.resolve())
-        imports.append(f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}}}")
-
-    snippet = "{\n" + ",\n".join(imports) + "\n}"
-
-    eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
-    raw_obj = eval_snippet("<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)], import_callback=_jsonnet_importer)
-    if not isinstance(raw_obj, str):
-        raise SnapshotIssuesLoadError(["flat: Jsonnet returned non-string"])
-
-    all_issues = json.loads(raw_obj)
-    if not isinstance(all_issues, dict):
-        raise SnapshotIssuesLoadError([f"flat: Expected dict, got {type(all_issues)}"])
-
-    # Split into TPs and FPs based on occurrence structure
-    true_positives: dict[str, dict] = {}
-    false_positives: dict[str, dict] = {}
-
-    for issue_id, issue_dict in all_issues.items():
-        if not isinstance(issue_dict, dict):
-            continue
-
-        occurrences = issue_dict.get("occurrences", [])
-        if not occurrences:
-            continue
-
-        # Check first occurrence to determine type
-        first_occ = occurrences[0]
-        is_tp = "expect_caught_from" in first_occ
-        is_fp = "relevant_files" in first_occ
-
-        if is_tp:
-            issue_dict["should_flag"] = True
-            true_positives[issue_id] = issue_dict
-        elif is_fp:
-            issue_dict["should_flag"] = False
-            false_positives[issue_id] = issue_dict
-        else:
-            raise SnapshotIssuesLoadError(
-                [
-                    f"Issue {issue_id!r}: First occurrence is malformed - "
-                    f"must have either 'expect_caught_from' (TP) or 'relevant_files' (FP), got keys: {list(first_occ.keys())}"
-                ]
-            )
-
-    return true_positives, false_positives
 
 
 def _validate_true_positives_from_dicts(
@@ -698,11 +608,13 @@ class SnapshotRegistry:
         # Determine snapshot directory for issue loading
         snapshot_dir = snapshot_path.parent
 
-        # Evaluate Jsonnet to raw dicts (no validation yet)
-        result = _jsonnet_evaluate_all(snapshot_dir)
-        if result is None:
-            raise SnapshotIssuesLoadError([f"No issues found under: {snapshot_dir}"])
-        raw_issues, raw_fps = result
+        # Evaluate Jsonnet to raw dicts (no validation yet) via isolated sync module
+        try:
+            raw_issues, raw_fps = evaluate_snapshot_issues(snapshot_dir)
+        except SnapshotIssuesLoadError:
+            raise
+        except Exception as e:
+            raise SnapshotIssuesLoadError([f"Failed to evaluate issues for {slug}: {e}"]) from e
 
         # Hydrate snapshot to build complete validation context
         hydrated_root = resolve_source_root(man, snapshot_path)
@@ -735,7 +647,7 @@ class SnapshotRegistry:
             )
 
             # Yield hydrated snapshot - single object with record + content root
-            yield HydratedSnapshot(record=rec, content_root=hydrated_root)
+            yield HydratedSnapshot(content_root=hydrated_root, all_discovered_files=all_discovered_files, record=rec)
         finally:
             # Clean up hydrated snapshot
             shutil.rmtree(

@@ -64,7 +64,7 @@ class NoAction:
     """Handler has no opinion; continue to next handler.
 
     When returned by a handler: "I defer, check the next handler"
-    When returned by reducer (all handlers deferred): "Sample the LLM normally"
+    When all handlers defer: "Sample the LLM normally"
 
     This replaces both NoLoopDecision and Continue, which had identical
     semantics in the sequential evaluation model.

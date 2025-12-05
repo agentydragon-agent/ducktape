@@ -6,8 +6,8 @@ import logging
 from uuid import UUID
 
 from adgn.agent.db_event_handler import DatabaseEventHandler
+from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.handler import BaseHandler
-from adgn.agent.rich_display import CompactDisplayHandler
 
 logger = logging.getLogger(__name__)
 

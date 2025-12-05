@@ -78,8 +78,8 @@ from adgn.openai_utils.model import OpenAIModelProto
 
 # MCP-based PE wiring (new path)
 
-# Always get a module logger; handler config is applied by DualOutputLogging
-logger: logging.Logger = logging.getLogger(__name__)
+# Module logger; handler config is applied by DualOutputLogging.setup_logging()
+logger = logging.getLogger(__name__)
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()

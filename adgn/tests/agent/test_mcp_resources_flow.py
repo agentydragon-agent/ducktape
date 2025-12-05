@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem

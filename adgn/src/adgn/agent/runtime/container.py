@@ -563,8 +563,8 @@ class AgentContainer:
             opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)
             runtime_server = make_runtime_server(opts)
             # Ensure tool is exposed under expected name
-            tools = await runtime_server._tool_manager.list_tools()
-            assert RUNTIME_EXEC_TOOL_NAME in [t.name for t in tools]
+            tools = runtime_server._tool_manager._tools
+            assert RUNTIME_EXEC_TOOL_NAME in tools
             await self._compositor.mount_inproc(RUNTIME_SERVER_NAME, runtime_server)
         # Persist runtime ephemerality for status reporting (explicit)
         self.runtime_ephemeral = False

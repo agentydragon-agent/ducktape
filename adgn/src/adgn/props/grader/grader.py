@@ -22,9 +22,8 @@ from rich.table import Table
 from sqlalchemy.orm import Session
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.handler import BaseHandler
+from adgn.agent.handler import AbortIf, BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.reducer import AbortIf
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
@@ -37,7 +36,8 @@ from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import Critique, GraderRun as DBGraderRun
+from adgn.props.db.adapters import orm_to_wrapper_fps, orm_to_wrapper_tps
+from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader.models import (
     CritiqueInputIssue,
@@ -49,7 +49,8 @@ from adgn.props.grader.models import (
 from adgn.props.ids import InputIssueID
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.snapshot_hydrated import HydratedSnapshot
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.snapshot_registry import KnownFalsePositive, TruePositiveIssue
 
 # Avoid circular imports:
 # - prompts.builder imports from here
@@ -178,10 +179,25 @@ async def run_grader(
     input_data: GraderInput,
     client: OpenAIModelProto,
     hydrated_specimen: HydratedSnapshot,
+    canonical_tps: list[TruePositiveIssue],
+    canonical_fps: list[KnownFalsePositive],
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
 ) -> tuple[GraderOutput, UUID]:
-    """Run grader agent: evaluate critique against ground truth, persist to DB."""
+    """Run grader agent: evaluate critique against ground truth, persist to DB.
+
+    Args:
+        input_data: Grader input with snapshot_slug and critique_id
+        client: OpenAI client
+        hydrated_specimen: Hydrated snapshot (only content_root used, not record)
+        canonical_tps: Canonical true positives (from DB or registry)
+        canonical_fps: Known false positives (from DB or registry)
+        extra_handlers: Additional handlers
+        verbose: Enable verbose output
+
+    Returns:
+        Tuple of (GraderOutput, grader_run_id)
+    """
     # Generate unique IDs for this run
     run_id = uuid4()
     transcript_id = uuid4()
@@ -207,10 +223,6 @@ async def run_grader(
         # Fetch critique from database
         critique = CriticSubmitPayload.model_validate(_get_required_critique(session, input_data.critique_id).payload)
 
-    # Use specimen's canonical issues and false positives (via convenience properties)
-    canonical_typed = hydrated_specimen.record.true_positive_issues
-    fp_typed = hydrated_specimen.record.known_false_positives_list
-
     # Convert critique issues to CritiqueInputIssue
     critique_typed = [
         CritiqueInputIssue(id=InputIssueID(issue.id), rationale=issue.rationale, occurrences=issue.occurrences)
@@ -223,9 +235,9 @@ async def run_grader(
 
     wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
     prompt = build_grade_from_json_prompt(
-        true_positive_issues=canonical_typed,
+        true_positive_issues=canonical_tps,
         critique_issues=critique_typed,
-        known_fps=fp_typed,
+        known_fps=canonical_fps,
         submit_tool_name=build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result"),
         wiring=wiring,
     )
@@ -283,7 +295,7 @@ async def run_grader(
 
 
 async def grade_critique_by_id(
-    session: Session, critique_id: UUID, client: OpenAIModelProto, registry: SnapshotRegistry, verbose: bool = False
+    session: Session, critique_id: UUID, client: OpenAIModelProto, verbose: bool = False
 ) -> UUID:
     """Grade critique by ID, return grader_run_id.
 
@@ -291,23 +303,37 @@ async def grade_critique_by_id(
         session: Database session (caller manages transaction)
         critique_id: ID of critique to grade
         client: OpenAI client
-        registry: Snapshot registry (required - caller must provide)
+        registry: Snapshot registry (still required for source hydration)
         verbose: Enable verbose output
 
     Returns:
         Grader run ID
     """
-    # Fetch snapshot_slug from critique
-    snapshot_slug = _get_required_critique(session, critique_id).snapshot_slug
+    # Fetch snapshot from critique
+    critique = _get_required_critique(session, critique_id)
+    snapshot_slug = critique.snapshot_slug
+
+    # Load snapshot and issues from database (no jsonnet!)
+    snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+
+    # Convert ORM → Pydantic wrappers for grader prompt
+    canonical_tps = orm_to_wrapper_tps(snapshot.true_positives)
+    canonical_fps = orm_to_wrapper_fps(snapshot.false_positives)
 
     # Create grader input
     grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)
 
-    # Load and hydrate specimen once, then execute
-    async with registry.load_and_hydrate(snapshot_slug) as hydrated:
-        # Execute grader run
+    # Hydrate source code only (not issues - already loaded from DB)
+    hydrator = SnapshotHydrator.from_package_resources()
+    async with hydrator.hydrate(snapshot_slug) as hydrated:
+        # Execute grader run with explicit canonical issues
         _grader_output, grader_run_id = await run_grader(
-            input_data=grader_input, client=client, hydrated_specimen=hydrated, verbose=verbose
+            input_data=grader_input,
+            client=client,
+            hydrated_specimen=hydrated,
+            canonical_tps=canonical_tps,
+            canonical_fps=canonical_fps,
+            verbose=verbose,
         )
 
         return grader_run_id

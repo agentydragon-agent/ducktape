@@ -5,10 +5,10 @@ evolutionary search with rich feedback from execution traces and grader output.
 
 Usage:
     from gepa import optimize
-    from adgn.props.dspy_opt.gepa_adapter import CriticAdapter, load_datasets
+    from adgn.props.gepa.gepa_adapter import CriticAdapter, load_datasets
 
-    adapter = CriticAdapter(registry, client)
-    trainset, valset = await load_datasets(registry)
+    adapter = CriticAdapter(hydrator, registry, critic_client, grader_client)
+    trainset, valset = await load_datasets()  # Loads from database
 
     result = optimize(
         seed_candidate={"system_prompt": initial_prompt},
@@ -26,10 +26,10 @@ import asyncio
 from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
-from importlib import resources
+from itertools import chain
 import logging
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -37,38 +37,22 @@ from pydantic import BaseModel
 from adgn.agent.events import EventType
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticSubmitPayload, ReportedIssue
+from adgn.props.critic.models import CriticInput, CriticSubmitPayload, ReportedIssue
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as DBGraderRun
+from adgn.props.db.adapters import orm_to_wrapper_fps, orm_to_wrapper_tps
+from adgn.props.db.models import CriticRun as DBCriticRun, Event, GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput, GradeSubmitInput
 from adgn.props.ids import FalsePositiveID, SnapshotSlug, TruePositiveID
-from adgn.props.loaders.filesystem import FilesystemLoader
-from adgn.props.models.training_example import TrainingExample
+from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES
+from adgn.props.snapshot_hydrator import SnapshotHydrator
 from adgn.props.snapshot_registry import KnownFalsePositive, SnapshotRegistry, TruePositiveIssue
 from adgn.props.splits import Split
 import gepa
+from gepa.core.result import GEPAResult
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# GEPA Types
-# =============================================================================
-
-
-class GepaResult(Protocol):
-    """Protocol for GEPA optimization result.
-
-    The gepa package's optimize() function returns an object with at least
-    these attributes. This Protocol documents the contract without requiring
-    a hard dependency on gepa's internal types.
-    """
-
-    best_candidate: dict[str, Any]
-    best_score: float
-    metric_calls: int
 
 
 # =============================================================================
@@ -78,7 +62,12 @@ class GepaResult(Protocol):
 
 @dataclass
 class SnapshotInput:
-    """Input for a single snapshot evaluation."""
+    """Input for a single snapshot evaluation.
+
+    TODO: Rename to something clearer (e.g., EvaluationContext, GraderInput, CriticEvaluationInput).
+    Current name is ambiguous with CriticInput. This represents the evaluation context for
+    GEPA optimization: which files to review + ground truth for grading.
+    """
 
     slug: SnapshotSlug
     target_files: set[Path]
@@ -152,9 +141,18 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
     the critic system prompt using your existing infrastructure.
     """
 
-    def __init__(self, registry: SnapshotRegistry, client: OpenAIModelProto, verbose: bool = False):
+    def __init__(
+        self,
+        hydrator: SnapshotHydrator,
+        registry: SnapshotRegistry,
+        critic_client: OpenAIModelProto,
+        grader_client: OpenAIModelProto,
+        verbose: bool = False,
+    ):
+        self.hydrator = hydrator
         self.registry = registry
-        self.client = client
+        self.critic_client = critic_client
+        self.grader_client = grader_client
         self.verbose = verbose
         # Use GEPA's default proposal implementation
         self.propose_new_texts = None
@@ -210,12 +208,12 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         slug = specimen_input.slug
 
         # Run critic
-        async with self.registry.load_and_hydrate(slug) as hydrated:
+        async with self.hydrator.hydrate(slug) as hydrated:
             critic_input = CriticInput(snapshot_slug=slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=prompt_sha256)
 
             critic_output, critic_run_id, critique_id = await run_critic(
                 input_data=critic_input,
-                client=self.client,
+                client=self.critic_client,
                 content_root=hydrated.content_root,
                 registry=self.registry,
                 mount_properties=True,
@@ -237,11 +235,8 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                 events = [e.payload for e in event_rows]
 
         # Grade and fetch output in single session
-        registry = SnapshotRegistry.from_package_resources()
         with get_session() as session:
-            grader_run_id = await grade_critique_by_id(
-                session, critique_id, self.client, registry, verbose=self.verbose
-            )
+            grader_run_id = await grade_critique_by_id(session, critique_id, self.grader_client, verbose=self.verbose)
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
             grader_output = GraderOutput.model_validate(grader_run.output)
@@ -325,95 +320,73 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 # =============================================================================
 
 
-async def load_datasets(
-    registry: SnapshotRegistry, use_per_file_examples: bool = False
-) -> tuple[list[SnapshotInput], list[SnapshotInput]]:
-    """Load train and validation datasets for GEPA.
+def _build_snapshot_inputs_from_snapshot(snapshot: Snapshot) -> list[SnapshotInput]:
+    """Build SnapshotInputs directly from Snapshot ORM object using critic scopes.
 
-    This function hydrates snapshots to discover target files and uses the registry's
-    TruePositiveIssue and KnownFalsePositive formats which are compatible with the grader.
-
-    For source-of-truth data models, see TrainingExample and FilesystemLoader.
+    Requires critic scopes to be defined in database (sync validation ensures this).
 
     Args:
-        registry: SnapshotRegistry instance
-        use_per_file_examples: If True, generate multiple examples per snapshot using
-            per-file scopes (from critic_scopes.yaml). If False (default), generate one
-            example per snapshot with all files (full-snapshot mode). Per-file mode is
-            recommended for training/optimization (tighter feedback loop), while full-snapshot
-            mode is the terminal metric for real-world performance.
+        snapshot: Snapshot ORM object with relationships loaded
+
+    Returns:
+        List of SnapshotInput objects (one per critic scope)
+
+    Raises:
+        ValueError: If snapshot has no critic scopes (should be caught during sync)
+    """
+    if not snapshot.critic_scopes:
+        raise ValueError(f"Snapshot {snapshot.slug} has no critic scopes - sync validation should have caught this")
+
+    # Convert ORM to wrapper types (for grader)
+    tps_list = orm_to_wrapper_tps(snapshot.true_positives)
+    fps_list = orm_to_wrapper_fps(snapshot.false_positives)
+    tps = {tp.id: tp for tp in tps_list}
+    fps = {fp.id: fp for fp in fps_list}
+
+    # Collect all files with issues for "all" sentinel resolution
+    all_files = snapshot.files_with_issues()
+
+    inputs: list[SnapshotInput] = []
+
+    # Generate one SnapshotInput per critic scope
+    for scope_db in snapshot.critic_scopes:
+        # Resolve "all" sentinel to actual file set
+        targeted_files = all_files if scope_db.files == ALL_FILES_WITH_ISSUES else scope_db.files  # type: ignore[assignment]
+
+        snapshot_input = SnapshotInput(
+            slug=snapshot.slug, target_files=set(targeted_files), known_true_positives=tps, known_false_positives=fps
+        )
+        inputs.append(snapshot_input)
+
+    return inputs
+
+
+async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
+    """Load train and validation datasets for GEPA from database.
+
+    Builds SnapshotInputs directly from Snapshot ORM objects using critic scopes.
+    Each critic scope becomes one training example. All data comes from database.
 
     Returns:
         (trainset, valset) tuple of SnapshotInput lists
+
+    Raises:
+        ValueError: If any snapshot has no critic scopes (should be caught during sync)
     """
-    if use_per_file_examples:
-        # Use per-file examples from critic_scopes.yaml
-        loader = FilesystemLoader(registry.base_path)
-        train_examples = loader.get_per_file_examples_for_split(Split.TRAIN)
-        valid_examples = loader.get_per_file_examples_for_split(Split.VALID)
+    logger.info("Loading training examples from critic_scopes database")
 
-        async def training_example_to_snapshot_input(example: TrainingExample) -> SnapshotInput:
-            async with registry.load_and_hydrate(example.snapshot_slug) as hydrated:
-                return SnapshotInput(
-                    slug=example.snapshot_slug,
-                    target_files=set(example.targeted_files),  # Convert frozenset to set
-                    known_true_positives=hydrated.true_positives,
-                    known_false_positives=hydrated.false_positives,
-                )
+    with get_session() as session:
+        train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
+        valid_snapshots = session.query(Snapshot).filter_by(split=Split.VALID).all()
 
-        trainset = [await training_example_to_snapshot_input(ex) for ex in train_examples]
-        valset = [await training_example_to_snapshot_input(ex) for ex in valid_examples]
-    else:
-        # Original behavior: one example per snapshot with all files
-        train_slugs = registry.get_snapshots_by_split(Split.TRAIN)
-        valid_slugs = registry.get_snapshots_by_split(Split.VALID)
+        # Build SnapshotInputs directly from ORM (one per critic scope)
+        # Must do this inside session context to access lazy-loaded relationships
+        trainset = list(chain.from_iterable(_build_snapshot_inputs_from_snapshot(s) for s in train_snapshots))
+        valset = list(chain.from_iterable(_build_snapshot_inputs_from_snapshot(s) for s in valid_snapshots))
 
-        async def load_snapshot(slug: SnapshotSlug) -> SnapshotInput:
-            async with registry.load_and_hydrate(slug) as hydrated:
-                return SnapshotInput(
-                    slug=slug,
-                    target_files=hydrated.files_with_issues(),
-                    known_true_positives=hydrated.true_positives,
-                    known_false_positives=hydrated.false_positives,
-                )
+    logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
+    logger.info(f"From {len(train_snapshots)} train snapshots, {len(valid_snapshots)} valid snapshots")
 
-        trainset = [await load_snapshot(slug) for slug in train_slugs]
-        valset = [await load_snapshot(slug) for slug in valid_slugs]
-
-    return trainset, valset
-
-
-def load_training_examples(
-    specimens_dir: Path | None = None, use_per_file_examples: bool = False
-) -> tuple[list[TrainingExample], list[TrainingExample]]:
-    """Load train and validation TrainingExamples from filesystem.
-
-    This is a synchronous, lightweight alternative to load_datasets() that returns
-    TrainingExample objects directly from the filesystem without hydration.
-
-    Args:
-        specimens_dir: Path to specimens directory. If None, uses package resources.
-        use_per_file_examples: If True, generate multiple examples per snapshot using
-            per-file scopes (from critic_scopes.yaml). If False (default), generate one
-            example per snapshot with all files (full-snapshot mode). Per-file mode is
-            recommended for training/optimization (tighter feedback loop), while full-snapshot
-            mode is the terminal metric for real-world performance.
-
-    Returns:
-        (trainset, valset) tuple of TrainingExample lists
-    """
-    if specimens_dir is None:
-        traversable = resources.files("adgn.props").joinpath("specimens")
-        with resources.as_file(traversable) as p:
-            specimens_dir = p
-
-    loader = FilesystemLoader(specimens_dir)
-    if use_per_file_examples:
-        trainset = loader.get_per_file_examples_for_split(Split.TRAIN)
-        valset = loader.get_per_file_examples_for_split(Split.VALID)
-    else:
-        trainset = loader.get_examples_for_split(Split.TRAIN)
-        valset = loader.get_examples_for_split(Split.VALID)
     return trainset, valset
 
 
@@ -424,38 +397,53 @@ def load_training_examples(
 
 async def optimize_with_gepa(
     initial_prompt: str,
+    hydrator: SnapshotHydrator,
     registry: SnapshotRegistry,
-    client: OpenAIModelProto,
+    critic_client: OpenAIModelProto,
+    grader_client: OpenAIModelProto,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
     verbose: bool = False,
-    use_per_file_examples: bool = False,
-) -> tuple[str, GepaResult]:
+) -> tuple[str, GEPAResult[CriticOutput, Any]]:
     """Optimize critic prompt using GEPA.
+
+    Uses critic scopes from database to generate training examples (one per scope).
+    Requires all snapshots to have critic scopes defined (enforced by sync validation).
 
     Args:
         initial_prompt: Starting system prompt
+        hydrator: SnapshotHydrator instance for source code hydration
         registry: SnapshotRegistry instance
-        client: LLM client for critic/grader execution
+        critic_client: LLM client for critic execution
+        grader_client: LLM client for grader execution
         reflection_model: Model for GEPA's reflection
         max_metric_calls: Budget for evaluations
         verbose: Enable verbose logging
-        use_per_file_examples: If True, use per-file training examples (from critic_scopes.yaml)
-            instead of full-snapshot examples. Per-file mode generates more training examples
-            (tighter feedback loop) but full-snapshot mode remains the terminal metric.
 
     Returns:
         (optimized_prompt, gepa_results) tuple
+
+    Raises:
+        ValueError: If any snapshot has no critic scopes
     """
-    # Load datasets
-    trainset, valset = await load_datasets(registry, use_per_file_examples=use_per_file_examples)
+    logger.info("Starting GEPA optimization")
+    logger.info(f"Reflection model: {reflection_model}")
+    logger.info(f"Max metric calls: {max_metric_calls}")
+    logger.info(f"Initial prompt length: {len(initial_prompt)} chars")
+
+    # Load datasets (always uses critic scopes from database)
+    logger.info("Loading datasets...")
+    trainset, valset = await load_datasets()
+    logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
 
     # Create adapter
-    adapter = CriticAdapter(registry, client, verbose=verbose)
+    logger.info("Creating CriticAdapter")
+    adapter = CriticAdapter(hydrator, registry, critic_client, grader_client, verbose=verbose)
 
     # Run optimization (reflection_lm accepts model string directly)
-    result: GepaResult = gepa.optimize(
+    logger.info("Starting GEPA evolutionary search...")
+    result: GEPAResult[CriticOutput, Any] = gepa.optimize(
         seed_candidate={"system_prompt": initial_prompt},
         trainset=trainset,
         valset=valset,
@@ -466,5 +454,8 @@ async def optimize_with_gepa(
     )
 
     optimized_prompt = result.best_candidate["system_prompt"]
+    best_score = result.val_aggregate_scores[result.best_idx]
+    metric_calls = result.total_metric_calls or 0
+    logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {metric_calls}")
 
     return optimized_prompt, result

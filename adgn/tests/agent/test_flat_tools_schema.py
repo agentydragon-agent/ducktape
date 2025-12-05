@@ -7,7 +7,7 @@ including complex nested models with Annotated fields, regex patterns, and descr
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from hamcrest import (
     assert_that,
@@ -178,6 +178,7 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     # Verify phase 1
     phase1_request = client_phase1.captured[0]
+    assert phase1_request.tools is not None  # Type narrowing for mypy
     assert_that(phase1_request.tools, has_length(1))
 
     print("\nPHASE 1 REQUEST (server_a only):")
@@ -206,8 +207,8 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     # Verify phase 2
     first_request = client_phase2.captured[0]
-    assert_that(first_request.tools, has_length(2))
     assert first_request.tools is not None  # Type narrowing for mypy
+    assert_that(first_request.tools, has_length(2))
 
     print("\nPHASE 2 REQUEST (server_a + server_b):")
     print(json.dumps(first_request.model_dump(exclude_none=True), indent=2))
@@ -221,13 +222,10 @@ async def test_agent_compositor_flat_tools_request_schema(
     # Verify server_a_tool_a schema (flat parameters)
     params_a = tool_a.parameters
     assert_that(params_a, has_entry("type", "object"))
-    assert_that(
-        params_a["properties"],
-        has_entries(
-            param_x=has_entries(type="number", description="First parameter"),
-            param_y=has_entries(type="number", description="Second parameter"),
-        ),
-    )
+    # Explicit Any types for nested matchers to avoid PyHamcrest type inference issues
+    param_x_matcher: Any = has_entries(type="number", description="First parameter")
+    param_y_matcher: Any = has_entries(type="number", description="Second parameter")
+    assert_that(params_a["properties"], has_entries(param_x=param_x_matcher, param_y=param_y_matcher))
     assert_that(params_a["required"], contains_inanyorder("param_x", "param_y"))
 
     # Find server_b_tool_b tool
@@ -243,14 +241,20 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     # Verify top-level fields exist and have correct types/descriptions
     props = params_b["properties"]
+    # Explicit Any types for nested matchers to avoid PyHamcrest type inference issues
+    identifier_matcher: Any = has_entries(type="string", description="Required regex field")
+    count_matcher: Any = has_entries(type="integer", description="Int with range")
+    nested_matcher: Any = has_key("$ref")
+    category_matcher: Any = has_key("$ref")
+    flag_matcher: Any = has_entries(type="boolean", default=False)
     assert_that(
         props,
         has_entries(
-            identifier=has_entries(type="string", description="Required regex field"),
-            count=has_entries(type="integer", description="Int with range"),
-            nested=has_key("$ref"),
-            category=has_key("$ref"),
-            flag=has_entries(type="boolean", default=False),
+            identifier=identifier_matcher,
+            count=count_matcher,
+            nested=nested_matcher,
+            category=category_matcher,
+            flag=flag_matcher,
         ),
     )
 
@@ -258,13 +262,10 @@ async def test_agent_compositor_flat_tools_request_schema(
     assert props["nested"]["description"] == "Nested model"
     assert_that(params_b, has_key("$defs"))
     nested_def = params_b["$defs"]["NestedInfo"]
-    assert_that(
-        nested_def["properties"],
-        has_entries(
-            regex=has_entries(description="Regex validation", pattern=equal_to(r"^\d{5}$"), type="string"),
-            text_defaultd=has_entries(default="DEFAULT", description="Text with default", type="string"),
-        ),
-    )
+    # Explicit Any types for nested matchers to avoid PyHamcrest type inference issues
+    regex_matcher: Any = has_entries(description="Regex validation", pattern=equal_to(r"^\d{5}$"), type="string")
+    text_defaultd_matcher: Any = has_entries(default="DEFAULT", description="Text with default", type="string")
+    assert_that(nested_def["properties"], has_entries(regex=regex_matcher, text_defaultd=text_defaultd_matcher))
     # NestedInfo required: only regex (text_defaultd has default)
     assert nested_def["required"] == ["regex"]
 

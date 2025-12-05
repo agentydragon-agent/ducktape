@@ -116,7 +116,9 @@ async def test_sensor_update(hass, co2_value, pm25_value, expected_iaqi, expecte
     sensor.update()
 
     # Check the results
-    assert_that(sensor.native_value, close_to(expected_iaqi, 0.1))
+    native_value = sensor.native_value
+    assert native_value is not None
+    assert_that(native_value, close_to(expected_iaqi, 0.1))
     assert_that(
         sensor.extra_state_attributes,
         has_entries(
@@ -171,7 +173,9 @@ async def test_sensor_error_handling(hass, now):
     sensor.update()
 
     # Check results - only CO2 at 800 ppm (IAQI 60) should be valid
-    assert_that(sensor.native_value, close_to(60.0, 0.1))
+    native_value = sensor.native_value
+    assert native_value is not None
+    assert_that(native_value, close_to(60.0, 0.1))
 
     assert_that(
         sensor.extra_state_attributes["sensor_errors"],

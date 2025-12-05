@@ -8,18 +8,53 @@ from pathlib import Path
 import structlog
 from structlog.typing import Processor
 
+# Valid log levels (single source of truth)
+VALID_LOG_LEVELS = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
-def configure_logging() -> None:
+
+def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") -> None:
     """Single source of truth for logging configuration.
 
     - Routes ALL logs through stdlib logging (structlog uses stdlib LoggerFactory)
-    - Console handler at WARNING+ by default (quiet CLI)
-    - Optional file sink at INFO when ADGN_LOG_DIR is set
+    - Configurable output destination and level
     - No prints; no library-specific handlers
+
+    Args:
+        log_output: Where to send logs ('stderr', 'stdout', 'none', or file path).
+        log_level: Log level (one of VALID_LOG_LEVELS).
     """
-    log_dir_env = os.getenv("ADGN_LOG_DIR")
-    file_enabled = bool(log_dir_env)
-    file_path = str((Path(log_dir_env or "./logs") / "adgn.log").resolve()) if file_enabled else None
+    # Validate log level
+    log_level_upper = log_level.upper()
+    if log_level_upper not in VALID_LOG_LEVELS:
+        raise ValueError(f"Invalid log level: {log_level}. Must be one of {', '.join(VALID_LOG_LEVELS)}")
+
+    # Determine handler configuration based on log_output
+    if log_output == "none":
+        handlers_config: dict = {"null": {"class": "logging.NullHandler"}}
+        root_handlers = ["null"]
+    elif log_output in ("stdout", "stderr"):
+        stream = "ext://sys.stdout" if log_output == "stdout" else "ext://sys.stderr"
+        handlers_config = {
+            "console": {
+                "class": "logging.StreamHandler",
+                "level": log_level_upper,
+                "formatter": "console",
+                "stream": stream,
+            }
+        }
+        root_handlers = ["console"]
+    else:
+        # Treat as file path
+        handlers_config = {
+            "file": {
+                "class": "logging.FileHandler",
+                "level": log_level_upper,
+                "formatter": "file",
+                "filename": str(Path(log_output).resolve()),
+                "encoding": "utf-8",
+            }
+        }
+        root_handlers = ["file"]
 
     dictConfig(
         {
@@ -29,28 +64,8 @@ def configure_logging() -> None:
                 "console": {"format": "%(levelname)s %(name)s: %(message)s"},
                 "file": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
             },
-            "handlers": {
-                "console": {
-                    "class": "logging.StreamHandler",
-                    "level": "WARNING",
-                    "formatter": "console",
-                    "stream": "ext://sys.stderr",
-                },
-                **(
-                    {
-                        "file": {
-                            "class": "logging.FileHandler",
-                            "level": "INFO",
-                            "formatter": "file",
-                            "filename": file_path,
-                            "encoding": "utf-8",
-                        }
-                    }
-                    if file_enabled
-                    else {}
-                ),
-            },
-            "root": {"level": "INFO", "handlers": ["console", "file"] if file_enabled else ["console"]},
+            "handlers": handlers_config,
+            "root": {"level": log_level_upper, "handlers": root_handlers},
             "loggers": {
                 # Ensure library loggers propagate to root (no own handlers)
                 "mcp": {"level": "INFO", "propagate": True, "handlers": []},

@@ -81,8 +81,8 @@ class ClientAPIKey(Base):
 class ResponseFrame(Base):
     __tablename__ = "response_frames"
     __table_args__ = (
-        Index("idx_response_frames_cache_key_ordinal", "cache_key", "ordinal"),
-        Index("idx_response_frames_response_id_ordinal", "response_id", "ordinal"),
+        Index("idx_response_frames_cache_key_sequence", "cache_key", "sequence_number"),
+        Index("idx_response_frames_response_id_sequence", "response_id", "sequence_number"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -90,9 +90,8 @@ class ResponseFrame(Base):
         String, ForeignKey("responses.cache_key", ondelete="CASCADE"), nullable=False
     )
     response_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(Integer, nullable=False)
     frame_type: Mapped[str] = mapped_column(String, nullable=False)
-    event_id: Mapped[int] = mapped_column(Integer, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
     frame: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
 
@@ -335,9 +334,7 @@ class ResponsesDB:
                 )
             await session.commit()
 
-    async def append_frame(
-        self, key: str, frame_obj: ResponseStreamEvent, *, ordinal: int | None = None, response_id: str | None = None
-    ) -> int:
+    async def append_frame(self, key: str, frame_obj: ResponseStreamEvent, *, response_id: str | None = None) -> int:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
         response = response_from_event(frame_obj)
@@ -345,16 +342,15 @@ class ResponsesDB:
         if response_id is None and derived_response_id is not None:
             response_id = derived_response_id
         frame_type = frame_obj.type
-        event_id = frame_obj.sequence_number
+        sequence_number = frame_obj.sequence_number
         async with self._session_factory() as session:
-            assigned_ordinal = await self._insert_frame(
+            await self._insert_frame(
                 session,
                 key=key,
-                ordinal=ordinal,
                 frame_obj=frame_obj,
                 response_id=response_id,
                 frame_type=frame_type,
-                event_id=event_id,
+                sequence_number=sequence_number,
             )
             await session.execute(
                 update(Response)
@@ -364,15 +360,11 @@ class ResponsesDB:
             await self._emit_event(
                 session,
                 FrameAppendedEvent(
-                    cache_key=key,
-                    response_id=response_id,
-                    ordinal=assigned_ordinal,
-                    frame_type=frame_type,
-                    event_id=event_id,
+                    cache_key=key, response_id=response_id, sequence_number=sequence_number, frame_type=frame_type
                 ),
             )
             await session.commit()
-            return assigned_ordinal
+            return sequence_number
 
     async def finalize_response(
         self,
@@ -460,7 +452,7 @@ class ResponsesDB:
             return result.scalar_one_or_none()
 
     async def get_frames(
-        self, identifier: str, *, limit: int | None = None, after_ordinal: int | None = None
+        self, identifier: str, *, limit: int | None = None, after_sequence_number: int | None = None
     ) -> list[ResponseFrame]:
         if self._session_factory is None:
             raise RuntimeError("Database not initialized")
@@ -475,10 +467,12 @@ class ResponsesDB:
             if key_value is None:
                 return []
             stmt = (
-                select(ResponseFrame).where(ResponseFrame.cache_key == key_value).order_by(ResponseFrame.ordinal.asc())
+                select(ResponseFrame)
+                .where(ResponseFrame.cache_key == key_value)
+                .order_by(ResponseFrame.sequence_number.asc())
             )
-            if after_ordinal is not None:
-                stmt = stmt.where(ResponseFrame.ordinal > after_ordinal)
+            if after_sequence_number is not None:
+                stmt = stmt.where(ResponseFrame.sequence_number > after_sequence_number)
             if limit is not None:
                 stmt = stmt.limit(limit)
             result = await session.execute(stmt)
@@ -493,32 +487,21 @@ class ResponsesDB:
         session: AsyncSession,
         *,
         key: str,
-        ordinal: int | None,
         frame_obj: ResponseStreamEvent,
         response_id: str | None,
         frame_type: str,
-        event_id: int,
-    ) -> int:
-        if ordinal is None:
-            result = await session.execute(
-                select(func.max(ResponseFrame.ordinal)).where(ResponseFrame.cache_key == key)
-            )
-            max_ordinal = result.scalar_one_or_none() or 0
-            assigned_ordinal = max_ordinal + 1
-        else:
-            assigned_ordinal = ordinal
+        sequence_number: int,
+    ) -> None:
         serialized = frame_obj.model_dump(mode="json")
         frame = ResponseFrame(
             cache_key=key,
             response_id=response_id,
-            ordinal=assigned_ordinal,
+            sequence_number=sequence_number,
             frame_type=frame_type,
-            event_id=event_id,
             frame=serialized,
         )
         session.add(frame)
         await session.flush()
-        return assigned_ordinal
 
     async def get_cached_response_payload(self, key: str) -> OpenAIResponse | None:
         if self._session_factory is None:

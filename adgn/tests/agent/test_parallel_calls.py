@@ -4,8 +4,8 @@ from typing import Any
 from pydantic import BaseModel
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
-from adgn.agent.reducer import BaseHandler
 from adgn.openai_utils.builders import ItemFactory
 from tests.agent.helpers import NoopOpenAIClient
 

@@ -92,5 +92,9 @@ COMPOSITOR_ADMIN_SERVER_NAME: Final[str] = "compositor_admin"
 # Subscriptions index (aggregated by resources server)
 RESOURCES_SUBSCRIPTIONS_INDEX_URI: Final[str] = "resources://subscriptions"
 
+# Agents server resource URIs
+AGENTS_LIST_URI: Final[str] = "agents://list"
+AGENTS_PRESETS_URI: Final[str] = "agents://presets"
+
 # Policy Gateway stamping key placed on error.data to unambiguously mark origin
 POLICY_GATEWAY_STAMP_KEY: Final[str] = "adgn_policy_gateway"

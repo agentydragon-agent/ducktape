@@ -39,7 +39,7 @@ dependencies = [
   "psycopg[binary]>=3.1",
   "psycopg2-binary>=2.9",
   "plotnine>=0.13.0",
-  "claude-code-sdk<=0.0.21",
+  "claude-code-sdk>=0.0.21,<0.1",
   "ipykernel>=6",
   "jupyter-mcp-server>=0.11.0",
   "jupyter-server",
@@ -201,7 +201,7 @@ rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
 adgn-sysrw = "adgn.llm.sysrw.cli:app"
 adgn-mini-codex = "adgn.agent.cli:main"
-adgn-properties = "adgn.props.cli_app.main:app"
+adgn-properties = "adgn.props.cli.main:app"
 git-commit-ai = "adgn.git_commit_ai.cli:main"
 sandbox-jupyter = "adgn.mcp.sandboxed_jupyter.wrapper:main"
 adgn-sandboxer = "adgn.llm.sandboxer:main"

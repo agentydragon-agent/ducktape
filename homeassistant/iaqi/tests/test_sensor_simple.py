@@ -21,7 +21,9 @@ def test_compute_iaqi_interpolation():
     """Test IAQI calculation with interpolation."""
     # At 800 ppm CO2, we should be between (600, 80) and (1000, 60)
     # Linear interpolation: 80 - (800-600)/(1000-600)*(80-60) = 80 - 0.5*20 = 80 - 10 = 70
-    assert_that(compute_iaqi("co2", 800), close_to(70.0, 0.01))
+    result = compute_iaqi("co2", 800)
+    assert result is not None
+    assert_that(result, close_to(70.0, 0.01))
 
 
 def test_compute_iaqi_unknown_pollutant():

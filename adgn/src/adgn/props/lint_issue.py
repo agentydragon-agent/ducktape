@@ -16,10 +16,9 @@ from rich.table import Table
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call, read_resource_call
-from adgn.agent.event_renderer import DisplayEventsHandler
-from adgn.agent.handler import BaseHandler, SequenceHandler
+from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
-from adgn.agent.reducer import AbortIf
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME, RUNTIME_CONTAINER_INFO_URI
@@ -28,6 +27,9 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
+from adgn.props.db import get_session
+from adgn.props.db.adapters import orm_to_wrapper_tps
+from adgn.props.db.models import Snapshot
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import IssueLintFindingRecord, LintSubmitPayload, extract_corrections
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
@@ -35,7 +37,7 @@ from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
 from adgn.props.runs_context import format_timestamp_session
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
@@ -271,19 +273,19 @@ def make_linter_handlers(
 
 
 async def lint_issue_run(
-    specimen: str | None,
+    specimen: SnapshotSlug | None,
     issue_core: IssueCore,
     occurrence: Occurrence,
     *,
     client: OpenAIModelProto,
     handlers: Sequence[BaseHandler] = (),
     content_root: Path | None = None,
-    registry: SnapshotRegistry,
+    hydrator: SnapshotHydrator | None = None,
 ) -> LintSubmitPayload:
     """Run the lint-issue agent and return the exact structured payload.
 
     If content_root provided: uses it directly (caller manages hydration).
-    If content_root not provided: hydrates specimen under $HOME/.cache.
+    If content_root not provided: hydrates specimen source code using hydrator.
     Launches in-proc submit server and docker_exec MCP with bootstrap injection
     and gating handlers as the CLI path.
     """
@@ -296,11 +298,13 @@ async def lint_issue_run(
             content_root, issue_core, occurrence, client, submit_state, handlers
         )
 
-    # Hydrate and run
+    # Hydrate source code and run
     if specimen is None:
         raise ValueError("Either specimen or content_root must be provided")
+    if hydrator is None:
+        raise ValueError("hydrator required when content_root not provided")
 
-    async with registry.load_and_hydrate(SnapshotSlug(Path(specimen).name)) as hydrated:
+    async with hydrator.hydrate(specimen) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
             hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
         )
@@ -382,11 +386,15 @@ async def run_specimen_lint_issue_async(
     dry_run: bool = False,
     occurrence_index: int,
     client: OpenAIModelProto,
+    hydrator: SnapshotHydrator,
 ) -> int:
-    # Load and hydrate once (avoids rehydration in lint_issue_run)
-    registry = SnapshotRegistry.from_package_resources()
-    async with registry.load_and_hydrate(specimen) as hydrated:
-        irec = hydrated.true_positives[tp_id]
+    # Load issues from database
+
+    with get_session() as session:
+        db_snapshot = session.query(Snapshot).filter_by(slug=specimen).one()
+        tps_list = orm_to_wrapper_tps(db_snapshot.true_positives)
+        tps = {tp.id: tp for tp in tps_list}
+        irec = tps[tp_id]
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue
         if not (0 <= occurrence_index < len(irec.occurrences)):
@@ -398,9 +406,10 @@ async def run_specimen_lint_issue_async(
         # Build submit tool name for dry-run prompt
         submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
+    # Hydrate source code for both dry-run and real execution
+    async with hydrator.hydrate(specimen) as hydrated:
         if dry_run:
             # Build a wiring for prompt rendering (no container launched in dry-run)
-            # Use hydrated content_root for accurate wiring
             wiring = properties_docker_spec(hydrated.content_root, mount_properties=True)
             prompt = _build_prompt(
                 irec.core,  # render via IssueCore + single occurrence
@@ -429,7 +438,6 @@ async def run_specimen_lint_issue_async(
             client=client,
             handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
             content_root=hydrated.content_root,  # Reuse hydrated root (avoids rehydration)
-            registry=registry,
         )
 
         # Print the exact occurrence representation as fed to the model

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.compaction import CompactionHandler
+from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.events import GroundTruthUsage, Response
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Compact, NoAction, RequireAnyTool

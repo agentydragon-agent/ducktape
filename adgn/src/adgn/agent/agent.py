@@ -25,6 +25,7 @@ from adgn.agent.loop_control import (
     Compact,
     ForbidAllTools,
     InjectItems,
+    LoopDecision,
     NoAction,
     RequireAnyTool,
     RequireSpecific,
@@ -48,7 +49,7 @@ from adgn.openai_utils.model import (
 )
 from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary, build_reasoning_params
 
-from .reducer import BaseHandler, Reducer
+from .handler import BaseHandler
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ DEFAULT_ABORT_ERROR = "tool execution aborted"
 
 
 def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> mcp_types.CallToolResult:
-    return mcp_types.CallToolResult(content=[mcp_types.TextContent(text=reason)], isError=True)
+    return mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text=reason)], isError=True)
 
 
 def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None) -> str | None:
@@ -209,9 +210,9 @@ class MiniCodex:
         self.finished: bool = False
         # Track function calls for debugging
         self._function_call_map: dict[str, FunctionCallItem] = {}
-        # Aggregating controller (owns handlers and loop-decision semantics)
-        handlers_list = list(handlers)
-        if not handlers_list:
+        # Handler list for event notification and loop control
+        self._handlers = list(handlers)
+        if not self._handlers:
             raise ValueError(
                 "At least one handler required to control the agent loop. "
                 "Without handlers, the agent will loop indefinitely. "
@@ -222,7 +223,6 @@ class MiniCodex:
                 "  • SequenceHandler([...]) - for fixed action sequences\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
-        self._controller = Reducer(handlers_list)
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
@@ -323,7 +323,10 @@ class MiniCodex:
 
     async def run(self, user_text: str) -> AgentResult:
         self._transcript.append(UserMessage.text(user_text))
-        self._controller.on_user_text(UserText(text=user_text))
+        # Notify all handlers
+        evt = UserText(text=user_text)
+        for h in self._handlers:
+            h.on_user_text_event(evt)
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -335,7 +338,9 @@ class MiniCodex:
                     await self._handle_pending_tool_calls()
             return AgentResult(text="\n".join(self.assistant_text_chunks))
         except Exception as exc:
-            self._controller.on_error(exc)
+            # Forward error to all handlers
+            for h in self._handlers:
+                h.on_error(exc)
             raise
 
     async def _handle_pending_tool_calls(self) -> None:
@@ -473,7 +478,14 @@ class MiniCodex:
         return items
 
     async def _run_one_phase(self):
-        decision = self._controller.on_before_sample()
+        # Poll handlers sequentially - first non-NoAction decision wins
+        decision: LoopDecision = NoAction()
+        for h in self._handlers:
+            d = h.on_before_sample()
+            if not isinstance(d, NoAction):
+                decision = d
+                break
+
         if isinstance(decision, Abort):
             self.finished = True
             return
@@ -487,9 +499,8 @@ class MiniCodex:
             # Notify handlers about injected function calls and add to pending
             for item in decision.items:
                 if isinstance(item, FunctionCallItem):
-                    self._controller.on_tool_call(
-                        ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id)
-                    )
+                    for h in self._handlers:
+                        h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id))
                     self.pending_function_calls.append(item)
             # Skip sampling this iteration
             # Main loop will execute any pending function calls, then iterate again
@@ -538,7 +549,8 @@ class MiniCodex:
                 if sdk_usage is not None
                 else GroundTruthUsage(model=self._client.model)
             )
-            self._controller.on_response(Response(response_id=resp.id, usage=usage, model=self._client.model))
+            for h in self._handlers:
+                h.on_response(Response(response_id=resp.id, usage=usage, model=self._client.model))
             resp_output = resp.output
 
         if resp_output is not None:
@@ -565,12 +577,14 @@ class MiniCodex:
             if isinstance(iid, str) and iid in existing_ids:
                 continue
             if isinstance(item, ReasoningItem):
-                self._controller.on_reasoning(item)
+                for h in self._handlers:
+                    h.on_reasoning(item)
                 self._transcript.append(item)
             elif isinstance(item, AssistantMessageOut):
                 text = item.text
                 self.assistant_text_chunks.append(text)
-                self._controller.on_assistant_text(AssistantText(text=text))
+                for h in self._handlers:
+                    h.on_assistant_text_event(AssistantText(text=text))
                 # Store assistant as our input item type to avoid secondary translation
                 self._transcript.append(item.to_input_item())
             elif isinstance(item, FunctionCallOutputItem):
@@ -582,7 +596,8 @@ class MiniCodex:
                 assert original_call_id
                 event = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_cids.add(original_call_id)
-                self._controller.on_tool_result(event)
+                for h in self._handlers:
+                    h.on_tool_result_event(event)
                 self._transcript.append(event)
                 if self.pending_function_calls:
                     self.pending_function_calls = [
@@ -592,7 +607,8 @@ class MiniCodex:
                 # Enforce a proper call_id for indexing/pending management
                 call_id = _require_call_id(item)
                 fc_local = item  # No conversion needed anymore
-                self._controller.on_tool_call(ToolCall(name=item.name, args_json=item.arguments, call_id=call_id))
+                for h in self._handlers:
+                    h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=call_id))
                 self._transcript.append(fc_local)
                 # Store in map for quick lookup when processing outputs
                 self._function_call_map[call_id] = fc_local
@@ -640,7 +656,8 @@ class MiniCodex:
         call_id = _require_call_id(function_call)
         event = ToolCallOutput(call_id=call_id, result=copy.deepcopy(result))
         self._transcript.append(event)
-        self._controller.on_tool_result(event)
+        for h in self._handlers:
+            h.on_tool_result_event(event)
 
     # Exposed for abort flows: synthesize aborted outputs for all pending calls
     def abort_pending_tool_calls(self) -> None:

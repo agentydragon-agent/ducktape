@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
 from rich.table import Table
 
-from adgn.agent.agent_progress import OneLineProgressHandler
+from adgn.agent.display import OneLineProgressHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.model import (
     FunctionCallItem,
@@ -20,7 +20,7 @@ from adgn.openai_utils.model import (
     ToolChoiceFunction,
     UserMessage,
 )
-from adgn.props.ids import BaseIssueID
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import extract_corrections
 from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
@@ -72,7 +72,7 @@ class OccurrenceCase(BaseModel):
 class IssueEvalSpec(BaseModel):
     """One issue under a specimen with multiple occurrence cases."""
 
-    specimen: str
+    specimen: SnapshotSlug
     issue: IssueCore
     cases: list[OccurrenceCase]
 
@@ -197,7 +197,6 @@ async def eval_issue_spec(
             occurrence=occ,
             client=client,
             handlers=[OneLineProgressHandler()],
-            registry=registry,
         )
 
         # Print the structured output object produced by the agent for this case

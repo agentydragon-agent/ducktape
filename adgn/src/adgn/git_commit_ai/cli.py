@@ -629,12 +629,13 @@ def _get_editor(repo: pygit2.Repository) -> str:
     Follows git's precedence: GIT_EDITOR env > core.editor config >
     VISUAL env > EDITOR env > 'vi'
     """
-    for candidate in (
-        os.environ.get("GIT_EDITOR"),
-        repo.config.get("core.editor"),
-        os.environ.get("VISUAL"),
-        os.environ.get("EDITOR"),
-    ):
+    # Try to get core.editor from git config (pygit2 Config doesn't have .get())
+    try:
+        git_editor = repo.config["core.editor"]
+    except KeyError:
+        git_editor = None
+
+    for candidate in (os.environ.get("GIT_EDITOR"), git_editor, os.environ.get("VISUAL"), os.environ.get("EDITOR")):
         if candidate:
             return candidate
     return "vi"

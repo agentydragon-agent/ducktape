@@ -26,9 +26,8 @@ class FrameAppendedEvent(EventBase):
     type: Literal["frame"] = "frame"
     cache_key: str
     response_id: str | None = None
-    ordinal: int
+    sequence_number: int
     frame_type: str | None = None
-    event_id: str | None = None
 
 
 class APIKeyCreatedEvent(EventBase):

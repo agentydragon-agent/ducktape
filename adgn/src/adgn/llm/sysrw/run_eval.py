@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+from collections import Counter
 from contextlib import suppress
 from datetime import datetime
 from importlib import resources
@@ -10,12 +11,14 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, TypedDict, cast
+from typing import Any, cast
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from openai import AsyncOpenAI
 from openai.types.chat import (
     ChatCompletionAssistantMessageParam,
+    ChatCompletionMessageCustomToolCall,
+    ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionUserMessageParam,
 )
@@ -75,11 +78,94 @@ TARGET_PREFIX_TOKENS = 200_000  # budget for prefix JSON inside grader prompt
 
 
 # Metrics helpers
-class ToolStats(TypedDict):
+class ConfidenceInterval(BaseModel):
+    """95% confidence interval."""
+
+    lcb: float
+    ucb: float
+
+
+class ToolingMetrics(BaseModel):
+    """Computed metrics for tool usage."""
+
     total_samples: int
-    text_only: int
-    with_tools: int
-    function_counts: dict[str, int]
+    text_only_pct: float
+    with_tools_pct: float
+    function_counts: Counter[str]
+    function_pct: dict[str, float]
+
+
+class SourceMetrics(BaseModel):
+    """Metrics for a single source (ccr or crush)."""
+
+    n: int
+    mean: float
+    ci95: ConfidenceInterval
+    tooling: ToolingMetrics
+
+
+class EvalCounters(BaseModel):
+    """Evaluation process counters."""
+
+    processed: int = 0
+    skipped_input_tokens: int = 0
+    sampler_errors: int = 0
+    grader_errors: int = 0
+
+
+class ModelConfig(BaseModel):
+    """Model configuration for evaluation."""
+
+    sampler: str
+    evaluator: str
+
+
+class SummaryMetrics(BaseModel):
+    """Complete evaluation summary metrics."""
+
+    n: int
+    mean: float
+    ci95: ConfidenceInterval
+    counters: EvalCounters
+    models: ModelConfig
+    tooling: ToolingMetrics
+    by_source: dict[str, SourceMetrics]
+
+
+class ToolStats(BaseModel):
+    total_samples: int = 0
+    text_only: int = 0
+    with_tools: int = 0
+    function_counts: Counter[str] = Counter()
+
+    def update_from_tool_calls(
+        self, tool_calls: list[ChatCompletionMessageFunctionToolCall | ChatCompletionMessageCustomToolCall]
+    ) -> None:
+        """Update stats from a list of tool calls."""
+        self.total_samples += 1
+        if not tool_calls:
+            self.text_only += 1
+        else:
+            self.with_tools += 1
+            self.function_counts.update(
+                tool_call.function.name
+                if isinstance(tool_call, ChatCompletionMessageFunctionToolCall)
+                else tool_call.custom.name
+                for tool_call in tool_calls
+            )
+
+    def compute_metrics(self) -> ToolingMetrics:
+        """Compute derived metrics from raw stats."""
+        total_tool_calls = sum(self.function_counts.values())
+        return ToolingMetrics(
+            total_samples=self.total_samples,
+            text_only_pct=(self.text_only / self.total_samples) if self.total_samples else 0.0,
+            with_tools_pct=(self.with_tools / self.total_samples) if self.total_samples else 0.0,
+            function_counts=self.function_counts,
+            function_pct={
+                k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in self.function_counts.items()
+            },
+        )
 
 
 # Models
@@ -355,7 +441,9 @@ def generate_html_report(report_base: Path):
                     bad_branch = []
                 else:
                     shared_prefix = [
-                        msg for msg in (display_messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM
+                        msg
+                        for msg in (display_messages[:last_assistant_index])
+                        if chat_param_message_role(msg) != MessageRole.SYSTEM
                     ]
                     bad_branch = display_messages[last_assistant_index:]
             else:
@@ -370,7 +458,11 @@ def generate_html_report(report_base: Path):
                     shared_prefix = messages
                     bad_branch = []
                 else:
-                    shared_prefix = [msg for msg in (messages[:last_assistant_index]) if msg.role != MessageRole.SYSTEM]
+                    shared_prefix = [
+                        msg
+                        for msg in (messages[:last_assistant_index])
+                        if chat_param_message_role(msg) != MessageRole.SYSTEM
+                    ]
                     bad_branch = messages[last_assistant_index:]
             row_grade: Grade | None = grades_map.get(correlation_id)
             rows.append(
@@ -452,7 +544,7 @@ async def run_eval(
         with progress_path.open("a", encoding="utf-8") as pg:
             pg.write(json.dumps(event) + "\n")
 
-    counters = {"processed": 0, "skipped_input_tokens": 0, "sampler_errors": 0, "grader_errors": 0}
+    counters = EvalCounters()
 
     # client is injected by caller (no implicit AsyncOpenAI() here)
     if client is None:
@@ -488,7 +580,7 @@ async def run_eval(
                     }
                 )
                 if input_tokens > MAX_INPUT_TOKENS:
-                    counters["skipped_input_tokens"] += 1
+                    counters.skipped_input_tokens += 1
                     log_event(
                         {
                             "correlation_id": item.correlation_id,
@@ -513,7 +605,7 @@ async def run_eval(
                         client, **{k: v for k, v in sample_request.items() if v is not None}
                     )
                 except Exception as e:
-                    counters["sampler_errors"] += 1
+                    counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
@@ -548,7 +640,7 @@ async def run_eval(
                 try:
                     sample = await responses_create_with_retries(client, **sample_request)
                 except Exception as e:
-                    counters["sampler_errors"] += 1
+                    counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
                     log_event(msg)
                     return None, None
@@ -566,7 +658,7 @@ async def run_eval(
             # 4) Build grading inputs
             messages = messages_for_grader
             base_prefix = messages[:-2] if len(messages) >= 2 else []
-            base_prefix = [msg for msg in base_prefix if msg.role != MessageRole.SYSTEM]
+            base_prefix = [msg for msg in base_prefix if chat_param_message_role(msg) != MessageRole.SYSTEM]
             # Compute bad branch (inclusive of complaint)
             complaint_index = len(messages) - 1
             bad_branch = messages[prev_assistant_index_for_grader : complaint_index + 1]
@@ -609,12 +701,12 @@ async def run_eval(
             )
             grader_messages = build_grader_prompt(prefix_messages, bad_branch, new_assistant_message)
             grader_request_messages = [
-                SystemMessage.text(grader_messages[0]["content"]).model_dump(),
-                UserMessage.text(grader_messages[1]["content"]).model_dump(),
+                SystemMessage.text(chat_param_message_content_as_text(grader_messages[0])).model_dump(),
+                UserMessage.text(chat_param_message_content_as_text(grader_messages[1])).model_dump(),
             ]
             input_tokens_grader = tokens_for_chat_messages(grader_request_messages)
             if input_tokens_grader > MAX_INPUT_TOKENS:
-                counters["skipped_input_tokens"] += 1
+                counters.skipped_input_tokens += 1
                 log_event(
                     {
                         "correlation_id": item.correlation_id,
@@ -635,7 +727,7 @@ async def run_eval(
             try:
                 grade_response = await responses_create_with_retries(client, **grade_request)
             except Exception as e:
-                counters["grader_errors"] += 1
+                counters.grader_errors += 1
                 msg = {"correlation_id": item.correlation_id, "status": "grader_error", "error": str(e)}
                 log_event(msg)
                 return None, None
@@ -643,7 +735,7 @@ async def run_eval(
             try:
                 _ = parse_grade_from_responses(grade_response)
             except Exception as e:
-                counters["grader_errors"] += 1
+                counters.grader_errors += 1
                 msg = {"correlation_id": item.correlation_id, "status": "grader_parse_error", "error": str(e)}
                 log_event(msg)
                 return None, None
@@ -671,22 +763,14 @@ async def run_eval(
 
     scores: list[float] = []
     # Secondary metrics: tooling usage
-    tool_stats: ToolStats = {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}}
+    tool_stats = ToolStats()
     # Per-source accumulators
     scores_by_source: dict[str, list[float]] = {"ccr": [], "crush": []}
-    tool_stats_by_source: dict[str, ToolStats] = {
-        "ccr": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
-        "crush": {"total_samples": 0, "text_only": 0, "with_tools": 0, "function_counts": {}},
-    }
+    tool_stats_by_source: dict[str, ToolStats] = {"ccr": ToolStats(), "crush": ToolStats()}
 
     def compute_and_write_summary(_final: bool = False) -> dict[str, Any]:
-        # Secondary metrics helpers
-        total_samples = tool_stats["total_samples"]
-        text_only = tool_stats["text_only"]
-        with_tools = tool_stats["with_tools"]
-        function_counts = tool_stats["function_counts"]
-        total_tool_calls = sum(function_counts.values()) if function_counts else 0
-        function_pct = {k: (v / total_tool_calls) if total_tool_calls > 0 else 0.0 for k, v in function_counts.items()}
+        # Compute metrics for overall and per-source stats
+        overall_metrics = tool_stats.compute_metrics()
 
         # CI helpers (normal approx, 95%)
         def _mk_basic(scores_list: list[float]) -> tuple[float, float, float, float]:
@@ -701,44 +785,28 @@ async def run_eval(
         # Compute mean and CI for overall scores
         mean, _ci95, lcb, ucb = _mk_basic(scores)
 
-        by_source: dict[str, Any] = {}
+        by_source: dict[str, SourceMetrics] = {}
         for sname in ("ccr", "crush"):
             m_s, _ci_s, l_s, u_s = _mk_basic(scores_by_source[sname])
-            ts_s = tool_stats_by_source[sname]
-            total_s = ts_s["total_samples"]
-            fc_s = ts_s["function_counts"]
-            total_tool_calls_s = sum(fc_s.values()) if fc_s else 0
-            func_pct_s = {k: (v / total_tool_calls_s) if total_tool_calls_s > 0 else 0.0 for k, v in fc_s.items()}
-            by_source[sname] = {
-                "n": len(scores_by_source[sname]),
-                "mean": m_s,
-                "ci95": {"lcb": l_s, "ucb": u_s},
-                "tooling": {
-                    "total_samples": total_s,
-                    "text_only_pct": ((ts_s["text_only"] / total_s) if total_s else 0.0),
-                    "with_tools_pct": ((ts_s["with_tools"] / total_s) if total_s else 0.0),
-                    "function_counts": ts_s["function_counts"],
-                    "function_pct": func_pct_s,
-                },
-            }
-        summary = {
-            "n": len(scores),
-            "mean": mean,
-            "ci95": {"lcb": lcb, "ucb": ucb},
-            "counters": counters,
-            "models": {"sampler": SAMPLER_MODEL, "evaluator": GRADER_MODEL},
-            "tooling": {
-                "total_samples": total_samples,
-                "text_only_pct": ((text_only / total_samples) if total_samples > 0 else 0.0),
-                "with_tools_pct": ((with_tools / total_samples) if total_samples > 0 else 0.0),
-                "function_counts": function_counts,
-                "function_pct": function_pct,
-            },
-            "by_source": by_source,
-        }
+            source_metrics = tool_stats_by_source[sname].compute_metrics()
+            by_source[sname] = SourceMetrics(
+                n=len(scores_by_source[sname]),
+                mean=m_s,
+                ci95=ConfidenceInterval(lcb=l_s, ucb=u_s),
+                tooling=source_metrics,
+            )
+        summary = SummaryMetrics(
+            n=len(scores),
+            mean=mean,
+            ci95=ConfidenceInterval(lcb=lcb, ucb=ucb),
+            counters=counters,
+            models=ModelConfig(sampler=SAMPLER_MODEL, evaluator=GRADER_MODEL),
+            tooling=overall_metrics,
+            by_source=by_source,
+        )
         with summary_out.open("w", encoding="utf-8") as f:
-            json.dump(summary, f, sort_keys=True)
-        return summary
+            json.dump(summary.model_dump(), f, sort_keys=True)
+        return summary.model_dump()
 
     with (
         samples_out.open("w", encoding="utf-8") as samples_output,
@@ -755,33 +823,16 @@ async def run_eval(
                 source = (
                     "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
                 )
-                # Update tool usage stats
-                tool_stats["total_samples"] += 1
                 # Extract tool calls from ChatAssistantMessage
                 tool_calls = []
                 if isinstance(sample_record.new_assistant_message, ChatAssistantMessage):
                     message_tool_calls = sample_record.new_assistant_message.message.tool_calls
                     tool_calls = list(message_tool_calls) if message_tool_calls is not None else []
-                if not tool_calls:
-                    tool_stats["text_only"] += 1
-                else:
-                    tool_stats["with_tools"] += 1
-                    function_counts = tool_stats["function_counts"]
-                    for tool_call in tool_calls:
-                        function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
-                        function_counts[function_name] = function_counts.get(function_name, 0) + 1
+                # Update tool usage stats
+                tool_stats.update_from_tool_calls(tool_calls)
                 # Per-source tool stats
                 if source in tool_stats_by_source:
-                    source_stats = tool_stats_by_source[source]
-                    source_stats["total_samples"] += 1
-                    if not tool_calls:
-                        source_stats["text_only"] += 1
-                    else:
-                        source_stats["with_tools"] += 1
-                        source_function_counts = source_stats["function_counts"]
-                        for tool_call in tool_calls:
-                            function_name = tool_call.function.name if tool_call.function else "UNKNOWN"
-                            source_function_counts[function_name] = source_function_counts.get(function_name, 0) + 1
+                    tool_stats_by_source[source].update_from_tool_calls(tool_calls)
             if grade_record:
                 grades_output.write(json.dumps(grade_record.model_dump(), sort_keys=True) + "\n")
                 try:
@@ -790,7 +841,7 @@ async def run_eval(
                     scores.append(score)
                     if source in scores_by_source:
                         scores_by_source[source].append(score)  # type: ignore[index]
-                    counters["processed"] += 1
+                    counters.processed += 1
                     summary_data = compute_and_write_summary(False)
                     print(
                         json.dumps(
@@ -807,7 +858,7 @@ async def run_eval(
                         )
                     )
                 except Exception as e:
-                    counters["grader_errors"] += 1
+                    counters.grader_errors += 1
                     log_event({"status": "aggregate_parse_error", "error": str(e)})
 
     # Final summary after all grades

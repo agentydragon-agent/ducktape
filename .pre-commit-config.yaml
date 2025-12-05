@@ -86,7 +86,32 @@ repos:
           - textual>=0.78.0
           - "docker>=7.0.0"
           - "sqlalchemy[mypy]>=2.0"
+          - gepa
+          - "fastmcp>=2.13"
+          - "mcp[cli]>=1.13.1"
+          - "openai>=1.40.0"
+          - "pygit2>=1.18"
+          - "tenacity>=8.2.0"
+          - "tiktoken>=0.7.0"
+          - structlog
+          - anthropic
+          - "canonicaljson>=1.6.0"
+          - "asyncpg>=0.29.0"
+          - "jinja2>=3.1"
+          - "pytest-asyncio>=0.23"
+          - PyHamcrest
+          - "compact-json>=1.4.0"
+          - aiosqlite
+          - aiodocker
+          - aiolimiter
+          - prometheus-client
+          - matplotlib
+          - plotnine
+          - "claude-code-sdk>=0.0.21,<0.1"
+          - playwright
           # Type stubs
+          - asyncpg-stubs
+          - types-unidiff
           - types-psycopg2
           - types-python-dateutil
           - types-Markdown
@@ -98,18 +123,21 @@ repos:
           - types-aiofiles
           - types-colorama
           - types-psutil
+          - pandas-stubs
 
       - id: mypy
         alias: mypy-homeassistant
         name: mypy (homeassistant iaqi)
         files: "^homeassistant/iaqi/.*\\.py$"
         language_version: python3.12
-        args: ["--config-file=mypy.ini"]
+        args: ["--config-file=mypy-homeassistant.ini"]
         additional_dependencies:
           # Needed because PyYAML 6.0 (pulled via homeassistant) must be cythonized on Python 3.12
           - "Cython<3"
           # Full HA typing surface
           - homeassistant-stubs
+          - pytest-homeassistant-custom-component
+          - PyHamcrest
 
   - repo: https://github.com/keith/pre-commit-buildifier
     rev: 6.4.0

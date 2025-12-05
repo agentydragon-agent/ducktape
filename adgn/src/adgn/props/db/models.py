@@ -6,6 +6,7 @@ Maps to the schema defined in docs/eval_results_db.md.
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any, ClassVar, TypeVar
 from uuid import UUID, uuid4
 
@@ -31,6 +32,7 @@ from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
+from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 
@@ -146,6 +148,9 @@ class Snapshot(Base):
     false_positives: Mapped[list[FalsePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
+    critic_scopes: Mapped[list[CriticScopeDB]] = relationship(
+        back_populates="snapshot_obj", cascade="all, delete-orphan"
+    )
     critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
     grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
     critiques: Mapped[list[Critique]] = relationship(back_populates="snapshot_obj")
@@ -168,6 +173,16 @@ class Snapshot(Base):
         if session is None:
             raise RuntimeError("Model not bound to session")
         return list(session.execute(select(cls).where(cls.split == split)).scalars().all())
+
+    def files_with_issues(self) -> set[Path]:
+        """Return files with ground truth TP or FP issues."""
+        tp_files = {
+            file_path for tp in self.true_positives for occurrence in tp.occurrences for file_path in occurrence.files
+        }
+        fp_files = {
+            file_path for fp in self.false_positives for occurrence in fp.occurrences for file_path in occurrence.files
+        }
+        return tp_files | fp_files
 
 
 class TruePositive(Base):
@@ -266,6 +281,52 @@ class FalsePositive(Base):
         return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
 
 
+class CriticScopeDB(Base):
+    """Critic scope defining targeted files for training examples.
+
+    Each scope represents one training example: a specific set of files to review
+    together. Multiple scopes per snapshot enable per-file training (tighter feedback
+    loops for optimization).
+
+    See docs/training_strategy.md for details on per-file examples approach.
+    """
+
+    __tablename__ = "critic_scopes"
+    __table_args__ = (
+        UniqueConstraint("snapshot_slug", "files_hash", name="uq_critic_scopes_snapshot_files"),
+        Index("ix_critic_scopes_snapshot_slug", "snapshot_slug"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
+    )
+    files: Mapped[CriticScopeSpec] = mapped_column(
+        PydanticColumn(CriticScopeSpec), nullable=False, comment="Files to review: set[Path] or 'all' sentinel"
+    )
+    # Hash of files field for unique constraint (JSONB not directly indexable)
+    files_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="SHA256 hash of normalized files field for uniqueness"
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critic_scopes")
+
+    @classmethod
+    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[CriticScopeDB]:
+        """Get all critic scopes for a snapshot."""
+
+        session = Session.object_session(cls)
+        if session is None:
+            raise RuntimeError("Model not bound to session")
+        # str() needed for mypy compatibility with SQLAlchemy comparison operators
+        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
+
+
 class Prompt(Base):
     """Critic prompt template identified by SHA256 hash."""
 
@@ -329,6 +390,9 @@ class Critique(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
+    # TODO: Add critic_scope_id FK to critic_scopes table to track which scope was used
+    # for targeted reviews (not full-snapshot). This enables per-scope evaluation metrics
+    # and better attribution of critique results to specific training examples.
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="CriticSubmitPayload as dict")
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

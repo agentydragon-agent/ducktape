@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, TypeVar
+from typing import Any, Literal, TypeVar
 
 from fastmcp.client.client import ClientSession
 from fastmcp.server.server import has_resource_prefix
@@ -48,7 +48,9 @@ async def read_text_json(session: ClientSession, uri: str) -> Any:
     return await read_text_json_typed(session, uri, dict[str, Any])
 
 
-def derive_origin_server(uri: str, mount_names: Iterable[str], prefix_format: str) -> str:
+def derive_origin_server(
+    uri: str, mount_names: Iterable[str], prefix_format: Literal["protocol", "path"] | None
+) -> str:
     """Find which mounted server owns the given resource URI.
 
     Raises ValueError if no server matches.

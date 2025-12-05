@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
+from adgn.props.db.sync._loader import FilesystemLoader
 from adgn.props.ids import SnapshotSlug
-from adgn.props.loaders.filesystem import FilesystemLoader
 from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScope
 from adgn.props.snapshot_registry import SnapshotRegistry
 from adgn.props.splits import Split
@@ -53,7 +53,7 @@ def test_load_critic_scopes(loader: FilesystemLoader):
 def test_load_critic_scopes_missing_file(tmp_path: Path):
     """Test that missing critic_scopes.yaml raises FileNotFoundError."""
     loader = FilesystemLoader(tmp_path)
-    with pytest.raises(FileNotFoundError, match="critic_scopes.yaml is required"):
+    with pytest.raises(FileNotFoundError, match=r"critic_scopes\.yaml is required"):
         loader.load_critic_scopes()
 
 

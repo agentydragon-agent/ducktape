@@ -9,7 +9,8 @@ import argparse
 import asyncio
 from pathlib import Path
 
-from .._shared.container_session import ContainerOptions, NetworkMode
+from ..._shared.container_session import ContainerOptions
+from ..._shared.types import NetworkMode
 from .server import make_container_exec_server
 
 

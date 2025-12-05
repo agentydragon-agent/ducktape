@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 import typer
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.event_renderer import DisplayEventsHandler
+from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
 
 # ------------------------
@@ -57,11 +59,12 @@ def is_function_call_output_end_turn(call_id: str | None = None):
     return is_function_call_output(call_id=call_id, kind="EndTurn")
 
 
-def assert_function_call_output_structured(records: list[dict], **kvs):
+def assert_function_call_output_structured(records: list[dict], **kvs: Any) -> None:
     """Assert that a RecordingHandler-style records list contains a function_call_output
     whose structuredContent matches the provided kv pairs.
     """
-    assert_that(
-        records,
-        has_item(has_entries(kind="function_call_output", result=has_entries(structured_content=has_entries(**kvs)))),
-    )
+    # Break down nested matchers with explicit Any types for PyHamcrest compatibility
+    structured_content_matcher: Any = has_entries(**kvs)
+    result_matcher: Any = has_entries(structured_content=structured_content_matcher)
+    entry_matcher: Any = has_entries(kind="function_call_output", result=result_matcher)
+    assert_that(records, has_item(entry_matcher))

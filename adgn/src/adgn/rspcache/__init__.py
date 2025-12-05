@@ -53,7 +53,6 @@ class StreamingContext:
     async def proxy_stream(self, resp: httpx.Response, start_time: float) -> AsyncIterator[bytes]:
         """Stream response chunks while recording frames to database."""
         text_buffer = ""
-        ordinal = 0
         token_usage: ResponseUsage | None = None
         latest_response: OpenAIResponse | None = None
         try:
@@ -71,7 +70,6 @@ class StreamingContext:
                     continue
                 for frame in parsed:
                     frame_payload = ResponseStreamEvent.model_validate(frame)
-                    ordinal += 1
                     self.response_id, usage_update, latest = await _update_response_state(
                         frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
                     )
@@ -79,11 +77,10 @@ class StreamingContext:
                         token_usage = usage_update
                     if latest is not None:
                         latest_response = latest
-                    await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+                    await self.db.append_frame(self.key, frame_payload, response_id=self.response_id)
             trailing_frames = _extract_remaining(text_buffer)
             for frame in trailing_frames:
                 frame_payload = ResponseStreamEvent.model_validate(frame)
-                ordinal += 1
                 self.response_id, usage_update, latest = await _update_response_state(
                     frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
                 )
@@ -91,7 +88,7 @@ class StreamingContext:
                     token_usage = usage_update
                 if latest is not None:
                     latest_response = latest
-                await self.db.append_frame(self.key, frame_payload, ordinal=ordinal, response_id=self.response_id)
+                await self.db.append_frame(self.key, frame_payload, response_id=self.response_id)
             latency_ms = int((time.perf_counter() - start_time) * 1000)
             if latest_response is not None and latest_response.usage is not None:
                 token_usage = latest_response.usage
@@ -226,15 +223,13 @@ async def _proxy_stream(
     resp: httpx.Response, *, db: ResponsesDB, key: str, response_id: str | None, start_time: float
 ) -> AsyncIterator[bytes]:
     text_buffer = ""
-    ordinal = 0
     token_usage: ResponseUsage | None = None
     latest_response: OpenAIResponse | None = None
 
     async def _process_frame(frame_dict: dict[str, Any]) -> None:
-        nonlocal ordinal, response_id, token_usage, latest_response
+        nonlocal response_id, token_usage, latest_response
 
         frame_payload = ResponseStreamEvent.model_validate(frame_dict)
-        ordinal += 1
         response_id, usage_update, latest = await _update_response_state(
             frame=frame_payload, db=db, cache_key=key, response_id=response_id
         )
@@ -242,7 +237,7 @@ async def _proxy_stream(
             token_usage = usage_update
         if latest is not None:
             latest_response = latest
-        await db.append_frame(key, frame_payload, ordinal=ordinal, response_id=response_id)
+        await db.append_frame(key, frame_payload, response_id=response_id)
 
     try:
         async for chunk in resp.aiter_bytes():
