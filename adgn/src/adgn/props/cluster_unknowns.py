@@ -56,6 +56,10 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
 
     Returns empty list if critic result is not success or if no novel issues found.
     """
+    # Skip grader runs where output or output.grade is None (incomplete/failed runs)
+    if db_run.output is None or db_run.output.grade is None:
+        return []
+
     # db_run.output is now typed as GraderOutput (PydanticColumn)
     critique_payload = CriticSubmitPayload.model_validate(critique.payload)
 

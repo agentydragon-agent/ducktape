@@ -4,10 +4,11 @@ Integrates with gepa-ai/gepa to optimize the critic system prompt using
 evolutionary search with rich feedback from execution traces and grader output.
 
 Usage:
+    from pathlib import Path
     from gepa import optimize
     from adgn.props.gepa.gepa_adapter import CriticAdapter, load_datasets
 
-    adapter = CriticAdapter(hydrator, registry, critic_client, grader_client)
+    adapter = CriticAdapter(hydrator, critic_client, grader_client, run_dir=Path("/tmp/gepa_run"))
     trainset, valset = await load_datasets()  # Loads from database
 
     result = optimize(
@@ -26,7 +27,9 @@ import asyncio
 from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
+from datetime import datetime
 from itertools import chain
+import json
 import logging
 from pathlib import Path
 import pickle
@@ -36,6 +39,8 @@ from uuid import UUID
 
 import gepa
 from gepa.core.result import GEPAResult
+from gepa.strategies.instruction_proposal import InstructionProposalSignature
+import litellm
 from pydantic import BaseModel
 from sqlalchemy import cast
 from sqlalchemy.dialects.postgresql import JSONB
@@ -130,18 +135,128 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         hydrator: SnapshotHydrator,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
+        run_dir: Path,
+        reflection_model: str | None = None,
         verbose: bool = False,
         max_parallelism: int = 20,
     ):
         self.hydrator = hydrator
         self.critic_client = critic_client
         self.grader_client = grader_client
+        self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
-        # Semaphore for limiting concurrent critic/grader runs
-        self._semaphore = asyncio.Semaphore(max_parallelism)
-        # Use GEPA's default proposal implementation
-        self.propose_new_texts = None
+
+        # Always set up proposal logging if reflection_model provided
+        if reflection_model:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            log_file = run_dir / f"gepa_proposals_{timestamp}.jsonl"
+            self._setup_proposal_logging(log_file)
+            logger.info(f"GEPA proposal logging enabled: {log_file.absolute()}")
+        else:
+            # Use GEPA's default proposal implementation
+            self.propose_new_texts = None
+
+    def _setup_proposal_logging(self, log_file: Path) -> None:
+        """Set up logging of GEPA's proposal step (reflection LM calls).
+
+        Replaces GEPA's default propose_new_texts implementation with a logging wrapper
+        that replicates the exact same behavior but logs all LLM calls to a JSONL file.
+
+        This method sets self.propose_new_texts to a custom function that:
+        - Uses InstructionProposalSignature (same as GEPA's default)
+        - Calls litellm.completion with self.reflection_model (same as GEPA does)
+        - Logs input (prompt, current instruction, feedback) and output (new instruction)
+
+        Args:
+            log_file: Path to JSONL file where proposal calls will be logged
+
+        Example log entry format:
+            {"timestamp": "2025-01-15T10:30:00", "call_id": 1, "component": "system_prompt",
+             "type": "input", "current_instruction": "...", "feedback_count": 3, "prompt": "..."}
+            {"timestamp": "2025-01-15T10:30:05", "call_id": 1, "component": "system_prompt",
+             "type": "output", "raw_response": "...", "new_instruction": "..."}
+        """
+        call_count = 0
+
+        def propose_new_texts(
+            candidate: dict[str, str],
+            reflective_dataset: Mapping[str, Sequence[Mapping[str, Any]]],
+            components_to_update: list[str],
+        ) -> dict[str, str]:
+            """Custom propose_new_texts that replicates GEPA's default with logging.
+
+            Mirrors the implementation in gepa.proposer.reflective_mutation.reflective_mutation
+            but adds structured logging before/after each LLM call.
+            """
+            nonlocal call_count
+            new_texts: dict[str, str] = {}
+
+            for name in components_to_update:
+                # Skip if no data (same as GEPA does)
+                if name not in reflective_dataset or not reflective_dataset.get(name):
+                    continue
+
+                call_count += 1
+                base_instruction = candidate[name]
+                dataset_with_feedback = reflective_dataset[name]
+
+                # Build the prompt (same as InstructionProposalSignature.run does)
+                input_dict = {
+                    "current_instruction_doc": base_instruction,
+                    "dataset_with_feedback": dataset_with_feedback,
+                    "prompt_template": None,  # Uses default template
+                }
+                full_prompt = InstructionProposalSignature.prompt_renderer(input_dict)
+
+                # Log input
+                with log_file.open("a") as f:
+                    f.write(
+                        json.dumps(
+                            {
+                                "timestamp": datetime.now().isoformat(),
+                                "call_id": call_count,
+                                "component": name,
+                                "type": "input",
+                                "current_instruction": base_instruction,
+                                "feedback_count": len(dataset_with_feedback),
+                                "prompt": full_prompt,
+                            }
+                        )
+                        + "\n"
+                    )
+
+                # Call LLM (same as GEPA does when reflection_lm is a string)
+                completion = litellm.completion(
+                    model=self.reflection_model, messages=[{"role": "user", "content": full_prompt}]
+                )
+                lm_out = (completion.choices[0].message.content or "").strip()
+
+                # Extract the new instruction (same as InstructionProposalSignature does)
+                result = InstructionProposalSignature.output_extractor(lm_out)
+                new_instruction = result["new_instruction"]
+
+                # Log output
+                with log_file.open("a") as f:
+                    f.write(
+                        json.dumps(
+                            {
+                                "timestamp": datetime.now().isoformat(),
+                                "call_id": call_count,
+                                "component": name,
+                                "type": "output",
+                                "raw_response": lm_out,
+                                "new_instruction": new_instruction,
+                            }
+                        )
+                        + "\n"
+                    )
+
+                new_texts[name] = new_instruction
+
+            return new_texts
+
+        self.propose_new_texts = propose_new_texts
 
     @staticmethod
     def _build_critic_output(grader_output: GraderOutput, critique_id: UUID) -> CriticOutput:
@@ -201,13 +316,13 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         return gepa.EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
     async def _evaluate_one_specimen(
-        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool
+        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool, semaphore: asyncio.Semaphore
     ) -> EvaluationResult:
         """Evaluate a single specimen (for parallel execution).
 
         Uses semaphore to limit concurrent critic/grader runs.
         """
-        async with self._semaphore:
+        async with semaphore:
             return await self._evaluate_one_specimen_impl(specimen_input, prompt_sha256, capture_traces)
 
     async def _evaluate_one_specimen_impl(
@@ -319,6 +434,9 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         Semaphore ensures max_parallelism concurrent critic/grader runs.
         """
+        # Create semaphore for this evaluation batch (scoped to this event loop)
+        semaphore = asyncio.Semaphore(self.max_parallelism)
+
         system_prompt = candidate["system_prompt"]
         prompt_sha256 = hash_and_upsert_prompt(system_prompt)
 
@@ -376,7 +494,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         fresh_results: dict[int, EvaluationResult] = {}
         if uncached_inputs:
             tasks = [
-                self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces)
+                self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
                 for _, specimen_input in uncached_inputs
             ]
             evaluated = await asyncio.gather(*tasks)
@@ -540,11 +658,18 @@ async def optimize_with_gepa(
     warm_start: bool = True,
     max_parallelism: int = 20,
     minibatch_size: int = 3,
+    use_merge: bool = True,
+    max_merge_invocations: int = 5,
+    merge_val_overlap_floor: int = 5,
 ) -> tuple[str, GEPAResult[CriticOutput, Any]]:
     """Optimize critic prompt using GEPA.
 
     Uses critic scopes from database to generate training examples (one per scope).
     Requires all snapshots to have critic scopes defined (enforced by sync validation).
+
+    GEPA supports two complementary strategies that work together:
+    1. Reflective mutation (always enabled): LLM analyzes failures and proposes improvements
+    2. Merge (optional): Genetic crossover of successful prompt variants
 
     Args:
         initial_prompt: Starting system prompt (ignored if warm_start=True and historical data exists)
@@ -557,6 +682,9 @@ async def optimize_with_gepa(
         warm_start: Load historical Pareto frontier from database (default: True)
         max_parallelism: Maximum concurrent critic/grader runs (default: 20)
         minibatch_size: Number of training examples per reflection iteration (default: 3)
+        use_merge: Enable genetic merging of successful variants (default: True)
+        max_merge_invocations: Maximum number of merge attempts (default: 5)
+        merge_val_overlap_floor: Minimum validation overlap for merge candidates (default: 5)
 
     Returns:
         (optimized_prompt, gepa_results) tuple
@@ -597,12 +725,25 @@ async def optimize_with_gepa(
         else:
             logger.warning("No historical data found - starting from seed candidate")
 
+    # If no run_dir yet (no warm start or no historical data), create one
+    if run_dir is None:
+        run_dir = tempfile.mkdtemp(prefix="gepa_run_")
+        logger.info(f"Created run directory: {run_dir}")
+
     # Create adapter
     logger.info(f"Creating CriticAdapter with max_parallelism={max_parallelism}")
-    adapter = CriticAdapter(hydrator, critic_client, grader_client, verbose=verbose, max_parallelism=max_parallelism)
+    adapter = CriticAdapter(
+        hydrator,
+        critic_client,
+        grader_client,
+        Path(run_dir),
+        reflection_model=reflection_model,
+        verbose=verbose,
+        max_parallelism=max_parallelism,
+    )
 
     # Run optimization (reflection_lm accepts model string directly)
-    logger.info("Starting GEPA evolutionary search...")
+    logger.info(f"Starting GEPA evolutionary search (merge={'enabled' if use_merge else 'disabled'})...")
     result: GEPAResult[CriticOutput, Any] = gepa.optimize(
         seed_candidate={"system_prompt": initial_prompt},
         trainset=trainset,
@@ -613,6 +754,9 @@ async def optimize_with_gepa(
         perfect_score=1.0,  # Perfect recall
         run_dir=run_dir,  # Load checkpoint if provided
         reflection_minibatch_size=minibatch_size,
+        use_merge=use_merge,
+        max_merge_invocations=max_merge_invocations,
+        merge_val_overlap_floor=merge_val_overlap_floor,
     )
 
     optimized_prompt = result.best_candidate["system_prompt"]
