@@ -127,12 +127,38 @@ def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *,
         return SimpleOk(ok=True)
 
 
-def make_grader_submit_server(
-    state: GradeSubmitState, *, name: str = "grader_submit", inputs: GradeInputs
-) -> NotifyingFastMCP:
-    """Create MCP server with submit_result tool."""
+GRADER_SUBMIT_INSTRUCTIONS = """\
+Grader submission server for critique evaluation.
 
-    mcp = NotifyingFastMCP(name)
+Use submit_result to submit the final grading comparing critique against ground truth.
+"""
+
+
+def make_grader_submit_server(
+    state: GradeSubmitState,
+    *,
+    name: str = "grader_submit",
+    inputs: GradeInputs,
+    token: str | None = None,
+) -> NotifyingFastMCP:
+    """Create MCP server with submit_result tool.
+
+    Args:
+        state: State container for submitted result.
+        name: Server name.
+        inputs: Grading context (snapshot slug and critique).
+        token: If provided, configure bearer token auth for HTTP mode.
+
+    Returns:
+        NotifyingFastMCP server (with auth if token provided).
+    """
+    from fastmcp.server.auth import StaticTokenVerifier
+
+    auth = None
+    if token is not None:
+        auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
+
+    mcp = NotifyingFastMCP(name, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
     build_grader_submit_tools(mcp, state, inputs=inputs)
 
     return mcp
@@ -227,10 +253,7 @@ async def _run_grader_agent(
     grader_submit_server: NotifyingFastMCP | None = None
     if grader_submit_mcp_client is None:
         # Inproc mode: mount grader_submit in compositor
-        grader_submit_server = NotifyingFastMCP(
-            GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
-        )
-        build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
+        grader_submit_server = make_grader_submit_server(grader_state, inputs=inputs)
         await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
 
     servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
@@ -370,11 +393,10 @@ async def run_grader(
 
     # Run agent with either HTTP or in-proc server based on toggle
     if USE_MCP_HTTP:
-        from adgn.props.servers.grader_submit_server import create_grader_submit_http_server
         from adgn.props.servers.http_launcher import launch_mcp_http_server
 
         def server_factory(token: str) -> NotifyingFastMCP:
-            return create_grader_submit_http_server(token, state=grader_state, inputs=inputs)
+            return make_grader_submit_server(grader_state, inputs=inputs, token=token)
 
         async with launch_mcp_http_server(server_factory) as handle:
             logger.info(f"Grader HTTP server started at {handle.url}")
