@@ -60,24 +60,6 @@ class TestLaunchMcpHttpServer:
                 await client.get(f"http://127.0.0.1:{handle.port}/", timeout=1.0)
 
     @pytest.mark.asyncio
-    async def test_uses_provided_token(self):
-        """Server should use the provided token for auth."""
-        custom_token = "my-custom-test-token-12345"
-
-        async with launch_mcp_http_server(_create_test_server, token=custom_token) as handle:
-            assert handle.token == custom_token
-
-    @pytest.mark.asyncio
-    async def test_uses_provided_port(self):
-        """Server should bind to the provided port."""
-        from adgn.util.net import pick_free_port
-
-        custom_port = pick_free_port()
-
-        async with launch_mcp_http_server(_create_test_server, port=custom_port) as handle:
-            assert handle.port == custom_port
-
-    @pytest.mark.asyncio
     async def test_auth_required(self):
         """Server should reject requests without valid token."""
         async with launch_mcp_http_server(_create_test_server) as handle:

@@ -7,16 +7,11 @@ and bearer token authentication for use by Docker-isolated agents.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
 
-from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.props.grader.grader import GradeInputs, GradeSubmitState, build_grader_submit_tools
-
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +43,7 @@ def create_grader_submit_http_server(
     state: GradeSubmitState,
     inputs: GradeInputs,
     name: str = "grader_submit",
-) -> FastMCP:
+) -> NotifyingFastMCP:
     """Create HTTP-exposed grader submit MCP server with auth configured.
 
     Args:

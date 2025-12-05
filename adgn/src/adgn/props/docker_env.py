@@ -102,7 +102,7 @@ def properties_docker_spec(
     workspace_mode: str = "ro",
     db_url: str | None = None,
     network_mode: str | None = None,
-    extra_env: dict[str, str] | None = None,
+    extra_env: dict[str, str] | None = None,  # noqa: B006 - mutable default avoided via update pattern
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
@@ -145,8 +145,8 @@ def properties_docker_spec(
         logger.warning("No db_url provided - container will not have database access")
 
     # Merge extra environment variables (e.g., MCP_SERVER_URL, MCP_SERVER_TOKEN)
+    env.update(extra_env or {})
     if extra_env:
-        env.update(extra_env)
         logger.info(f"Injecting extra environment variables: {list(extra_env.keys())}")
 
     def _factory() -> FastMCP:

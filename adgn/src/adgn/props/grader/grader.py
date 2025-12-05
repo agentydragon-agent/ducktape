@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import RemoteMCPServer
+from fastmcp.server import FastMCP
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -39,7 +40,7 @@ from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
-from adgn.props.docker_env import properties_docker_spec
+from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
 from adgn.props.grader.models import (
     CritiqueInputIssue,
     FalsePositiveID,
@@ -200,11 +201,12 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
 # =============================================================================
 
 
-async def _run_grader_agent_inproc(
+async def _run_grader_agent(
     *,
+    comp: Compositor,
+    runtime_server: FastMCP,
+    grader_submit_server: NotifyingFastMCP | None,
     grader_state: GradeSubmitState,
-    inputs: GradeInputs,
-    wiring,
     prompt: str,
     client: OpenAIModelProto,
     transcript_id: UUID,
@@ -212,21 +214,11 @@ async def _run_grader_agent_inproc(
     input_data: GraderInput,
     verbose: bool,
     extra_handlers: tuple[BaseHandler, ...],
+    wiring_server_name: str,
 ) -> None:
-    """Run grader agent using in-process compositor (existing path)."""
-    # Set up compositor and servers
-    comp = Compositor("compositor")
-    runtime_server = await wiring.attach(comp)
-    grader_submit_server = NotifyingFastMCP(
-        GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
-    )
-    build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
-    await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+    """Run the grader agent with the given compositor setup."""
+    servers = {wiring_server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
 
-    # Set up handlers
-    servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
-
-    # Run grader agent
     async with Client(comp) as mcp_client:
         await mount_standard_inproc_servers(compositor=comp)
         agent = await MiniCodex.create(
@@ -251,11 +243,50 @@ async def _run_grader_agent_inproc(
         await agent.run(prompt)
 
 
+async def _run_grader_agent_inproc(
+    *,
+    grader_state: GradeSubmitState,
+    inputs: GradeInputs,
+    wiring: PropertiesDockerWiring,
+    prompt: str,
+    client: OpenAIModelProto,
+    transcript_id: UUID,
+    snapshot_split: str,
+    input_data: GraderInput,
+    verbose: bool,
+    extra_handlers: tuple[BaseHandler, ...],
+) -> None:
+    """Run grader agent using in-process compositor (existing path)."""
+    comp = Compositor("compositor")
+    runtime_server = await wiring.attach(comp)
+
+    grader_submit_server = NotifyingFastMCP(
+        GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
+    )
+    build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
+    await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+
+    await _run_grader_agent(
+        comp=comp,
+        runtime_server=runtime_server,
+        grader_submit_server=grader_submit_server,
+        grader_state=grader_state,
+        prompt=prompt,
+        client=client,
+        transcript_id=transcript_id,
+        snapshot_split=snapshot_split,
+        input_data=input_data,
+        verbose=verbose,
+        extra_handlers=extra_handlers,
+        wiring_server_name=wiring.server_name,
+    )
+
+
 async def _run_grader_agent_http(
     *,
     grader_state: GradeSubmitState,
     inputs: GradeInputs,
-    wiring,
+    wiring: PropertiesDockerWiring,
     prompt: str,
     client: OpenAIModelProto,
     transcript_id: UUID,
@@ -272,51 +303,35 @@ async def _run_grader_agent_http(
     from adgn.props.servers.grader_submit_server import create_grader_submit_http_server
     from adgn.props.servers.http_launcher import launch_mcp_http_server
 
-    # Create server factory that captures state and inputs
-    def server_factory(token: str):
+    def server_factory(token: str) -> NotifyingFastMCP:
         return create_grader_submit_http_server(token, state=grader_state, inputs=inputs)
 
-    # Launch HTTP server and run agent
     async with launch_mcp_http_server(server_factory) as handle:
         logger.info(f"Grader HTTP server started at {handle.url}")
 
-        # Set up compositor with Docker runtime + HTTP grader_submit
         comp = Compositor("compositor")
         runtime_server = await wiring.attach(comp)
 
-        # Mount grader_submit via HTTP instead of in-proc
         grader_submit_spec = RemoteMCPServer(
-            url=f"http://127.0.0.1:{handle.port}",  # Use localhost since compositor is on host
+            url=f"http://127.0.0.1:{handle.port}",
             auth=handle.token,
         )
         await comp.mount_server(GRADER_SUBMIT_SERVER_NAME, grader_submit_spec)
 
-        # Set up handlers (grader_submit_server is remote, so use None for its entry)
-        servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: None}
-
-        # Run grader agent
-        async with Client(comp) as mcp_client:
-            await mount_standard_inproc_servers(compositor=comp)
-            agent = await MiniCodex.create(
-                mcp_client=mcp_client,
-                system="You are a strict grader. Return only metrics via submit_result.",
-                client=client,
-                handlers=[
-                    AbortIf(should_abort=lambda: grader_state.result is not None),
-                    *build_props_handlers(
-                        transcript_id=transcript_id,
-                        verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
-                        if verbose
-                        else None,
-                        servers=servers,
-                    ),
-                    *extra_handlers,
-                ],
-                parallel_tool_calls=True,
-                reasoning_summary=ReasoningSummary.detailed,
-                tool_policy=RequireAnyTool(),
-            )
-            await agent.run(prompt)
+        await _run_grader_agent(
+            comp=comp,
+            runtime_server=runtime_server,
+            grader_submit_server=None,  # Remote server, not local
+            grader_state=grader_state,
+            prompt=prompt,
+            client=client,
+            transcript_id=transcript_id,
+            snapshot_split=snapshot_split,
+            input_data=input_data,
+            verbose=verbose,
+            extra_handlers=extra_handlers,
+            wiring_server_name=wiring.server_name,
+        )
 
 
 # =============================================================================

@@ -13,14 +13,11 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import logging
 import secrets
-from typing import TYPE_CHECKING
 
+from fastmcp import FastMCP
 import uvicorn
 
 from adgn.util.net import pick_free_port, wait_for_port
-
-if TYPE_CHECKING:
-    from fastmcp import FastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -38,19 +35,17 @@ class ServerHandle:
 async def launch_mcp_http_server(
     server_factory: Callable[[str], FastMCP],
     *,
-    host: str = "0.0.0.0",  # noqa: S104 - binding to all interfaces for Docker access
-    port: int | None = None,
-    token: str | None = None,
+    host: str = "0.0.0.0",  # binding to all interfaces for Docker access
     startup_timeout: float = 10.0,
 ):
     """Launch an ephemeral MCP HTTP server, yield handle, shut down on exit.
+
+    Port and token are generated internally (ephemeral, no persistence needed).
 
     Args:
         server_factory: Factory function that creates a FastMCP server.
             Called with (token: str) to allow server to configure auth.
         host: Host to bind to. Default 0.0.0.0 for Docker accessibility.
-        port: Port to bind to. If None, a free port is picked automatically.
-        token: Bearer token for authentication. If None, generated randomly.
         startup_timeout: Seconds to wait for server to become ready.
 
     Yields:
@@ -68,9 +63,8 @@ async def launch_mcp_http_server(
             )
             ...
     """
-    # Generate token if not provided (ephemeral, no persistence needed)
-    token = token or secrets.token_hex(32)
-    port = port or pick_free_port(host="127.0.0.1")
+    token = secrets.token_hex(32)
+    port = pick_free_port(host="127.0.0.1")
 
     # Create server with auth configured
     server = server_factory(token)
@@ -114,7 +108,7 @@ async def launch_mcp_http_server(
         # Wait for graceful shutdown with timeout
         try:
             await asyncio.wait_for(server_task, timeout=5.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             logger.warning("Server shutdown timed out, cancelling")
             server_task.cancel()
             with asyncio.suppress(asyncio.CancelledError):
