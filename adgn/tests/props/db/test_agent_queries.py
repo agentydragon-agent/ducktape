@@ -61,7 +61,11 @@ def query_test_data(test_db):
                 tp_id="tp-001",
                 rationale="Test true positive 1",
                 occurrences=[
-                    {"files": {"file1.py": [[1, 10]]}, "note": "First occurrence", "expect_caught_from": ["file1.py"]}
+                    {
+                        "files": {"file1.py": [{"start_line": 1, "end_line": 10}]},
+                        "note": "First occurrence",
+                        "expect_caught_from": [frozenset({"file1.py"})],
+                    }
                 ],
             ),
             TruePositive(
@@ -69,7 +73,11 @@ def query_test_data(test_db):
                 tp_id="tp-002",
                 rationale="Test true positive 2",
                 occurrences=[
-                    {"files": {"file2.py": [[5, 15]]}, "note": "Second occurrence", "expect_caught_from": ["file2.py"]}
+                    {
+                        "files": {"file2.py": [{"start_line": 5, "end_line": 15}]},
+                        "note": "Second occurrence",
+                        "expect_caught_from": [frozenset({"file2.py"})],
+                    }
                 ],
             ),
         ]
@@ -82,7 +90,11 @@ def query_test_data(test_db):
                 fp_id="fp-001",
                 rationale="Test false positive 1",
                 occurrences=[
-                    {"files": {"file3.py": [[20, 30]]}, "note": "FP occurrence", "relevant_files": ["file3.py"]}
+                    {
+                        "files": {"file3.py": [{"start_line": 20, "end_line": 30}]},
+                        "note": "FP occurrence",
+                        "relevant_files": ["file3.py"],
+                    }
                 ],
             )
         ]

@@ -14,8 +14,6 @@ from pydantic import BaseModel, TypeAdapter
 from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.client_helpers import extract_error_detail
 
-# We use the concrete FastMCP Client type for sessions in tests
-
 T_In = TypeVar("T_In", bound=BaseModel)
 T_Out = TypeVar("T_Out")
 

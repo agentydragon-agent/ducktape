@@ -1,5 +1,6 @@
 """Shared test fixtures for props tests."""
 
+import hashlib
 from pathlib import Path
 from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
@@ -11,9 +12,9 @@ from sqlalchemy import create_engine, text
 
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
 from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
-from adgn.props.db import get_session, init_db, recreate_database
+from adgn.props.db import init_db, recreate_database
 from adgn.props.db.config import DatabaseConfig, get_test_config
-from adgn.props.db.models import Prompt
+from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
@@ -42,6 +43,18 @@ def specimen_relative_path_model():
         path: SpecimenRelativePath
 
     return Model
+
+
+@pytest.fixture
+def validate_specimen_path(specimen_relative_path_model):
+    """Factory for validating specimen paths with context, reducing test duplication."""
+
+    def _validate(path_str: str, context: SpecimenContext):
+        """Validate a path string against specimen context."""
+        ctx = {"snapshots": context}
+        return specimen_relative_path_model.model_validate({"path": path_str}, context=ctx)
+
+    return _validate
 
 
 @pytest.fixture
@@ -221,16 +234,48 @@ def make_openai_client():
     return _factory
 
 
+def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
+    """Sanitize pytest node ID for use in PostgreSQL database name.
+
+    Args:
+        test_id: pytest node ID (e.g., 'tests/props/test_db.py::test_sync')
+        max_length: Maximum length for PostgreSQL identifier (default 63)
+
+    Returns:
+        Sanitized database name safe for PostgreSQL
+    """
+    # Keep only alphanumeric and underscore; replace other chars with underscore
+    sanitized = "".join(c if c.isalnum() or c == "_" else "_" for c in test_id)
+    # Collapse consecutive underscores
+    while "__" in sanitized:
+        sanitized = sanitized.replace("__", "_")
+    # Trim leading/trailing underscores
+    sanitized = sanitized.strip("_")
+    # Ensure it fits PostgreSQL's 63-character limit (including 'props_test_' prefix)
+    # Reserve space for the prefix that will be added later
+    prefix = "props_test_"
+    available_length = max_length - len(prefix)
+    if len(sanitized) > available_length:
+        # Keep prefix and add hash suffix to ensure uniqueness
+        hash_suffix = hashlib.sha256(test_id.encode()).hexdigest()[:8]
+        prefix_length = available_length - len(hash_suffix) - 1
+        sanitized = f"{sanitized[:prefix_length]}_{hash_suffix}"
+    return sanitized
+
+
 @pytest.fixture
 def test_db(request):
     """Create isolated database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
+
+    Database name is derived from the test node ID for better debuggability.
     """
-    # Generate unique database name for this test
-    test_id = str(uuid4()).replace("-", "")[:16]
-    db_name = f"props_test_{test_id}"
+    # Generate database name from test node ID
+    test_node_id = request.node.nodeid
+    sanitized_id = _sanitize_test_id(test_node_id)
+    db_name = f"props_test_{sanitized_id}"
 
     # Get base config and parse admin URL
     base_config = get_test_config()
@@ -252,12 +297,9 @@ def test_db(request):
     init_db(test_config.admin_url)
     recreate_database()
 
-    # Create default test prompts
-    with get_session() as session:
-        for prompt_sha256 in ["test123", "unknown", "test", "train-test"]:
-            prompt = Prompt(prompt_sha256=prompt_sha256, prompt_text=f"Test prompt for {prompt_sha256}")
-            session.add(prompt)
-        session.commit()
+    # Create default test prompts using proper SHA256 computation
+    for prompt_name in ["test123", "unknown", "test", "train-test"]:
+        hash_and_upsert_prompt(f"Test prompt for {prompt_name}")
 
     yield  # Test runs here
 

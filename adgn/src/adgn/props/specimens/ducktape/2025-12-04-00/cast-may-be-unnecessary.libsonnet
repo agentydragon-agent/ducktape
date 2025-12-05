@@ -7,6 +7,6 @@ I.issue(
     The cast may be unnecessary redundancy.
   |||,
   filesToRanges={
-    'src/adgn/props/grader/models.py': [[307, 307]],
+    'adgn/src/adgn/props/grader/models.py': [[307, 307]],
   },
 )

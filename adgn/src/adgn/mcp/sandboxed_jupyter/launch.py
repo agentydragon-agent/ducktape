@@ -8,76 +8,14 @@ import os
 from pathlib import Path
 import secrets
 import shutil
-import socket
 import subprocess
 import sys
-from typing import IO
 from urllib.parse import urlunparse
 
-from adgn.util.net import wait_for_port
+from adgn.mcp.sandboxed_jupyter._jupyter_shared import build_jupyter_mcp_command, start_jupyter_server_process
+from adgn.util.net import pick_free_port
 
 StrPath = str | os.PathLike[str]
-
-
-def _pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        port: int = int(s.getsockname()[1])
-        return port
-
-
-def _start_jupyter_server(
-    *,
-    workspace: Path,
-    config_dir: Path,
-    port: int,
-    token: str,
-    log_dir: Path | None,
-    extra_env: dict[str, str] | None = None,
-) -> subprocess.Popen:
-    env = os.environ.copy()
-    if extra_env:
-        env.update(extra_env)
-    # Honor explicit config dir (contains jupyter_server_config.py)
-    # Jupyter honors JUPYTER_CONFIG_DIR; also pass --config to be explicit
-    env.setdefault("JUPYTER_CONFIG_DIR", str(config_dir))
-
-    cmd = [
-        "jupyter",
-        "server",
-        "--port",
-        str(port),
-        "--ip",
-        "127.0.0.1",
-        "--ServerApp.root_dir",
-        str(workspace),
-        "--ServerApp.open_browser",
-        "False",
-        "--IdentityProvider.token",
-        token,
-        "--ServerApp.password",
-        "",
-        "--ServerApp.disable_check_xsrf",
-        "True",
-        "--config",
-        str(config_dir / "jupyter_server_config.py"),
-    ]
-
-    out_f: IO[str] | int
-    err_f: IO[str] | int
-    if log_dir:
-        log_dir.mkdir(parents=True, exist_ok=True)
-        out_f = (log_dir / "jupyter_server.out").open("a", buffering=1)
-        err_f = (log_dir / "jupyter_server.err").open("a", buffering=1)
-    else:
-        out_f = subprocess.DEVNULL
-        err_f = subprocess.DEVNULL
-
-    proc = subprocess.Popen(cmd, stdout=out_f, stderr=err_f, env=env)
-
-    # Wait for readiness (up to 12s)
-    wait_for_port("127.0.0.1", port, timeout_secs=12.0)
-    return proc
 
 
 def run_jupyter_mcp(
@@ -119,7 +57,7 @@ def run_jupyter_mcp(
     runtime_dir.mkdir(parents=True, exist_ok=True)
     (runtime_dir / "kernels.json").write_text(json.dumps({"default": kernel_name}) + "\n")
 
-    eff_port = port or _pick_free_port()
+    eff_port = port or pick_free_port()
     eff_token = secrets.token_urlsafe(24) if token == "auto" else token
 
     # Ensure we have jupyter and jupyter-mcp-server on PATH
@@ -130,7 +68,7 @@ def run_jupyter_mcp(
     jpy_url = urlunparse(("http", f"127.0.0.1:{eff_port}", "", "", "", ""))
     print(f"[launch] jupyter @ {jpy_url} token=REDACTED", file=sys.stderr)
 
-    jl = _start_jupyter_server(
+    jl = start_jupyter_server_process(
         workspace=workspace,
         config_dir=config_dir,
         port=eff_port,
@@ -139,26 +77,9 @@ def run_jupyter_mcp(
         extra_env=child_env,
     )
 
-    mcp_cmd = [
-        "jupyter-mcp-server",
-        "start",
-        "--transport",
-        "stdio",
-        "--provider",
-        "jupyter",
-        "--document-url",
-        jpy_url,
-        "--document-id",
-        ".mcp/auto.ipynb",
-        "--document-token",
-        eff_token,
-        "--runtime-url",
-        jpy_url,
-        "--runtime-token",
-        eff_token,
-        "--start-new-runtime",
-        "true" if start_new_runtime else "false",
-    ]
+    mcp_cmd = build_jupyter_mcp_command(
+        base_url=jpy_url, document_id=".mcp/auto.ipynb", token=eff_token, start_new_runtime=start_new_runtime
+    )
 
     try:
         proc = subprocess.Popen(mcp_cmd)

@@ -79,7 +79,3 @@ class HydratedSnapshot:
             for occurrence in issue_record.occurrences
         )
         return set(chain.from_iterable(chain(tp_files, fp_files)))
-
-
-# Backwards compatibility alias (deprecated)
-HydratedSpecimen = HydratedSnapshot

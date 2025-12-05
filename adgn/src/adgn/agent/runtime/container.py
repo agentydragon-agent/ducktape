@@ -24,7 +24,7 @@ from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.rendering import render_compositor_instructions
-from adgn.agent.server.runtime import AgentSession, ConnectionManager
+from adgn.agent.server.runtime import AgentSession, UiEventHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
@@ -147,7 +147,7 @@ def default_client_factory(model: str) -> OpenAIModelProto:
 
 @dataclass
 class UiFacet:
-    manager: ConnectionManager
+    manager: UiEventHandler
     ui_bus: ServerBus
 
 
@@ -196,7 +196,7 @@ class AgentContainer:
     _closed: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _stack: AsyncExitStack = field(default_factory=AsyncExitStack, init=False)
     # Internal helpers/state
-    _cm: ConnectionManager | None = field(default=None, init=False)
+    _cm: UiEventHandler | None = field(default=None, init=False)
     _ui_bus: ServerBus | None = field(default=None, init=False)
     # Compositor instance (when compositor path is used)
     _compositor: Compositor | None = field(default=None, init=False)
@@ -298,7 +298,7 @@ class AgentContainer:
             tuple: (compositor, mcp_client, notifications_buffer)
         """
         # Session & manager
-        self._cm = ConnectionManager()
+        self._cm = UiEventHandler()
 
         # Initialize AsyncExitStack and enter contexts through it
         await self._stack.__aenter__()
@@ -395,7 +395,7 @@ class AgentContainer:
             dynamic_instructions=_dynamic_instructions,
             tool_policy=RequireAnyTool(),
         )
-        await self._stack.enter_async_context(agent)
+        # Note: MiniCodex doesn't own resources, no cleanup needed
 
         # Session tracks the system used for persisted run metadata; store base system
         sess.attach_agent(agent, model=self.model, system=base_system)

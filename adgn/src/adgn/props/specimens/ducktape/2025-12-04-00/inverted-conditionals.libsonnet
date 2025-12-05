@@ -8,5 +8,5 @@ I.issue(
     - Remove the else branch and un-indent the complex logic
     This reduces nesting depth by one level for the main logic path.
   |||,
-  filesToRanges={'src/adgn/mcp/compositor/server.py': [[169, 190]]},
+  filesToRanges={'adgn/src/adgn/mcp/compositor/server.py': [[169, 190]]},
 )

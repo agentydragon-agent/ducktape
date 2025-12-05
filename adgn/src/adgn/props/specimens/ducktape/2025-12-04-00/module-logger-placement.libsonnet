@@ -7,5 +7,5 @@ I.issue(
     imports and before class/function definitions, to make them easily discoverable and to follow
     standard Python conventions for module-level constants.
   |||,
-  filesToRanges={'src/adgn/agent/agent.py': [665]},
+  filesToRanges={'adgn/src/adgn/agent/agent.py': [665]},
 )

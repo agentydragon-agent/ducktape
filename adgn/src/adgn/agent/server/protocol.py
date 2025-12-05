@@ -75,7 +75,6 @@ class AgentStatus(StrEnum):
 # --------------------------
 # Transcript items
 # --------------------------
-# UserText, AssistantText, ToolCall imported from adgn.agent.events
 
 
 class FunctionCallOutput(BaseModel):

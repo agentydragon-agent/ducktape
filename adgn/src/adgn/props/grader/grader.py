@@ -127,10 +127,7 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     # Compute fractional coverage recall from recall credits
     coverage_recall = None
     if total_canonical_tps > 0:
-        # Sum recall credits, clamping each canonical's total credit to 1.0
-        coverage_recall = (
-            sum(min(1.0, cov.recall_credit) for cov in obj.canonical_tp_coverage.values()) / total_canonical_tps
-        )
+        coverage_recall = sum(cov.recall_credit for cov in obj.canonical_tp_coverage.values()) / total_canonical_tps
 
     # Main metrics table
     metrics_tbl = Table(title="Grading Metrics", show_lines=False, expand=True)
@@ -191,16 +188,17 @@ async def run_grader(
 
     # Phase 1: Write initial run and fetch critique (BEFORE agent runs)
     with get_session() as session:
-        db_run = DBGraderRun(
-            id=run_id,
-            transcript_id=transcript_id,
-            snapshot_slug=input_data.snapshot_slug,
-            model=client.model,
-            critique_id=input_data.critique_id,
-            prompt_optimization_run_id=input_data.prompt_optimization_run_id,
-            output=None,  # Will be set in Phase 2
+        session.add(
+            DBGraderRun(
+                id=run_id,
+                transcript_id=transcript_id,
+                snapshot_slug=input_data.snapshot_slug,
+                model=client.model,
+                critique_id=input_data.critique_id,
+                prompt_optimization_run_id=input_data.prompt_optimization_run_id,
+                output=None,  # Will be set in Phase 2
+            )
         )
-        session.add(db_run)
         session.commit()
         logger.info(
             f"Created initial grader run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
@@ -223,14 +221,12 @@ async def run_grader(
     grader_state = GradeSubmitState()
     inputs = GradeInputs(specimen=hydrated_specimen, critique=critique)
 
-    submit_tool_name = build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result")
-
     wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
     prompt = build_grade_from_json_prompt(
         true_positive_issues=canonical_typed,
         critique_issues=critique_typed,
         known_fps=fp_typed,
-        submit_tool_name=submit_tool_name,
+        submit_tool_name=build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result"),
         wiring=wiring,
     )
 
@@ -246,16 +242,6 @@ async def run_grader(
     # Set up handlers
     servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
 
-    handlers: list = [
-        AbortIf(should_abort=lambda: grader_state.result is not None),
-        *build_props_handlers(
-            transcript_id=transcript_id,
-            verbose_prefix=f"[GRADER {input_data.snapshot_slug}] " if verbose else None,
-            servers=servers,
-        ),
-        *extra_handlers,
-    ]
-
     # Run grader agent
     # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
     #       for better agent context about runtime environment
@@ -265,7 +251,15 @@ async def run_grader(
             mcp_client=mcp_client,
             system="You are a strict grader. Return only metrics via submit_result.",
             client=client,
-            handlers=handlers,
+            handlers=[
+                AbortIf(should_abort=lambda: grader_state.result is not None),
+                *build_props_handlers(
+                    transcript_id=transcript_id,
+                    verbose_prefix=f"[GRADER {input_data.snapshot_slug}] " if verbose else None,
+                    servers=servers,
+                ),
+                *extra_handlers,
+            ],
             parallel_tool_calls=True,
             reasoning_summary=ReasoningSummary.detailed,
             tool_policy=RequireAnyTool(),

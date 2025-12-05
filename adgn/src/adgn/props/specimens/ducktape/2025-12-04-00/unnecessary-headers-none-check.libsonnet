@@ -7,5 +7,5 @@ I.issue(
     If they are equivalent, simplify to headers=headers (remove the "or None" check).
     This eliminates unnecessary complexity unless there's a semantic difference.
   |||,
-  filesToRanges={'src/adgn/mcp/compositor/server.py': [[346, 349]]},
+  filesToRanges={'adgn/src/adgn/mcp/compositor/server.py': [[346, 349]]},
 )

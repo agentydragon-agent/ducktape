@@ -10,6 +10,6 @@ I.issue(
     or deleted if not actually needed by tests.
   |||,
   filesToRanges={
-    'tests/props/conftest.py': [[256, 260]],
+    'adgn/tests/props/conftest.py': [[256, 260]],
   },
 )

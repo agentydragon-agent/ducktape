@@ -9,5 +9,5 @@ I.issue(
     - In except: raise RuntimeError(error + f": {exc}") from exc
     - In is_error check: if detail, append to error; raise RuntimeError(error)
   |||,
-  filesToRanges={'src/adgn/mcp/_shared/client_helpers.py': [[50, 62]]},
+  filesToRanges={'adgn/src/adgn/mcp/_shared/client_helpers.py': [[50, 62]]},
 )

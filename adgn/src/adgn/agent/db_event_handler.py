@@ -1,8 +1,4 @@
-"""Database event handler for MiniCodex runs.
-
-Writes agent events to the database events table instead of events.jsonl files.
-Each event is linked to the agent run via transcript_id and sequenced.
-"""
+"""Database event handler for MiniCodex runs."""
 
 from __future__ import annotations
 
@@ -35,7 +31,7 @@ class DatabaseEventHandler(BaseHandler):
         """Initialize handler for a specific agent run.
 
         Args:
-            transcript_id: UUID linking this event stream to critic/grader runs
+            transcript_id: UUID linking this event stream to the agent run
         """
         self.transcript_id = transcript_id
         self._sequence_num = 0
@@ -43,30 +39,23 @@ class DatabaseEventHandler(BaseHandler):
     def _write_event(
         self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
     ) -> None:
-        """Write event to database with sequence number.
-
-        Args:
-            evt: Event object to persist
-        """
-        # Extract type for event_type column (all EventType variants have this field)
+        """Write event to database with sequence number."""
         event_type = evt.type
 
-        # Write to database - the Event model's EventTypeColumn handles serialization
         with get_session() as session:
-            event = Event(
-                transcript_id=self.transcript_id,
-                sequence_num=self._sequence_num,
-                event_type=event_type,
-                timestamp=datetime.now(UTC),
-                payload=evt,  # Pass EventType directly - ORM serializes automatically
+            session.add(
+                Event(
+                    transcript_id=self.transcript_id,
+                    sequence_num=self._sequence_num,
+                    event_type=event_type,
+                    timestamp=datetime.now(UTC),
+                    payload=evt,
+                )
             )
-            session.add(event)
             session.flush()
 
         self._sequence_num += 1
-        logger.debug(
-            f"Wrote event to DB: transcript_id={self.transcript_id}, seq={self._sequence_num - 1}, type={event_type}"
-        )
+        logger.debug(f"Wrote event to DB: {self.transcript_id=} {self._sequence_num - 1=} {event_type=}")
 
     # ---- BaseHandler hooks (typed) ----
     def on_user_text_event(self, evt: UserText) -> None:

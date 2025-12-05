@@ -7,7 +7,7 @@ I.issue(
     to the `__init__` parameter `events_path`. Shorter names improve readability without losing clarity.
   |||,
   filesToRanges={
-    'src/adgn/agent/transcript_handler.py': [
+    'adgn/src/adgn/agent/transcript_handler.py': [
       34,  // __init__ parameter
       35,  // field assignment
       37,  // mkdir parent

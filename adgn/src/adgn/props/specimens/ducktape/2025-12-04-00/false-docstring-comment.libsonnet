@@ -6,5 +6,5 @@ I.issue(
     (created by run managers)." This is contradicted by lines 36-37 which explicitly create the parent
     directory with `mkdir(parents=True, exist_ok=True)`. The comment should be removed as it's inaccurate.
   |||,
-  filesToRanges={'src/adgn/agent/transcript_handler.py': [27]},
+  filesToRanges={'adgn/src/adgn/agent/transcript_handler.py': [27]},
 )

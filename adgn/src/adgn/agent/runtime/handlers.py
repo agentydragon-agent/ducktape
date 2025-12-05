@@ -10,14 +10,14 @@ from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
-from adgn.agent.server.runtime import ConnectionManager
+from adgn.agent.server.runtime import UiEventHandler
 from adgn.agent.types import AgentID
 
 
 def build_handlers(
     *,
     poll_notifications: Callable[[], NotificationsBatch],
-    manager: ConnectionManager,
+    manager: UiEventHandler,
     persistence: Persistence,
     agent_id: AgentID,
     ui_bus: ServerBus | None = None,

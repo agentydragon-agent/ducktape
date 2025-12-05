@@ -8,7 +8,7 @@ I.issue(
     This centralizes all mount state in one place and eliminates the need to keep _pinned_servers synchronized.
   |||,
   filesToRanges={
-    'src/adgn/mcp/compositor/server.py': [
+    'adgn/src/adgn/mcp/compositor/server.py': [
       89,  // _pinned_servers field declaration
       [306, 307],  // pinned check in mount_inproc
       314,  // pinned check in unmount_server

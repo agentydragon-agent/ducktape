@@ -7,5 +7,5 @@ I.issue(
     benefit since the following loop (lines 622-624) would naturally be a no-op if the list is empty.
     The early return adds unnecessary code without improving performance or clarity.
   |||,
-  filesToRanges={'src/adgn/agent/agent.py': [[620, 621]]},
+  filesToRanges={'adgn/src/adgn/agent/agent.py': [[620, 621]]},
 )

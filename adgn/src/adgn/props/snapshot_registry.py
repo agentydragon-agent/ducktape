@@ -831,8 +831,3 @@ class SnapshotRegistry:
 
             yield specimen_paths, defs_root
             # AsyncExitStack will cleanup all hydrated specimens automatically
-
-
-# Backwards compatibility aliases (deprecated)
-SpecimenRegistry = SnapshotRegistry
-SpecimenRecord = SnapshotRecord

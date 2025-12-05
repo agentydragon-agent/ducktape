@@ -6,19 +6,19 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/agent/agent.py': [[358, 360]]},
+      files: {'adgn/src/adgn/agent/agent.py': [[358, 360]]},
       note: 'Variable cid assigned then used in conditional check',
-      expect_caught_from: [['src/adgn/agent/agent.py']],
+      expect_caught_from: [['adgn/src/adgn/agent/agent.py']],
     },
     {
-      files: {'src/adgn/agent/agent.py': [[396, 407]]},
+      files: {'adgn/src/adgn/agent/agent.py': [[396, 407]]},
       note: 'Variable cid assigned then used in get() and RuntimeError message',
-      expect_caught_from: [['src/adgn/agent/agent.py']],
+      expect_caught_from: [['adgn/src/adgn/agent/agent.py']],
     },
     {
-      files: {'src/adgn/agent/db_event_handler.py': [30, 31]},
+      files: {'adgn/src/adgn/agent/db_event_handler.py': [30, 31]},
       note: 'Usage example variable could use walrus in list comprehension or call',
-      expect_caught_from: [['src/adgn/agent/db_event_handler.py']],
+      expect_caught_from: [['adgn/src/adgn/agent/db_event_handler.py']],
     },
   ],
 )

@@ -13,19 +13,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.props.ids import BaseIssueID, SnapshotSlug
+from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScopeSpec
 from adgn.props.models.true_positive import Occurrence
 from adgn.props.rationale import Rationale
 
 # =============================================================================
 # File Scope Types and Constants
 # =============================================================================
-
-ALL_FILES_WITH_ISSUES: Literal["all"] = "all"
-"""Sentinel value: scope critic to all files with ground truth TP/FP issues."""
-
-type FileScopeSpec = set[Path] | Literal["all"]
-"""File scope specification - either explicit file set or ALL_FILES_WITH_ISSUES sentinel.
-Requires resolution via resolve_critic_scope() to produce ResolvedFileScope."""
 
 type ResolvedFileScope = set[Path]
 """Resolved file scope - guaranteed to be an explicit set of paths (no sentinels)."""
@@ -47,7 +41,7 @@ class CriticInput(BaseModel):
     """
 
     snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    files: FileScopeSpec = Field(
+    files: CriticScopeSpec = Field(
         description=f'Files to review: explicit set or "{ALL_FILES_WITH_ISSUES}" sentinel for ground truth files'
     )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")

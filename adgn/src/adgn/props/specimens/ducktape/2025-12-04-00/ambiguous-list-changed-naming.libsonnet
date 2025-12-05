@@ -9,7 +9,7 @@ I.issue(
     This affects field names (_list_changed_listeners, _pending_list_changed), method names (add_list_changed_listener, _notify_list_changed, pop_recent_list_changed), and the comment at line 82.
   |||,
   filesToRanges={
-    'src/adgn/mcp/compositor/server.py': [
+    'adgn/src/adgn/mcp/compositor/server.py': [
       [82, 84],  // comment and field declaration
       109,  // add_list_changed_listener method
       116,  // _notify_list_changed method

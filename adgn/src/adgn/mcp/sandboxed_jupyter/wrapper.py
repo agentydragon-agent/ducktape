@@ -9,7 +9,6 @@ from os import PathLike
 from pathlib import Path
 import secrets
 import shlex
-import socket
 import subprocess
 import sys
 from urllib.parse import urlunparse
@@ -18,8 +17,13 @@ import docker
 import yaml
 
 from adgn.llm.sandboxer import Policy
-from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD, WORKING_DIR
-from adgn.util.net import wait_for_port
+from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
+from adgn.mcp.sandboxed_jupyter._jupyter_shared import (
+    JUPYTER_SERVER_CONFIG,
+    build_jupyter_mcp_command,
+    build_jupyter_server_command,
+)
+from adgn.util.net import pick_free_port, wait_for_port
 
 StrPath = str | PathLike[str]
 
@@ -49,8 +53,11 @@ def _ensure_document_id(workspace: Path, document_id: str | None) -> str:
 # Docker mode helper (unchanged behavior aside from workspace/run_root coming from CLI)
 
 
-def _build_bash_script(workspace: Path, document_id: str, token: str, start_new_runtime: bool) -> str:
-    wq = shlex.quote(str(workspace))
+def _build_bash_script(document_id: str, token: str, start_new_runtime: bool) -> str:
+    """Build bash script for Docker mode that starts Jupyter server and MCP server.
+
+    The workspace path is not needed here since it's always /workspace in the container.
+    """
     dq = shlex.quote(document_id)
     tq = shlex.quote(token)
     return f"""
@@ -60,7 +67,7 @@ trap 'kill "$JPID" 2>/dev/null || true' EXIT
 jupyter server \
   --port "$JP_PORT" \
   --ip 127.0.0.1 \
-  --ServerApp.root_dir {wq} \
+  --ServerApp.root_dir /workspace \
   --ServerApp.open_browser=False \
   --ServerApp.token {tq} \
   --ServerApp.password '' \
@@ -96,7 +103,7 @@ exec jupyter-mcp-server start \
 
 def _docker(workspace: Path, document_id: str, docker_image: str, start_new_runtime: bool, jupyter_port: int) -> int:
     token = secrets.token_urlsafe(24)
-    bash_script = _build_bash_script(WORKING_DIR, document_id, token, start_new_runtime)
+    bash_script = _build_bash_script(document_id, token, start_new_runtime)
 
     run_root = f"/tmp/sjmcp-{secrets.token_hex(6)}"
 
@@ -190,12 +197,6 @@ def _write_sandboxed_kernelspec(
     (ks_dir / "kernel.json").write_text(json.dumps(kernel_json))
 
 
-def _pick_free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(("127.0.0.1", 0))
-        return int(s.getsockname()[1])
-
-
 def _start_jupyter_server(
     workspace: Path,
     token: str,
@@ -204,42 +205,30 @@ def _start_jupyter_server(
     env: dict[str, str],
     kernel_default_name: str | None = None,
 ) -> tuple[subprocess.Popen, int]:
+    """Start Jupyter server with wrapper-specific configuration.
+
+    This differs from the launch.py version by:
+    - Auto-selecting a free port if jupyter_port is 0
+    - Using DEBUG log level
+    - Setting JUPYTER_PLATFORM_DIRS env var
+    - Returning both process and actual port
+    """
     out_path = run_root / "runtime" / "jupyter_server.out"
     err_path = run_root / "runtime" / "jupyter_server.err"
     out_f = out_path.open("a", buffering=1)
     err_f = err_path.open("a", buffering=1)
     # Honor port=0 by selecting a free local port ourselves
-    port = jupyter_port if int(jupyter_port) != 0 else _pick_free_port()
+    port = jupyter_port if int(jupyter_port) != 0 else pick_free_port()
 
-    cmd = [
-        "jupyter",
-        "server",
-        "--port",
-        str(port),
-        "--ip",
-        "127.0.0.1",
-        "--ServerApp.root_dir",
-        str(workspace),
-        "--ServerApp.open_browser",
-        "False",
-        "--ServerApp.token",
-        token,
-        "--ServerApp.password",
-        "",
-        "--ServerApp.disable_check_xsrf",
-        "True",
-        "--ServerApp.log_level",
-        "DEBUG",
-        "--config",
-        str(run_root / "config" / "jupyter_server_config.py"),
-    ]
-    if kernel_default_name:
-        cmd += [
-            "--ServerApp.default_kernel_name",
-            kernel_default_name,
-            "--NotebookApp.default_kernel_name",
-            kernel_default_name,
-        ]
+    cmd = build_jupyter_server_command(
+        port=port,
+        workspace=workspace,
+        token=token,
+        config_file=run_root / "config" / "jupyter_server_config.py",
+        log_level="DEBUG",
+        kernel_default_name=kernel_default_name,
+    )
+
     # Turn on RTC/ydoc deps visibility and quieter platformdirs warning
     env = dict(env)
     env.setdefault("JUPYTER_PLATFORM_DIRS", "1")
@@ -273,19 +262,8 @@ def _seatbelt(
     for subdir in ("runtime", "config", "data", "mpl", "scratch"):
         (run_root / subdir).mkdir(parents=True, exist_ok=True)
 
-    # Jupyter Server config (keep compact and explicit)
-    jsc = (
-        "c.NotebookApp.allow_origin = '*'\n"
-        "c.NotebookApp.trust_xheaders = True\n"
-        "c.ServerApp.tornado_settings = {\n"
-        "    'headers': {\n"
-        "        'Access-Control-Allow-Origin': '*',\n"
-        "        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',\n"
-        "        'Access-Control-Allow-Headers': 'Content-Type, Authorization'\n"
-        "    }\n"
-        "}\n"
-    )
-    (run_root / "config" / "jupyter_server_config.py").write_text(jsc)
+    # Write standard Jupyter Server config
+    (run_root / "config" / "jupyter_server_config.py").write_text(JUPYTER_SERVER_CONFIG)
 
     # Prepare a uniquely named notebook document id/path
     _ensure_document_id(workspace, document_id)
@@ -302,26 +280,9 @@ def _seatbelt(
 
     # Launch stdio MCP server bound to our stdio to drive the Jupyter server
     mcp_url = urlunparse(("http", f"127.0.0.1:{actual_port}", "", "", "", ""))
-    mcp_cmd = [
-        "jupyter-mcp-server",
-        "start",
-        "--transport",
-        "stdio",
-        "--provider",
-        "jupyter",
-        "--document-url",
-        mcp_url,
-        "--document-id",
-        document_id,
-        "--document-token",
-        jpy_token,
-        "--runtime-url",
-        mcp_url,
-        "--runtime-token",
-        jpy_token,
-        "--start-new-runtime",
-        "true" if start_new_runtime else "false",
-    ]
+    mcp_cmd = build_jupyter_mcp_command(
+        base_url=mcp_url, document_id=document_id, token=jpy_token, start_new_runtime=start_new_runtime
+    )
 
     try:
         # Inherit stdio so pytest can speak JSON-RPC to the MCP server

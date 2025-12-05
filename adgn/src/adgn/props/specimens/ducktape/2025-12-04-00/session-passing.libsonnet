@@ -11,5 +11,5 @@ I.issue(
     sync_all() to be written as a single with-block that inlines the FullSyncResult
     construction with all four calls inside the session context.
   |||,
-  filesToRanges={'src/adgn/props/cli_app/cmd_db.py': [[47, 63]]},
+  filesToRanges={'adgn/src/adgn/props/cli_app/cmd_db.py': [[47, 63]]},
 )

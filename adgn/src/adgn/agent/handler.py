@@ -1,7 +1,6 @@
 """Handler interface and decision types for MiniCodex agent loop.
 
 This module defines the BaseHandler interface and loop control decisions.
-Event types are imported from adgn.agent.events (single source of truth).
 """
 
 from __future__ import annotations

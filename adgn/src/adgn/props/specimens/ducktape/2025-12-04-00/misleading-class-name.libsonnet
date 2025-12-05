@@ -6,5 +6,5 @@ I.issue(
 
     The class manages message delivery and event handling for the agent session, not connection lifecycle. A name like MessageDeliveryHandler or UiEventHandler would better reflect its actual purpose.
   |||,
-  filesToRanges={'src/adgn/agent/server/runtime.py': [38]},
+  filesToRanges={'adgn/src/adgn/agent/server/runtime.py': [38]},
 )

@@ -7,7 +7,7 @@ Extracted to avoid circular dependencies with prompts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated, cast
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
@@ -54,21 +54,17 @@ class GradeValidationContext:
         """Build validation context from specimen and critique."""
         # Collect files from canonical TPs and critique issues
         # Use specimen's convenience properties (delegates to .record)
-        tp_files = {
-            f
-            for issue_rec in specimen.true_positives.values()
-            for instance in issue_rec.occurrences
-            for f in instance.files
-        }
-
-        critique_files = {f for issue in critique.issues for occ in issue.occurrences for f in occ.files}
-
         return cls(
             allowed_tp_ids={TruePositiveID(id) for id in specimen.true_positives},
             allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
-            tp_files=tp_files,
-            critique_files=critique_files,
+            tp_files={
+                f
+                for issue_rec in specimen.true_positives.values()
+                for instance in issue_rec.occurrences
+                for f in instance.files
+            },
+            critique_files={f for issue in critique.issues for occ in issue.occurrences for f in occ.files},
         )
 
 
@@ -301,9 +297,7 @@ class GradeSubmitInput(BaseModel):
         if info.context is None:
             return None
         ctx = info.context.get("grade_validation_context")
-        if ctx is None or not isinstance(ctx, GradeValidationContext):
-            return None
-        return cast(GradeValidationContext, ctx)
+        return ctx if isinstance(ctx, GradeValidationContext) else None
 
     @property
     def _mentioned_tp_ids(self) -> set[InputIssueID]:

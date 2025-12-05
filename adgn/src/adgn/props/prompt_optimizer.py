@@ -288,11 +288,11 @@ async def build_server(
         """
         # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
         with get_session() as session:
-            grader_run_id = await grade_critique_by_id(
-                session=session, critique_id=payload.critique_id, client=client, registry=registry, verbose=verbose
+            return RunGraderOutput(
+                grader_run_id=await grade_critique_by_id(
+                    session=session, critique_id=payload.critique_id, client=client, registry=registry, verbose=verbose
+                )
             )
-
-        return RunGraderOutput(grader_run_id=grader_run_id)
 
     return mcp
 

@@ -8,6 +8,6 @@ I.issue(
     more reasonable like 128 characters if PostgreSQL allows it.
   |||,
   filesToRanges={
-    'tests/props/conftest.py': [[232, 233]],
+    'adgn/tests/props/conftest.py': [[232, 233]],
   },
 )

@@ -105,11 +105,17 @@ async def test_bundle_excludes_libsonnet_files(specimen_record, hydrated_specime
     This test ensures that specimen bundles don't recursively include the specimen
     issue files themselves. The bundle should contain only the code snapshots, not
     the issue definitions that describe problems in those snapshots.
+
+    Note: Test fixture .libsonnet files (under tests/) are allowed.
     """
-    libsonnet_files = list(hydrated_specimen.rglob("*.libsonnet"))
+    all_libsonnet = list(hydrated_specimen.rglob("*.libsonnet"))
+
+    # Filter to only specimen metadata (not test fixtures)
+    specimens_path = "src/adgn/props/specimens"
+    libsonnet_files = [f for f in all_libsonnet if specimens_path in str(f.relative_to(hydrated_specimen))]
 
     assert len(libsonnet_files) == 0, (
-        f"Found {len(libsonnet_files)} .libsonnet files in {specimen_record.slug}:\n"
+        f"Found {len(libsonnet_files)} specimen .libsonnet files in {specimen_record.slug}:\n"
         + "\n".join(f"  - {f.relative_to(hydrated_specimen)}" for f in libsonnet_files[:10])
     )
 

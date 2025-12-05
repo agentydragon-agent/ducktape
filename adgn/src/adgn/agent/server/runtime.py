@@ -35,8 +35,8 @@ from adgn.mcp.approval_policy.engine import PolicyEngine
 logger = logging.getLogger(__name__)
 
 
-class ConnectionManager(BaseHandler):
-    """Manages message delivery to UI clients via ServerBus."""
+class UiEventHandler(BaseHandler):
+    """Handles agent events and delivers messages to UI clients via ServerBus."""
 
     def __init__(self) -> None:
         self._session: AgentSession | None = None
@@ -56,8 +56,7 @@ class ConnectionManager(BaseHandler):
         assert self._session is not None
         if self._session.ui_bus is None:
             return
-        bus = self._session.ui_bus
-        for item in bus.drain_messages():
+        for item in self._session.ui_bus.drain_messages():
             if isinstance(item, UiMessage):
                 await self._send_and_reduce(
                     UiMessageEvt(message=UiMessagePayload(mime=item.mime, content=item.content))
@@ -79,8 +78,7 @@ class ConnectionManager(BaseHandler):
     async def flush(self) -> None:
         if not self._bg_tasks:
             return
-        tasks = list(self._bg_tasks)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
 
     def on_user_text_event(self, evt: UserText) -> None:
         ut = UiUserText(text=evt.text)
@@ -93,10 +91,7 @@ class ConnectionManager(BaseHandler):
         tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
         self._spawn(self._send_and_reduce(tc))
 
-    # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
-
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        # evt.result is already a Pydantic mcp.types.CallToolResult
         fco = FunctionCallOutput(call_id=evt.call_id, result=evt.result)
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
@@ -105,7 +100,7 @@ class ConnectionManager(BaseHandler):
 class AgentSession:
     def __init__(
         self,
-        manager: ConnectionManager,
+        manager: UiEventHandler,
         *,
         persistence: Persistence,
         agent_id: AgentID,

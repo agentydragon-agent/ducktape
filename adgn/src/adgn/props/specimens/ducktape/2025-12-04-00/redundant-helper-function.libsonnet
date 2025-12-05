@@ -7,5 +7,5 @@ I.issue(
     Either replace callers to use read_text_json_typed(session, uri, dict[str, Any]) directly, or delegate read_text_json to call read_text_json_typed internally.
     The preferred approach is to replace callers, as it makes the type contract explicit at each call site.
   |||,
-  filesToRanges={'src/adgn/mcp/_shared/resources.py': [[32, 41]]},
+  filesToRanges={'adgn/src/adgn/mcp/_shared/resources.py': [[32, 41]]},
 )

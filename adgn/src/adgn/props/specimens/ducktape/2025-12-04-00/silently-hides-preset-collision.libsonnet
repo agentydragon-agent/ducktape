@@ -8,5 +8,5 @@ I.issue(
     Either raise an error on collision (strict mode) or remove the conditional and allow later directories
     to overwrite earlier ones (simple precedence).
   |||,
-  filesToRanges={'src/adgn/agent/presets.py': [91]},
+  filesToRanges={'adgn/src/adgn/agent/presets.py': [91]},
 )

@@ -8,5 +8,5 @@ I.issue(
     direct access to the TreeEntry object with its oid and filemode attributes, avoiding
     tuple unpacking. The prefix parameter should remain str for composition purposes.
   |||,
-  filesToRanges={'src/adgn/props/cli_app/cmd_build_bundle.py': [[47, 62]]},
+  filesToRanges={'adgn/src/adgn/props/cli_app/cmd_build_bundle.py': [[47, 62]]},
 )

@@ -10,5 +10,5 @@ I.issue(
 
     The abbreviations save 5-6 characters but don't prevent any line wrapping, so they only reduce clarity.
   |||,
-  filesToRanges={'src/adgn/agent/agent.py': [358, 360, 396, 407, 411, [555, 563]]},
+  filesToRanges={'adgn/src/adgn/agent/agent.py': [358, 360, 396, 407, 411, [555, 563]]},
 )

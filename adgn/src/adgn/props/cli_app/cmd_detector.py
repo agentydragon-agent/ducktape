@@ -18,7 +18,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli_app import common_options as opt
 from adgn.props.cli_app.decorators import async_run
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticScopeSpec
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun
 from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
@@ -249,7 +249,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
 # ---------- CLI command wrappers ----------
 
 
-def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> FileScopeSpec:
+def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> CriticScopeSpec:
     """Filter available files to requested subset, with validation.
 
     Args:

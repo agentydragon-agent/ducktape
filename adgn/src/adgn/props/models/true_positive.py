@@ -203,10 +203,6 @@ class SnapshotIssuesLoadError(Exception):
         return "Snapshot issue loading errors:\n" + "\n".join(self.errors)
 
 
-# Backwards compatibility alias (deprecated)
-SpecimenIssuesLoadError = SnapshotIssuesLoadError
-
-
 # Strongly-typed identifiers with validation
 # BaseIssueID imported from ids module (validates no colons)
 

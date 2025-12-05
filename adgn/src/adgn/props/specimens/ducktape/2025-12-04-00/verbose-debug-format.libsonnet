@@ -8,5 +8,5 @@ I.issue(
 
     Better: f"Wrote event to DB: {self.transcript_id=} {self._sequence_num - 1=} {event_type=}"
   |||,
-  filesToRanges={'src/adgn/agent/db_event_handler.py': [68]},
+  filesToRanges={'adgn/src/adgn/agent/db_event_handler.py': [68]},
 )

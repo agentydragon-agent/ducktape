@@ -29,20 +29,6 @@ def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_t
     return text
 
 
-async def read_text_json(session: ClientSession, uri: str) -> Any:
-    """Read a text JSON resource and parse it to a Python value.
-
-    - Validates that the payload is exactly one text part.
-    - Parses the text as JSON using Pydantic's TypeAdapter(dict) to preserve types.
-    """
-    rr = await session.read_resource(parse_any_url(uri))
-    s = extract_single_text_content(rr)
-    # Parse as JSON into a generic Python structure
-    return TypeAdapter(dict[str, Any]).validate_json(s)
-
-
-# Internal helpers; import explicitly where needed
-
 T = TypeVar("T")
 
 
@@ -52,30 +38,24 @@ async def read_text_json_typed[T](session: ClientSession, uri: str, model: type[
     - Validates exactly one text part
     - Parses JSON into the provided model/type using TypeAdapter(model).validate_json
     """
-    rr = await session.read_resource(parse_any_url(uri))
-    s = extract_single_text_content(rr)
-    return TypeAdapter(model).validate_json(s)
+    return TypeAdapter(model).validate_json(
+        extract_single_text_content(await session.read_resource(parse_any_url(uri)))
+    )
+
+
+async def read_text_json(session: ClientSession, uri: str) -> Any:
+    """Read a text JSON resource and parse it to a Python dict."""
+    return await read_text_json_typed(session, uri, dict[str, Any])
 
 
 def derive_origin_server(uri: str, mount_names: Iterable[str], prefix_format: str) -> str:
-    """Derive origin server name from resource URI.
+    """Find which mounted server owns the given resource URI.
 
-    Loops through mount names to find which server owns the given URI based on
-    resource prefix matching.
-
-    Args:
-        uri: Resource URI to translate (may be prefixed)
-        mount_names: Available mount names to check
-        prefix_format: Resource prefix format from compositor
-
-    Returns:
-        Origin server name
-
-    Raises:
-        ValueError: If no server matches the URI
+    Raises ValueError if no server matches.
     """
-    for name in sorted(mount_names):
+    sorted_names = sorted(mount_names)
+    for name in sorted_names:
         if has_resource_prefix(uri, name, prefix_format):
             return name
 
-    raise ValueError(f"Could not derive origin server for URI {uri!r}. Available servers: {sorted(mount_names)}")
+    raise ValueError(f"Could not derive origin server for URI {uri!r}. Available servers: {sorted_names}")

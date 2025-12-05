@@ -8,14 +8,14 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/props/gepa/gepa_adapter.py': [[66, 66]]},
+      files: {'adgn/src/adgn/props/gepa/gepa_adapter.py': [[66, 66]]},
       note: 'SnapshotInput.target_files uses set[Path] but other path parameters like specimen_slug are plain str',
-      expect_caught_from: [['src/adgn/props/gepa/gepa_adapter.py']],
+      expect_caught_from: [['adgn/src/adgn/props/gepa/gepa_adapter.py']],
     },
     {
-      files: {'src/adgn/props/cli_app/cmd_build_bundle.py': [[18, 44], [47, 62], [239, 363]]},
+      files: {'adgn/src/adgn/props/cli_app/cmd_build_bundle.py': [[18, 44], [47, 62], [239, 363]]},
       note: 'Functions use list[str] and str for file paths instead of Path objects',
-      expect_caught_from: [['src/adgn/props/cli_app/cmd_build_bundle.py']],
+      expect_caught_from: [['adgn/src/adgn/props/cli_app/cmd_build_bundle.py']],
     },
   ],
 )

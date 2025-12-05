@@ -6,5 +6,5 @@ I.issue(
 
     The transcript_id parameter links events to any agent run, not just critic/grader runs. The documentation should reflect this generality.
   |||,
-  filesToRanges={'src/adgn/agent/db_event_handler.py': [38]},
+  filesToRanges={'adgn/src/adgn/agent/db_event_handler.py': [38]},
 )

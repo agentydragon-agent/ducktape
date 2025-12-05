@@ -1,5 +1,11 @@
 # Instructions for Authoring Snapshot Issue Files
 
+## Overview
+
+This guide explains how to author issue files for code review snapshots. Snapshots are frozen code states with labeled issues used as training/evaluation data for the LLM critic.
+
+**For the broader context** on how snapshots fit into the training strategy (per-file examples, `expect_caught_from` filtering, optimization approaches), see [Training Strategy](training_strategy.md).
+
 ## File Structure
 
 ```
@@ -50,7 +56,37 @@ Each `.libsonnet` file contains:
 
 **Do NOT duplicate this information in README.md or other files.**
 
-### 2. Issue File Templates
+### 2. Verify File Paths Match Bundle Structure
+
+**File paths in issue files must match the hydrated bundle structure exactly.**
+
+When a snapshot bundle is created with `include: [adgn/]`, the hydrated snapshot will have paths like:
+- `adgn/src/adgn/agent/agent.py`
+- `adgn/tests/props/test_foo.py`
+
+**NOT** like:
+- `src/adgn/agent/agent.py` ❌
+- `tests/props/test_foo.py` ❌
+
+**Verification steps:**
+1. **Check the bundle configuration** in `snapshots.yaml`:
+   ```yaml
+   bundle:
+     source_commit: abc123...
+     include:
+     - adgn/  # ← This prefix will be in all hydrated paths
+   ```
+
+2. **Verify paths match** by hydrating the snapshot and listing files:
+   ```bash
+   adgn-properties snapshot exec <snapshot-slug> -- ls -la
+   ```
+
+3. **Use paths as they appear** in the hydrated bundle - include all directory prefixes from the `include` patterns.
+
+**Common mistake:** Writing issue files for `ducktape/` snapshots without the `adgn/` prefix when the bundle includes `adgn/`.
+
+### 3. Issue File Templates
 
 **True Positive (issue that should be caught):**
 ```jsonnet
@@ -79,6 +115,8 @@ I.issue(
   ],
 )
 ```
+
+**Note on `expect_caught_from`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
 
 **Multiple occurrences:**
 ```jsonnet
@@ -115,7 +153,7 @@ I.falsePositive(
 )
 ```
 
-### 3. Range Format Specifications
+### 4. Range Format Specifications
 
 **Three valid formats for line ranges:**
 
@@ -159,7 +197,7 @@ filesToRanges={'file.py': [
   - This applies even to single-file occurrences within the multi-file issue
 - Example: If occurrence 1 uses `file_a.py` and occurrence 2 uses `file_b.py`, both need `expect_caught_from`
 
-### 4. Detection Standard for `expect_caught_from`
+### 5. Detection Standard for `expect_caught_from`
 
 **The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
 
@@ -227,7 +265,7 @@ Examples:
   - The file IS the problem (broken promise), not just "unused affordance"
   - Contrast with: Tests not using `server.py` fixture → fixture is fine, tests are the problem
 
-### 5. Issue Organization: Logical Problems, Not Locations
+### 6. Issue Organization: Logical Problems, Not Locations
 
 **CRITICAL PRINCIPLE: Group by LOGICAL ISSUE, not by location.**
 
@@ -248,7 +286,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 3. **Same problem across locations** = single issue with multiple occurrences
 4. **Different problems** = separate issues even if in adjacent lines
 
-### 6. Objectivity in Issue Descriptions
+### 7. Objectivity in Issue Descriptions
 
 **Avoid subjective phrasing** - describe problems objectively:
 
@@ -264,7 +302,7 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 
 Present facts and technical rationale, not opinions or attributed suggestions.
 
-### 7. Research First: No Open Questions
+### 8. Research First: No Open Questions
 
 **Snapshots must not leave open research questions.** All investigation should be completed before authoring the issue.
 
@@ -287,7 +325,7 @@ rationale=|||
 |||
 ```
 
-### 8. Verifiable External References
+### 9. Verifiable External References
 
 **When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
 
@@ -301,7 +339,7 @@ rationale=|||
 - Standard libraries: Python stdlib, Node.js core modules
 - Well-known tools: pytest, Jest, Docker, PostgreSQL
 
-### 9. Code Citation Guidelines
+### 10. Code Citation Guidelines
 
 **IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line ranges, briefly summarize what's there.
 

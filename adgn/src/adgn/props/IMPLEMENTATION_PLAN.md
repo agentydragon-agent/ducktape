@@ -26,12 +26,7 @@
 
 ### Medium Priority
 
-3. **Mypy cleanup in other modules**
-  - `bundles/build_bundle.py`: typing issues with pygit2
-  - `cli_app/main.py`, `specimens/registry.py`: `_jsonnet` stubs
-  - These are pre-existing, not blocking current work
-
-4. **Test coverage improvements**
+3. **Test coverage improvements**
    - Tests for lint_issue structure conformance
    - Tests for eval harness when samples are added
 

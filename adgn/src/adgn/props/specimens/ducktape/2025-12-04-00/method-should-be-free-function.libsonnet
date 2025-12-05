@@ -7,5 +7,5 @@ I.issue(
     This should be a module-level function outside the class, not a method.
     As a free function, it's easier to test in isolation and signals that it has no side effects or class dependencies.
   |||,
-  filesToRanges={'src/adgn/mcp/compositor/server.py': [[343, 352]]},
+  filesToRanges={'adgn/src/adgn/mcp/compositor/server.py': [[343, 352]]},
 )

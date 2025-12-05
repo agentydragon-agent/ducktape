@@ -32,6 +32,7 @@ from sqlalchemy.types import TypeDecorator
 from adgn.agent.events import EventType
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
 from adgn.props.models.snapshot import BundleFilter, Source
+from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -183,8 +184,8 @@ class TruePositive(Base):
     )
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    occurrences: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=False, comment="TruePositiveOccurrence objects (files, note, expect_caught_from)"
+    occurrences: Mapped[list[TruePositiveOccurrence]] = mapped_column(
+        PydanticColumn(list[TruePositiveOccurrence]), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -231,8 +232,8 @@ class FalsePositive(Base):
     )
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    occurrences: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSONB, nullable=False, comment="FalsePositiveOccurrence objects (files, note, relevant_files)"
+    occurrences: Mapped[list[FalsePositiveOccurrence]] = mapped_column(
+        PydanticColumn(list[FalsePositiveOccurrence]), nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

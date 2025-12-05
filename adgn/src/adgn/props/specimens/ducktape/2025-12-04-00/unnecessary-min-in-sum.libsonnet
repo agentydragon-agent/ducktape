@@ -6,6 +6,6 @@ I.issue(
     capped at 1.0 by Pydantic's RatioFloat constraint (Field(ge=0.0, le=1.0)), making min() redundant.
   |||,
   filesToRanges={
-    'src/adgn/props/grader/grader.py': [[131, 132]],
+    'adgn/src/adgn/props/grader/grader.py': [[131, 132]],
   },
 )

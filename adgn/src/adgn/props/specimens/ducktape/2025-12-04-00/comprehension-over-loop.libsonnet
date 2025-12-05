@@ -6,5 +6,5 @@ I.issue(
     This imperative pattern should be replaced with a dict comprehension for clarity and conciseness:
     return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}
   |||,
-  filesToRanges={'src/adgn/mcp/compositor/server.py': [[221, 225]]},
+  filesToRanges={'adgn/src/adgn/mcp/compositor/server.py': [[221, 225]]},
 )

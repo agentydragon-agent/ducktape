@@ -7,14 +7,14 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/props/db/sync.py': [[51, 54], [75, 80]]},
+      files: {'adgn/src/adgn/props/db/sync.py': [[51, 54], [75, 80]]},
       note: 'In sync_snapshots_to_db: snapshot_data dict',
-      expect_caught_from: [['src/adgn/props/db/sync.py']],
+      expect_caught_from: [['adgn/src/adgn/props/db/sync.py']],
     },
     {
-      files: {'src/adgn/props/db/sync.py': [[179, 184], [229, 234]]},
+      files: {'adgn/src/adgn/props/db/sync.py': [[179, 184], [229, 234]]},
       note: 'In sync_issues_to_db: issue_data and fp_data dicts',
-      expect_caught_from: [['src/adgn/props/db/sync.py']],
+      expect_caught_from: [['adgn/src/adgn/props/db/sync.py']],
     },
   ],
 )

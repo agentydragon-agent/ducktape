@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Currently, each `SpecimenRegistry.load_and_hydrate()` call:
+Currently, each `SnapshotRegistry.load_and_hydrate()` call:
 1. Extracts tarball from archive cache (~/.cache/adgn-llm/specimens/)
 2. Yields hydrated content root
 3. Deletes extracted directory on exit
@@ -13,7 +13,7 @@ Example from prompt_optimizer.py:
 ```python
 # Pre-hydrates once and keeps alive
 for slug in train_specimens:
-    hydrated = await stack.enter_async_context(SpecimenRegistry.load_and_hydrate(slug))
+    hydrated = await stack.enter_async_context(SnapshotRegistry.load_and_hydrate(slug))
     specimen_paths[slug] = hydrated.content_root
 # ... operates on all specimens ...
 # Cleanup when stack exits
@@ -21,7 +21,7 @@ for slug in train_specimens:
 
 But in other places (critic.py, grader.py), we hydrate per-operation:
 ```python
-async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
+async with SnapshotRegistry.load_and_hydrate(specimen_slug) as hydrated:
     # Single operation
     pass
 # Immediately deletes
@@ -51,12 +51,12 @@ async with SpecimenRegistry.load_and_hydrate(specimen_slug) as hydrated:
 class HydrationCache:
     """Session-scoped cache of hydrated specimens."""
 
-    def __init__(self, registry: SpecimenRegistry):
+    def __init__(self, registry: SnapshotRegistry):
         self._registry = registry
-        self._hydrated: dict[str, HydratedSpecimen] = {}
+        self._hydrated: dict[str, HydratedSnapshot] = {}
         self._exit_stack = AsyncExitStack()
 
-    async def get(self, slug: str) -> HydratedSpecimen:
+    async def get(self, slug: str) -> HydratedSnapshot:
         """Get hydrated specimen (from cache or hydrate on demand)."""
         if slug not in self._hydrated:
             # Hydrate and keep alive until cache cleanup
@@ -73,7 +73,7 @@ class HydrationCache:
 
 # Usage at entry point
 async def optimize(budget: float, ...):
-    registry = SpecimenRegistry()
+    registry = SnapshotRegistry()
     cache = HydrationCache(registry)
 
     try:
@@ -108,12 +108,12 @@ async def optimize(budget: float, ...):
 class RefCountedHydrationCache:
     """Ref-counted cache of hydrated specimens."""
 
-    def __init__(self, registry: SpecimenRegistry):
+    def __init__(self, registry: SnapshotRegistry):
         self._registry = registry
         self._entries: dict[str, CacheEntry] = {}
 
     @asynccontextmanager
-    async def load(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
+    async def load(self, slug: str) -> AsyncIterator[HydratedSnapshot]:
         """Load specimen (hydrate on demand, ref-count, cleanup when unused)."""
         # Acquire entry (increment ref count)
         entry = await self._acquire(slug)
@@ -168,7 +168,7 @@ async def run_critic(..., cache: RefCountedHydrationCache):
 
 ```python
 # Current approach in prompt_optimizer.py
-async def hydrate_train_specimens(registry: SpecimenRegistry, slugs: list[str]):
+async def hydrate_train_specimens(registry: SnapshotRegistry, slugs: list[str]):
     async with AsyncExitStack() as stack:
         specimen_paths = {}
         for slug in slugs:
@@ -212,9 +212,9 @@ async with hydrate_train_specimens(registry, ["ducktape/2025-11-20-00", ...]) as
 
 ## Proposed API
 
-### Layer 1: SpecimenRegistry (Entry Point)
+### Layer 1: SnapshotRegistry (Entry Point)
 ```python
-class SpecimenRegistry:
+class SnapshotRegistry:
     """Specimen metadata, manifest loading, archive management."""
 
     def __init__(self, *, base: Path | None = None, cache_dir: Path | None = None):
@@ -222,7 +222,7 @@ class SpecimenRegistry:
         self._cache_dir = cache_dir or _xdg_cache_base()
 
     @asynccontextmanager
-    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSpecimen]:
+    async def load_and_hydrate(self, slug: str) -> AsyncIterator[HydratedSnapshot]:
         """Load and hydrate specimen (single-use, cleanup on exit)."""
         # Current implementation (extract -> yield -> delete)
         ...
@@ -245,12 +245,12 @@ class HydrationCache:
     Use for batch operations where multiple operations use same specimens.
     """
 
-    def __init__(self, registry: SpecimenRegistry):
+    def __init__(self, registry: SnapshotRegistry):
         self._registry = registry
-        self._hydrated: dict[str, HydratedSpecimen] = {}
+        self._hydrated: dict[str, HydratedSnapshot] = {}
         self._exit_stack = AsyncExitStack()
 
-    async def get(self, slug: str) -> HydratedSpecimen:
+    async def get(self, slug: str) -> HydratedSnapshot:
         """Get hydrated specimen (from cache or hydrate on first access)."""
         ...
 
@@ -272,7 +272,7 @@ class HydrationCache:
 # CLI command that operates on one specimen
 @app.command()
 async def check(specimen: str):
-    registry = SpecimenRegistry()
+    registry = SnapshotRegistry()
 
     # Use registry directly (hydrate -> use -> cleanup)
     async with registry.load_and_hydrate(specimen) as hydrated:
@@ -284,7 +284,7 @@ async def check(specimen: str):
 # CLI command that operates on multiple specimens
 @app.command()
 async def optimize(budget: float):
-    registry = SpecimenRegistry()
+    registry = SnapshotRegistry()
 
     async with registry.create_cache() as cache:
         # Multiple operations, cache prevents re-hydration
@@ -303,7 +303,7 @@ async def optimize(budget: float):
 # Prompt optimizer needs persistent paths for Docker volumes
 @app.command()
 async def optimize(budget: float):
-    registry = SpecimenRegistry()
+    registry = SnapshotRegistry()
 
     async with registry.create_cache() as cache:
         # Pre-hydrate all specimens
@@ -320,7 +320,7 @@ async def optimize(budget: float):
 
 **Current (classmethods)**:
 ```python
-async with SpecimenRegistry.load_and_hydrate(slug) as hydrated:
+async with SnapshotRegistry.load_and_hydrate(slug) as hydrated:
     ...
 ```
 
@@ -328,7 +328,7 @@ async with SpecimenRegistry.load_and_hydrate(slug) as hydrated:
 
 **Option 1: Thread registry, use direct hydration**
 ```python
-async def run_critic(..., *, registry: SpecimenRegistry):
+async def run_critic(..., *, registry: SnapshotRegistry):
     async with registry.load_and_hydrate(specimen_slug) as hydrated:
         ...
 
@@ -349,9 +349,9 @@ async with registry.create_cache() as cache:
     await run_grader(..., cache=cache)
 ```
 
-**Option 3: Caller hydrates, thread HydratedSpecimen**
+**Option 3: Caller hydrates, thread HydratedSnapshot**
 ```python
-async def run_critic(..., *, hydrated: HydratedSpecimen):
+async def run_critic(..., *, hydrated: HydratedSnapshot):
     # Just use the already-hydrated specimen
     ...
 
@@ -364,20 +364,20 @@ hydrated = await cache.get(slug)
 await run_critic(..., hydrated=hydrated)
 ```
 
-**Recommendation**: Start with Option 3 (thread HydratedSpecimen). It's the most flexible:
+**Recommendation**: Start with Option 3 (thread HydratedSnapshot). It's the most flexible:
 - Caller controls hydration strategy (direct, cached, pre-hydrated)
 - Functions don't care about caching
-- Easy to test (mock HydratedSpecimen)
+- Easy to test (mock HydratedSnapshot)
 
 ## Migration Strategy
 
 ### Phase 1: Add HydrationCache (non-breaking)
 1. Add `HydrationCache` class to `specimens/registry.py`
-2. Add `SpecimenRegistry.create_cache()` method
+2. Add `SnapshotRegistry.create_cache()` method
 3. Keep existing `load_and_hydrate()` classmethod working
 
 ### Phase 2: Promote registry to instance-based
-1. Add instance methods to `SpecimenRegistry`
+1. Add instance methods to `SnapshotRegistry`
 2. Thread `registry` through all entry points
 3. Update functions to accept `registry` parameter
 
@@ -386,8 +386,8 @@ await run_critic(..., hydrated=hydrated)
 2. Use `registry.create_cache()` instead of repeated `load_and_hydrate()`
 3. Measure performance improvement
 
-### Phase 4: Consider threading HydratedSpecimen
-1. Change function signatures to accept `hydrated: HydratedSpecimen`
+### Phase 4: Consider threading HydratedSnapshot
+1. Change function signatures to accept `hydrated: HydratedSnapshot`
 2. Move hydration responsibility to caller
 3. Simplifies function signatures (no registry/cache parameter)
 
@@ -408,7 +408,7 @@ await run_critic(..., hydrated=hydrated)
    - **Con**: Adds complexity
    - **Recommendation**: No locking for session-scoped (single owner), add if needed for shared cache
 
-4. **Interface choice**: Thread `registry`, `cache`, or `HydratedSpecimen`?
+4. **Interface choice**: Thread `registry`, `cache`, or `HydratedSnapshot`?
    - **registry**: Caller decides hydration per-operation
    - **cache**: Caller creates cache, functions hydrate on-demand
    - **hydrated**: Caller handles all hydration, functions just use it
@@ -441,5 +441,5 @@ await run_critic(..., hydrated=hydrated)
 1. **Implement Option A (HydrationCache)** in specimens/cache.py
 2. **Update prompt_optimizer.py** to use cache instead of manual AsyncExitStack
 3. **Measure performance improvement** on prompt optimization runs
-4. **Consider threading HydratedSpecimen** to simplify function signatures
+4. **Consider threading HydratedSnapshot** to simplify function signatures
 5. **Evaluate persistent cache** if we see repeated hydration across process invocations

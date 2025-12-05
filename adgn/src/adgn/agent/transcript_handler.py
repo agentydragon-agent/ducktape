@@ -19,32 +19,22 @@ class _Event:
 
 
 class TranscriptHandler(BaseHandler):
-    """Unified transcript writer for MiniCodex runs.
-
-    Writes a JSONL stream to the specified events file path.
-    Each record is timestamped and includes the event's discriminated type field.
-
-    The parent directory must already exist (created by run managers).
-
-    Usage:
-      h = TranscriptHandler(events_path=run_dir / "events.jsonl")
-      MiniCodex.create(..., handlers=[h, ...])
-    """
+    """Writes timestamped JSONL event stream to file."""
 
     def __init__(self, *, events_path: Path) -> None:
-        self._events_path = events_path
-        # Create parent directory if needed
-        self._events_path.parent.mkdir(parents=True, exist_ok=True)
+        self._path = events_path
         # Fail fast if a transcript already exists at destination
-        if self._events_path.exists():
-            raise FileExistsError(f"Transcript already exists: {self._events_path}")
+        if self._path.exists():
+            raise FileExistsError(f"Transcript already exists: {self._path}")
 
     # ---- Event helpers ----
     def _write_event(self, evt: Any) -> None:
+        # Create parent directory if needed (lazy initialization)
+        self._path.parent.mkdir(parents=True, exist_ok=True)
         rec = evt.model_dump(mode="json", exclude_none=True)
         # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.now(UTC).isoformat(), **rec}
-        with self._events_path.open("a", encoding="utf-8") as f:
+        with self._path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(out, ensure_ascii=False) + "\n")
 
     # ---- BaseHandler hooks (typed) ----
@@ -61,7 +51,6 @@ class TranscriptHandler(BaseHandler):
         self._write_event(evt)
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        # Record adapter ReasoningItem via shared JSONL mapping
         self._write_event(item)
 
     def on_response(self, evt: Any) -> None:

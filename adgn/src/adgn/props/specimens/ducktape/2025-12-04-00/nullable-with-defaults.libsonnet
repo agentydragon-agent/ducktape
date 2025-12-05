@@ -7,5 +7,5 @@ I.issue(
     instead be Sequence[str] with default=() in the function signature, eliminating the
     need for None checks. This makes the contract clearer and reduces defensive code.
   |||,
-  filesToRanges={'src/adgn/props/cli_app/cmd_build_bundle.py': [[18, 44]]},
+  filesToRanges={'adgn/src/adgn/props/cli_app/cmd_build_bundle.py': [[18, 44]]},
 )

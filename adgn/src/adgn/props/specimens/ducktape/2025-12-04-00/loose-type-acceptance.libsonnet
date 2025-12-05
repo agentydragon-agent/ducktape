@@ -7,5 +7,5 @@ I.issue(
     The function should accept only mcp_types.CallToolResult, and callers should explicitly convert using fastmcp_to_mcp_result if needed.
     This pushes the conversion to the boundary, making the core logic simpler and type-safe.
   |||,
-  filesToRanges={'src/adgn/mcp/_shared/calltool.py': [56]},
+  filesToRanges={'adgn/src/adgn/mcp/_shared/calltool.py': [56]},
 )

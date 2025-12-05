@@ -9,7 +9,7 @@ I.issue(
     this converts to an external format (OpenAI's), not our internal format.
   |||,
   filesToRanges={
-    'src/adgn/agent/agent.py': [
+    'adgn/src/adgn/agent/agent.py': [
       [626, 656],  // .messages property
       [431, 448],  // _to_openai_input_items implementation
     ],

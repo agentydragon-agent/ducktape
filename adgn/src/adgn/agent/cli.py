@@ -156,14 +156,13 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
             handlers=[DisplayEventsHandler()],
             tool_policy=RequireAnyTool(),
         )
-        async with agent:
-            for line in sys.stdin:
-                user = line.rstrip("\n")
-                if not user:
-                    continue
-                res = await agent.run(user_text=user)
-                if res.text:
-                    print(res.text)
+        for line in sys.stdin:
+            user = line.rstrip("\n")
+            if not user:
+                continue
+            res = await agent.run(user_text=user)
+            if res.text:
+                print(res.text)
 
 
 @app.command("run")

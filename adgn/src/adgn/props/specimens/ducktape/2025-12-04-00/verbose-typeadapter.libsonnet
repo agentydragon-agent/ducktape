@@ -8,5 +8,5 @@ I.issue(
 
     Better: mcp_types.CallToolResult.model_validate_json(item.output)
   |||,
-  filesToRanges={'src/adgn/agent/agent.py': [554]},
+  filesToRanges={'adgn/src/adgn/agent/agent.py': [554]},
 )

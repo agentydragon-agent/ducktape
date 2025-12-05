@@ -1,25 +1,35 @@
-# Props Agent Guide (AGENTS.md)
+# Guide for agents working on `adgn/props` subtree
 
-## Scope
-- Applies to the entire `src/adgn/props/` subtree: properties, specimens, detectors, runbooks, and CLIs.
+## Key Documentation
+
+**For critic optimization and prompt improvement:**
+- @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
+- @docs/prompt_optimizer_context.md — Context specifically for prompt optimization tasks
+
+**For authoring snapshots and issues:**
+- @docs/authoring.md — How to write issue files, Jsonnet conventions, quality standards
+- @docs/quality-checklist.md — Pre-commit checklist for snapshot quality
+
+**For understanding the broader system:**
+- @README.md — Package overview, conventions, workflow
 
 ## MCP Wiring & Prompt Authoring
 
 ### What the agent already sees automatically
-  - MiniCodex prepends an MCP “wiring banner” to the system message before sampling (see `src/adgn/agent/agent.py`: `_build_effective_instructions`).
-  - The banner is computed from a live MCP snapshot: running server names, their tool names/descriptions, and a short list of resources (URIs) per server.
-  - For the Docker exec server, the `container.info` resource includes image tag/ID, image build history (e.g., `pip install ... ruff==…`), mounted volumes (e.g., `/workspace`, `/props`), working directory, and network mode.
-  - The banner lists only a few resources per server for readability; the agent can call `resources/list`/`resources/read` to enumerate/read more.
+- MiniCodex prepends an MCP “wiring banner” to the system message before sampling (see `src/adgn/agent/agent.py`: `_build_effective_instructions`).
+- The banner is computed from a live MCP snapshot: running server names, their tool names/descriptions, and a short list of resources (URIs) per server.
+- For the Docker exec server, the `container.info` resource includes image tag/ID, image build history (e.g., `pip install ... ruff==…`), mounted volumes (e.g., `/workspace`, `/props`), working directory, and network mode.
+- The banner lists only a few resources per server for readability; the agent can call `resources/list`/`resources/read` to enumerate/read more.
 
 ### Implications for runbooks/prompts (do vs don’t)
-  - Do:
-    - Describe the analysis strategy and sequencing (what to check, in what order, why).
-    - Provide concrete command examples (e.g., run Ruff/Mypy/Vulture/custom detectors) and define the required final outputs (inline JSON/markdown with truncation rules).
-  - Don’t (redundant due to wiring/banner):
-    - Re‑enumerate MCP servers, tool schemas, or resource URIs shown in the banner.
-    - Restate tool versions/pins or platform details; the agent can read them from `container.info`.
-    - Repeat wiring details like server names, volumes (`/workspace`, `/props`), or cache/temp env; these are implied by the container wiring.
-    - Restate long acceptance criteria verbatim; link to property docs or summarize briefly.
+- Do:
+  - Describe the analysis strategy and sequencing (what to check, in what order, why).
+  - Provide concrete command examples (e.g., run Ruff/Mypy/Vulture/custom detectors) and define the required final outputs (inline JSON/markdown with truncation rules).
+- Don’t (redundant due to wiring/banner):
+  - Re‑enumerate MCP servers, tool schemas, or resource URIs shown in the banner.
+  - Restate tool versions/pins or platform details; the agent can read them from `container.info`.
+  - Repeat wiring details like server names, volumes (`/workspace`, `/props`), or cache/temp env; these are implied by the container wiring.
+  - Restate long acceptance criteria verbatim; link to property docs or summarize briefly.
 
 ## Tooling Specifics (Current Image)
 - Ruff: run `ruff check --output-format json /workspace`; set `XDG_CACHE_HOME=/tmp` (or `RUFF_CACHE_DIR=/tmp/.ruff_cache`).
@@ -54,10 +64,4 @@ Notes
 
 ## Docker Build
 - Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.
-  - Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
-
-## Findings Organization (Specimens)
-- Follow repo markdown conventions when authoring specimen docs.
-- Split findings into:
-  - `covered.md`: only those that map to an existing, formal property under `props/definitions/**`.
-  - `not_covered_yet.md`: anything that doesn’t map cleanly to an existing definition (or is only tangentially related).
+- Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`

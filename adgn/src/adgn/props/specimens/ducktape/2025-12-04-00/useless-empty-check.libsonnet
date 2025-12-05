@@ -6,5 +6,5 @@ I.issue(
 
     If the upstream validation at line 253 is reliable, this check is redundant and should be removed. If this is meant as a defensive check against validation failures, it should raise ValueError("server name cannot be empty") rather than silently returning. Silent success on invalid input masks bugs and makes debugging harder.
   |||,
-  filesToRanges={'src/adgn/mcp/compositor/server.py': [[311, 312]]},
+  filesToRanges={'adgn/src/adgn/mcp/compositor/server.py': [[311, 312]]},
 )

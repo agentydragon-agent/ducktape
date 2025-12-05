@@ -8,5 +8,5 @@ I.issue(
     principle of lazy initialization and reduces work done during object construction. The mkdir call can
     be performed once before the first write operation.
   |||,
-  filesToRanges={'src/adgn/agent/transcript_handler.py': [[36, 37]]},
+  filesToRanges={'adgn/src/adgn/agent/transcript_handler.py': [[36, 37]]},
 )

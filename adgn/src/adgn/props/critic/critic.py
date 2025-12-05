@@ -42,9 +42,9 @@ from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.models import (
     ALL_FILES_WITH_ISSUES,
     CriticInput,
+    CriticScopeSpec,
     CriticSubmitPayload,
     CriticSuccess,
-    FileScopeSpec,
     ReportedIssue,
     ResolvedFileScope,
 )
@@ -340,7 +340,7 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 
 async def resolve_critic_scope(
-    snapshot_slug: SnapshotSlug, files: FileScopeSpec, registry: SnapshotRegistry
+    snapshot_slug: SnapshotSlug, files: CriticScopeSpec, registry: SnapshotRegistry
 ) -> ResolvedFileScope:
     """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
 

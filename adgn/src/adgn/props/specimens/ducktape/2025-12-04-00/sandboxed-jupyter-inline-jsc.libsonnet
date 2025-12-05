@@ -6,5 +6,5 @@ I.issue(
 
     A module-level constant like JUPYTER_SERVER_CONFIG_TEMPLATE would improve readability, make the configuration reusable if needed, and clarify its purpose through the name and docstring. The inline comment "keep compact and explicit" (line 277) provides some context but a proper docstring would be more appropriate for a constant.
   |||,
-  filesToRanges={'src/adgn/mcp/sandboxed_jupyter/wrapper.py': [[277, 287]]},
+  filesToRanges={'adgn/src/adgn/mcp/sandboxed_jupyter/wrapper.py': [[277, 287]]},
 )

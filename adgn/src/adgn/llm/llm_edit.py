@@ -77,10 +77,9 @@ async def _execute(
             handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
             tool_policy=RequireAnyTool(),
         )
-        async with agent:
-            res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")
-            print(res.text)
-            return 0
+        res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")
+        print(res.text)
+        return 0
 
 
 app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)

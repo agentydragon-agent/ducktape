@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from importlib import resources
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 from uuid import UUID
 
 from pydantic import BaseModel
@@ -51,6 +51,24 @@ from adgn.props.splits import Split
 import gepa
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# GEPA Types
+# =============================================================================
+
+
+class GepaResult(Protocol):
+    """Protocol for GEPA optimization result.
+
+    The gepa package's optimize() function returns an object with at least
+    these attributes. This Protocol documents the contract without requiring
+    a hard dependency on gepa's internal types.
+    """
+
+    best_candidate: dict[str, Any]
+    best_score: float
+    metric_calls: int
 
 
 # =============================================================================
@@ -268,36 +286,38 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         For each component being optimized, returns a list of examples
         showing what happened and what should be improved.
+
+        Currently only supports optimizing 'system_prompt' component.
         """
-        dataset: dict[str, list[Mapping[str, Any]]] = {}
+        # Validate that we only received supported components
+        unsupported = [c for c in components_to_update if c != "system_prompt"]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported components for optimization: {unsupported}. Only 'system_prompt' is supported."
+            )
 
-        for component in components_to_update:
-            if component != "system_prompt":
-                continue  # Only optimize system_prompt
+        # GEPA always calls this with capture_traces=True, so trajectories must exist
+        assert eval_batch.trajectories is not None, "make_reflective_dataset requires trajectories"
 
-            # GEPA always calls this with capture_traces=True, so trajectories must exist
-            assert eval_batch.trajectories is not None, "make_reflective_dataset requires trajectories"
+        # Since we only support system_prompt component, process it directly
+        examples: list[Mapping[str, Any]] = []
+        for output, score, trajectory in zip(
+            eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
+        ):
+            example = ReflectionExample(
+                component_name="system_prompt",
+                current_text=candidate["system_prompt"],
+                score=score,
+                specimen=output.snapshot_slug,
+                issues_found=output.issues_found,
+                events=trajectory.events,
+                critique_payload=trajectory.critique_payload,
+                grader_output=output.grader_output,
+            )
 
-            examples: list[Mapping[str, Any]] = []
-            for output, score, trajectory in zip(
-                eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
-            ):
-                example = ReflectionExample(
-                    component_name="system_prompt",
-                    current_text=candidate["system_prompt"],
-                    score=score,
-                    specimen=output.snapshot_slug,
-                    issues_found=output.issues_found,
-                    events=trajectory.events,
-                    critique_payload=trajectory.critique_payload,
-                    grader_output=output.grader_output,
-                )
+            examples.append(example.model_dump())
 
-                examples.append(example.model_dump())
-
-            dataset[component] = examples
-
-        return dataset
+        return {"system_prompt": examples}
 
 
 # =============================================================================
@@ -305,7 +325,9 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 # =============================================================================
 
 
-async def load_datasets(registry: SnapshotRegistry) -> tuple[list[SnapshotInput], list[SnapshotInput]]:
+async def load_datasets(
+    registry: SnapshotRegistry, use_per_file_examples: bool = False
+) -> tuple[list[SnapshotInput], list[SnapshotInput]]:
     """Load train and validation datasets for GEPA.
 
     This function hydrates snapshots to discover target files and uses the registry's
@@ -313,28 +335,57 @@ async def load_datasets(registry: SnapshotRegistry) -> tuple[list[SnapshotInput]
 
     For source-of-truth data models, see TrainingExample and FilesystemLoader.
 
+    Args:
+        registry: SnapshotRegistry instance
+        use_per_file_examples: If True, generate multiple examples per snapshot using
+            per-file scopes (from critic_scopes.yaml). If False (default), generate one
+            example per snapshot with all files (full-snapshot mode). Per-file mode is
+            recommended for training/optimization (tighter feedback loop), while full-snapshot
+            mode is the terminal metric for real-world performance.
+
     Returns:
         (trainset, valset) tuple of SnapshotInput lists
     """
-    train_slugs = registry.get_snapshots_by_split(Split.TRAIN)
-    valid_slugs = registry.get_snapshots_by_split(Split.VALID)
+    if use_per_file_examples:
+        # Use per-file examples from critic_scopes.yaml
+        loader = FilesystemLoader(registry.base_path)
+        train_examples = loader.get_per_file_examples_for_split(Split.TRAIN)
+        valid_examples = loader.get_per_file_examples_for_split(Split.VALID)
 
-    async def load_snapshot(slug: SnapshotSlug) -> SnapshotInput:
-        async with registry.load_and_hydrate(slug) as hydrated:
-            return SnapshotInput(
-                slug=slug,
-                target_files=hydrated.files_with_issues(),
-                known_true_positives=hydrated.true_positives,
-                known_false_positives=hydrated.false_positives,
-            )
+        async def training_example_to_snapshot_input(example: TrainingExample) -> SnapshotInput:
+            async with registry.load_and_hydrate(example.snapshot_slug) as hydrated:
+                return SnapshotInput(
+                    slug=example.snapshot_slug,
+                    target_files=set(example.targeted_files),  # Convert frozenset to set
+                    known_true_positives=hydrated.true_positives,
+                    known_false_positives=hydrated.false_positives,
+                )
 
-    trainset = [await load_snapshot(slug) for slug in train_slugs]
-    valset = [await load_snapshot(slug) for slug in valid_slugs]
+        trainset = [await training_example_to_snapshot_input(ex) for ex in train_examples]
+        valset = [await training_example_to_snapshot_input(ex) for ex in valid_examples]
+    else:
+        # Original behavior: one example per snapshot with all files
+        train_slugs = registry.get_snapshots_by_split(Split.TRAIN)
+        valid_slugs = registry.get_snapshots_by_split(Split.VALID)
+
+        async def load_snapshot(slug: SnapshotSlug) -> SnapshotInput:
+            async with registry.load_and_hydrate(slug) as hydrated:
+                return SnapshotInput(
+                    slug=slug,
+                    target_files=hydrated.files_with_issues(),
+                    known_true_positives=hydrated.true_positives,
+                    known_false_positives=hydrated.false_positives,
+                )
+
+        trainset = [await load_snapshot(slug) for slug in train_slugs]
+        valset = [await load_snapshot(slug) for slug in valid_slugs]
 
     return trainset, valset
 
 
-def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[TrainingExample], list[TrainingExample]]:
+def load_training_examples(
+    specimens_dir: Path | None = None, use_per_file_examples: bool = False
+) -> tuple[list[TrainingExample], list[TrainingExample]]:
     """Load train and validation TrainingExamples from filesystem.
 
     This is a synchronous, lightweight alternative to load_datasets() that returns
@@ -342,6 +393,11 @@ def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[Trai
 
     Args:
         specimens_dir: Path to specimens directory. If None, uses package resources.
+        use_per_file_examples: If True, generate multiple examples per snapshot using
+            per-file scopes (from critic_scopes.yaml). If False (default), generate one
+            example per snapshot with all files (full-snapshot mode). Per-file mode is
+            recommended for training/optimization (tighter feedback loop), while full-snapshot
+            mode is the terminal metric for real-world performance.
 
     Returns:
         (trainset, valset) tuple of TrainingExample lists
@@ -352,8 +408,12 @@ def load_training_examples(specimens_dir: Path | None = None) -> tuple[list[Trai
             specimens_dir = p
 
     loader = FilesystemLoader(specimens_dir)
-    trainset = loader.get_examples_for_split(Split.TRAIN)
-    valset = loader.get_examples_for_split(Split.VALID)
+    if use_per_file_examples:
+        trainset = loader.get_per_file_examples_for_split(Split.TRAIN)
+        valset = loader.get_per_file_examples_for_split(Split.VALID)
+    else:
+        trainset = loader.get_examples_for_split(Split.TRAIN)
+        valset = loader.get_examples_for_split(Split.VALID)
     return trainset, valset
 
 
@@ -367,10 +427,11 @@ async def optimize_with_gepa(
     registry: SnapshotRegistry,
     client: OpenAIModelProto,
     *,
-    reflection_model: str = "gpt-4o",
+    reflection_model: str,
     max_metric_calls: int = 100,
     verbose: bool = False,
-) -> tuple[str, Any]:
+    use_per_file_examples: bool = False,
+) -> tuple[str, GepaResult]:
     """Optimize critic prompt using GEPA.
 
     Args:
@@ -380,18 +441,21 @@ async def optimize_with_gepa(
         reflection_model: Model for GEPA's reflection
         max_metric_calls: Budget for evaluations
         verbose: Enable verbose logging
+        use_per_file_examples: If True, use per-file training examples (from critic_scopes.yaml)
+            instead of full-snapshot examples. Per-file mode generates more training examples
+            (tighter feedback loop) but full-snapshot mode remains the terminal metric.
 
     Returns:
         (optimized_prompt, gepa_results) tuple
     """
     # Load datasets
-    trainset, valset = await load_datasets(registry)
+    trainset, valset = await load_datasets(registry, use_per_file_examples=use_per_file_examples)
 
     # Create adapter
     adapter = CriticAdapter(registry, client, verbose=verbose)
 
     # Run optimization (reflection_lm accepts model string directly)
-    result: Any = gepa.optimize(
+    result: GepaResult = gepa.optimize(
         seed_candidate={"system_prompt": initial_prompt},
         trainset=trainset,
         valset=valset,

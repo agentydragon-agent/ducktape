@@ -8,19 +8,19 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [66]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [66]},
       note: 'StatusEntry.path is str',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [88]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [88]},
       note: 'ChangedFileItem.path is str',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [131]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [131]},
       note: 'StatItem.path is str',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
   ],
 )

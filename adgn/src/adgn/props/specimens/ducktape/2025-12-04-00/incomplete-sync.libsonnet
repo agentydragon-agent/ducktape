@@ -11,5 +11,5 @@ I.issue(
     operations - it also syncs data. Renaming to recreate_database() would better reflect
     that it handles tables, roles, RLS, and data sync.
   |||,
-  filesToRanges={'src/adgn/props/cli_app/cmd_db.py': [[66, 83]]},
+  filesToRanges={'adgn/src/adgn/props/cli_app/cmd_db.py': [[66, 83]]},
 )

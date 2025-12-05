@@ -10,14 +10,14 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [[113, 116]]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [[113, 116]]},
       note: 'ChangedFileItem construction loses rename path information',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [[158, 161]]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [[158, 161]]},
       note: 'StatItem construction loses rename path information',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
   ],
 )

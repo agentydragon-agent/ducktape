@@ -368,7 +368,7 @@ class WorkspaceEnvironment(BaseModel):
     """Local workspace directory environment for task execution."""
 
     type: Literal[EnvironmentType.WORKSPACE_DIR] = EnvironmentType.WORKSPACE_DIR
-    workspace_path: str
+    workspace_path: Path
 
     def collect_files(self) -> dict[str, str]:
         """Collect all files from workspace directory.
@@ -377,15 +377,14 @@ class WorkspaceEnvironment(BaseModel):
             Dictionary mapping relative file paths to contents
         """
         files: dict[str, str] = {}
-        directory_path = Path(self.workspace_path)
 
-        if not directory_path.exists():
+        if not self.workspace_path.exists():
             return files
 
         for root, _, filenames in os.walk(self.workspace_path):
             for filename in filenames:
                 filepath = Path(root) / filename
-                relative_path = filepath.relative_to(directory_path).as_posix()
+                relative_path = filepath.relative_to(self.workspace_path).as_posix()
                 try:
                     files[relative_path] = filepath.read_text(encoding="utf-8")
                 except (UnicodeDecodeError, OSError):

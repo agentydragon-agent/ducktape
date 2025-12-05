@@ -15,18 +15,12 @@ def _normalize_structured_content(sc: JsonValue) -> JsonValue:
     return sc
 
 
-def as_minimal_json(res: FMCallToolResult | mcp_types.CallToolResult) -> dict[str, Any]:
+def as_minimal_json(res: mcp_types.CallToolResult) -> dict[str, Any]:
     """Serialize a tool result to a compact JSON dict (structured content + flags).
 
     Returns a dict with camelCase keys matching MCP CallToolResult field names,
     so the result can be deserialized as a valid CallToolResult.
     """
-    if isinstance(res, FMCallToolResult):
-        res = fastmcp_to_mcp_result(res)
-
-    if not isinstance(res, mcp_types.CallToolResult):  # pragma: no cover - defensive
-        raise TypeError(f"Expected CallToolResult, got {type(res).__name__}")
-
     data = res.model_dump(mode="json", by_alias=False)
     # Use camelCase keys to match MCP CallToolResult field names for deserialization
     payload: dict[str, Any] = {"isError": data.get("isError", False)}
@@ -53,32 +47,14 @@ def fastmcp_to_mcp_result(res: FMCallToolResult) -> mcp_types.CallToolResult:
     return mcp_types.CallToolResult.model_validate(payload)
 
 
-def extract_structured_content[T](result: mcp_types.CallToolResult | FMCallToolResult, output_type: type[T]) -> T:
-    """Extract and parse structured content from an MCP CallToolResult.
+def extract_structured_content[T](result: mcp_types.CallToolResult, output_type: type[T]) -> T:
+    """Extract and validate structured content from a tool result.
 
-    Handles both FastMCP client results and Pydantic MCP types.
-
-    Args:
-        result: MCP tool result (FastMCP or Pydantic variant)
-        output_type: Pydantic model class or type to validate structured content as
-
-    Returns:
-        Parsed and validated instance of output_type
-
-    Raises:
-        ValueError: If structured content is missing or result is an error
-        ValidationError: If structured content doesn't match output_type schema
+    Raises ValueError if result is an error or lacks structured content.
     """
-    # Normalize to Pydantic type if needed
-    if isinstance(result, FMCallToolResult):
-        result = fastmcp_to_mcp_result(result)
-
-    # Direct attribute access on Pydantic model
-    # Pydantic models expose both the alias (isError) and Python name (is_error)
     if result.isError:
         raise ValueError(f"Cannot extract from error result: {result}")
 
-    # Access structured content via Pydantic alias (preferred for MCP types)
     sc = result.structuredContent
     if sc is None:
         raise ValueError(f"CallToolResult missing structured content: {result}")

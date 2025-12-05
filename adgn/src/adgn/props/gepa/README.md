@@ -24,6 +24,38 @@ optimized_prompt, result = await optimize_with_gepa(
 )
 ```
 
+### Per-File vs Full-Snapshot Training
+
+By default, GEPA uses **full-snapshot examples** (one example per snapshot, reviewing all files). For training/optimization, you can use **per-file examples** to get more training signal and tighter feedback:
+
+```python
+# Per-file mode: More training examples (e.g., 29 vs 5), faster hill-climbing
+optimized_prompt, result = await optimize_with_gepa(
+    initial_prompt=initial_prompt,
+    registry=registry,
+    client=client,
+    use_per_file_examples=True,  # Use critic_scopes.yaml to generate per-file examples
+)
+```
+
+**When to use per-file vs full-snapshot:**
+- **Per-file mode** (`use_per_file_examples=True`): For training/optimization. Generates multiple focused examples per snapshot (from `critic_scopes.yaml`), making it easier to hill-climb and debug specific issues.
+- **Full-snapshot mode** (default): For terminal evaluation. Tests the critic's ability to comprehensively review entire codebases, which is the real-world use case.
+
+**Recommended workflow:**
+1. Optimize with per-file examples (tighter feedback loop, more training signal)
+2. Validate final prompt on full-snapshot examples (terminal metric)
+
+### CLI Usage
+
+```bash
+# Default: full-snapshot examples
+python -m adgn.props.gepa.run_gepa_optimization --max-metric-calls 100
+
+# Per-file mode: more training examples
+python -m adgn.props.gepa.run_gepa_optimization --use-per-file-examples --max-metric-calls 200
+```
+
 ### Direct GEPA API
 
 For full control:
@@ -32,7 +64,8 @@ For full control:
 import gepa
 from adgn.props.dspy_opt import CriticAdapter, load_datasets
 
-trainset, valset = await load_datasets(registry)
+# Load datasets with per-file examples
+trainset, valset = await load_datasets(registry, use_per_file_examples=True)
 adapter = CriticAdapter(registry, client)
 
 result = gepa.optimize(

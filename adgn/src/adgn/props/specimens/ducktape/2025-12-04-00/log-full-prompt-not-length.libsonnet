@@ -6,6 +6,6 @@ I.issue(
     Since the prompt is not private and is very short, it should be logged directly for debugging purposes.
   |||,
   filesToRanges={
-    'src/adgn/props/grader/grader.py': [[205, 207]],
+    'adgn/src/adgn/props/grader/grader.py': [[205, 207]],
   },
 )

@@ -8,5 +8,5 @@ I.issue(
 
     Should be: `def _abort_result(reason: str = DEFAULT_ABORT_ERROR) -> ...: return _make_error_result(reason)`
   |||,
-  filesToRanges={'src/adgn/agent/agent.py': [[139, 140]]},
+  filesToRanges={'adgn/src/adgn/agent/agent.py': [[139, 140]]},
 )

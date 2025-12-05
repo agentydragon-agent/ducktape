@@ -96,7 +96,7 @@ async def test_lint_issue_bootstrap_small_files(
     assert res.text.strip() == "FINAL"
 
     # Inspect transcript for bootstrap then LLM tool call then final text
-    messages = agent.messages
+    messages = agent.to_openai_messages()
     fco = [m for m in messages if isinstance(m, FunctionCallOutputItem)]
 
     # Verify we have bootstrap outputs and the LLM's tool call

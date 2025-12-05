@@ -10,14 +10,14 @@ I.issueMulti(
   |||,
   occurrences=[
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [[68, 69]]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [[68, 69]]},
       note: 'StatusEntry uses str for index and worktree instead of GIT_STATUS_* enums',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
     {
-      files: {'src/adgn/mcp/git_ro/formatting.py': [89]},
+      files: {'adgn/src/adgn/mcp/git_ro/formatting.py': [89]},
       note: 'ChangedFileItem uses str for status instead of GIT_DELTA_* enum',
-      expect_caught_from: [['src/adgn/mcp/git_ro/formatting.py']],
+      expect_caught_from: [['adgn/src/adgn/mcp/git_ro/formatting.py']],
     },
   ],
 )

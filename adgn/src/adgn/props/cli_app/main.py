@@ -54,7 +54,7 @@ from adgn.props.cli_app.shared import (
 )
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, FileScopeSpec
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import GraderRun as DBGraderRun
 from adgn.props.db.prompts import hash_and_upsert_prompt
@@ -70,6 +70,7 @@ from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
+from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
@@ -168,7 +169,7 @@ def read_embedded_paths(paths: list[Path]) -> str:
     )
 
 
-def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> FileScopeSpec:
+def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> CriticScopeSpec:
     """Filter available files to requested subset, with validation.
 
     Args:
@@ -222,7 +223,7 @@ async def _run_snapshot_minicodex_async(
     async with registry.load_and_hydrate(snapshot) as hydrated:
         supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
-        # Filter files if requested (returns FileScopeSpec: sentinel or explicit set)
+        # Filter files if requested (returns CriticScopeSpec: sentinel or explicit set)
         files_spec = _filter_files(hydrated.all_discovered_files, files)
 
         # Resolve files for prompt rendering
@@ -463,7 +464,7 @@ async def _open_run_context(
         registry: SnapshotRegistry instance (always required, instantiated at CLI entry point)
 
     Yields:
-        (wiring, files_spec, label) tuple where files_spec is FileScopeSpec
+        (wiring, files_spec, label) tuple where files_spec is CriticScopeSpec
     """
     if path is not None:
         wiring = properties_docker_spec(path, mount_properties=True, ephemeral=False)
@@ -488,7 +489,7 @@ async def _exec_agent(
     final_only: bool,
     label: str,
     snapshot_slug: SnapshotSlug | None,
-    files_spec: FileScopeSpec | None,
+    files_spec: CriticScopeSpec | None,
     registry: SnapshotRegistry,
     dry_run: bool = False,
 ) -> None:
@@ -827,7 +828,9 @@ def snapshot_capture_ducktape(
     # Add snapshot entry to snapshots.yaml (no manifest.yaml - that's deprecated)
     snapshots_yaml_path = specimens_dir / "snapshots.yaml"
     with snapshots_yaml_path.open() as f:
-        snapshots_data = yaml.safe_load(f) or {}
+        snapshots_data = yaml.safe_load(f)
+        if snapshots_data is None:
+            raise ValueError(f"snapshots.yaml at {snapshots_yaml_path} is empty or contains only null")
 
     snapshots_data[slug] = {
         "source": {

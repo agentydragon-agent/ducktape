@@ -2,10 +2,9 @@ local I = import '../../lib.libsonnet';
 
 I.issue(
   rationale= |||
-    Multiple consecutive empty lines or strategically poor empty line placement that reduces readability.
-    Lines 328-348 have excessive empty lines interspersed with useless comments.
+    Unnecessary empty lines that add no value to code organization. These lines should be deleted to reduce vertical space without losing readability.
   |||,
   filesToRanges={
-    'src/adgn/props/grader/grader.py': [[328, 348]],
+    'adgn/src/adgn/props/grader/grader.py': [290, 308, 311, 318],
   },
 )

@@ -5,6 +5,7 @@ This script runs the GEPA evolutionary optimization workflow to improve
 the critic system prompt.
 """
 
+import argparse
 import asyncio
 import logging
 from pathlib import Path
@@ -22,6 +23,17 @@ logger = logging.getLogger(__name__)
 
 async def main():
     """Run GEPA optimization."""
+    parser = argparse.ArgumentParser(description="Run GEPA-based prompt optimization for props critic")
+    parser.add_argument(
+        "--use-per-file-examples",
+        action="store_true",
+        help="Use per-file training examples (from critic_scopes.yaml) instead of full-snapshot examples. "
+        "Per-file mode generates more training examples (tighter feedback loop) but full-snapshot mode "
+        "remains the terminal metric for real-world performance.",
+    )
+    parser.add_argument("--max-metric-calls", type=int, default=100, help="Budget for evaluations (default: 100)")
+    args = parser.parse_args()
+
     configure_logging()
 
     # Get database URL via production config (same path as adgn-properties CLI)
@@ -37,12 +49,12 @@ async def main():
     # Configuration
     model = "gpt-5-codex"  # Model for critic/grader execution
     reflection_model = "gpt-5-codex"  # Model for GEPA's reflection/evolution
-    max_metric_calls = 100  # Budget for evaluations
 
     logger.info("Starting GEPA optimization workflow")
     logger.info(f"Model: {model}")
     logger.info(f"Reflection model: {reflection_model}")
-    logger.info(f"Max metric calls: {max_metric_calls}")
+    logger.info(f"Max metric calls: {args.max_metric_calls}")
+    logger.info(f"Using per-file examples: {args.use_per_file_examples}")
 
     # Simple one-line initial prompt for testing GEPA
     initial_prompt = "Review the code."
@@ -63,8 +75,9 @@ async def main():
         registry=registry,
         client=client,
         reflection_model=reflection_model,
-        max_metric_calls=max_metric_calls,
+        max_metric_calls=args.max_metric_calls,
         verbose=True,
+        use_per_file_examples=args.use_per_file_examples,
     )
 
     # Save results

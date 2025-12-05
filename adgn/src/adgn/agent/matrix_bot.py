@@ -125,13 +125,12 @@ def run(
                 return next_since, bool(events)
 
             since_token = initial_since or None
-            async with agent:
-                while True:
-                    next_since, has_new = await _sync_once(since_token)
-                    since_token = next_since
-                    if not has_new:
-                        continue
-                    await agent.run(user_text="process matrix inbox")
+            while True:
+                next_since, has_new = await _sync_once(since_token)
+                since_token = next_since
+                if not has_new:
+                    continue
+                await agent.run(user_text="process matrix inbox")
 
     asyncio.run(_run())
 

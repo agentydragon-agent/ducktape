@@ -10,5 +10,5 @@ I.issue(
     there will be exactly one component ("system_prompt"). The code can directly process
     that component without iteration.
   |||,
-  filesToRanges={'src/adgn/props/gepa/gepa_adapter.py': [[274, 300]]},
+  filesToRanges={'adgn/src/adgn/props/gepa/gepa_adapter.py': [[274, 300]]},
 )

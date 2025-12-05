@@ -7,5 +7,5 @@ I.issue(
     a local helper function to eliminate duplication and improve readability. The helper
     could be named something like matches_any_pattern(path, patterns).
   |||,
-  filesToRanges={'src/adgn/props/cli_app/cmd_build_bundle.py': [[38, 42]]},
+  filesToRanges={'adgn/src/adgn/props/cli_app/cmd_build_bundle.py': [[38, 42]]},
 )

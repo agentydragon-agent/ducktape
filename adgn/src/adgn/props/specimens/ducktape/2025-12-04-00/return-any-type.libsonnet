@@ -6,5 +6,5 @@ I.issue(
     is typed as Any. This should be replaced with a concrete type for the GEPA result,
     likely the return type of gepa.optimize(). Using Any loses type safety and IDE support.
   |||,
-  filesToRanges={'src/adgn/props/gepa/gepa_adapter.py': [[373, 373], [394, 394], [406, 406]]},
+  filesToRanges={'adgn/src/adgn/props/gepa/gepa_adapter.py': [[373, 373], [394, 394], [406, 406]]},
 )

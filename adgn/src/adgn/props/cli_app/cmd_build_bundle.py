@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+from dataclasses import dataclass
 import fnmatch
 from importlib import resources
 from pathlib import Path
@@ -15,7 +17,17 @@ import yaml
 from adgn.props.models.snapshot import GitSource, SnapshotDoc
 
 
-def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, exclude: list[str] | None) -> list[str]:
+@dataclass(frozen=True)
+class FileEntry:
+    """File entry with oid and filemode, similar to pygit2.TreeEntry but detached."""
+
+    oid: pygit2.Oid
+    filemode: int
+
+
+def apply_gitignore_patterns(
+    file_list: list[str], include: Sequence[str] = (), exclude: Sequence[str] = ()
+) -> list[str]:
     """Apply gitignore-style include/exclude patterns to a file list.
 
     Include patterns are applied first (whitelist), then exclude patterns (blacklist).
@@ -31,22 +43,26 @@ def apply_gitignore_patterns(file_list: list[str], include: list[str] | None, ex
         # For file patterns, use fnmatch
         return fnmatch.fnmatch(path, pattern) or path.startswith(pattern + "/")
 
+    def matches_any_pattern(path: str, patterns: Sequence[str]) -> bool:
+        """Check if path matches any of the given patterns."""
+        return any(matches_pattern(path, pattern) for pattern in patterns)
+
     result = file_list
 
     # Apply include patterns (if specified, only keep matching files)
     if include:
-        result = [f for f in result if any(matches_pattern(f, pattern) for pattern in include)]
+        result = [f for f in result if matches_any_pattern(f, include)]
 
     # Apply exclude patterns (remove matching files)
     if exclude:
-        result = [f for f in result if not any(matches_pattern(f, pattern) for pattern in exclude)]
+        result = [f for f in result if not matches_any_pattern(f, exclude)]
 
     return result
 
 
-def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> dict[str, tuple[pygit2.Oid, int]]:
-    """Get all files in a tree recursively as path -> (oid, filemode) mappings."""
-    files: dict[str, tuple[pygit2.Oid, int]] = {}
+def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "") -> dict[str, FileEntry]:
+    """Get all files in a tree recursively as path -> FileEntry mappings."""
+    files: dict[str, FileEntry] = {}
 
     for entry in tree:
         path = f"{prefix}{entry.name}"
@@ -57,14 +73,14 @@ def get_tree_files(repo: pygit2.Repository, tree: pygit2.Tree, prefix: str = "")
                 files.update(get_tree_files(repo, subtree, path + "/"))
         else:
             # Store file entry
-            files[path] = (entry.id, entry.filemode)
+            files[path] = FileEntry(oid=entry.id, filemode=entry.filemode)
 
     return files
 
 
-def calculate_tree_size(repo: pygit2.Repository, files: dict[str, tuple[pygit2.Oid, int]]) -> int:
+def calculate_tree_size(repo: pygit2.Repository, files: dict[str, FileEntry]) -> int:
     """Calculate total size of all blobs in bytes."""
-    return sum(len(repo[oid].read_raw()) for oid, _ in files.values())
+    return sum(len(repo[entry.oid].read_raw()) for entry in files.values())
 
 
 def copy_blob(source_repo: pygit2.Repository, bundle_repo: pygit2.Repository, oid: pygit2.Oid) -> None:
@@ -85,8 +101,8 @@ def create_filtered_tree(
     source_repo: pygit2.Repository,
     bundle_repo: pygit2.Repository,
     source_tree: pygit2.Tree,
-    include: list[str] | None,
-    exclude: list[str] | None,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
 ) -> pygit2.Oid:
     """Create a filtered tree by applying include/exclude patterns.
 
@@ -101,8 +117,8 @@ def create_filtered_tree(
     filtered_files = {path: all_files[path] for path in filtered_paths}
 
     # Copy necessary blobs to bundle repo
-    for oid, _ in filtered_files.values():
-        copy_blob(source_repo, bundle_repo, oid)
+    for entry in filtered_files.values():
+        copy_blob(source_repo, bundle_repo, entry.oid)
 
     # Build tree structure from filtered files
     def build_tree(path_prefix: str) -> pygit2.Oid:
@@ -112,14 +128,14 @@ def create_filtered_tree(
         # Collect items at this level
         items: dict[str, tuple[str, pygit2.Oid | None, int]] = {}  # name -> (type, oid, mode)
 
-        for path, (oid, mode) in filtered_files.items():
+        for path, entry in filtered_files.items():
             if not path.startswith(path_prefix):
                 continue
 
             rel_path = path[len(path_prefix) :]
             if "/" not in rel_path:
                 # Direct child (file)
-                items[rel_path] = ("blob", oid, mode)
+                items[rel_path] = ("blob", entry.oid, entry.filemode)
             else:
                 # Subdirectory
                 dir_name = rel_path.split("/")[0]
@@ -149,8 +165,8 @@ def create_filtered_commit(
     source_commit_sha: str,
     tag_name: str,
     base_commit: pygit2.Commit,
-    include: list[str] | None,
-    exclude: list[str] | None,
+    include: Sequence[str] = (),
+    exclude: Sequence[str] = (),
 ) -> pygit2.Oid:
     """Create a filtered commit in the bundle repo with original metadata.
 
@@ -185,15 +201,11 @@ def create_filtered_commit(
     print(f"  Original: {orig_size / 1024 / 1024:.1f}MB, Filtered: {new_size / 1024 / 1024:.1f}MB")
 
     # Create commit with original metadata
-    author = source_commit.author
-    committer = source_commit.committer
-    message = source_commit.message
-
     new_commit_oid = bundle_repo.create_commit(
         None,  # Don't update any reference
-        author,
-        committer,
-        message,
+        source_commit.author,
+        source_commit.committer,
+        source_commit.message,
         filtered_tree_oid,
         [base_commit.id],
     )
@@ -218,7 +230,13 @@ def discover_snapshots_to_build(specimens_dir: Path) -> list[tuple[str, Snapshot
         raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
 
     with snapshots_yaml.open() as f:
-        snapshots_data = yaml.safe_load(f) or {}
+        snapshots_data = yaml.safe_load(f)
+        if snapshots_data is None:
+            raise ValueError(f"snapshots.yaml at {snapshots_yaml} is empty or invalid")
+        if not isinstance(snapshots_data, dict):
+            raise ValueError(
+                f"snapshots.yaml at {snapshots_yaml} must contain a dictionary, got {type(snapshots_data).__name__}"
+            )
 
     results = []
     for slug, snapshot_data in snapshots_data.items():
@@ -229,9 +247,8 @@ def discover_snapshots_to_build(specimens_dir: Path) -> list[tuple[str, Snapshot
         # Parse and validate the snapshot doc (let validation errors propagate)
         snapshot = TypeAdapter(SnapshotDoc).validate_python(snapshot_data)
 
-        # Only include snapshots with complete bundle metadata
-        if snapshot.bundle is not None:
-            results.append((slug, snapshot))
+        # Bundle is guaranteed non-None after the check above
+        results.append((slug, snapshot))
 
     return results
 
@@ -326,8 +343,8 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
                 source_commit_sha=snapshot.bundle.source_commit,
                 tag_name=tag_name,
                 base_commit=base_commit,
-                include=snapshot.bundle.include,
-                exclude=snapshot.bundle.exclude,
+                include=snapshot.bundle.include or (),
+                exclude=snapshot.bundle.exclude or (),
             )
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)

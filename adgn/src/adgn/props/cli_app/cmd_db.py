@@ -7,10 +7,10 @@ from dataclasses import dataclass
 import typer
 
 from adgn.props.cli_app.decorators import async_run
-from adgn.props.db import get_session, init_db, recreate_database
-from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
+from adgn.props.db import get_session, init_db, recreate_database as recreate_db_schema
+from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt_with_session
 from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_db
-from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata
+from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata_with_session
 from adgn.props.snapshot_registry import SnapshotRegistry
 
 
@@ -32,20 +32,10 @@ class FullSyncResult:
     model_metadata_stats: ModelMetadataSyncStats
 
 
-def sync_detector_prompts() -> list[DetectorPromptSyncResult]:
-    """Sync all detector prompts from prompts/system/*.md to database.
-
-    Returns:
-        List of synced detector prompts with their SHA-256 hashes
-    """
-    return [
-        DetectorPromptSyncResult(filename=filename, prompt_sha256=load_and_upsert_detector_prompt(filename))
-        for filename in discover_detector_prompts()
-    ]
-
-
 def sync_all() -> FullSyncResult:
     """Sync snapshots, issues, detector prompts, and model metadata in a single operation.
+
+    All sync operations happen within a single database session for consistency.
 
     Returns:
         Combined results from all sync operations
@@ -55,32 +45,39 @@ def sync_all() -> FullSyncResult:
         snapshot_stats = sync_snapshots_to_db(session, registry)
         issue_stats = sync_issues_to_db(session, registry)
 
-    return FullSyncResult(
-        snapshot_stats=snapshot_stats,
-        issue_stats=issue_stats,
-        detector_prompts=sync_detector_prompts(),
-        model_metadata_stats=sync_model_metadata(),
-    )
+        # Sync detector prompts
+        detector_prompts = [
+            DetectorPromptSyncResult(
+                filename=filename, prompt_sha256=load_and_upsert_detector_prompt_with_session(session, filename)
+            )
+            for filename in discover_detector_prompts()
+        ]
+
+        # Sync model metadata
+        model_metadata_stats = sync_model_metadata_with_session(session)
+
+        return FullSyncResult(
+            snapshot_stats=snapshot_stats,
+            issue_stats=issue_stats,
+            detector_prompts=detector_prompts,
+            model_metadata_stats=model_metadata_stats,
+        )
 
 
-def recreate_database_schema() -> tuple[SyncStats, SyncStats]:
+def recreate_database_and_sync() -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
-    Drops all tables/views/policies, creates fresh schema, and syncs snapshots/issues.
+    Drops all tables/views/policies, creates fresh schema, and syncs all data
+    (snapshots, issues, detector prompts, and model metadata).
 
     Returns:
-        Tuple of (snapshot_stats, issue_stats) after recreation
+        Combined results from all sync operations
     """
     # Recreate schema (tables, RLS, roles)
-    recreate_database()
+    recreate_db_schema()
 
-    # Sync snapshots and issues into fresh database
-    registry = SnapshotRegistry.from_package_resources()
-    with get_session() as session:
-        snapshot_stats = sync_snapshots_to_db(session, registry)
-        issue_stats = sync_issues_to_db(session, registry)
-
-    return snapshot_stats, issue_stats
+    # Sync all data sources into fresh database
+    return sync_all()
 
 
 @async_run
@@ -112,7 +109,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     2. Create agent_user role (read-only with RLS)
     3. Create tables from ORM models
     4. Enable Row-Level Security policies
-    5. Sync snapshots and issues from filesystem
+    5. Sync all data from filesystem (snapshots, issues, detector prompts, model metadata)
 
     Requires PROPS_DB_URL environment variable (postgres superuser connection).
     """
@@ -123,10 +120,12 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
             typer.echo("Aborted")
             raise typer.Exit(1)
 
-    # Connect and recreate (includes snapshot/issue sync)
+    # Connect and recreate (includes full sync)
     init_db()
     typer.echo("Recreating database schema...")
-    snapshot_stats, issue_stats = recreate_database_schema()
+    result = recreate_database_and_sync()
     typer.echo("✓ Database recreated:")
-    typer.echo(f"  Snapshots: {snapshot_stats.summary_text}")
-    typer.echo(f"  Issues:    {issue_stats.summary_text}")
+    typer.echo(f"  Snapshots:        {result.snapshot_stats.summary_text}")
+    typer.echo(f"  Issues:           {result.issue_stats.summary_text}")
+    typer.echo(f"  Detector prompts: {len(result.detector_prompts)} synced")
+    typer.echo(f"  Model metadata:   {result.model_metadata_stats.summary_text}")
