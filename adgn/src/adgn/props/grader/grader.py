@@ -224,6 +224,10 @@ async def run_grader(
 
     # Phase 1: Write initial run and fetch critique (BEFORE agent runs)
     with get_session() as session:
+        # Fetch snapshot to get split for verbose prefix
+        snapshot = session.query(Snapshot).filter_by(slug=input_data.snapshot_slug).one()
+        snapshot_split = snapshot.split
+
         session.add(
             DBGraderRun(
                 id=run_id,
@@ -299,7 +303,7 @@ async def run_grader(
                 AbortIf(should_abort=lambda: grader_state.result is not None),
                 *build_props_handlers(
                     transcript_id=transcript_id,
-                    verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {input_data.snapshot_slug}] "
+                    verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
                     if verbose
                     else None,
                     servers=servers,

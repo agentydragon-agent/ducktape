@@ -420,6 +420,10 @@ async def run_critic(
 
     # Phase 1: Write initial run to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
+        # Fetch snapshot to get split for verbose prefix
+        snapshot = session.query(Snapshot).filter_by(slug=input_data.snapshot_slug).one()
+        snapshot_split = snapshot.split
+
         db_run = DBCriticRun(
             id=run_id,
             transcript_id=transcript_id,
@@ -465,7 +469,9 @@ async def run_critic(
         bootstrap,
         *build_props_handlers(
             transcript_id=transcript_id,
-            verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {input_data.snapshot_slug}] " if verbose else None,
+            verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+            if verbose
+            else None,
             servers=servers,
         ),
         AbortIf(should_abort=_ready_state),
