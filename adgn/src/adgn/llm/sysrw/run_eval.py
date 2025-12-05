@@ -605,7 +605,7 @@ async def run_eval(
                     }
                 )
                 try:
-                    sample = await chat_create_with_retries(client, **sample_request)
+                    sample = await chat_create_with_retries(client, sample_request)
                 except Exception as e:
                     counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}

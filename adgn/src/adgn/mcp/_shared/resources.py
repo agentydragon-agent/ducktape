@@ -38,9 +38,8 @@ async def read_text_json_typed[T](session: ClientSession, uri: str, model: type[
     - Validates exactly one text part
     - Parses JSON into the provided model/type using TypeAdapter(model).validate_json
     """
-    return TypeAdapter(model).validate_json(
-        extract_single_text_content(await session.read_resource(parse_any_url(uri)))
-    )
+    result = await session.read_resource(parse_any_url(uri))
+    return TypeAdapter(model).validate_json(extract_single_text_content(result.contents))
 
 
 async def read_text_json(session: ClientSession, uri: str) -> Any:

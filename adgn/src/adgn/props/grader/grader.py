@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
@@ -95,6 +96,7 @@ class GradeInputs:
 
     snapshot_slug: SnapshotSlug
     critique: CriticSubmitPayload
+    reviewed_files: set[Path] | None = None  # Files reviewed by critic (for scope filtering)
 
 
 def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
@@ -104,7 +106,10 @@ def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *,
         snapshot_orm = session.query(Snapshot).filter_by(slug=inputs.snapshot_slug).one()
 
         # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
-        context = GradeValidationContext.from_specimen_and_critique(snapshot_orm, inputs.critique)
+        # Pass reviewed_files for scope filtering if available
+        context = GradeValidationContext.from_specimen_and_critique(
+            snapshot_orm, inputs.critique, reviewed_files=inputs.reviewed_files
+        )
 
     @mcp.flat_model()
     async def submit_result(payload: GradeSubmitInput) -> SimpleOk:
@@ -236,7 +241,19 @@ async def run_grader(
         )
 
         # Fetch critique from database
-        critique = CriticSubmitPayload.model_validate(_get_required_critique(session, input_data.critique_id).payload)
+        critique_orm = _get_required_critique(session, input_data.critique_id)
+        critique = CriticSubmitPayload.model_validate(critique_orm.payload)
+
+        # Extract reviewed files from critic run while still in session (for scope filtering)
+        # TODO: Clean up path propagation - reviewed_files is extracted here, passed through
+        # GradeInputs, then used in both build_grader_submit_tools (for validation) and
+        # grade_critique_by_id (for prompt filtering). Consider refactoring to single source
+        # or making the critique → files relationship more explicit.
+        from adgn.props.grader.models import FILTER_TPS_BY_CRITIC_SCOPE
+
+        reviewed_files: set[Path] | None = None
+        if FILTER_TPS_BY_CRITIC_SCOPE and critique_orm.critic_run:
+            reviewed_files = {Path(f) for f in critique_orm.critic_run.files}
 
     # Convert critique issues to CritiqueInputIssue
     critique_typed = [
@@ -246,7 +263,7 @@ async def run_grader(
 
     # Build grader inputs and state
     grader_state = GradeSubmitState()
-    inputs = GradeInputs(snapshot_slug=input_data.snapshot_slug, critique=critique)
+    inputs = GradeInputs(snapshot_slug=input_data.snapshot_slug, critique=critique, reviewed_files=reviewed_files)
 
     wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
     prompt = build_grade_from_json_prompt(
@@ -336,6 +353,24 @@ async def grade_critique_by_id(
     # Convert ORM → Pydantic wrappers for grader prompt
     canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
     canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
+
+    # Filter TPs/FPs by critic scope if enabled
+    from adgn.props.grader.models import FILTER_TPS_BY_CRITIC_SCOPE
+
+    if FILTER_TPS_BY_CRITIC_SCOPE and critique.critic_run:
+        from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
+
+        reviewed_files = {Path(f) for f in critique.critic_run.files}
+
+        # Only include TPs where at least one occurrence is catchable from reviewed files
+        canonical_tps = [
+            tp for tp in canonical_tps if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+        ]
+
+        # Only include FPs where at least one occurrence is relevant to reviewed files
+        canonical_fps = [
+            fp for fp in canonical_fps if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
+        ]
 
     # Create grader input
     grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)

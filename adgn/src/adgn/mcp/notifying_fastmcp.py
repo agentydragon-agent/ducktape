@@ -17,7 +17,7 @@ from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
 from pydantic import BaseModel
 
-from adgn.mcp._shared.fastmcp_flat import FlatModelToolMixin
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from adgn.mcp._shared.urls import ANY_URL
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ class _CapturingServer(LowLevelServer):
         return caps
 
 
-class NotifyingFastMCP(FlatModelToolMixin, FastMCP):
+class NotifyingFastMCP(FlatModelFastMCP):
     """FastMCP subclass that can broadcast protocol notifications outside requests.
 
     - Captures live ServerSession objects as soon as initialize completes

@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any, ParamSpec, TypeVar, cast
 import httpx
 import openai
 from openai import AsyncOpenAI
-from openai.types.chat import ChatCompletion
+from openai.types.chat import ChatCompletion, CompletionCreateParams
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
 from .model import ResponsesRequest, ResponsesResult
@@ -68,24 +68,23 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 
 
 @retry_decorator()
-async def chat_create_with_retries(client: AsyncOpenAI, *, stream: bool = False, **kwargs: Any) -> ChatCompletion:
+async def chat_create_with_retries(client: AsyncOpenAI, params: CompletionCreateParams) -> ChatCompletion:
     """Create a chat completion with retries (non-streaming only).
 
     Args:
         client: AsyncOpenAI client
-        stream: Must be False (streaming not supported by this function)
-        **kwargs: Other parameters passed to chat.completions.create (messages, model, etc.)
+        params: Chat completion parameters (must have stream=False or omit stream)
 
     Returns:
         ChatCompletion response
 
     Raises:
-        ValueError: If stream=True is passed
+        ValueError: If stream=True is in params
     """
-    if stream:
+    if params.get("stream"):
         raise ValueError("chat_create_with_retries does not support streaming (stream=True)")
-    # OpenAI SDK uses @overload; passing stream=False literal resolves to ChatCompletion overload
-    return await client.chat.completions.create(stream=False, **kwargs)
+    # Explicit stream=False ensures we get ChatCompletion (non-streaming) overload
+    return await client.chat.completions.create(stream=False, **params)
 
 
 @dataclass

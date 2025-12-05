@@ -574,7 +574,7 @@ def _print_presets() -> None:
 
 def _load_preset_text(name: str) -> str:
     if not (rel := _PRESET_MAP.get(name)):
-        raise typer.BadParameter(f"Unknown preset: {name}. Use --list-presets to see options.")
+        raise typer.BadParameter(f"Unknown preset: {name}. Use 'adgn-properties list-presets' to see options.")
     # Resources are relative to the adgn.props package root
     res = resources.files("adgn.props").joinpath(rel)
     try:
@@ -593,7 +593,9 @@ async def cmd_run(
     path: Path | None = opt.OPT_RUNBOOK_PATH,
     snapshot: SnapshotSlug | None = opt.OPT_RUNBOOK_SNAPSHOT,
     # Prompt source (at most one; default by mode)
-    preset: str | None = typer.Option(None, "--preset", help="Built-in prompt name; see --list-presets"),
+    preset: str | None = typer.Option(
+        None, "--preset", help="Built-in prompt name; see 'adgn-properties list-presets'"
+    ),
     prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
     prompt_text: str | None = typer.Option(
         None, "--prompt-text", help="Inline prompt text (discouraged for long prompts)"
@@ -606,7 +608,6 @@ async def cmd_run(
     model: str = opt.OPT_MODEL,
     final_only: bool = opt.OPT_FINAL_ONLY,
     output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
-    list_presets: bool = typer.Option(False, "--list-presets", help="List available built-in presets and exit"),
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
 ) -> None:
     """Unified runner: snapshot|path + structured|freeform + preset|prompt-file|text.
@@ -615,10 +616,6 @@ async def cmd_run(
     - structured=false: preset=open (if no prompt source provided)
     - structured=true: preset=max-recall-critic (if no prompt source provided)
     """
-    if list_presets:
-        _print_presets()
-        return
-
     # Initialize DB for structured runs (calls run_critic/run_grader)
     if structured:
         init_db()

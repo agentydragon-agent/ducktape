@@ -7,6 +7,7 @@ Extracted to avoid circular dependencies with prompts.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, NewType
 from uuid import UUID
 
@@ -39,6 +40,9 @@ FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-
 # Constants and Type Aliases
 # =============================================================================
 
+# Feature flag: filter TPs/FPs by critic scope using expect_caught_from
+FILTER_TPS_BY_CRITIC_SCOPE = True
+
 RATIO_SUM_TOLERANCE = 0.01  # Allow ±0.01 deviation from 1.0
 RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 
@@ -61,18 +65,41 @@ class GradeValidationContext:
 
     @classmethod
     def from_specimen_and_critique(
-        cls, snapshot_orm: Snapshot, critique: CriticSubmitPayload
+        cls, snapshot_orm: Snapshot, critique: CriticSubmitPayload, *, reviewed_files: set[Path] | None = None
     ) -> GradeValidationContext:
         """Build validation context from ORM Snapshot and critique.
 
         Args:
             snapshot_orm: ORM Snapshot from database (has TPs/FPs)
             critique: Critic's submitted payload
+            reviewed_files: Optional set of files that were reviewed by the critic.
+                If provided and FILTER_TPS_BY_CRITIC_SCOPE is True, only include
+                TPs/FPs that are catchable/relevant from those files.
         """
-        # Extract IDs directly from ORM (no conversion needed for validation)
+        from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
+
+        # Filter TPs/FPs by scope if enabled and reviewed_files provided
+        if FILTER_TPS_BY_CRITIC_SCOPE and reviewed_files:
+            # Only include TPs where at least one occurrence is catchable from reviewed files
+            allowed_tp_ids = {
+                TruePositiveID(tp.tp_id)
+                for tp in snapshot_orm.true_positives
+                if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+            }
+            # Only include FPs where at least one occurrence is relevant to reviewed files
+            allowed_fp_ids = {
+                FalsePositiveID(fp.fp_id)
+                for fp in snapshot_orm.false_positives
+                if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
+            }
+        else:
+            # No filtering: include all TPs/FPs
+            allowed_tp_ids = {TruePositiveID(tp.tp_id) for tp in snapshot_orm.true_positives}
+            allowed_fp_ids = {FalsePositiveID(fp.fp_id) for fp in snapshot_orm.false_positives}
+
         return cls(
-            allowed_tp_ids={TruePositiveID(tp.tp_id) for tp in snapshot_orm.true_positives},
-            allowed_fp_ids={FalsePositiveID(fp.fp_id) for fp in snapshot_orm.false_positives},
+            allowed_tp_ids=allowed_tp_ids,
+            allowed_fp_ids=allowed_fp_ids,
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
         )
 

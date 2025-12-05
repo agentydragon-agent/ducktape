@@ -3,11 +3,14 @@ from __future__ import annotations
 from collections.abc import Callable
 import functools
 import inspect
+import json
 import logging
 from typing import Annotated, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
+from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
-from pydantic import BaseModel, ConfigDict, Field
+from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic_core import PydanticUndefined
 
 logger = logging.getLogger(__name__)
@@ -47,8 +50,17 @@ class FlatWrapper:
         # Extract payload kwargs (exclude context parameter)
         payload_kwargs = {k: v for k, v in kwargs.items() if k != self._context_name}
 
-        # Create the model instance
-        payload = self._mcp_flat_input_model(**payload_kwargs)
+        # Create the model instance, catching validation errors
+        try:
+            payload = self._mcp_flat_input_model(**payload_kwargs)
+        except ValidationError as e:
+            # Get JSON-safe errors (Pydantic's .json() handles exception serialization)
+            errors = json.loads(e.json())
+            # Strip documentation URLs
+            for err in errors:
+                err.pop("url", None)
+            # Raise ToolError with structured JSON for agent consumption
+            raise ToolError(json.dumps(errors, indent=2)) from e
 
         # Get context value if needed
         ctx_value = kwargs.get(self._context_name) if self._context_name else None
@@ -304,8 +316,8 @@ def _flat_model_decorator(
     return outer
 
 
-class FlatModelToolMixin:
-    """Mixin that extends FastMCP.tool() with flat-model support."""
+class FlatModelFastMCP(FastMCP):
+    """FastMCP subclass with flat-model tool support and ValidationError formatting."""
 
     class _ToolOpts(BaseModel):
         name: str | None = None
@@ -333,7 +345,7 @@ class FlatModelToolMixin:
 
         def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
             # Only pass kwargs accepted by FastMCP.tool overload (drop unsupported ones)
-            base_tool = super(FlatModelToolMixin, self).tool  # type: ignore[misc]
+            base_tool = super(FlatModelFastMCP, self).tool  # type: ignore[misc]
             filtered = {k: v for k, v in mcp_tool_kwargs.items() if v is not None}
             decorator = base_tool(**filtered)
             decorator(fn)  # register the wrapper
@@ -352,9 +364,31 @@ class FlatModelToolMixin:
             ),
         )
 
+    async def _call_tool_mcp(
+        self, key: str, arguments: dict[str, Any]
+    ) -> list[mcp_types.ContentBlock] | tuple[list[mcp_types.ContentBlock], dict[str, Any]] | mcp_types.CallToolResult:
+        """Override to format ValidationErrors from flat model tools as flat JSON.
 
-class FlatModelFastMCP(FlatModelToolMixin, FastMCP):
-    """FastMCP subclass with the flat-model convenience decorator built-in."""
+        When FastMCP validates tool arguments before calling our flat wrapper, ValidationErrors
+        are raised before our wrapper's error formatting runs. This override catches those errors
+        and formats them consistently with the flat error format (JSON array of error objects).
+        """
+        try:
+            result: (
+                list[mcp_types.ContentBlock]
+                | tuple[list[mcp_types.ContentBlock], dict[str, Any]]
+                | mcp_types.CallToolResult
+            ) = await super()._call_tool_mcp(key, arguments)
+            return result
+        except ValidationError as e:
+            # Format validation errors as flat JSON (same as FlatWrapper._prepare_call)
+            errors = json.loads(e.json())
+            for err in errors:
+                err.pop("url", None)
+            # Return as MCP error result
+            return mcp_types.CallToolResult(
+                content=[mcp_types.TextContent(type="text", text=json.dumps(errors, indent=2))], isError=True
+            )
 
 
 def mcp_flat_model(
@@ -367,11 +401,10 @@ def mcp_flat_model(
     structured_output: bool = True,
     output_model: type[BaseModel] | None = None,
 ):
-    if isinstance(mcp, FlatModelToolMixin):
-        mixin = cast(FlatModelToolMixin, mcp)
+    if isinstance(mcp, FlatModelFastMCP):
         return cast(
             Callable[[Callable[..., Any]], Callable[..., Any]],
-            mixin.tool(
+            mcp.tool(
                 name=name,
                 title=title,
                 description=description,

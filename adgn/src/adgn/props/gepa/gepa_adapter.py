@@ -539,6 +539,7 @@ async def optimize_with_gepa(
     verbose: bool = False,
     warm_start: bool = True,
     max_parallelism: int = 20,
+    minibatch_size: int = 3,
 ) -> tuple[str, GEPAResult[CriticOutput, Any]]:
     """Optimize critic prompt using GEPA.
 
@@ -555,6 +556,7 @@ async def optimize_with_gepa(
         verbose: Enable verbose logging
         warm_start: Load historical Pareto frontier from database (default: True)
         max_parallelism: Maximum concurrent critic/grader runs (default: 20)
+        minibatch_size: Number of training examples per reflection iteration (default: 3)
 
     Returns:
         (optimized_prompt, gepa_results) tuple
@@ -565,6 +567,7 @@ async def optimize_with_gepa(
     logger.info("Starting GEPA optimization")
     logger.info(f"Reflection model: {reflection_model}")
     logger.info(f"Max metric calls: {max_metric_calls}")
+    logger.info(f"Minibatch size: {minibatch_size}")
     logger.info(f"Initial prompt length: {len(initial_prompt)} chars")
     logger.info(f"Warm start: {warm_start}")
 
@@ -609,6 +612,7 @@ async def optimize_with_gepa(
         max_metric_calls=max_metric_calls,
         perfect_score=1.0,  # Perfect recall
         run_dir=run_dir,  # Load checkpoint if provided
+        reflection_minibatch_size=minibatch_size,
     )
 
     optimized_prompt = result.best_candidate["system_prompt"]

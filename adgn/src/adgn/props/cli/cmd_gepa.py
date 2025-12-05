@@ -32,6 +32,7 @@ async def cmd_gepa(
         bool, typer.Option(help="Load historical Pareto frontier from database to start from known good prompts")
     ] = True,
     max_parallelism: Annotated[int, typer.Option(help="Maximum concurrent critic/grader evaluations")] = 20,
+    minibatch_size: Annotated[int, typer.Option(help="Number of training examples per reflection iteration")] = 3,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.
@@ -55,6 +56,7 @@ async def cmd_gepa(
     console.print(f"  Reflection model: {reflection_model}")
     console.print(f"  Max metric calls: {max_metric_calls} (this run only)")
     console.print(f"  Max parallelism: {max_parallelism} concurrent evaluations")
+    console.print(f"  Minibatch size: {minibatch_size} training examples per reflection")
     console.print("  Training examples: per-file mode (from database critic_scopes)")
     console.print(f"  Warm start: {'enabled' if warm_start else 'disabled'}")
     console.print(f"  Output directory: {output_dir}")
@@ -78,6 +80,7 @@ async def cmd_gepa(
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
         max_parallelism=max_parallelism,
+        minibatch_size=minibatch_size,
         verbose=verbose,
         warm_start=warm_start,
     )

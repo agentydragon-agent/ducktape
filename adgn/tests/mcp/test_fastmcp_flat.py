@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import inspect
+import json
 from typing import Literal
 
 from fastmcp.client import Client
 from fastmcp.server.context import Context
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 import pytest
 
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
@@ -160,3 +161,49 @@ async def test_flat_model_union_return_unwrapped():
         page = await typed_client.get_page(EmptyInput())
         assert isinstance(page, PageA)
         assert page.value == "hello"
+
+
+class StrictModel(BaseModel):
+    """Model for validation error testing with custom validator."""
+
+    value: int
+
+    @field_validator("value")
+    @classmethod
+    def check_positive(cls, v):
+        if v <= 0:
+            raise ValueError("must be positive")
+        return v
+
+
+async def test_flat_model_validation_error_formatting():
+    """Test that Pydantic validation errors are formatted as structured JSON without URL.
+
+    This tests the case where FastMCP's parameter validation passes (all required args provided)
+    but Pydantic model construction fails (custom validator rejection).
+    """
+    m = NotifyingFastMCP("validation_test")
+
+    @m.flat_model()
+    async def validate_input(input: StrictModel) -> OutModel:
+        return OutModel(ok=True)
+
+    async with Client(m) as client:
+        # Call with value that fails custom validator
+        result = await client.call_tool("validate_input", {"value": -5}, raise_on_error=False)
+        assert result.is_error
+
+        # Parse the error message as JSON
+        error_json = json.loads(result.content[0].text)
+        assert isinstance(error_json, list)
+        assert len(error_json) == 1
+
+        err = error_json[0]
+        # Verify structure
+        assert err["type"] == "value_error"
+        assert err["loc"] == ["value"]
+        assert "must be positive" in err["msg"]
+        assert err["input"] == -5
+        assert err["ctx"] == {"error": "must be positive"}
+        # Verify no URL
+        assert "url" not in err
