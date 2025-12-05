@@ -13,19 +13,15 @@ from fastmcp.server.auth import StaticTokenVerifier
 import httpx
 import pytest
 
+from adgn.mcp.testing.simple_servers import build_simple_tools
 from adgn.props.servers.http_launcher import ServerHandle, launch_mcp_http_server
 
 
 def _create_test_server(token: str) -> FastMCP:
-    """Create a minimal FastMCP server for testing."""
+    """Create a minimal FastMCP server with auth for testing."""
     auth = StaticTokenVerifier(tokens={token: {"client_id": "test", "scopes": []}})
     server = FastMCP("test_server", auth=auth, instructions="Test server for HTTP launcher tests.")
-
-    @server.tool()
-    def echo(message: str) -> str:
-        """Echo back the message."""
-        return f"echo: {message}"
-
+    build_simple_tools(server)
     return server
 
 
