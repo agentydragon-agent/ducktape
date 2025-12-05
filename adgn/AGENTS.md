@@ -93,7 +93,7 @@ See `README.md` for a shorter overview.
   - `adgn-mini-codex` → MiniCodex UI/REPL
   - `adgn-llm-edit` → `adgn.llm.llm_edit:app`
   - `adgn-sysrw` → `adgn.llm.sysrw.cli:app`
-  - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties2` Typer UI)
+  - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties` Typer UI)
   - `git-commit-ai` → `adgn.git_commit_ai.cli:main`
   - `sandbox-jupyter` → `adgn.mcp.sandboxed_jupyter.wrapper:main`
   - Other helpers: `adgn-openai-probe`, `adgn-sandboxer`, `adgn-mcp-*`, `adgn-matrix-bot`
@@ -105,7 +105,7 @@ See `README.md` for a shorter overview.
   - @src/adgn/llm/properties/specimen_registry.py
 - Authoring guide:
   - @src/adgn/props/CLAUDE.md
-- Examples: `adgn-properties specimen-shell <specimen-id>`
+- Examples: `adgn-properties snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
 - Typical: `direnv exec adgn pytest -q -m "not live_llm"`
@@ -163,7 +163,7 @@ handlers = [bootstrap, ...other handlers...]
   - Prefer working with `pathlib.Path` objects directly; only call
     `str(path)` when an external API requires a string.
 - MCP CallToolResult handling
-  - Normalize FastMCP client results immediately by calling `to_pydantic`. Downstream helpers should only accept `mcp.types.CallToolResult`.
+  - Normalize FastMCP client results immediately by calling `fastmcp_to_mcp_result`. Downstream helpers should only accept `mcp.types.CallToolResult`.
 - Typing discipline
   - Handle exact runtime types. When an external API returns a loose object, convert it at the boundary so the rest of the code sees a single concrete type.
   - During typing passes, scan for broad annotations (`Any`, `object`, large `Union`, untyped `dict`) with `rg` and tighten or document each occurrence. Treat unexplained permissive types as findings.
@@ -222,10 +222,10 @@ handlers = [bootstrap, ...other handlers...]
 - Central helpers
   - Use `adgn.mcp._shared.calltool.as_minimal_json(res)` to serialize a client `CallToolResult` for UI/logging/persistence. It returns:
     - `{structured_content?: Any, is_error: bool}` (snake_case keys; `structured_content` is JSON‑dumped if it was a Pydantic model).
-  - Use `adgn.mcp._shared.calltool.to_pydantic(res)` when you need a typed `mcp.types.CallToolResult` (uses alias names `structuredContent`/`isError`).
+  - Use `adgn.mcp._shared.calltool.fastmcp_to_mcp_result(res)` when you need a typed `mcp.types.CallToolResult` (uses alias names `structuredContent`/`isError`).
 - Do not call `.model_dump()` on FastMCP’s client `CallToolResult` — it isn’t a Pydantic model. Either:
   - Serialize via `as_minimal_json(...)` for UI/logging, or
-  - Adapt to `mcp.types.CallToolResult` via `to_pydantic(...)` (or `TypeAdapter(mcp.types.CallToolResult).validate_python(...)` on an alias‑keyed dict).
+  - Adapt to `mcp.types.CallToolResult` via `fastmcp_to_mcp_result(...)` (or `TypeAdapter(mcp.types.CallToolResult).validate_python(...)` on an alias‑keyed dict).
 - UI/tests convention
   - Prefer the minimal JSON shape in server→UI messages unless the full typed MCP result is required.
   - When tests need to validate structure, construct/validate against `mcp.types.CallToolResult` explicitly.

@@ -21,10 +21,10 @@ from adgn.openai_utils.model import (
     UserMessage,
 )
 from adgn.props.ids import BaseIssueID
-from adgn.props.models.issue import IssueCore, Occurrence
 from adgn.props.models.lint import extract_corrections
+from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 from .lint_issue import lint_issue_run
 
@@ -83,7 +83,7 @@ class IssueEvalSpec(BaseModel):
 
 class SampleRunSummary(BaseModel):
     specimen: str
-    issue_id: BaseIssueID
+    tp_id: BaseIssueID
     total: int
     passed: int
     failed: int
@@ -158,7 +158,7 @@ async def eval_issue_spec(
     spec: IssueEvalSpec,
     *,
     client: OpenAIModelProto,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     out_dir: Path | str | None = None,
     ctx: RunsContext,
 ) -> SampleRunSummary:
@@ -276,7 +276,7 @@ async def eval_issue_spec(
 
     summary_obj = {
         "specimen": spec.specimen,
-        "issue_id": spec.issue.id,
+        "tp_id": spec.issue.id,
         "total": len(spec.cases),
         "passed": passes,
         "failed": len(spec.cases) - passes,
@@ -286,7 +286,7 @@ async def eval_issue_spec(
 
     return SampleRunSummary(
         specimen=spec.specimen,
-        issue_id=spec.issue.id,
+        tp_id=spec.issue.id,
         total=len(spec.cases),
         passed=passes,
         failed=len(spec.cases) - passes,
@@ -306,7 +306,7 @@ def _load_samples() -> list[IssueEvalSpec]:
 async def run_all_evals(
     *,
     client: OpenAIModelProto,
-    registry: SpecimenRegistry,
+    registry: SnapshotRegistry,
     root_out: Path | None = None,
     concurrency: int = 4,
     ctx: RunsContext,
@@ -337,7 +337,7 @@ async def run_all_evals(
     table.add_column("Summary Path")
 
     for ent in eval_index.samples:
-        table.add_row(ent.specimen, ent.issue_id, str(ent.total), str(ent.passed), str(ent.failed), ent.summary_path)
+        table.add_row(ent.specimen, ent.tp_id, str(ent.total), str(ent.passed), str(ent.failed), ent.summary_path)
     Console().print(table)
 
     return eval_index

@@ -7,7 +7,7 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 
 
 def extract_text_blocks(contents: Iterable[mcp_types.ContentBlock]) -> list[str]:
@@ -56,7 +56,7 @@ async def call_simple_ok(client: Client, *, name: str, arguments: dict) -> None:
     except Exception as exc:
         raise RuntimeError(f"{name} failed: {exc}") from exc
     if bool(res.is_error):
-        detail = extract_error_detail(to_pydantic(res))
+        detail = extract_error_detail(fastmcp_to_mcp_result(res))
         if detail:
             raise RuntimeError(f"{name} failed: {detail}")
         raise RuntimeError(f"{name} failed")

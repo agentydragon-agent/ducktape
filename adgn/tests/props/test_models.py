@@ -7,31 +7,39 @@ from pathlib import Path
 from uuid import uuid4
 
 from hamcrest import assert_that, equal_to
+import pytest
 
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticFailure, CriticInput, CriticSubmitPayload, CriticSuccess
-from adgn.props.grader import GraderInput, GraderOutput, GradeSubmitInput
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticSubmitPayload, CriticSuccess
+from adgn.props.grader.models import GraderInput, GraderOutput, GradeSubmitInput
+from adgn.props.ids import SnapshotSlug
+
+
+@pytest.fixture
+def mock_snapshot_slug() -> SnapshotSlug:
+    """Shared test snapshot slug."""
+    return SnapshotSlug("ducktape/2025-11-26-00")
 
 
 class TestCriticModels:
     """Tests for critic input/output models."""
 
-    def test_critic_input_valid(self, mock_prompt_sha256: str):
-        """CriticInput should accept valid specimen_slug, files, and prompt hash."""
+    def test_critic_input_valid(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
+        """CriticInput should accept valid snapshot_slug, files, and prompt hash."""
         critic_input = CriticInput(
-            specimen_slug="ducktape/2025-11-26-00", files={Path("src/main.py")}, prompt_sha256=mock_prompt_sha256
+            snapshot_slug=mock_snapshot_slug, files={Path("src/main.py")}, prompt_sha256=mock_prompt_sha256
         )
 
-        assert_that(critic_input.specimen_slug, equal_to("ducktape/2025-11-26-00"))
+        assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
         assert_that(critic_input.files, equal_to({Path("src/main.py")}))
         assert_that(critic_input.prompt_sha256, equal_to(mock_prompt_sha256))
 
-    def test_critic_input_with_sentinel(self, mock_prompt_sha256: str):
+    def test_critic_input_with_sentinel(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
         """CriticInput should accept ALL_FILES_WITH_ISSUES sentinel."""
         critic_input = CriticInput(
-            specimen_slug="ducktape/2025-11-26-00", files=ALL_FILES_WITH_ISSUES, prompt_sha256=mock_prompt_sha256
+            snapshot_slug=mock_snapshot_slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=mock_prompt_sha256
         )
 
-        assert_that(critic_input.specimen_slug, equal_to("ducktape/2025-11-26-00"))
+        assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
         assert_that(critic_input.files, equal_to(ALL_FILES_WITH_ISSUES))
 
     def test_critic_success_variant(self):
@@ -43,37 +51,16 @@ class TestCriticModels:
         assert_that(success.result, equal_to(result))
         assert_that(isinstance(success, CriticSuccess))
 
-    def test_critic_failure_variant(self):
-        """CriticFailure should wrap error result."""
-        error = "Failed to analyze"
-        failure = CriticFailure(error=error)
-
-        assert_that(failure.tag, equal_to("failure"))
-        assert_that(failure.error, equal_to(error))
-        assert_that(isinstance(failure, CriticFailure))
-
-    def test_critic_output_discriminated_union(self):
-        """CriticOutput should be a discriminated union of success/failure."""
-        # Success case
-        result = CriticSubmitPayload(issues=[], notes_md="Done")
-        success = CriticSuccess(result=result)
-        assert_that(isinstance(success, CriticSuccess))
-
-        # Failure case
-        error = "Error"
-        failure = CriticFailure(error=error)
-        assert_that(isinstance(failure, CriticFailure))
-
 
 class TestGraderModels:
     """Tests for grader input/output models."""
 
-    def test_grader_input_valid(self):
-        """GraderInput should accept specimen_slug and critique_id."""
+    def test_grader_input_valid(self, mock_snapshot_slug: SnapshotSlug):
+        """GraderInput should accept snapshot_slug and critique_id."""
         critique_id = uuid4()
-        grader_input = GraderInput(specimen_slug="ducktape/2025-11-26-00", critique_id=critique_id)
+        grader_input = GraderInput(snapshot_slug=mock_snapshot_slug, critique_id=critique_id)
 
-        assert_that(grader_input.specimen_slug, equal_to("ducktape/2025-11-26-00"))
+        assert_that(grader_input.snapshot_slug, equal_to(mock_snapshot_slug))
         assert_that(grader_input.critique_id, equal_to(critique_id))
 
     def test_grader_output_valid(self):

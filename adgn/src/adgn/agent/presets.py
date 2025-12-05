@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -9,6 +10,10 @@ from fastmcp.mcp_config import MCPConfig
 from platformdirs import user_config_dir
 from pydantic import BaseModel, Field
 import yaml
+
+from adgn.agent.persist import AgentMetadata
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from adgn.agent.persist.sqlite import SQLitePersistence
@@ -54,6 +59,10 @@ def load_presets_from_dir(root: Path) -> dict[str, AgentPreset]:
         stat = p.stat()  # Fail fast on OS errors
         preset.file_path = str(p)
         preset.modified_at = datetime.fromtimestamp(stat.st_mtime).isoformat()
+        if preset.name in out:
+            logger.warning(
+                f"Preset name collision: '{preset.name}' from {p} overrides preset from {out[preset.name].file_path}"
+            )
         out[preset.name] = preset
     return out
 
@@ -107,11 +116,13 @@ async def create_agent_from_preset(
     Returns:
         Tuple of (agent_id, mcp_config, system_prompt)
     """
-    from adgn.agent.persist import AgentMetadata
-
     # Load preset
     presets = discover_presets()
-    preset = presets.get(preset_name or "default") or presets["default"]
+    requested_name = preset_name or "default"
+    if requested_name not in presets:
+        available = ", ".join(sorted(presets.keys()))
+        raise ValueError(f"Unknown preset '{requested_name}'. Available presets: {available}")
+    preset = presets[requested_name]
 
     # Merge preset MCP config with base config
     mcp_config = base_mcp_config.model_copy(deep=True)

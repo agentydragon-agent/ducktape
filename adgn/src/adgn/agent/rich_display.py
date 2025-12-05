@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
 
@@ -258,7 +258,7 @@ class RichDisplayHandler(BaseHandler):
 
         if isinstance(event, ToolCallOutput):
             # Convert to typed result
-            result = to_pydantic(event.result)
+            result = fastmcp_to_mcp_result(event.result)
             call = self._calls.get(event.call_id)
             label = f"◀ {call.name}" if call else "◀ tool_output"
 
@@ -527,7 +527,7 @@ class CompactDisplayHandler(BaseHandler):
 
         # ToolCallOutput - metadata inline, content indented
         if isinstance(event, ToolCallOutput):
-            result = to_pydantic(event.result)
+            result = fastmcp_to_mcp_result(event.result)
             call = self._calls.get(event.call_id)
 
             # Try to parse structured_content using registered schema

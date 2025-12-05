@@ -114,6 +114,11 @@ gnome = [
 matrix = [
   "mautrix>=0.20.0",
 ]
+gepa = [
+  "gepa>=0.0.22",
+  "litellm>=1.0.0",
+  "nest-asyncio>=1.5.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

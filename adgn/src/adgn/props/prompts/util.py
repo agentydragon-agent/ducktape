@@ -6,7 +6,9 @@ from typing import Any
 
 from jinja2 import Environment, PackageLoader
 
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
+from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 
 
@@ -108,10 +110,6 @@ def build_standard_context(
     }
 
     if include_schemas:
-        # Import schemas here to avoid circular dependency
-        from adgn.props.critic import CriticSubmitPayload, ReportedIssue
-        from adgn.props.grader import GradeMetrics, GradeSubmitInput
-
         context["schemas_json"] = build_input_schemas_json(
             [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
         )

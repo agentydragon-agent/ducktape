@@ -98,19 +98,32 @@ Migration guidance
 
 ## Specimen-driven property evolution (freeform → formal)
 
-- Goal: Use real “I don’t like this code” specimens to iteratively design properties and improve reviewer prompts.
+- Goal: Use real "I don't like this code" specimens to iteratively design properties and improve reviewer prompts.
 - Process overview:
-  1) Capture a specimen: code + a freeform list of review items (things that should be found, and optionally “negatives” that are OK and should not be flagged).
+  1) Capture a specimen: code + a freeform list of review items (things that should be found, and optionally "negatives" that are OK and should not be flagged).
   2) Draft or refine a property definition from the specimen items (manually or via LLM-assisted prompt/design iteration).
   3) Generate/adjust reviewer prompts (critics/fixers/analyzers) from the property definition.
   4) Backtest: run analyzers on the specimen and measure:
      - Did it complain about what it should have complained about?
      - Did it avoid flagging the items explicitly marked as acceptable?
   5) Feedback loop:
-     - If the reviewer finds novel, useful issues not in the specimen, add them as new “should find” items.
-     - If the reviewer falsely flags acceptable patterns, add them as “negatives” (do-not-flag) to the specimen and/or clarify the property.
+     - If the reviewer finds novel, useful issues not in the specimen, add them as new "should find" items.
+     - If the reviewer falsely flags acceptable patterns, add them as "negatives" (do-not-flag) to the specimen and/or clarify the property.
   6) Freeze specimens as ground truth snapshots; properties remain scope-agnostic and durable.
 - This keeps properties concise and objective, while allowing rich freeform context during discovery and tuning.
+
+## Training Strategy: Per-File Examples
+
+**Goal:** Train the LLM critic to behavior-clone the user's subjective code review judgment by using fine-grained training examples.
+
+**Approach:** Generate multiple focused training examples per snapshot (single files, file pairs, component groups) in addition to the full-repo review. This provides tighter feedback loops and more training signal for optimization.
+
+**Dataset model:**
+- **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs)
+- **Training Example:** `(snapshot, targeted_files)` pair where ground truth is computed based on which issues are "catchable" from those files
+- **True Positive filtering:** Uses `expect_caught_from` to determine which issues should be detectable given a file set
+
+For detailed information on the training dataset model, per-file examples strategy, and optimization approaches, see [Training Strategy](docs/training_strategy.md).
 
 ```mermaid
 flowchart TD
@@ -133,22 +146,22 @@ flowchart TD
 
 ## Specimen inspection (for assistants)
 
-Use the `specimen-exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
+Use the `snapshot exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
 
 Examples
 - Open interactive shell:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt
 - Execute a one-off command (after "--"):
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- sed -n '18,36p' /workspace/wt/wt/server/github_client.py
 - Numbered ranges with nl + sed:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- nl -ba --number-width=6 --number-format=ln /workspace/wt/wt/shared/models.py | sed -n '130,170p'
 - Ripgrep search (rg is baked into the image):
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- rg -n "WorktreeService\.create_worktree\(|execute_post_creation_script\(" /workspace/wt --glob '!/workspace/wt/tests/**'
 - Multi-line convenience via heredoc:
-  - adgn-properties specimen-exec 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
+  - adgn-properties snapshot exec 2025-09-02-ducktape_wt -- bash -lc $'nl -ba /workspace/wt/wt/server/wt_server.py | sed -n \"220,240p\"; echo ---; sed -n \"2035,2060p\" /workspace/wt/wt/server/wt_server.py'
 
 Notes
-- Prefer specimen-exec for reading/grepping specimen files. Avoid mounting host paths directly.
+- Prefer snapshot exec for reading/grepping specimen files. Avoid mounting host paths directly.
 - For quoting-heavy commands, pass a single string after -- and let bash -lc interpret it, or use a $''-quoted heredoc as above.
 
 ## Usage Workflow
@@ -161,13 +174,13 @@ Run structured critic to find issues in a specimen:
 export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
 
 # Run critic with default preset (max-recall-critic)
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true
 
 # Or specify a custom preset
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --preset find
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true --preset find
 
 # Filter to specific files
-adgn-properties2 run --specimen ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
+adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true --files src/foo.py src/bar.py
 ```
 
 This:
@@ -182,10 +195,10 @@ Grade a stored critique against canonical findings:
 
 ```bash
 # Grade by critique ID (from previous critic run output)
-adgn-properties2 specimen-grade 123
+adgn-properties snapshot-grade 123
 
 # Use different model for grading
-adgn-properties2 specimen-grade 123 --model gpt-4o
+adgn-properties snapshot-grade 123 --model gpt-4o
 ```
 
 This:

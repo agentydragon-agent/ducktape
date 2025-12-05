@@ -1,22 +1,25 @@
 // Jsonnet helpers for concise, DRY specimen issue definitions.
-// Produces data compatible with adgn_llm.properties.specimen_issues.SpecimenIssues
-// Usage (example):
-//   local I = import 'specimens/lib.libsonnet';
-//   I.root([
-//     I.issueMultiFromLines(
-//       id='iss-001',
-//       rationale='Inline imports inside functions; move to module top.',
+// Produces data compatible with adgn.props models (Issue, FalsePositive).
 //
-  //       linesByFile={
-//         'wt/wt/cli.py': [101, 158, 193, 198, 206, 253],
-//         'wt/wt/client/handlers.py': [10, 16, 50, 75, 86, 89, 94, 97, 104, 120, 127, 134, 136, 142, 152, [164,168], 194, 196, 201, 214, 220, 226, 238, 240, [242,243], 249, 254, 263, 277, 298, [301,302], 310, 342],
-//       }
-//     ),
-//     I.issueSingle(id='iss-009', should_flag=false, rationale='shlex.quote requires str', files={ 'wt/wt/client/worktree_utils.py': [ 98 ] }),
-//   ])
+// Note: `snapshot` is auto-derived from file path at Python loader level.
+//
+// Usage example:
+//   local I = import '../../lib.libsonnet';
+//   I.issue(
+//     rationale='Dead code should be removed',
+//     filesToRanges={'src/cli.py': [[145, 167]]},
+//     // expect_caught_from auto-inferred: [['src/cli.py']] (single file)
+//   )
+
+// ============================================================================
+// Internal Helper Functions (not exported)
+// ============================================================================
 
 // Normalize a line spec into a LineRange object.
 // Accepts either an int (single line) or a [start,end] array; also accepts objects that already have start_line/end_line.
+// TODO: Support per-range notes/context: [[10, 20, 'note about this range'], [30, 40, 'note about that range']]
+//       Currently only occurrence-level notes are supported; inline comments are for human readers only.
+//       Per-range notes would help explain why specific line ranges matter within one occurrence.
 local toRange(x) =
   if std.type(x) == 'number' then { start_line: x }
   else if std.type(x) == 'array' && std.length(x) == 2 then { start_line: x[0], end_line: x[1] }
@@ -35,72 +38,196 @@ local normFiles(files) = {
   for f in std.objectFields(files)
 };
 
-// Expand shorthand mapping {file: [entry,...]|null} into a list of Occurrence objects
-// Entry forms supported (per occurrence):
-// - number            → single line
-// - [start, end]      → span
-// - {range: <spec>, note: "..."} → range + occurrence-level note
-// - {note: "..."}    → unspecified range for that file with an occurrence-level note
-// If value is null or []: one occurrence with unspecified range for that file (no note)
+// ============================================================================
+// True Positive Helpers
+// ============================================================================
 
-// Occurrence constructor helper: normalize per-entry forms to { files: {file: ranges|null}, note?: string }
-local occFromEntry(file, ln) =
-  if ln == null then { files: { [file]: null } }
-  else if std.type(ln) == 'string' then { files: { [file]: null }, note: ln }
-  else if std.type(ln) == 'number' then { files: fileEntry(file, [ln]) }
-  else if std.type(ln) == 'array' && std.length(ln) == 2 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'string' then
-    { files: fileEntry(file, [ln[0]]), note: ln[1] }
-  else if std.type(ln) == 'array' && std.length(ln) == 2 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'number' then
-    { files: fileEntry(file, [{ start_line: ln[0], end_line: ln[1] }]) }
-  else if std.type(ln) == 'array' && std.length(ln) == 3 && std.type(ln[0]) == 'number' && std.type(ln[1]) == 'number' && std.type(ln[2]) == 'string' then
-    { files: fileEntry(file, [{ start_line: ln[0], end_line: ln[1] }]), note: ln[2] }
-  else error 'Invalid entry in linesByFile for ' + file + ': ' + std.manifestJson(ln);
-
-local instancesFromLinesByFile(linesByFile) = std.flattenArrays([
-  (
-    local v = linesByFile[file];
-    if v == null || (std.type(v) == 'array' && std.length(v) == 0)
-    then [{ files: { [file]: null } }]
-    else [occFromEntry(file, ln) for ln in v]
-  )
-  for file in std.objectFields(linesByFile)
-]);
-
-// Issue constructors
-
-// One occurrence that can span multiple files/ranges
+// Single occurrence true positive issue.
+//
 // Parameters:
 //   rationale: Full explanation of what's wrong and recommended fix
 //   filesToRanges: Dict of file paths → array of line ranges
-//   should_flag: Whether this should be flagged (default: true)
-local issueOneOccurrence(rationale, filesToRanges, should_flag=true) = {
-  should_flag: should_flag,
-  rationale: rationale,
-  instances: [{ files: normFiles(filesToRanges) }],
-};
+//   expect_caught_from: (optional) List of alternative file sets for detection
+//                       Format: [['file1.py'], ['file2.py', 'file3.py']]
+//                       Semantics: Issue detectable from ANY of these file sets (OR logic)
+//                       Each inner list is files required together (AND logic)
+//
+// Detection standard for expect_caught_from:
+//   "If I gave a high-quality critic this file set to review, and they failed to
+//   find this issue, would that be a failure on their part?"
+//
+//   A thorough code review starting from these files naturally includes:
+//   - Following imports/calls to check APIs
+//   - Searching for existing helpers/patterns
+//   - Looking for duplication in the codebase
+//   - All normal code review activities
+//
+//   NOT: "Can you detect this reading only these files in isolation?"
+//
+// Auto-inference:
+//   - If filesToRanges has 1 file AND expect_caught_from not provided:
+//     Auto-infers expect_caught_from = [[that_single_file]]
+//   - If filesToRanges has >1 file AND expect_caught_from not provided:
+//     Raises error (author must specify minimal detection sets)
+//
+// Returns: {rationale, occurrences: [{files, expect_caught_from}]}
+local issue(rationale, filesToRanges, expect_caught_from=null) =
+  local files_list = std.objectFields(filesToRanges);
+  local inferred_expect_caught_from =
+    if expect_caught_from != null then expect_caught_from
+    else if std.length(files_list) == 1 then [[files_list[0]]]
+    else error 'Multi-file issue requires explicit expect_caught_from. Specify minimal file sets required to detect this issue (AND/OR semantics). Files: ' + std.manifestJson(files_list);
+  {
+    rationale: rationale,
+    occurrences: [{
+      files: normFiles(filesToRanges),
+      expect_caught_from: inferred_expect_caught_from,
+    }],
+  };
 
-// Many occurrences (explicit list)
-local issueWithOccurrences(rationale, occurrences, should_flag=true) = {
-  should_flag: should_flag,
-  rationale: rationale,
-  instances: [
-    // Each instance.files may be a {file: [ranges]|null} map; normalize arrays to LineRange
-    { files: normFiles(inst.files) }
-    for inst in occurrences
-  ],
-};
+// Multiple occurrences true positive issue.
+//
+// Parameters:
+//   rationale: Full explanation of what's wrong and recommended fix
+//   occurrences: List of occurrence objects, each with:
+//     - files: {file: [ranges]|null} dict
+//     - note: string (REQUIRED - explains this specific occurrence)
+//     - expect_caught_from: [[files...], ...] (REQUIRED if total files > 1)
+//
+// Detection standard for expect_caught_from (same as issue()):
+//   "If I gave a high-quality critic this file set to review, and they failed to
+//   find this issue, would that be a failure on their part?"
+//
+//   A thorough code review starting from these files naturally includes:
+//   - Following imports/calls to check APIs
+//   - Searching for existing helpers/patterns
+//   - Looking for duplication in the codebase
+//   - All normal code review activities
+//
+//   NOT: "Can you detect this reading only these files in isolation?"
+//
+// Validation:
+//   - ALL occurrences must have 'note' field
+//   - If total unique files across ALL occurrences > 1:
+//     EVERY occurrence must have explicit 'expect_caught_from'
+//     (Even single-file occurrences need it when total > 1)
+//
+// Returns: {rationale, occurrences}
+local issueMulti(rationale, occurrences) =
+  // Validate all occurrences have notes
+  local missing_notes = [
+    i
+    for i in std.range(0, std.length(occurrences) - 1)
+    if !std.objectHas(occurrences[i], 'note') || occurrences[i].note == null
+  ];
+  local notes_valid = if std.length(missing_notes) > 0
+    then error 'All occurrences in issueMulti must have a note field. Missing in occurrences at indices: ' + std.manifestJson(missing_notes)
+    else true;
 
-// Many occurrences, each single-file/single-range (built from shorthand mapping)
-local issueOccurrencesFromLines(rationale, linesByFile, should_flag=true) =
-  issueWithOccurrences(rationale=rationale, occurrences=instancesFromLinesByFile(linesByFile), should_flag=should_flag);
+  // Compute total unique files across all occurrences
+  local all_files = std.foldl(
+    function(acc, occ) acc + std.objectFields(occ.files),
+    occurrences,
+    []
+  );
+  local unique_files = std.set(all_files);
+  local total_files = std.length(unique_files);
 
+  // If total files > 1, validate ALL occurrences have expect_caught_from
+  local missing_expect = if total_files > 1 then [
+    i
+    for i in std.range(0, std.length(occurrences) - 1)
+    if !std.objectHas(occurrences[i], 'expect_caught_from')
+  ] else [];
+  local expect_valid = if std.length(missing_expect) > 0
+    then error 'Multi-file issue (total files: %d) requires expect_caught_from on ALL occurrences. Missing in occurrences at indices: %s. Files: %s' % [total_files, std.manifestJson(missing_expect), std.manifestJson(unique_files)]
+    else true;
 
-// Note: Batch loading requires Python to compose explicit import statements
-// (Jsonnet does not support computed import paths)
+  {
+    rationale: rationale,
+    occurrences: [
+      {
+        files: normFiles(occ.files),
+        note: occ.note,
+        expect_caught_from: occ.expect_caught_from,
+      }
+      for occ in occurrences
+    ],
+  };
+
+// ============================================================================
+// False Positive Helpers
+// ============================================================================
+
+// Single occurrence false positive.
+//
+// Parameters:
+//   rationale: Explanation of why this looks like an issue but isn't
+//   filesToRanges: Dict of file paths → array of line ranges
+//   relevant_files: (optional) List of files to show this FP for
+//                   Auto-inferred from filesToRanges keys if not provided
+//
+// Semantics: Show this FP to grader if critic reviewed ANY of relevant_files
+//
+// Returns: {rationale, occurrences: [{files, relevant_files}]}
+local falsePositive(rationale, filesToRanges, relevant_files=null) =
+  local inferred_relevant_files =
+    if relevant_files != null then relevant_files
+    else std.objectFields(filesToRanges);
+  {
+    rationale: rationale,
+    occurrences: [{
+      files: normFiles(filesToRanges),
+      relevant_files: inferred_relevant_files,
+    }],
+  };
+
+// Multiple occurrences false positive.
+//
+// Parameters:
+//   rationale: Explanation of why this looks like an issue but isn't
+//   occurrences: List of occurrence objects, each with:
+//     - files: {file: [ranges]|null} dict
+//     - note: string (REQUIRED - explains this specific occurrence)
+//     - relevant_files: [files...] (list of files to show this FP for)
+//
+// Validation:
+//   - ALL occurrences must have 'note' field
+//
+// Returns: {rationale, occurrences}
+local falsePositiveMulti(rationale, occurrences) =
+  // Validate all occurrences have notes
+  local missing_notes = [
+    i
+    for i in std.range(0, std.length(occurrences) - 1)
+    if !std.objectHas(occurrences[i], 'note') || occurrences[i].note == null
+  ];
+  local notes_valid = if std.length(missing_notes) > 0
+    then error 'All occurrences in falsePositiveMulti must have a note field. Missing in occurrences at indices: ' + std.manifestJson(missing_notes)
+    else true;
+
+  {
+    rationale: rationale,
+    occurrences: [
+      {
+        files: normFiles(occ.files),
+        note: occ.note,
+        relevant_files: occ.relevant_files,
+      }
+      for occ in occurrences
+    ],
+  };
+
+// ============================================================================
+// Exported API
+// ============================================================================
 
 {
-  // exported symbols
-  issueOneOccurrence: issueOneOccurrence,
-  issueWithOccurrences: issueWithOccurrences,
-  issueOccurrencesFromLines: issueOccurrencesFromLines,
+  // True Positive helpers
+  issue: issue,
+  issueMulti: issueMulti,
+
+  // False Positive helpers
+  falsePositive: falsePositive,
+  falsePositiveMulti: falsePositiveMulti,
 }

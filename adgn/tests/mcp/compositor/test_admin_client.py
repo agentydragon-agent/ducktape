@@ -5,7 +5,7 @@ from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaCli
 
 async def test_admin_client_list_and_detach(make_pg_compositor, backend_server):
     # make_pg_compositor auto-creates a PolicyEngine and mounts its reader
-    async with make_pg_compositor({"backend": backend_server}) as (sess, comp, _engine):
+    async with make_pg_compositor({"backend": backend_server}) as (sess, _comp, _engine):
         admin = CompositorAdminClient(sess)
         meta = CompositorMetaClient(sess)
         states = await meta.list_states()

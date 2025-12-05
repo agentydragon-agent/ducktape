@@ -7,10 +7,11 @@ from dataclasses import dataclass
 import typer
 
 from adgn.props.cli_app.decorators import async_run
-from adgn.props.db import init_db, recreate_database
-from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt
-from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata
-from adgn.props.db.sync_specimens import SyncStats, sync_specimens
+from adgn.props.db import get_session, init_db, recreate_database as recreate_db_schema
+from adgn.props.db.prompts import discover_detector_prompts, load_and_upsert_detector_prompt_with_session
+from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_db
+from adgn.props.db.sync_model_metadata import ModelMetadataSyncStats, sync_model_metadata_with_session
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @dataclass
@@ -23,63 +24,73 @@ class DetectorPromptSyncResult:
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing specimens, detector prompts, and model metadata."""
+    """Combined result from syncing snapshots, issues, detector prompts, and model metadata."""
 
-    specimen_stats: SyncStats
+    snapshot_stats: SyncStats
+    issue_stats: SyncStats
     detector_prompts: list[DetectorPromptSyncResult]
     model_metadata_stats: ModelMetadataSyncStats
 
 
-def sync_detector_prompts() -> list[DetectorPromptSyncResult]:
-    """Sync all detector prompts from prompts/system/*.md to database.
+def sync_all() -> FullSyncResult:
+    """Sync snapshots, issues, detector prompts, and model metadata in a single operation.
 
-    Returns:
-        List of synced detector prompts with their SHA-256 hashes
-    """
-    return [
-        DetectorPromptSyncResult(filename=filename, prompt_sha256=load_and_upsert_detector_prompt(filename))
-        for filename in discover_detector_prompts()
-    ]
-
-
-async def sync_all() -> FullSyncResult:
-    """Sync specimens, detector prompts, and model metadata in a single operation.
+    All sync operations happen within a single database session for consistency.
 
     Returns:
         Combined results from all sync operations
     """
-    return FullSyncResult(
-        specimen_stats=await sync_specimens(),
-        detector_prompts=sync_detector_prompts(),
-        model_metadata_stats=sync_model_metadata(),
-    )
+    registry = SnapshotRegistry.from_package_resources()
+    with get_session() as session:
+        snapshot_stats = sync_snapshots_to_db(session, registry)
+        issue_stats = sync_issues_to_db(session, registry)
+
+        # Sync detector prompts
+        detector_prompts = [
+            DetectorPromptSyncResult(
+                filename=filename, prompt_sha256=load_and_upsert_detector_prompt_with_session(session, filename)
+            )
+            for filename in discover_detector_prompts()
+        ]
+
+        # Sync model metadata
+        model_metadata_stats = sync_model_metadata_with_session(session)
+
+        return FullSyncResult(
+            snapshot_stats=snapshot_stats,
+            issue_stats=issue_stats,
+            detector_prompts=detector_prompts,
+            model_metadata_stats=model_metadata_stats,
+        )
 
 
-async def recreate_database_schema() -> SyncStats:
+def recreate_database_and_sync() -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
-    Drops all tables/views/policies, creates fresh schema, and syncs specimens.
+    Drops all tables/views/policies, creates fresh schema, and syncs all data
+    (snapshots, issues, detector prompts, and model metadata).
 
     Returns:
-        Statistics about specimens synced after recreation
+        Combined results from all sync operations
     """
     # Recreate schema (tables, RLS, roles)
-    recreate_database()
+    recreate_db_schema()
 
-    # Sync specimens into fresh database
-    return await sync_specimens()
+    # Sync all data sources into fresh database
+    return sync_all()
 
 
 @async_run
 async def cmd_sync() -> None:
-    """Sync specimens, detector prompts, and model metadata from source to DB."""
+    """Sync snapshots, issues, detector prompts, and model metadata from source to DB."""
     init_db()
 
     # Sync all data sources
-    typer.echo("Syncing specimens...")
-    result = await sync_all()
+    typer.echo("Syncing snapshots and issues...")
+    result = sync_all()
 
-    typer.echo(f"  {result.specimen_stats.summary_text}")
+    typer.echo(f"  Snapshots: {result.snapshot_stats.summary_text}")
+    typer.echo(f"  Issues:    {result.issue_stats.summary_text}")
 
     typer.echo("\nSyncing detector prompts...")
     for detector in result.detector_prompts:
@@ -98,7 +109,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     2. Create agent_user role (read-only with RLS)
     3. Create tables from ORM models
     4. Enable Row-Level Security policies
-    5. Sync specimens from splits.py
+    5. Sync all data from filesystem (snapshots, issues, detector prompts, model metadata)
 
     Requires PROPS_DB_URL environment variable (postgres superuser connection).
     """
@@ -109,8 +120,12 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
             typer.echo("Aborted")
             raise typer.Exit(1)
 
-    # Connect and recreate (includes specimen sync)
+    # Connect and recreate (includes full sync)
     init_db()
     typer.echo("Recreating database schema...")
-    stats = await recreate_database_schema()
-    typer.echo(f"✓ Database recreated with {stats.summary_text}")
+    result = recreate_database_and_sync()
+    typer.echo("✓ Database recreated:")
+    typer.echo(f"  Snapshots:        {result.snapshot_stats.summary_text}")
+    typer.echo(f"  Issues:           {result.issue_stats.summary_text}")
+    typer.echo(f"  Detector prompts: {len(result.detector_prompts)} synced")
+    typer.echo(f"  Model metadata:   {result.model_metadata_stats.summary_text}")

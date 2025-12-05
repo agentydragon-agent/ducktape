@@ -1,103 +1,284 @@
-# Instructions for Authoring Specimen Files
+# Instructions for Authoring Snapshot Issue Files
+
+## Overview
+
+This guide explains how to author issue files for code review snapshots. Snapshots are frozen code states with labeled issues used as training/evaluation data for the LLM critic.
+
+**For the broader context** on how snapshots fit into the training strategy (per-file examples, `expect_caught_from` filtering, optimization approaches), see [Training Strategy](training_strategy.md).
 
 ## File Structure
 
 ```
-specimen-name/
-├── manifest.yaml            # VCS source, commit ref, scope (include patterns)
-├── README.md               # Brief overview (optional, cross-cutting context only)
-└── issues/
-    ├── dead-code.libsonnet      # Detailed issue with rationale, locations
-    ├── missing-types.libsonnet  # Use descriptive slugs, not numbers
-    └── ...
+specimens/
+  snapshots.yaml                  # All snapshots defined here
+  lib.libsonnet                   # Jsonnet helpers
+  ducktape/
+    2025-11-26-00/
+      dead-code.libsonnet         # Issues directly in snapshot dir
+      missing-types.libsonnet
+      fp-intentional-duplication.libsonnet  # FPs mixed with TPs
 ```
 
 **Naming convention:** Issue files use descriptive slugs (lowercase with hyphens), not numerical indices. Slugs should be short (0-30 characters) and convey the issue type. Examples: `dead-code.libsonnet`, `missing-error-handling.libsonnet`, `duplicate-logic.libsonnet`.
 
-## Critical: Specimens are Frozen Snapshots
+## Critical: Snapshots are Frozen Code States
 
-**Specimens are training/evaluation data representing code quality issues at a specific commit.**
+**Snapshots are training/evaluation data representing code quality issues at a specific commit.**
 
-- Each specimen is pinned to a specific commit (see `manifest.yaml` `ref` field)
+- Each snapshot is pinned to a specific commit (see `snapshots.yaml` source field)
 - Issue files (`.libsonnet`) describe what was **wrong at that commit**
 - **NEVER** update issue files to record resolution status or mark issues "COMPLETED"
 - Issue files should remain accurate descriptions of problems as they existed
-- Fixes happen on separate branches; specimens remain unchanged historical records
-- Think of specimens like labeled training data: the label describes the frozen state
+- Fixes happen on separate branches; snapshots remain unchanged historical records
+- Think of snapshots like labeled training data: the label describes the frozen state
 
 **Example violations:**
-- ❌ Adding "Status: COMPLETED" or "Note: This was fixed in commit X"
-- ❌ Updating rationale to say "This issue has been resolved"
-- ❌ Removing or modifying issue descriptions after fixes are made
+- Adding "Status: COMPLETED" or "Note: This was fixed in commit X"
+- Updating rationale to say "This issue has been resolved"
+- Removing or modifying issue descriptions after fixes are made
 
 **Correct approach:**
-- ✅ Record issues as they exist at the snapshot commit
-- ✅ Fix issues on separate branches without modifying specimen files
-- ✅ Create new specimens for new commits if you want to capture improvements
+- Record issues as they exist at the snapshot commit
+- Fix issues on separate branches without modifying snapshot files
+- Create new snapshots for new commits if you want to capture improvements
 
 ## Authoring Rules
 
 ### 1. Single Source of Truth: Jsonnet Files
 
-**All detailed issue information belongs in `issues/*.libsonnet` files only.**
+**All detailed issue information belongs in `*.libsonnet` files only.**
 
 Each `.libsonnet` file contains:
 - **Rationale**: Full explanation of what's wrong and why
 - **File locations**: Exact paths and line ranges
-- **Comments**: Inline comments at line ranges explaining context
+- **expect_caught_from** (TPs): Files required to catch the issue
+- **relevant_files** (FPs): Files that make the FP relevant
 
 **Do NOT duplicate this information in README.md or other files.**
 
-### 2. README.md: Cross-Cutting Information Only
+### 2. Verify File Paths Match Bundle Structure
 
-**Specimens should NOT have READMEs that restate/summarize issues.**
+**File paths in issue files must match the hydrated bundle structure exactly.**
 
-If a README exists, it should ONLY contain:
-- **Cross-cutting context** not present in individual issue files
-- **Scope/inclusion criteria**: What code was analyzed, what was excluded
-- **Patterns across issues**: High-level themes linking multiple issues
-- **Specimen-specific setup**: Special tags, branches, or analysis methods
-- **Reference line**: "See `issues/*.libsonnet` for issue details."
+When a snapshot bundle is created with `include: [adgn/]`, the hydrated snapshot will have paths like:
+- `adgn/src/adgn/agent/agent.py`
+- `adgn/tests/props/test_foo.py`
 
-**Do NOT include**:
-- Issue list with one-line summaries (redundant with issue files)
-- Full rationale or problem explanations (belongs in libsonnet)
-- Code snippets or examples (belongs in libsonnet)
-- "Correct behavior" sections (belongs in libsonnet)
-- Detailed analysis (belongs in libsonnet)
+**NOT** like:
+- `src/adgn/agent/agent.py` ❌
+- `tests/props/test_foo.py` ❌
 
-**When to have NO README:**
-- If specimen has no cross-cutting context, skip README entirely
-- Issue files are the documentation - README adds no value
+**Verification steps:**
+1. **Check the bundle configuration** in `snapshots.yaml`:
+   ```yaml
+   bundle:
+     source_commit: abc123...
+     include:
+     - adgn/  # ← This prefix will be in all hydrated paths
+   ```
 
-**Example of useful README content:**
-```markdown
-# Specimen: post-refactor-analysis
+2. **Verify paths match** by hydrating the snapshot and listing files:
+   ```bash
+   adgn-properties snapshot exec <snapshot-slug> -- ls -la
+   ```
 
-Analyzed after refactoring MCP compositor to 2-level architecture.
-Focuses on inconsistencies between new architecture and legacy code.
+3. **Use paths as they appear** in the hydrated bundle - include all directory prefixes from the `include` patterns.
 
-Scope: `adgn/src/adgn/agent/` and `adgn/src/adgn/mcp/` only.
-Excluded: third-party integrations (not yet migrated).
+**Common mistake:** Writing issue files for `ducktape/` snapshots without the `adgn/` prefix when the bundle includes `adgn/`.
 
-See `issues/*.libsonnet` for issue details.
+### 3. Issue File Templates
+
+**True Positive (issue that should be caught):**
+```jsonnet
+local I = import '../../lib.libsonnet';
+
+I.issue(
+  rationale='Dead code should be removed',
+  filesToRanges={'src/cli.py': [[145, 167]]},
+  // expect_caught_from auto-inferred for single-file issues
+)
 ```
 
-### 3. Issue Organization: Logical Problems, Not Locations
+**Multi-file issue (requires explicit expect_caught_from):**
+```jsonnet
+local I = import '../../lib.libsonnet';
+
+I.issue(
+  rationale='Duplicated enum definitions',
+  filesToRanges={
+    'src/types.py': [[6, 10]],
+    'src/persist.py': [[54, 58]],
+  },
+  expect_caught_from=[
+    ['src/types.py'],      // Catch from either
+    ['src/persist.py'],
+  ],
+)
+```
+
+**Note on `expect_caught_from`:** This field specifies which minimal file sets are needed to detect the issue. It's used to generate focused training examples per-file rather than only full-snapshot reviews. See [Training Strategy](training_strategy.md) for details on how this enables the per-file examples approach and tighter optimization feedback loops.
+
+**Multiple occurrences:**
+```jsonnet
+local I = import '../../lib.libsonnet';
+
+I.issueMulti(
+  rationale='Imperative list building should use comprehensions',
+  occurrences=[
+    {
+      files: {'src/agents.py': [[50, 59]]},
+      note: 'In _convert_pending_approvals()',
+      expect_caught_from: [['src/agents.py']],
+    },
+    {
+      files: {'src/bridge.py': [[64, 108]]},
+      note: 'In list_approvals()',
+      expect_caught_from: [['src/bridge.py']],
+    },
+  ],
+)
+```
+
+**False Positive:**
+```jsonnet
+local I = import '../../lib.libsonnet';
+
+I.falsePositive(
+  rationale='Intentional duplication for visual consistency',
+  filesToRanges={
+    'src/Button.svelte': [[45, 60]],
+    'src/Link.svelte': [[32, 47]],
+  },
+  // relevant_files auto-inferred from filesToRanges keys
+)
+```
+
+### 4. Range Format Specifications
+
+**Three valid formats for line ranges:**
+
+```jsonnet
+filesToRanges={
+  'file.py': [
+    // Format 1: Bare number (single line)
+    38,
+
+    // Format 2: Two-element array (range)
+    [40, 45],     // Lines 40-45 inclusive
+    [50, 50],     // Single line (start = end)
+
+    // Format 3: Object (explicit fields)
+    {start_line: 60},                    // Single line (no end_line)
+    {start_line: 70, end_line: 75},      // Range with end_line
+  ]
+}
+```
+
+**Invalid format:**
+```jsonnet
+filesToRanges={'file.py': [
+  [38],  // ❌ INVALID - arrays must have exactly 2 elements
+]}
+```
+
+**Auto-inference rules:**
+
+**For `issue()` (single occurrence):**
+- If `filesToRanges` has 1 file: `expect_caught_from` auto-inferred as `[[that_file]]`
+- If `filesToRanges` has >1 file: Must provide explicit `expect_caught_from` (will error if missing)
+
+**For `falsePositive()` (single occurrence):**
+- If `relevant_files` not provided: Auto-inferred from keys of `filesToRanges`
+
+**For `issueMulti()` (multiple occurrences):**
+- All occurrences MUST have `note` field
+- If total unique files across ALL occurrences > 1:
+  - EVERY occurrence must have explicit `expect_caught_from`
+  - This applies even to single-file occurrences within the multi-file issue
+- Example: If occurrence 1 uses `file_a.py` and occurrence 2 uses `file_b.py`, both need `expect_caught_from`
+
+### 5. Detection Standard for `expect_caught_from`
+
+**The key question:** "If I gave a high-quality critic this file set to review, and they failed to find this issue, would that be a failure on their part?"
+
+**What "reviewing a file" includes:**
+- Reading the file thoroughly line by line
+- Following imports and calls to check APIs
+- Searching the codebase for existing helpers/patterns
+- Looking for duplication or similar patterns
+- All normal thorough code review activities
+
+**What it does NOT mean:**
+- "Can you detect this reading ONLY these files in complete isolation?"
+- "Without following any imports or doing any searches?"
+
+**Examples:**
+
+**Example 1: Test creating `Compositor("comp")` directly**
+- File: `test_notifications.py` with `comp = Compositor("comp")`
+- Question: "Should this use a pytest fixture?"
+- Expected action: Critic searches for existing fixtures and patterns
+- Result: Finds 12 other instances, flags duplication
+- `expect_caught_from: [['test_notifications.py']]` ✓
+
+**Example 2: Wrapper calling implementation with silent fallback**
+- Files: `cli.py` (wrapper) and `local_tools.py` (implementation with fallback logic)
+- From `cli.py` alone: See wrapper name, but not fallback behavior
+- From `local_tools.py` alone: See the silent fallback directly
+- Result: Only detectable from implementation file
+- `expect_caught_from: [['local_tools.py']]` ✓
+
+**Example 3: Unused CLI flag**
+- File: `cli.py` defines `--ui-port` flag with logs saying "Management UI available"
+- Question: "Does this flag actually work?"
+- Expected action: Critic traces code to verify the flag is properly wired up
+- Result: Discovers server serves only stubs, flag misleads users
+- `expect_caught_from: [['cli.py']]` ✓
+
+**Example 4: Cross-file duplication of enum definitions**
+- Files: `types.py` and `persist.py` both define same enum
+- From either file alone: Cannot detect duplication (only see one instance)
+- Need both files: See duplicate definitions
+- `expect_caught_from: [['types.py', 'persist.py']]` ✓ (AND logic)
+
+**General principle: Include problem code, not reference/solution code**
+
+When an issue is about "absence of use" or "should use existing X":
+- **Include:** Code that needs to change (the violators/problems)
+- **Don't include:** Code that's already correct and just needs to be used/referenced
+
+Examples:
+- Tests not using fixtures → Include test files, not conftest
+- Code not using helper function → Include duplicated code, not the helper module
+- Code not using base class → Include implementations, not the base class
+- Code duplicating utility logic → Include duplicators, not the utility module
+- Code reinventing stdlib feature → Include reinvention, not stdlib
+- Code with hardcoded values → Include literals, not the constants file
+- Code not following pattern → Include non-conforming code, not the exemplar
+- Code not calling cleanup → Include leaky code, not the cleanup util
+
+**Exceptions - include the "solution" file when:**
+- It itself has a problem (broken/misleading API, incomplete implementation, missing docs)
+- The issue is about improving the solution, not just using it
+- **Internal contradiction:** File's docstring/comments promise something the code doesn't deliver
+  - Example: `server.py` docstring says "provides Management UI" but code only has stubs
+  - The file IS the problem (broken promise), not just "unused affordance"
+  - Contrast with: Tests not using `server.py` fixture → fixture is fine, tests are the problem
+
+### 6. Issue Organization: Logical Problems, Not Locations
 
 **CRITICAL PRINCIPLE: Group by LOGICAL ISSUE, not by location.**
 
 Each issue file should describe ONE logical problem type, which may occur in multiple locations:
 
-**✅ CORRECT - One logical issue:**
-- "Trivial alias functions that should be inlined" → lists 5 occurrences across different files
-- "Imports not at top of file" → lists 8 occurrences in different components
-- "Dead code that should be removed" → lists all unused functions
-- "Manual JSON parsing without validation" → lists all `JSON.parse()` without schema checks
+**CORRECT - One logical issue:**
+- "Trivial alias functions that should be inlined" -> lists 5 occurrences across different files
+- "Imports not at top of file" -> lists 8 occurrences in different components
+- "Dead code that should be removed" -> lists all unused functions
 
-**❌ WRONG - One location:**
-- "Problems in ServersPanel.svelte" → mixing thin wrappers + manual parsing + duplicate styles
-- "Issues in app.py lines 100-200" → mixing type annotations + dead code + useless comments
+**WRONG - One location:**
+- "Problems in ServersPanel.svelte" -> mixing thin wrappers + manual parsing + duplicate styles
+- "Issues in app.py lines 100-200" -> mixing type annotations + dead code + useless comments
 
 **Issue organization rules:**
 1. **One logical problem** = one issue file (may have N occurrences)
@@ -105,190 +286,80 @@ Each issue file should describe ONE logical problem type, which may occur in mul
 3. **Same problem across locations** = single issue with multiple occurrences
 4. **Different problems** = separate issues even if in adjacent lines
 
-**Examples of logical problem groupings:**
-- Code duplication (same pattern repeated)
-- Type safety violations (missing annotations, `as any` casts)
-- Dead code (unused imports, unreachable functions)
-- Architectural violations (bypassing abstraction layers)
-- Missing error handling (swallowed exceptions)
-- Useless comments (historical notes, obvious statements)
-- Naming violations (inconsistent, misleading names)
-
-**When splitting issues:**
-- If a location has 3 problems → create 3 separate issues
-- Each issue describes ONE problem type across ALL its occurrences
-- Don't create "ServersPanel issues" - create "thin wrapper issues" that happen to include ServersPanel
-
-### 4. Objectivity in Issue Descriptions
+### 7. Objectivity in Issue Descriptions
 
 **Avoid subjective phrasing** - describe problems objectively:
 
-**❌ Wrong:**
+**Wrong:**
 - "User mentioned 'pretty mechanism for parsing Pydantic models'"
 - "This is a nice pattern"
 - "Would be better to..."
 
-**✅ Correct:**
+**Correct:**
 - "Manual `isinstance()` validation instead of Pydantic `TypeAdapter`"
 - "This pattern duplicates validation logic"
 - "Use `TypeAdapter` for automatic validation"
 
 Present facts and technical rationale, not opinions or attributed suggestions.
 
-### 5. Research First: No Open Questions
+### 8. Research First: No Open Questions
 
-**Specimens must not leave open research questions.** All investigation should be completed before authoring the issue.
+**Snapshots must not leave open research questions.** All investigation should be completed before authoring the issue.
 
-**❌ WRONG - Leaving research questions open:**
+**WRONG - Leaving research questions open:**
 ```jsonnet
 rationale=|||
   Lines 700-704 manually discover the git directory. Check if `pygit2.Repository()`
   can discover automatically.
 
-  **Investigation needed:** Check if either of these works:
-  - `pygit2.Repository(Path.cwd())` (auto-discovers from current dir)
-  - `pygit2.Repository()` (auto-discovers from current dir)
-
-  **If auto-discovery works:** [suggested fix]
-  **If auto-discovery doesn't work:** Close this issue as invalid.
+  **Investigation needed:** Check if either of these works...
 |||
 ```
 
-**✅ CORRECT - Research completed, findings documented:**
+**CORRECT - Research completed, findings documented:**
 ```jsonnet
 rationale=|||
   Lines 700-704 manually discover the git directory using `pygit2.discover_repository()`.
   Per pygit2 docs, `Repository()` accepts a path and auto-discovers the .git directory,
   making manual discovery unnecessary.
-
-  Replace:
-    gitdir = pygit2.discover_repository(Path.cwd())
-    if not gitdir: [error handling]
-    repo = pygit2.Repository(gitdir)
-
-  With:
-    try:
-      repo = pygit2.Repository(Path.cwd())
-    except pygit2.GitError: [error handling]
 |||
 ```
 
-**Research checklist before authoring:**
-- ✅ Check library documentation for existing solutions
-- ✅ Verify claims about "better approaches" with concrete evidence
-- ✅ Test suggested fixes if uncertain about correctness
-- ✅ Remove issues that turn out to be invalid after research
-
-**Example of what NOT to do:**
-An issue asks "Check if auto-discovery works" and includes "If auto-discovery doesn't work: Close this issue as invalid." This research should have been completed first - either document that auto-discovery works (with evidence), or don't create the issue.
-
-### 6. Verifiable External References
+### 9. Verifiable External References
 
 **When referencing specific tools, APIs, or implementation details, provide verifiable links. Well-known frameworks/standards don't need URLs.**
 
-**DO need URLs (specific implementation details):**
-- **Specific tools/packages:** npm packages, PyPI packages, CLI tools
-- **APIs and library methods:** Specific API endpoints, method documentation
-- **Commit references:** Full 40-character SHAs or GitHub/GitLab permalinks
-- **Project-specific components:** SDKs, internal libraries, custom tools
-- **Specifications:** RFCs, PEPs with section numbers
+**DO need URLs:**
+- Specific tools/packages: npm packages, PyPI packages, CLI tools
+- APIs and library methods: Specific API endpoints, method documentation
+- Commit references: Full 40-character SHAs or GitHub/GitLab permalinks
 
-**DON'T need URLs (well-known frameworks/standards):**
-- **Common frameworks:** React, Vue, Angular, Tailwind CSS, Bootstrap
-- **Standard libraries:** Python stdlib, Node.js core modules
-- **Well-known tools:** pytest, Jest, Docker, PostgreSQL, Redis
-- **Programming languages:** Python, JavaScript, TypeScript, Go, Rust
-- **Common patterns:** REST, GraphQL, OAuth, JWT
+**DON'T need URLs:**
+- Common frameworks: React, Vue, Angular, Tailwind CSS
+- Standard libraries: Python stdlib, Node.js core modules
+- Well-known tools: pytest, Jest, Docker, PostgreSQL
 
-**❌ Wrong - Unverifiable references:**
-- "Per the library docs..." (which docs? which version?)
-- "GitHub shows an example..." (which repo? which file? which commit?)
-- "The API supports X" (which API version? link to docs?)
-- "According to best practices..." (which best practices? source?)
-- "Commit 7c6cae7ad..." (short SHA - use full SHA or permalink)
+### 10. Code Citation Guidelines
 
-**✅ Correct - Verifiable references:**
-- "Per pygit2 docs (https://www.pygit2.org/repository.html#pygit2.Repository), `Repository()` accepts..."
-- "See FastAPI example: https://github.com/tiangolo/fastapi/blob/45321abc.../docs/tutorial/path-params.md#predefined-values"
-- "Pydantic TypeAdapter (https://docs.pydantic.dev/2.5/api/type_adapter/) validates..."
-- "Per PEP 484 (https://www.python.org/dev/peps/pep-0484/#forward-references), forward references..."
-- "The `json-schema-to-zod` package (https://www.npmjs.com/package/json-schema-to-zod)..."
+**IMPORTANT**: Do NOT include long code blocks in rationale. Readers have snapshot code open - cite file paths and line ranges, briefly summarize what's there.
 
-**✅ Correct - Well-known frameworks (no URL needed):**
-- "Use pytest parameterization for multiple test cases"
-- "Tailwind CSS provides utility classes for styling"
-- "PostgreSQL supports JSON columns"
-- "React hooks should follow the rules of hooks"
-
-**Goal:** Anyone reading the issue years later should be able to verify specific claims by following the links, without needing URLs for universally-known technologies.
-
-### 7. Jsonnet Issue File Template
-
-**IMPORTANT**: Do NOT include long code blocks in rationale. Readers have specimen code open - cite file paths and line ranges, briefly summarize what's there. Long code citations bloat issue files unnecessarily.
-
-**Code citation guidelines:**
-- ✅ Brief summary: "Button styles duplicated across 6 components (AgentsSidebar lines 355-360, GlobalApprovalsList lines 118-146, etc.)"
-- ✅ Short example (3-5 lines) when illustrating pattern: "Pattern: `.btn-primary { background: ...; color: ...; }`"
-- ❌ Long blocks (10+ lines) copied from source
-- ❌ Multiple large code blocks showing variations
+- Brief summary: "Button styles duplicated across 6 components (AgentsSidebar lines 355-360, GlobalApprovalsList lines 118-146, etc.)"
+- Short example (3-5 lines) when illustrating pattern
+- Avoid long blocks (10+ lines) copied from source
 - Assume reader can look up exact code at cited lines
 
-**Rationale brevity:**
-- **Keep "why this is bad" brief or omit it when obvious**: Dead code, obvious bugs, or issues where the issue description makes the problem clear don't need lengthy explanations.
-- Focus rationale on what's wrong and the correct approach; skip redundant justifications.
-
-```jsonnet
-local I = import '../../specimens/lib.libsonnet';
-
-I.issueOneOccurrence(
-  rationale=|||
-    Description of the problem and correct approach.
-    Cite file:line ranges, briefly summarize patterns.
-
-    Do NOT paste long code blocks - reader has specimen open.
-    Keep "why this is bad" brief when obvious (dead code, bugs, etc.).
-  |||,
-  filesToRanges={
-    'path/to/file.py': [
-      123,              // Brief context (when needed)
-      [200, 210],       // Brief note (when needed)
-    ],
-    'other/file.py': [
-      [45, 50],         // Multiple locations OK
-    ],
-  },
-)
-```
-
-### 8. Comments: Use Sparingly
-
-**Ideal: Zero comments.** All information should go in structured fields (`rationale`, `filesToRanges`).
-
-**When to use comments (rare cases):**
-- Uncertainty about proper issue categorization
-- Historical context on how issue arose (if not suitable for rationale)
-- Temporary notes during specimen authoring
-- Clarification that doesn't fit structured format
-
-**✅ Acceptable inline comments at line ranges:**
+**Per-range context:** Currently, notes are only supported at the occurrence level. Use Jsonnet comments for per-range context:
 ```jsonnet
 filesToRanges={
-  'foo.py': [
-    [86, 89],   // --mcp-config flag parsing
-    [92, 93],   // --initial-policy flag
+  'file.py': [
+    [10, 20],  // definition site
+    [30, 40],  // call site
   ],
 }
 ```
-Brief labels for code location context only.
+Note: These comments help human readers but aren't parsed into the data model.
 
-**❌ FORBIDDEN - Comments duplicating structured fields:**
-```jsonnet
-// Problem: Silent fallback without error
-// Fix: Remove exists() check or raise error
-```
-This information belongs in `rationale`, not comments. **Delete such blocks.**
-
-**Rule**: If information can go in a structured field, it MUST go there, not in comments.
+TODO: Add support for structured per-range notes in both Jsonnet and Pydantic schemas.
 
 @quality-checklist.md
 
@@ -298,4 +369,4 @@ This information belongs in `rationale`, not comments. **Delete such blocks.**
 2. **Tooling-friendly**: Jsonnet is machine-readable for analysis tools
 3. **Human-friendly**: Jsonnet provides full detail in a structured format
 4. **Maintainable**: Updates happen in one place only
-5. **Composable**: Tools can combine/aggregate issues from multiple specimens
+5. **Composable**: Tools can combine/aggregate issues from multiple snapshots

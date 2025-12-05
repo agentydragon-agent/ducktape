@@ -51,7 +51,7 @@ async def test_stateless_reasoning_forwarding(
     await agent.run("say hi")
 
     # Reasoning should be present in the agent transcript/messages for stateless forwarding
-    assert_items_include_instances(agent.messages, ReasoningItem, AssistantMessage)
+    assert_items_include_instances(agent.to_openai_messages(), ReasoningItem, AssistantMessage)
 
 
 async def test_function_call_and_function_call_output_replay(
@@ -129,6 +129,6 @@ async def test_model_provided_tool_output_records_without_execution(
 
     await agent.run("say hi")
 
-    assert_items_include_instances(agent.messages, FunctionCallOutputItem)
+    assert_items_include_instances(agent.to_openai_messages(), FunctionCallOutputItem)
     assert not agent.pending_function_calls
     assert client.calls == 1

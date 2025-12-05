@@ -47,6 +47,7 @@ def extract_output[T: BaseModel](req: ResponsesRequest, output_type: type[T]) ->
         logger.error("Full request dump:")
         logger.error(json.dumps(req.model_dump(mode="json"), indent=2))
         pytest.fail(f"Failed to extract {output_type.__name__}: {e}. See log for full request.")
+        raise AssertionError("unreachable")
 
 
 def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, output_type: type[T]) -> T:

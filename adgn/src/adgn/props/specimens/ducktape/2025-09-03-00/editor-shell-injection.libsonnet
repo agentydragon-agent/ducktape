@@ -1,0 +1,27 @@
+local I = import '../../lib.libsonnet';
+
+I.issue(
+  rationale= |||
+    In llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py the editor is invoked via:
+    `asyncio.create_subprocess_shell(f"{editor} {commit_msg_path}")`.
+
+    This concatenates the filename into the shell command string. That is not Git-compatible and
+    breaks with spaces/quotes in either the editor value or the path; it also changes parsing semantics.
+
+    Correct Git-compatible invocation keeps shell semantics but appends the filename as a separate
+    argument through the shell wrapper (like Git's run-command):
+
+      /bin/sh -c '<editor> "$@"' <editor> <realpath-to-COMMIT_EDITMSG>
+      # On Git for Windows, use `sh -c` rather than `/bin/sh -c`.
+
+    Acceptance criteria:
+    - Replace the f-string shell command with the shell-wrapper form above (or an equivalent that
+      passes the path as a separate arg rather than interpolating it into the command string).
+    - Resolve the editor via `git var GIT_EDITOR` (respects precedence and ":" no-op).
+    - Keep shell usage for full Git compatibility; do not flag shell usage itself.
+    - (Optional) Validate COMMIT_EDITMSG path (e.g., symlink/permissions) before launch.
+  |||,
+  filesToRanges={
+    'llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py': [[920, 934]],
+  },
+)

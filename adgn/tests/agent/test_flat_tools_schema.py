@@ -174,8 +174,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )
-        async with agent:
-            await agent.run(user_text="What is 10 + 20?")
+        await agent.run(user_text="What is 10 + 20?")
 
     # Verify phase 1
     phase1_request = client_phase1.captured[0]
@@ -203,8 +202,7 @@ async def test_agent_compositor_flat_tools_request_schema(
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )
-        async with agent:
-            await agent.run(user_text="What is 10 + 20?")
+        await agent.run(user_text="What is 10 + 20?")
 
     # Verify phase 2
     first_request = client_phase2.captured[0]

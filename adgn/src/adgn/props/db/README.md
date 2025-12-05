@@ -52,12 +52,13 @@ export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@
    export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
 
    # Initialize tables, RLS policies, and sync specimens
-   adgn-properties2 db-init
+   adgn-properties sync
    ```
 
-   To drop and recreate everything (destructive):
+   To drop and recreate everything (includes specimen sync, destructive):
    ```bash
-   adgn-properties2 db-init --clean --yes
+   PROPS_DB_URL='postgresql://postgres:postgres@localhost:5433/eval_results' \
+     adgn-properties db-recreate --yes
    ```
 
 ## Database Users

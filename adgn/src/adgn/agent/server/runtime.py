@@ -8,7 +8,8 @@ from typing import Any
 import uuid
 
 from adgn.agent.agent import MiniCodex
-from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
@@ -28,14 +29,13 @@ from adgn.agent.server.protocol import (
 from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.types import AgentID
-from adgn.mcp._shared.calltool import to_pydantic
 from adgn.mcp.approval_policy.engine import PolicyEngine
 
 logger = logging.getLogger(__name__)
 
 
-class ConnectionManager(BaseHandler):
-    """Manages message delivery to UI clients via ServerBus."""
+class UiEventHandler(BaseHandler):
+    """Handles agent events and delivers messages to UI clients via ServerBus."""
 
     def __init__(self) -> None:
         self._session: AgentSession | None = None
@@ -55,8 +55,7 @@ class ConnectionManager(BaseHandler):
         assert self._session is not None
         if self._session.ui_bus is None:
             return
-        bus = self._session.ui_bus
-        for item in bus.drain_messages():
+        for item in self._session.ui_bus.drain_messages():
             if isinstance(item, UiMessage):
                 await self._send_and_reduce(
                     UiMessageEvt(message=UiMessagePayload(mime=item.mime, content=item.content))
@@ -78,8 +77,7 @@ class ConnectionManager(BaseHandler):
     async def flush(self) -> None:
         if not self._bg_tasks:
             return
-        tasks = list(self._bg_tasks)
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
 
     def on_user_text_event(self, evt: UserText) -> None:
         ut = UiUserText(text=evt.text)
@@ -92,11 +90,8 @@ class ConnectionManager(BaseHandler):
         tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
         self._spawn(self._send_and_reduce(tc))
 
-    # No per-tool interception; Policy Gateway middleware emits approval_pending via notifier
-
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        # FastMCP CallToolResult is not a Pydantic model; project minimal fields
-        fco = FunctionCallOutput(call_id=evt.call_id, result=to_pydantic(evt.result))
+        fco = FunctionCallOutput(call_id=evt.call_id, result=evt.result)
         self._spawn(self._send_and_reduce(fco))
         self._spawn(self._emit_ui_bus_messages())
 
@@ -104,7 +99,7 @@ class ConnectionManager(BaseHandler):
 class AgentSession:
     def __init__(
         self,
-        manager: ConnectionManager,
+        manager: UiEventHandler,
         *,
         persistence: Persistence,
         agent_id: AgentID,

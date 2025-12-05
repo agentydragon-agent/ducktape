@@ -60,8 +60,7 @@ def parse_rfc3339_millis(ts: str | None) -> int | None:
         return None
     try:
         # Support fractional seconds
-        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-        return int(dt.timestamp() * 1000)
+        return int(datetime.fromisoformat(ts).timestamp() * 1000)
     except (TypeError, ValueError):
         return None
 

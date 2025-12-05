@@ -7,7 +7,8 @@ from __future__ import annotations
 
 import logging
 
-from adgn.agent.handler import BaseHandler, Response
+from adgn.agent.events import Response
+from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Compact, LoopDecision, NoAction
 
 logger = logging.getLogger(__name__)

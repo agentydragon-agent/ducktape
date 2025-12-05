@@ -489,7 +489,7 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
         if name in subscribed:
             await _broadcast_subs_updated()
 
-    compositor.add_list_changed_listener(_on_list_changed)
+    compositor.add_resource_list_change_listener(_on_list_changed)
 
     # React to compositor resource-updated notifications: if a subscribed
     # resource (server, uri) matches, broadcast index update so UIs refresh.

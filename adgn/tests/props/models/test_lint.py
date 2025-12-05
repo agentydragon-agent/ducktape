@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from adgn.props.models.issue import LineRange
 from adgn.props.models.lint import (
     AnchorIncorrect,
     Correction,
@@ -12,6 +11,7 @@ from adgn.props.models.lint import (
     OtherError,
     TruePositive,
 )
+from adgn.props.models.true_positive import LineRange
 
 
 def test_validation_accepts_single_false_positive():

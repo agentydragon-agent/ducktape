@@ -16,7 +16,7 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.llm.logging_config import configure_logging
-from adgn.mcp._shared.calltool import to_pydantic
+from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp._shared.constants import MATRIX_CONTROL_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions
@@ -109,7 +109,7 @@ def run(
                 res_client = await mcp_client.session.call_tool(
                     name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
                 )
-                res = to_pydantic(res_client)
+                res = fastmcp_to_mcp_result(res_client)
                 ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
                 stdout_stream = ex.stdout or ""
                 assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
@@ -125,13 +125,12 @@ def run(
                 return next_since, bool(events)
 
             since_token = initial_since or None
-            async with agent:
-                while True:
-                    next_since, has_new = await _sync_once(since_token)
-                    since_token = next_since
-                    if not has_new:
-                        continue
-                    await agent.run(user_text="process matrix inbox")
+            while True:
+                next_since, has_new = await _sync_once(since_token)
+                since_token = next_since
+                if not has_new:
+                    continue
+                await agent.run(user_text="process matrix inbox")
 
     asyncio.run(_run())
 

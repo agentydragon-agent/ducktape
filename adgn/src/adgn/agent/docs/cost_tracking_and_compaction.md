@@ -433,12 +433,11 @@ async def main():
             tool_policy=RequireAnyTool(),
         )
 
-        async with agent:
-            print("Agent ready. Type your task:")
-            user_input = input("> ")
+        print("Agent ready. Type your task:")
+        user_input = input("> ")
 
-            result = await agent.run(user_text=user_input)
-            print(result.text)
+        result = await agent.run(user_text=user_input)
+        print(result.text)
 
             # Query metrics
             # print(f"\nCost: ${cost_handler.total_cost_usd:.4f}")
@@ -566,15 +565,14 @@ For CLI tools, print cost summary after each run:
 ```python
 # In adgn-mini-codex run command
 
-async with agent:
-    for line in sys.stdin:
-        user = line.rstrip("\n")
-        if not user:
-            continue
+for line in sys.stdin:
+    user = line.rstrip("\n")
+    if not user:
+        continue
 
-        res = await agent.run(user_text=user)
-        if res.text:
-            print(res.text)
+    res = await agent.run(user_text=user)
+    if res.text:
+        print(res.text)
 
         # Print cost summary after each turn
         if hasattr(agent, '_cost_handler') and agent._cost_handler:

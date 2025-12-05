@@ -6,7 +6,7 @@ import pytest
 
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.lint_issue import lint_issue_run
-from adgn.props.models.issue import IssueCore, LineRange, Occurrence
+from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 
 
 @pytest.mark.live_llm
@@ -54,7 +54,6 @@ async def test_iss014_anchor_windows(
     # Build injected IssueCore + Occurrence from the provided spec
     issue_core = IssueCore(
         id="iss-014",
-        should_flag=True,
         rationale="Delete StatusSnapshot - dead code; never used and should be removed.",
         # properties=["no-dead-code"],  # deprecated; omit
     )

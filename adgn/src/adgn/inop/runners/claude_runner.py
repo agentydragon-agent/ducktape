@@ -232,4 +232,4 @@ class ClaudeRunner(AgentRunner):
         if not self.workspace_path:
             return None
 
-        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))
+        return WorkspaceEnvironment(workspace_path=self.workspace_path)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
@@ -48,6 +49,7 @@ class _MountState:
     # Persistent child client to keep a session open for notifications/subscriptions
     child_client: Client | None = None
     stack: AsyncExitStack | None = None
+    pinned: bool = False
 
 
 class MountEvent(StrEnum):
@@ -76,16 +78,14 @@ class Compositor(FastMCP):
         # Mount lifecycle listeners: callbacks invoked on mount/unmount/state events
         # Callable signature: (name: str, action: MountEvent) -> Optional[Awaitable[None]]
         self._mount_listeners: list[Callable[[str, MountEvent], Awaitable[None] | None]] = []
-        # Pending list_changed origins captured from child notifications
-        self._pending_list_changed: set[str] = set()
-        # List-changed event listeners (server-scoped)
+        # Servers that reported resource list changes (pending broadcast)
+        self._pending_resource_list_changes: set[str] = set()
+        # Resource list change listeners (server-scoped)
         # Callable signature: (name: str) -> Optional[Awaitable[None]]
-        self._list_changed_listeners: list[Callable[[str], Awaitable[None] | None]] = []
+        self._resource_list_change_listeners: list[Callable[[str], Awaitable[None] | None]] = []
         # Resource-updated event listeners (server-scoped, with URI)
         # Callable signature: (name: str, uri: str) -> Optional[Awaitable[None]]
         self._resource_updated_listeners: list[Callable[[str, str], Awaitable[None] | None]] = []
-        # Pinned servers cannot be unmounted (internal Python API)
-        self._pinned_servers: set[str] = set()
 
         # Compositor metadata resources are exposed via the separate 'compositor_meta' server.
 
@@ -105,15 +105,15 @@ class Compositor(FastMCP):
             if asyncio.iscoroutine(res):
                 await res
 
-    def add_list_changed_listener(self, cb: Callable[[str], Awaitable[None] | None]) -> None:
+    def add_resource_list_change_listener(self, cb: Callable[[str], Awaitable[None] | None]) -> None:
         """Register a callback invoked when a child reports resources/list_changed.
 
         Callback signature: (name: str) where name is the origin server.
         """
-        self._list_changed_listeners.append(cb)
+        self._resource_list_change_listeners.append(cb)
 
-    async def _notify_list_changed(self, name: str) -> None:
-        for cb in list(self._list_changed_listeners):
+    async def _notify_resource_list_change(self, name: str) -> None:
+        for cb in list(self._resource_list_change_listeners):
             res = cb(name)
             if asyncio.iscoroutine(res):
                 await res
@@ -139,17 +139,18 @@ class Compositor(FastMCP):
             self._name = name
 
         async def on_resource_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
-            self._compositor._pending_list_changed.add(self._name)
+            self._compositor._pending_resource_list_changes.add(self._name)
             # No forwarding here; child client handles forwarding via proxy
-            await self._compositor._notify_list_changed(self._name)
+            await self._compositor._notify_resource_list_change(self._name)
 
         async def on_resource_updated(self, message: mcp_types.ResourceUpdatedNotification) -> None:
             # Forward to listeners with origin attribution
             await self._compositor._notify_resource_updated(self._name, str(message.params.uri))
 
-    def pop_recent_list_changed(self) -> list[str]:
-        names = sorted(self._pending_list_changed)
-        self._pending_list_changed.clear()
+    def pop_recent_resource_list_changes(self) -> list[str]:
+        """Return and clear servers that recently reported resource list changes."""
+        names = sorted(self._pending_resource_list_changes)
+        self._pending_resource_list_changes.clear()
         return names
 
     # No child_* helpers; callers should use server_entries()/sampling_snapshot()
@@ -165,28 +166,30 @@ class Compositor(FastMCP):
         per_name: dict[str, ServerEntry] = {}
         tool_tasks: dict[str, asyncio.Task[list[mcp_types.Tool]]] = {}
         for name, mount in items:
-            if mount.proxy is not None:
-                try:
-                    init = mount.cached_init
-                    if init is None:
-                        client_factory = mount.proxy.client_factory
-                        client = client_factory()
-                        async with client as c:
-                            init = c.initialize_result
-                            mount.cached_init = init
-
-                    # Schedule list_tools via proxy client for parallel enumeration
-                    async def _list_tools_via_client(cf):
-                        cli = cf()
-                        async with cli:
-                            return await cli.list_tools()
-
-                    tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
-                    per_name[name] = RunningServerEntry(initialize=init, tools=[])
-                except Exception as e:
-                    per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
-            else:
+            # Early bailout for in-process mounts (no proxy)
+            if mount.proxy is None:
                 per_name[name] = InitializingServerEntry()
+                continue
+
+            try:
+                init = mount.cached_init
+                if init is None:
+                    client_factory = mount.proxy.client_factory
+                    client = client_factory()
+                    async with client as c:
+                        init = c.initialize_result
+                        mount.cached_init = init
+
+                # Schedule list_tools via proxy client for parallel enumeration
+                async def _list_tools_via_client(cf):
+                    cli = cf()
+                    async with cli:
+                        return await cli.list_tools()
+
+                tool_tasks[name] = asyncio.create_task(_list_tools_via_client(mount.proxy.client_factory))
+                per_name[name] = RunningServerEntry(initialize=init, tools=[])
+            except Exception as e:
+                per_name[name] = FailedServerEntry(error=f"{type(e).__name__}: {e}")
 
         # Phase 2: resolve tool enumeration in parallel with structured concurrency
         async def _handle_tools(name: str, task: asyncio.Task, entry: RunningServerEntry):
@@ -217,11 +220,7 @@ class Compositor(FastMCP):
         Only includes spec-based mounts; in-process mounts (spec=None) are excluded.
         """
         async with self._lock:
-            result: dict[str, MCPServerTypes] = {}
-            for k, v in self._mounts.items():
-                if v.spec is not None:
-                    result[k] = v.spec
-            return result
+            return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}
 
     # No resource helper methods: resources are aggregated and served via the
     # mounted proxy. Callers should use a client connected to this Compositor
@@ -283,18 +282,18 @@ class Compositor(FastMCP):
         self.mount(proxy, prefix=name)
         # Cache initialize result and notify state (always on mount)
         mount.cached_init = base_client.initialize_result
+        mount.pinned = pinned
         await self._notify_mount_listeners(name, MountEvent.STATE)
-        if pinned:
-            self._pinned_servers.add(name)
         await self._notify_mount_listeners(name, MountEvent.MOUNTED)
 
     async def unmount_server(self, name: str) -> None:
-        if name in ("",):
-            return
+        if not name:
+            raise ValueError("server name cannot be empty")
         # Prevent unmount of pinned servers
-        if name in self._pinned_servers:
-            raise RuntimeError(f"server '{name}' is pinned and cannot be unmounted")
         async with self._lock:
+            mount = self._mounts.get(name)
+            if mount is not None and mount.pinned:
+                raise RuntimeError(f"server '{name}' is pinned and cannot be unmounted")
             mount = self._mounts.pop(name, None)
         # Stop persistent client (if any)
         if mount is not None:
@@ -327,7 +326,7 @@ class Compositor(FastMCP):
             headers = dict(spec.headers or {})
             if spec.auth:
                 headers.setdefault("Authorization", f"Bearer {spec.auth}")
-            return StreamableHttpTransport(spec.url, headers=headers or None)
+            return StreamableHttpTransport(spec.url, headers=headers)
         if isinstance(spec, StdioMCPServer | TransformingStdioMCPServer):
             return StdioTransport(spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd)
         raise ValueError("unsupported transport for fastmcp client")
@@ -355,8 +354,6 @@ class Compositor(FastMCP):
         returns mcp.server.lowlevel.helper_types.ReadResourceContents which must be converted to
         proper MCP protocol types (TextResourceContents | BlobResourceContents).
         """
-        import base64
-
         raw_contents = await self._read_resource_mcp(uri)
         # Convert FastMCP's internal ReadResourceContents to MCP protocol types
         return [

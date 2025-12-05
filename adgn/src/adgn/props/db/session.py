@@ -214,16 +214,26 @@ def _enable_rls() -> None:
         existing_policies = {(row[0], row[1]) for row in result}
 
     # RLS-enabled tables
-    rls_table_names = ["specimens", "critiques", "critic_runs", "grader_runs", "events"]
+    rls_table_names = [
+        "snapshots",
+        "true_positives",
+        "false_positives",
+        "critiques",
+        "critic_runs",
+        "grader_runs",
+        "events",
+    ]
     rls_tables = {Base.metadata.tables[name] for name in rls_table_names}
 
     # Define agent access rules per table
     agent_access_rules = {
-        "specimens": "FOR SELECT TO agent_user USING (true)",
-        "critiques": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split = 'train'))",
-        "critic_runs": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split = 'train'))",
-        "grader_runs": "FOR SELECT TO agent_user USING (specimen IN (SELECT specimen FROM specimens WHERE split IN ('train', 'valid')))",
-        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE specimen IN (SELECT specimen FROM specimens WHERE split = 'train')))",
+        "snapshots": "FOR SELECT TO agent_user USING (true)",
+        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
+        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split IN ('train', 'valid')))",
+        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train')))",
     }
 
     with _engine.begin() as conn:
@@ -249,7 +259,10 @@ def _enable_rls() -> None:
 
 
 def _create_views() -> None:
-    """Create database views (idempotent)."""
+    """Create database views (idempotent).
+
+    Note: run_costs view is created automatically via DDL event listener in models.py
+    """
     if _engine is None:
         raise RuntimeError("Database not initialized.")
 
@@ -264,7 +277,7 @@ def _create_views() -> None:
                 """
                 CREATE VIEW valid_full_specimen_grader_metrics AS
                 SELECT
-                    g.specimen,
+                    g.snapshot_slug,
                     (g.output->'grade'->>'recall')::float as recall,
                     (g.output->'grade'->>'precision')::float as precision,
                     (g.output->'grade'->'metrics'->>'true_positives')::int as tp,
@@ -273,34 +286,8 @@ def _create_views() -> None:
                     g.model,
                     g.created_at
                 FROM grader_runs g
-                JOIN specimens s ON g.specimen = s.specimen
+                JOIN snapshots s ON g.snapshot_slug = s.slug
                 WHERE s.split = 'valid'
-                """
-            )
-        )
-
-        # Drop and recreate run_costs view for post-hoc cost calculation
-        conn.execute(DDL("DROP VIEW IF EXISTS run_costs"))
-        conn.execute(
-            DDL(
-                """
-                CREATE VIEW run_costs AS
-                SELECT
-                    e.payload->>'response_id' as response_id,
-                    e.transcript_id,
-                    (e.payload->'usage'->>'model') as model,
-                    (e.payload->'usage'->>'input_tokens')::int as input_tokens,
-                    COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0) as cached_tokens,
-                    (e.payload->'usage'->>'output_tokens')::int as output_tokens,
-                    COALESCE((e.payload->'usage'->'output_tokens_details'->>'reasoning_tokens')::int, 0) as reasoning_tokens,
-                    ((e.payload->'usage'->>'input_tokens')::int - COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0)) * p.input_usd_per_1m_tokens / 1000000.0 +
-                    COALESCE((e.payload->'usage'->'input_tokens_details'->>'cached_tokens')::int, 0) * p.cached_input_usd_per_1m_tokens / 1000000.0 +
-                    (e.payload->'usage'->>'output_tokens')::int * p.output_usd_per_1m_tokens / 1000000.0 as cost_usd,
-                    e.timestamp
-                FROM events e
-                JOIN model_pricing p ON (e.payload->'usage'->>'model') = p.model_id
-                WHERE e.event_type = 'response'
-                    AND e.payload->'usage' IS NOT NULL
                 """
             )
         )

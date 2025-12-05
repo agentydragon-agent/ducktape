@@ -1,8 +1,8 @@
-"""Train/validation/test split definitions for specimen evaluation.
+"""Train/validation/test split definitions for snapshot evaluation.
 
-Each specimen is explicitly assigned to 'train', 'valid', or 'test' in its manifest.yaml.
-The split assignment is the single source of truth for specimen classification.
-Query splits via SpecimenRegistry methods: get_split(slug), get_specimens_by_split(split).
+Each snapshot is explicitly assigned to 'train', 'valid', or 'test' in snapshots.yaml.
+The split assignment is the single source of truth for snapshot classification.
+Query splits via SnapshotRegistry methods: get_split(slug), get_snapshots_by_split(split).
 """
 
 from __future__ import annotations

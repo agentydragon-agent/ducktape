@@ -92,7 +92,8 @@ class MiniCodexRunner(AgentRunner):
             handlers=handlers,
             tool_policy=RequireAnyTool(),
         )
-        self._agent = await self._exit_stack.enter_async_context(agent)
+        # Note: MiniCodex doesn't own resources, no cleanup needed
+        self._agent = agent
 
     def _build_mcp_server_factories(self, setup) -> dict[str, Callable[..., FastMCP]]:
         if not self.workspace_path:
@@ -180,4 +181,4 @@ class MiniCodexRunner(AgentRunner):
     def get_environment(self) -> RunnerEnvironment | None:
         if not self.workspace_path:
             return None
-        return WorkspaceEnvironment(workspace_path=str(self.workspace_path))
+        return WorkspaceEnvironment(workspace_path=self.workspace_path)

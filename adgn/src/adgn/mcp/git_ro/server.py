@@ -195,23 +195,7 @@ ShowResult = TextPage | ChangedFilesPage | DiffStatPage
 
 # -------------------------- outputs -----------------------------------------
 
-
-class IndexStatus(StrEnum):
-    NONE = " "
-    M = "M"
-    A = "A"
-    D = "D"
-    R = "R"
-    T = "T"
-
-
-class WorktreeStatus(StrEnum):
-    NONE = " "
-    M = "M"
-    D = "D"
-    UNTRACKED = "?"
-
-
+## Status enums removed - now using raw pygit2 flags (int) for type safety
 ## moved to formatting.py
 
 
@@ -240,32 +224,14 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
 
     @mcp.flat_model()
     def git_status(input: StatusInput) -> StatusPage:
-        """Return compact status entries similar to porcelain v1 (no headers)."""
+        """Return status entries with raw pygit2 flags for type-safe interpretation."""
         root = state.git_repo
         repo = _open_repo(root)
         st = repo.status()
         entries: list[StatusEntry] = []
         for path, flags in st.items():
-            # Map pygit2 status flags to porcelain-like two-letter codes
-            idx: IndexStatus = IndexStatus.NONE
-            wt: WorktreeStatus = WorktreeStatus.NONE
-            if flags & pygit2.GIT_STATUS_INDEX_NEW:
-                idx = IndexStatus.A
-            elif flags & pygit2.GIT_STATUS_INDEX_MODIFIED:
-                idx = IndexStatus.M
-            elif flags & pygit2.GIT_STATUS_INDEX_DELETED:
-                idx = IndexStatus.D
-            elif flags & pygit2.GIT_STATUS_INDEX_RENAMED:
-                idx = IndexStatus.R
-            elif flags & pygit2.GIT_STATUS_INDEX_TYPECHANGE:
-                idx = IndexStatus.T
-            if flags & pygit2.GIT_STATUS_WT_MODIFIED:
-                wt = WorktreeStatus.M
-            elif flags & pygit2.GIT_STATUS_WT_DELETED:
-                wt = WorktreeStatus.D
-            elif flags & pygit2.GIT_STATUS_WT_NEW:
-                wt = WorktreeStatus.UNTRACKED
-            entries.append(StatusEntry(path=path, index=idx, worktree=wt))
+            # Store raw pygit2 status flags for consumers to interpret
+            entries.append(StatusEntry(path=Path(path), index=flags, worktree=flags))
         return build_status_page(entries, input.list_slice)
 
     @mcp.flat_model()

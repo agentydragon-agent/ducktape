@@ -1,60 +1,20 @@
-"""SQL query constants for prompt optimizer agent.
+"""SQL query placeholders for prompt optimizer agent.
 
-All queries tested against populated database with RLS verification.
-Constants are passed to Jinja2 templates for interpolation into agent prompts.
+These are template queries with placeholders (e.g., <transcript_id>, <snapshot_slug>)
+that agents fill in at runtime.
+
+For actual query execution (in tests or Python code), use query_builders.py directly.
+For j2 template injection, compile queries on-the-fly via query_builders.compile_to_sql().
+
+This module only exists to provide backward-compatible placeholder strings for templates.
 """
 
-# SQL query constants (simple, no parameters - agent can modify as needed)
-SQL_LIST_TRAIN_SPECIMENS = """SELECT specimen, split
-FROM specimens
-WHERE split = 'train'
-ORDER BY specimen;"""
+# ============================================================================
+# Template placeholders (for agent-side substitution)
+# ============================================================================
+# Agents fill in placeholders like <transcript_id>, <snapshot_slug>, <po_run_id>
+# at runtime when executing queries.
 
-SQL_RECENT_GRADER_RESULTS = """SELECT
-    g.specimen,
-    g.transcript_id,
-    g.output->'grade'->>'recall' as recall,
-    g.output->'grade'->>'precision' as precision,
-    g.output->'grade'->'metrics'->>'true_positives' as tp,
-    g.output->'grade'->'metrics'->>'false_positives' as fp,
-    g.output->'grade'->'metrics'->>'false_negatives' as fn,
-    g.model,
-    g.created_at
-FROM grader_runs g
-JOIN specimens s ON g.specimen = s.specimen
-WHERE s.split = 'train'
-ORDER BY g.created_at DESC
-LIMIT 10;"""
-
-SQL_CRITIQUE_FOR_SPECIMEN = """SELECT
-    c.id,
-    c.payload,
-    c.created_at,
-    cr.prompt_sha256,
-    cr.model,
-    cr.files
-FROM critiques c
-LEFT JOIN critic_runs cr ON c.id = cr.critique_id
-WHERE c.specimen = 'ducktape/2025-11-20-00'
-ORDER BY c.created_at DESC
-LIMIT 5;"""
-
-SQL_LINK_GRADER_TO_PROMPT = """SELECT
-    g.id as grader_run_id,
-    g.specimen,
-    g.output->'grade'->>'recall' as recall,
-    c.id as critique_id,
-    cr.id as critic_run_id,
-    cr.prompt_sha256,
-    p.prompt_text
-FROM grader_runs g
-JOIN critiques c ON g.critique_id = c.id
-JOIN critic_runs cr ON c.id = cr.critique_id
-JOIN prompts p ON cr.prompt_sha256 = p.prompt_sha256
-WHERE g.specimen = 'ducktape/2025-11-20-00'
-LIMIT 1;"""
-
-# Event trajectory queries (use <transcript_id> placeholder - agent replaces with actual UUID)
 SQL_TOOLS_USED = """SELECT payload->>'name' as tool_name, COUNT(*) as count
 FROM events
 WHERE transcript_id = '<transcript_id>' AND event_type = 'tool_call'
@@ -77,47 +37,46 @@ WHERE e1.transcript_id = '<transcript_id>'
   AND e2.event_type = 'function_call_output'
   AND (e2.payload->'result'->>'isError')::bool = true;"""
 
-# Valid split aggregate queries (via view - no critique details or execution traces)
-# View name clarifies these are full-specimen runs only (all files with known issues)
-SQL_VALID_AGGREGATES_VIEW = """SELECT
-    AVG(recall) as avg_recall,
-    AVG(precision) as avg_precision,
-    COUNT(DISTINCT specimen) as specimen_count,
-    COUNT(*) as run_count,
-    model
-FROM valid_full_specimen_grader_metrics
-GROUP BY model
-ORDER BY avg_recall DESC;"""
-
-# Blocked query examples (these return 0 rows for valid split due to RLS)
-SQL_BLOCKED_VALID_CRITIQUES = """SELECT c.id, c.payload
+SQL_CRITIQUE_FOR_SPECIMEN = """SELECT
+    c.id,
+    c.payload,
+    c.created_at,
+    cr.prompt_sha256,
+    cr.model,
+    cr.files
 FROM critiques c
-WHERE c.specimen IN (SELECT specimen FROM specimens WHERE split = 'valid');"""
+LEFT JOIN critic_runs cr ON c.id = cr.critique_id
+WHERE c.snapshot_slug = '<snapshot_slug>'
+ORDER BY c.created_at DESC
+LIMIT 5;"""
 
-SQL_BLOCKED_VALID_GRADER_RUNS = """SELECT g.id, g.output
+SQL_LINK_GRADER_TO_PROMPT = """SELECT
+    g.id as grader_run_id,
+    g.snapshot_slug,
+    g.output->'grade'->>'recall' as recall,
+    c.id as critique_id,
+    cr.id as critic_run_id,
+    cr.prompt_sha256,
+    p.prompt_text
 FROM grader_runs g
-WHERE g.specimen IN (SELECT specimen FROM specimens WHERE split = 'valid');"""
+JOIN critiques c ON g.critique_id = c.id
+JOIN critic_runs cr ON c.id = cr.critique_id
+JOIN prompts p ON cr.prompt_sha256 = p.prompt_sha256
+WHERE g.snapshot_slug = '<snapshot_slug>'
+LIMIT 1;"""
 
-SQL_BLOCKED_VALID_EVENTS = """SELECT COUNT(*) FROM events
-WHERE transcript_id IN (
-  SELECT transcript_id FROM critic_runs
-  WHERE specimen IN (SELECT specimen FROM specimens WHERE split = 'valid')
-);"""
-
-# Cost tracking query (post-hoc via run_costs view)
-# Shows per-run costs and cumulative total for this PO session
 SQL_PO_RUN_COSTS = """WITH po_transcripts AS (
-    SELECT cr.transcript_id, cr.specimen, 'critic' as run_type, cr.created_at
+    SELECT cr.transcript_id, cr.snapshot_slug, 'critic' as run_type, cr.created_at
     FROM critic_runs cr
     WHERE cr.prompt_optimization_run_id = '<po_run_id>'
     UNION ALL
-    SELECT gr.transcript_id, gr.specimen, 'grader' as run_type, gr.created_at
+    SELECT gr.transcript_id, gr.snapshot_slug, 'grader' as run_type, gr.created_at
     FROM grader_runs gr
     WHERE gr.prompt_optimization_run_id = '<po_run_id>'
 )
 SELECT
     pt.transcript_id,
-    pt.specimen,
+    pt.snapshot_slug,
     pt.run_type,
     rc.model,
     SUM(rc.cost_usd) as cost_usd,
@@ -127,5 +86,5 @@ SELECT
     pt.created_at
 FROM po_transcripts pt
 JOIN run_costs rc ON pt.transcript_id = rc.transcript_id
-GROUP BY pt.transcript_id, pt.specimen, pt.run_type, rc.model, pt.created_at
+GROUP BY pt.transcript_id, pt.snapshot_slug, pt.run_type, rc.model, pt.created_at
 ORDER BY pt.created_at DESC;"""

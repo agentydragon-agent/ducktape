@@ -66,7 +66,7 @@ def main(argv: list[str] | None = None, *, argv0: str | None = None) -> int:
     # Fallback flag
     if len(argv) >= 3 and argv[1] == "--adgn-run-as":
         name = argv[2]
-        argv = [argv[0]] + argv[3:]
+        argv = [argv[0], *argv[3:]]
     if name in ("apply_patch", "applypatch"):
         return _apply_patch_cli(argv)
     print(f"arg0_runner: unknown command: {name}", file=sys.stderr)

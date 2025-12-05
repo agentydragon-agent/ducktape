@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -172,17 +173,7 @@ class TypedBootstrapBuilder:
 def read_resource_call(
     builder: TypedBootstrapBuilder, server: str, uri: str, *, max_bytes: int = 65536
 ) -> FunctionCallItem:
-    """Create a resources.read bootstrap call.
-
-    Args:
-        builder: TypedBootstrapBuilder instance
-        server: MCP server name that owns the resource
-        uri: Resource URI (e.g., "resource://prompt_eval/po_run_id")
-        max_bytes: Maximum bytes to read (default: 64KB)
-
-    Returns:
-        FunctionCallItem for resources.read call
-    """
+    """Bootstrap helper for resources.read."""
     return builder.call(
         "resources", "read", ResourcesReadArgs(server=server, uri=uri, start_offset=0, max_bytes=max_bytes)
     )
@@ -191,18 +182,8 @@ def read_resource_call(
 def docker_exec_call(
     builder: TypedBootstrapBuilder, server: str, cmd: list[str], *, timeout_ms: int = 10_000
 ) -> FunctionCallItem:
-    """Create a docker_exec bootstrap call.
-
-    Args:
-        builder: TypedBootstrapBuilder instance
-        server: MCP server name (e.g., "runtime")
-        cmd: Command and arguments to execute
-        timeout_ms: Timeout in milliseconds (default: 10s)
-
-    Returns:
-        FunctionCallItem for docker_exec call
-    """
-    return builder.call(server, "docker_exec", ExecInput(cmd=cmd, timeout_ms=timeout_ms))
+    """Bootstrap helper for docker exec."""
+    return builder.call(server, RUNTIME_EXEC_TOOL_NAME, ExecInput(cmd=cmd, timeout_ms=timeout_ms))
 
 
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)

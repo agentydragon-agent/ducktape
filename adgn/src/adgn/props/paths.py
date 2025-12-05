@@ -50,7 +50,7 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
         Validated Path object
 
     Raises:
-        KeyError: If specimen_context not in validation context
+        KeyError: If snapshots not in validation context
         ValueError: If path invalid (empty, absolute, parent refs, not found, not regular file)
     """
     # Convert to Path if needed
@@ -72,10 +72,10 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
     if ".." in p.parts:
         raise ValueError(f"Path cannot contain parent references (..): {p}")
 
-    # Existence validation (only when specimen_context is available)
+    # Existence validation (only when snapshots is available)
     # Critiques parsed standalone (no context) skip this validation
-    if info.context and "specimen_context" in info.context:
-        ctx = info.context["specimen_context"]
+    if info.context and "snapshots" in info.context:
+        ctx = info.context["snapshots"]
 
         if p not in ctx.all_discovered_files:
             raise ValueError(f"Path not found in specimen: {p}")
@@ -93,7 +93,7 @@ SpecimenRelativePath = Annotated[
 ]
 """Path type for specimen-relative paths with strict validation.
 
-Requires specimen_context in validation context (raises KeyError if missing).
+Requires snapshots in validation context (raises KeyError if missing).
 
 Validates:
 - Path is relative (not absolute)

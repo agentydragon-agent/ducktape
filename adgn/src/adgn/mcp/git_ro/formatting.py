@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TypeVar
 
 from pydantic import BaseModel, Field
@@ -47,7 +48,7 @@ def _calc_window(total: int, start: int, size: int) -> tuple[int, int, bool, int
     return s, e, truncated, next_offset
 
 
-def apply_list_slice(items: Sequence[T], slicer: ListSlice) -> tuple[list[T], bool, int | None, int]:
+def apply_list_slice[T](items: Sequence[T], slicer: ListSlice) -> tuple[list[T], bool, int | None, int]:
     total = len(items)
     s, e, truncated, next_offset = _calc_window(total, slicer.offset, slicer.limit)
     return list(items[s:e]), truncated, next_offset, total
@@ -63,10 +64,10 @@ def apply_text_slice(body: str, slicer: TextSlice) -> TextPage:
 
 
 class StatusEntry(BaseModel):
-    path: str
-    # Accept enum-to-str coercion from server module
-    index: str = Field(description="Index status (e.g., M, A, D, R, T, ' ')")
-    worktree: str = Field(description="Worktree status (e.g., M, D, ?, ' ')")
+    path: Path
+    # Use pygit2 status flags directly for type safety
+    index: int = Field(description="Index status flags (pygit2.GIT_STATUS_INDEX_*)")
+    worktree: int = Field(description="Worktree status flags (pygit2.GIT_STATUS_WT_*)")
 
 
 class StatusPage(BaseModel):
@@ -85,8 +86,15 @@ def build_status_page(entries: list[StatusEntry], slicer: ListSlice) -> StatusPa
 
 
 class ChangedFileItem(BaseModel):
-    path: str
-    status: str = Field(description="A (added), M (modified), D (deleted), R (renamed)")
+    """Represents a changed file in a diff.
+
+    For renames: old_path contains the source path, path contains the destination path.
+    For other changes: only path is set, old_path is None.
+    """
+
+    path: Path = Field(description="New/current path (destination for renames)")
+    old_path: Path | None = Field(default=None, description="Old path (for renames only)")
+    status: int = Field(description="Delta status (pygit2.GIT_DELTA_*)")
 
 
 class ChangedFilesPage(BaseModel):
@@ -96,27 +104,23 @@ class ChangedFilesPage(BaseModel):
     total_items: int
 
 
-def _status_char(delta_status: int) -> str:
-    # Map pygit2 GIT_DELTA_* to a compact letter for name-status
-    if delta_status == pygit2.GIT_DELTA_ADDED:
-        return "A"
-    if delta_status == pygit2.GIT_DELTA_DELETED:
-        return "D"
-    if delta_status == pygit2.GIT_DELTA_RENAMED:
-        return "R"
-    # Treat all others as modified (including copied, typechange, etc.)
-    return "M"
-
-
 def diff_to_changed_files(diff: pygit2.Diff) -> list[ChangedFileItem]:
-    return [
-        ChangedFileItem(
-            path=((d.new_file.path or d.old_file.path) if d.new_file else d.old_file.path),
-            status=_status_char(d.status),
-        )
-        for p in diff
-        for d in [p.delta]
-    ]
+    """Convert a pygit2 Diff to a list of ChangedFileItem.
+
+    For renamed files, preserves both old_path (source) and path (destination).
+    For other changes, only path is set.
+    """
+    items: list[ChangedFileItem] = []
+    for p in diff:
+        d = p.delta
+        # For renames, preserve both paths
+        if d.status == pygit2.GIT_DELTA_RENAMED:
+            items.append(ChangedFileItem(path=Path(d.new_file.path), old_path=Path(d.old_file.path), status=d.status))
+        else:
+            # For other changes, use new_file.path if available, otherwise old_file.path
+            path = (d.new_file.path or d.old_file.path) if d.new_file else d.old_file.path
+            items.append(ChangedFileItem(path=Path(path), old_path=None, status=d.status))
+    return items
 
 
 def build_changed_files_page(items: list[ChangedFileItem], slicer: ListSlice) -> ChangedFilesPage:
@@ -128,7 +132,13 @@ def build_changed_files_page(items: list[ChangedFileItem], slicer: ListSlice) ->
 
 
 class StatItem(BaseModel):
-    path: str
+    """Represents file statistics (additions/deletions) for a diff.
+
+    For renamed files, path is the new (destination) path.
+    """
+
+    path: Path
+    old_path: Path | None = Field(default=None, description="Old path (for renames only)")
     additions: int
     deletions: int
 
@@ -153,12 +163,29 @@ def _count_patch_lines(patch: pygit2.Patch) -> tuple[int, int]:
 
 
 def diff_to_file_stats(diff: pygit2.Diff) -> list[StatItem]:
+    """Convert a pygit2 Diff to file statistics.
+
+    For renamed files, preserves both old_path (source) and path (destination).
+    """
     out: list[StatItem] = []
     for patch in diff:  # type: ignore[assignment]  # pygit2.Diff iteration typing incomplete in stubs
         delta = patch.delta
-        path = (delta.new_file.path or delta.old_file.path) if delta.new_file else delta.old_file.path
         additions, deletions = _count_patch_lines(patch)
-        out.append(StatItem(path=path, additions=additions, deletions=deletions))
+
+        # For renames, preserve both paths
+        if delta.status == pygit2.GIT_DELTA_RENAMED:
+            out.append(
+                StatItem(
+                    path=Path(delta.new_file.path),
+                    old_path=Path(delta.old_file.path),
+                    additions=additions,
+                    deletions=deletions,
+                )
+            )
+        else:
+            # For other changes, use new_file.path if available, otherwise old_file.path
+            path = (delta.new_file.path or delta.old_file.path) if delta.new_file else delta.old_file.path
+            out.append(StatItem(path=Path(path), old_path=None, additions=additions, deletions=deletions))
     return out
 
 

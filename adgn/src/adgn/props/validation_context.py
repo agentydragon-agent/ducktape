@@ -15,30 +15,32 @@ from __future__ import annotations
 from collections.abc import Iterable
 from pathlib import Path
 
-from adgn.props.ids import BaseIssueID
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import FileType, classify_path
 
 
 class SpecimenContext:
     """Validation context for specimen-derived data.
 
-    Contains file system information and allowed specimen IDs from a hydrated specimen.
+    Contains file system information and allowed issue IDs from a hydrated specimen.
     Used by:
     - SpecimenRelativePath (validate file existence and type)
     - TruePositiveID (validates .id against allowed_tp_ids)
     - FalsePositiveID (validates .id against allowed_fp_ids)
 
-    Context key: "specimen_context"
+    Context key: "snapshots"
+
+    TODO: Rename class to SnapshotContext when unbundling specimen concept.
     """
 
     def __init__(
         self,
-        specimen_slug: str,
+        snapshot_slug: SnapshotSlug,
         all_discovered_files: dict[Path, FileType],
         allowed_tp_ids: Iterable[BaseIssueID],
         allowed_fp_ids: Iterable[BaseIssueID],
     ):
-        self.specimen_slug = specimen_slug
+        self.snapshot_slug = snapshot_slug
         self.all_discovered_files = all_discovered_files
         self.allowed_tp_ids: frozenset[BaseIssueID] = frozenset(allowed_tp_ids)
         self.allowed_fp_ids: frozenset[BaseIssueID] = frozenset(allowed_fp_ids)
@@ -46,16 +48,19 @@ class SpecimenContext:
     @classmethod
     def from_hydrated_specimen(
         cls,
-        specimen_slug: str,
+        snapshot_slug: SnapshotSlug,
         hydrated_root: Path,
         specimen_issues: Iterable[BaseIssueID],
         specimen_fps: Iterable[BaseIssueID],
     ) -> SpecimenContext:
-        """Build file map from hydrated_root via rglob("*") and classify_path."""
+        """Build file map from hydrated_root via rglob("*") and classify_path.
+
+        TODO: Rename to from_hydrated_snapshot when unbundling specimen concept.
+        """
         all_discovered_files = {p.relative_to(hydrated_root): classify_path(p) for p in hydrated_root.rglob("*")}
 
         return cls(
-            specimen_slug=specimen_slug,
+            snapshot_slug=snapshot_slug,
             all_discovered_files=all_discovered_files,
             allowed_tp_ids=specimen_issues,
             allowed_fp_ids=specimen_fps,

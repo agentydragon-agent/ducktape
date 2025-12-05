@@ -12,7 +12,7 @@ from fastmcp.mcp_config import MCPConfig
 from mcp.types import TextContent
 import pytest
 
-from adgn.agent.presets import discover_presets
+from adgn.agent.presets import create_agent_from_preset, discover_presets
 from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from tests.agent.testdata.approval_policy import fetch_policy
@@ -153,8 +153,6 @@ class TestPresetPolicyResolution:
     @pytest.mark.asyncio
     async def test_agent_metadata_records_preset(self, sqlite_persistence):
         """Creating agent from preset records preset name in metadata."""
-        from adgn.agent.presets import create_agent_from_preset
-
         agent_id, _config, _system = await create_agent_from_preset(
             persistence=sqlite_persistence, preset_name="default", base_mcp_config=MCPConfig(mcpServers={})
         )

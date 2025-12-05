@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from adgn.props.models.specimen import GitSource
-from adgn.props.specimens.registry import SpecimenRegistry, resolve_bundle_url
+from adgn.props.models.snapshot import GitSource
+from adgn.props.snapshot_registry import SnapshotRegistry, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024
@@ -18,7 +18,7 @@ MAX_BUNDLE_SIZE = 10 * 1024 * 1024
 @pytest.fixture(scope="session")
 def specimens_base_for_bundles() -> Path:
     """Base directory containing all specimens."""
-    registry = SpecimenRegistry.from_package_resources()
+    registry = SnapshotRegistry.from_package_resources()
     return registry.base_path
 
 
@@ -44,8 +44,8 @@ def pytest_generate_tests(metafunc):
         return
 
     # Create registry at collection time (lightweight, no specimens loaded yet)
-    registry = SpecimenRegistry.from_package_resources()
-    all_specimen_slugs = registry.specimen_ids
+    registry = SnapshotRegistry.from_package_resources()
+    all_specimen_slugs = registry.snapshot_slugs
 
     # Filter to Git bundle specimens with file:// URLs
     bundle_specimen_slugs = []
@@ -68,11 +68,11 @@ def pytest_generate_tests(metafunc):
 async def specimen_record(request, production_specimens_registry):
     """Fixture that loads a specimen record without hydration.
 
-    Parameter: specimen_slug (string)
-    Returns: SpecimenRecord
+    Parameter: slug (string)
+    Returns: SnapshotRecord
     """
-    specimen_slug = request.param
-    async with production_specimens_registry.load_and_hydrate(specimen_slug) as hydrated:
+    slug = request.param
+    async with production_specimens_registry.load_and_hydrate(slug) as hydrated:
         return hydrated.record
 
 
@@ -91,7 +91,7 @@ def test_bundle_exists(specimen_record) -> None:
     """Verify bundle file exists for specimen."""
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.manifest_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.snapshot_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     assert bundle_path.exists(), f"Bundle not found at {bundle_path}"
@@ -105,18 +105,24 @@ async def test_bundle_excludes_libsonnet_files(specimen_record, hydrated_specime
     This test ensures that specimen bundles don't recursively include the specimen
     issue files themselves. The bundle should contain only the code snapshots, not
     the issue definitions that describe problems in those snapshots.
+
+    Note: Test fixture .libsonnet files (under tests/) are allowed.
     """
-    libsonnet_files = list(hydrated_specimen.rglob("*.libsonnet"))
+    all_libsonnet = list(hydrated_specimen.rglob("*.libsonnet"))
+
+    # Filter to only specimen metadata (not test fixtures)
+    specimens_path = "src/adgn/props/specimens"
+    libsonnet_files = [f for f in all_libsonnet if specimens_path in str(f.relative_to(hydrated_specimen))]
 
     assert len(libsonnet_files) == 0, (
-        f"Found {len(libsonnet_files)} .libsonnet files in {specimen_record.slug}:\n"
+        f"Found {len(libsonnet_files)} specimen .libsonnet files in {specimen_record.slug}:\n"
         + "\n".join(f"  - {f.relative_to(hydrated_specimen)}" for f in libsonnet_files[:10])
     )
 
 
 @pytest.mark.asyncio
 async def test_bundle_excludes_specimen_metadata(specimen_record, hydrated_specimen) -> None:
-    """Verify no specimen metadata files (manifest.yaml, README.md in specimens/) are included.
+    """Verify no specimen metadata files (libsonnet issues, snapshots.yaml) are included.
 
     This ensures the specimens/ directory itself is not in the bundle.
     """
@@ -163,7 +169,7 @@ async def test_bundle_excludes_bundle_files(specimen_record, hydrated_specimen) 
         [
             str(f.relative_to(hydrated_specimen))
             for f in hydrated_specimen.rglob("*")
-            if f.is_file() and "specimens.bundle" in f.name
+            if f.is_file() and "snapshots.bundle" in f.name
         ]
     )
 
@@ -180,7 +186,7 @@ def test_bundle_size_reasonable(specimen_record) -> None:
     """
     assert isinstance(specimen_record.manifest.source, GitSource)
 
-    bundle_url = resolve_bundle_url(specimen_record.manifest_path, specimen_record.manifest.source.url)
+    bundle_url = resolve_bundle_url(specimen_record.snapshot_path, specimen_record.manifest.source.url)
     bundle_path = Path(bundle_url.removeprefix("file://"))
 
     bundle_size = bundle_path.stat().st_size
@@ -196,7 +202,7 @@ def test_bundle_size_reasonable(specimen_record) -> None:
 async def test_specimen_respects_exclusion_patterns(specimen_record, hydrated_specimen) -> None:
     """Verify no specimen includes files matching its exclusion patterns.
 
-    This ensures bundle.exclude patterns in manifest.yaml are properly respected.
+    This ensures bundle.exclude patterns in snapshots.yaml are properly respected.
     """
     bundle_config = specimen_record.manifest.bundle
     if not bundle_config or not bundle_config.exclude:
@@ -222,7 +228,7 @@ async def test_specimen_respects_exclusion_patterns(specimen_record, hydrated_sp
                 violations.append((path_str, pattern))
 
     assert not violations, (
-        f"Specimen {specimen_record.slug} includes files matching exclusion patterns:\n"
+        f"Snapshot {specimen_record.slug} includes files matching exclusion patterns:\n"
         + "\n".join(f"  {path} matches pattern '{pattern}'" for path, pattern in violations[:10])
         + (f"\n  ... and {len(violations) - 10} more" if len(violations) > 10 else "")
     )

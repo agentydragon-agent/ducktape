@@ -5,14 +5,14 @@ from datetime import UTC, datetime
 import logging
 from typing import Any
 
-from adgn.agent.handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler
 from adgn.agent.types import AgentID
-from adgn.mcp._shared.calltool import to_pydantic
 from adgn.openai_utils.model import ReasoningItem
 
 from . import Persistence
 
-logger = logging.getLogger("adgn.persist.handler")
+logger = logging.getLogger(__name__)
 
 
 class RunPersistenceHandler(BaseHandler):
@@ -56,55 +56,31 @@ class RunPersistenceHandler(BaseHandler):
             raise RuntimeError(f"persistence_drain_failed: {', '.join(kinds)}")
 
     def _record_event(
-        self, *, payload: dict[str, Any], call_id: str | None = None, tool_key: str | None = None
+        self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
     ) -> None:
         """Common append path: bump seq, enqueue append_event.
 
         Keeps ordering by incrementing a local sequence.
-        Payload must contain 'type' field for discriminated union.
+        Event must have 'type' field for discriminated union.
         """
         self._seq += 1
-        self._spawn(
-            self._persistence.append_event(
-                agent_id=self._agent_id,
-                seq=self._seq,
-                ts=self._now(),
-                payload=payload,
-                call_id=call_id,
-                tool_key=tool_key,
-            )
-        )
+        self._spawn(self._persistence.append_event(agent_id=self._agent_id, seq=self._seq, ts=self._now(), event=evt))
 
     # BaseHandler typed hooks --------------------------------------------------
     def on_user_text_event(self, evt: UserText) -> None:
-        payload = evt.model_dump(mode="json", exclude_none=True)
-        payload["type"] = "user_text"
-        self._record_event(payload=payload)
+        self._record_event(evt)
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
-        payload = evt.model_dump(mode="json", exclude_none=True)
-        payload["type"] = "assistant_text"
-        self._record_event(payload=payload)
+        self._record_event(evt)
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        payload = evt.model_dump(mode="json", exclude_none=True)
-        payload["type"] = "tool_call"
-        self._record_event(payload=payload, call_id=evt.call_id, tool_key=evt.name)
+        self._record_event(evt)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        # Persist full Pydantic MCP CallToolResult (with content when available)
-        payload_model = to_pydantic(evt.result)
-        payload = payload_model.model_dump(mode="json", by_alias=True)
-        payload["type"] = "function_call_output"
-        payload["call_id"] = evt.call_id
-        self._record_event(payload=payload, call_id=evt.call_id)
+        self._record_event(evt)
 
     def on_reasoning(self, item: ReasoningItem) -> None:
-        payload = item.model_dump(mode="json", exclude_none=True)
-        payload["type"] = "reasoning"
-        self._record_event(payload=payload)
+        self._record_event(item)
 
     def on_response(self, evt: Response) -> None:
-        payload = evt.model_dump(mode="json", exclude_none=True)
-        payload["type"] = "response"
-        self._record_event(payload=payload)
+        self._record_event(evt)

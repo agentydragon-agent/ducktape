@@ -1,52 +1,19 @@
-"""Typed MiniCodex event types and JSONL mapping (co-located with handlers).
+"""Handler interface and decision types for MiniCodex agent loop.
 
-Note: This module hosts the strongly-typed event algebra used by handlers and
-loggers. It intentionally avoids enums and base-class discrimination; each
-event is a distinct Pydantic model. Transcript serialization adds a `kind`
-string derived from the concrete type.
+This module defines the BaseHandler interface and loop control decisions.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
-from fastmcp.client.client import CallToolResult
 from pydantic import BaseModel
 
+from adgn.agent.events import AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import LoopDecision, NoAction
-from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem
 
-
-# ---- Ground-truth usage (OpenAI upstream fields only; no derived numbers) ----
-class GroundTruthUsage(BaseModel):
-    model: str
-    input_tokens: int | None = None
-    input_tokens_details: InputTokensDetails | None = None
-    output_tokens: int | None = None
-    output_tokens_details: OutputTokensDetails | None = None
-    total_tokens: int | None = None
-
-
-# ---- Typed events (no shared runtime base required) ----
-class UserText(BaseModel):
-    text: str
-
-
-class AssistantText(BaseModel):
-    text: str
-
-
-class ToolCall(BaseModel):
-    name: str
-    args_json: str | None = None
-    call_id: str
-
-
-class ToolCallOutput(BaseModel):
-    call_id: str
-    result: CallToolResult
+__all__ = ["AbortTurnDecision", "BaseHandler", "ContinueDecision", "SequenceHandler"]
 
 
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
@@ -63,45 +30,6 @@ class AbortTurnDecision(BaseModel):
 
     action: Literal["abort"] = "abort"
     reason: str | None = None
-
-
-class Response(BaseModel):
-    """One OpenAI responses.create result (non-streaming) with usage.
-
-    Emitted once per model call to avoid duplicating usage across assistant/tool events.
-    """
-
-    response_id: str | None = None
-    usage: GroundTruthUsage
-    model: str | None = None
-    created_at: datetime | None = None
-    idempotency_key: str | None = None
-
-
-# Union of all current event types (as a typing alias)
-type EventType = UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
-
-
-# ---- Transcript JSONL serialization ----
-KIND_MAP: dict[
-    type, Literal["user_text", "assistant_text", "tool_call", "function_call_output", "response", "reasoning"]
-] = {
-    UserText: "user_text",
-    AssistantText: "assistant_text",
-    ToolCall: "tool_call",
-    ToolCallOutput: "function_call_output",
-    Response: "response",
-    ReasoningItem: "reasoning",
-}
-
-
-type JsonlRecord = dict[str, Any]
-
-
-def to_jsonl_record(evt: EventType) -> JsonlRecord:
-    data = evt.model_dump(mode="json", exclude_none=True)
-    data["kind"] = KIND_MAP[type(evt)]
-    return data
 
 
 class BaseHandler:

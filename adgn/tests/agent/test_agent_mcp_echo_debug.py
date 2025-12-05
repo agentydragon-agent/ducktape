@@ -18,8 +18,7 @@ async def test_agent_mcp_echo_tool_use(
         parallel_tool_calls=False,
     )
 
-    async with agent:
-        res = await agent.run(user_text="use echo")
+    res = await agent.run(user_text="use echo")
 
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     outputs = [r for r in recording_handler.records if r.get("kind") == "function_call_output"]

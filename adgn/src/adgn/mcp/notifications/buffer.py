@@ -58,9 +58,9 @@ class NotificationsBuffer:
         # rely solely on client message forwarding (which may be disabled for
         # in-proc mounts).
         self._compositor.add_resource_updated_listener(self._on_resource_listener)
-        self._compositor.add_list_changed_listener(self._on_list_listener)
-        # Capture any pending list-changed signals emitted before the buffer attached
-        for server in self._compositor.pop_recent_list_changed():
+        self._compositor.add_resource_list_change_listener(self._on_list_listener)
+        # Capture any pending resource list changes emitted before the buffer attached
+        for server in self._compositor.pop_recent_resource_list_changes():
             self._servers.setdefault(server, _ServerNoticeAccumulator()).list_changed = True
 
     def peek(self) -> NotificationsBatch:
@@ -82,7 +82,7 @@ class NotificationsBuffer:
 
     async def _on_list_changed(self, message: mcp_types.ResourceListChangedNotification) -> None:
         # Attribute origin using compositor-captured child notifications when available
-        names = list(self._compositor.pop_recent_list_changed())
+        names = list(self._compositor.pop_recent_resource_list_changes())
         for name in names:
             self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
 

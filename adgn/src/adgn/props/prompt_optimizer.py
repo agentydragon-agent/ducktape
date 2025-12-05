@@ -8,8 +8,6 @@ Includes MCP server for prompt evaluation (run_critic/run_grader tools).
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
 import logging
 import os
 from pathlib import Path
@@ -30,17 +28,17 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
-from adgn.props.critic import ALL_FILES_WITH_ISSUES, CriticInput, resolve_critic_scope, run_critic as execute_critic_run
-from adgn.props.db import agent_queries, get_session
+from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
+from adgn.props.db import get_session, query_builders as qb
+from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.sync_specimens import sync_specimens
+from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
-from adgn.props.grader import grade_critique_by_id
+from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.specimens.registry import SpecimenRegistry
-from adgn.props.splits import Split
+from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +115,7 @@ class RunGraderOutput(BaseModel):
 async def build_server(
     *,
     client: OpenAIModelProto,
+    registry: SnapshotRegistry,
     name: str = "prompt_eval",
     prompt_optimization_run_id: UUID,
     workspace_root: Path,
@@ -142,14 +141,19 @@ async def build_server(
 
     Args:
         client: OpenAI client for running evaluations
+        registry: Snapshot registry (required, no default)
         name: MCP server name
         prompt_optimization_run_id: Optional ID of the optimization run for tracking prompts
+        workspace_root: Working directory for reading prompt files
+        verbose: Verbose output flag
 
     Returns:
         MCP server with upsert_prompt, run_critic and run_grader tools
     """
-    # Ensure specimens table is synced on server startup
-    await sync_specimens()
+    # Ensure snapshots and issues tables are synced on server startup
+    with get_session() as session:
+        sync_snapshots_to_db(session, registry=registry)
+        sync_issues_to_db(session, registry=registry)
 
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
@@ -196,9 +200,6 @@ async def build_server(
 
         return UpsertPromptOutput(prompt_sha256=prompt_sha256)
 
-    # Create registry once for the MCP server
-    registry = SpecimenRegistry.from_package_resources()
-
     @mcp.tool(flat=True)
     async def run_critic(payload: CriticInput) -> RunCriticOutput:
         """Execute critic agent on specimen to generate critique (list of reported issues).
@@ -219,35 +220,32 @@ async def build_server(
 
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
-        # Check specimen split and enforce validation restriction
-        from adgn.props.db import get_session
-        from adgn.props.db.models import Specimen
-
+        # Check snapshot split and enforce validation restriction
         with get_session() as session:
-            db_specimen = session.query(Specimen).filter_by(specimen_slug=payload.specimen_slug).first()
-            if db_specimen is None:
-                raise ValueError(f"Specimen '{payload.specimen_slug}' not found in database")
+            db_snapshot = session.query(Snapshot).filter_by(slug=payload.snapshot_slug).first()
+            if db_snapshot is None:
+                raise ValueError(f"Snapshot '{payload.snapshot_slug}' not found in database")
 
             # Validation split: must use files=ALL_FILES_WITH_ISSUES
-            if db_specimen.split == "valid" and payload.files != ALL_FILES_WITH_ISSUES:
+            if db_snapshot.split == "valid" and payload.files != ALL_FILES_WITH_ISSUES:
                 raise ValueError(
-                    f"Validation split specimen '{payload.specimen_slug}' must use files=\"{ALL_FILES_WITH_ISSUES}\" (full specimen evaluation only). "
+                    f"Validation split snapshot '{payload.snapshot_slug}' must use files=\"{ALL_FILES_WITH_ISSUES}\" (full specimen evaluation only). "
                     f"Cannot run on subset of files."
                 )
 
         # Resolve files for prompt rendering and validation
         resolved_files = await resolve_critic_scope(
-            specimen_slug=payload.specimen_slug, files=payload.files, registry=registry
+            snapshot_slug=payload.snapshot_slug, files=payload.files, registry=registry
         )
 
         # Load and hydrate specimen for content_root
-        async with registry.load_and_hydrate(payload.specimen_slug) as hydrated:
+        async with registry.load_and_hydrate(payload.snapshot_slug) as hydrated:
             # Validate explicit files exist (when not using sentinel)
             if payload.files != ALL_FILES_WITH_ISSUES:
                 specimen_files = set(hydrated.all_discovered_files.keys())
                 if invalid_files := resolved_files - specimen_files:
                     raise ValueError(
-                        f"Invalid files for specimen '{payload.specimen_slug}': {sorted(str(f) for f in invalid_files)}. "
+                        f"Invalid files for specimen '{payload.snapshot_slug}': {sorted(str(f) for f in invalid_files)}. "
                         f"Available files: {sorted(str(f) for f in specimen_files)[:10]}..."
                     )
 
@@ -289,9 +287,12 @@ async def build_server(
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
         # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
-        grader_run_id = await grade_critique_by_id(critique_id=payload.critique_id, client=client, verbose=verbose)
-
-        return RunGraderOutput(grader_run_id=grader_run_id)
+        with get_session() as session:
+            return RunGraderOutput(
+                grader_run_id=await grade_critique_by_id(
+                    session=session, critique_id=payload.critique_id, client=client, registry=registry, verbose=verbose
+                )
+            )
 
     return mcp
 
@@ -301,58 +302,46 @@ async def build_server(
 # ============================================================================
 
 
-@asynccontextmanager
-async def hydrate_train_specimens() -> AsyncIterator[tuple[dict[str, Path], Path]]:
-    """Hydrate all train specimens and keep them alive for direct Docker mounting.
-
-    Uses AsyncExitStack to keep all specimens hydrated until context exits.
-    No copying - mount each specimen and its definitions directly as separate Docker volumes.
-    """
-    specimen_paths: dict[str, Path] = {}
-    defs_root = specimens_definitions_root()
-    registry = SpecimenRegistry.from_package_resources()
-
-    async with AsyncExitStack() as stack:
-        train_specimens = registry.get_specimens_by_split(Split.TRAIN)
-        logger.info(f"Hydrating {len(train_specimens)} train specimens (for direct Docker mount)")
-
-        for slug in train_specimens:
-            # Load and hydrate specimen, keep alive for Docker mounting
-            hydrated = await stack.enter_async_context(registry.load_and_hydrate(slug))
-            # No copying - mount hydrated path directly as separate Docker volume
-            specimen_paths[slug] = hydrated.content_root
-            logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /specimens/{slug})")
-
-        # Return base definitions directory - consumer mounts defs_root/{slug} for each train specimen
-        logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
-
-        yield specimen_paths, defs_root
-        # AsyncExitStack will cleanup all hydrated specimens automatically
-
-
 async def run_prompt_optimizer(
-    budget: float, ctx: RunsContext, out_dir: Path | None = None, model: str = "gpt-5", verbose: bool = False
+    budget: float,
+    ctx: RunsContext,
+    registry: SnapshotRegistry,
+    out_dir: Path | None = None,
+    model: str = "gpt-5",
+    verbose: bool = False,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt.
+
+    Args:
+        budget: Dollar budget for optimization
+        ctx: Runs context for path derivation
+        registry: Snapshot registry (required, no default - caller must provide)
+        out_dir: Optional output directory
+        model: Model to use (default gpt-5)
+        verbose: Verbose output flag
 
     Hydrates train specimens and mounts them with definitions via Docker.
     The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
     """
-    # Render system prompt with query constants
+    # Render system prompt with compiled SQL queries from builders
     system = render_prompt_template(
         "prompt_optimizer_system.j2.md",
-        sql_list_train=agent_queries.SQL_LIST_TRAIN_SPECIMENS,
-        sql_recent_graders=agent_queries.SQL_RECENT_GRADER_RESULTS,
-        sql_valid_agg_view=agent_queries.SQL_VALID_AGGREGATES_VIEW,
-        sql_critique_for_specimen=agent_queries.SQL_CRITIQUE_FOR_SPECIMEN,
-        sql_link_to_prompt=agent_queries.SQL_LINK_GRADER_TO_PROMPT,
-        sql_tools_used=agent_queries.SQL_TOOLS_USED,
-        sql_tool_sequence=agent_queries.SQL_TOOL_SEQUENCE,
-        sql_failed_tools=agent_queries.SQL_FAILED_TOOLS,
-        sql_blocked_valid_critiques=agent_queries.SQL_BLOCKED_VALID_CRITIQUES,
-        sql_blocked_valid_grader_runs=agent_queries.SQL_BLOCKED_VALID_GRADER_RUNS,
-        sql_blocked_valid_events=agent_queries.SQL_BLOCKED_VALID_EVENTS,
-        sql_po_run_costs=agent_queries.SQL_PO_RUN_COSTS,
+        sql_list_train=qb.compile_to_sql(qb.list_train_snapshots()),
+        sql_list_train_tps=qb.compile_to_sql(qb.list_train_true_positives()),
+        sql_list_train_fps=qb.compile_to_sql(qb.list_train_false_positives()),
+        sql_count_issues_by_snapshot=qb.compile_to_sql(qb.count_issues_by_snapshot(split="train")),
+        sql_recent_graders=qb.compile_to_sql(qb.recent_grader_results(limit=10)),
+        sql_valid_agg_view=qb.compile_to_sql(qb.valid_aggregates_view()),
+        # Parameterized queries - compile with placeholders for agent to fill in
+        sql_critique_for_specimen=qb.compile_to_sql_with_placeholders(qb.critiques_for_snapshot_parameterized()),
+        sql_link_to_prompt=qb.compile_to_sql_with_placeholders(qb.link_grader_to_prompt_parameterized()),
+        sql_tools_used=qb.compile_to_sql_with_placeholders(qb.tools_used_by_transcript_parameterized()),
+        sql_tool_sequence=qb.compile_to_sql_with_placeholders(qb.tool_sequence_by_transcript_parameterized()),
+        sql_failed_tools=qb.compile_to_sql_with_placeholders(qb.failed_tools_by_transcript_parameterized()),
+        sql_blocked_valid_critiques=qb.compile_to_sql(qb.blocked_valid_critiques()),
+        sql_blocked_valid_grader_runs=qb.compile_to_sql(qb.blocked_valid_grader_runs()),
+        sql_blocked_valid_events=qb.compile_to_sql(qb.blocked_valid_events()),
+        sql_po_run_costs=qb.compile_to_sql_with_placeholders(qb.po_run_costs_parameterized()),
     )
 
     # Session directory (inline adhoc_run_dir - only called here)
@@ -365,21 +354,17 @@ async def run_prompt_optimizer(
         session_dir = session_dir.resolve()
 
     # Hydrate train specimens and keep alive for Docker mounting
-    async with hydrate_train_specimens() as (train_specimens, defs_root):
+    async with registry.hydrate_train_specimens() as (train_specimens, _defs_root):
         # Build extra volumes for Docker (specimens + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
 
-        # Train specimens source code (ro) - mount each separately
+        # Train snapshots source code (ro) - mount each separately
         for slug, path in train_specimens.items():
-            extra_volumes[str(path.resolve())] = {"bind": f"/specimens/train/{slug}", "mode": "ro"}
+            extra_volumes[str(path.resolve())] = {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
 
-        # Mount train specimen definitions separately (ground truth issues)
-        # This prevents leaking test/valid split data to the optimization agent
-        for slug in train_specimens:
-            def_path = defs_root / slug
-            if def_path.exists():
-                extra_volumes[str(def_path.resolve())] = {"bind": f"/specimen_defs/train/{slug}", "mode": "ro"}
+        # Ground truth issues (TPs/FPs) are now accessed via database
+        # No longer mount libsonnet definitions from filesystem
 
         # Get agent_user database URL from environment
         agent_db_url = os.environ.get("PROPS_AGENT_DB_URL")
@@ -407,7 +392,6 @@ async def run_prompt_optimizer(
         )
 
         # Create PromptOptimizationRun record for tracking
-        from adgn.props.db.models import PromptOptimizationRun
 
         with get_session() as session:
             po_run = PromptOptimizationRun(
@@ -426,6 +410,7 @@ async def run_prompt_optimizer(
         # Create and mount prompt_eval server, keeping reference for introspection
         prompt_eval_server = await build_server(
             client=build_client(model),
+            registry=registry,
             name=PROMPT_EVAL_SERVER_NAME,
             prompt_optimization_run_id=prompt_optimization_run_id,
             workspace_root=session_dir,

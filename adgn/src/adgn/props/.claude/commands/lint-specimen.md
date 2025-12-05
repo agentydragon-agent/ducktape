@@ -31,7 +31,7 @@ A textual report of all violations with:
 1) Read authoring guide and extract checklist
 2) Identify target specimen directory
 3) Validate structure and files
-4) **Use `adgn-properties2 specimen-exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
+4) **Use `adgn-properties snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
 5) **Check EVERY issue file in `issues/*.libsonnet`** (not just a sample):
    - Evaluate Jsonnet to JSON
    - **Verify ONE logical problem per file** (Authoring Guide §3):
@@ -57,7 +57,7 @@ A textual report of all violations with:
 
 ## Interaction with Specimens
 
-**CRITICAL**: Always use `adgn-properties2 specimen-exec <slug> -- <command>` when you need to interact with the hydrated specimen code:
+**CRITICAL**: Always use `adgn-properties snapshot exec <slug> -- <command>` when you need to interact with the hydrated specimen code:
 - Reading files from the specimen
 - Running tools against the specimen code
 - Checking file existence or structure
@@ -70,11 +70,11 @@ This ensures:
 Example:
 ```bash
 # Read a file from specimen
-adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- cat adgn/tests/agent/test_foo.py
+adgn-properties snapshot exec ducktape/2025-11-20-repo -- cat adgn/tests/agent/test_foo.py
 
 # Check if file exists
-adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- test -f adgn/src/adgn/agent/bar.py && echo "exists"
+adgn-properties snapshot exec ducktape/2025-11-20-repo -- test -f adgn/src/adgn/agent/bar.py && echo "exists"
 
 # List files matching pattern
-adgn-properties2 specimen-exec ducktape/2025-11-20-repo -- find adgn -name "*.py" -type f
+adgn-properties snapshot exec ducktape/2025-11-20-repo -- find adgn -name "*.py" -type f
 ```

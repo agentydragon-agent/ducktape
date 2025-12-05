@@ -71,3 +71,7 @@ worktrees
 # (Those are supposed to be non-RCM)
 dotfiles/config/cronomix/**
 dotfiles/config/OrcaSlicer/**
+
+# GEPA outputs and logs
+adgn/src/adgn/props/gepa/**/*.log
+adgn/src/adgn/props/gepa/gepa_output/

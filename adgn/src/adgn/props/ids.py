@@ -51,10 +51,10 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 
 
 # =============================================================================
-# Specimen Slug
+# Snapshot Slug
 # =============================================================================
 
-# Specimen slug type with validated pattern enforcing exactly one slash
+# Base validated snapshot slug type (internal)
 # Pattern: {project}/{date-sequence}
 #   - project: lowercase alphanumeric, underscore, hyphen (e.g., "ducktape", "crush", "misc")
 #   - date-sequence: typically YYYY-MM-DD-NN or YYYY-MM-DD-name (e.g., "2025-11-26-00", "2025-08-30-internal_db")
@@ -75,7 +75,7 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 #   [a-z0-9_-]+$  - date-sequence part (1+ chars)
 #
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility
-SpecimenSlug: TypeAlias = Annotated[  # type: ignore[valid-type]
+_SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
     constr(
         pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",
         min_length=3,  # Minimum: "a/b"
@@ -83,6 +83,11 @@ SpecimenSlug: TypeAlias = Annotated[  # type: ignore[valid-type]
     ),
     _STR_IDENTITY_SERIALIZER,
 ]
+
+# Public snapshot slug type (NewType for nominal type safety)
+# Compile-time distinct from bare str, runtime is validated _SnapshotSlugBase string
+SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-newtype]
+"""Snapshot slug ID. Compile-time distinct from str, runtime is validated string."""
 
 
 # =============================================================================
@@ -101,3 +106,28 @@ FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-
 
 InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
+
+
+# =============================================================================
+# Snapshot Slug Utilities
+# =============================================================================
+
+
+def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
+    """Split snapshot slug into repo and version components.
+
+    Args:
+        slug: Snapshot slug like "ducktape/2025-11-26-00"
+
+    Returns:
+        Tuple of (repo, version) e.g., ('ducktape', '2025-11-26-00')
+
+    Example:
+        >>> repo, version = split_snapshot_slug(SnapshotSlug("ducktape/2025-11-26-00"))
+        >>> repo
+        'ducktape'
+        >>> version
+        '2025-11-26-00'
+    """
+    parts = str(slug).split("/", 1)
+    return parts[0], parts[1]

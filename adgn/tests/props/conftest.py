@@ -1,24 +1,26 @@
 """Shared test fixtures for props tests."""
 
+import hashlib
 from pathlib import Path
+from urllib.parse import urlparse, urlunparse
 from uuid import uuid4
 
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
-from sqlalchemy import text
+from sqlalchemy import create_engine, text
 
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
-from adgn.props.critic import CriticSubmitPayload, CriticSuccess
-from adgn.props.db import get_session, init_db, recreate_database
-from adgn.props.db.config import get_test_config
-from adgn.props.db.models import Prompt
-from adgn.props.grader import GraderInput
-from adgn.props.ids import BaseIssueID
+from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
+from adgn.props.db import init_db, recreate_database
+from adgn.props.db.config import DatabaseConfig, get_test_config
+from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.grader.models import GraderInput
+from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from adgn.props.specimens.registry import SpecimenRegistry
+from adgn.props.snapshot_registry import SnapshotRegistry
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
@@ -44,6 +46,18 @@ def specimen_relative_path_model():
 
 
 @pytest.fixture
+def validate_specimen_path(specimen_relative_path_model):
+    """Factory for validating specimen paths with context, reducing test duplication."""
+
+    def _validate(path_str: str, context: SpecimenContext):
+        """Validate a path string against specimen context."""
+        ctx = {"snapshots": context}
+        return specimen_relative_path_model.model_validate({"path": path_str}, context=ctx)
+
+    return _validate
+
+
+@pytest.fixture
 def rationale_model():
     """Fixture providing a Pydantic model with Rationale field."""
 
@@ -59,7 +73,7 @@ def make_specimen_ctx():
 
     def _make(tp_ids=(), fp_ids=(), all_discovered_files=None):
         return SpecimenContext(
-            specimen_slug="test/specimen",
+            snapshot_slug=SnapshotSlug("test/specimen"),
             all_discovered_files=all_discovered_files or {},
             allowed_tp_ids=frozenset(tp_ids),
             allowed_fp_ids=frozenset(fp_ids),
@@ -70,13 +84,13 @@ def make_specimen_ctx():
 
 @pytest.fixture
 def specimen_ctx_multiple_tp(make_specimen_ctx):
-    """Specimen context with multiple TP IDs (for testing hashability/sets)."""
+    """Snapshot context with multiple TP IDs (for testing hashability/sets)."""
     return make_specimen_ctx(tp_ids=["issue-001", "issue-002"])
 
 
 @pytest.fixture
 def specimen_ctx_tp_fp(make_specimen_ctx):
-    """Specimen context with same ID in both TP and FP (for namespace discrimination)."""
+    """Snapshot context with same ID in both TP and FP (for namespace discrimination)."""
     return make_specimen_ctx(tp_ids=["issue-001"], fp_ids=["issue-001"])
 
 
@@ -86,19 +100,19 @@ def critique_ctx_single():
     return GradedCritiqueContext(allowed_input_ids=frozenset(["critique-001"]))
 
 
-# === Specimen Registry Fixtures (DI Pattern) ===
+# === Snapshot Registry Fixtures (DI Pattern) ===
 # Two explicit registries:
 # 1. production_specimens_registry - for real specimens (src/adgn/props/specimens/)
 # 2. test_specimens_registry - for test fixtures (tests/props/fixtures/specimens/)
 
 
 @pytest.fixture
-def production_specimens_registry() -> SpecimenRegistry:
+def production_specimens_registry() -> SnapshotRegistry:
     """Production specimens registry from package resources.
 
     Uses installed package specimens (src/adgn/props/specimens/).
     """
-    return SpecimenRegistry.from_package_resources()
+    return SnapshotRegistry.from_package_resources()
 
 
 @pytest.fixture
@@ -112,20 +126,20 @@ def test_specimens_base() -> Path:
 
 
 @pytest.fixture
-def test_specimens_registry(test_specimens_base: Path) -> SpecimenRegistry:
+def test_specimens_registry(test_specimens_base: Path) -> SnapshotRegistry:
     """Test fixtures specimens registry (DI pattern - no monkeypatching).
 
     Uses test fixtures from tests/props/fixtures/specimens/ which contains
     minimal test-only specimens like test-trivial.
     """
-    return SpecimenRegistry.from_base_path(test_specimens_base)
+    return SnapshotRegistry.from_base_path(test_specimens_base)
 
 
 @pytest_asyncio.fixture
 async def loaded_specimen(production_specimens_registry):
     """Load a real specimen with validation using load_and_hydrate.
 
-    Yields HydratedSpecimen object containing both the validated specimen data
+    Yields HydratedSnapshot object containing both the validated specimen data
     and the hydrated content root.
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
@@ -175,7 +189,7 @@ def sample_critic_success() -> CriticSuccess:
 @pytest.fixture
 def sample_grader_input() -> GraderInput:
     """Sample GraderInput with train specimen and critique ID."""
-    return GraderInput(specimen_slug="ducktape/2025-11-26-00", critique_id=uuid4())
+    return GraderInput(snapshot_slug=SnapshotSlug("ducktape/2025-11-26-00"), critique_id=uuid4())
 
 
 @pytest.fixture
@@ -220,26 +234,52 @@ def make_openai_client():
     return _factory
 
 
+def _sanitize_test_id(test_id: str, max_length: int = 63) -> str:
+    """Sanitize pytest node ID for use in PostgreSQL database name.
+
+    Args:
+        test_id: pytest node ID (e.g., 'tests/props/test_db.py::test_sync')
+        max_length: Maximum length for PostgreSQL identifier (default 63)
+
+    Returns:
+        Sanitized database name safe for PostgreSQL
+    """
+    # Keep only alphanumeric and underscore; replace other chars with underscore
+    sanitized = "".join(c if c.isalnum() or c == "_" else "_" for c in test_id)
+    # Collapse consecutive underscores
+    while "__" in sanitized:
+        sanitized = sanitized.replace("__", "_")
+    # Trim leading/trailing underscores
+    sanitized = sanitized.strip("_")
+    # Ensure it fits PostgreSQL's 63-character limit (including 'props_test_' prefix)
+    # Reserve space for the prefix that will be added later
+    prefix = "props_test_"
+    available_length = max_length - len(prefix)
+    if len(sanitized) > available_length:
+        # Keep prefix and add hash suffix to ensure uniqueness
+        hash_suffix = hashlib.sha256(test_id.encode()).hexdigest()[:8]
+        prefix_length = available_length - len(hash_suffix) - 1
+        sanitized = f"{sanitized[:prefix_length]}_{hash_suffix}"
+    return sanitized
+
+
 @pytest.fixture
 def test_db(request):
     """Create isolated database for each test.
 
     Creates a unique database per test, initializes schema, and drops it after.
     Safe for parallel pytest-xdist execution - each test gets its own database.
+
+    Database name is derived from the test node ID for better debuggability.
     """
-    from sqlalchemy import create_engine
-
-    from adgn.props.db.config import DatabaseConfig
-
-    # Generate unique database name for this test
-    test_id = str(uuid4()).replace("-", "")[:16]
-    db_name = f"props_test_{test_id}"
+    # Generate database name from test node ID
+    test_node_id = request.node.nodeid
+    sanitized_id = _sanitize_test_id(test_node_id)
+    db_name = f"props_test_{sanitized_id}"
 
     # Get base config and parse admin URL
     base_config = get_test_config()
     # Parse admin URL to get connection params (connect to postgres db to create new db)
-    from urllib.parse import urlparse, urlunparse
-
     parsed = urlparse(base_config.admin_url)
     postgres_url = urlunparse((parsed.scheme, parsed.netloc, "/postgres", "", "", ""))
 
@@ -257,12 +297,9 @@ def test_db(request):
     init_db(test_config.admin_url)
     recreate_database()
 
-    # Create default test prompts
-    with get_session() as session:
-        for prompt_sha256 in ["test123", "unknown", "test", "train-test"]:
-            prompt = Prompt(prompt_sha256=prompt_sha256, prompt_text=f"Test prompt for {prompt_sha256}")
-            session.add(prompt)
-        session.commit()
+    # Create default test prompts using proper SHA256 computation
+    for prompt_name in ["test123", "unknown", "test", "train-test"]:
+        hash_and_upsert_prompt(f"Test prompt for {prompt_name}")
 
     yield  # Test runs here
 
