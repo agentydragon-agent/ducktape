@@ -214,10 +214,14 @@ def render_stream(data: bytes, limit: int) -> ExecStream:
     return TruncatedStream(truncated_text=data[:limit].decode("utf-8", errors="replace"), total_bytes=len(data))
 
 
+def render_streams(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[ExecStream, ExecStream]:
+    """Render both stdout and stderr streams under a byte limit."""
+    return (render_stream(stdout, max_bytes), render_stream(stderr, max_bytes))
+
+
 def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecResult:
     """Render ExecOutcome directly to BaseExecResult (preserves types)."""
-    stdout_render = render_stream(outcome.output.stdout, max_bytes)
-    stderr_render = render_stream(outcome.output.stderr, max_bytes)
+    stdout_render, stderr_render = render_streams(outcome.output.stdout, outcome.output.stderr, max_bytes)
 
     # Pass through exit status directly - all subprocess types are valid MCP types
     exit_status = outcome.exit
@@ -229,8 +233,7 @@ def render_raw_to_result(
     stdout: bytes, stderr: bytes, exit_code: int | None, timed_out: bool, max_bytes: int, duration_ms: int
 ) -> BaseExecResult:
     """Render raw streams directly to BaseExecResult (preserves types)."""
-    stdout_render = render_stream(stdout, max_bytes)
-    stderr_render = render_stream(stderr, max_bytes)
+    stdout_render, stderr_render = render_streams(stdout, stderr, max_bytes)
 
     # exit_code should be int when not timed out, but handle None defensively
     exit_status = TimedOut() if timed_out else Exited(exit_code=exit_code if exit_code is not None else 0)

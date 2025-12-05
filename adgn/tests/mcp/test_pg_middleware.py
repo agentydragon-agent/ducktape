@@ -83,7 +83,7 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
     engine = make_decision_engine(ApprovalDecision.ASK)
     call_ids: list[str] = []
 
-    async with make_pg_compositor({"backend": backend_server}, policy_engine=engine) as (sess, _comp, policy_engine):
+    async with make_pg_compositor({"backend": backend_server}, policy_engine=engine) as (sess, policy_engine):
         # Start tool call in background - it will block waiting for approval
         call_task = asyncio.create_task(sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"}))
 

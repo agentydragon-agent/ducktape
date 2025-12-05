@@ -16,6 +16,7 @@ from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
+from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
 
@@ -176,11 +177,6 @@ class RichDisplayHandler(BaseHandler):
             kwargs["border_style"] = color
         return Panel(constrained_content, **kwargs)  # type: ignore[arg-type]
 
-    def _parse_tool_key(self, tool_name: str) -> tuple[str, str] | None:
-        """Parse tool name into (server, tool) tuple, or None if invalid format."""
-        parts = tool_name.split("_", 1)
-        return (parts[0], parts[1]) if len(parts) == 2 else None
-
     def _format_exec_input(self, input_data: ExecInput) -> Text:
         """Format ExecInput as readable text."""
         lines = []
@@ -246,8 +242,8 @@ class RichDisplayHandler(BaseHandler):
             args = parsed if parsed is not None else {"_raw": event.args_json or "{}"}
 
             # Try type-based rendering if we have schema registered
-            tool_key = self._parse_tool_key(event.name)
-            if tool_key and tool_key in self._tool_input_schemas and parsed is not None:
+            tool_key = parse_tool_name(event.name)
+            if tool_key in self._tool_input_schemas and parsed is not None:
                 try:
                     input_type = self._tool_input_schemas[tool_key]
                     typed_input = TypeAdapter(input_type).validate_python(parsed)
@@ -270,8 +266,8 @@ class RichDisplayHandler(BaseHandler):
             # Try to parse structured_content using registered schema
             parsed_data: Any = result.structuredContent
             if parsed_data is not None and call:
-                tool_key = self._parse_tool_key(call.name)
-                if tool_key and tool_key in self._tool_schemas:
+                tool_key = parse_tool_name(call.name)
+                if tool_key in self._tool_schemas:
                     try:
                         result_type = self._tool_schemas[tool_key]
                         parsed_data = TypeAdapter(result_type).validate_python(parsed_data)
@@ -404,11 +400,6 @@ class CompactDisplayHandler(BaseHandler):
         if renderable is not None:
             self._console.print(renderable)
 
-    def _parse_tool_key(self, tool_name: str) -> tuple[str, str] | None:
-        """Parse tool name into (server, tool) tuple, or None if invalid format."""
-        parts = tool_name.split("_", 1)
-        return (parts[0], parts[1]) if len(parts) == 2 else None
-
     def _format_exec_command(self, input_data: ExecInput) -> str:
         """Format ExecInput as a shell command."""
         # Unwrap shell wrappers or quote the parts
@@ -455,6 +446,29 @@ class CompactDisplayHandler(BaseHandler):
             return f"{count / 1000:.1f}k"
         return str(count)
 
+    def _extract_stream_text(self, stream: str | TruncatedStream) -> str:
+        """Extract text from a stream, handling TruncatedStream."""
+        if isinstance(stream, TruncatedStream):
+            return stream.truncated_text + "\n[truncated]"
+        return stream
+
+    def _try_parse_with_schema(self, parsed_data: Any, tool_name: str, schemas: dict[tuple[str, str], type]) -> Any:
+        """Try to parse data with registered schema, return original on failure."""
+        if parsed_data is None:
+            return None
+        tool_key = parse_tool_name(tool_name)
+        if tool_key not in schemas:
+            return parsed_data
+        try:
+            result_type = schemas[tool_key]
+            return TypeAdapter(result_type).validate_python(parsed_data)
+        except ValidationError:
+            return parsed_data
+
+    def _format_prefix_label(self, default: str = "Assistant") -> str:
+        """Format prefix label with fallback."""
+        return f"{self._prefix}: " if self._prefix else f"{default}: "
+
     def _create_renderable(self, event: TurnEventType) -> RenderableType | None:
         """Create a Rich renderable for an event by type."""
         # UserText - plain with "User:" prefix
@@ -467,10 +481,7 @@ class CompactDisplayHandler(BaseHandler):
         # AssistantText - plain with prefix if set
         if isinstance(event, AssistantText):
             text = Text()
-            if self._prefix:
-                text.append(f"{self._prefix}: ", style="bold green")
-            else:
-                text.append("Assistant: ", style="bold green")
+            text.append(self._format_prefix_label(), style="bold green")
             text.append(event.text)
             return text
 
@@ -480,7 +491,7 @@ class CompactDisplayHandler(BaseHandler):
                 return None
             text = Text()
             if self._prefix:
-                text.append(f"{self._prefix}: ", style="bold green")
+                text.append(self._format_prefix_label(), style="bold green")
             # Combine summary parts
             summary_text = " ".join(s.text for s in event.summary if s.text)
             text.append(summary_text, style="italic dim")
@@ -492,18 +503,11 @@ class CompactDisplayHandler(BaseHandler):
             args = parsed if parsed is not None else {}
 
             # Try type-based rendering if we have schema registered
-            tool_key = self._parse_tool_key(event.name)
-            typed_input = None
-            if tool_key and tool_key in self._tool_input_schemas and parsed is not None:
-                try:
-                    input_type = self._tool_input_schemas[tool_key]
-                    typed_input = TypeAdapter(input_type).validate_python(parsed)
-                except ValidationError:
-                    pass
+            typed_input = self._try_parse_with_schema(parsed, event.name, self._tool_input_schemas)
 
             text = Text()
             # Bullet with prefix and tool name
-            prefix_part = f"{self._prefix}: " if self._prefix else ""
+            prefix_part = self._format_prefix_label(default="")
             text.append(f"● {prefix_part}", style="cyan")
             text.append(event.name, style="bold cyan")
 
@@ -540,13 +544,7 @@ class CompactDisplayHandler(BaseHandler):
             # Try to parse structured_content using registered schema
             parsed_data: Any = result.structuredContent
             if parsed_data is not None and call:
-                tool_key = self._parse_tool_key(call.name)
-                if tool_key and tool_key in self._tool_schemas:
-                    try:
-                        result_type = self._tool_schemas[tool_key]
-                        parsed_data = TypeAdapter(result_type).validate_python(parsed_data)
-                    except ValidationError:
-                        pass
+                parsed_data = self._try_parse_with_schema(parsed_data, call.name, self._tool_schemas)
 
             # Determine what to display
             display_data = parsed_data if parsed_data is not None else (result.content or {"isError": result.isError})
@@ -574,11 +572,7 @@ class CompactDisplayHandler(BaseHandler):
 
                 # Stdout
                 if has_stdout:
-                    stdout_text = (
-                        display_data.stdout.truncated_text + "\n[truncated]"
-                        if isinstance(display_data.stdout, TruncatedStream)
-                        else display_data.stdout
-                    )
+                    stdout_text = self._extract_stream_text(display_data.stdout)
                     truncated = self._truncate_lines(stdout_text, self._max_lines)
                     if both_present:
                         text.append("\n    stdout:\n")
@@ -588,11 +582,7 @@ class CompactDisplayHandler(BaseHandler):
 
                 # Stderr
                 if has_stderr:
-                    stderr_text = (
-                        display_data.stderr.truncated_text + "\n[truncated]"
-                        if isinstance(display_data.stderr, TruncatedStream)
-                        else display_data.stderr
-                    )
+                    stderr_text = self._extract_stream_text(display_data.stderr)
                     truncated = self._truncate_lines(stderr_text, self._max_lines)
                     if both_present:
                         text.append("\n    stderr:\n", style="red")

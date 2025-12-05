@@ -75,7 +75,7 @@ async def admin_env(make_compositor):
     Yields a tuple (admin_client, compositor).
     """
     async with make_compositor({}) as (client, comp):
-        await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+        await mount_standard_inproc_servers(compositor=comp)
         admin = CompositorAdminClient(client)
         yield admin, comp
 

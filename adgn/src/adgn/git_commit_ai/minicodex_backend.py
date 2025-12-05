@@ -188,29 +188,31 @@ async def generate_commit_message_minicodex(
     prompt = _build_commit_prompt(amend)
 
     # Build compositor, mount servers
-    comp = Compositor("compositor")
-    git_server = await attach_git_ro(comp, repo_root)
-    await comp.mount_inproc(SUBMIT_COMMIT_MESSAGE_SERVER_NAME, make_submit_server(submit_state))
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        git_server = await attach_git_ro(comp, repo_root)
+        await comp.mount_inproc(SUBMIT_COMMIT_MESSAGE_SERVER_NAME, make_submit_server(submit_state))
 
-    # Build bootstrap calls
-    builder = TypedBootstrapBuilder.for_server(git_server)
-    bootstrap_calls = make_commit_bootstrap_calls(builder, GIT_RO_SERVER_NAME, amend=amend)
-    bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+        # Build bootstrap calls
+        builder = TypedBootstrapBuilder.for_server(git_server)
+        bootstrap_calls = make_commit_bootstrap_calls(builder, GIT_RO_SERVER_NAME, amend=amend)
+        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-    handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
-    if debug:
-        handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
+        handlers: list[BaseHandler] = [CommitController(submit_state, bootstrap)]
+        if debug:
+            handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system="You are a code agent. Be concise.",
-            client=build_client(model),
-            handlers=handlers,
-            parallel_tool_calls=True,
-            tool_policy=RequireAnyTool(),
-        )
-        await agent.run(prompt)
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system="You are a code agent. Be concise.",
+                client=build_client(model),
+                handlers=handlers,
+                parallel_tool_calls=True,
+                tool_policy=RequireAnyTool(),
+            )
+            await agent.run(prompt)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     assert submit_state.result is not None, "submit_commit_message not called"
     cm = submit_state.result

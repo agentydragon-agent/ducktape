@@ -144,25 +144,25 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
     client = build_client(model)
 
     # Build in-proc Compositor and mount servers
-
-    comp = Compositor("compositor")
-    for name, spec in cfg.mcpServers.items():
-        await comp.mount_server(name, spec)
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=system,
-            client=client,
-            handlers=[DisplayEventsHandler()],
-            tool_policy=RequireAnyTool(),
-        )
-        for line in sys.stdin:
-            user = line.rstrip("\n")
-            if not user:
-                continue
-            res = await agent.run(user_text=user)
-            if res.text:
-                print(res.text)
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        await comp.mount_servers_from_config(cfg)
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=system,
+                client=client,
+                handlers=[DisplayEventsHandler()],
+                tool_policy=RequireAnyTool(),
+            )
+            for line in sys.stdin:
+                user = line.rstrip("\n")
+                if not user:
+                    continue
+                res = await agent.run(user_text=user)
+                if res.text:
+                    print(res.text)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
 
 @app.command("run")

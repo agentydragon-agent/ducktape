@@ -539,7 +539,7 @@ async def _exec_agent(
     dest_root = Path(tempfile.gettempdir()) / "adgn_runs" / label / ts
     dest_root.mkdir(parents=True, exist_ok=True)
 
-    comp = Compositor("compositor")
+    comp = Compositor()
     await wiring.attach(comp)
     handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(events_path=dest_root / "events.jsonl")]
     print(f"[run] Transcript: {dest_root}")

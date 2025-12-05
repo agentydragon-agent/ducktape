@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from hamcrest import all_of, assert_that, contains_string
+
 from adgn.agent.agent import MiniCodex
 from adgn.agent.events import ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
+from tests.agent.test_matchers import tool_call_with_error_text
 from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
 
@@ -63,11 +66,10 @@ async def test_malformed_json_in_tool_arguments(pg_client_echo, recording_handle
     assert len(tool_outputs) == 1
 
     tool_result = tool_outputs[0].result
-    assert tool_result.isError is True
-    assert len(tool_result.content) > 0
-    error_text = tool_result.content[0].text
-    assert "Invalid JSON" in error_text
-    assert "unterminated string" in error_text.lower()
+    assert_that(
+        tool_result,
+        tool_call_with_error_text(all_of(contains_string("Invalid JSON"), contains_string("unterminated string"))),
+    )
 
 
 async def test_non_dict_json_in_tool_arguments(pg_client_echo, recording_handler) -> None:
@@ -92,9 +94,7 @@ async def test_non_dict_json_in_tool_arguments(pg_client_echo, recording_handler
     assert len(tool_outputs) == 1
 
     tool_result = tool_outputs[0].result
-    assert tool_result.isError is True
-    error_text = tool_result.content[0].text
-    assert "must be a JSON object" in error_text
+    assert_that(tool_result, tool_call_with_error_text(contains_string("must be a JSON object")))
 
 
 async def test_malformed_json_parallel_tool_calls(pg_client_echo, recording_handler) -> None:

@@ -494,10 +494,21 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         fresh_results: dict[int, EvaluationResult] = {}
         if uncached_inputs:
             tasks = [
-                self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
+                asyncio.create_task(
+                    self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
+                )
                 for _, specimen_input in uncached_inputs
             ]
-            evaluated = await asyncio.gather(*tasks)
+            try:
+                evaluated = await asyncio.gather(*tasks)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # Cancel all tasks on interrupt to ensure clean shutdown
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # Wait for all tasks to actually cancel
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
 
             for (batch_idx, _), result in zip(uncached_inputs, evaluated, strict=False):
                 fresh_results[batch_idx] = result

@@ -108,6 +108,7 @@ repos:
           - prometheus-client
           - matplotlib
           - plotnine
+          - "plotext>=5.2.0"
           - "claude-code-sdk>=0.0.21,<0.1"
           - playwright
           # Type stubs

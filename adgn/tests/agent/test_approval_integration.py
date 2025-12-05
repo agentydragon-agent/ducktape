@@ -34,7 +34,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
 
     # Use make_pg_compositor with custom policy engine
     servers = dict(echo_spec)
-    async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, _comp, policy_engine):
+    async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, policy_engine):
         agent = await MiniCodex.create(
             mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )

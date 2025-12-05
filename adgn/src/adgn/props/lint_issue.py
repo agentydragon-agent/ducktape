@@ -345,28 +345,30 @@ async def _lint_issue_run_with_hydrated_root(
     handlers_list.extend(handlers)
 
     # Build compositor and client
-    comp = Compositor("compositor")
-    await wiring.attach(comp)
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        await wiring.attach(comp)
 
-    # Create lint submit server and mount in-proc
-    submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
+        # Create lint submit server and mount in-proc
+        submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
 
-    @submit_srv.flat_model()
-    async def submit_result(result: LintSubmitPayload) -> SimpleOk:
-        submit_state.result = result
-        return SimpleOk(ok=True)
+        @submit_srv.flat_model()
+        async def submit_result(result: LintSubmitPayload) -> SimpleOk:
+            submit_state.result = result
+            return SimpleOk(ok=True)
 
-    await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system="You are a code agent. Be concise.",
-            client=client,
-            handlers=handlers_list,
-            parallel_tool_calls=True,
-            tool_policy=RequireAnyTool(),
-        )
-        await agent.run(prompt)
+        await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system="You are a code agent. Be concise.",
+                client=client,
+                handlers=handlers_list,
+                parallel_tool_calls=True,
+                tool_policy=RequireAnyTool(),
+            )
+            await agent.run(prompt)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     assert submit_state.result, "submit_result somehow not called?"
     result: LintSubmitPayload = submit_state.result

@@ -41,24 +41,26 @@ async def run_prompt_async(
     Uses quiet single-line progress handler and per-run transcript directory.
     """
     transcript: list[TranscriptItem] = []
-    comp = Compositor("compositor")
-    for name, factory in server_factories.items():
-        server = factory()
-        await comp.mount_inproc(name, server)
-    # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
-    # Per-run transcript directory (logs/ for ad-hoc debugging)
-    run_dir = Path.cwd() / "logs" / "mini_codex" / "agent_runner"
-    run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=system_prompt,
-            client=client,
-            handlers=[OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
-            tool_policy=RequireAnyTool(),
-        )
-        res_any = await agent.run(prompt)
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        for name, factory in server_factories.items():
+            server = factory()
+            await comp.mount_inproc(name, server)
+        # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
+        # Per-run transcript directory (logs/ for ad-hoc debugging)
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "agent_runner"
+        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=system_prompt,
+                client=client,
+                handlers=[OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+                tool_policy=RequireAnyTool(),
+            )
+            res_any = await agent.run(prompt)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     return AgentResult(final_text=res_any.text, transcript=transcript)
 

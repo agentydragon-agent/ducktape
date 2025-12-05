@@ -279,42 +279,44 @@ async def run_grader(
     )
 
     # Set up compositor and servers
-    comp = Compositor("compositor")
-    runtime_server = await wiring.attach(comp)
-    grader_submit_server = NotifyingFastMCP(
-        GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
-    )
-    build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
-    await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
-
-    # Set up handlers
-    servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
-
-    # Run grader agent
-    # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
-    #       for better agent context about runtime environment
-    async with Client(comp) as mcp_client:
-        await mount_standard_inproc_servers(compositor=comp)
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system="You are a strict grader. Return only metrics via submit_result.",
-            client=client,
-            handlers=[
-                AbortIf(should_abort=lambda: grader_state.result is not None),
-                *build_props_handlers(
-                    transcript_id=transcript_id,
-                    verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
-                    if verbose
-                    else None,
-                    servers=servers,
-                ),
-                *extra_handlers,
-            ],
-            parallel_tool_calls=True,
-            reasoning_summary=ReasoningSummary.detailed,
-            tool_policy=RequireAnyTool(),
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        runtime_server = await wiring.attach(comp)
+        grader_submit_server = NotifyingFastMCP(
+            GRADER_SUBMIT_SERVER_NAME, instructions="Final grader submission for critique evaluation"
         )
-        await agent.run(prompt)
+        build_grader_submit_tools(grader_submit_server, grader_state, inputs=inputs)
+        await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+
+        # Set up handlers
+        servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
+
+        # Run grader agent
+        # TODO: Consider adding BootstrapInspectHandler (like critic) to inject container.info resource read
+        #       for better agent context about runtime environment
+        async with Client(comp) as mcp_client:
+            await mount_standard_inproc_servers(compositor=comp)
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system="You are a strict grader. Return only metrics via submit_result.",
+                client=client,
+                handlers=[
+                    AbortIf(should_abort=lambda: grader_state.result is not None),
+                    *build_props_handlers(
+                        transcript_id=transcript_id,
+                        verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                        if verbose
+                        else None,
+                        servers=servers,
+                    ),
+                    *extra_handlers,
+                ],
+                parallel_tool_calls=True,
+                reasoning_summary=ReasoningSummary.detailed,
+                tool_policy=RequireAnyTool(),
+            )
+            await agent.run(prompt)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     if grader_state.result is None:
         raise ToolError("Grader did not submit result")

@@ -80,7 +80,7 @@ def run(
 
         # Build a Compositor and mount runtime + matrix control servers
 
-        comp = Compositor("compositor")
+        comp = Compositor()
         runtime_server = make_container_exec_server(
             ContainerOptions(image=docker_image, network_mode=nm, environment=env, ephemeral=True)
         )

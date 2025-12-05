@@ -81,10 +81,12 @@ POLICY_EVALUATOR_ERROR_MSG: Final[str] = "policy_evaluator_error"
 
 # Compositor metadata server and resource URI templates (mounted under compositor)
 COMPOSITOR_META_SERVER_NAME: Final[str] = "compositor_meta"
-COMPOSITOR_META_URI_PREFIX: Final[str] = "resource://compositor_meta"
-COMPOSITOR_META_STATE_URI_FMT: Final[str] = f"{COMPOSITOR_META_URI_PREFIX}/state/{{server}}"
-COMPOSITOR_META_INSTRUCTIONS_URI_FMT: Final[str] = f"{COMPOSITOR_META_URI_PREFIX}/instructions/{{server}}"
-COMPOSITOR_META_CAPABILITIES_URI_FMT: Final[str] = f"{COMPOSITOR_META_URI_PREFIX}/capabilities/{{server}}"
+# Concrete resource for discovery
+COMPOSITOR_META_SERVERS_URI: Final[str] = "compositor://servers"
+# URI patterns with compositor:// scheme (for notifications and client use)
+COMPOSITOR_META_STATE_URI_PATTERN: Final[str] = "compositor://{server}/state"
+COMPOSITOR_META_INSTRUCTIONS_URI_PATTERN: Final[str] = "compositor://{server}/instructions"
+COMPOSITOR_META_CAPABILITIES_URI_PATTERN: Final[str] = "compositor://{server}/capabilities"
 
 # Compositor admin server name
 COMPOSITOR_ADMIN_SERVER_NAME: Final[str] = "compositor_admin"

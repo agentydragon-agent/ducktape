@@ -83,36 +83,39 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
     out_root.mkdir(parents=True, exist_ok=True)
     result: list[ClusterSpec] | None = None
 
-    comp = Compositor("compositor")
-    srv = NotifyingFastMCP("cluster_submit", instructions="Cluster submit")
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        srv = NotifyingFastMCP("cluster_submit", instructions="Cluster submit")
 
-    @srv.tool()
-    def submit_result(payload: ClusterSubmitPayload) -> str:
-        nonlocal result
-        seen = {it for c in payload.clusters for it in c.issue_ids}
-        all_keys = {u.tp_id for u in snapshot_issues}
-        missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.tp_id))
-        if missing:
-            raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
-        result = payload.clusters
-        return "ok"
+        @srv.tool()
+        def submit_result(payload: ClusterSubmitPayload) -> str:
+            nonlocal result
+            seen = {it for c in payload.clusters for it in c.issue_ids}
+            all_keys = {u.tp_id for u in snapshot_issues}
+            missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.tp_id))
+            if missing:
+                raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
+            result = payload.clusters
+            return "ok"
 
-    await comp.mount_inproc("cluster_submit", srv)
-    system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
-    input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=system,
-            client=build_client(model),
-            handlers=[
-                TranscriptHandler(events_path=out_root / "events.jsonl"),
-                AbortIf(should_abort=lambda: result is not None),
-            ],
-            parallel_tool_calls=True,
-            tool_policy=RequireAnyTool(),
-        )
-        await agent.run("Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines)
+        await comp.mount_inproc("cluster_submit", srv)
+        system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
+        input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=system,
+                client=build_client(model),
+                handlers=[
+                    TranscriptHandler(events_path=out_root / "events.jsonl"),
+                    AbortIf(should_abort=lambda: result is not None),
+                ],
+                parallel_tool_calls=True,
+                tool_policy=RequireAnyTool(),
+            )
+            await agent.run("Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
+
     if result is None:
         raise RuntimeError("cluster_submit.submit_result not called")
     (out_root / "clusters.json").write_text(
