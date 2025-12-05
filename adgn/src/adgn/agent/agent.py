@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
 
@@ -364,12 +365,19 @@ class MiniCodex:
                 return ToolCallOutcome(result=copy.deepcopy(local_map[call_id]))
 
             # Invoke via Policy Gateway client; do not swallow exceptions.
-            # Parse arguments strictly; invalid JSON/object shape is a hard error.
+            # Parse arguments strictly; invalid JSON/object shape raises ToolError.
             args: dict[str, Any] = {}
             if args_json:
-                val = json.loads(args_json)
+                try:
+                    val = json.loads(args_json)
+                except json.JSONDecodeError as e:
+                    preview = args_json[:200] if len(args_json) <= 200 else args_json[:200] + "..."
+                    raise ToolError(
+                        f"Invalid JSON in tool call arguments for {function_call.name!r}: {e}. "
+                        f"Arguments preview: {preview!r}"
+                    ) from e
                 if not isinstance(val, dict):
-                    raise ValueError("tool arguments must be a JSON object")
+                    raise ToolError("tool arguments must be a JSON object")
                 args = val
             raw = await self._mcp_client.call_tool(function_call.name, args, raise_on_error=False)
             # Convert FastMCP CallToolResult to Pydantic mcp.types.CallToolResult
@@ -380,6 +388,15 @@ class MiniCodex:
         else:
             await self._run_tool_calls_sequential(calls, function_calls, _invoke)
         self.pending_function_calls.clear()
+
+    @staticmethod
+    def _tool_error_to_outcome(e: ToolError) -> ToolCallOutcome:
+        """Convert ToolError to an error tool result outcome."""
+        error_msg = str(e) if str(e) else "Tool error"
+        error_result = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text=f"Tool call failed: {error_msg}")], isError=True
+        )
+        return ToolCallOutcome(result=error_result)
 
     async def _run_tool_calls_parallel(
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
@@ -392,11 +409,14 @@ class MiniCodex:
 
             async def runner(fc: FunctionCallItem, aj: str | None) -> None:
                 nonlocal abort_triggered
+                call_id = _require_call_id(fc)
                 try:
                     outcome = await invoker(fc, aj)
                 except cancelled_exc:
                     return
-                call_id = _require_call_id(fc)
+                except ToolError as e:
+                    outcome = self._tool_error_to_outcome(e)
+
                 results[call_id] = outcome
                 if outcome.was_aborted:
                     abort_triggered = True
@@ -423,7 +443,11 @@ class MiniCodex:
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
     ) -> None:
         for i, (function_call, args_json) in enumerate(calls):
-            outcome = await invoker(function_call, args_json)
+            try:
+                outcome = await invoker(function_call, args_json)
+            except ToolError as e:
+                outcome = self._tool_error_to_outcome(e)
+
             self._emit_tool_result(function_call, outcome.result)
             if outcome.was_aborted:
                 for remaining in function_calls[i + 1 :]:
