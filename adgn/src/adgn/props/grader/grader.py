@@ -8,7 +8,9 @@ submit_result.
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
+from functools import partial
 import logging
 import os
 from pathlib import Path
@@ -16,7 +18,7 @@ from uuid import UUID, uuid4
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.mcp_config import RemoteMCPServer
+from fastmcp.server.auth import StaticTokenVerifier
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -41,6 +43,7 @@ from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
 from adgn.props.grader.models import (
+    FILTER_TPS_BY_CRITIC_SCOPE,
     CritiqueInputIssue,
     FalsePositiveID,
     GraderInput,
@@ -52,8 +55,10 @@ from adgn.props.grader.models import (
     TruePositiveIssue,
 )
 from adgn.props.ids import InputIssueID, SnapshotSlug
+from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.rationale import Rationale
+from adgn.props.servers.http_launcher import launch_mcp_http_server
 from adgn.props.snapshot_hydrated import HydratedSnapshot
 from adgn.props.snapshot_hydrator import SnapshotHydrator
 
@@ -136,8 +141,6 @@ Use submit_result to submit the final grading comparing critique against ground 
 
 def make_grader_submit_server(
     state: GradeSubmitState,
-    *,
-    name: str = "grader_submit",
     inputs: GradeInputs,
     token: str | None = None,
 ) -> NotifyingFastMCP:
@@ -145,22 +148,12 @@ def make_grader_submit_server(
 
     Args:
         state: State container for submitted result.
-        name: Server name.
         inputs: Grading context (snapshot slug and critique).
-        token: If provided, configure bearer token auth for HTTP mode.
-
-    Returns:
-        NotifyingFastMCP server (with auth if token provided).
+        token: Auth token for HTTP mode (None for inproc).
     """
-    from fastmcp.server.auth import StaticTokenVerifier
-
-    auth = None
-    if token is not None:
-        auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
-
-    mcp = NotifyingFastMCP(name, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
+    auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}}) if token else None
+    mcp = NotifyingFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
     build_grader_submit_tools(mcp, state, inputs=inputs)
-
     return mcp
 
 
@@ -238,33 +231,26 @@ async def _run_grader_agent(
     input_data: GraderInput,
     verbose: bool,
     extra_handlers: tuple[BaseHandler, ...],
-    grader_submit_mcp_client: Client | None = None,
+    http_mode: bool = False,
 ) -> None:
     """Run the grader agent.
 
     Args:
-        grader_submit_mcp_client: If provided (HTTP mode), agent uses this client
-            directly for grader_submit tools. If None (inproc mode), grader_submit
-            is mounted in the compositor.
+        http_mode: If True, grader_submit is exposed via HTTP (env vars in wiring).
+            If False, grader_submit is mounted in compositor.
     """
     comp = Compositor("compositor")
     runtime_server = await wiring.attach(comp)
 
-    grader_submit_server: NotifyingFastMCP | None = None
-    if grader_submit_mcp_client is None:
+    servers: dict[str, NotifyingFastMCP | None] = {wiring.server_name: runtime_server}
+    if not http_mode:
         # Inproc mode: mount grader_submit in compositor
-        grader_submit_server = make_grader_submit_server(grader_state, inputs=inputs)
+        grader_submit_server = make_grader_submit_server(grader_state, inputs)
         await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+        servers[GRADER_SUBMIT_SERVER_NAME] = grader_submit_server
 
-    servers = {wiring.server_name: runtime_server, GRADER_SUBMIT_SERVER_NAME: grader_submit_server}
-
-    # In HTTP mode, use the direct HTTP client; in inproc mode, use compositor client
-    mcp_client = grader_submit_mcp_client if grader_submit_mcp_client is not None else Client(comp)
-
-    async with mcp_client:
-        if grader_submit_mcp_client is None:
-            # Only mount standard servers in inproc mode (compositor is used)
-            await mount_standard_inproc_servers(compositor=comp)
+    async with Client(comp) as mcp_client:
+        await mount_standard_inproc_servers(compositor=comp)
 
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
@@ -352,8 +338,6 @@ async def run_grader(
         # GradeInputs, then used in both build_grader_submit_tools (for validation) and
         # grade_critique_by_id (for prompt filtering). Consider refactoring to single source
         # or making the critique → files relationship more explicit.
-        from adgn.props.grader.models import FILTER_TPS_BY_CRITIC_SCOPE
-
         reviewed_files: set[Path] | None = None
         if FILTER_TPS_BY_CRITIC_SCOPE and critique_orm.critic_run:
             reviewed_files = {Path(f) for f in critique_orm.critic_run.files}
@@ -368,43 +352,42 @@ async def run_grader(
     grader_state = GradeSubmitState()
     inputs = GradeInputs(snapshot_slug=input_data.snapshot_slug, critique=critique, reviewed_files=reviewed_files)
 
-    wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
-    prompt = build_grade_from_json_prompt(
-        true_positive_issues=canonical_tps,
-        critique_issues=critique_typed,
-        known_fps=canonical_fps,
-        submit_tool_name=build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result"),
-        wiring=wiring,
-    )
-
-    # Common agent args
-    agent_args = {
-        "grader_state": grader_state,
-        "inputs": inputs,
-        "wiring": wiring,
-        "prompt": prompt,
-        "client": client,
-        "transcript_id": transcript_id,
-        "snapshot_split": snapshot_split,
-        "input_data": input_data,
-        "verbose": verbose,
-        "extra_handlers": extra_handlers,
-    }
-
     # Run agent with either HTTP or in-proc server based on toggle
-    if USE_MCP_HTTP:
-        from adgn.props.servers.http_launcher import launch_mcp_http_server
-
-        def server_factory(token: str) -> NotifyingFastMCP:
-            return make_grader_submit_server(grader_state, inputs=inputs, token=token)
-
-        async with launch_mcp_http_server(server_factory) as handle:
+    @asynccontextmanager
+    async def _http_context():
+        async with launch_mcp_http_server(partial(make_grader_submit_server, grader_state, inputs)) as handle:
             logger.info(f"Grader HTTP server started at {handle.url}")
-            # Create client connected directly to HTTP server (no compositor)
-            http_config = RemoteMCPServer(url=f"http://127.0.0.1:{handle.port}", auth=handle.token)
-            await _run_grader_agent(**agent_args, grader_submit_mcp_client=Client(http_config))
-    else:
-        await _run_grader_agent(**agent_args)
+            yield handle
+
+    ctx = _http_context() if USE_MCP_HTTP else nullcontext()
+    async with ctx as http_handle:
+        # Create wiring with MCP env vars if in HTTP mode
+        extra_env = (
+            {"MCP_GRADER_URL": http_handle.url, "MCP_GRADER_TOKEN": http_handle.token} if http_handle else None
+        )
+        wiring = properties_docker_spec(
+            hydrated_specimen.content_root, mount_properties=True, ephemeral=False, extra_env=extra_env
+        )
+        prompt = build_grade_from_json_prompt(
+            true_positive_issues=canonical_tps,
+            critique_issues=critique_typed,
+            known_fps=canonical_fps,
+            submit_tool_name=build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result"),
+            wiring=wiring,
+        )
+        await _run_grader_agent(
+            grader_state=grader_state,
+            inputs=inputs,
+            wiring=wiring,
+            prompt=prompt,
+            client=client,
+            transcript_id=transcript_id,
+            snapshot_split=snapshot_split,
+            input_data=input_data,
+            verbose=verbose,
+            extra_handlers=extra_handlers,
+            http_mode=bool(http_handle),
+        )
 
     if grader_state.result is None:
         raise ToolError("Grader did not submit result")
@@ -449,11 +432,7 @@ async def grade_critique_by_id(
     canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
 
     # Filter TPs/FPs by critic scope if enabled
-    from adgn.props.grader.models import FILTER_TPS_BY_CRITIC_SCOPE
-
     if FILTER_TPS_BY_CRITIC_SCOPE and critique.critic_run:
-        from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
-
         reviewed_files = {Path(f) for f in critique.critic_run.files}
 
         # Only include TPs where at least one occurrence is catchable from reviewed files
