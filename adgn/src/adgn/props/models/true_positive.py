@@ -5,7 +5,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
-from adgn.props.ids import BaseIssueID, SnapshotSlug
+from adgn.props.ids import BaseIssueID
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 
@@ -139,50 +139,6 @@ class FalsePositiveOccurrence(BaseModel):
     def validate_non_empty(self) -> FalsePositiveOccurrence:
         if not self.relevant_files:
             raise ValueError("relevant_files must be non-empty")
-        return self
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class TruePositive(BaseModel):
-    """True positive issue (post-migration).
-
-    Represents a real problem that should be detected by critics.
-    """
-
-    tp_id: str = Field(description="Derived from filename by loader")
-    snapshot_slug: SnapshotSlug = Field(description="From Jsonnet 'snapshot' field")
-    rationale: Rationale
-    occurrences: list[TruePositiveOccurrence]
-
-    @model_validator(mode="after")
-    def validate_multi_occurrence_notes(self) -> TruePositive:
-        if len(self.occurrences) > 1:
-            for occ in self.occurrences:
-                if occ.note is None:
-                    raise ValueError("note required for multi-occurrence true positives")
-        return self
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class FalsePositive(BaseModel):
-    """False positive (post-migration).
-
-    Represents a pattern that looks like an issue but isn't.
-    """
-
-    fp_id: str = Field(description="Derived from filename by loader")
-    snapshot_slug: SnapshotSlug = Field(description="From Jsonnet 'snapshot' field")
-    rationale: Rationale
-    occurrences: list[FalsePositiveOccurrence]
-
-    @model_validator(mode="after")
-    def validate_multi_occurrence_notes(self) -> FalsePositive:
-        if len(self.occurrences) > 1:
-            for occ in self.occurrences:
-                if occ.note is None:
-                    raise ValueError("note required for multi-occurrence false positives")
         return self
 
     model_config = ConfigDict(extra="forbid")

@@ -64,7 +64,7 @@ async def test_read_crush_min():
     assert isinstance(s_bad, CrushSample)
     # Responses-native payload preserved as Pydantic model
     oai_req = s_bad.oai_request
-    input_data = oai_req.input
+    input_data = oai_req.input  # type: ignore[union-attr]  # Both variants have 'input' field (TypedDict limitation)
     assert isinstance(input_data, list)
     # Extract roles from the input messages (should be proper message objects)
     roles = [item.role.lower() for item in input_data if isinstance(item, ResponseInputMessageItem)]

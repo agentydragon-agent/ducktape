@@ -137,8 +137,6 @@ def grader_agent_steps():
         "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
         "recall": 0.8,
         "summary": "Good coverage of canonical issues.",
-        "per_file_recall": {"subtract.py": 0.8},
-        "per_file_ratios": {"subtract.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
     }
     return [MakeCall("grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input))]
 
@@ -204,7 +202,7 @@ async def test_full_workflow_po_agent_critic_grader(
     po_agent_steps,
     critic_agent_steps,
     grader_agent_steps,
-    test_specimens_registry,
+    test_specimens_hydrator,
 ):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
@@ -235,7 +233,7 @@ async def test_full_workflow_po_agent_critic_grader(
         await run_prompt_optimizer(
             budget=1.0,
             ctx=RunsContext.from_pkg_dir(),
-            registry=test_specimens_registry,
+            hydrator=test_specimens_hydrator,
             out_dir=tmp_path,
             model="gpt-5-nano",
         )

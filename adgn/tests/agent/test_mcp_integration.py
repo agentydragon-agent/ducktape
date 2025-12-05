@@ -8,6 +8,7 @@ import pytest
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
 from adgn.mcp.exec.models import BaseExecResult, Exited
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
 
 # FastMCP stdio client (hard import)
@@ -63,7 +64,9 @@ async def test_direct_inprocess_server(make_compositor) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_inproc_container_exec_exposes_container_info_resource(docker_inproc_spec_py312: object) -> None:
+async def test_inproc_container_exec_exposes_container_info_resource(
+    docker_inproc_spec_py312: NotifyingFastMCP,
+) -> None:
     """in-proc container exec exposes a container.info resource."""
 
     # Call the server directly to read the resource; no manager needed here

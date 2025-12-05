@@ -8,6 +8,7 @@ Includes MCP server for prompt evaluation (run_critic/run_grader tools).
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 import logging
 import os
 from pathlib import Path
@@ -33,12 +34,15 @@ from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.sync import sync_issues_to_db, sync_snapshots_to_db
+from adgn.props.db.sync import get_specimens_base_path, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader.grader import grade_critique_by_id
+from adgn.props.ids import SnapshotSlug
 from adgn.props.prompts.util import render_prompt_template
+from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
@@ -115,7 +119,7 @@ class RunGraderOutput(BaseModel):
 async def build_server(
     *,
     client: OpenAIModelProto,
-    registry: SnapshotRegistry,
+    hydrator: SnapshotHydrator,
     name: str = "prompt_eval",
     prompt_optimization_run_id: UUID,
     workspace_root: Path,
@@ -141,7 +145,7 @@ async def build_server(
 
     Args:
         client: OpenAI client for running evaluations
-        registry: Snapshot registry (required, no default)
+        hydrator: Snapshot hydrator for source code extraction
         name: MCP server name
         prompt_optimization_run_id: Optional ID of the optimization run for tracking prompts
         workspace_root: Working directory for reading prompt files
@@ -151,9 +155,10 @@ async def build_server(
         MCP server with upsert_prompt, run_critic and run_grader tools
     """
     # Ensure snapshots and issues tables are synced on server startup
+    base_path = get_specimens_base_path()
     with get_session() as session:
-        sync_snapshots_to_db(session, registry=registry)
-        sync_issues_to_db(session, registry=registry)
+        sync_snapshots_to_db(session, base_path)
+        sync_issues_to_db(session, base_path)
 
     mcp = NotifyingFastMCP(
         name, instructions="Prompt Evaluation server — manage prompts, trigger critic/grader runs, query DB for results"
@@ -237,7 +242,7 @@ async def build_server(
         resolved_files = await resolve_critic_scope(snapshot_slug=payload.snapshot_slug, files=payload.files)
 
         # Load and hydrate specimen for content_root
-        async with registry.load_and_hydrate(payload.snapshot_slug) as hydrated:
+        async with hydrator.hydrate(payload.snapshot_slug) as hydrated:
             # Validate explicit files exist (when not using sentinel)
             if payload.files != ALL_FILES_WITH_ISSUES:
                 specimen_files = set(hydrated.all_discovered_files.keys())
@@ -253,7 +258,6 @@ async def build_server(
                 input_data=payload,
                 client=client,
                 content_root=hydrated.content_root,
-                registry=registry,
                 mount_properties=False,
                 extra_handlers=(),
                 verbose=verbose,
@@ -303,7 +307,7 @@ async def build_server(
 async def run_prompt_optimizer(
     budget: float,
     ctx: RunsContext,
-    registry: SnapshotRegistry,
+    hydrator: SnapshotHydrator,
     out_dir: Path | None = None,
     model: str = "gpt-5",
     verbose: bool = False,
@@ -313,7 +317,7 @@ async def run_prompt_optimizer(
     Args:
         budget: Dollar budget for optimization
         ctx: Runs context for path derivation
-        registry: Snapshot registry (required, no default - caller must provide)
+        hydrator: Snapshot hydrator for source code extraction
         out_dir: Optional output directory
         model: Model to use (default gpt-5)
         verbose: Verbose output flag
@@ -351,14 +355,32 @@ async def run_prompt_optimizer(
         session_dir.mkdir(parents=True, exist_ok=True)
         session_dir = session_dir.resolve()
 
+    # Get train specimens from database and hydrate them
+    with get_session() as session:
+        train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN.value).all()
+        train_slugs = [SnapshotSlug(s.slug) for s in train_snapshots]
+
+    logger.info(f"Hydrating {len(train_slugs)} train specimens (for direct Docker mount)")
+
     # Hydrate train specimens and keep alive for Docker mounting
-    async with registry.hydrate_train_specimens() as (train_specimens, _defs_root):
+    specimen_paths: dict[SnapshotSlug, Path] = {}
+    defs_root = specimens_definitions_root()
+
+    async with AsyncExitStack() as stack:
+        # Hydrate each train specimen and keep alive
+        for slug in train_slugs:
+            hydrated = await stack.enter_async_context(hydrator.hydrate(slug))
+            specimen_paths[slug] = hydrated.content_root
+            logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /snapshots/train/{slug})")
+
+        logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
+
         # Build extra volumes for Docker (specimens + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         extra_volumes = {}
 
         # Train snapshots source code (ro) - mount each separately
-        for slug, path in train_specimens.items():
+        for slug, path in specimen_paths.items():
             extra_volumes[str(path.resolve())] = {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
 
         # Ground truth issues (TPs/FPs) are now accessed via database
@@ -408,7 +430,7 @@ async def run_prompt_optimizer(
         # Create and mount prompt_eval server, keeping reference for introspection
         prompt_eval_server = await build_server(
             client=build_client(model),
-            registry=registry,
+            hydrator=hydrator,
             name=PROMPT_EVAL_SERVER_NAME,
             prompt_optimization_run_id=prompt_optimization_run_id,
             workspace_root=session_dir,

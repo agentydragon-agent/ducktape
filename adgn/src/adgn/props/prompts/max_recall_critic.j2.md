@@ -2,7 +2,6 @@
 {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload"] %}
 {% set read_only = true %}
 {% set include_reporting = true %}
-{% set include_tools = true %}
 {% set suppress_no_violations_line = true %}
 
 {% block title %}Max-Recall Critic (High-Volume Findings){% endblock %}

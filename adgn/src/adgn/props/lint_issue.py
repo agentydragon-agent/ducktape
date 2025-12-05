@@ -28,7 +28,6 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.db import get_session
-from adgn.props.db.adapters import orm_to_wrapper_tps
 from adgn.props.db.models import Snapshot
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import IssueLintFindingRecord, LintSubmitPayload, extract_corrections
@@ -36,6 +35,7 @@ from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
+from adgn.props.rationale import Rationale
 from adgn.props.runs_context import format_timestamp_session
 from adgn.props.snapshot_hydrator import SnapshotHydrator
 
@@ -392,16 +392,22 @@ async def run_specimen_lint_issue_async(
 
     with get_session() as session:
         db_snapshot = session.query(Snapshot).filter_by(slug=specimen).one()
-        tps_list = orm_to_wrapper_tps(db_snapshot.true_positives)
-        tps = {tp.id: tp for tp in tps_list}
-        irec = tps[tp_id]
+        # Find TP by id directly from ORM
+        tp_orm = next((tp for tp in db_snapshot.true_positives if tp.tp_id == str(tp_id)), None)
+        if tp_orm is None:
+            raise SystemExit(f"True positive '{tp_id}' not found in snapshot '{specimen}'")
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue
-        if not (0 <= occurrence_index < len(irec.occurrences)):
-            raise SystemExit(f"occurrence_index out of range: {occurrence_index} (occurrences={len(irec.occurrences)})")
-        tp_occ = irec.occurrences[occurrence_index]
+        if not (0 <= occurrence_index < len(tp_orm.occurrences)):
+            raise SystemExit(
+                f"occurrence_index out of range: {occurrence_index} (occurrences={len(tp_orm.occurrences)})"
+            )
+        tp_occ = tp_orm.occurrences[occurrence_index]
         # Convert TruePositiveOccurrence to Occurrence (drop expect_caught_from field)
         occ = Occurrence(files=tp_occ.files, note=tp_occ.note)
+
+        # Build IssueCore for lint prompt (id + rationale only)
+        issue_core = IssueCore(id=BaseIssueID(tp_orm.tp_id), rationale=Rationale(tp_orm.rationale))
 
         # Build submit tool name for dry-run prompt
         submit_tool_name = build_mcp_function("lint_submit", "submit_result")
@@ -412,7 +418,7 @@ async def run_specimen_lint_issue_async(
             # Build a wiring for prompt rendering (no container launched in dry-run)
             wiring = properties_docker_spec(hydrated.content_root, mount_properties=True)
             prompt = _build_prompt(
-                irec.core,  # render via IssueCore + single occurrence
+                issue_core,  # render via IssueCore + single occurrence
                 submit_tool_name=submit_tool_name,
                 occurrence=occ,
                 wiring=wiring,
@@ -433,7 +439,7 @@ async def run_specimen_lint_issue_async(
 
         res = await lint_issue_run(
             specimen=None,  # Not needed when content_root provided
-            issue_core=irec.core,
+            issue_core=issue_core,
             occurrence=occ,
             client=client,
             handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
@@ -441,7 +447,7 @@ async def run_specimen_lint_issue_async(
         )
 
         # Print the exact occurrence representation as fed to the model
-        issue_dict = irec.core.model_dump(exclude_none=True)
+        issue_dict = issue_core.model_dump(exclude_none=True)
         issue_dict.pop("id", None)
         occ_dict: dict[str, Any] = occ.model_dump(exclude_none=True)
         issue_dict["instances"] = [occ_dict]

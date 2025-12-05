@@ -63,7 +63,11 @@ def init_db(config: DatabaseConfig | None = None) -> None:
 
     url = config.admin_url()
     logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
-    _engine = create_engine(url, echo=False)
+    # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
+    # pool_size: number of connections kept open
+    # max_overflow: additional connections beyond pool_size
+    # Total concurrent connections: pool_size + max_overflow = 32
+    _engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
     _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
 
     # Verify connection immediately
@@ -256,14 +260,15 @@ def _enable_rls() -> None:
     rls_tables = {Base.metadata.tables[name] for name in rls_table_names}
 
     # Define agent access rules per table
+    # Note: Cast string literals to split_enum type for enum column comparison
     agent_access_rules = {
         "snapshots": "FOR SELECT TO agent_user USING (true)",
-        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split IN ('train', 'valid')))",
-        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train')))",
+        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum)))",
     }
 
     with _engine.begin() as conn:
@@ -317,7 +322,7 @@ def _create_views() -> None:
                     g.created_at
                 FROM grader_runs g
                 JOIN snapshots s ON g.snapshot_slug = s.slug
-                WHERE s.split = 'valid'
+                WHERE s.split = 'valid'::split_enum
                 """
             )
         )

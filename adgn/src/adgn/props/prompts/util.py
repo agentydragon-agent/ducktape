@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from pathlib import Path
-from typing import Any
 
 from jinja2 import Environment, PackageLoader
 
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
+from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
@@ -82,30 +82,26 @@ def build_scope_text(files: Iterable[Path]) -> str:
 def build_standard_context(
     *,
     files: Iterable[Path],
-    wiring: Any,  # PropertiesDockerWiring, avoid circular import
-    available_tools: list[str] | None = None,
+    wiring: PropertiesDockerWiring,
     supplemental_text: str | None = None,
     include_schemas: bool = True,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     """Build standard Jinja context for properties prompts.
 
     Args:
         files: Iterable of Path objects (file list for scope)
         wiring: PropertiesDockerWiring with image/volumes/network config
-        available_tools: List of tool names (default: [])
         supplemental_text: Optional additional context (e.g., specimen notes)
         include_schemas: Whether to include schemas_json (default: True)
 
     Returns:
         Dictionary suitable for Jinja template.render(**context)
     """
-    context: dict[str, Any] = {
+    context: dict[str, object] = {
         "files": sorted(files, key=str),
         "wiring": wiring,
-        "available_tools": available_tools if available_tools is not None else [],
         "supplemental_text": supplemental_text,
         "read_only": True,
-        "include_tools": False,
         "include_reporting": False,
     }
 

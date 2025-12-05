@@ -11,19 +11,7 @@ from typing import Any, ClassVar, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, TypeAdapter
-from sqlalchemy import (
-    CheckConstraint,
-    ForeignKey,
-    Index,
-    Integer,
-    String,
-    Text,
-    UniqueConstraint,
-    cast,
-    event,
-    func,
-    select,
-)
+from sqlalchemy import Enum, ForeignKey, Index, Integer, String, Text, UniqueConstraint, cast, event, func, select
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
@@ -31,10 +19,12 @@ from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
+from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
 from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
+from adgn.props.splits import Split
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -113,6 +103,32 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
         return SnapshotSlug(validated)
 
 
+class SplitColumn(TypeDecorator[Split]):
+    """SQLAlchemy column type for Split enum.
+
+    Uses PostgreSQL ENUM type with values derived from Split enum.
+    """
+
+    impl = Enum
+    cache_ok = True
+
+    def __init__(self):
+        # Derive SQL enum values from Python enum to keep them in sync
+        super().__init__(*[e.value for e in Split], name="split_enum", create_constraint=True, native_enum=True)
+
+    def process_bind_param(self, value: Split | str | None, dialect: Any) -> str | None:
+        """Convert Split enum to string for storage (Python → DB)."""
+        if value is None:
+            return None
+        return value.value if isinstance(value, Split) else str(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> Split | None:
+        """Convert string to Split enum after loading (DB → Python)."""
+        if value is None:
+            return None
+        return Split(value)
+
+
 class Base(DeclarativeBase):
     """Base class for all models."""
 
@@ -120,6 +136,7 @@ class Base(DeclarativeBase):
         dict[str, Any]: JSONB,
         UUID: PG_UUID(as_uuid=True),
         SnapshotSlug: SnapshotSlugColumn(),
+        Split: SplitColumn(),
     }
 
 
@@ -132,8 +149,8 @@ class Snapshot(Base):
 
     __tablename__ = "snapshots"
 
-    slug: Mapped[SnapshotSlug] = mapped_column(primary_key=True)
-    split: Mapped[str] = mapped_column(String, CheckConstraint("split IN ('train', 'valid', 'test')"), nullable=False)
+    slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    split: Mapped[Split] = mapped_column(SplitColumn(), nullable=False)
     source: Mapped[Source] = mapped_column(PydanticColumn(Source), nullable=False)
     bundle: Mapped[BundleFilter | None] = mapped_column(PydanticColumn(BundleFilter), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -148,8 +165,10 @@ class Snapshot(Base):
     false_positives: Mapped[list[FalsePositive]] = relationship(
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
+    # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
+    # GEPA maps SnapshotInput → DataId via list position, so critic_scopes must load in stable order
     critic_scopes: Mapped[list[CriticScopeDB]] = relationship(
-        back_populates="snapshot_obj", cascade="all, delete-orphan"
+        back_populates="snapshot_obj", cascade="all, delete-orphan", order_by="CriticScopeDB.id"
     )
     critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
     grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
@@ -162,8 +181,7 @@ class Snapshot(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
-        return session.execute(select(cls).where(cls.slug == str(slug))).scalar_one_or_none()
+        return session.execute(select(cls).where(cls.slug == slug)).scalar_one_or_none()  # type: ignore[arg-type]
 
     @classmethod
     def get_by_split(cls, split: str) -> list[Snapshot]:
@@ -195,7 +213,7 @@ class TruePositive(Base):
     __tablename__ = "true_positives"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
     )
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
@@ -217,9 +235,8 @@ class TruePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
         return session.execute(
-            select(cls).where(cls.snapshot_slug == str(snapshot_slug), cls.tp_id == tp_id)
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.tp_id == tp_id)  # type: ignore[arg-type]
         ).scalar_one_or_none()
 
     @classmethod
@@ -229,8 +246,7 @@ class TruePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
-        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
 class FalsePositive(Base):
@@ -243,7 +259,7 @@ class FalsePositive(Base):
     __tablename__ = "false_positives"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
     )
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
@@ -265,9 +281,8 @@ class FalsePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
         return session.execute(
-            select(cls).where(cls.snapshot_slug == str(snapshot_slug), cls.fp_id == fp_id)
+            select(cls).where(cls.snapshot_slug == snapshot_slug, cls.fp_id == fp_id)  # type: ignore[arg-type]
         ).scalar_one_or_none()
 
     @classmethod
@@ -277,8 +292,7 @@ class FalsePositive(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
-        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
 class CriticScopeDB(Base):
@@ -299,7 +313,7 @@ class CriticScopeDB(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
     )
     files: Mapped[CriticScopeSpec] = mapped_column(
         PydanticColumn(CriticScopeSpec), nullable=False, comment="Files to review: set[Path] or 'all' sentinel"
@@ -323,8 +337,7 @@ class CriticScopeDB(Base):
         session = Session.object_session(cls)
         if session is None:
             raise RuntimeError("Model not bound to session")
-        # str() needed for mypy compatibility with SQLAlchemy comparison operators
-        return list(session.execute(select(cls).where(cls.snapshot_slug == str(snapshot_slug))).scalars().all())
+        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
 class Prompt(Base):
@@ -388,7 +401,7 @@ class Critique(Base):
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
     # TODO: Add critic_scope_id FK to critic_scopes table to track which scope was used
     # for targeted reviews (not full-snapshot). This enables per-scope evaluation metrics
@@ -419,7 +432,7 @@ class CriticRun(Base):
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     prompt_sha256: Mapped[str] = mapped_column(String(64), ForeignKey("prompts.prompt_sha256"), nullable=False)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=True)
@@ -427,6 +440,9 @@ class CriticRun(Base):
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
     files: Mapped[list[str]] = mapped_column(JSONB, nullable=False, comment="Files in critic scope")
+    files_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="SHA256 hash of sorted file paths for cache lookup"
+    )
     output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -453,14 +469,14 @@ class GraderRun(Base):
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
     critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=False)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
-    output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    output: Mapped[GraderOutput] = mapped_column(PydanticColumn(GraderOutput), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()

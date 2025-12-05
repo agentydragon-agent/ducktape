@@ -1,9 +1,8 @@
-from collections.abc import Sequence
 import os
-from typing import Any
+from typing import Any, cast
 
 import openai
-from openai.types.responses import EasyInputMessageParam
+from openai.types.responses import EasyInputMessageParam, ResponseInputParam
 import pytest
 
 
@@ -22,12 +21,12 @@ async def test_responses_nonstreaming_live(tmp_path):
     model = os.getenv("OPENAI_MODEL", "o4-mini")
 
     # Use TypedDict (input type) directly
-    inp: Sequence[EasyInputMessageParam] = [
+    inp: list[EasyInputMessageParam] = [
         {"type": "message", "role": "user", "content": "Say hello in one short sentence."}
     ]
 
     # Non-streaming call
-    resp = await client.responses.create(model=model, input=inp)
+    resp = await client.responses.create(model=model, input=cast(ResponseInputParam, inp))
 
     # Try to normalize to dict for assertions
     data: dict[str, Any] | None
@@ -56,30 +55,21 @@ async def test_responses_streaming_live(tmp_path):
     model = os.getenv("OPENAI_MODEL", "o4-mini")
 
     # Use TypedDict (input type) directly
-    inp: Sequence[EasyInputMessageParam] = [
+    inp: list[EasyInputMessageParam] = [
         {"type": "message", "role": "user", "content": "Stream: say numbers 1..3 as separate events"}
     ]
 
-    # The SDK may return a coroutine that yields an async iterator; await it first
-    maybe_iter = await client.responses.create(model=model, input=inp, stream=True)
+    # AsyncOpenAI with stream=True returns an async iterator
+    stream = await client.responses.create(model=model, input=cast(ResponseInputParam, inp), stream=True)
 
-    # Support both async iterables and sync iterables returned by the SDK wrapper
     got_any = False
-    items = []
-    if hasattr(maybe_iter, "__aiter__"):
-        async for event in maybe_iter:
-            got_any = True
-            try:
-                items.append(event.model_dump(exclude_none=True))
-            except Exception:
-                items.append(event if isinstance(event, dict) else None)
-    else:
-        for event in maybe_iter:
-            got_any = True
-            try:
-                items.append(event.model_dump(exclude_none=True))
-            except Exception:
-                items.append(event if isinstance(event, dict) else None)
+    items: list[dict[str, Any] | None] = []
+    async for event in stream:
+        got_any = True
+        try:
+            items.append(event.model_dump(exclude_none=True))
+        except Exception:
+            items.append(event if isinstance(event, dict) else None)
 
     assert got_any, "No stream events received"
     assert any(it is not None for it in items), "Stream events contained no usable payload"

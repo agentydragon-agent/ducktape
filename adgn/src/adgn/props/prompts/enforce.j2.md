@@ -2,7 +2,6 @@
 {% set header_schema_names = ["Occurrence", "LineRange"] %}
 {% set read_only = false %}
 {% set include_reporting = false %}
-{% set include_tools = false %}
 
 {% block title %}Enforce{% endblock %}
 

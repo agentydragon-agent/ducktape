@@ -14,7 +14,6 @@ from adgn.props.db import init_db
 from adgn.props.db.config import get_production_config
 from adgn.props.gepa.gepa_adapter import optimize_with_gepa
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @async_run
@@ -23,10 +22,16 @@ async def cmd_gepa(
     grader_model: Annotated[str, typer.Option(help="Model for grader execution")] = "gpt-5.1-codex-mini",
     reflection_model: Annotated[str, typer.Option(help="Model for GEPA's reflection/evolution")] = "gpt-5.1",
     initial_prompt: Annotated[
-        str | None, typer.Option(help="Initial prompt (default: load from max-recall-critic preset)")
+        str | None, typer.Option(help="Initial prompt (ignored if warm-start loads historical data)")
     ] = None,
-    max_metric_calls: Annotated[int, typer.Option(help="Budget for evaluations")] = 100,
+    max_metric_calls: Annotated[
+        int, typer.Option(help="Budget for evaluations in this run (not counting historical)")
+    ] = 100,
     output_dir: Annotated[Path, typer.Option(help="Output directory for results")] = Path("gepa_output"),
+    warm_start: Annotated[
+        bool, typer.Option(help="Load historical Pareto frontier from database to start from known good prompts")
+    ] = True,
+    max_parallelism: Annotated[int, typer.Option(help="Maximum concurrent critic/grader evaluations")] = 20,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.
@@ -48,8 +53,10 @@ async def cmd_gepa(
     console.print(f"  Critic model: {critic_model}")
     console.print(f"  Grader model: {grader_model}")
     console.print(f"  Reflection model: {reflection_model}")
-    console.print(f"  Max metric calls: {max_metric_calls}")
+    console.print(f"  Max metric calls: {max_metric_calls} (this run only)")
+    console.print(f"  Max parallelism: {max_parallelism} concurrent evaluations")
     console.print("  Training examples: per-file mode (from database critic_scopes)")
+    console.print(f"  Warm start: {'enabled' if warm_start else 'disabled'}")
     console.print(f"  Output directory: {output_dir}")
     console.print(f"  Initial prompt length: {len(initial_prompt)} chars\n")
 
@@ -58,21 +65,21 @@ async def cmd_gepa(
     console.print(f"[dim]Database: {config.host}:{config.port}/{config.database}[/dim]")
     init_db(config=config)
 
-    # Create hydrator and registry
+    # Create hydrator
     hydrator = SnapshotHydrator.from_package_resources()
-    registry = SnapshotRegistry.from_package_resources()
 
     # Run optimization
     console.print("\n[bold green]Starting GEPA optimization...[/bold green]\n")
     optimized_prompt, result = await optimize_with_gepa(
         initial_prompt=initial_prompt,
         hydrator=hydrator,
-        registry=registry,
         critic_client=build_client(critic_model),
         grader_client=build_client(grader_model),
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
+        max_parallelism=max_parallelism,
         verbose=verbose,
+        warm_start=warm_start,
     )
 
     # Save results

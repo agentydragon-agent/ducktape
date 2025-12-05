@@ -1,15 +1,13 @@
-"""Test critic and grader models (scope types, input/output models, discriminated unions).
+"""Test grader models (input/output models, discriminated unions).
 
-Tests for models defined in critic.py and grader.py.
+Tests for models defined in grader/models.py.
 """
 
-from pathlib import Path
 from uuid import uuid4
 
 from hamcrest import assert_that, equal_to
 import pytest
 
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticSubmitPayload, CriticSuccess
 from adgn.props.grader.models import GraderInput, GraderOutput, GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
 
@@ -18,38 +16,6 @@ from adgn.props.ids import SnapshotSlug
 def mock_snapshot_slug() -> SnapshotSlug:
     """Shared test snapshot slug."""
     return SnapshotSlug("ducktape/2025-11-26-00")
-
-
-class TestCriticModels:
-    """Tests for critic input/output models."""
-
-    def test_critic_input_valid(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
-        """CriticInput should accept valid snapshot_slug, files, and prompt hash."""
-        critic_input = CriticInput(
-            snapshot_slug=mock_snapshot_slug, files={Path("src/main.py")}, prompt_sha256=mock_prompt_sha256
-        )
-
-        assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to({Path("src/main.py")}))
-        assert_that(critic_input.prompt_sha256, equal_to(mock_prompt_sha256))
-
-    def test_critic_input_with_sentinel(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
-        """CriticInput should accept ALL_FILES_WITH_ISSUES sentinel."""
-        critic_input = CriticInput(
-            snapshot_slug=mock_snapshot_slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=mock_prompt_sha256
-        )
-
-        assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to(ALL_FILES_WITH_ISSUES))
-
-    def test_critic_success_variant(self):
-        """CriticSuccess should wrap successful critique result."""
-        result = CriticSubmitPayload(issues=[], notes_md="All good")
-        success = CriticSuccess(result=result)
-
-        assert_that(success.tag, equal_to("success"))
-        assert_that(success.result, equal_to(result))
-        assert_that(isinstance(success, CriticSuccess))
 
 
 class TestGraderModels:
@@ -76,8 +42,6 @@ class TestGraderModels:
                 "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
                 "recall": 0.5,
                 "summary": "Test summary",
-                "per_file_recall": {},
-                "per_file_ratios": {},
             }
         )
 
@@ -96,14 +60,8 @@ class TestGraderModels:
                 "reported_issue_ratios": {"tp": 0.0, "fp": 0.0, "unlabeled": 1.0},
                 "recall": 0.0,
                 "summary": "No canonicals",
-                "per_file_recall": {},
-                "per_file_ratios": {},
             }
         )
 
         output = GraderOutput(grade=grade)
         assert_that(output.coverage_recall, equal_to(None))
-
-
-class TestFullSplitEvalModels:
-    """Tests for orchestrated eval input/output models."""

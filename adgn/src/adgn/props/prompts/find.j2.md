@@ -2,7 +2,6 @@
 {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload"] %}
 {% set read_only = true %}
 {% set include_reporting = true %}
-{% set include_tools = true %}
 
 {% block title %}Review code and report issues{% endblock %}
 

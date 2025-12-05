@@ -13,14 +13,27 @@ from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesRe
 from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import init_db, recreate_database
 from adgn.props.db.config import get_production_config
+from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SpecimenRelativePath
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
+
+# Common test data for database fixtures
+TEST_FILES_LIST = ["test.py"]
+TEST_FILES = {Path(f) for f in TEST_FILES_LIST}
+TEST_FILES_HASH = hash_file_set(TEST_FILES)
+
+
+@pytest.fixture
+def test_prompt_sha():
+    """Create and return a test prompt hash (upserts to DB once)."""
+    return hash_and_upsert_prompt("test prompt for database tests")
 
 
 @pytest.fixture
@@ -98,19 +111,19 @@ def critique_ctx_single():
     return GradedCritiqueContext(allowed_input_ids=frozenset(["critique-001"]))
 
 
-# === Snapshot Registry Fixtures (DI Pattern) ===
-# Two explicit registries:
-# 1. production_specimens_registry - for real specimens (src/adgn/props/specimens/)
-# 2. test_specimens_registry - for test fixtures (tests/props/fixtures/specimens/)
+# === Snapshot Hydrator Fixtures (DI Pattern) ===
+# Two explicit hydrators:
+# 1. production_specimens_hydrator - for real specimens (src/adgn/props/specimens/)
+# 2. test_specimens_hydrator - for test fixtures (tests/props/fixtures/specimens/)
 
 
 @pytest.fixture
-def production_specimens_registry() -> SnapshotRegistry:
-    """Production specimens registry from package resources.
+def production_specimens_hydrator() -> SnapshotHydrator:
+    """Production specimens hydrator from package resources.
 
     Uses installed package specimens (src/adgn/props/specimens/).
     """
-    return SnapshotRegistry.from_package_resources()
+    return SnapshotHydrator.from_package_resources()
 
 
 @pytest.fixture
@@ -124,46 +137,37 @@ def test_specimens_base() -> Path:
 
 
 @pytest.fixture
-def test_specimens_registry(test_specimens_base: Path) -> SnapshotRegistry:
-    """Test fixtures specimens registry (DI pattern - no monkeypatching).
+def test_specimens_hydrator(test_specimens_base: Path) -> SnapshotHydrator:
+    """Test fixtures specimens hydrator (DI pattern - no monkeypatching).
 
     Uses test fixtures from tests/props/fixtures/specimens/ which contains
     minimal test-only specimens like test-trivial.
     """
-    return SnapshotRegistry.from_base_path(test_specimens_base)
+    return SnapshotHydrator(test_specimens_base)
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen(production_specimens_registry):
-    """Load a real specimen with validation using load_and_hydrate.
+async def loaded_specimen(production_specimens_hydrator):
+    """Load a real specimen using hydrator.
 
-    Yields HydratedSnapshot object containing both the validated specimen data
-    and the hydrated content root.
+    Yields HydratedSnapshot object (content_root + all_discovered_files).
+    Issues must be loaded separately from database via ORM.
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
     """
-    async with production_specimens_registry.load_and_hydrate("ducktape/2025-11-22-02") as hydrated:
+    async with production_specimens_hydrator.hydrate("ducktape/2025-11-22-02") as hydrated:
         yield hydrated
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen_record(loaded_specimen):
-    """Load a real specimen (async fixture for tests that only need the record).
-
-    Uses ducktape/2025-11-22-02 as the canonical test specimen.
-    """
-    return loaded_specimen.record
-
-
-@pytest_asyncio.fixture
-async def test_trivial_specimen(test_specimens_registry):
+async def test_trivial_specimen(test_specimens_hydrator):
     """Load test-trivial fixture specimen (clean Python code, zero issues).
 
     Test-only specimen for validating zero-issues case.
     Lives in tests/props/fixtures/specimens/test-fixtures/test-trivial/.
     Uses DI - no monkeypatching needed.
     """
-    async with test_specimens_registry.load_and_hydrate("test-fixtures/test-trivial") as hydrated:
+    async with test_specimens_hydrator.hydrate("test-fixtures/test-trivial") as hydrated:
         yield hydrated
 
 
@@ -285,6 +289,18 @@ def test_db(request):
     postgres_config = base_config.with_database("postgres")
     postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
     with postgres_engine.connect() as conn:
+        # Drop database if it exists (idempotent - handles cleanup failures from previous runs)
+        conn.execute(
+            text(
+                f"""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '{db_name}'
+              AND pid <> pg_backend_pid()
+        """
+            )
+        )
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
         conn.execute(text(f'CREATE DATABASE "{db_name}"'))
 
     # Build config for the new test database

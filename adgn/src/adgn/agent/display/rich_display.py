@@ -29,6 +29,15 @@ if TYPE_CHECKING:
 TurnEventType = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem
 
 
+def _unwrap_shell_command(cmd: list[str]) -> str | None:
+    """Unwrap shell -c/-lc wrappers, returning the actual command or None."""
+    match cmd:
+        case ["bash" | "/bin/sh", "-c" | "-lc", actual_cmd]:
+            return actual_cmd
+        case _:
+            return None
+
+
 class MaxHeight:
     """Wrapper that constrains any renderable to max height without padding.
 
@@ -180,14 +189,12 @@ class RichDisplayHandler(BaseHandler):
         timeout_sec = input_data.timeout_ms / 1000
         lines.append(f"Timeout: {timeout_sec:.1f}s")
 
-        # Command line - special case for bash -lc
-        cmd = input_data.cmd
-        if len(cmd) == 3 and cmd[0] == "bash" and cmd[1] == "-lc":
-            # Just show the actual command string
-            lines.append(cmd[2])
+        # Command line - unwrap shell wrappers or quote the parts
+        unwrapped = _unwrap_shell_command(input_data.cmd)
+        if unwrapped:
+            lines.append(unwrapped)
         else:
-            # Shell-quote the command parts
-            quoted = " ".join(shlex.quote(part) for part in cmd)
+            quoted = " ".join(shlex.quote(part) for part in input_data.cmd)
             lines.append(quoted)
 
         return Text("\n".join(lines))
@@ -404,12 +411,11 @@ class CompactDisplayHandler(BaseHandler):
 
     def _format_exec_command(self, input_data: ExecInput) -> str:
         """Format ExecInput as a shell command."""
-        cmd = input_data.cmd
-        # Special case for bash -lc (unwrap the actual command)
-        if len(cmd) == 3 and cmd[0] == "bash" and cmd[1] == "-lc":
-            return cmd[2]
-        # Shell-quote the command parts
-        return " ".join(shlex.quote(part) for part in cmd)
+        # Unwrap shell wrappers or quote the parts
+        unwrapped = _unwrap_shell_command(input_data.cmd)
+        if unwrapped:
+            return unwrapped
+        return " ".join(shlex.quote(part) for part in input_data.cmd)
 
     def _format_exec_metadata(self, result: BaseExecResult) -> str:
         """Format exec result metadata (exit code, duration) for inline display."""
@@ -504,7 +510,8 @@ class CompactDisplayHandler(BaseHandler):
             # Special handling for exec
             if isinstance(typed_input, ExecInput):
                 cmd_str = self._format_exec_command(typed_input)
-                text.append(f": {cmd_str}", style="cyan")
+                truncated_cmd = self._truncate_lines(cmd_str, self._max_lines)
+                text.append(f": {truncated_cmd}", style="cyan")
                 # Add cwd if present and not default
                 if typed_input.cwd and typed_input.cwd != "/workspace":
                     text.append(f"  [cwd={typed_input.cwd}]", style="dim cyan")
@@ -512,13 +519,14 @@ class CompactDisplayHandler(BaseHandler):
                 # Args with smart line wrapping
                 formatter = Formatter(max_inline_length=self._console.width - self._TOOL_CALL_INDENT)
                 json_str = formatter.serialize(args)
+                truncated_json = self._truncate_lines(json_str, self._max_lines)
                 # If it fits on one line and is short enough, keep it inline
-                if "\n" not in json_str and len(json_str) < 80:
-                    text.append(f": {json_str}", style="dim cyan")
+                if "\n" not in truncated_json and len(truncated_json) < 80:
+                    text.append(f": {truncated_json}", style="dim cyan")
                 else:
                     # Multi-line or long - indent on next line
                     text.append("\n")
-                    indented = self._indent(json_str, self._TOOL_CALL_INDENT)
+                    indented = self._indent(truncated_json, self._TOOL_CALL_INDENT)
                     text.append(indented, style="dim cyan")
 
             return text

@@ -12,6 +12,7 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.urls import parse_any_url
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
 
@@ -50,8 +51,9 @@ class _NotifierServer(FastMCP):
         )
         async def notify_policy(input: NotifyPolicyInput, ctx: Context) -> NotifyPolicyOutput:
             # Protocol-level notification: emit ResourceUpdatedNotification from server to client
+            assert ctx.request_context is not None, "request_context must be present in tool handler"
             sess = ctx.request_context.session  # low-level ServerSession
-            await sess.send_resource_updated(input.uri)
+            await sess.send_resource_updated(parse_any_url(input.uri))
             return NotifyPolicyOutput(ok=True, uri=input.uri)
 
 

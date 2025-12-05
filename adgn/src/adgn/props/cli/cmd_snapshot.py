@@ -19,19 +19,19 @@ from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_build_bundle import cmd_build_bundle
 from adgn.props.cli.decorators import async_run
 from adgn.props.db import get_session
-from adgn.props.db.adapters import orm_to_wrapper_fps, orm_to_wrapper_tps
 from adgn.props.db.models import Snapshot
+from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_volumes, ensure_critic_image
 from adgn.props.ids import SnapshotSlug
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @async_run
 async def cmd_snapshot_list() -> None:
     """List all valid snapshot slugs."""
-    registry = SnapshotRegistry.from_package_resources()
-    slugs = sorted(registry.list_all())
+    with get_session() as session:
+        snapshots = session.query(Snapshot).all()
+        slugs = sorted([s.slug for s in snapshots])
 
     for slug in slugs:
         typer.echo(str(slug))
@@ -48,26 +48,22 @@ async def snapshot_dump(
         with get_session() as session:
             db_snapshot = session.query(Snapshot).filter_by(slug=snapshot).one()
 
-            # Convert ORM → Pydantic wrappers
-            tps_list = orm_to_wrapper_tps(db_snapshot.true_positives)
-            fps_list = orm_to_wrapper_fps(db_snapshot.false_positives)
-
-            # Build output structure
+            # Build output structure directly from ORM
             output = {
                 "slug": str(db_snapshot.slug),
                 "issues": {
-                    str(tp.id): {
-                        "rationale": str(tp.rationale),
+                    tp.tp_id: {
+                        "rationale": tp.rationale,
                         "instances": [occ.model_dump(mode="json") for occ in tp.occurrences],
                     }
-                    for tp in tps_list
+                    for tp in db_snapshot.true_positives
                 },
                 "false_positives": {
-                    str(fp.id): {
-                        "rationale": str(fp.rationale),
+                    fp.fp_id: {
+                        "rationale": fp.rationale,
                         "instances": [occ.model_dump(mode="json") for occ in fp.occurrences],
                     }
-                    for fp in fps_list
+                    for fp in db_snapshot.false_positives
                 },
             }
 
@@ -162,15 +158,14 @@ def snapshot_capture_ducktape(
     # Generate slug if not provided
     if slug is None:
         today = datetime.now().strftime("%Y-%m-%d")
-        registry = SnapshotRegistry.from_package_resources()
-        existing = sorted([name for name in registry.list_all() if name.startswith(f"ducktape/{today}")])
+        with get_session() as session:
+            snapshots = session.query(Snapshot).all()
+            existing = sorted([s.slug for s in snapshots if str(s.slug).startswith(f"ducktape/{today}")])
         next_num = len(existing)
         slug = f"ducktape/{today}-{next_num:02d}"
 
     # Create snapshot directory
-    registry = SnapshotRegistry.from_package_resources()
-    specimens_dir = registry.base_path
-    snapshot_dir = specimens_dir / slug
+    snapshot_dir = get_specimens_base_path() / slug
     snapshot_dir.mkdir(parents=True, exist_ok=False)
     issues_dir = snapshot_dir / "issues"
     issues_dir.mkdir()
@@ -179,7 +174,7 @@ def snapshot_capture_ducktape(
     tag_name = f"specimen-{slug.replace('/', '-')}"
 
     # Add snapshot entry to snapshots.yaml (no manifest.yaml - that's deprecated)
-    snapshots_yaml_path = specimens_dir / "snapshots.yaml"
+    snapshots_yaml_path = get_specimens_base_path() / "snapshots.yaml"
     with snapshots_yaml_path.open() as f:
         snapshots_data = yaml.safe_load(f)
         if snapshots_data is None:
@@ -209,7 +204,7 @@ def snapshot_capture_ducktape(
     typer.echo("Rebuilding bundle with new snapshot...")
 
     # Rebuild bundle with new snapshot
-    cmd_build_bundle(specimens_dir=specimens_dir)
+    cmd_build_bundle(specimens_dir=get_specimens_base_path())
 
     typer.echo()
     typer.echo(f"✓ Snapshot captured: {slug}")

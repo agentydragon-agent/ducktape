@@ -5,52 +5,77 @@ import re
 
 import pytest
 
+from adgn.props.db import get_session
+from adgn.props.db.models import Snapshot
+from adgn.props.db.sync import sync_snapshots_to_db, sync_issues_to_db, sync_critic_scopes_to_db
+from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 
-def _all_specimens() -> set[SnapshotSlug]:
-    registry = SnapshotRegistry.from_package_resources()
-    return registry.snapshot_slugs
+@pytest.fixture
+def synced_test_db(test_db):
+    """Test database with production specimens synced."""
+    specimens_dir = get_specimens_base_path()
+    with get_session() as session:
+        sync_snapshots_to_db(session, specimens_dir)
+        sync_issues_to_db(session, specimens_dir)
+        sync_critic_scopes_to_db(session, specimens_dir)
+        session.commit()
+    return test_db
 
 
-@pytest.mark.parametrize("specimen", _all_specimens())
-async def test_specimen_issues_and_false_positives_load(specimen: str, production_specimens_registry) -> None:
-    # Load both issues/ and false_positives/ via the registry; assert no load errors
-    try:
-        async with production_specimens_registry.load_and_hydrate(specimen) as _hydrated:
-            # If we get here, loading succeeded - no errors
-            pass
-    except Exception as e:
-        # Load failed - format error for display
-        error_str = str(e)
-        print(f"Snapshot '{specimen}' has invalid Jsonnet files:", flush=True)
-        print(error_str, flush=True)
+async def test_specimen_issues_and_false_positives_load(
+    production_specimens_hydrator: SnapshotHydrator, synced_test_db
+) -> None:
+    """Test that all specimen issues and false positives load without errors."""
+    # Get all specimens from synced database
+    with get_session() as session:
+        snapshots = session.query(Snapshot).all()
+        specimens = [s.slug for s in snapshots]
 
-        # Try to extract file path and line number for context
+    failures = []
+
+    for specimen in specimens:
+        # Load both issues/ and false_positives/ via the hydrator; assert no load errors
         try:
-            matches = re.findall(r"(/[^:]+):(\d+):", error_str)
-            if matches:
-                path_str, ln_str = matches[-1]
-                ln = int(ln_str)
-                p = Path(path_str)
-                if p.exists():
-                    src_lines = p.read_text().splitlines()
-                    start = max(1, ln - 3)
-                    end = min(len(src_lines), ln + 3)
-                    print(f"--- context {p}:{ln} ---", flush=True)
-                    for i in range(start, end + 1):
-                        print(f"{i:>4}: {src_lines[i - 1]}", flush=True)
-        except Exception:
-            pass
+            async with production_specimens_hydrator.hydrate(specimen) as _hydrated:
+                # If we get here, loading succeeded - no errors
+                pass
+        except Exception as e:
+            # Load failed - format error for display
+            error_str = str(e)
+            error_msg = [f"Snapshot '{specimen}' has invalid Jsonnet files:", error_str]
 
-        pytest.fail(f"Snapshot '{specimen}' has invalid Jsonnet files: {e}")
+            # Try to extract file path and line number for context (best-effort)
+            try:
+                matches = re.findall(r"(/[^:]+):(\d+):", error_str)
+                if matches:
+                    path_str, ln_str = matches[-1]
+                    ln = int(ln_str)
+                    p = Path(path_str)
+                    if p.exists():
+                        src_lines = p.read_text().splitlines()
+                        start = max(1, ln - 3)
+                        end = min(len(src_lines), ln + 3)
+                        error_msg.append(f"--- context {p}:{ln} ---")
+                        for i in range(start, end + 1):
+                            error_msg.append(f"{i:>4}: {src_lines[i - 1]}")
+            except Exception as ctx_err:
+                error_msg.append(f"(Could not extract context: {ctx_err})")
+
+            failures.append("\n".join(error_msg))
+
+    # Report all failures at once
+    if failures:
+        pytest.fail("\n\n".join(failures))
 
 
-@pytest.mark.parametrize("specimen", _all_specimens())
 @pytest.mark.asyncio
-async def test_specimen_references_are_valid(specimen: str, production_specimens_registry) -> None:
+async def test_specimen_references_are_valid(
+    production_specimens_hydrator: SnapshotHydrator, synced_test_db
+) -> None:
     """Validate that all file references and line ranges in issues are valid.
 
     For each specimen:
@@ -59,81 +84,103 @@ async def test_specimen_references_are_valid(specimen: str, production_specimens
        - All referenced files exist in the hydrated copy
        - All line ranges are within the file's actual line count
     """
-    async with production_specimens_registry.load_and_hydrate(specimen) as hydrated:
-        rec = hydrated.record
-        content_root = hydrated.content_root
+    # Get all specimens from synced database
+    with get_session() as session:
+        snapshots = session.query(Snapshot).all()
+        specimens = [s.slug for s in snapshots]
 
-        # Skip validation for local specimens (they don't hydrate the same way)
-        if isinstance(rec.manifest.source, LocalSource):
-            pytest.skip(f"Skipping reference validation for local specimen '{specimen}'")
+    failures = []
 
-        # Collect all file references and their line ranges from issues
-        file_references: dict[Path, set[tuple[int, int | None]]] = {}
+    for specimen in specimens:
+        # Load snapshot from database to get manifest and issues
+        with get_session() as session:
+            snapshot_db = session.get(Snapshot, specimen)
+            assert snapshot_db is not None, f"Snapshot {specimen} not found in database"
+            manifest = snapshot_db.source
 
-        # Check true positives
-        for issue in rec.true_positives.values():
-            for occurrence in issue.occurrences:
-                for file_path, ranges in occurrence.files.items():
-                    if file_path not in file_references:
-                        file_references[file_path] = set()
+            # Skip validation for local specimens (they don't hydrate the same way)
+            if isinstance(manifest, LocalSource):
+                continue  # Skip this specimen
 
-                    if ranges:
-                        for line_range in ranges:
-                            file_references[file_path].add((line_range.start_line, line_range.end_line))
+            # Use relationships to get issues (ORM models have occurrences directly)
+            true_positives_list = snapshot_db.true_positives
+            false_positives_list = snapshot_db.false_positives
 
-        # Also check false positives
-        for fp in rec.false_positives.values():
-            for occurrence in fp.occurrences:
-                for file_path, ranges in occurrence.files.items():
-                    if file_path not in file_references:
-                        file_references[file_path] = set()
+        # Hydrate source code
+        async with production_specimens_hydrator.hydrate(specimen) as hydrated:
+            content_root = hydrated.content_root
 
-                    if ranges:
-                        for line_range in ranges:
-                            file_references[file_path].add((line_range.start_line, line_range.end_line))
+            # Collect all file references and their line ranges from issues
+            file_references: dict[Path, set[tuple[int, int | None]]] = {}
 
-        # If no file references, skip validation
-        if not file_references:
-            pytest.skip(f"Snapshot '{specimen}' has no file references to validate")
+            # Check true positives
+            for issue in true_positives_list:
+                for tp_occurrence in issue.occurrences:
+                    for file_path, ranges in tp_occurrence.files.items():
+                        if file_path not in file_references:
+                            file_references[file_path] = set()
 
-        # Validate references using the already-hydrated content root (no double-hydration!)
-        errors = []
+                        if ranges:
+                            for line_range in ranges:
+                                file_references[file_path].add((line_range.start_line, line_range.end_line))
 
-        for file_path, line_ranges in file_references.items():
-            full_path = content_root / file_path
+            # Also check false positives
+            for fp in false_positives_list:
+                for fp_occurrence in fp.occurrences:
+                    for file_path, ranges in fp_occurrence.files.items():
+                        if file_path not in file_references:
+                            file_references[file_path] = set()
 
-            # Check if file exists
-            if not full_path.exists():
-                errors.append(f"File not found in hydrated specimen: {file_path}")
+                        if ranges:
+                            for line_range in ranges:
+                                file_references[file_path].add((line_range.start_line, line_range.end_line))
+
+            # If no file references, skip this specimen
+            if not file_references:
                 continue
 
-            if not full_path.is_file():
-                errors.append(f"Path is not a file: {file_path}")
-                continue
+            # Validate references using the already-hydrated content root (no double-hydration!)
+            errors = []
 
-            # Read file and count lines
-            try:
-                file_content = full_path.read_text(encoding="utf-8")
-                lines = file_content.splitlines()
-                num_lines = len(lines)
+            for file_path, line_ranges in file_references.items():
+                full_path = content_root / file_path
 
-                # Validate each line range
-                for start_line, end_line in line_ranges:
-                    if start_line < 1:
-                        errors.append(f"Invalid start_line {start_line} in {file_path} (must be >= 1)")
-                    elif start_line > num_lines:
-                        errors.append(f"start_line {start_line} exceeds file length {num_lines} in {file_path}")
+                # Check if file exists
+                if not full_path.exists():
+                    errors.append(f"File not found in hydrated specimen: {file_path}")
+                    continue
 
-                    if end_line is not None:
-                        if end_line < start_line:
-                            errors.append(f"Invalid range [{start_line}, {end_line}] in {file_path} (end < start)")
-                        elif end_line > num_lines:
-                            errors.append(f"end_line {end_line} exceeds file length {num_lines} in {file_path}")
+                if not full_path.is_file():
+                    errors.append(f"Path is not a file: {file_path}")
+                    continue
 
-            except Exception as e:
-                errors.append(f"Error reading {file_path}: {e}")
+                # Read file and count lines
+                try:
+                    file_content = full_path.read_text(encoding="utf-8")
+                    lines = file_content.splitlines()
+                    num_lines = len(lines)
 
-        if errors:
-            error_msg = f"Snapshot '{specimen}' has invalid file references:\n"
-            error_msg += "\n".join(f"  - {error}" for error in errors)
-            pytest.fail(error_msg)
+                    # Validate each line range
+                    for start_line, end_line in line_ranges:
+                        if start_line < 1:
+                            errors.append(f"Invalid start_line {start_line} in {file_path} (must be >= 1)")
+                        elif start_line > num_lines:
+                            errors.append(f"start_line {start_line} exceeds file length {num_lines} in {file_path}")
+
+                        if end_line is not None:
+                            if end_line < start_line:
+                                errors.append(f"Invalid range [{start_line}, {end_line}] in {file_path} (end < start)")
+                            elif end_line > num_lines:
+                                errors.append(f"end_line {end_line} exceeds file length {num_lines} in {file_path}")
+
+                except Exception as e:
+                    errors.append(f"Error reading {file_path}: {e}")
+
+            if errors:
+                error_msg = f"Snapshot '{specimen}' has invalid file references:\n"
+                error_msg += "\n".join(f"  - {error}" for error in errors)
+                failures.append(error_msg)
+
+    # Report all failures at once
+    if failures:
+        pytest.fail("\n\n".join(failures))

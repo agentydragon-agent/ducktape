@@ -21,11 +21,10 @@ from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticScopeSpec
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import CriticRun
+from adgn.props.db.models import CriticRun, Snapshot
 from adgn.props.db.prompts import load_and_upsert_detector_prompt
 from adgn.props.ids import SnapshotSlug
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @dataclass
@@ -147,7 +146,6 @@ async def run_detector_on_specimen(
     client: OpenAIModelProto,
     verbose: bool,
     hydrator: SnapshotHydrator,
-    registry: SnapshotRegistry,
 ) -> tuple[str, str, bool]:
     """Run a single detector on a specimen.
 
@@ -157,7 +155,6 @@ async def run_detector_on_specimen(
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
     async with hydrator.hydrate(snapshot_slug) as hydrated:
         await run_critic(
-            registry=registry,
             input_data=CriticInput(
                 snapshot_slug=snapshot_slug,
                 files=set(hydrated.all_discovered_files.keys()),
@@ -177,7 +174,6 @@ async def run_missing_evaluations(
     client: OpenAIModelProto,
     verbose: bool,
     hydrator: SnapshotHydrator,
-    registry: SnapshotRegistry,
 ) -> int:
     """Run all missing (detector, specimen) pairs in parallel.
 
@@ -191,9 +187,7 @@ async def run_missing_evaluations(
     console.print(f"\n[yellow]Running {len(missing_pairs)} missing evaluations in parallel...[/yellow]")
 
     tasks = [
-        run_detector_on_specimen(
-            detector, specimen, client=client, verbose=verbose, hydrator=hydrator, registry=registry
-        )
+        run_detector_on_specimen(detector, specimen, client=client, verbose=verbose, hydrator=hydrator)
         for detector, specimen in missing_pairs
     ]
     results = await asyncio.gather(*tasks)
@@ -215,9 +209,12 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     # Discover all critic system prompts and specimens
     detector_filenames = list_critic_system_prompts()
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
-    registry = SnapshotRegistry.from_package_resources()
     hydrator = SnapshotHydrator.from_package_resources()
-    all_specimens = registry.list_all()
+
+    # Get all specimens from database
+    with get_session() as session:
+        snapshots = session.query(Snapshot).all()
+        all_specimens = {s.slug for s in snapshots}
 
     # Fetch current coverage
     coverage_data = fetch_coverage_data(detector_prompts, all_specimens)
@@ -238,9 +235,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
         missing_pairs = collect_missing_pairs(coverage_data)
         if missing_pairs:
             client = build_client(model)
-            successes = await run_missing_evaluations(
-                missing_pairs, client=client, verbose=verbose, hydrator=hydrator, registry=registry
-            )
+            successes = await run_missing_evaluations(missing_pairs, client=client, verbose=verbose, hydrator=hydrator)
 
             if successes > 0:
                 # Re-fetch and display updated coverage
@@ -325,11 +320,10 @@ async def cmd_run_detector(
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    registry = SnapshotRegistry.from_package_resources()
-    async with registry.load_and_hydrate(specimen) as hydrated:
+    hydrator = SnapshotHydrator.from_package_resources()
+    async with hydrator.hydrate(specimen) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
-            registry=registry,
             input_data=CriticInput(snapshot_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
             content_root=hydrated.content_root,

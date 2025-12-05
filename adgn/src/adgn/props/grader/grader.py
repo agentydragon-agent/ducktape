@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
@@ -36,26 +35,24 @@ from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.adapters import orm_to_wrapper_fps, orm_to_wrapper_tps
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.grader.models import (
     CritiqueInputIssue,
+    FalsePositiveID,
     GraderInput,
     GraderOutput,
     GradeSubmitInput,
     GradeValidationContext,
+    KnownFalsePositive,
+    TruePositiveID,
+    TruePositiveIssue,
 )
-from adgn.props.ids import InputIssueID
+from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.prompts.builder import build_grade_from_json_prompt
+from adgn.props.rationale import Rationale
 from adgn.props.snapshot_hydrated import HydratedSnapshot
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.snapshot_registry import KnownFalsePositive, TruePositiveIssue
-
-# Avoid circular imports:
-# - prompts.builder imports from here
-if TYPE_CHECKING:
-    pass
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +60,20 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 # Helper Functions
 # =============================================================================
+
+
+def _tp_from_orm(orm_tp) -> TruePositiveIssue:
+    """Convert ORM TruePositive to grader representation (module-private)."""
+    return TruePositiveIssue(
+        id=TruePositiveID(orm_tp.tp_id), rationale=Rationale(orm_tp.rationale), occurrences=orm_tp.occurrences
+    )
+
+
+def _fp_from_orm(orm_fp) -> KnownFalsePositive:
+    """Convert ORM FalsePositive to grader representation (module-private)."""
+    return KnownFalsePositive(
+        id=FalsePositiveID(orm_fp.fp_id), rationale=Rationale(orm_fp.rationale), occurrences=orm_fp.occurrences
+    )
 
 
 def _get_required_critique(session: Session, critique_id: UUID) -> Critique:
@@ -80,16 +91,20 @@ class GradeSubmitState:
 
 @dataclass(frozen=True)
 class GradeInputs:
-    """Grading context: specimen and critique."""
+    """Grading context: snapshot slug and critique."""
 
-    specimen: HydratedSnapshot
+    snapshot_slug: SnapshotSlug
     critique: CriticSubmitPayload
 
 
 def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
     """Register grader submit tool with validation context."""
-    # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
-    context = GradeValidationContext.from_specimen_and_critique(inputs.specimen, inputs.critique)
+    # Load ORM snapshot from database for ground truth issues
+    with get_session() as session:
+        snapshot_orm = session.query(Snapshot).filter_by(slug=inputs.snapshot_slug).one()
+
+        # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
+        context = GradeValidationContext.from_specimen_and_critique(snapshot_orm, inputs.critique)
 
     @mcp.flat_model()
     async def submit_result(payload: GradeSubmitInput) -> SimpleOk:
@@ -231,7 +246,7 @@ async def run_grader(
 
     # Build grader inputs and state
     grader_state = GradeSubmitState()
-    inputs = GradeInputs(specimen=hydrated_specimen, critique=critique)
+    inputs = GradeInputs(snapshot_slug=input_data.snapshot_slug, critique=critique)
 
     wiring = properties_docker_spec(hydrated_specimen.content_root, mount_properties=True, ephemeral=False)
     prompt = build_grade_from_json_prompt(
@@ -267,7 +282,9 @@ async def run_grader(
                 AbortIf(should_abort=lambda: grader_state.result is not None),
                 *build_props_handlers(
                     transcript_id=transcript_id,
-                    verbose_prefix=f"[GRADER {input_data.snapshot_slug}] " if verbose else None,
+                    verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {input_data.snapshot_slug}] "
+                    if verbose
+                    else None,
                     servers=servers,
                 ),
                 *extra_handlers,
@@ -287,7 +304,7 @@ async def run_grader(
     with get_session() as session:
         found_run = session.get(DBGraderRun, run_id)
         assert found_run is not None, f"Grader run {run_id} not found in database"
-        found_run.output = output.model_dump(mode="json")
+        found_run.output = output
         session.commit()
         logger.info(f"Updated grader run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
 
@@ -317,8 +334,8 @@ async def grade_critique_by_id(
     snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
     # Convert ORM → Pydantic wrappers for grader prompt
-    canonical_tps = orm_to_wrapper_tps(snapshot.true_positives)
-    canonical_fps = orm_to_wrapper_fps(snapshot.false_positives)
+    canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
+    canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
 
     # Create grader input
     grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)

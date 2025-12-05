@@ -21,6 +21,8 @@ DO NOT import from these modules outside this package.
 from ._sync import (
     ModelMetadataSyncStats,
     SyncStats,
+    get_specimens_base_path,
+    load_manifests_from_yaml,
     sync_critic_scopes_to_db,
     sync_issues_to_db,
     sync_model_metadata,
@@ -31,6 +33,8 @@ from ._sync import (
 __all__ = [
     "ModelMetadataSyncStats",
     "SyncStats",
+    "get_specimens_base_path",
+    "load_manifests_from_yaml",
     "sync_critic_scopes_to_db",
     "sync_issues_to_db",
     "sync_model_metadata",

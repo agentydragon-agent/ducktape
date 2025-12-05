@@ -21,8 +21,9 @@ from openai.types.chat import (
     ChatCompletionMessageFunctionToolCall,
     ChatCompletionMessageParam,
     ChatCompletionUserMessageParam,
+    CompletionCreateParams as ChatCompletionCreateParams,
 )
-from openai.types.responses import ResponseOutputMessage
+from openai.types.responses import ResponseCreateParams, ResponseOutputMessage
 from pydantic import BaseModel, TypeAdapter
 import tiktoken
 
@@ -558,6 +559,7 @@ async def run_eval(
             new_assistant_message: ChatAssistantMessage | ResponsesAssistantMessage
             messages_for_grader: list[ChatCompletionMessageParam]
             prev_assistant_index_for_grader: int
+            sample_request: ChatCompletionCreateParams | ResponseCreateParams
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 anthropic_request = item.anthropic_request
@@ -592,18 +594,18 @@ async def run_eval(
                 max_completion_tokens = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - input_tokens - SAFETY_TOKENS))
                 tools_param = anthropic_request.tools
                 chat_tools = convert_responses_tools_to_chat_functions(tools_param)
-                sample_request = {
-                    "model": SAMPLER_MODEL,
-                    "messages": dump_chat_messages(openai_messages),
-                    "tools": chat_tools,
-                    "tool_choice": "auto",
-                    "parallel_tool_calls": True,
-                    "max_completion_tokens": max_completion_tokens,
-                }
+                sample_request = TypeAdapter(ChatCompletionCreateParams).validate_python(
+                    {
+                        "model": SAMPLER_MODEL,
+                        "messages": dump_chat_messages(openai_messages),
+                        "tools": chat_tools,
+                        "tool_choice": "auto",
+                        "parallel_tool_calls": True,
+                        "max_completion_tokens": max_completion_tokens,
+                    }
+                )
                 try:
-                    sample = await chat_create_with_retries(
-                        client, **{k: v for k, v in sample_request.items() if v is not None}
-                    )
+                    sample = await chat_create_with_retries(client, **sample_request)
                 except Exception as e:
                     counters.sampler_errors += 1
                     msg = {"correlation_id": item.correlation_id, "status": "sampler_error", "error": str(e)}
@@ -636,7 +638,7 @@ async def run_eval(
                 base_request["input"] = responses_input_payload
                 if not base_request.get("model"):
                     base_request["model"] = SAMPLER_MODEL
-                sample_request = cast(dict[str, Any], base_request)
+                sample_request = TypeAdapter(ResponseCreateParams).validate_python(base_request)
                 try:
                     sample = await responses_create_with_retries(client, **sample_request)
                 except Exception as e:
@@ -716,14 +718,16 @@ async def run_eval(
                 )
                 return None, None
             max_output_tokens = max(1, min(PER_OUTPUT_CAP, MAX_TOTAL_TOKENS - input_tokens_grader - SAFETY_TOKENS))
-            grade_request = {
-                "model": GRADER_MODEL,
-                "input": grader_request_messages,
-                "tools": [GRADE_TOOL],
-                "tool_choice": {"type": "function", "name": "grade"},
-                "parallel_tool_calls": False,
-                "max_output_tokens": max_output_tokens,
-            }
+            grade_request: ResponseCreateParams = TypeAdapter(ResponseCreateParams).validate_python(
+                {
+                    "model": GRADER_MODEL,
+                    "input": grader_request_messages,
+                    "tools": [GRADE_TOOL],
+                    "tool_choice": {"type": "function", "name": "grade"},
+                    "parallel_tool_calls": False,
+                    "max_output_tokens": max_output_tokens,
+                }
+            )
             try:
                 grade_response = await responses_create_with_retries(client, **grade_request)
             except Exception as e:

@@ -7,19 +7,33 @@ Extracted to avoid circular dependencies with prompts.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, NewType
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
-from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePositiveID
-from adgn.props.models.true_positive import Occurrence
-from adgn.props.paths import SpecimenRelativePath
+from adgn.props.ids import BaseIssueID, InputIssueID, SnapshotSlug
+from adgn.props.models.true_positive import FalsePositiveOccurrence, Occurrence, TruePositiveOccurrence
 from adgn.props.rationale import Rationale
 
 if TYPE_CHECKING:
     from adgn.props.critic.models import CriticSubmitPayload
-    from adgn.props.snapshot_hydrated import HydratedSnapshot
+    from adgn.props.db.models import Snapshot
+
+
+# =============================================================================
+# Grader-specific ID Types
+# =============================================================================
+
+# These IDs are internal to the grader subsystem
+# Type is implied by position in data structure (true positive keys in canonical_tp_coverage, etc.)
+
+TruePositiveID = NewType("TruePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
+"""True positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
+
+FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
+"""False positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
+
 
 # =============================================================================
 # Constants and Type Aliases
@@ -36,7 +50,7 @@ RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 
 @dataclass(frozen=True)
 class GradeValidationContext:
-    """Validation context: allowed IDs and required files for grading.
+    """Validation context: allowed IDs for grading.
 
     Context key: "grade_validation_context"
     """
@@ -44,27 +58,22 @@ class GradeValidationContext:
     allowed_tp_ids: set[TruePositiveID]
     allowed_fp_ids: set[FalsePositiveID]
     allowed_input_ids: set[InputIssueID]
-    tp_files: set[SpecimenRelativePath]  # Files with canonical TPs (need recall)
-    critique_files: set[SpecimenRelativePath]  # Files with critique issues (need ratios)
 
     @classmethod
     def from_specimen_and_critique(
-        cls, specimen: HydratedSnapshot, critique: CriticSubmitPayload
+        cls, snapshot_orm: Snapshot, critique: CriticSubmitPayload
     ) -> GradeValidationContext:
-        """Build validation context from specimen and critique."""
-        # Collect files from canonical TPs and critique issues
-        # Use specimen's convenience properties (delegates to .record)
+        """Build validation context from ORM Snapshot and critique.
+
+        Args:
+            snapshot_orm: ORM Snapshot from database (has TPs/FPs)
+            critique: Critic's submitted payload
+        """
+        # Extract IDs directly from ORM (no conversion needed for validation)
         return cls(
-            allowed_tp_ids={TruePositiveID(id) for id in specimen.true_positives},
-            allowed_fp_ids={FalsePositiveID(id) for id in specimen.false_positives},
+            allowed_tp_ids={TruePositiveID(tp.tp_id) for tp in snapshot_orm.true_positives},
+            allowed_fp_ids={FalsePositiveID(fp.fp_id) for fp in snapshot_orm.false_positives},
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
-            tp_files={
-                f
-                for issue_rec in specimen.true_positives.values()
-                for instance in issue_rec.occurrences
-                for f in instance.files
-            },
-            critique_files={f for issue in critique.issues for occ in issue.occurrences for f in occ.files},
         )
 
 
@@ -119,6 +128,26 @@ class CritiqueInputIssue(BaseModel):
     id: InputIssueID
     rationale: Rationale
     occurrences: list[Occurrence]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class TruePositiveIssue(BaseModel):
+    """Canonical true positive issue with typed namespaced ID."""
+
+    id: TruePositiveID
+    rationale: Rationale
+    occurrences: list[TruePositiveOccurrence]
+
+    model_config = ConfigDict(frozen=True)
+
+
+class KnownFalsePositive(BaseModel):
+    """Known false positive issue with typed namespaced ID."""
+
+    id: FalsePositiveID
+    rationale: Rationale
+    occurrences: list[FalsePositiveOccurrence]
 
     model_config = ConfigDict(frozen=True)
 
@@ -248,17 +277,17 @@ class GradeSubmitInput(BaseModel):
 
     # Coverage for ground truth issues
     canonical_tp_coverage: dict[TruePositiveID, CanonicalTPCoverage] = Field(
-        ..., description="Coverage for EVERY canonical TP. Keys are plain string IDs."
+        ..., description="Coverage for EVERY canonical TP. Keys are typed IDs (TruePositiveID)."
     )
 
     canonical_fp_coverage: dict[FalsePositiveID, CanonicalFPCoverage] = Field(
-        ..., description="Coverage for EVERY known FP. Keys are plain string IDs."
+        ..., description="Coverage for EVERY known FP. Keys are typed IDs (FalsePositiveID)."
     )
 
     # Novel/unknown input issues
     novel_critique_issues: dict[InputIssueID, NovelIssueReasoning] = Field(
         ...,
-        description="Input issues with novel aspects. Keys are plain string IDs. Can be pure novel (not in any covered_by) or hybrid (appears in covered_by but has additional novel content). Empty dict if all input issues fully match canonicals/FPs.",
+        description="Input issues with novel aspects. Keys are typed IDs (InputIssueID). Can be pure novel (not in any covered_by) or hybrid (appears in covered_by but has additional novel content). Empty dict if all input issues fully match canonicals/FPs.",
     )
 
     # Metrics
@@ -277,17 +306,6 @@ class GradeSubmitInput(BaseModel):
     # Required summary
     summary: Rationale = Field(
         description="Markdown summary with high-level observations. Use for cross-cutting patterns, weighting rationale (if non-obvious), or specimen-level notes. DO NOT repeat per-issue details already in rationale fields—assume reader sees entire object."
-    )
-
-    # Per-file metrics (split by what needs to be tracked)
-    per_file_recall: dict[SpecimenRelativePath, float] = Field(
-        ...,
-        description="Recall [0,1] for EVERY file with canonical TPs. Keys = file paths. Value = fraction of canonical TPs in this file that were covered, weighted by importance/severity.",
-    )
-
-    per_file_ratios: dict[SpecimenRelativePath, ReportedIssueRatios] = Field(
-        ...,
-        description="Ratios {tp,fp,unlabeled} for EVERY file with critique issues. Keys = file paths. Value = ratios for reported issues touching this file, weighted, must sum to ~1.0.",
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -378,46 +396,6 @@ class GradeSubmitInput(BaseModel):
             raise ValueError(
                 f"Missing input IDs: {sorted(missing_input)}. "
                 f"Every input issue MUST appear in covered_by or novel_critique_issues."
-            )
-
-        return self
-
-    @model_validator(mode="after")
-    def validate_per_file_metrics_complete(self, info: ValidationInfo) -> GradeSubmitInput:
-        """Validate per-file metrics cover exactly the required files."""
-        if (ctx := self._get_validation_context(info)) is None:
-            return self
-
-        # Check per_file_recall keys match tp_files
-        provided_recall = set(self.per_file_recall.keys())
-        missing_recall = ctx.tp_files - provided_recall
-        if missing_recall:
-            raise ValueError(
-                f"Missing per_file_recall for: {sorted(str(f) for f in missing_recall)}. "
-                f"Must provide recall for all files with canonical TPs."
-            )
-
-        extra_recall = provided_recall - ctx.tp_files
-        if extra_recall:
-            raise ValueError(
-                f"Unexpected per_file_recall for: {sorted(str(f) for f in extra_recall)}. "
-                f"Only provide recall for files with canonical TPs."
-            )
-
-        # Check per_file_ratios keys match critique_files
-        provided_ratios = set(self.per_file_ratios.keys())
-        missing_ratios = ctx.critique_files - provided_ratios
-        if missing_ratios:
-            raise ValueError(
-                f"Missing per_file_ratios for: {sorted(str(f) for f in missing_ratios)}. "
-                f"Must provide ratios for all files with critique issues."
-            )
-
-        extra_ratios = provided_ratios - ctx.critique_files
-        if extra_ratios:
-            raise ValueError(
-                f"Unexpected per_file_ratios for: {sorted(str(f) for f in extra_ratios)}. "
-                f"Only provide ratios for files with critique issues."
             )
 
         return self

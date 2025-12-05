@@ -156,14 +156,15 @@ def _enable_rls(engine: Engine) -> None:
     rls_tables = {Base.metadata.tables[name] for name in rls_table_names}
 
     # Define agent access rules per table
+    # Note: Cast string literals to split_enum type for enum column comparison
     agent_access_rules = {
         "snapshots": "FOR SELECT TO agent_user USING (true)",
-        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'))",
-        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split IN ('train', 'valid')))",
-        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train')))",
+        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
+        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum)))",
     }
 
     with engine.begin() as conn:
@@ -214,7 +215,7 @@ def _create_views(engine: Engine) -> None:
                     g.created_at
                 FROM grader_runs g
                 JOIN snapshots s ON g.snapshot_slug = s.slug
-                WHERE s.split = 'valid'
+                WHERE s.split = 'valid'::split_enum
                 """
             )
         )

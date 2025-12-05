@@ -56,6 +56,7 @@ in {
     docker rm -f ${pgConfig.containerName} 2>/dev/null || true
 
     # Run PostgreSQL container
+    # max_connections=50: Support parallel GEPA evaluation (default max_parallelism=20)
     docker run --rm \
       --name ${pgConfig.containerName} \
       --network props_default \
@@ -63,7 +64,8 @@ in {
       -e POSTGRES_USER=${pgConfig.adminUser} \
       -e POSTGRES_PASSWORD=${pgConfig.adminPassword} \
       -v props_eval_results_data:/var/lib/postgresql/data \
-      postgres:16
+      postgres:16 \
+      -c max_connections=50
   '';
 
   # Environment variables (database connection parameters - single source of truth)

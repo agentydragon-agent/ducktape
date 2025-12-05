@@ -24,7 +24,7 @@ from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import extract_corrections
 from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 from .lint_issue import lint_issue_run
 
@@ -155,12 +155,7 @@ async def _grade_rationale_with_llm(
 
 
 async def eval_issue_spec(
-    spec: IssueEvalSpec,
-    *,
-    client: OpenAIModelProto,
-    registry: SnapshotRegistry,
-    out_dir: Path | str | None = None,
-    ctx: RunsContext,
+    spec: IssueEvalSpec, *, client: OpenAIModelProto, out_dir: Path | str | None = None, ctx: RunsContext
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
@@ -305,7 +300,7 @@ def _load_samples() -> list[IssueEvalSpec]:
 async def run_all_evals(
     *,
     client: OpenAIModelProto,
-    registry: SnapshotRegistry,
+    hydrator: SnapshotHydrator,
     root_out: Path | None = None,
     concurrency: int = 4,
     ctx: RunsContext,
@@ -319,7 +314,7 @@ async def run_all_evals(
     async def _run_one(sample: IssueEvalSpec) -> SampleRunSummary:
         async with sem:
             out_dir = root / sample.issue.id
-            return await eval_issue_spec(spec=sample, client=client, registry=registry, out_dir=out_dir, ctx=ctx)
+            return await eval_issue_spec(spec=sample, client=client, out_dir=out_dir, ctx=ctx)
 
     entries = await asyncio.gather(*[_run_one(s) for s in _load_samples()])
 

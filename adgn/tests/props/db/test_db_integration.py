@@ -29,6 +29,7 @@ from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot
 from adgn.props.ids import SnapshotSlug
+from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -81,7 +82,7 @@ LIMIT 1;
 # test_grader_run_writes_to_database, test_events_are_written_to_database).
 
 
-def test_rls_blocks_test_split_for_agent_user(test_db):
+def test_rls_blocks_test_split_for_agent_user(test_db, test_prompt_sha):
     """Test that agent_user cannot see test split data (RLS policy).
 
     Setup (as admin_user):
@@ -100,10 +101,11 @@ def test_rls_blocks_test_split_for_agent_user(test_db):
         # Create a critic run for the test specimen
         test_run = CriticRun(
             transcript_id=uuid4(),
-            prompt_sha256="a" * 64,
+            prompt_sha256=test_prompt_sha,
             snapshot_slug="crush/test-specimen",
             model="test-model",
-            files=["test.py"],
+            files=TEST_FILES_LIST,
+            files_hash=TEST_FILES_HASH,
             output={"tag": "failure", "error": "test"},
         )
         session.add(test_run)
@@ -122,7 +124,7 @@ def test_rls_blocks_test_split_for_agent_user(test_db):
         assert len(test_runs) == 0, "agent_user should not see test split data via RLS"
 
 
-def test_rls_allows_train_split_for_agent_user(test_db):
+def test_rls_allows_train_split_for_agent_user(test_db, test_prompt_sha):
     """Test that agent_user can see train split data (RLS policy allows).
 
     Setup (as admin_user):
@@ -134,6 +136,7 @@ def test_rls_allows_train_split_for_agent_user(test_db):
     """
     # Setup: Use admin_user to write test data (already connected via test_db fixture)
     train_run_id = uuid4()
+
     with get_session() as session:
         train_specimen = Snapshot(slug="ducktape/2025-11-26-00", split="train")
         session.merge(train_specimen)
@@ -142,10 +145,11 @@ def test_rls_allows_train_split_for_agent_user(test_db):
         # Create a critic run for the train specimen
         train_run = CriticRun(
             transcript_id=train_run_id,
-            prompt_sha256="b" * 64,
+            prompt_sha256=test_prompt_sha,
             snapshot_slug="ducktape/2025-11-26-00",
             model="test-model",
-            files=["test.py"],
+            files=TEST_FILES_LIST,
+            files_hash=TEST_FILES_HASH,
             output={"tag": "failure", "error": "test"},
         )
         session.add(train_run)
@@ -159,7 +163,7 @@ def test_rls_allows_train_split_for_agent_user(test_db):
         assert train_runs[0].snapshot_slug == "ducktape/2025-11-26-00"
 
 
-def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
+def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_sha):
     """Test that agent_user CANNOT see valid split critique details (RLS policy blocks).
 
     Setup (as admin_user):
@@ -175,6 +179,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
     # Setup: Use admin_user to write test data (already connected via test_db fixture)
     valid_critique_id = uuid4()
     valid_run_id = uuid4()
+
     with get_session() as session:
         valid_specimen = Snapshot(slug="valid/spec-test", split="valid")
         session.merge(valid_specimen)
@@ -192,11 +197,12 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
         # Create a critic run for the valid specimen
         valid_critic_run = CriticRun(
             transcript_id=valid_run_id,
-            prompt_sha256="c" * 64,
+            prompt_sha256=test_prompt_sha,
             snapshot_slug="valid/spec-test",
             model="test-model",
             critique_id=valid_critique_id,
-            files=["test.py"],
+            files=TEST_FILES_LIST,
+            files_hash=TEST_FILES_HASH,
             output={"tag": "success"},
         )
         session.add(valid_critic_run)
@@ -210,9 +216,12 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
             critique_id=valid_critique_id,
             output={
                 "grade": {
+                    "canonical_tp_coverage": {},
+                    "canonical_fp_coverage": {},
+                    "novel_critique_issues": {},
+                    "reported_issue_ratios": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1},
                     "recall": 0.8,
-                    "precision": 0.9,
-                    "metrics": {"true_positives": 4, "false_positives": 1, "false_negatives": 1},
+                    "summary": "Test grader run for RLS validation",
                 }
             },
         )
@@ -235,11 +244,12 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db):
 
         # SHOULD see valid aggregates via the view
         result = session.execute(
-            text("SELECT specimen, recall, precision FROM valid_grader_metrics WHERE specimen = 'valid/spec-test'")
+            text("SELECT specimen, recall FROM valid_full_specimen_grader_metrics WHERE specimen = 'valid/spec-test'")
         ).fetchall()
-        assert len(result) == 1, "agent_user SHOULD see valid split aggregates via valid_grader_metrics view"
+        assert len(result) == 1, (
+            "agent_user SHOULD see valid split aggregates via valid_full_specimen_grader_metrics view"
+        )
         assert result[0].recall == 0.8
-        assert result[0].precision == 0.9
 
         # Test the blocked SQL from prompt: attempt to get critique details
         result = session.execute(text(SQL_BLOCKED_VALID_CRITIQUES)).fetchall()

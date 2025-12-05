@@ -7,22 +7,66 @@ Includes model metadata sync (previously in sync_model_metadata.py).
 from __future__ import annotations
 
 from dataclasses import dataclass
-import hashlib
+from importlib import resources
 import logging
+from pathlib import Path
 
+from pydantic import TypeAdapter
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
+import yaml
 
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticScopeDB, FalsePositive, ModelMetadata, Snapshot, TruePositive
+from adgn.props.files_hash import hash_critic_scope_files
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScopeSpec
-from adgn.props.snapshot_registry import SnapshotRegistry
+from adgn.props.models.snapshot import SnapshotDoc
 
 from ._loader import FilesystemLoader
 
 logger = logging.getLogger(__name__)
+
+
+def get_specimens_base_path() -> Path:
+    """Get specimens base path from package resources.
+
+    Returns:
+        Path to specimens directory
+
+    Raises:
+        FileNotFoundError: If specimens directory doesn't exist
+    """
+    traversable = resources.files("adgn.props").joinpath("specimens")
+    with resources.as_file(traversable) as p:
+        if not p.exists() or not p.is_dir():
+            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
+        # Return the resolved absolute path (valid after context manager exits)
+        return p.resolve()
+
+
+def load_manifests_from_yaml(base_path: Path) -> dict[SnapshotSlug, SnapshotDoc]:
+    """Load snapshot manifests from snapshots.yaml.
+
+    For use by sync code and tests that validate source files.
+    Runtime code should query the database instead.
+
+    Args:
+        base_path: Specimens base directory containing snapshots.yaml
+
+    Returns:
+        Dict mapping snapshot slug to manifest
+
+    Raises:
+        FileNotFoundError: If snapshots.yaml doesn't exist
+    """
+    snapshots_yaml = base_path / "snapshots.yaml"
+    if not snapshots_yaml.exists():
+        raise FileNotFoundError(f"snapshots.yaml not found at {snapshots_yaml}")
+
+    raw = yaml.safe_load(snapshots_yaml.read_text(encoding="utf-8")) or {}
+    adapter = TypeAdapter(dict[SnapshotSlug, SnapshotDoc])
+    return adapter.validate_python(raw)
 
 
 @dataclass
@@ -40,24 +84,21 @@ class SyncStats:
         return f"{self.total} total (+{self.added}, ~{self.updated}, -{self.deleted})"
 
 
-def sync_snapshots_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats:
+def sync_snapshots_to_db(session: Session, base_path: Path) -> SyncStats:
     """Sync snapshots from filesystem to database.
 
     Loads snapshots from specimens/snapshots.yaml and upserts to snapshots table.
 
     Args:
         session: SQLAlchemy session
-        registry: Registry to sync from
+        base_path: Specimens base directory containing snapshots.yaml
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
 
-    # Load snapshots from registry
-    snapshots = {}
-    for slug in registry.snapshot_slugs:
-        _snapshot_path, manifest = registry.load_manifest_only(slug)
-        snapshots[slug] = manifest
+    # Load snapshots from YAML
+    snapshots = load_manifests_from_yaml(base_path)
 
     # Get existing snapshots from DB
     existing = {s.slug: s for s in session.query(Snapshot).all()}
@@ -128,7 +169,7 @@ def sync_snapshots_to_db(session: Session, registry: SnapshotRegistry) -> SyncSt
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def sync_issues_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats:
+def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
     """Sync issues and false positives from filesystem to database.
 
     For each snapshot, loads issues from specimens/{slug}/*.libsonnet
@@ -136,17 +177,18 @@ def sync_issues_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats
 
     Args:
         session: SQLAlchemy session
-        registry: Registry to sync from
+        base_path: Specimens base directory
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
 
-    # Get snapshot slugs from registry
-    snapshots = list(registry.snapshot_slugs)
+    # Get snapshot slugs from YAML
+    manifests = load_manifests_from_yaml(base_path)
+    snapshots = list(manifests.keys())
 
-    # Load issues from registry's base path
-    loader = FilesystemLoader(registry.base_path)
+    # Load issues from base path
+    loader = FilesystemLoader(base_path)
 
     # Track stats across both TPs and FPs
     total = 0
@@ -156,8 +198,8 @@ def sync_issues_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats
 
     # Get existing issues and FPs from DB
 
-    existing_issues = {(SnapshotSlug(i.snapshot_slug), i.tp_id): i for i in session.query(TruePositive).all()}
-    existing_fps = {(SnapshotSlug(fp.snapshot_slug), fp.fp_id): fp for fp in session.query(FalsePositive).all()}
+    existing_issues = {(i.snapshot_slug, i.tp_id): i for i in session.query(TruePositive).all()}
+    existing_fps = {(fp.snapshot_slug, fp.fp_id): fp for fp in session.query(FalsePositive).all()}
 
     # Track which issues/FPs we've seen (to detect deletions)
     seen_issue_keys = set()
@@ -270,30 +312,7 @@ def sync_issues_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def _hash_critic_scope_files(files: CriticScopeSpec) -> str:
-    """Calculate SHA256 hash of critic scope files for uniqueness constraint.
-
-    Ensures deterministic hashing across Python runs by:
-    - Using special token for "all" sentinel
-    - Sorting file paths for set[Path] case
-
-    Args:
-        files: CriticScopeSpec (set[Path] or "all" sentinel)
-
-    Returns:
-        64-character SHA256 hex digest
-    """
-    if files == ALL_FILES_WITH_ISSUES:
-        # Special case for "all" sentinel
-        return hashlib.sha256(b"__ALL_FILES_WITH_ISSUES__").hexdigest()
-
-    # Sort paths for deterministic hash
-    sorted_files = sorted(str(p) for p in files)
-    content = "\n".join(sorted_files).encode("utf-8")
-    return hashlib.sha256(content).hexdigest()
-
-
-def sync_critic_scopes_to_db(session: Session, registry: SnapshotRegistry) -> SyncStats:
+def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
     """Sync critic scopes from filesystem to database.
 
     Loads critic scopes from specimens/critic_scopes.yaml and upserts to
@@ -301,13 +320,13 @@ def sync_critic_scopes_to_db(session: Session, registry: SnapshotRegistry) -> Sy
 
     Args:
         session: SQLAlchemy session
-        registry: Registry to sync from
+        base_path: Specimens base directory
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
     # Load critic scopes from YAML
-    loader = FilesystemLoader(registry.base_path)
+    loader = FilesystemLoader(base_path)
     scopes_by_slug = loader.load_critic_scopes()
 
     # Get existing critic scopes from DB
@@ -326,7 +345,7 @@ def sync_critic_scopes_to_db(session: Session, registry: SnapshotRegistry) -> Sy
     for slug, scope_list in scopes_by_slug.items():
         for scope in scope_list:
             # Calculate hash for uniqueness
-            files_hash = _hash_critic_scope_files(scope.files)
+            files_hash = hash_critic_scope_files(scope.files)
             key = (slug, files_hash)
             seen_scope_keys.add(key)
 

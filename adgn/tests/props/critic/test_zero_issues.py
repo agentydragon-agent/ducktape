@@ -111,9 +111,7 @@ def _make_critic_response_sequence() -> list:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_zero_issues_submits_successfully(
-    test_trivial_specimen, make_openai_client, production_specimens_registry, critic_test_db_setup
-):
+async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, make_openai_client, critic_test_db_setup):
     """Test that critic successfully calls submit(issues=0) when finding no issues.
 
     This is a regression test for the infinite loop bug where RequireAnyTool()
@@ -130,11 +128,7 @@ async def test_critic_zero_issues_submits_successfully(
 
     # This should complete successfully without infinite loop
     output, critic_run_id, critique_id = await run_critic(
-        input_data=input_data,
-        client=client,
-        content_root=specimen_dir,
-        registry=production_specimens_registry,
-        mount_properties=False,
+        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
     )
 
     # Verify output
@@ -160,7 +154,7 @@ async def test_critic_zero_issues_submits_successfully(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    test_trivial_specimen, make_openai_client, production_specimens_registry, critic_test_db_setup
+    test_trivial_specimen, make_openai_client, critic_test_db_setup
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
@@ -188,11 +182,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     # This should complete in 3 turns, not loop infinitely
     output, _, _ = await run_critic(
-        input_data=input_data,
-        client=client,
-        content_root=specimen_dir,
-        registry=production_specimens_registry,
-        mount_properties=False,
+        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
     )
 
     assert output.result is not None

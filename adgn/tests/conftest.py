@@ -26,6 +26,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp
 from tests.support.responses import _StepRunner
@@ -426,7 +427,7 @@ def live_openai(request):
 
 
 @pytest.fixture
-def docker_inproc_spec_py312():
+def docker_inproc_spec_py312() -> NotifyingFastMCP:
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = make_container_opts("python:3.12-alpine")
     return make_container_exec_server(opts)

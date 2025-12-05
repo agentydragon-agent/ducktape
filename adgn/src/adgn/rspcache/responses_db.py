@@ -11,7 +11,10 @@ from typing import Any
 import uuid
 
 import asyncpg
+from asyncpg import Connection
+from asyncpg.pool import PoolConnectionProxy
 from openai.types.responses import Response as OpenAIResponse, ResponseStreamEvent, ResponseUsage
+from pydantic import TypeAdapter
 from sqlalchemy import (
     BigInteger,
     DateTime,
@@ -51,6 +54,9 @@ __all__ = [
 ]
 
 CHANNEL_NAME = "rspcache_events"
+
+# Type adapter for OpenAI SDK type alias (not a Pydantic model)
+_response_stream_event_adapter: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
 
 
 class Base(DeclarativeBase):
@@ -100,7 +106,7 @@ class ResponseFrame(Base):
     @property
     def typed_frame(self) -> ResponseStreamEvent:
         """Return the frame as a typed ResponseStreamEvent."""
-        return ResponseStreamEvent.model_validate(self.frame)
+        return _response_stream_event_adapter.validate_python(self.frame)
 
 
 class Response(Base):
@@ -594,8 +600,10 @@ class ResponsesDB:
 
     # ------------------------------------------------------------------
 
-    def _notify_queues(self, _conn: Any, _pid: int, _channel: str, payload: str) -> None:
-        event = parse_event(payload)
+    def _notify_queues(
+        self, _conn: Connection[Any] | PoolConnectionProxy[Any], _pid: int, _channel: str, payload: object
+    ) -> None:
+        event = parse_event(str(payload))
         task = asyncio.create_task(self._fanout(event))
         task.add_done_callback(lambda t: t.exception() if t.done() and not t.cancelled() else None)
 

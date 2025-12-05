@@ -6,8 +6,8 @@ from hamcrest import assert_that, equal_to, has_length, instance_of, only_contai
 from pydantic import ValidationError
 import pytest
 
-from adgn.props.grader.models import GradeSubmitInput
-from adgn.props.ids import FalsePositiveID, InputIssueID, SnapshotSlug, TruePositiveID
+from adgn.props.grader.models import FalsePositiveID, GradeSubmitInput, TruePositiveID
+from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.paths import FileType
 from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
 
@@ -117,8 +117,6 @@ def test_grade_submit_uses_typed_id_dicts():
             "reported_issue_ratios": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1},
             "recall": 0.5,
             "summary": "Test summary",
-            "per_file_recall": {"src/main.py": 0.5},
-            "per_file_ratios": {"src/main.py": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1}},
         }
     )
 
@@ -149,8 +147,6 @@ def test_grade_submit_serialization_round_trip():
             "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
             "recall": 1.0,
             "summary": "All issues were matched correctly",
-            "per_file_recall": {"src/example.py": 1.0},
-            "per_file_ratios": {"src/example.py": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0}},
         }
     )
 

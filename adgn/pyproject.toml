@@ -92,6 +92,7 @@ dev = [
   'types-requests',
   'types-tabulate',
   'types-docker',
+  'asyncpg-stubs',
   'pandas-stubs',
   'types-Jinja2',
 ]
@@ -102,6 +103,7 @@ typing = [
     'types-requests',
     'types-tabulate',
     'types-docker',
+    'asyncpg-stubs',
     'pandas-stubs',
     'types-Jinja2',
 ]

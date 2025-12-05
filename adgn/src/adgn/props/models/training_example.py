@@ -8,12 +8,15 @@ are relevant?
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.true_positive import FalsePositive, TruePositive
 from adgn.props.splits import Split
+
+if TYPE_CHECKING:
+    from adgn.props.db.models import FalsePositive, TruePositive
 
 
 class TrainingExample(BaseModel):
@@ -39,7 +42,7 @@ class TrainingExample(BaseModel):
     true_positives: list[TruePositive] = Field(description="Catchable true positives given targeted_files")
     false_positives: list[FalsePositive] = Field(description="Relevant false positives given targeted_files")
 
-    model_config = ConfigDict(frozen=True)
+    model_config = ConfigDict(frozen=True, arbitrary_types_allowed=True)
 
     @staticmethod
     def should_include_tp(tp: TruePositive, targeted_files: set[Path]) -> bool:

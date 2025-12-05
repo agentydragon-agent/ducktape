@@ -13,13 +13,10 @@ remaining strings at runtime (work as JSON dict keys).
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated, Any, NewType, TypeAlias
 
 from pydantic import BeforeValidator, PlainSerializer, constr
-
-# =============================================================================
-# Shared Serializer
-# =============================================================================
 
 # Shared identity serializer for all string-based Annotated types
 # Preserves string value unchanged during serialization
@@ -60,20 +57,6 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 #   - date-sequence: typically YYYY-MM-DD-NN or YYYY-MM-DD-name (e.g., "2025-11-26-00", "2025-08-30-internal_db")
 # Constraint: EXACTLY ONE SLASH for consistent directory depth in runs/
 #
-# Valid examples:
-#   - "ducktape/2025-11-26-00"
-#   - "crush/2025-08-30-internal_db"
-#   - "misc/2025-08-29-pyright_watch_report"
-#
-# Invalid:
-#   - "2025-08-29-pyright_watch_report" (no slash - migrate to misc/)
-#   - "a/b/c" (multiple slashes)
-#
-# Pattern breakdown:
-#   ^[a-z0-9_-]+  - project part (1+ chars)
-#   /             - exactly one slash separator
-#   [a-z0-9_-]+$  - date-sequence part (1+ chars)
-#
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility
 _SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
     constr(
@@ -96,13 +79,10 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-
 
 # NewType creates nominal types for mypy (compile-time type safety)
 # At runtime, these are just BaseIssueID strings (work as JSON dict keys)
-# Type is implied by position in data structure (true positive keys in canonical_tp_coverage, etc.)
+# Type is implied by position in data structure
 
-TruePositiveID = NewType("TruePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
-"""True positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
-
-FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-newtype]
-"""False positive ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
+# Note: TruePositiveID and FalsePositiveID have been moved to grader/models.py
+# as they are internal to the grader subsystem
 
 InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
@@ -131,3 +111,26 @@ def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
     """
     parts = str(slug).split("/", 1)
     return parts[0], parts[1]
+
+
+def get_snapshot_manifest_path(base_path: Path, slug: SnapshotSlug) -> Path:
+    """Get synthetic manifest path for bundle URL resolution.
+
+    Returns a synthetic file path inside the snapshot directory used for
+    resolving relative bundle URLs. The actual file doesn't need to exist;
+    it's just a reference point for URL resolution.
+
+    Args:
+        base_path: Specimens base directory
+        slug: Snapshot slug like "ducktape/2025-11-26-00"
+
+    Returns:
+        Path to synthetic _snapshot file used for bundle URL resolution
+
+    Example:
+        >>> base = Path("/path/to/specimens")
+        >>> get_snapshot_manifest_path(base, SnapshotSlug("ducktape/2025-11-26-00"))
+        PosixPath('/path/to/specimens/ducktape/2025-11-26-00/_snapshot')
+    """
+    repo, version = split_snapshot_slug(slug)
+    return (base_path / repo / version / "_snapshot").resolve()

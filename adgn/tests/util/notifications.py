@@ -88,7 +88,7 @@ def enable_resources_caps(server: Any, *, subscribe: bool | None = None, list_ch
     mcp_server.create_initialization_options = patched_create_initialization_options
 
     def patched_get_capabilities(notification_options: Any, experimental_capabilities: Any) -> types.ServerCapabilities:
-        caps = base_get_caps(notification_options, experimental_capabilities)
+        caps: types.ServerCapabilities = base_get_caps(notification_options, experimental_capabilities)
         res_caps = caps.resources
         if subscribe is not None or list_changed is not None:
             if res_caps is None:

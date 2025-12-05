@@ -68,9 +68,24 @@ async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> R
 
 
 @retry_decorator()
-async def chat_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ChatCompletion:
-    # kwargs should contain: messages=..., model=..., etc.
-    return await client.chat.completions.create(**kwargs)
+async def chat_create_with_retries(client: AsyncOpenAI, *, stream: bool = False, **kwargs: Any) -> ChatCompletion:
+    """Create a chat completion with retries (non-streaming only).
+
+    Args:
+        client: AsyncOpenAI client
+        stream: Must be False (streaming not supported by this function)
+        **kwargs: Other parameters passed to chat.completions.create (messages, model, etc.)
+
+    Returns:
+        ChatCompletion response
+
+    Raises:
+        ValueError: If stream=True is passed
+    """
+    if stream:
+        raise ValueError("chat_create_with_retries does not support streaming (stream=True)")
+    # OpenAI SDK uses @overload; passing stream=False literal resolves to ChatCompletion overload
+    return await client.chat.completions.create(stream=False, **kwargs)
 
 
 @dataclass

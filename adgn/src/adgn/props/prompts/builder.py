@@ -10,11 +10,12 @@ from adgn.props.grader.models import (
     CritiqueInputIssue,
     GradeMetrics,
     GradeSubmitInput,
+    KnownFalsePositive,
     NovelIssueReasoning,
     ReportedIssueRatios,
+    TruePositiveIssue,
 )
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
-from adgn.props.snapshot_registry import KnownFalsePositive, TruePositiveIssue
 
 from .schemas import build_input_schemas_json
 from .util import render_prompt_template

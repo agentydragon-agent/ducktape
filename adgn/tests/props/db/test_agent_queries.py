@@ -23,6 +23,7 @@ import pytest
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.models import CriticRun, Critique, Event, FalsePositive, GraderRun, Prompt, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
+from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -135,7 +136,8 @@ def query_test_data(test_db):
                 snapshot_slug="train/spec-a",
                 model="test-model",
                 critique_id=critique_a_id,
-                files=["test.py"],
+                files=TEST_FILES_LIST,
+                files_hash=TEST_FILES_HASH,
                 output={"tag": "success"},
             ),
             CriticRun(
@@ -144,7 +146,8 @@ def query_test_data(test_db):
                 snapshot_slug="train/spec-b",
                 model="test-model",
                 critique_id=critique_b_id,
-                files=["test.py"],
+                files=TEST_FILES_LIST,
+                files_hash=TEST_FILES_HASH,
                 output={"tag": "success"},
             ),
         ]

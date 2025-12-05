@@ -15,11 +15,16 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import httpx
 from openai.types.responses import Response as OpenAIResponse, ResponseCreateParams, ResponseStreamEvent, ResponseUsage
+from pydantic import TypeAdapter
 
 from adgn.rspcache.models import ErrorPayload, ResponseStatus, response_from_event
 from adgn.rspcache.responses_db import APIKeyRecord, ResponsesDB
 
 CacheKey = NewType("CacheKey", str)
+
+# Type adapters for OpenAI SDK type aliases (not Pydantic models)
+_response_stream_event_adapter: TypeAdapter[ResponseStreamEvent] = TypeAdapter(ResponseStreamEvent)
+_response_create_params_adapter: TypeAdapter[ResponseCreateParams] = TypeAdapter(ResponseCreateParams)
 
 
 class StreamingContext:
@@ -69,7 +74,7 @@ class StreamingContext:
                 if not parsed:
                     continue
                 for frame in parsed:
-                    frame_payload = ResponseStreamEvent.model_validate(frame)
+                    frame_payload = _response_stream_event_adapter.validate_python(frame)
                     self.response_id, usage_update, latest = await _update_response_state(
                         frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
                     )
@@ -80,7 +85,7 @@ class StreamingContext:
                     await self.db.append_frame(self.key, frame_payload, response_id=self.response_id)
             trailing_frames = _extract_remaining(text_buffer)
             for frame in trailing_frames:
-                frame_payload = ResponseStreamEvent.model_validate(frame)
+                frame_payload = _response_stream_event_adapter.validate_python(frame)
                 self.response_id, usage_update, latest = await _update_response_state(
                     frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
                 )
@@ -161,12 +166,14 @@ def _extract_client_token(request: Request, authorization: str | None, x_api_key
 def compute_cache_key(body: ResponseCreateParams) -> CacheKey:
     """Compute cache key from OpenAI request body.
 
-    Excludes non-deterministic fields via model_copy for validation.
+    Excludes non-deterministic fields (request_id, request_timestamp, nonce).
     """
-    # Use model_copy to exclude non-deterministic fields, benefiting from Pydantic validation
-    cacheable = body.model_copy(update={"request_id": None, "request_timestamp": None, "nonce": None})
-    keyed = cacheable.model_dump(mode="json", exclude_none=True, exclude_unset=True)
-    return CacheKey(hashlib.sha256(canonicaljson.encode_canonical_json(keyed)).hexdigest())
+    # TypedDict at runtime is a dict; copy and remove non-deterministic fields
+    cacheable = dict(body)
+    cacheable.pop("request_id", None)
+    cacheable.pop("request_timestamp", None)
+    cacheable.pop("nonce", None)
+    return CacheKey(hashlib.sha256(canonicaljson.encode_canonical_json(cacheable)).hexdigest())
 
 
 def _extract_frames(buffer: str) -> tuple[str, list[dict[str, Any]]]:
@@ -229,7 +236,7 @@ async def _proxy_stream(
     async def _process_frame(frame_dict: dict[str, Any]) -> None:
         nonlocal response_id, token_usage, latest_response
 
-        frame_payload = ResponseStreamEvent.model_validate(frame_dict)
+        frame_payload = _response_stream_event_adapter.validate_python(frame_dict)
         response_id, usage_update, latest = await _update_response_state(
             frame=frame_payload, db=db, cache_key=key, response_id=response_id
         )
@@ -315,7 +322,7 @@ async def responses_endpoint(
 
     # Validate request body structure and generate cache key
     try:
-        validated_body = ResponseCreateParams.model_validate(body)
+        validated_body = _response_create_params_adapter.validate_python(body)
         key = compute_cache_key(validated_body)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Invalid request: {exc}") from exc

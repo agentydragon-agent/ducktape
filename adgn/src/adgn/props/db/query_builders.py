@@ -105,7 +105,7 @@ def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     """
     return (
         select(TruePositive.tp_id, TruePositive.rationale, TruePositive.occurrences)
-        .where(TruePositive.snapshot_slug == str(snapshot_slug))
+        .where(TruePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .order_by(TruePositive.tp_id)
     )
 
@@ -121,7 +121,7 @@ def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     """
     return (
         select(FalsePositive.fp_id, FalsePositive.rationale, FalsePositive.occurrences)
-        .where(FalsePositive.snapshot_slug == str(snapshot_slug))
+        .where(FalsePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .order_by(FalsePositive.fp_id)
     )
 
@@ -275,7 +275,7 @@ def critiques_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Selec
             CriticRun.files,
         )
         .outerjoin(CriticRun, Critique.id == CriticRun.critique_id)
-        .where(Critique.snapshot_slug == str(snapshot_slug))
+        .where(Critique.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .order_by(Critique.created_at.desc())
         .limit(limit)
     )
@@ -305,7 +305,7 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         .join(Critique, GraderRun.critique_id == Critique.id)
         .join(CriticRun, Critique.id == CriticRun.critique_id)
         .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
-        .where(GraderRun.snapshot_slug == str(snapshot_slug))
+        .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .limit(limit)
     )
 

@@ -18,12 +18,12 @@ from adgn.props.db.prompts import load_and_upsert_detector_prompt_with_session
 from adgn.props.db.sync import (
     ModelMetadataSyncStats,
     SyncStats,
+    get_specimens_base_path,
     sync_critic_scopes_to_db,
     sync_issues_to_db,
     sync_model_metadata_with_session,
     sync_snapshots_to_db,
 )
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 
 @dataclass
@@ -53,11 +53,12 @@ def sync_all() -> FullSyncResult:
     Returns:
         Combined results from all sync operations
     """
-    registry = SnapshotRegistry.from_package_resources()
+    base_path = get_specimens_base_path()
+
     with get_session() as session:
-        snapshot_stats = sync_snapshots_to_db(session, registry)
-        issue_stats = sync_issues_to_db(session, registry)
-        critic_scope_stats = sync_critic_scopes_to_db(session, registry)
+        snapshot_stats = sync_snapshots_to_db(session, base_path)
+        issue_stats = sync_issues_to_db(session, base_path)
+        critic_scope_stats = sync_critic_scopes_to_db(session, base_path)
 
         # Sync critic system prompts
         detector_prompts = [

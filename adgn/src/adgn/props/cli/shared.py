@@ -6,8 +6,6 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import os
 from pathlib import Path
-import shutil
-import subprocess
 import tempfile
 import time
 
@@ -71,44 +69,6 @@ class BuildOptions:
     skip_git_repo_check: bool
     full_auto: bool
     extra_configs: list[str] | None = None
-
-
-def detect_tools() -> list[str]:
-    tools = [
-        ("ruff", "ruff"),
-        ("mypy", "mypy"),
-        ("pyright", "pyright"),
-        ("vulture", "vulture"),
-        ("bandit", "bandit"),
-        ("pip-audit", "pip-audit"),
-        ("safety", "safety"),
-        ("codespell", "codespell"),
-        ("pyupgrade", "pyupgrade"),
-        ("refurb", "refurb"),
-        ("flynt", "flynt"),
-        ("pydocstyle", "pydocstyle"),
-        ("interrogate", "interrogate"),
-        ("import-linter", "lint-imports"),
-        ("semgrep", "semgrep"),
-        ("radon", "radon"),
-        ("xenon", "xenon"),
-        ("pylint", "pylint"),
-        ("lizard", "lizard"),
-        ("coverage", "coverage"),
-        ("diff-cover", "diff-cover"),
-        ("jscpd", "jscpd"),
-    ]
-    available: list[str] = []
-    for name, exe in tools:
-        if shutil.which(exe):
-            available.append(name)
-    if "jscpd" not in available and shutil.which("npx"):
-        cp = subprocess.run(
-            ["npx", "--yes", "--no-install", "jscpd", "--version"], check=False, text=True, capture_output=True
-        )
-        if cp.returncode == 0:
-            available.append("jscpd(npx)")
-    return available
 
 
 def save_prompt_to_tmp(stem: str, text: str) -> Path:

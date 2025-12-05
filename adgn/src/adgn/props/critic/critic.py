@@ -50,11 +50,11 @@ from adgn.props.critic.models import (
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt, Snapshot
 from adgn.props.docker_env import properties_docker_spec
+from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -381,7 +381,6 @@ async def run_critic(
     input_data: CriticInput,
     client: OpenAIModelProto,
     content_root,
-    registry: SnapshotRegistry,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
@@ -423,6 +422,7 @@ async def run_critic(
             critique_id=None,  # Will be set in Phase 2 if successful
             prompt_optimization_run_id=input_data.prompt_optimization_run_id,
             files=sorted(str(p) for p in resolved_files),
+            files_hash=hash_file_set(resolved_files),
             output=None,  # Will be set in Phase 2
         )
         session.add(db_run)
@@ -458,7 +458,7 @@ async def run_critic(
         bootstrap,
         *build_props_handlers(
             transcript_id=transcript_id,
-            verbose_prefix=f"[CRITIC {input_data.snapshot_slug}] " if verbose else None,
+            verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {input_data.snapshot_slug}] " if verbose else None,
             servers=servers,
         ),
         AbortIf(should_abort=_ready_state),

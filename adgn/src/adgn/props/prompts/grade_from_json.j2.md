@@ -2,7 +2,6 @@
 {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "GradeMetrics", "GradeSubmitInput", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
-{% set include_tools = true %}
 {% set include_properties = false %}
 
 {% block title %}Grade (structured JSON){% endblock %}
@@ -20,7 +19,6 @@ Match input critique items against canonical positives and known false positives
 - Identify novel/unlabeled input issues (pure novel or hybrid)
 - Compute weighted reported_issue_ratios (must sum to ~1.0)
 - Compute weighted recall for canonical TPs
-- Provide per-file recall for files with canonical TPs, and per-file ratios for files with critique issues
 - Write summary explaining weighting, novel issues, and partial coverage
 
 ## Matching Guidance
@@ -95,8 +93,6 @@ Match input critique items against canonical positives and known false positives
   - ALL input issues appear in either covered_by or novel_critique_issues
   - reported_issue_ratios sum to ~1.0
   - recall_credit bounds: min(covered_by.values()) ≤ recall_credit ≤ sum(covered_by.values())
-  - per_file_recall: keys must exactly match files with canonical TPs
-  - per_file_ratios: keys must exactly match files with critique issues
 
 **Required Justifications** (in summary and reasoning fields):
 - **For each unknown critique issue**: Explain WHY it didn't match, referencing the code you inspected (e.g., "Inspected lines 45-48 in file.py - code implements X, but canonical issue discusses Y at lines 20-25")

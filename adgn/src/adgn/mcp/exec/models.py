@@ -145,7 +145,7 @@ class ExecInput(BaseModel):
     env: dict[str, str] | None = Field(default=None, description="Environment variables for the process")
     user: str | None = Field(default=None, description="Username inside container")
     shell: bool = Field(default=False, description="Run via sh -lc <cmd>")
-    timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit_code becomes None)")
+    timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)")
 
     model_config = ConfigDict(extra="forbid")
 

@@ -69,7 +69,7 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 {% endfor %}
 {% endif %}
 
-{% from "_partials.j2" import constraints_read_only, supplemental_section_md, tools_section, reporting_requirements %}
+{% from "_partials.j2" import constraints_read_only, supplemental_section_md, reporting_requirements %}
 
 ## Files in scope
 
@@ -82,7 +82,5 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 {% if include_reporting %}{{ reporting_requirements(no_empty_reports=suppress_no_violations_line|default(true)) }}{% endif %}
 
 {{ supplemental_section_md(supplemental_text) }}
-
-{% if include_tools %}{{ tools_section(available_tools) }}{% endif %}
 
 {% block body %}{% endblock %}

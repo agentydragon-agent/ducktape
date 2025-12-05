@@ -2,7 +2,6 @@
 {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "LintSubmitPayload", "IssueLintFindingRecord"] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
-{% set include_tools = false %}
 
 {% block title %}Lint issue occurrence{% endblock %}
 

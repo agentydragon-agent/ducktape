@@ -18,7 +18,6 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun
-from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import BaseIssueID
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session
@@ -57,12 +56,7 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
 
     Returns empty list if critic result is not success or if no novel issues found.
     """
-    # Skip runs with no output (failed/incomplete runs)
-    if db_run.output is None:
-        return []
-
-    # Parse typed output from JSONB
-    grader_output = GraderOutput.model_validate(db_run.output)
+    # db_run.output is now typed as GraderOutput (PydanticColumn)
     critique_payload = CriticSubmitPayload.model_validate(critique.payload)
 
     critique_id = db_run.critique_id
@@ -74,7 +68,7 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
             rationale=matching_issue.rationale,
             files={f for occ in matching_issue.occurrences for f in occ.files},
         )
-        for input_id in grader_output.grade.novel_critique_issues
+        for input_id in db_run.output.grade.novel_critique_issues
         if (matching_issue := next((issue for issue in critique_payload.issues if issue.id == str(input_id)), None))
         is not None
     ]

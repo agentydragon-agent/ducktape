@@ -36,17 +36,17 @@ from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
 from adgn.props.cli.cmd_snapshot import cmd_snapshot_list, snapshot_capture_ducktape, snapshot_dump, snapshot_exec
 from adgn.props.cli.decorators import async_run
-from adgn.props.cli.shared import BuildOptions, build_cmd, detect_tools, run_check_minicodex_async, save_prompt_to_tmp
+from adgn.props.cli.shared import BuildOptions, build_cmd, run_check_minicodex_async, save_prompt_to_tmp
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import GraderRun as DBGraderRun
+from adgn.props.db.models import GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grader.grader import grade_critique_by_id
-from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.critic_scopes import CriticScopeSpec
@@ -57,7 +57,6 @@ from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.snapshot_registry import SnapshotRegistry
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -206,7 +205,6 @@ async def _run_snapshot_minicodex_async(
     client: OpenAIModelProto,
     files: list[str] | None,
     hydrator: SnapshotHydrator,
-    registry: SnapshotRegistry,
 ) -> int:
     # Hydrate snapshot source code (issues loaded from DB elsewhere)
     async with hydrator.hydrate(snapshot) as hydrated:
@@ -243,7 +241,6 @@ async def _run_snapshot_minicodex_async(
             ),
             client=client,
             content_root=hydrated.content_root,
-            registry=registry,
             mount_properties=True,
             verbose=True,
         )
@@ -268,15 +265,17 @@ async def cmd_snapshot_discover(
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
-    registry = SnapshotRegistry.from_package_resources()
     hydrator = SnapshotHydrator.from_package_resources()
-    names = sorted(registry.list_all())
+    # Get all snapshots from database
+    with get_session() as session:
+        all_snapshots = session.query(Snapshot).all()
+        names = sorted([s.slug for s in all_snapshots])
     if snapshot not in names:
         typer.echo(f"Unknown snapshot slug: {snapshot}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
         raise typer.Exit(2)
     # TODO: Remove this manual path wrangling. The covered.md/not_covered_yet.md files
     # should be deprecated and removed, along with snapshot-discover command and related paths.
-    spec_dir = registry.base_path / snapshot
+    spec_dir = get_specimens_base_path() / snapshot
     embed_paths: list[Path] | None = [
         p for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
     ]
@@ -292,7 +291,6 @@ async def cmd_snapshot_discover(
         client=build_client("gpt-5"),
         files=files,
         hydrator=hydrator,
-        registry=registry,
     )
     raise typer.Exit(code=rc)
 
@@ -318,16 +316,18 @@ async def prompt_optimize(
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
-    registry = SnapshotRegistry.from_package_resources()
+    hydrator = SnapshotHydrator.from_package_resources()
     await run_prompt_optimizer(
-        budget=budget, ctx=RunsContext.from_pkg_dir(), registry=registry, model=model, verbose=verbose
+        budget=budget, ctx=RunsContext.from_pkg_dir(), hydrator=hydrator, model=model, verbose=verbose
     )
 
 
 @app.command("snapshot-grade")
 @async_run
 async def snapshot_grade(
-    critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"), model: str = opt.OPT_MODEL
+    critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"),
+    model: str = opt.OPT_MODEL,
+    verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Grade a critique by database ID against canonical findings.
 
@@ -337,20 +337,18 @@ async def snapshot_grade(
 
     # Query database and grade critique in single session
     with get_session() as session:
-        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model))
+        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model), verbose=verbose)
         db_grader_run = session.get(DBGraderRun, grader_run_id)
         if db_grader_run is None:
             raise RuntimeError(f"Grader run {grader_run_id} not found in database")
 
-        # Parse and display output
-        output = GraderOutput.model_validate(db_grader_run.output)
-
+        # db_grader_run.output is now typed as GraderOutput (PydanticColumn)
         typer.echo(f"Graded critique {critique_id}")
         typer.echo(f"Grader run ID: {grader_run_id}")
         typer.echo(f"Grader run transcript_id: {db_grader_run.transcript_id}")
         typer.echo(f"Snapshot: {db_grader_run.snapshot_slug}")
         typer.echo("")
-        typer.echo(output.model_dump_json(indent=2))
+        typer.echo(db_grader_run.output.model_dump_json(indent=2))
 
 
 @app.command("fix")
@@ -413,8 +411,8 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    registry = SnapshotRegistry.from_package_resources()
-    await run_all_evals(client=build_client("gpt-5"), registry=registry, ctx=RunsContext.from_pkg_dir())
+    hydrator = SnapshotHydrator.from_package_resources()
+    await run_all_evals(client=build_client("gpt-5"), hydrator=hydrator, ctx=RunsContext.from_pkg_dir())
 
 
 # DB commands
@@ -454,19 +452,13 @@ def _render_prompt_with_context(
     """
     env = get_templates_env()
     tmpl = env.from_string(text)
-    context = build_standard_context(
-        files=files, wiring=wiring, available_tools=detect_tools(), supplemental_text=supplemental_text
-    )
+    context = build_standard_context(files=files, wiring=wiring, supplemental_text=supplemental_text)
     return str(tmpl.render(**context))
 
 
 @asynccontextmanager
 async def _open_run_context(
-    path: Path | None,
-    snapshot: SnapshotSlug | None,
-    files: list[str] | None,
-    hydrator: SnapshotHydrator,
-    registry: SnapshotRegistry,
+    path: Path | None, snapshot: SnapshotSlug | None, files: list[str] | None, hydrator: SnapshotHydrator
 ):
     """Yield (wiring, files_spec, label) for either a local path or a hydrated snapshot.
 
@@ -475,7 +467,6 @@ async def _open_run_context(
         snapshot: Snapshot slug (mutually exclusive with path)
         files: Optional file filter (only for snapshots)
         hydrator: SnapshotHydrator instance (for source code extraction)
-        registry: SnapshotRegistry instance (legacy, will be removed)
 
     Yields:
         (wiring, files_spec, label) tuple where files_spec is CriticScopeSpec
@@ -504,7 +495,6 @@ async def _exec_agent(
     label: str,
     snapshot_slug: SnapshotSlug | None,
     files_spec: CriticScopeSpec | None,
-    registry: SnapshotRegistry,
     dry_run: bool = False,
 ) -> None:
     # Dry-run: save prompt and exit (before any agent/DB/compositor setup)
@@ -527,7 +517,6 @@ async def _exec_agent(
             ),
             client=build_client(model),
             content_root=wiring.working_dir,
-            registry=registry,
             mount_properties=True,
             verbose=True,
         )
@@ -664,12 +653,11 @@ async def cmd_run(
         print("ERROR: --structured requires --snapshot (not --path) for database persistence.")
         raise typer.Exit(2)
 
-    # Create registry and hydrator once at CLI entry point (always, even for path mode - lightweight)
-    registry = SnapshotRegistry.from_package_resources()
+    # Create hydrator once at CLI entry point (always, even for path mode - lightweight)
     hydrator = SnapshotHydrator.from_package_resources()
 
     # Enter workspace context and run (same path for dry-run and real execution)
-    async with _open_run_context(path, snapshot, files, hydrator, registry) as (wiring, files_spec, label):
+    async with _open_run_context(path, snapshot, files, hydrator) as (wiring, files_spec, label):
         # Resolve files for prompt rendering (snapshot mode resolves sentinel, path mode is already explicit)
         if snapshot is not None:
             resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
@@ -688,7 +676,6 @@ async def cmd_run(
             label=label,
             snapshot_slug=snapshot,
             files_spec=files_spec if snapshot is not None else None,
-            registry=registry,
             dry_run=dry_run,
         )
 

@@ -23,19 +23,17 @@ import yaml
 from ...ids import split_snapshot_slug
 from ...models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScope, CriticScopeSpec
 from ...models.snapshot import Snapshot, SnapshotSlug
-from ...models.training_example import TrainingExample
-from ...models.true_positive import FalsePositive, TruePositive
-from ...splits import Split
 from ._jsonnet import evaluate_snapshot_issues
+from ._models import FalsePositive, TruePositive
 
 logger = logging.getLogger(__name__)
 
 
 class FilesystemLoader:
-    """Loads snapshot metadata and issues from filesystem.
+    """Loads snapshot metadata and issues from filesystem for sync operations.
 
-    Responsibility: Parse YAML/Jsonnet → Pydantic objects.
-    Does NOT interact with database - only reads from filesystem.
+    ONLY used during sync: Jsonnet → Pydantic → ORM → Database.
+    For training examples, query the database directly using ORM models.
     """
 
     def __init__(self, specimens_dir: Path):
@@ -121,129 +119,6 @@ class FilesystemLoader:
             ],
         )
 
-    def get_training_example(self, slug: SnapshotSlug, targeted_files: set[Path]) -> TrainingExample:
-        """Create a focused training example for specific files in a snapshot.
-
-        Args:
-            slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
-            targeted_files: Files to review (determines which TPs/FPs are included)
-
-        Returns:
-            TrainingExample with catchable TPs and relevant FPs for the targeted files
-        """
-        snapshots = self.load_snapshots()
-        if slug not in snapshots:
-            raise KeyError(f"Snapshot '{slug}' not found in snapshots.yaml")
-
-        snapshot = snapshots[slug]
-        all_tps, all_fps = self.load_issues_for_snapshot(slug)
-
-        return self._create_training_example(slug, snapshot.split, targeted_files, all_tps, all_fps)
-
-    @staticmethod
-    def _collect_all_files_from_issues(
-        true_positives: list[TruePositive], false_positives: list[FalsePositive]
-    ) -> set[Path]:
-        """Collect all files referenced in true positives and false positives.
-
-        Args:
-            true_positives: List of true positive issues
-            false_positives: List of false positive issues
-
-        Returns:
-            Set of all file paths referenced in any occurrence
-        """
-        all_files: set[Path] = set()
-        for tp in true_positives:
-            for tp_occ in tp.occurrences:
-                all_files.update(tp_occ.files.keys())
-        for fp in false_positives:
-            for fp_occ in fp.occurrences:
-                all_files.update(fp_occ.files.keys())
-        return all_files
-
-    @staticmethod
-    def _create_training_example(
-        slug: SnapshotSlug,
-        split: Split,
-        targeted_files: set[Path],
-        all_tps: list[TruePositive],
-        all_fps: list[FalsePositive],
-    ) -> TrainingExample:
-        """Create a TrainingExample with filtered TPs/FPs for the targeted files.
-
-        Args:
-            slug: Snapshot slug
-            split: Dataset split (TRAIN, VALID, TEST)
-            targeted_files: Files to review in this example
-            all_tps: All true positives for the snapshot
-            all_fps: All false positives for the snapshot
-
-        Returns:
-            TrainingExample with catchable TPs and relevant FPs for the targeted files
-        """
-        # Filter to catchable true positives
-        catchable_tps = [tp for tp in all_tps if TrainingExample.should_include_tp(tp, targeted_files)]
-
-        # Filter to relevant false positives
-        relevant_fps = [fp for fp in all_fps if TrainingExample.should_include_fp(fp, targeted_files)]
-
-        return TrainingExample(
-            snapshot_slug=slug,
-            split=split,
-            targeted_files=frozenset(targeted_files),
-            true_positives=catchable_tps,
-            false_positives=relevant_fps,
-        )
-
-    def get_examples_for_split(self, split: Split) -> list[TrainingExample]:
-        """Get training examples for a given split (full snapshot review).
-
-        Each example targets ALL files in the snapshot (full review scenario).
-        For focused file subsets, use get_training_example(slug, targeted_files).
-
-        Args:
-            split: The split to filter by (TRAIN, VALID, or TEST)
-
-        Returns:
-            List of TrainingExample objects for snapshots in the given split
-        """
-        snapshots = self.load_snapshots()
-        examples = []
-
-        for slug, snapshot in snapshots.items():
-            if snapshot.split == split:
-                all_tps, all_fps = self.load_issues_for_snapshot(slug)
-                all_files = self._collect_all_files_from_issues(all_tps, all_fps)
-
-                # Create example targeting all files (full snapshot review)
-                example = self._create_training_example(slug, split, all_files, all_tps, all_fps)
-                examples.append(example)
-
-        return sorted(examples, key=lambda e: e.snapshot_slug)
-
-    def get_all_examples(self) -> list[TrainingExample]:
-        """Get all training examples across all splits (full snapshot review).
-
-        Each example targets ALL files in the snapshot (full review scenario).
-        For focused file subsets, use get_training_example(slug, targeted_files).
-
-        Returns:
-            List of all TrainingExample objects, sorted by slug
-        """
-        snapshots = self.load_snapshots()
-        examples = []
-
-        for slug, snapshot in snapshots.items():
-            all_tps, all_fps = self.load_issues_for_snapshot(slug)
-            all_files = self._collect_all_files_from_issues(all_tps, all_fps)
-
-            # Create example targeting all files (full snapshot review)
-            example = self._create_training_example(slug, snapshot.split, all_files, all_tps, all_fps)
-            examples.append(example)
-
-        return sorted(examples, key=lambda e: e.snapshot_slug)
-
     def load_critic_scopes(self) -> dict[SnapshotSlug, list[CriticScope]]:
         """Load specimens/critic_scopes.yaml → CriticScope objects.
 
@@ -290,6 +165,30 @@ class FilesystemLoader:
             scopes[SnapshotSlug(slug_str)] = validated_scopes
 
         return scopes
+
+    @staticmethod
+    def _collect_all_files_from_issues(
+        true_positives: list[TruePositive], false_positives: list[FalsePositive]
+    ) -> set[Path]:
+        """Collect all files referenced in true positives and false positives.
+
+        Used during sync for validation and data quality checks.
+
+        Args:
+            true_positives: List of true positive issues (Pydantic, from Jsonnet)
+            false_positives: List of false positive issues (Pydantic, from Jsonnet)
+
+        Returns:
+            Set of all file paths referenced in any occurrence
+        """
+        all_files: set[Path] = set()
+        for tp in true_positives:
+            for tp_occ in tp.occurrences:
+                all_files.update(tp_occ.files.keys())
+        for fp in false_positives:
+            for fp_occ in fp.occurrences:
+                all_files.update(fp_occ.files.keys())
+        return all_files
 
     @staticmethod
     def _resolve_critic_scope(scope: CriticScope, all_files: set[Path], slug: SnapshotSlug) -> set[Path]:
@@ -366,117 +265,5 @@ class FilesystemLoader:
 
             raise ValueError("\n".join(error_lines))
 
-    def _generate_examples_from_scopes(
-        self,
-        slug: SnapshotSlug,
-        split: Split,
-        scopes: list[CriticScope],
-        all_files: set[Path],
-        all_tps: list[TruePositive],
-        all_fps: list[FalsePositive],
-    ) -> list[TrainingExample]:
-        """Generate training examples from defined critic scopes.
 
-        Args:
-            slug: Snapshot slug
-            split: Dataset split
-            scopes: List of critic scopes defining file groupings
-            all_files: All files with issues in the snapshot
-            all_tps: All true positives for the snapshot
-            all_fps: All false positives for the snapshot
-
-        Returns:
-            List of TrainingExample objects, one per scope with matching files
-        """
-        examples = []
-        logger.debug(f"Using {len(scopes)} critic scopes for {slug}")
-
-        for scope in scopes:
-            # Resolve scope and validate files exist
-            targeted_files = self._resolve_critic_scope(scope, all_files, slug)
-
-            if targeted_files:
-                example = self._create_training_example(slug, split, targeted_files, all_tps, all_fps)
-                examples.append(example)
-            else:
-                logger.warning(f"Scope for {slug} resolved to no files")
-
-        return examples
-
-    def _generate_fallback_examples(
-        self,
-        slug: SnapshotSlug,
-        split: Split,
-        all_files: set[Path],
-        all_tps: list[TruePositive],
-        all_fps: list[FalsePositive],
-    ) -> list[TrainingExample]:
-        """Generate fallback per-file examples when no scopes defined.
-
-        Args:
-            slug: Snapshot slug
-            split: Dataset split
-            all_files: All files with issues in the snapshot
-            all_tps: All true positives for the snapshot
-            all_fps: All false positives for the snapshot
-
-        Returns:
-            List of TrainingExample objects, one per file
-        """
-        examples = []
-        logger.debug(f"No critic scopes for {slug}, using per-file fallback")
-
-        for file in sorted(all_files):
-            example = self._create_training_example(slug, split, {file}, all_tps, all_fps)
-            examples.append(example)
-
-        return examples
-
-    def get_per_file_examples_for_split(self, split: Split) -> list[TrainingExample]:
-        """Get per-file training examples for a given split.
-
-        For each snapshot in the split:
-        - If critic_scopes defined: generate one TrainingExample per scope
-        - If no scopes: fallback to one example per file with issues
-        - Always include one full-snapshot example as the last item (terminal metric)
-
-        Args:
-            split: The split to filter by (TRAIN, VALID, or TEST)
-
-        Returns:
-            List of TrainingExample objects with focused file sets
-        """
-        snapshots = self.load_snapshots()
-        critic_scopes = self.load_critic_scopes()
-        examples = []
-
-        for slug, snapshot in snapshots.items():
-            if snapshot.split != split:
-                continue
-
-            # Load issues once per snapshot
-            all_tps, all_fps = self.load_issues_for_snapshot(slug)
-            all_files = self._collect_all_files_from_issues(all_tps, all_fps)
-
-            if not all_files:
-                logger.warning(f"Snapshot {slug} has no files with issues, skipping")
-                continue
-
-            # Generate focused examples (scopes or per-file fallback)
-            if slug in critic_scopes:
-                focused_examples = self._generate_examples_from_scopes(
-                    slug, split, critic_scopes[slug], all_files, all_tps, all_fps
-                )
-            else:
-                focused_examples = self._generate_fallback_examples(slug, split, all_files, all_tps, all_fps)
-
-            examples.extend(focused_examples)
-
-            # Always add full-snapshot example as terminal metric
-            full_example = self._create_training_example(slug, split, all_files, all_tps, all_fps)
-            examples.append(full_example)
-
-        return examples
-
-
-__all__ = ["FilesystemLoader", "TrainingExample"]
+__all__ = ["FilesystemLoader"]
