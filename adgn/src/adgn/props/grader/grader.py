@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
-from functools import partial
 import logging
 import os
 from pathlib import Path
@@ -18,7 +17,7 @@ from uuid import UUID, uuid4
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.server.auth import StaticTokenVerifier
+from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -142,16 +141,15 @@ Use submit_result to submit the final grading comparing critique against ground 
 def make_grader_submit_server(
     state: GradeSubmitState,
     inputs: GradeInputs,
-    token: str | None = None,
+    auth: AuthProvider | None = None,
 ) -> NotifyingFastMCP:
     """Create MCP server with submit_result tool.
 
     Args:
         state: State container for submitted result.
         inputs: Grading context (snapshot slug and critique).
-        token: Auth token for HTTP mode (None for inproc).
+        auth: Auth provider for HTTP mode (None for inproc).
     """
-    auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}}) if token else None
     mcp = NotifyingFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
     build_grader_submit_tools(mcp, state, inputs=inputs)
     return mcp
@@ -355,16 +353,16 @@ async def run_grader(
     # Run agent with either HTTP or in-proc server based on toggle
     @asynccontextmanager
     async def _http_context():
-        async with launch_mcp_http_server(partial(make_grader_submit_server, grader_state, inputs)) as handle:
+        def server_factory(token: str) -> NotifyingFastMCP:
+            auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
+            return make_grader_submit_server(grader_state, inputs, auth)
+
+        async with launch_mcp_http_server(server_factory) as handle:
             logger.info(f"Grader HTTP server started at {handle.url}")
-            yield handle
+            yield {"MCP_GRADER_URL": handle.url, "MCP_GRADER_TOKEN": handle.token}
 
     ctx = _http_context() if USE_MCP_HTTP else nullcontext()
-    async with ctx as http_handle:
-        # Create wiring with MCP env vars if in HTTP mode
-        extra_env = (
-            {"MCP_GRADER_URL": http_handle.url, "MCP_GRADER_TOKEN": http_handle.token} if http_handle else None
-        )
+    async with ctx as extra_env:
         wiring = properties_docker_spec(
             hydrated_specimen.content_root, mount_properties=True, ephemeral=False, extra_env=extra_env
         )
@@ -386,7 +384,7 @@ async def run_grader(
             input_data=input_data,
             verbose=verbose,
             extra_handlers=extra_handlers,
-            http_mode=bool(http_handle),
+            http_mode=bool(extra_env),
         )
 
     if grader_state.result is None:
