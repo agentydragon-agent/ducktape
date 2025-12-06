@@ -333,7 +333,7 @@ You do not have direct access to invoke the server's tools - the MCP server is n
 
 Important: MCP sessions must be initialized (session.initialize()) before you can use tools, list resources, etc. When used in one-off Python scripts, the session will be closed at the end of the script.
 
-When you successfully submit, this conversation will abort. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
+You will exclusively act by calling tools. Do not send any text messages at any point. When you successfully submit your result, this conversation will abort automatically. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
 
 {MCP_HTTP_CONNECTION_INSTRUCTIONS}"""
         else:
