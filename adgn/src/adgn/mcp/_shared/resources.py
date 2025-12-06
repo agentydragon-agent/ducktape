@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Literal, TypeVar
+from typing import Any, Literal
 
 from fastmcp.client.client import ClientSession
 from fastmcp.server.server import has_resource_prefix
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
-
-from .urls import parse_any_url
+from pydantic.networks import AnyUrl
 
 
 def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
@@ -29,20 +28,27 @@ def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_t
     return text
 
 
-T = TypeVar("T")
-
-
-async def read_text_json_typed[T](session: ClientSession, uri: str, model: type[T]) -> T:
+async def read_text_json_typed[T](session: ClientSession, uri: AnyUrl | str, model: type[T] | Any) -> T:
     """Read a text JSON resource and parse it as the given Pydantic model/type.
+
+    Args:
+        session: MCP client session
+        uri: Resource URI (AnyUrl or string)
+        model: Type (class, Union, Annotated, etc.) that TypeAdapter can handle
+
+    Returns:
+        Parsed model instance
 
     - Validates exactly one text part
     - Parses JSON into the provided model/type using TypeAdapter(model).validate_json
+    - Accepts concrete types (type[T]) and type expressions (Union, Annotated, etc.)
+    - Type inference works for concrete types; Union types require explicit annotation
     """
-    result = await session.read_resource(parse_any_url(uri))
+    result = await session.read_resource(uri)
     return TypeAdapter(model).validate_json(extract_single_text_content(result.contents))
 
 
-async def read_text_json(session: ClientSession, uri: str) -> Any:
+async def read_text_json(session: ClientSession, uri: AnyUrl | str) -> Any:
     """Read a text JSON resource and parse it to a Python dict."""
     return await read_text_json_typed(session, uri, dict[str, Any])
 

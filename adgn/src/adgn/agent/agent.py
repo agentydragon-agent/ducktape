@@ -181,6 +181,51 @@ type Message = UserMessage | AssistantMessage | SystemMessage
 type TranscriptItem = Message | FunctionCallItem | ReasoningItem | ToolCallOutput
 
 
+def _sanitize_tool_result(result: mcp_types.CallToolResult) -> mcp_types.CallToolResult:
+    """Remove null bytes from tool results, prepending warning if any found.
+
+    PostgreSQL JSONB doesn't support null bytes (from tools like `rg -0`).
+    """
+    null_count = 0
+
+    def sanitize(value: Any) -> Any:
+        nonlocal null_count
+        if isinstance(value, str):
+            if "\x00" in value:
+                null_count += value.count("\x00")
+                return value.replace("\x00", "")
+            return value
+        if isinstance(value, dict):
+            return {k: sanitize(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    # Sanitize all content
+    new_content = [
+        mcp_types.TextContent(type="text", text=sanitize(b.text) if b.text else b.text)
+        if isinstance(b, mcp_types.TextContent)
+        else b
+        for b in (result.content or [])
+    ]
+    new_structured = sanitize(result.structuredContent) if result.structuredContent else None
+
+    # Prepend warning if needed
+    if null_count > 0:
+        warning = f"NOTE: {null_count} null byte(s) removed from tool output\n\n"
+        if new_content and isinstance(new_content[0], mcp_types.TextContent):
+            new_content[0] = mcp_types.TextContent(type="text", text=warning + (new_content[0].text or ""))
+        else:
+            new_content.insert(0, mcp_types.TextContent(type="text", text=warning))
+
+    return mcp_types.CallToolResult(
+        content=new_content or result.content,
+        structuredContent=new_structured,
+        isError=result.isError,
+        _meta=result.meta,
+    )
+
+
 class MiniCodex:
     def __init__(
         self,
@@ -675,10 +720,15 @@ class MiniCodex:
         )
 
     def _emit_tool_result(self, function_call: FunctionCallItem, result: mcp_types.CallToolResult) -> None:
-        """Emit a ToolCallOutput event and notify handlers."""
+        """Emit a ToolCallOutput event and notify handlers.
 
+        Sanitizes null bytes from tool results before emitting (PostgreSQL JSONB doesn't support them).
+        Prepends a warning to the output if any null bytes were found.
+        """
         call_id = _require_call_id(function_call)
-        event = ToolCallOutput(call_id=call_id, result=copy.deepcopy(result))
+        # Sanitize null bytes and add warning if present
+        sanitized = _sanitize_tool_result(result)
+        event = ToolCallOutput(call_id=call_id, result=copy.deepcopy(sanitized))
         self._transcript.append(event)
         for h in self._handlers:
             h.on_tool_result_event(event)

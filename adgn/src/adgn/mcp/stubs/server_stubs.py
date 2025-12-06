@@ -6,8 +6,10 @@ with proper type hints for better IDE support and type checking.
 
 from __future__ import annotations
 
+import ast
 from collections.abc import Awaitable
 import inspect
+import textwrap
 from typing import TYPE_CHECKING, Any, TypeVar, cast, get_args, get_origin, get_type_hints
 
 if TYPE_CHECKING:
@@ -44,7 +46,11 @@ class ServerStub:
         self._auto_wire_methods()
 
     def _auto_wire_methods(self) -> None:
-        """Auto-wire methods based on type hints."""
+        """Auto-wire methods based on type hints.
+
+        Only wires methods that have a trivial body (just raise NotImplementedError).
+        Methods with actual implementations are left as-is for helper methods.
+        """
         # Get all methods defined in the subclass (not inherited from ServerStub)
         for name, method in inspect.getmembers(self.__class__, predicate=inspect.isfunction):
             # Skip special methods and inherited methods from ServerStub
@@ -53,6 +59,40 @@ class ServerStub:
 
             # Only wire async methods
             if not inspect.iscoroutinefunction(method):
+                continue
+
+            # Skip methods with non-trivial implementations (helper methods)
+            try:
+                source = inspect.getsource(method)
+                # Dedent the source to handle class method indentation
+                source = textwrap.dedent(source)
+                tree = ast.parse(source)
+                # Find the function definition
+                func_def = None
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.AsyncFunctionDef):
+                        func_def = node
+                        break
+
+                if not func_def:
+                    continue
+
+                # Check if the body is just "raise NotImplementedError"
+                if len(func_def.body) != 1:
+                    # Multi-statement body, skip auto-wiring
+                    continue
+
+                stmt = func_def.body[0]
+                if not isinstance(stmt, ast.Raise):
+                    # Not a raise statement, skip auto-wiring
+                    continue
+
+                # Check if it's raising NotImplementedError
+                if not isinstance(stmt.exc, ast.Name) or stmt.exc.id != "NotImplementedError":
+                    # Not raising NotImplementedError, skip auto-wiring
+                    continue
+            except Exception:
+                # If we can't parse source, skip auto-wiring for safety
                 continue
 
             # Get type hints

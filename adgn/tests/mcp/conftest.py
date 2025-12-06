@@ -12,8 +12,8 @@ import pytest
 from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
-from adgn.mcp.resources.clients import ResourcesClient
 from adgn.mcp.resources.server import make_resources_server
+from adgn.mcp.testing.resources_stubs import ResourcesServerStub
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
 
@@ -63,9 +63,9 @@ async def resources_client(resources_server):
 
 
 @pytest.fixture
-async def typed_resources_client(resources_client):
-    """Typed ResourcesClient wrapping the resources server client."""
-    return ResourcesClient(resources_client)
+async def typed_resources_client(resources_server, resources_client):
+    """Typed stub for the resources server."""
+    return ResourcesServerStub.from_server(resources_server, resources_client)
 
 
 @pytest.fixture
