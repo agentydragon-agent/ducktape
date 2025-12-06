@@ -304,9 +304,8 @@ class AgentContainer:
         await self._stack.__aenter__()
 
         # In-proc Compositor (embedded)
-        comp = Compositor("compositor", eager_open=True)
-        for name, server_cfg in mcp_config.mcpServers.items():
-            await comp.mount_server(name, server_cfg)
+        comp = Compositor(eager_open=True)
+        await comp.mount_servers_from_config(mcp_config)
         # Mount loop control server (agent-only surface)
         loop_server = make_loop_server("loop")
         await comp.mount_inproc("loop", loop_server)
@@ -328,7 +327,7 @@ class AgentContainer:
         comp.add_middleware(approval_engine.gateway)
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
-        await mount_standard_inproc_servers(compositor=comp, mount_resources=True)
+        await mount_standard_inproc_servers(compositor=comp)
 
         return (comp, mcp_client, notif_buffer)
 

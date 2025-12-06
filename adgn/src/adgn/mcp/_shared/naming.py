@@ -18,6 +18,31 @@ def build_mcp_function(server: str, tool: str) -> str:
     return f"{server}_{tool}"
 
 
+def parse_tool_name(name: str) -> tuple[str, str]:
+    """Parse a tool name into (server, tool) tuple.
+
+    Inverse of build_mcp_function(). Expects format: {server}_{tool}.
+    Tool portion may contain underscores.
+
+    Raises:
+        ValueError: If name doesn't contain exactly one underscore separator,
+                   or if either server or tool portion is empty.
+    """
+
+    def _err(detail: str) -> str:
+        return f"Invalid tool name format: {name!r}. {detail}"
+
+    parts = name.split("_", 1)
+    if len(parts) != 2:
+        raise ValueError(_err("Expected 'server_tool'."))
+    server, tool = parts[0], parts[1]
+    if not server:
+        raise ValueError(_err("Server portion is empty."))
+    if not tool:
+        raise ValueError(_err("Tool portion is empty."))
+    return (server, tool)
+
+
 def tool_prefix(server: str) -> str:
     """Return the namespaced prefix for all tools exposed by ``server``."""
     if not server:

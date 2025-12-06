@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 from typing import Annotated
 
 from rich.console import Console
@@ -34,6 +35,7 @@ async def cmd_gepa(
     max_parallelism: Annotated[int, typer.Option(help="Maximum concurrent critic/grader evaluations")] = 20,
     minibatch_size: Annotated[int, typer.Option(help="Number of training examples per reflection iteration")] = 3,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
+    seed: Annotated[int | None, typer.Option(help="Random seed for reproducibility (default: timestamp-based)")] = None,
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.
 
@@ -49,6 +51,12 @@ async def cmd_gepa(
     if initial_prompt is None:
         initial_prompt = "You are a code critic."
         console.print(f"[dim]Using default initial prompt: {initial_prompt}[/dim]")
+
+    # Compute seed (timestamp-based if not provided)
+    actual_seed = seed if seed is not None else int(time.time())
+    console.print(
+        f"[dim]Random seed: {actual_seed} {'(user-provided)' if seed is not None else '(timestamp-based)'}[/dim]"
+    )
 
     console.print("\n[bold cyan]GEPA Optimization Configuration[/bold cyan]")
     console.print(f"  Critic model: {critic_model}")
@@ -83,6 +91,7 @@ async def cmd_gepa(
         minibatch_size=minibatch_size,
         verbose=verbose,
         warm_start=warm_start,
+        seed=actual_seed,
     )
 
     # Save results

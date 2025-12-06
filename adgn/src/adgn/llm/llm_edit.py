@@ -46,7 +46,7 @@ async def _execute(
         return 2
 
     # Folded context: per-agent MCP lifetime + agent lifetime
-    comp = Compositor("compositor")
+    comp = Compositor()
     await comp.mount_inproc(EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME))
     # Normalize CLI strings to adapter-level values (no direct SDK types)
     effort_val: ReasoningEffort | None = None

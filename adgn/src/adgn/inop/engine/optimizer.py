@@ -275,63 +275,67 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
 
     # Build the MCP servers and session handle
     # Build secured in-proc attach via factory and capture the handle directly
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
+        await comp.mount_inproc("prompt_feedback", _server)
+        async with Client(comp) as mcp_client:
+            # Create MiniCodex PE with system prompt at init
+            model = args.pe_model
+            # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
+            agent_description = "a coding agent"
+            task_description = (
+                "- Agent has access to a filesystem and a shell through tools. "
+                "Tasks should be solved by writing code files on disk using these tools, "
+                "not just shown to user in conversation.\n"
+            )
+            system_message = (
+                "You are an expert LLM prompt engineer. "
+                f"Your task is to design the best prompt for a LLM used as "
+                f"{agent_description}.\n"
+                f"{task_description}"
+                "- Agent has a fixed system prompt that teaches it how to use its tools (and other basics).\n"
+                "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
+                "are already correct and additional conflicting instructions could easily make it worse.\n"
+                "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
+                "and you will receive information from these rollouts to help you design a better prompt.\n"
+                "- Your goal is to *find the best performing prompt you can* over *N turns* of (propose prompt1 -> "
+                "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
+                f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
+            )
 
-    comp = Compositor("compositor")
-    _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
-    await comp.mount_inproc("prompt_feedback", _server)
-    async with Client(comp) as mcp_client:
-        # Create MiniCodex PE with system prompt at init
-        model = args.pe_model
-        # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
-        agent_description = "a coding agent"
-        task_description = (
-            "- Agent has access to a filesystem and a shell through tools. "
-            "Tasks should be solved by writing code files on disk using these tools, "
-            "not just shown to user in conversation.\n"
-        )
-        system_message = (
-            "You are an expert LLM prompt engineer. "
-            f"Your task is to design the best prompt for a LLM used as "
-            f"{agent_description}.\n"
-            f"{task_description}"
-            "- Agent has a fixed system prompt that teaches it how to use its tools (and other basics).\n"
-            "- Avoid giving your own instructions on how to use the tools - agent's baked-in tool use instructions "
-            "are already correct and additional conflicting instructions could easily make it worse.\n"
-            "- Each turn, you will propose a prompt. The agent will be run with that prompt on several tasks, "
-            "and you will receive information from these rollouts to help you design a better prompt.\n"
-            "- Your goal is to *find the best performing prompt you can* over *N turns* of (propose prompt1 -> "
-            "receive feedback1 -> propose prompt2 -> ...). You will be scored by the max score, not the last score.\n"
-            f"- The feedback will take the form of: {feedback_provider.verbal_description()}\n"
-        )
+            # Write PE transcripts into the main optimization output directory
+            run_dir = args.base_dir
+            run_dir.mkdir(parents=True, exist_ok=True)
+            # TODO(mpokorny): AbortIf(max_iters) and current ProposePromptNTimes can be exceeded under
+            # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
+            # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
+            pe = await MiniCodex.create(
+                mcp_client=mcp_client,
+                client=model,
+                system=system_message,
+                handlers=[
+                    ProposePromptNTimes(args.iterations),
+                    TranscriptHandler(events_path=run_dir / "events.jsonl"),
+                ],
+                tool_policy=RequireAnyTool(),
+            )
 
-        # Write PE transcripts into the main optimization output directory
-        run_dir = args.base_dir
-        run_dir.mkdir(parents=True, exist_ok=True)
-        # TODO(mpokorny): AbortIf(max_iters) and current ProposePromptNTimes can be exceeded under
-        # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
-        # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
-        pe = await MiniCodex.create(
-            mcp_client=mcp_client,
-            client=model,
-            system=system_message,
-            handlers=[ProposePromptNTimes(args.iterations), TranscriptHandler(events_path=run_dir / "events.jsonl")],
-            tool_policy=RequireAnyTool(),
-        )
+            # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
+            await pe.run(user_text="Start prompt optimization.")
 
-        # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
-        await pe.run(user_text="Start prompt optimization.")
+            # Read final state directly (in-proc) for logging only
+            last_prompt = state.last_prompt or ""
+            last_feedback = state.last_feedback or ""
 
-        # Read final state directly (in-proc) for logging only
-        last_prompt = state.last_prompt or ""
-        last_feedback = state.last_feedback or ""
-
-        logger.info(
-            "Optimization complete (MCP)",
-            extra={
-                "last_prompt_preview": (last_prompt or "")[:160],
-                "last_feedback_preview": (last_feedback or "")[:160],
-            },
-        )
+            logger.info(
+                "Optimization complete (MCP)",
+                extra={
+                    "last_prompt_preview": (last_prompt or "")[:160],
+                    "last_feedback_preview": (last_feedback or "")[:160],
+                },
+            )
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
     return args.base_dir
 
 

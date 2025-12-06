@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 import anyio
 from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
 
@@ -178,6 +179,51 @@ def _tool_choice_from_policy(policy: ToolPolicy) -> ToolChoice:
 
 type Message = UserMessage | AssistantMessage | SystemMessage
 type TranscriptItem = Message | FunctionCallItem | ReasoningItem | ToolCallOutput
+
+
+def _sanitize_tool_result(result: mcp_types.CallToolResult) -> mcp_types.CallToolResult:
+    """Remove null bytes from tool results, prepending warning if any found.
+
+    PostgreSQL JSONB doesn't support null bytes (from tools like `rg -0`).
+    """
+    null_count = 0
+
+    def sanitize(value: Any) -> Any:
+        nonlocal null_count
+        if isinstance(value, str):
+            if "\x00" in value:
+                null_count += value.count("\x00")
+                return value.replace("\x00", "")
+            return value
+        if isinstance(value, dict):
+            return {k: sanitize(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [sanitize(item) for item in value]
+        return value
+
+    # Sanitize all content
+    new_content = [
+        mcp_types.TextContent(type="text", text=sanitize(b.text) if b.text else b.text)
+        if isinstance(b, mcp_types.TextContent)
+        else b
+        for b in (result.content or [])
+    ]
+    new_structured = sanitize(result.structuredContent) if result.structuredContent else None
+
+    # Prepend warning if needed
+    if null_count > 0:
+        warning = f"NOTE: {null_count} null byte(s) removed from tool output\n\n"
+        if new_content and isinstance(new_content[0], mcp_types.TextContent):
+            new_content[0] = mcp_types.TextContent(type="text", text=warning + (new_content[0].text or ""))
+        else:
+            new_content.insert(0, mcp_types.TextContent(type="text", text=warning))
+
+    return mcp_types.CallToolResult(
+        content=new_content or result.content,
+        structuredContent=new_structured,
+        isError=result.isError,
+        _meta=result.meta,
+    )
 
 
 class MiniCodex:
@@ -364,12 +410,19 @@ class MiniCodex:
                 return ToolCallOutcome(result=copy.deepcopy(local_map[call_id]))
 
             # Invoke via Policy Gateway client; do not swallow exceptions.
-            # Parse arguments strictly; invalid JSON/object shape is a hard error.
+            # Parse arguments strictly; invalid JSON/object shape raises ToolError.
             args: dict[str, Any] = {}
             if args_json:
-                val = json.loads(args_json)
+                try:
+                    val = json.loads(args_json)
+                except json.JSONDecodeError as e:
+                    preview = args_json[:200] if len(args_json) <= 200 else args_json[:200] + "..."
+                    raise ToolError(
+                        f"Invalid JSON in tool call arguments for {function_call.name!r}: {e}. "
+                        f"Arguments preview: {preview!r}"
+                    ) from e
                 if not isinstance(val, dict):
-                    raise ValueError("tool arguments must be a JSON object")
+                    raise ToolError("tool arguments must be a JSON object")
                 args = val
             raw = await self._mcp_client.call_tool(function_call.name, args, raise_on_error=False)
             # Convert FastMCP CallToolResult to Pydantic mcp.types.CallToolResult
@@ -380,6 +433,15 @@ class MiniCodex:
         else:
             await self._run_tool_calls_sequential(calls, function_calls, _invoke)
         self.pending_function_calls.clear()
+
+    @staticmethod
+    def _tool_error_to_outcome(e: ToolError) -> ToolCallOutcome:
+        """Convert ToolError to an error tool result outcome."""
+        error_msg = str(e) if str(e) else "Tool error"
+        error_result = mcp_types.CallToolResult(
+            content=[mcp_types.TextContent(type="text", text=f"Tool call failed: {error_msg}")], isError=True
+        )
+        return ToolCallOutcome(result=error_result)
 
     async def _run_tool_calls_parallel(
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
@@ -392,11 +454,14 @@ class MiniCodex:
 
             async def runner(fc: FunctionCallItem, aj: str | None) -> None:
                 nonlocal abort_triggered
+                call_id = _require_call_id(fc)
                 try:
                     outcome = await invoker(fc, aj)
                 except cancelled_exc:
                     return
-                call_id = _require_call_id(fc)
+                except ToolError as e:
+                    outcome = self._tool_error_to_outcome(e)
+
                 results[call_id] = outcome
                 if outcome.was_aborted:
                     abort_triggered = True
@@ -423,7 +488,11 @@ class MiniCodex:
         self, calls: list[tuple[FunctionCallItem, str | None]], function_calls: list[FunctionCallItem], invoker
     ) -> None:
         for i, (function_call, args_json) in enumerate(calls):
-            outcome = await invoker(function_call, args_json)
+            try:
+                outcome = await invoker(function_call, args_json)
+            except ToolError as e:
+                outcome = self._tool_error_to_outcome(e)
+
             self._emit_tool_result(function_call, outcome.result)
             if outcome.was_aborted:
                 for remaining in function_calls[i + 1 :]:
@@ -651,10 +720,15 @@ class MiniCodex:
         )
 
     def _emit_tool_result(self, function_call: FunctionCallItem, result: mcp_types.CallToolResult) -> None:
-        """Emit a ToolCallOutput event and notify handlers."""
+        """Emit a ToolCallOutput event and notify handlers.
 
+        Sanitizes null bytes from tool results before emitting (PostgreSQL JSONB doesn't support them).
+        Prepends a warning to the output if any null bytes were found.
+        """
         call_id = _require_call_id(function_call)
-        event = ToolCallOutput(call_id=call_id, result=copy.deepcopy(result))
+        # Sanitize null bytes and add warning if present
+        sanitized = _sanitize_tool_result(result)
+        event = ToolCallOutput(call_id=call_id, result=copy.deepcopy(sanitized))
         self._transcript.append(event)
         for h in self._handlers:
             h.on_tool_result_event(event)

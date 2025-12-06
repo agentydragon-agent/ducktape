@@ -494,10 +494,21 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         fresh_results: dict[int, EvaluationResult] = {}
         if uncached_inputs:
             tasks = [
-                self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
+                asyncio.create_task(
+                    self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
+                )
                 for _, specimen_input in uncached_inputs
             ]
-            evaluated = await asyncio.gather(*tasks)
+            try:
+                evaluated = await asyncio.gather(*tasks)
+            except (KeyboardInterrupt, asyncio.CancelledError):
+                # Cancel all tasks on interrupt to ensure clean shutdown
+                for task in tasks:
+                    if not task.done():
+                        task.cancel()
+                # Wait for all tasks to actually cancel
+                await asyncio.gather(*tasks, return_exceptions=True)
+                raise
 
             for (batch_idx, _), result in zip(uncached_inputs, evaluated, strict=False):
                 fresh_results[batch_idx] = result
@@ -661,6 +672,7 @@ async def optimize_with_gepa(
     use_merge: bool = True,
     max_merge_invocations: int = 5,
     merge_val_overlap_floor: int = 5,
+    seed: int | None = None,
 ) -> tuple[str, GEPAResult[CriticOutput, Any]]:
     """Optimize critic prompt using GEPA.
 
@@ -685,6 +697,7 @@ async def optimize_with_gepa(
         use_merge: Enable genetic merging of successful variants (default: True)
         max_merge_invocations: Maximum number of merge attempts (default: 5)
         merge_val_overlap_floor: Minimum validation overlap for merge candidates (default: 5)
+        seed: Random seed for reproducibility (default: None, uses GEPA default of 0)
 
     Returns:
         (optimized_prompt, gepa_results) tuple
@@ -698,6 +711,8 @@ async def optimize_with_gepa(
     logger.info(f"Minibatch size: {minibatch_size}")
     logger.info(f"Initial prompt length: {len(initial_prompt)} chars")
     logger.info(f"Warm start: {warm_start}")
+    if seed is not None:
+        logger.info(f"Random seed: {seed}")
 
     # Load datasets (always uses critic scopes from database)
     logger.info("Loading datasets...")
@@ -757,6 +772,7 @@ async def optimize_with_gepa(
         use_merge=use_merge,
         max_merge_invocations=max_merge_invocations,
         merge_val_overlap_floor=merge_val_overlap_floor,
+        seed=seed if seed is not None else 0,
     )
 
     optimized_prompt = result.best_candidate["system_prompt"]

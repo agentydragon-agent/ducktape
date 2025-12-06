@@ -74,7 +74,8 @@ class MiniCodexRunner(AgentRunner):
         server_factories = self._build_mcp_server_factories(setup)
 
         self._exit_stack = AsyncExitStack()
-        comp = Compositor("compositor")
+        # Enter Compositor into exit stack for proper cleanup
+        comp = await self._exit_stack.enter_async_context(Compositor())
         for name, factory in server_factories.items():
             await comp.mount_inproc(name, factory(None))
         # Per-run transcript directory

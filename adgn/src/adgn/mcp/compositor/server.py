@@ -305,6 +305,63 @@ class Compositor(FastMCP):
                 mount.stack = None
         await self._notify_mount_listeners(name, MountEvent.UNMOUNTED)
 
+    async def mount_servers_from_config(
+        self, config: MCPConfig, *, on_error: str = "raise"
+    ) -> dict[str, Exception | None]:
+        """Mount multiple servers from config in parallel.
+
+        Args:
+            config: MCPConfig object with mcpServers dict
+            on_error: How to handle mount errors:
+                - "raise": Raise on first error (default)
+                - "collect": Continue mounting others, return errors dict
+
+        Returns:
+            Dict mapping server name to error (None if successful)
+        """
+        servers = config.mcpServers
+        if not servers:
+            return {}
+
+        # Mount all servers in parallel
+        async def _mount_one(name: str, spec: MCPServerTypes) -> tuple[str, Exception | None]:
+            try:
+                await self.mount_server(name, spec)
+                return (name, None)
+            except Exception as e:
+                if on_error == "raise":
+                    raise
+                return (name, e)
+
+        results = await asyncio.gather(*[_mount_one(name, spec) for name, spec in servers.items()])
+        return dict(results)
+
+    # ---- Lifecycle management (async context manager) ---------------------
+
+    async def __aenter__(self):
+        """Support async context manager protocol."""
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup all non-pinned servers on exit."""
+        await self.close()
+        return False
+
+    async def close(self):
+        """Unmount all non-pinned servers and cleanup their resources.
+
+        Pinned servers (e.g., compositor_meta, resources) are left mounted.
+        Logs warnings for cleanup failures but does not raise.
+        """
+        async with self._lock:
+            names = [name for name, mount in self._mounts.items() if not mount.pinned]
+
+        for name in names:
+            try:
+                await self.unmount_server(name)
+            except Exception as e:
+                logger.warning(f"Failed to unmount server '{name}' during close: {e}")
+
     # Python-only mount listing and server_status removed — prefer resources via compositor_meta
 
     # ---- Aggregated surface (protocol handlers) ----------------------------
@@ -375,6 +432,5 @@ async def build_compositor(
     for running it (e.g., via run_streamable_http_async()).
     """
     comp = Compositor(name=name, instructions=instructions, eager_open=eager_open)
-    for n, s in cfg.mcpServers.items():
-        await comp.mount_server(n, s)
+    await comp.mount_servers_from_config(cfg)
     return comp

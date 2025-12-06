@@ -246,10 +246,9 @@ async def _setup_pg_compositor(
             policy_source=approve_all_policy_text(),
         )
 
-    await comp.mount_inproc("reader", policy_engine.reader)
     await _mount_servers(comp, servers)
     comp.add_middleware(policy_engine.gateway)
-    await mount_standard_inproc_servers(compositor=comp, mount_resources=False)
+    await mount_standard_inproc_servers(compositor=comp, policy_engine=policy_engine)
 
     return comp, policy_engine
 
@@ -268,21 +267,25 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
         comp, _ = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, test_agent_id)
-        async with Client(comp) as sess:
-            yield sess
+        try:
+            async with Client(comp) as sess:
+                yield sess
+        finally:
+            await comp.close()
 
     return _open
 
 
 @pytest.fixture
 def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
-    """Async helper with full access to compositor and engine.
+    """Async helper with full access to client and policy engine.
 
     Usage:
-        async with make_pg_compositor(servers, policy_engine=engine) as (sess, comp, engine):
+        async with make_pg_compositor(servers, policy_engine=engine) as (sess, engine):
             ...
 
     For tests that only need the client, prefer make_pg_client instead.
+    The compositor is always the same shared instance and doesn't need to be in the tuple.
     """
 
     @asynccontextmanager
@@ -290,8 +293,11 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
         comp, engine = await _setup_pg_compositor(
             servers, policy_engine, sqlite_persistence, docker_client, test_agent_id
         )
-        async with Client(comp) as sess:
-            yield sess, comp, engine
+        try:
+            async with Client(comp) as sess:
+                yield sess, engine
+        finally:
+            await comp.close()
 
     return _open
 
@@ -320,20 +326,30 @@ def make_compositor():
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs):
-        comp = Compositor("comp")
-        await _mount_servers(comp, servers)
-        async with Client(comp) as sess:
-            yield sess, comp
+        async with Compositor("comp") as comp:
+            await _mount_servers(comp, servers)
+            async with Client(comp) as sess:
+                yield sess, comp
 
     return _open
 
 
+def _extract_pg_client(compositor_result):
+    """Extract just the client from a pg_compositor result tuple.
+
+    pg_compositor fixtures yield (client, policy_engine).
+    This helper extracts just the client for convenience fixtures.
+    """
+    client, _policy_engine = compositor_result
+    return client
+
+
 @pytest.fixture
 async def pg_compositor_box(make_pg_compositor):
-    """Async fixture with boxed Docker exec server and policy gateway.
+    """Async fixture with box Docker exec server and policy gateway.
 
     Mounts a per-session container exec server under name "box" with policy gateway.
-    Yields (client, compositor, policy_engine).
+    Yields (client, policy_engine).
     """
     server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
     async with make_pg_compositor({"box": server}) as result:
@@ -342,19 +358,15 @@ async def pg_compositor_box(make_pg_compositor):
 
 @pytest.fixture
 async def pg_client_box(pg_compositor_box):
-    """MCP client for boxed Docker exec server (convenience extractor).
-
-    For tests that only need the client, not the full compositor/engine.
-    """
-    client, _compositor, _policy_engine = pg_compositor_box
-    return client
+    """MCP client for box Docker exec server (convenience extractor)."""
+    return _extract_pg_client(pg_compositor_box)
 
 
 @pytest.fixture
 async def pg_compositor_echo(echo_spec, make_pg_compositor):
     """Async fixture with echo server and policy gateway.
 
-    Yields (client, compositor, policy_engine).
+    Yields (client, policy_engine).
     """
     async with make_pg_compositor(echo_spec) as result:
         yield result
@@ -362,12 +374,8 @@ async def pg_compositor_echo(echo_spec, make_pg_compositor):
 
 @pytest.fixture
 async def pg_client_echo(pg_compositor_echo):
-    """MCP client for echo server (convenience extractor).
-
-    For tests that only need the client, not the full compositor/engine.
-    """
-    client, _compositor, _policy_engine = pg_compositor_echo
-    return client
+    """MCP client for echo server (convenience extractor)."""
+    return _extract_pg_client(pg_compositor_echo)
 
 
 @pytest.fixture
@@ -380,11 +388,11 @@ def make_buffered_client():
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs):
-        comp = Compositor("comp")
-        await _mount_servers(comp, servers)
-        buf = NotificationsBuffer(compositor=comp)
-        async with Client(comp, message_handler=buf.handler) as sess:
-            yield sess, comp, buf
+        async with Compositor("comp") as comp:
+            await _mount_servers(comp, servers)
+            buf = NotificationsBuffer(compositor=comp)
+            async with Client(comp, message_handler=buf.handler) as sess:
+                yield sess, comp, buf
 
     return _open
 

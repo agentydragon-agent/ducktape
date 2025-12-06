@@ -446,51 +446,54 @@ async def run_critic(
     critic_state = CriticSubmitState()
     # Use ephemeral=False so critic can persist temporary analysis artifacts, checklists, and reasoning
     wiring = properties_docker_spec(content_root, mount_properties=mount_properties, ephemeral=False)
-    comp = Compositor("compositor")
-    runtime_server = await wiring.attach(comp)
 
-    # Mount critic submit server
-    critic_server = NotifyingFastMCP(CRITIC_SUBMIT_SERVER_NAME, instructions=CRITIC_MCP_INSTRUCTIONS)
-    build_critic_submit_tools(critic_server, critic_state)
-    await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, critic_server)
+    # Use Compositor as async context manager to ensure cleanup
+    async with Compositor() as comp:
+        runtime_server = await wiring.attach(comp)
 
-    # Set up handlers
-    builder = TypedBootstrapBuilder.for_server(runtime_server)
-    bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, builder)
-    bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+        # Mount critic submit server
+        critic_server = NotifyingFastMCP(CRITIC_SUBMIT_SERVER_NAME, instructions=CRITIC_MCP_INSTRUCTIONS)
+        build_critic_submit_tools(critic_server, critic_state)
+        await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, critic_server)
 
-    # Build servers dict for handlers
-    servers = {wiring.server_name: runtime_server, CRITIC_SUBMIT_SERVER_NAME: critic_server}
+        # Set up handlers
+        builder = TypedBootstrapBuilder.for_server(runtime_server)
+        bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, builder)
+        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-    def _ready_state() -> bool:
-        return (critic_state.result is not None) or (critic_state.error is not None)
+        # Build servers dict for handlers
+        servers = {wiring.server_name: runtime_server, CRITIC_SUBMIT_SERVER_NAME: critic_server}
 
-    handlers: list = [
-        bootstrap,
-        *build_props_handlers(
-            transcript_id=transcript_id,
-            verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
-            if verbose
-            else None,
-            servers=servers,
-        ),
-        AbortIf(should_abort=_ready_state),
-        *extra_handlers,
-    ]
+        def _ready_state() -> bool:
+            return (critic_state.result is not None) or (critic_state.error is not None)
 
-    # Run critic agent
-    async with Client(comp) as mcp_client:
-        await mount_standard_inproc_servers(compositor=comp)
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=system_prompt,
-            client=client,
-            handlers=handlers,
-            parallel_tool_calls=True,
-            tool_policy=RequireAnyTool(),
-            reasoning_summary=ReasoningSummary.detailed,
-        )
-        await agent.run(user_prompt)
+        handlers: list = [
+            bootstrap,
+            *build_props_handlers(
+                transcript_id=transcript_id,
+                verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                if verbose
+                else None,
+                servers=servers,
+            ),
+            AbortIf(should_abort=_ready_state),
+            *extra_handlers,
+        ]
+
+        # Run critic agent
+        async with Client(comp) as mcp_client:
+            await mount_standard_inproc_servers(compositor=comp)
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=system_prompt,
+                client=client,
+                handlers=handlers,
+                parallel_tool_calls=True,
+                tool_policy=RequireAnyTool(),
+                reasoning_summary=ReasoningSummary.detailed,
+            )
+            await agent.run(user_prompt)
+    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     # Convert state to output
     if critic_state.error is not None:

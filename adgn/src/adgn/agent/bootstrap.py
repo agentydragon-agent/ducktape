@@ -12,6 +12,7 @@ import json
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
+from pydantic.networks import AnyUrl
 
 from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME
 from adgn.mcp._shared.naming import build_mcp_function
@@ -171,11 +172,11 @@ class TypedBootstrapBuilder:
 
 
 def read_resource_call(
-    builder: TypedBootstrapBuilder, server: str, uri: str, *, max_bytes: int = 65536
+    builder: TypedBootstrapBuilder, server: str, uri: AnyUrl | str, *, max_bytes: int = 65536
 ) -> FunctionCallItem:
     """Bootstrap helper for resources.read."""
     return builder.call(
-        "resources", "read", ResourcesReadArgs(server=server, uri=uri, start_offset=0, max_bytes=max_bytes)
+        "resources", "read", ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes)
     )
 
 

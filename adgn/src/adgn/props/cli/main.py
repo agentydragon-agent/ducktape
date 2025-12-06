@@ -35,6 +35,7 @@ from adgn.props.cli.cmd_db import cmd_db_recreate, cmd_sync
 from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
 from adgn.props.cli.cmd_snapshot import cmd_snapshot_list, snapshot_capture_ducktape, snapshot_dump, snapshot_exec
+from adgn.props.cli.cmd_stats import cmd_stats
 from adgn.props.cli.decorators import async_run
 from adgn.props.cli.shared import BuildOptions, build_cmd, run_check_minicodex_async, save_prompt_to_tmp
 from adgn.props.cluster_unknowns import cluster_unknowns
@@ -432,6 +433,9 @@ app.command("detector-coverage")(cmd_detector_coverage)
 # GEPA command
 app.command("gepa")(cmd_gepa)
 
+# Stats command
+app.command("stats")(cmd_stats)
+
 
 # ---------- Shared helpers for run ----------
 
@@ -535,7 +539,7 @@ async def _exec_agent(
     dest_root = Path(tempfile.gettempdir()) / "adgn_runs" / label / ts
     dest_root.mkdir(parents=True, exist_ok=True)
 
-    comp = Compositor("compositor")
+    comp = Compositor()
     await wiring.attach(comp)
     handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(events_path=dest_root / "events.jsonl")]
     print(f"[run] Transcript: {dest_root}")

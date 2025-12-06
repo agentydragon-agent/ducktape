@@ -424,57 +424,59 @@ async def run_prompt_optimizer(
 
         logger.info(f"Created PromptOptimizationRun: {prompt_optimization_run_id}")
 
-        comp = Compositor("compositor")
-        runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
+        # Use Compositor as async context manager to ensure cleanup
+        async with Compositor() as comp:
+            runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
 
-        # Create and mount prompt_eval server, keeping reference for introspection
-        prompt_eval_server = await build_server(
-            client=build_client(model),
-            hydrator=hydrator,
-            name=PROMPT_EVAL_SERVER_NAME,
-            prompt_optimization_run_id=prompt_optimization_run_id,
-            workspace_root=session_dir,
-            verbose=verbose,
-        )
-        await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
+            # Create and mount prompt_eval server, keeping reference for introspection
+            prompt_eval_server = await build_server(
+                client=build_client(model),
+                hydrator=hydrator,
+                name=PROMPT_EVAL_SERVER_NAME,
+                prompt_optimization_run_id=prompt_optimization_run_id,
+                workspace_root=session_dir,
+                verbose=verbose,
+            )
+            await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
 
-        # Collect servers for tool schema extraction
-        servers = {wiring.server_name: runtime_server}
+            # Collect servers for tool schema extraction
+            servers = {wiring.server_name: runtime_server}
 
-        user = f"""Your budget is: ${budget:.2f}.
+            user = f"""Your budget is: ${budget:.2f}.
 
 Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
 Prioritize recall first, then precision.
 """
 
-        # Generate transcript ID for database event tracking
-        transcript_id = uuid4()
-        logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
+            # Generate transcript ID for database event tracking
+            transcript_id = uuid4()
+            logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
 
-        # Use the prompt_eval server reference for introspection
-        builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
-        bootstrap_calls = make_po_bootstrap_calls(builder)
-        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+            # Use the prompt_eval server reference for introspection
+            builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
+            bootstrap_calls = make_po_bootstrap_calls(builder)
+            bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-        handlers: list = [
-            bootstrap,
-            *build_props_handlers(
-                transcript_id=transcript_id, verbose_prefix="[OPTIMIZER] " if verbose else None, servers=servers
-            ),
-        ]
-        async with Client(comp) as mcp_client:
-            await mount_standard_inproc_servers(compositor=comp)
-            agent = await MiniCodex.create(
-                mcp_client=mcp_client,
-                system=system,
-                client=build_client(model),
-                handlers=handlers,
-                parallel_tool_calls=True,
-                reasoning_summary=ReasoningSummary.detailed,
-                tool_policy=RequireAnyTool(),
-            )
+            handlers: list = [
+                bootstrap,
+                *build_props_handlers(
+                    transcript_id=transcript_id, verbose_prefix="[OPTIMIZER] " if verbose else None, servers=servers
+                ),
+            ]
+            async with Client(comp) as mcp_client:
+                await mount_standard_inproc_servers(compositor=comp)
+                agent = await MiniCodex.create(
+                    mcp_client=mcp_client,
+                    system=system,
+                    client=build_client(model),
+                    handlers=handlers,
+                    parallel_tool_calls=True,
+                    reasoning_summary=ReasoningSummary.detailed,
+                    tool_policy=RequireAnyTool(),
+                )
 
-            await agent.run(user)
+                await agent.run(user)
+        # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
         logger.info(f"Optimization session complete. Results in: {session_dir}")
         # NOTE: Cost tracking removed pending refactor - pe_state no longer available

@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties
+from hamcrest.core.base_matcher import BaseMatcher
+from hamcrest.core.description import Description
+from mcp import types as mcp_types
 
 # ------------------------
 # Hamcrest matcher helpers
@@ -33,6 +36,57 @@ def assert_payloads_have(payloads: list[object], *matchers):
 
 # Convenience alias for substring assertions
 contains_err = contains_string
+
+
+# ------------------------
+# MCP tool result matchers
+# ------------------------
+
+
+class HasErrorText(BaseMatcher):
+    """Matcher for CallToolResult that verifies it's an error with TextContent."""
+
+    def __init__(self, text_matcher):
+        self.text_matcher = text_matcher
+
+    def _matches(self, result):
+        """Match CallToolResult with isError=True and TextContent."""
+        if not isinstance(result, mcp_types.CallToolResult):
+            return False
+        if not result.isError:
+            return False
+        if not result.content or len(result.content) == 0:
+            return False
+        content_item = result.content[0]
+        if not isinstance(content_item, mcp_types.TextContent):
+            return False
+        return self.text_matcher.matches(content_item.text)
+
+    def describe_to(self, description: Description):
+        description.append_text("error CallToolResult with text content matching ")
+        self.text_matcher.describe_to(description)
+
+    def describe_mismatch(self, result, mismatch_description: Description):
+        if not isinstance(result, mcp_types.CallToolResult):
+            mismatch_description.append_text("was not a CallToolResult")
+            return
+        if not result.isError:
+            mismatch_description.append_text("was not an error (isError=False)")
+            return
+        if not result.content or len(result.content) == 0:
+            mismatch_description.append_text("had empty content")
+            return
+        content_item = result.content[0]
+        if not isinstance(content_item, mcp_types.TextContent):
+            mismatch_description.append_text(f"first content was {type(content_item).__name__}, not TextContent")
+            return
+        mismatch_description.append_text("error text ")
+        self.text_matcher.describe_mismatch(content_item.text, mismatch_description)
+
+
+def tool_call_with_error_text(text_matcher):
+    """Match CallToolResult with isError=True and text content matching the given matcher."""
+    return HasErrorText(text_matcher)
 
 
 # ------------------------

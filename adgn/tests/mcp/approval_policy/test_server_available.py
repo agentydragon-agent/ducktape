@@ -14,13 +14,9 @@ from tests.support.steps import AssistantMessage
 async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor, make_step_runner):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
-    # make_pg_compositor creates a PolicyEngine with reader auto-mounted;
-    # we just need to mount the proposer separately
+    # make_pg_compositor creates a PolicyEngine with all servers (reader, proposer, admin) already mounted
     servers = dict(echo_spec)
-    async with make_pg_compositor(servers) as (mcp_client, comp, policy_engine):
-        # Mount the proposer server under the new naming scheme
-        await comp.mount_inproc("policy_proposer", policy_engine.policy_proposer)
-
+    async with make_pg_compositor(servers) as (mcp_client, policy_engine):
         # Create a sequence where agent lists available tools
         runner = make_step_runner(steps=[AssistantMessage("I can see the approval tools")])
         client = make_mock(runner.handle_request_async)

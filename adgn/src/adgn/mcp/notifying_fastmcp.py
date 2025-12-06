@@ -17,6 +17,7 @@ from mcp.server.lowlevel.server import InitializationOptions, NotificationOption
 from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
 from pydantic import BaseModel
+from pydantic.networks import AnyUrl
 
 from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
 from adgn.mcp._shared.urls import ANY_URL
@@ -36,7 +37,7 @@ class _CapturingServer(LowLevelServer):
         fastmcp: FastMCP,  # Required positional arg in fastmcp 2.13+
         *a,
         on_session_created: Callable[[ServerSession], None] | None = None,
-        on_session_created_async: Callable[[ServerSession], Awaitable[None]] | None = None,
+        on_session_created_async: (Callable[[ServerSession], Awaitable[None]] | None) = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
         **kw,
     ):
@@ -131,9 +132,8 @@ class NotifyingFastMCP(FlatModelFastMCP):
         self._pending_uris: list[str] = []
         self._pending_list_changed: bool = False
         self._experimental_capabilities = experimental_capabilities or {}
-        # Replace the low-level server with a capturing variant and re-register handlers
-        prev_lifespan = self._mcp_server.lifespan
 
+        # Replace the low-level server with a capturing variant and re-register handlers
         async def _on_created(sess: ServerSession) -> None:
             # Register and flush any queued notifications
             self._sessions.add(sess)
@@ -150,7 +150,7 @@ class NotifyingFastMCP(FlatModelFastMCP):
             instructions=self.instructions,
             on_session_created=_adapter,
             on_session_created_async=_on_created,
-            lifespan=prev_lifespan,
+            lifespan=self._mcp_server.lifespan,
             experimental_capabilities=self._experimental_capabilities,
         )
         # Replace low-level server with our capturing variant
@@ -159,18 +159,16 @@ class NotifyingFastMCP(FlatModelFastMCP):
         self._setup_handlers()
 
     # ---- Broadcast API (can be called outside request scope) ----
-    async def broadcast_resource_updated(self, uri: str) -> None:
+    async def broadcast_resource_updated(self, uri: AnyUrl | str) -> None:
         # If no sessions yet, queue and return
-        sessions = [s for s in list(self._sessions) if s is not None]
-        if not sessions:
+        if not self._sessions:
             self._pending_uris.append(uri)
             return
+        sessions = [s for s in self._sessions if s is not None]
         # Send to all current sessions; prune failures
-
         logger.debug("broadcast_resource_updated: uri=%s sessions=%d", uri, len(sessions))
-        uri_value = ANY_URL.validate_python(uri)
-        send_tasks = [s.send_resource_updated(uri_value) for s in sessions]
-        results = await asyncio.gather(*send_tasks, return_exceptions=True)
+        uri_value = uri if isinstance(uri, AnyUrl) else ANY_URL.validate_python(uri)
+        results = await asyncio.gather(*[s.send_resource_updated(uri_value) for s in sessions], return_exceptions=True)
         logger.debug("broadcast done: results=%s", [repr(r) for r in results])
         # Best-effort: drop sessions that errored
         for s, r in zip(sessions, results, strict=False):
@@ -180,22 +178,18 @@ class NotifyingFastMCP(FlatModelFastMCP):
 
     async def flush_pending(self) -> None:
         """Send any queued URIs to current sessions (if any)."""
-        if not self._pending_uris:
-            # fall through to possibly flush list_changed
-            pass
-        sessions = [s for s in list(self._sessions) if s is not None]
-        if not sessions:
+        if not self._sessions:
             return
+        sessions = [s for s in self._sessions if s is not None]
         uris = self._pending_uris[:]
         self._pending_uris.clear()
-        tasks: list[Awaitable[Any]] = []
-        if uris:
-            tasks.extend(s.send_resource_updated(ANY_URL.validate_python(uri)) for s in sessions for uri in uris)
+        tasks: list[Awaitable[Any]] = [
+            s.send_resource_updated(ANY_URL.validate_python(uri)) for s in sessions for uri in uris
+        ]
         if self._pending_list_changed:
             self._pending_list_changed = False
             tasks.extend(s.send_resource_list_changed() for s in sessions)
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     async def broadcast_resource_list_changed(self) -> None:
         """Notify clients that the server's resource list changed."""
