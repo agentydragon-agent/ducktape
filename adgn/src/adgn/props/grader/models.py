@@ -220,7 +220,12 @@ class CanonicalTPCoverage(BaseModel):
     )
 
     rationale: Rationale = Field(
-        description="Explanation of coverage decision. For matches: why semantically equivalent. For no-match: what was closest and why insufficient."
+        description=(
+            "Explanation of coverage decision with code references. "
+            "For matches: why semantically equivalent (include code inspection details if line ranges differ). "
+            "For partial coverage: what was covered and what was missed. "
+            "For no-match: what was closest and why insufficient."
+        )
     )
 
     model_config = ConfigDict(extra="forbid")
@@ -264,14 +269,22 @@ class NovelIssueReasoning(BaseModel):
     """Rationale for novel aspects beyond matched canonicals/FPs."""
 
     rationale: Rationale = Field(
-        description="Explanation of novel aspects. For pure novel: why it doesn't match anything. For hybrid: what's novel beyond the matched canonical(s)."
+        description=(
+            "Explanation of novel aspects with code references. "
+            "For pure novel: why it doesn't match anything (reference inspected code locations). "
+            "For hybrid: what's novel beyond the matched canonical(s)."
+        )
     )
 
     model_config = ConfigDict(extra="forbid")
 
 
 class ReportedIssueRatios(BaseModel):
-    """Weighted ratios {tp, fp, unlabeled} in [0,1], must sum to ~1.0."""
+    """Weighted ratios {tp, fp, unlabeled} in [0,1], must sum to ~1.0.
+
+    Note: This model should only be instantiated when there are actually reported issues.
+    For empty critiques (no issues reported), use None instead of creating a zero-valued instance.
+    """
 
     tp: float = Field(..., ge=0.0, le=1.0, description="Ratio of reported issue weight that matches canonical TPs")
 
@@ -288,13 +301,18 @@ class ReportedIssueRatios(BaseModel):
 
     @model_validator(mode="after")
     def validate_ratios_sum(self) -> ReportedIssueRatios:
-        """Validate that ratios sum to approximately 1.0."""
-        if not (
-            1.0 - RATIO_SUM_TOLERANCE <= (total := self.tp + self.fp + self.unlabeled) <= 1.0 + RATIO_SUM_TOLERANCE
-        ):
+        """Validate that ratios sum to approximately 1.0.
+
+        Note: This validator does not allow all-zero ratios. For empty critiques,
+        reported_issue_ratios should be None, not ReportedIssueRatios(0, 0, 0).
+        """
+        total = self.tp + self.fp + self.unlabeled
+
+        if not (1.0 - RATIO_SUM_TOLERANCE <= total <= 1.0 + RATIO_SUM_TOLERANCE):
             raise ValueError(
                 f"Ratios must sum to ~1.0, got {total:.3f} "
-                f"(tp={self.tp:.3f}, fp={self.fp:.3f}, unlabeled={self.unlabeled:.3f})"
+                f"(tp={self.tp:.3f}, fp={self.fp:.3f}, unlabeled={self.unlabeled:.3f}). "
+                f"For empty critiques with no reported issues, use None instead of zero-valued ratios."
             )
         return self
 
@@ -304,6 +322,91 @@ class GradeSubmitInput(BaseModel):
 
     Validation enforces completeness. Weight issues fractionally by severity/size.
     Put reasoning in narrowest applicable field; avoid duplication.
+
+    Examples:
+
+    Example A — One input issue spans multiple canonical items (C1, C2):
+    {
+      "canonical_tp_coverage": {
+        "C1": {"covered_by": {"I1": 1.0}, "recall_credit": 1.0, "rationale": "..."},
+        "C2": {"covered_by": {"I1": 1.0}, "recall_credit": 1.0, "rationale": "..."}
+      },
+      "canonical_fp_coverage": {},
+      "novel_critique_issues": {},
+      "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
+      "recall": 1.0,
+      "summary": "..."
+    }
+
+    Example B — Input overlaps TP and FP (hybrid):
+    {
+      "canonical_tp_coverage": {
+        "C1": {"covered_by": {"I1": 1.0}, "recall_credit": 1.0, "rationale": "..."}
+      },
+      "canonical_fp_coverage": {
+        "F1": {"covered_by": ["I1"], "rationale": "..."}
+      },
+      "novel_critique_issues": {},
+      "reported_issue_ratios": {"tp": 0.5, "fp": 0.5, "unlabeled": 0.0},
+      "recall": 1.0,
+      "summary": "..."
+    }
+
+    Example C — Multiple inputs partially cover one canonical:
+    {
+      "canonical_tp_coverage": {
+        "C1": {
+          "covered_by": {"I1": 0.6, "I2": 0.3},
+          "recall_credit": 0.8,
+          "rationale": "I1 covers 6/10 occurrences, I2 covers 3/10 with some overlap"
+        }
+      },
+      "canonical_fp_coverage": {},
+      "novel_critique_issues": {},
+      "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
+      "recall": 0.8,
+      "summary": "..."
+    }
+
+    Example D — Hybrid issue (matches canonical AND has novel aspects):
+    {
+      "canonical_tp_coverage": {
+        "C1": {"covered_by": {"I1": 1.0}, "recall_credit": 1.0, "rationale": "..."}
+      },
+      "canonical_fp_coverage": {},
+      "novel_critique_issues": {
+        "I1": {"rationale": "Matches C1 for duplication, but adds novel O(n²) concern"}
+      },
+      "reported_issue_ratios": {"tp": 0.7, "fp": 0.0, "unlabeled": 0.3},
+      "recall": 1.0,
+      "summary": "..."
+    }
+
+    Example E — Pure novel issue (no canonical match):
+    {
+      "canonical_tp_coverage": {
+        "C1": {"covered_by": {}, "recall_credit": 0.0, "rationale": "Not covered..."}
+      },
+      "canonical_fp_coverage": {},
+      "novel_critique_issues": {
+        "I2": {"rationale": "Pure novel. Discusses mount failure handling not in canonical"}
+      },
+      "reported_issue_ratios": {"tp": 0.0, "fp": 0.0, "unlabeled": 1.0},
+      "recall": 0.0,
+      "summary": "..."
+    }
+
+    Example F — Empty critique (no issues reported):
+    {
+      "canonical_tp_coverage": {
+        "C1": {"covered_by": {}, "recall_credit": 0.0, "rationale": "Not covered - empty"}
+      },
+      "canonical_fp_coverage": {},
+      "novel_critique_issues": {},
+      "reported_issue_ratios": null,
+      "recall": 0.0,
+      "summary": "Critique reported no issues. All canonical issues uncovered."
+    }
     """
 
     # Coverage for ground truth issues
@@ -322,9 +425,9 @@ class GradeSubmitInput(BaseModel):
     )
 
     # Metrics
-    reported_issue_ratios: ReportedIssueRatios = Field(
+    reported_issue_ratios: ReportedIssueRatios | None = Field(
         ...,
-        description="Ratios of reported issues: {tp, fp, unlabeled}. Weighted by importance/severity. Must sum to ~1.0.",
+        description="Ratios of reported issues: {tp, fp, unlabeled}. Weighted by importance/severity. Must sum to ~1.0. Use None when critique is empty (no issues reported).",
     )
 
     recall: float = Field(
@@ -428,5 +531,24 @@ class GradeSubmitInput(BaseModel):
                 f"Missing input IDs: {sorted(missing_input)}. "
                 f"Every input issue MUST appear in covered_by or novel_critique_issues."
             )
+
+        return self
+
+    @model_validator(mode="after")
+    def validate_empty_critique_ratios(self, info: ValidationInfo) -> GradeSubmitInput:
+        """Validate None ratios only allowed for truly empty critique."""
+        if (ctx := self._get_validation_context(info)) is None:
+            return self
+
+        has_input_issues = len(ctx.allowed_input_ids) > 0
+
+        if self.reported_issue_ratios is None and has_input_issues:
+            raise ValueError(
+                f"Cannot have None reported_issue_ratios when critique has {len(ctx.allowed_input_ids)} input issues. "
+                f"Use None only for empty critiques with no reported issues."
+            )
+
+        if self.reported_issue_ratios is not None and not has_input_issues:
+            raise ValueError("Must use None for reported_issue_ratios when critique has no input issues.")
 
         return self

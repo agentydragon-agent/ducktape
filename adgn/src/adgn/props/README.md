@@ -52,41 +52,30 @@ Example usage:
 
 ## Specimens format
 
-Specimens are now expressed as a manifest YAML plus a directory of per-issue Jsonnet files. The canonical, tooling-friendly layout is:
+Specimens consist of a central registry (`specimens/snapshots.yaml`) plus per-snapshot directories containing issue files.
 
-- manifest.yaml (required)
-  - YAML manifest that describes the specimen source and scope. Example:
-    ```yaml
-    source:
-      vcs: github
-      org: agentydragon
-      repo: ducktape
-      ref: <commit-sha>
-    scope:
-      include:
-        - 'wt/**'
-    ```
-  - The loader (src/adgn/props/specimens/registry.py) reads this manifest and materializes a deterministic archive for inspection.
+**Structure:**
+```
+specimens/
+  snapshots.yaml                    # Central registry: all snapshots with source/split
+  lib.libsonnet                     # Jsonnet helpers
+  ducktape/
+    2025-11-26-00/
+      dead-code.libsonnet           # Issue files directly in snapshot directory
+      missing-types.libsonnet
+      fp-intentional-duplication.libsonnet
+```
 
-- issues/ (required for tooling)
-  - Per-issue Jsonnet files: `issues/<issue-id>.libsonnet`.
-  - Each .libsonnet must be a single Jsonnet expression that returns one Issue object built with the helpers in `specimens/lib.libsonnet` (import with: `local I = import '../../specimens/lib.libsonnet';`).
-  - Preferred constructors: `I.issueOneOccurrence`, `I.issueWithOccurrences`, `I.issueOccurrencesFromLines`, `I.issueOccurrencesFromFiles`. The v2 helper `rootV2(source, scope, items)` is available for programmatic assembly.
-  - Line anchors accept numbers (single line), `[start,end]` spans, or objects with `start_line`/`end_line`; the Jsonnet helpers normalize these into LineRange objects the Python loader expects.
+**Issue files:**
+- Each `.libsonnet` file is a single Jsonnet expression that returns an Issue/FalsePositive object
+- Import helpers: `local I = import '../../lib.libsonnet';`
+- Available constructors:
+  - `I.issue(rationale, filesToRanges, expect_caught_from=null)` - single occurrence true positive
+  - `I.issueMulti(rationale, occurrences)` - multiple occurrences true positive
+  - `I.falsePositive(rationale, filesToRanges, relevant_files=null)` - single occurrence false positive
+  - `I.falsePositiveMulti(rationale, occurrences)` - multiple occurrences false positive
 
-- legacy support
-  - A single-file `issues.libsonnet` (monolithic) is still supported for backward compatibility, but the recommended approach is per-issue Jsonnet under `issues/`.
-  - Human-facing files like `covered.md`, `not_covered_yet.md`, and `false_positives.md` may remain as optional notes during migration, but they are NOT the canonical machine-readable source for tooling.
-
-Authoring rules (short)
-
-- Issue id is derived from the filename stem (e.g., `issues/iss-032.libsonnet`). Do not include an `id` field in Jsonnet.
-- Use the Jsonnet helpers from `specimens/lib.libsonnet` to normalize ranges and occurrence-level notes.
-- Avoid external network imports in Jsonnet; the loader uses a controlled importer that resolves relative imports and a package library directory only.
-
-Migration guidance
-
-- When converting legacy `covered.md` / `not_covered_yet.md` findings, create explicit `issues/*.libsonnet` entries that capture rationale and file/line anchors. Keep `covered.md` as an optional human note while migrating; mark it legacy once issues are represented in `issues/`.
+**For detailed authoring rules and guidelines**, see [docs/authoring.md](docs/authoring.md).
 
 ## Behavioral layer and scoping
 

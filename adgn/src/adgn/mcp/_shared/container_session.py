@@ -4,11 +4,13 @@ import asyncio
 from collections.abc import Iterable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
+import logging
 from pathlib import Path
 import shlex
 from typing import Any, cast
 
 import aiodocker
+import anyio
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 
@@ -16,6 +18,8 @@ from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD, WOR
 from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+
+logger = logging.getLogger(__name__)
 
 # Exit code returned by SIGTERM; standardized for host-side timeouts
 
@@ -58,7 +62,14 @@ class ContainerOptions:
     environment: dict[str, str] | None = None
     labels: dict[str, str] | None = None
     describe: bool = True
+    # TODO: Replace 'ephemeral: bool' with explicit container lifecycle modes:
+    #   (a) external - container ID provided, server doesn't manage lifecycle
+    #   (b) server-scoped - container lives as long as MCP server
+    #   (c) session-scoped - container lives/dies with client session
+    #   (d) call-scoped - new container per tool call (current "ephemeral")
+    # The current bool doesn't clearly distinguish these cases.
     ephemeral: bool = False
+    auto_remove: bool = True  # Auto-remove containers when stopped
 
     def to_container_config(
         self,
@@ -130,7 +141,16 @@ def _build_host_config(opts: ContainerOptions, *, auto_remove: bool = False) -> 
 
 
 async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
-    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=True)
+    """Create and start a Docker container with the given options.
+
+    Args:
+        client: aiodocker Docker client
+        opts: Container configuration options
+
+    Returns:
+        Dict with container ID and name
+    """
+    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=opts.auto_remove)
 
     container = await client.containers.create(container_config)
     await container.start()
@@ -160,15 +180,28 @@ def make_container_lifespan(opts: ContainerOptions):
                 ephemeral=opts.ephemeral,
             )
         finally:
+            # Shield cleanup from cancellation: anyio.CancelScope(shield=True) protects
+            # async operations from parent cancel scopes (FastMCP's transport cancellation).
+            # This ensures containers are properly killed even when the client disconnects.
             try:
                 if container_dict is not None:
-                    # Get container instance for cleanup
-                    container = await client.containers.get(container_dict["Id"])
-                    await container.kill()
-                    await container.delete(force=True)
+                    with anyio.CancelScope(shield=True):
+                        try:
+                            container = await client.containers.get(container_dict["Id"])
+                            await container.kill()
+                            # If auto_remove=True, Docker will remove the container automatically
+                            # when it stops. Otherwise, explicitly delete it.
+                            if not opts.auto_remove:
+                                await container.delete(force=True)
+                            logger.debug(f"Container {container_dict['Id']} cleaned up successfully")
+                        except Exception as e:
+                            logger.error(f"Container cleanup failed for {container_dict['Id']}: {e}")
             finally:
                 # Always close the client, even if container cleanup fails
-                await client.close()
+                try:
+                    await client.close()
+                except Exception as e:
+                    logger.warning(f"Docker client close failed: {e}")
 
     return lifespan
 
@@ -288,8 +321,8 @@ async def _run_ephemeral_container(
     except Exception:
         pass
 
-    # Remove container
-    await container.delete(force=True)
+    # Container has auto_remove=True, so Docker will remove it automatically when stopped.
+    # No explicit delete needed.
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 
