@@ -162,7 +162,7 @@ class NotifyingFastMCP(FlatModelFastMCP):
     async def broadcast_resource_updated(self, uri: AnyUrl | str) -> None:
         # If no sessions yet, queue and return
         if not self._sessions:
-            self._pending_uris.append(uri)
+            self._pending_uris.append(str(uri))
             return
         sessions = [s for s in self._sessions if s is not None]
         # Send to all current sessions; prune failures

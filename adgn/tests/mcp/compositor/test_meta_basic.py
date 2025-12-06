@@ -16,5 +16,5 @@ async def test_compositor_meta_resources_available(pg_client):
     state_uri = add_resource_prefix(
         COMPOSITOR_META_STATE_URI_PATTERN.format(server="backend"), COMPOSITOR_META_SERVER_NAME
     )
-    entry = await read_text_json_typed(pg_client.session, state_uri, ServerEntry)
+    entry: ServerEntry = await read_text_json_typed(pg_client.session, state_uri, ServerEntry)
     assert isinstance(entry, RunningServerEntry)

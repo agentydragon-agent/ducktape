@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from importlib.resources import files
 from pathlib import Path
+from typing import Any
 
+from compact_json import Formatter  # type: ignore[import-untyped]
 from jinja2 import Environment, PackageLoader
 
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
@@ -12,17 +15,49 @@ from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 
 
+def _load_mcp_http_instructions() -> str:
+    """Load MCP HTTP connection instructions from markdown file.
+
+    Generic instructions for agents running in Docker containers that need to connect
+    to an MCP server on the host via HTTP transport.
+    Based on design doc: src/adgn/props/docs/plans/mcp_over_docker_network.md
+    """
+    prompts_pkg = files("adgn.props.prompts")
+    md_file = prompts_pkg / "mcp_http_connection.md"
+    return md_file.read_text()
+
+
+MCP_HTTP_CONNECTION_INSTRUCTIONS = _load_mcp_http_instructions()
+
+
+def _compact_json_filter(value: Any, max_width: int = 100) -> str:
+    """Jinja2 filter for compact JSON formatting using compact_json.
+
+    Args:
+        value: Python object to serialize (usually dict from model_json_schema())
+        max_width: Maximum line width before wrapping (default: 100)
+
+    Returns:
+        Compact JSON string with smart line wrapping
+    """
+    formatter = Formatter(max_inline_length=max_width)
+    return formatter.serialize(value)  # type: ignore[no-any-return]
+
+
 def get_templates_env() -> Environment:
     """Load prompt templates from the installed package using importlib.resources.
 
     Templates live under the adgn.props.prompts package directory.
     """
-    return Environment(
+    env = Environment(
         loader=PackageLoader("adgn.props", "prompts"),
         autoescape=False,  # Prompts are text for LLMs, not HTML
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    # Register custom filters
+    env.filters["compactjson"] = _compact_json_filter
+    return env
 
 
 def render_prompt_template(name: str, **ctx: object) -> str:

@@ -19,7 +19,7 @@ async def test_meta_presents_inproc_mounts(make_pg_compositor, backend_server):
         discovery_uri = add_resource_prefix(COMPOSITOR_META_SERVERS_URI, COMPOSITOR_META_SERVER_NAME)
 
         # Read the discovery resource using the typed helper
-        servers = await read_text_json_typed(sess.session, discovery_uri, list[str])
+        servers: list[str] = await read_text_json_typed(sess.session, discovery_uri, list[str])
 
         # Should list at least the backend server we mounted
         assert isinstance(servers, list)
@@ -32,7 +32,7 @@ async def test_meta_presents_inproc_mounts(make_pg_compositor, backend_server):
         )
 
         # Read state using the typed helper
-        entry = await read_text_json_typed(sess.session, backend_state_uri, ServerEntry)
+        entry: ServerEntry = await read_text_json_typed(sess.session, backend_state_uri, ServerEntry)
 
         # In-proc mounts should be running when read via compositor_meta
         assert isinstance(entry, RunningServerEntry)

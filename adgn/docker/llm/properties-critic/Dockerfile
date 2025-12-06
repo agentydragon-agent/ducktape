@@ -23,9 +23,15 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
         universal-ctags \
         jq \
         fd-find \
-        postgresql-client
+        postgresql-client \
+        curl \
+        golang-go
 
 WORKDIR /opt/adgn
+
+# Install semgrep via official installer (requires semgrep-core binary)
+RUN curl -sSL https://github.com/semgrep/semgrep/releases/latest/download/semgrep-$(uname -s)-$(uname -m) -o /usr/local/bin/semgrep \
+ && chmod +x /usr/local/bin/semgrep
 
 # Copy repo sources to make adgn.* importable without installing the whole package.
 COPY src /opt/adgn/src
@@ -35,6 +41,7 @@ ENV PYTHONPATH="/opt/adgn/src"
 
 # Python tools used by runbooks (install as wheels)
 # MCP SDK is included for HTTP server connectivity (Phase 1: MCP over Docker network)
+# Note: semgrep installed above as binary, not via pip
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python -m pip install --upgrade pip \
  && PIP_NO_CACHE_DIR=0 python -m pip install \
@@ -53,7 +60,6 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         pyan3 \
         pytest \
         coverage \
-        semgrep \
         codespell \
         pyupgrade \
         refurb \
@@ -67,6 +73,14 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
     npm install -g pyright \
  && npm install -g jscpd
+
+# Install mcptools via Go
+ENV GOPATH=/opt/go
+ENV PATH="$GOPATH/bin:$PATH"
+RUN --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    --mount=type=cache,target=$GOPATH/pkg/mod,sharing=locked \
+    go install github.com/f/mcptools/cmd/mcptools@latest \
+ && ln -s /opt/go/bin/mcptools /usr/local/bin/mcptools
 
 # Provide a CLI shim for our custom detectors
 RUN printf '#!/usr/bin/env bash\nexec python -m adgn.props.detectors.cli_custom "$@"\n' > /usr/local/bin/adgn-detectors-custom \

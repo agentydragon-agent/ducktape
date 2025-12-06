@@ -1,10 +1,6 @@
 # policy middleware in the compositor — implementation spec (V1 sync)
 
-Supported path: Compositor + FastMCP Client only
-
 All agent and container tool/resource calls go through the Compositor surface.
-McpManager has been retired. New integrations use Compositor + Client exclusively.
-
 This document specifies the V1 (synchronous) policy middleware implemented as pre‑dispatch filtering inside the Compositor (aggregator). The Compositor remains the aggregation layer and also becomes the authoritative ingress for model‑initiated tool calls (and, when enabled, programmatic calls from inside the container). Resource management (list/read/subscribe) is handled by a dedicated resources MCP server mounted under the Compositor; the policy middleware does not add resource semantics. See <overview.md> for runtime architecture, and <../vision.md> for the philosophy behind executable policy and graduated autonomy.
 
 Scope

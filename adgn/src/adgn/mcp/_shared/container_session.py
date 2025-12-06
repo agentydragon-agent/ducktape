@@ -160,16 +160,15 @@ def make_container_lifespan(opts: ContainerOptions):
                 ephemeral=opts.ephemeral,
             )
         finally:
-            if container_dict is not None:
-                try:
+            try:
+                if container_dict is not None:
                     # Get container instance for cleanup
                     container = await client.containers.get(container_dict["Id"])
                     await container.kill()
                     await container.delete(force=True)
-                except Exception:
-                    # Already removed or cleanup failed
-                    pass
-            await client.close()
+            finally:
+                # Always close the client, even if container cleanup fails
+                await client.close()
 
     return lifespan
 
@@ -214,7 +213,7 @@ async def _run_ephemeral_container(
         cmd=prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd],
         working_dir=input.cwd,  # Override if specified
         env=input.env,  # Override if specified
-        auto_remove=False,
+        auto_remove=True,  # Ephemeral containers should auto-remove on exit
     )
 
     # Create and start container
@@ -290,8 +289,7 @@ async def _run_ephemeral_container(
         pass
 
     # Remove container
-    with suppress(Exception):
-        await container.delete(force=True)
+    await container.delete(force=True)
 
     return stdout_buf, stderr_buf, exit_code, timed_out
 

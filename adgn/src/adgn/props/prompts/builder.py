@@ -17,7 +17,7 @@ from adgn.props.grader.models import (
 )
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 
-from .schemas import build_input_schemas_json
+from .schemas import build_input_schemas_json, compact_json_serialize
 from .util import render_prompt_template
 
 
@@ -62,10 +62,14 @@ def build_grade_from_json_prompt(
         ]
     )
 
-    # Serialize lists to JSON strings before template rendering
-    canonical_json = TypeAdapter(list[TruePositiveIssue]).dump_json(true_positive_issues, indent=2).decode()
-    critique_json = TypeAdapter(list[CritiqueInputIssue]).dump_json(critique_issues, indent=2).decode()
-    known_fps_json = TypeAdapter(list[KnownFalsePositive]).dump_json(known_fps, indent=2).decode()
+    # Serialize lists to compact JSON strings before template rendering
+    canonical_json = compact_json_serialize(
+        TypeAdapter(list[TruePositiveIssue]).dump_python(true_positive_issues, mode="json")
+    )
+    critique_json = compact_json_serialize(
+        TypeAdapter(list[CritiqueInputIssue]).dump_python(critique_issues, mode="json")
+    )
+    known_fps_json = compact_json_serialize(TypeAdapter(list[KnownFalsePositive]).dump_python(known_fps, mode="json"))
 
     return render_prompt_template(
         "grade_from_json.j2.md",

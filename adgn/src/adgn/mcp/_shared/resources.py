@@ -44,8 +44,11 @@ async def read_text_json_typed[T](session: ClientSession, uri: AnyUrl | str, mod
     - Accepts concrete types (type[T]) and type expressions (Union, Annotated, etc.)
     - Type inference works for concrete types; Union types require explicit annotation
     """
-    result = await session.read_resource(uri)
-    return TypeAdapter(model).validate_json(extract_single_text_content(result.contents))
+    # Convert str to AnyUrl if needed
+    uri_obj: AnyUrl = AnyUrl(uri) if isinstance(uri, str) else uri
+    result = await session.read_resource(uri_obj)
+    validated: T = TypeAdapter(model).validate_json(extract_single_text_content(result.contents))
+    return validated
 
 
 async def read_text_json(session: ClientSession, uri: AnyUrl | str) -> Any:

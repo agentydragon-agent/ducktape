@@ -119,7 +119,8 @@ def test_item_factory_mcp_tool_call_auto_id():
 def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactory):
     result = responses_factory.make_mcp_tool_call("docker", "exec", SampleInput(text="ls"))
 
-    assert_that(result, has_properties(id="resp_generic", output=has_length(1)))
+    assert_that(result, has_properties(id="resp_generic"))
+    assert_that(result.output, has_length(1))
     call_item = result.output[0]
     assert_that(
         call_item,

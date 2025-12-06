@@ -28,7 +28,7 @@ def _create_test_server(token: str) -> FastMCP:
 @pytest.fixture
 async def server_handle() -> AsyncIterator[ServerHandle]:
     """Launch a test HTTP server and yield the handle."""
-    async with launch_mcp_http_server(_create_test_server) as handle:
+    async with launch_mcp_http_server(_create_test_server, container_host="localhost") as handle:
         yield handle
 
 
@@ -62,7 +62,7 @@ class TestLaunchMcpHttpServer:
     @pytest.mark.asyncio
     async def test_server_stops_after_context(self):
         """Server should stop after context manager exits."""
-        async with launch_mcp_http_server(_create_test_server) as handle:
+        async with launch_mcp_http_server(_create_test_server, container_host="localhost") as handle:
             port = handle.port
 
         # Give it a moment to fully shut down
@@ -75,10 +75,7 @@ class TestLaunchMcpHttpServer:
     async def test_auth_rejects_missing_token(self, server_handle: ServerHandle):
         """Server should reject requests without auth header."""
         async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"http://127.0.0.1:{server_handle.port}/mcp",
-                timeout=5.0,
-            )
+            response = await client.get(f"http://127.0.0.1:{server_handle.port}/mcp", timeout=5.0)
             assert response.status_code in (401, 403)
 
     @pytest.mark.asyncio

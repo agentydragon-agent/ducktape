@@ -357,10 +357,7 @@ class Compositor(FastMCP):
             names = [name for name, mount in self._mounts.items() if not mount.pinned]
 
         for name in names:
-            try:
-                await self.unmount_server(name)
-            except Exception as e:
-                logger.warning(f"Failed to unmount server '{name}' during close: {e}")
+            await self.unmount_server(name)
 
     # Python-only mount listing and server_status removed — prefer resources via compositor_meta
 

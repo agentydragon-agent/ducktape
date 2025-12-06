@@ -93,11 +93,16 @@ in {
     export PLAYWRIGHT_BROWSERS_PATH="${pkgs.playwright-driver.browsers}"
     export PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=true
 
-    # Ensure Docker network exists for Postgres + agent containers
+    # Ensure Docker networks exist for Postgres + agent containers
     if command -v docker &> /dev/null; then
       if ! docker network inspect props_default &> /dev/null; then
         echo "Creating Docker network 'props_default' for container communication..."
         docker network create props_default
+      fi
+      # Also create props-network for HTTP mode MCP (allows host access, blocks internet)
+      if ! docker network inspect props-network &> /dev/null; then
+        echo "Creating Docker network 'props-network' for MCP HTTP mode..."
+        docker network create props-network --internal=true
       fi
     fi
 

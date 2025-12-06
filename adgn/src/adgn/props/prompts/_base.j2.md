@@ -64,7 +64,7 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 {% for name in header_schema_names %}
 - {{ name }}
 ```json
-{{ schemas_json[name] | tojson(indent=2) }}
+{{ schemas_json[name] | compactjson }}
 ```
 {% endfor %}
 {% endif %}

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 import logging
 import secrets
@@ -36,6 +36,7 @@ async def launch_mcp_http_server(
     server_factory: Callable[[str], FastMCP],
     *,
     host: str = "0.0.0.0",  # binding to all interfaces for Docker access
+    container_host: str,  # hostname containers use to reach host (no default - caller must specify)
     startup_timeout: float = 10.0,
 ):
     """Launch an ephemeral MCP HTTP server, yield handle, shut down on exit.
@@ -46,6 +47,9 @@ async def launch_mcp_http_server(
         server_factory: Factory function that creates a FastMCP server.
             Called with (token: str) to allow server to configure auth.
         host: Host to bind to. Default 0.0.0.0 for Docker accessibility.
+        container_host: Hostname that containers use to reach the host.
+            Default "host.docker.internal" for non-internal networks.
+            For internal Docker networks, pass the gateway IP (e.g., "172.19.0.1").
         startup_timeout: Seconds to wait for server to become ready.
 
     Yields:
@@ -74,13 +78,7 @@ async def launch_mcp_http_server(
     app = server.http_app(transport="streamable-http")
 
     # Configure uvicorn
-    config = uvicorn.Config(
-        app=app,
-        host=host,
-        port=port,
-        log_level="warning",
-        access_log=False,
-    )
+    config = uvicorn.Config(app=app, host=host, port=port, log_level="warning", access_log=False)
     uv_server = uvicorn.Server(config)
 
     # Start server in background task
@@ -88,16 +86,12 @@ async def launch_mcp_http_server(
 
     try:
         # Wait for server to be ready
-        await asyncio.to_thread(
-            wait_for_port,
-            "127.0.0.1",
-            port,
-            timeout_secs=startup_timeout,
-        )
+        await asyncio.to_thread(wait_for_port, "127.0.0.1", port, timeout_secs=startup_timeout)
 
-        url = f"http://host.docker.internal:{port}"
+        # FastMCP serves at /mcp for streamable-http transport
+        url = f"http://{container_host}:{port}/mcp"
         handle = ServerHandle(port=port, token=token, url=url)
-        logger.info(f"MCP HTTP server started on port {port}")
+        logger.info(f"MCP HTTP server started at {url}")
 
         yield handle
 
@@ -111,7 +105,7 @@ async def launch_mcp_http_server(
         except TimeoutError:
             logger.warning("Server shutdown timed out, cancelling")
             server_task.cancel()
-            with asyncio.suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError):
                 await server_task
         except asyncio.CancelledError:
             # Suppress cancellation during shutdown; this is expected if the task is cancelled.

@@ -15,3 +15,10 @@ tests/
 .venv/
 .direnv/
 .ruff_cache/
+
+# Exclude specimens (snapshots/issues) - mounted as volumes at runtime
+src/adgn/props/specimens/
+
+# Exclude log files
+**/*.log
+**/logs/

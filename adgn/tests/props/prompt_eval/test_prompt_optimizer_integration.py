@@ -13,7 +13,7 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from hamcrest import assert_that, equal_to, has_entry, has_length, has_properties, not_none
+from hamcrest import assert_that, equal_to, has_entry, has_length, has_properties, instance_of, not_none
 import pytest
 
 from adgn.mcp.exec.models import ExecInput
@@ -248,11 +248,6 @@ async def test_full_workflow_po_agent_critic_grader(
     grader_runs = get_grader_runs_for_slug(TEST_SPECIMEN_SLUG)
     assert_that(grader_runs, has_length(1), "Expected exactly one grader run")
     grader_run = grader_runs[0]
-    assert_that(
-        grader_run,
-        has_properties(
-            critique_id=equal_to(critic_run.critique_id),
-            model=equal_to("fake-model"),
-            output=has_entry("grade", has_entry("recall", equal_to(0.8))),
-        ),
-    )
+    assert_that(grader_run, has_properties(critique_id=equal_to(critic_run.critique_id), model=equal_to("fake-model")))
+    assert_that(grader_run.output, has_entry("grade", instance_of(dict)))
+    assert_that(grader_run.output["grade"], has_entry("recall", equal_to(0.8)))

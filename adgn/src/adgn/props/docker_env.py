@@ -102,7 +102,7 @@ def properties_docker_spec(
     workspace_mode: str = "ro",
     db_url: str | None = None,
     network_mode: str | None = None,
-    extra_env: dict[str, str] | None = None,  # noqa: B006 - mutable default avoided via update pattern
+    extra_env: dict[str, str] | None = None,
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 

@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
@@ -56,6 +57,7 @@ from adgn.props.grader.models import (
 from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
 from adgn.props.prompts.builder import build_grade_from_json_prompt
+from adgn.props.prompts.util import MCP_HTTP_CONNECTION_INSTRUCTIONS
 from adgn.props.rationale import Rationale
 from adgn.props.servers.http_launcher import launch_mcp_http_server
 from adgn.props.snapshot_hydrated import HydratedSnapshot
@@ -63,8 +65,45 @@ from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 logger = logging.getLogger(__name__)
 
+
+def get_docker_network_gateway(network_name: str) -> str:
+    """Get the gateway IP for a Docker network.
+
+    Args:
+        network_name: Name of the Docker network
+
+    Returns:
+        Gateway IP address (e.g., "172.19.0.1")
+
+    Raises:
+        docker.errors.NotFound: If network does not exist
+        RuntimeError: If gateway cannot be determined from network config
+    """
+    import docker
+
+    client = docker.from_env()
+    network = client.networks.get(network_name)
+    ipam_config = network.attrs.get("IPAM", {}).get("Config", [])
+    if not ipam_config:
+        raise RuntimeError(f"No IPAM config found for network {network_name}")
+    gateway = ipam_config[0].get("Gateway")
+    if isinstance(gateway, str):
+        return gateway
+    raise RuntimeError(f"No gateway found for network {network_name}")
+
+
 # Toggle for MCP HTTP transport (Phase 1: parallel with compositor)
-# Set via environment variable or modify directly for testing
+# Set via environment variable: ADGN_USE_MCP_HTTP=1
+# When enabled:
+#   - grader_submit server launches via HTTP transport
+#   - MCP_SERVER_URL and MCP_SERVER_TOKEN are injected into container environment
+#   - Bootstrap inspects the MCP server to show its tools/resources/instructions
+#   - Container uses custom network config to allow host access but block internet
+# When disabled:
+#   - grader_submit server is mounted in-proc (no HTTP server)
+#   - No MCP environment variables are set in the container
+#   - No bootstrap inspection runs
+#   - Container uses network_mode="none" (full isolation)
 USE_MCP_HTTP = os.getenv("ADGN_USE_MCP_HTTP", "").lower() in ("1", "true", "yes")
 
 
@@ -139,9 +178,7 @@ Use submit_result to submit the final grading comparing critique against ground 
 
 
 def make_grader_submit_server(
-    state: GradeSubmitState,
-    inputs: GradeInputs,
-    auth: AuthProvider | None = None,
+    state: GradeSubmitState, inputs: GradeInputs, auth: AuthProvider | None = None
 ) -> NotifyingFastMCP:
     """Create MCP server with submit_result tool.
 
@@ -213,6 +250,42 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
 
 
 # =============================================================================
+# Bootstrap Helpers
+# =============================================================================
+
+# Bootstrap function disabled - example code is embedded in system prompt instead
+# def make_grader_http_bootstrap_calls(
+#     wiring: PropertiesDockerWiring, builder: TypedBootstrapBuilder
+# ) -> list[FunctionCallItem]:
+#     """Build bootstrap calls for grader in HTTP mode: inspect MCP server with auth.
+#
+#     Args:
+#         wiring: Docker container wiring (provides server_name)
+#         builder: Bootstrap builder with call ID generation
+#
+#     Returns:
+#         List of bootstrap function calls that inspect the MCP server
+#     """
+#     from importlib.resources import files
+#
+#     # Load MCP inspection script from package resource
+#     grader_pkg = files("adgn.props.grader")
+#     inspect_script = (grader_pkg / "mcp_inspect.py").read_text()
+#
+#     return [
+#         # First verify environment variables are set
+#         docker_exec_call(
+#             builder,
+#             server=wiring.server_name,
+#             cmd=["sh", "-c", "echo 'MCP_SERVER_URL='$MCP_SERVER_URL; echo 'MCP_SERVER_TOKEN='$MCP_SERVER_TOKEN"],
+#             timeout_ms=5_000,
+#         ),
+#         # Then run the inspection script
+#         docker_exec_call(builder, server=wiring.server_name, cmd=["python3", "-c", inspect_script], timeout_ms=15_000),
+#     ]
+
+
+# =============================================================================
 # Agent Execution
 # =============================================================================
 
@@ -240,7 +313,7 @@ async def _run_grader_agent(
     comp = Compositor("compositor")
     runtime_server = await wiring.attach(comp)
 
-    servers: dict[str, NotifyingFastMCP | None] = {wiring.server_name: runtime_server}
+    servers: dict[str, FastMCP | None] = {wiring.server_name: runtime_server}
     if not http_mode:
         # Inproc mode: mount grader_submit in compositor
         grader_submit_server = make_grader_submit_server(grader_state, inputs)
@@ -250,11 +323,34 @@ async def _run_grader_agent(
     async with Client(comp) as mcp_client:
         await mount_standard_inproc_servers(compositor=comp)
 
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system="You are a strict grader. Return only metrics via submit_result.",
-            client=client,
-            handlers=[
+        # Build system prompt with MCP HTTP instructions if in http_mode
+        if http_mode:
+            system = f"""You are a strict grader evaluating a code critique.
+
+Grade the critique, then submit your result by invoking the MCP server's submit_result tool.
+
+You do not have direct access to invoke the server's tools - the MCP server is networked to the container that docker_exec runs commands in. To interact with the server (and to submit your work using its submit_result tool), use docker_exec to run a process in the container that will talk to the MCP server over the MCP protocol (Streamable HTTP transport). The server is available at MCP_SERVER_URL with authentication token MCP_SERVER_TOKEN.
+
+Important: MCP sessions must be initialized (session.initialize()) before you can use tools, list resources, etc. When used in one-off Python scripts, the session will be closed at the end of the script.
+
+When you successfully submit, this conversation will abort. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
+
+{MCP_HTTP_CONNECTION_INSTRUCTIONS}"""
+        else:
+            system = "You are a strict grader. Return only metrics via submit_result."
+
+        # Build handlers list, add bootstrap for HTTP mode
+        handlers_list: list[BaseHandler] = []
+
+        # Bootstrap disabled - example code is embedded in system prompt instead
+        # if http_mode:
+        #     # Add bootstrap to inspect MCP server via mcptools
+        #     builder = TypedBootstrapBuilder.for_server(runtime_server)
+        #     bootstrap_calls = make_grader_http_bootstrap_calls(wiring, builder)
+        #     handlers_list.append(SequenceHandler([InjectItems(items=bootstrap_calls)]))
+
+        handlers_list.extend(
+            [
                 AbortIf(should_abort=lambda: grader_state.result is not None),
                 *build_props_handlers(
                     transcript_id=transcript_id,
@@ -264,7 +360,14 @@ async def _run_grader_agent(
                     servers=servers,
                 ),
                 *extra_handlers,
-            ],
+            ]
+        )
+
+        agent = await MiniCodex.create(
+            mcp_client=mcp_client,
+            system=system,
+            client=client,
+            handlers=handlers_list,
             parallel_tool_calls=True,
             reasoning_summary=ReasoningSummary.detailed,
             tool_policy=RequireAnyTool(),
@@ -357,20 +460,43 @@ async def run_grader(
             auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
             return make_grader_submit_server(grader_state, inputs, auth)
 
-        async with launch_mcp_http_server(server_factory) as handle:
+        # Get gateway IP for props-network (internal network blocks DNS)
+        network_name = "props-network"
+        gateway_ip = get_docker_network_gateway(network_name)
+        logger.info(f"Using gateway IP {gateway_ip} for Docker network {network_name}")
+
+        async with launch_mcp_http_server(server_factory, container_host=gateway_ip) as handle:
             logger.info(f"Grader HTTP server started at {handle.url}")
-            yield {"MCP_GRADER_URL": handle.url, "MCP_GRADER_TOKEN": handle.token}
+            yield {"MCP_SERVER_URL": handle.url, "MCP_SERVER_TOKEN": handle.token}
 
     ctx = _http_context() if USE_MCP_HTTP else nullcontext()
     async with ctx as extra_env:
+        logger.info(f"HTTP mode enabled: {USE_MCP_HTTP}, extra_env: {extra_env is not None}")
+        if extra_env:
+            logger.info(
+                f"MCP environment variables: URL={extra_env.get('MCP_SERVER_URL')}, TOKEN_LEN={len(extra_env.get('MCP_SERVER_TOKEN', ''))}"
+            )
+        # When HTTP mode is enabled, use props-network (allows host.docker.internal but blocks internet)
+        network_mode = "props-network" if USE_MCP_HTTP else "none"
         wiring = properties_docker_spec(
-            hydrated_specimen.content_root, mount_properties=True, ephemeral=False, extra_env=extra_env
+            hydrated_specimen.content_root,
+            mount_properties=True,
+            ephemeral=False,
+            extra_env=extra_env,
+            network_mode=network_mode,
         )
+        # Tool name differs based on mode:
+        # - HTTP mode: direct connection to grader server, use bare tool name
+        # - In-proc mode: via compositor, use server-prefixed name
+        submit_tool_name = (
+            "submit_result" if USE_MCP_HTTP else build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result")
+        )
+
         prompt = build_grade_from_json_prompt(
             true_positive_issues=canonical_tps,
             critique_issues=critique_typed,
             known_fps=canonical_fps,
-            submit_tool_name=build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result"),
+            submit_tool_name=submit_tool_name,
             wiring=wiring,
         )
         await _run_grader_agent(

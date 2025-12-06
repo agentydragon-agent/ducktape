@@ -28,6 +28,8 @@ from adgn.agent.server.runtime import AgentSession, UiEventHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.types import AgentID
 from adgn.mcp._shared.constants import (
+    POLICY_PROPOSER_SERVER_NAME,
+    POLICY_READER_SERVER_NAME,
     RUNTIME_EXEC_TOOL_NAME,
     RUNTIME_SERVER_NAME,
     SEATBELT_EXEC_SERVER_NAME,
@@ -545,10 +547,10 @@ class AgentContainer:
         assert engine is not None
         assert self._compositor is not None
 
-        # Mount policy servers: reader + policy_proposer (agent compositor)
+        # Mount policy servers: policy_reader + policy_proposer (agent compositor)
         # admin server is mounted on user compositor later (Phase 5 of consolidation)
-        await self._compositor.mount_inproc("reader", engine.reader)
-        await self._compositor.mount_inproc("policy_proposer", engine.policy_proposer)
+        await self._compositor.mount_inproc(POLICY_READER_SERVER_NAME, engine.reader)
+        await self._compositor.mount_inproc(POLICY_PROPOSER_SERVER_NAME, engine.policy_proposer)
 
         if self.with_ui and ui_bus is not None:
             # UI server (in-proc)

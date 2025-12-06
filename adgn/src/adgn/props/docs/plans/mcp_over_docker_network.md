@@ -148,7 +148,7 @@ The full sequence when running prompt optimization:
 
 3. Host: Launch agent container (via properties_docker_spec + wiring.attach)
    ├── Network: props-network (no internet)
-   ├── Environment: MCP_SERVER_URL=http://host.docker.internal:54321
+   ├── Environment: MCP_SERVER_URL=http://host.docker.internal:54321/mcp
    └── Environment: MCP_SERVER_TOKEN=<token>
 
 4. Agent (in container): Connect to MCP server via streamable HTTP
@@ -208,7 +208,7 @@ wiring = properties_docker_spec(
 # For HTTP mode: Extend ContainerOptions with MCP server connection environment
 # This would be added to the environment dict in properties_docker_spec:
 # {
-#     "MCP_SERVER_URL": f"http://host.docker.internal:{port}",
+#     "MCP_SERVER_URL": f"http://host.docker.internal:{port}/mcp",
 #     "MCP_SERVER_TOKEN": os.getenv("ADGN_PROMPT_EVAL_TOKEN"),
 #     ... (existing cache/tmp env vars)
 # }
@@ -307,7 +307,7 @@ async def run_*_http(...):
         wiring = properties_docker_spec(
             ...,
             extra_env={
-                "MCP_SERVER_URL": f"http://host.docker.internal:{port}",
+                "MCP_SERVER_URL": f"http://host.docker.internal:{port}/mcp",
                 "MCP_SERVER_TOKEN": token,
             },
         )
@@ -401,6 +401,27 @@ async def run_*_http(...):
 **Deferred for later:**
 - **Token rotation**: Not implementing rotation initially (manual regeneration if needed)
 - **TLS**: Localhost-only, plain HTTP is sufficient (no TLS for now)
+
+**Future enhancements:**
+- **mcptools server aliases**: The `mcptools` CLI supports server aliases that can embed auth headers. This would allow agents to use short commands like `mcp call tool_name server-alias` instead of passing full URL + auth each time.
+
+  **Config format**: mcptools stores aliases in two ways:
+  1. **Server aliases** (via `mcp alias add <name> <command>`): Stored in `~/.mcpt/aliases.json`
+  2. **LLM app configs** (via `mcp configs set <app> <server> <command>`): Stored in `~/.mcpt/configs.json` with predefined app names (vscode, cursor, claude-desktop, etc.)
+
+  **Setup options for Docker containers**:
+  - **Init script**: Generate config file in container at startup via entrypoint script that creates `~/.mcpt/aliases.json` from environment variables:
+    ```json
+    {
+      "critic-server": "http://host.docker.internal:${PORT}/mcp --headers Authorization=Bearer ${TOKEN}"
+    }
+    ```
+  - **Volume mount**: Mount pre-generated config from host: `--mount type=bind,source=/host/mcpt-config,target=/root/.mcpt,readonly`
+  - **Command wrapper**: Create shell function/alias that passes URL + auth without using mcptools config system
+
+  **Current limitation**: Config management CLI commands (`mcp configs set`, `mcp alias add`) only work on macOS; but the *config files* themselves (`~/.mcpt/*.json`) work cross-platform once created.
+
+  **Recommendation**: Use init script approach for simplest cross-platform support. See https://github.com/f/mcptools#server-aliases for config format details.
 
 ## References
 

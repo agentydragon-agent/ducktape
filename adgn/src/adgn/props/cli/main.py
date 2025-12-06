@@ -5,6 +5,7 @@ Incremental migration target: we will gradually move subcommands here.
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from uuid import UUID
 from fastmcp.client import Client
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
+from sqlalchemy import select
 import typer
 
 from adgn.agent.agent import MiniCodex
@@ -42,7 +44,7 @@ from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import GraderRun as DBGraderRun, Snapshot
+from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
@@ -350,6 +352,65 @@ async def snapshot_grade(
         typer.echo(f"Snapshot: {db_grader_run.snapshot_slug}")
         typer.echo("")
         typer.echo(db_grader_run.output.model_dump_json(indent=2))
+
+
+@app.command("grade-missing")
+@async_run
+async def cmd_grade_missing(
+    model: str = typer.Option("gpt-5.1-codex-mini", "--model", help="Grader model to use"),
+    max_parallel: int = typer.Option(1, "--max-parallel", help="Maximum number of parallel grader runs"),
+    verbose: bool = opt.OPT_VERBOSE,
+) -> None:
+    """Grade all critiques missing grader runs for the specified model.
+
+    Finds critiques without a grader run for the given model and grades them
+    in parallel with semaphore-limited concurrency.
+    """
+    init_db()
+
+    # Find critique IDs missing grader runs for this model
+    with get_session() as session:
+        # Subquery: critique IDs that already have grader runs for this model
+        graded_critique_ids = select(DBGraderRun.critique_id).where(DBGraderRun.model == model).scalar_subquery()
+
+        # Query: critique IDs without grader runs for this model
+        ungraded_critique_ids = (
+            session.execute(select(Critique.id).where(Critique.id.notin_(graded_critique_ids))).scalars().all()
+        )
+
+        if not ungraded_critique_ids:
+            typer.echo(f"No critiques missing grader runs for model '{model}'")
+            return
+
+        typer.echo(f"Found {len(ungraded_critique_ids)} critiques missing grader runs for model '{model}'")
+        typer.echo(f"Grading with max_parallel={max_parallel}...")
+
+    # Create semaphore for concurrency control
+    semaphore = asyncio.Semaphore(max_parallel)
+
+    async def grade_one(critique_id: UUID) -> tuple[UUID, bool]:
+        """Grade one critique, returns (critique_id, success)"""
+        async with semaphore:
+            try:
+                with get_session() as session:
+                    grader_run_id = await grade_critique_by_id(
+                        session, critique_id, build_client(model), verbose=verbose
+                    )
+                    if not verbose:
+                        typer.echo(f"✓ Graded critique {critique_id} → grader_run {grader_run_id}")
+                    return (critique_id, True)
+            except Exception as e:
+                typer.echo(f"✗ Failed to grade critique {critique_id}: {e}", err=True)
+                return (critique_id, False)
+
+    # Grade all in parallel (semaphore limits concurrency)
+    results = await asyncio.gather(*[grade_one(cid) for cid in ungraded_critique_ids])
+
+    # Summary
+    successes = sum(1 for _, success in results if success)
+    failures = sum(1 for _, success in results if not success)
+    typer.echo("")
+    typer.echo(f"Completed: {successes} succeeded, {failures} failed")
 
 
 @app.command("fix")

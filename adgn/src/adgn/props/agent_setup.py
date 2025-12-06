@@ -28,6 +28,6 @@ def build_props_handlers(*, transcript_id: UUID, verbose_prefix: str | None, ser
 
     if verbose_prefix is not None:
         # handlers.append(RichDisplayHandler(max_lines=10, prefix=verbose_prefix, servers=servers))
-        handlers.append(CompactDisplayHandler(max_lines=10, prefix=verbose_prefix, servers=servers))
+        handlers.append(CompactDisplayHandler(max_lines=50, prefix=verbose_prefix, servers=servers))
 
     return handlers
