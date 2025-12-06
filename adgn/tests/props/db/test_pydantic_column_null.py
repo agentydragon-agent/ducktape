@@ -182,9 +182,9 @@ def test_what_does_setting_none_create(test_pydantic_column_db):
 
     # When you query it back, you get Python None
     with get_session() as session:
-        obj = session.get(TestTable, 1)
-        assert obj is not None
-        assert obj.data is None  # PydanticColumn deserializes JSON null → Python None
+        loaded_obj = session.get(TestTable, 1)
+        assert loaded_obj is not None
+        assert loaded_obj.data is None  # PydanticColumn deserializes JSON null → Python None
 
         # So the round-trip is:
         # Python None → JSON 'null' → Python None

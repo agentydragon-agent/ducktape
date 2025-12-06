@@ -370,14 +370,16 @@ async def cmd_grade_missing(
 
     # Find critique IDs missing grader runs for this model
     with get_session() as session:
-        # Subquery: critique IDs that already have grader runs for this model
-        graded_critique_ids = select(DBGraderRun.critique_id).where(DBGraderRun.model == model).scalar_subquery()
-
-        # Query: critique IDs without grader runs for this model
-        # Filter out critiques with NULL payload (failed critic runs)
+        # More efficient than NOT IN: LEFT JOIN with NULL check
+        # Also filter out critiques with NULL payload (failed critic runs)
         ungraded_critique_ids = (
             session.execute(
-                select(Critique.id).where(Critique.id.notin_(graded_critique_ids), Critique.payload.is_not(None))
+                select(Critique.id)
+                .outerjoin(DBGraderRun, (DBGraderRun.critique_id == Critique.id) & (DBGraderRun.model == model))
+                .where(
+                    DBGraderRun.id.is_(None),  # No grader run exists for this model
+                    Critique.payload.is_not(None),  # Payload is not SQL NULL
+                )
             )
             .scalars()
             .all()

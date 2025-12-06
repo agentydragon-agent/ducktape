@@ -1,5 +1,5 @@
 {% extends "_base.j2.md" %}
-{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "GradeMetrics", "GradeSubmitInput", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %}
+{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
 {% set include_properties = false %}
