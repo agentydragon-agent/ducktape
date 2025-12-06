@@ -16,7 +16,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
 
     # make_pg_compositor creates a PolicyEngine with all servers (reader, proposer, admin) already mounted
     servers = dict(echo_spec)
-    async with make_pg_compositor(servers) as (mcp_client, policy_engine):
+    async with make_pg_compositor(servers) as (mcp_client, _policy_engine):
         # Create a sequence where agent lists available tools
         runner = make_step_runner(steps=[AssistantMessage("I can see the approval tools")])
         client = make_mock(runner.handle_request_async)

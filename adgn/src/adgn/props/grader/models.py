@@ -14,7 +14,13 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from adgn.props.ids import BaseIssueID, InputIssueID, SnapshotSlug
-from adgn.props.models.true_positive import FalsePositiveOccurrence, Occurrence, TruePositiveOccurrence
+from adgn.props.models.true_positive import (
+    FalsePositiveOccurrence,
+    Occurrence,
+    TruePositiveOccurrence,
+    should_catch_occurrence,
+    should_show_fp_occurrence,
+)
 from adgn.props.rationale import Rationale
 
 if TYPE_CHECKING:
@@ -76,8 +82,6 @@ class GradeValidationContext:
                 If provided and FILTER_TPS_BY_CRITIC_SCOPE is True, only include
                 TPs/FPs that are catchable/relevant from those files.
         """
-        from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
-
         # Filter TPs/FPs by scope if enabled and reviewed_files provided
         if FILTER_TPS_BY_CRITIC_SCOPE and reviewed_files:
             # Only include TPs where at least one occurrence is catchable from reviewed files

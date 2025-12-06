@@ -374,8 +374,13 @@ async def cmd_grade_missing(
         graded_critique_ids = select(DBGraderRun.critique_id).where(DBGraderRun.model == model).scalar_subquery()
 
         # Query: critique IDs without grader runs for this model
+        # Filter out critiques with NULL payload (failed critic runs)
         ungraded_critique_ids = (
-            session.execute(select(Critique.id).where(Critique.id.notin_(graded_critique_ids))).scalars().all()
+            session.execute(
+                select(Critique.id).where(Critique.id.notin_(graded_critique_ids), Critique.payload.is_not(None))
+            )
+            .scalars()
+            .all()
         )
 
         if not ungraded_critique_ids:

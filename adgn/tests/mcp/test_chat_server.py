@@ -2,7 +2,7 @@ import asyncio
 from typing import Any
 
 from fastmcp.client import Client
-from hamcrest import anything, assert_that, contains, empty, has_properties
+from hamcrest import anything, assert_that, empty, has_properties
 from hamcrest.core.matcher import Matcher
 import pytest
 
@@ -83,7 +83,8 @@ async def test_chat_flow_user_to_agent_then_agent_to_user(chat_servers) -> None:
         reply = await a.post(PostInput(mime="text/markdown", content="roger"))
         assert reply.id is not None
         hpage = await h.read_pending_messages(ReadPendingInput(limit=100))
-        assert_that(hpage.messages, contains(assistant_markdown_message("roger")))
+        assert len(hpage.messages) == 1
+        assert_that(hpage.messages[0], assistant_markdown_message("roger"))
 
 
 async def test_chat_head_notifications_other_participant(chat_servers) -> None:

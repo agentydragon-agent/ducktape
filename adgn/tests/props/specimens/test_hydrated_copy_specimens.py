@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from adgn.props.ids import SnapshotSlug
 from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 
@@ -12,7 +13,7 @@ async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(
     'pyright_watch_report.py'. The hydrated working directory yielded by the
     context manager must therefore contain exactly one file: that python file.
     """
-    async with production_specimens_hydrator.hydrate("misc/2025-08-29-pyright_watch_report") as hydrated:
+    async with production_specimens_hydrator.hydrate(SnapshotSlug("misc/2025-08-29-pyright_watch_report")) as hydrated:
         assert hydrated.content_root.is_dir(), f"hydrated content root not a directory: {hydrated.content_root}"
         files = [p.name for p in hydrated.content_root.iterdir() if p.is_file()]
         assert files == ["pyright_watch_report.py"], (
@@ -29,7 +30,7 @@ async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly(
     Using specimen 'ducktape/2025-11-20-01', assert that <root>/wt/src/wt/server exists
     and contains at least one file or subdirectory.
     """
-    async with production_specimens_hydrator.hydrate("ducktape/2025-11-20-01") as hydrated:
+    async with production_specimens_hydrator.hydrate(SnapshotSlug("ducktape/2025-11-20-01")) as hydrated:
         assert hydrated.content_root.is_dir(), f"hydrated content root not a directory: {hydrated.content_root}"
         server_dir = hydrated.content_root / "wt" / "src" / "wt" / "server"
         assert server_dir.is_dir(), f"expected directory missing: {server_dir}"

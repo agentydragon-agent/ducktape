@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
+import docker
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
@@ -79,8 +80,6 @@ def get_docker_network_gateway(network_name: str) -> str:
         docker.errors.NotFound: If network does not exist
         RuntimeError: If gateway cannot be determined from network config
     """
-    import docker
-
     client = docker.from_env()
     network = client.networks.get(network_name)
     ipam_config = network.attrs.get("IPAM", {}).get("Config", [])
