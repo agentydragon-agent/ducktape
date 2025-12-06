@@ -144,7 +144,12 @@ I.issueMulti(
 local I = import '../../lib.libsonnet';
 
 I.falsePositive(
-  rationale='Intentional duplication for visual consistency',
+  rationale= |||
+    Critics might flag this duplication as problematic because the button styles
+    are repeated across components. However, our ground truth is that this is
+    intentional for visual consistency - we want all interactive elements to
+    have identical hover/active states for UX coherence.
+  |||,
   filesToRanges={
     'src/Button.svelte': [[45, 60]],
     'src/Link.svelte': [[32, 47]],
@@ -152,6 +157,23 @@ I.falsePositive(
   // relevant_files auto-inferred from filesToRanges keys
 )
 ```
+
+**False Positive Rationale Format:**
+
+The rationale should explain why something that LOOKS like a problem is actually acceptable. Typical structure (not a strict template):
+
+**Pattern:** "Critics might say X is bad because Y, but our ground truth is that it's acceptable because Z."
+
+- **X** = What was flagged (describe the pattern critics noticed)
+- **Y** = Why it looks problematic (the critic's reasoning)
+- **Z** = Why it's actually fine (your reasoning: intentional choice, acceptable trade-off, makes sense with context, etc.)
+
+The exact phrasing can vary - the key is to acknowledge what looks problematic while explaining why it's actually acceptable.
+
+**Examples:**
+- "Critics might flag this duplication as a DRY violation because the validation logic is repeated. However, our ground truth is that this is acceptable because each validation context has slightly different error handling requirements and merging them would reduce clarity."
+- "Critics might say this type annotation is missing because the function signature has no return type. However, our ground truth is that it's acceptable because this is a decorator that preserves the wrapped function's type, and explicit annotation would be less accurate than the inferred type."
+- "Some critics flagged this as a resource leak, but this is intentional - the handle lifetime is managed by the parent context manager which ensures cleanup in its `__exit__` method."
 
 ### 4. Range Format Specifications
 
