@@ -10,6 +10,7 @@ from weakref import WeakSet
 import anyio
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from fastmcp.server import FastMCP
+from fastmcp.server.auth import AuthProvider
 from fastmcp.server.low_level import LowLevelServer
 from mcp import types as mcp_types
 from mcp.server.lowlevel.server import InitializationOptions, NotificationOptions
@@ -122,10 +123,11 @@ class NotifyingFastMCP(FlatModelFastMCP):
         name: str,
         *,
         instructions: str | None = None,
-        lifespan: Callable[[FastMCP], AbstractAsyncContextManager[Any]] | None = None,
-        experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
+        experimental_capabilities: dict[str, dict[str, object]] | None = None,
+        auth: AuthProvider | None = None,
     ) -> None:
-        super().__init__(name=name, instructions=instructions, lifespan=lifespan)
+        super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth)
         self._sessions: WeakSet[ServerSession] = WeakSet()
         self._pending_uris: list[str] = []
         self._pending_list_changed: bool = False

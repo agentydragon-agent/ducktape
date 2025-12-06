@@ -102,11 +102,22 @@ def properties_docker_spec(
     workspace_mode: str = "ro",
     db_url: str | None = None,
     network_mode: str | None = None,
+    extra_env: dict[str, str] | None = None,  # noqa: B006 - mutable default avoided via update pattern
 ) -> PropertiesDockerWiring:
     """Return wiring for the properties critic container.
 
     Ensures the default critic image exists (raises if missing). Sets up standard tool cache
     environment variables to use /tmp.
+
+    Args:
+        workspace_root: Path to workspace directory to mount in container.
+        mount_properties: Whether to mount property definitions at /props.
+        extra_volumes: Additional volumes to mount (merged with standard volumes).
+        ephemeral: Whether container should be removed after use.
+        workspace_mode: Mount mode for workspace ("ro" or "rw").
+        db_url: Database URL to inject as DATABASE_URL environment variable.
+        network_mode: Docker network mode (default "none" for isolation).
+        extra_env: Additional environment variables to inject (e.g., MCP_SERVER_URL).
     """
     # Ensure image exists; let exceptions propagate with helpful message
     ensure_critic_image()
@@ -132,6 +143,11 @@ def properties_docker_spec(
         logger.info(f"Setting DATABASE_URL in container environment: {db_url[:50]}...")
     else:
         logger.warning("No db_url provided - container will not have database access")
+
+    # Merge extra environment variables (e.g., MCP_SERVER_URL, MCP_SERVER_TOKEN)
+    env.update(extra_env or {})
+    if extra_env:
+        logger.info(f"Injecting extra environment variables: {list(extra_env.keys())}")
 
     def _factory() -> FastMCP:
         return make_container_exec_server(
