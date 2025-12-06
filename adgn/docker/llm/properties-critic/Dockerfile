@@ -11,6 +11,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # OS tools
+# Interactive inspection tools (zsh, neovim, bat) are for human use via snapshot exec
 RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update \
@@ -18,6 +19,9 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
         ca-certificates \
         ripgrep \
         bash \
+        zsh \
+        neovim \
+        bat \
         nodejs \
         npm \
         universal-ctags \

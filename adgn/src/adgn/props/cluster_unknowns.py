@@ -6,7 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastmcp.client import Client
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import AbortIf
@@ -45,6 +45,9 @@ class UnknownIssue(BaseModel):
 class ClusterSpec(BaseModel):
     name: str
     issue_ids: list[ClusteredIssueID]
+    primary_files: set[Path] = Field(
+        description="Files affected by issues in this cluster (aggregated from all occurrences)"
+    )
 
 
 class ClusterSubmitPayload(BaseModel):
@@ -95,7 +98,19 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
             missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.tp_id))
             if missing:
                 raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
-            result = payload.clusters
+
+            # Compute primary_files for each cluster by aggregating from issues
+            issue_lookup = {u.tp_id: u for u in snapshot_issues}
+            enriched_clusters = []
+            for cluster in payload.clusters:
+                primary_files = set()
+                for issue_id in cluster.issue_ids:
+                    if issue_id in issue_lookup:
+                        primary_files.update(issue_lookup[issue_id].files)
+                enriched_clusters.append(
+                    ClusterSpec(name=cluster.name, issue_ids=cluster.issue_ids, primary_files=primary_files)
+                )
+            result = enriched_clusters
             return "ok"
 
         await comp.mount_inproc("cluster_submit", srv)

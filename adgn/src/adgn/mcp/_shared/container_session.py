@@ -69,7 +69,6 @@ class ContainerOptions:
     #   (d) call-scoped - new container per tool call (current "ephemeral")
     # The current bool doesn't clearly distinguish these cases.
     ephemeral: bool = False
-    auto_remove: bool = True  # Auto-remove containers when stopped
 
     def to_container_config(
         self,
@@ -150,7 +149,9 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
     Returns:
         Dict with container ID and name
     """
-    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=opts.auto_remove)
+    # Always set auto_remove=False - we handle cleanup explicitly in the lifespan to ensure
+    # containers are removed even if the process crashes before normal exit.
+    container_config = opts.to_container_config(cmd=SLEEP_FOREVER_CMD, auto_remove=False)
 
     container = await client.containers.create(container_config)
     await container.start()
@@ -189,10 +190,10 @@ def make_container_lifespan(opts: ContainerOptions):
                         try:
                             container = await client.containers.get(container_dict["Id"])
                             await container.kill()
-                            # If auto_remove=True, Docker will remove the container automatically
-                            # when it stops. Otherwise, explicitly delete it.
-                            if not opts.auto_remove:
-                                await container.delete(force=True)
+                            # Always explicitly delete. We disable auto_remove to ensure deterministic
+                            # cleanup behavior - our shielded lifespan cleanup is the single point
+                            # of responsibility for container removal.
+                            await container.delete(force=True)
                             logger.debug(f"Container {container_dict['Id']} cleaned up successfully")
                         except Exception as e:
                             logger.error(f"Container cleanup failed for {container_dict['Id']}: {e}")
