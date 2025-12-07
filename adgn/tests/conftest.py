@@ -42,11 +42,29 @@ def test_agent_id(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture
 async def compositor():
-    """Fresh Compositor instance for each test.
+    """Fresh Compositor instance for each test with automatic lifecycle management.
 
-    No explicit cleanup - compositor will be garbage collected after test completes.
+    The compositor is entered as a context manager automatically, so tests can
+    mount servers and use it immediately without explicit 'async with'.
     """
-    return Compositor("comp")
+    async with Compositor("comp") as comp:
+        yield comp
+
+
+@pytest.fixture
+async def test_policy_engine(sqlite_persistence, docker_client, test_agent_id):
+    """Policy engine fixture with approve-all policy for testing."""
+    # Create agent in DB first to satisfy FK constraints
+    agent_id_resolved = await sqlite_persistence.create_agent(
+        mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test")
+    )
+
+    return PolicyEngine(
+        docker_client=docker_client,
+        agent_id=agent_id_resolved,
+        persistence=sqlite_persistence,
+        policy_source=approve_all_policy_text(),
+    )
 
 
 # Ensure shared fixtures from tests/support are always registered, even when
@@ -228,29 +246,33 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
         await comp.mount_inproc(name, srv)
 
 
-async def _setup_pg_compositor(
-    servers: McpServerSpecs, policy_engine: PolicyEngine | None, sqlite_persistence, docker_client, agent_id: str
-) -> tuple[Compositor, PolicyEngine]:
-    """Shared setup for make_pg_client and make_pg_compositor."""
-    comp = Compositor("comp")
+async def _setup_mounted_compositor(comp: Compositor, servers: McpServerSpecs, policy_engine: PolicyEngine) -> None:
+    """Mount servers and setup policy middleware on an existing compositor.
 
-    if policy_engine is None:
-        # Create agent in DB first to satisfy FK constraints when recording approvals
-        # Use the persistence API to create the agent properly
-        agent_id = await sqlite_persistence.create_agent(mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test"))
-
-        policy_engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id=agent_id,
-            persistence=sqlite_persistence,
-            policy_source=approve_all_policy_text(),
-        )
-
+    Args:
+        comp: Compositor instance to configure
+        servers: Dict of server name -> FastMCP instance to mount
+        policy_engine: Policy engine to install middleware from
+    """
     await _mount_servers(comp, servers)
     comp.add_middleware(policy_engine.gateway)
     await mount_standard_inproc_servers(compositor=comp, policy_engine=policy_engine)
 
-    return comp, policy_engine
+
+async def _create_test_policy_engine(sqlite_persistence, docker_client: docker.DockerClient) -> PolicyEngine:
+    """Create a test policy engine with approve-all policy.
+
+    Helper to avoid duplication in make_pg_client and make_pg_compositor.
+    """
+    agent_id_resolved = await sqlite_persistence.create_agent(
+        mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test")
+    )
+    return PolicyEngine(
+        docker_client=docker_client,
+        agent_id=agent_id_resolved,
+        persistence=sqlite_persistence,
+        policy_source=approve_all_policy_text(),
+    )
 
 
 @pytest.fixture
@@ -266,12 +288,13 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        comp, _ = await _setup_pg_compositor(servers, policy_engine, sqlite_persistence, docker_client, test_agent_id)
-        try:
+        if policy_engine is None:
+            policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
+
+        async with Compositor("comp") as comp:
+            await _setup_mounted_compositor(comp, servers, policy_engine)
             async with Client(comp) as sess:
                 yield sess
-        finally:
-            await comp.close()
 
     return _open
 
@@ -285,19 +308,17 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
             ...
 
     For tests that only need the client, prefer make_pg_client instead.
-    The compositor is always the same shared instance and doesn't need to be in the tuple.
     """
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs, *, policy_engine: PolicyEngine | None = None):
-        comp, engine = await _setup_pg_compositor(
-            servers, policy_engine, sqlite_persistence, docker_client, test_agent_id
-        )
-        try:
+        if policy_engine is None:
+            policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
+
+        async with Compositor("comp") as comp:
+            await _setup_mounted_compositor(comp, servers, policy_engine)
             async with Client(comp) as sess:
-                yield sess, engine
-        finally:
-            await comp.close()
+                yield sess, policy_engine
 
     return _open
 

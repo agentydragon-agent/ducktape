@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 
 import docker
 from fastmcp import FastMCP
-from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 from rich.console import Group, RenderableType
@@ -312,22 +311,22 @@ async def _run_grader_agent(
         http_mode: If True, grader_submit is exposed via HTTP (env vars in wiring).
             If False, grader_submit is mounted in compositor.
     """
-    comp = Compositor("compositor")
-    runtime_server = await wiring.attach(comp)
+    async with Compositor("compositor") as handle:
+        runtime_server = await wiring.attach(handle)
 
-    servers: dict[str, FastMCP | None] = {wiring.server_name: runtime_server}
-    if not http_mode:
-        # Inproc mode: mount grader_submit in compositor
-        grader_submit_server = make_grader_submit_server(grader_state, inputs)
-        await comp.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
-        servers[GRADER_SUBMIT_SERVER_NAME] = grader_submit_server
+        servers: dict[str, FastMCP | None] = {wiring.server_name: runtime_server}
+        if not http_mode:
+            # Inproc mode: mount grader_submit in compositor
+            grader_submit_server = make_grader_submit_server(grader_state, inputs)
+            await handle.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
+            servers[GRADER_SUBMIT_SERVER_NAME] = grader_submit_server
 
-    async with Client(comp) as mcp_client:
-        await mount_standard_inproc_servers(compositor=comp)
+        async with handle.client() as mcp_client:
+            await mount_standard_inproc_servers(compositor=handle)
 
-        # Build system prompt with MCP HTTP instructions if in http_mode
-        if http_mode:
-            system = f"""You are a strict grader evaluating a code critique.
+            # Build system prompt with MCP HTTP instructions if in http_mode
+            if http_mode:
+                system = f"""You are a strict grader evaluating a code critique.
 
 Grade the critique, then submit your result by invoking the MCP server's submit_result tool.
 
@@ -338,43 +337,43 @@ Important: MCP sessions must be initialized (session.initialize()) before you ca
 You will exclusively act by calling tools. Do not send any text messages at any point. When you successfully submit your result, this conversation will abort automatically. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
 
 {MCP_HTTP_CONNECTION_INSTRUCTIONS}"""
-        else:
-            system = "You are a strict grader. Return only metrics via submit_result."
+            else:
+                system = "You are a strict grader. Return only metrics via submit_result."
 
-        # Build handlers list, add bootstrap for HTTP mode
-        handlers_list: list[BaseHandler] = []
+            # Build handlers list, add bootstrap for HTTP mode
+            handlers_list: list[BaseHandler] = []
 
-        # Bootstrap disabled - example code is embedded in system prompt instead
-        # if http_mode:
-        #     # Add bootstrap to inspect MCP server via mcptools
-        #     builder = TypedBootstrapBuilder.for_server(runtime_server)
-        #     bootstrap_calls = make_grader_http_bootstrap_calls(wiring, builder)
-        #     handlers_list.append(SequenceHandler([InjectItems(items=bootstrap_calls)]))
+            # Bootstrap disabled - example code is embedded in system prompt instead
+            # if http_mode:
+            #     # Add bootstrap to inspect MCP server via mcptools
+            #     builder = TypedBootstrapBuilder.for_server(runtime_server)
+            #     bootstrap_calls = make_grader_http_bootstrap_calls(wiring, builder)
+            #     handlers_list.append(SequenceHandler([InjectItems(items=bootstrap_calls)]))
 
-        handlers_list.extend(
-            [
-                AbortIf(should_abort=lambda: grader_state.result is not None),
-                *build_props_handlers(
-                    transcript_id=transcript_id,
-                    verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
-                    if verbose
-                    else None,
-                    servers=servers,
-                ),
-                *extra_handlers,
-            ]
-        )
+            handlers_list.extend(
+                [
+                    AbortIf(should_abort=lambda: grader_state.result is not None),
+                    *build_props_handlers(
+                        transcript_id=transcript_id,
+                        verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                        if verbose
+                        else None,
+                        servers=servers,
+                    ),
+                    *extra_handlers,
+                ]
+            )
 
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=system,
-            client=client,
-            handlers=handlers_list,
-            parallel_tool_calls=True,
-            reasoning_summary=ReasoningSummary.detailed,
-            tool_policy=RequireAnyTool(),
-        )
-        await agent.run(prompt)
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=system,
+                client=client,
+                handlers=handlers_list,
+                parallel_tool_calls=True,
+                reasoning_summary=ReasoningSummary.detailed,
+                tool_policy=RequireAnyTool(),
+            )
+            await agent.run(prompt)
 
 
 # =============================================================================

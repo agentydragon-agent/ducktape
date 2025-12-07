@@ -80,57 +80,60 @@ def run(
 
         # Build a Compositor and mount runtime + matrix control servers
 
-        comp = Compositor()
-        runtime_server = make_container_exec_server(
-            ContainerOptions(image=docker_image, network_mode=nm, environment=env, ephemeral=True)
-        )
-        await comp.mount_inproc("docker", runtime_server)
-        matrix_control = make_matrix_control_server(name="Matrix Control", bus=ui_bus)
-        await comp.mount_inproc(MATRIX_CONTROL_SERVER_NAME, matrix_control)
-
-        # Client with notifications buffer so UI can reflect MCP updates
-        notif_buffer = NotificationsBuffer(compositor=comp)
-        async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
-            agent = await MiniCodex.create(
-                mcp_client=mcp_client,
-                system=effective_system,
-                client=client,
-                handlers=[ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll), DisplayEventsHandler()],
-                tool_policy=RequireAnyTool(),
+        async with Compositor() as comp:
+            runtime_server = make_container_exec_server(
+                ContainerOptions(image=docker_image, network_mode=nm, environment=env, ephemeral=True)
             )
+            await comp.mount_inproc("docker", runtime_server)
+            matrix_control = make_matrix_control_server(name="Matrix Control", bus=ui_bus)
+            await comp.mount_inproc(MATRIX_CONTROL_SERVER_NAME, matrix_control)
 
-            async def _sync_once(since: str | None) -> tuple[str, bool]:
-                qs = {"timeout": "30000"}
-                if since:
-                    qs["since"] = since
-                url = f"$MATRIX_BASE_URL/_matrix/client/v3/sync?{urlencode(qs)}"
-                hdr = "Authorization: Bearer $MATRIX_ACCESS_TOKEN"
-                cmd = ["sh", "-lc", f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"']
-                res_client = await mcp_client.session.call_tool(
-                    name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
+            # Client with notifications buffer so UI can reflect MCP updates
+            notif_buffer = NotificationsBuffer(compositor=comp)
+            async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
+                agent = await MiniCodex.create(
+                    mcp_client=mcp_client,
+                    system=effective_system,
+                    client=client,
+                    handlers=[
+                        ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
+                        DisplayEventsHandler(),
+                    ],
+                    tool_policy=RequireAnyTool(),
                 )
-                res = fastmcp_to_mcp_result(res_client)
-                ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
-                stdout_stream = ex.stdout or ""
-                assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
-                stdout = stdout_stream
-                try:
-                    data = json.loads(stdout)
-                except json.JSONDecodeError:
-                    # Not JSON (or truncated), keep polling without advancing
-                    return since or "", False
-                next_since = data.get("next_batch") or (since or "")
-                rooms = (data.get("rooms") or {}).get("join") or {}
-                events = (rooms.get(room) or {}).get("timeline", {}).get("events", [])
-                return next_since, bool(events)
 
-            since_token = initial_since or None
-            while True:
-                next_since, has_new = await _sync_once(since_token)
-                since_token = next_since
-                if not has_new:
-                    continue
-                await agent.run(user_text="process matrix inbox")
+                async def _sync_once(since: str | None) -> tuple[str, bool]:
+                    qs = {"timeout": "30000"}
+                    if since:
+                        qs["since"] = since
+                    url = f"$MATRIX_BASE_URL/_matrix/client/v3/sync?{urlencode(qs)}"
+                    hdr = "Authorization: Bearer $MATRIX_ACCESS_TOKEN"
+                    cmd = ["sh", "-lc", f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"']
+                    res_client = await mcp_client.session.call_tool(
+                        name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
+                    )
+                    res = fastmcp_to_mcp_result(res_client)
+                    ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
+                    stdout_stream = ex.stdout or ""
+                    assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
+                    stdout = stdout_stream
+                    try:
+                        data = json.loads(stdout)
+                    except json.JSONDecodeError:
+                        # Not JSON (or truncated), keep polling without advancing
+                        return since or "", False
+                    next_since = data.get("next_batch") or (since or "")
+                    rooms = (data.get("rooms") or {}).get("join") or {}
+                    events = (rooms.get(room) or {}).get("timeline", {}).get("events", [])
+                    return next_since, bool(events)
+
+                since_token = initial_since or None
+                while True:
+                    next_since, has_new = await _sync_once(since_token)
+                    since_token = next_since
+                    if not has_new:
+                        continue
+                    await agent.run(user_text="process matrix inbox")
 
     asyncio.run(_run())
 

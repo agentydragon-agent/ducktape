@@ -42,7 +42,7 @@ async def create_global_compositor(registry: InfrastructureRegistry) -> Composit
         Compositor with agents server mounted
     """
     # Create the global compositor
-    compositor = Compositor("global", eager_open=True)
+    compositor = Compositor("global")
 
     # Create and mount agents management server
     agents_server = make_agents_server(AGENTS_SERVER_NAME, registry)

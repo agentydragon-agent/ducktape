@@ -138,6 +138,11 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         if app.state.mcp_registry is not None:
             await app.state.mcp_registry.shutdown_all()
 
+        # Close global compositor to cleanup mounted servers
+        if app.state.global_compositor is not None:
+            with contextlib.suppress(Exception):
+                await app.state.global_compositor.close()
+
         # Legacy registry path for backwards compatibility
         for container in app.state.registry.list():
             # Flush legacy UI manager

@@ -134,9 +134,7 @@ async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
     client = build_client(model)
 
     # Create empty MCP compositor (no tools for interrogation)
-    compositor = Compositor()
-
-    async with MCPClient(compositor) as mcp_client:
+    async with Compositor() as compositor, MCPClient(compositor) as mcp_client:
         agent = await MiniCodex.create(
             mcp_client=mcp_client,
             system=system_instructions,

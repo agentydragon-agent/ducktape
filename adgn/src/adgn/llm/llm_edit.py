@@ -14,6 +14,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 import time
+from typing import Annotated
 
 from fastmcp.client import Client
 import typer
@@ -35,8 +36,8 @@ async def _execute(
     file_path: Path,
     prompt: str,
     model: str,
-    reasoning_effort: str | None,
-    reasoning_summary: str | None,
+    reasoning_effort: ReasoningEffort | None,
+    reasoning_summary: ReasoningSummary | None,
     client: OpenAIModelProto,
 ) -> int:
     # Validate input path
@@ -46,40 +47,31 @@ async def _execute(
         return 2
 
     # Folded context: per-agent MCP lifetime + agent lifetime
-    comp = Compositor()
-    await comp.mount_inproc(EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME))
-    # Normalize CLI strings to adapter-level values (no direct SDK types)
-    effort_val: ReasoningEffort | None = None
-    if reasoning_effort is not None:
-        try:
-            effort_val = ReasoningEffort(reasoning_effort)
-        except ValueError as exc:
-            allowed = ", ".join(item.value for item in ReasoningEffort)
-            raise ValueError(f"Invalid reasoning_effort={reasoning_effort!r}; expected one of: {allowed}") from exc
-    summary_val = None if reasoning_summary is None else ReasoningSummary(reasoning_summary)
+    async with Compositor() as comp:
+        await comp.mount_inproc(EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME))
 
-    # Create a per-run transcript directory (aligned with MiniCodex defaults)
-    run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
-    run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
-    run_dir.mkdir(parents=True, exist_ok=True)
+        # Create a per-run transcript directory (aligned with MiniCodex defaults)
+        run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
+        run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
+        run_dir.mkdir(parents=True, exist_ok=True)
 
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system=(
-                "You are a code editor assistant. Use tools to read/modify/save files.\n"
-                "Operate on the provided file only. Prefer precise replace_text edits.\n"
-                "Finish with done(success, report)."
-            ),
-            client=client,
-            reasoning_effort=effort_val,
-            reasoning_summary=summary_val,
-            handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
-            tool_policy=RequireAnyTool(),
-        )
-        res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")
-        print(res.text)
-        return 0
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system=(
+                    "You are a code editor assistant. Use tools to read/modify/save files.\n"
+                    "Operate on the provided file only. Prefer precise replace_text edits.\n"
+                    "Finish with done(success, report)."
+                ),
+                client=client,
+                reasoning_effort=reasoning_effort,
+                reasoning_summary=reasoning_summary,
+                handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+                tool_policy=RequireAnyTool(),
+            )
+            res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")
+            print(res.text)
+            return 0
 
 
 app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
@@ -87,15 +79,15 @@ app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
 
 @app.command()
 async def edit(
-    file_path: Path = typer.Argument(  # noqa: B008
-        ..., exists=True, dir_okay=False, readable=True, help="Path to file to edit"
-    ),
-    prompt: str = typer.Argument(..., help="Editing prompt"),
-    model: str = typer.Option("o4-mini", "--model", help="Model name"),
-    reasoning_effort: str | None = typer.Option(
-        None, help="Reasoning effort for reasoning-capable models (minimal/low/medium/high)"
-    ),
-    reasoning_summary: str | None = typer.Option(None, help="Emit reasoning summaries (auto/concise/detailed)"),
+    file_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True, help="Path to file to edit")],
+    prompt: Annotated[str, typer.Argument(help="Editing prompt")],
+    model: Annotated[str, typer.Option("--model", help="Model name")] = "o4-mini",
+    reasoning_effort: Annotated[
+        ReasoningEffort | None, typer.Option(help="Reasoning effort for reasoning-capable models", case_sensitive=False)
+    ] = None,
+    reasoning_summary: Annotated[
+        ReasoningSummary | None, typer.Option(help="Emit reasoning summaries", case_sensitive=False)
+    ] = None,
 ) -> None:
     client = client_factory.build_client(model)
     code = await _execute(

@@ -305,19 +305,20 @@ class AgentContainer:
         # Initialize AsyncExitStack and enter contexts through it
         await self._stack.__aenter__()
 
-        # In-proc Compositor (embedded)
-        comp = Compositor(eager_open=True)
-        await comp.mount_servers_from_config(mcp_config)
+        # In-proc Compositor (embedded) - enter as context manager via stack
+        self._compositor = await self._stack.enter_async_context(Compositor())
+        assert self._compositor is not None  # Type narrowing for mypy
+
+        # Now mount servers (compositor is in ACTIVE state)
+        await self._compositor.mount_servers_from_config(mcp_config)
         # Mount loop control server (agent-only surface)
-        loop_server = make_loop_server("loop")
-        await comp.mount_inproc("loop", loop_server)
-        self._compositor = comp
+        await self._compositor.mount_inproc("loop", make_loop_server("loop"))
 
         # Notifications buffer for MCP events
-        notif_buffer = NotificationsBuffer(compositor=comp)
+        notif_buffer = NotificationsBuffer(compositor=self._compositor)
 
         # In-proc client to the compositor with policy middleware
-        mcp_client = Client(comp, message_handler=notif_buffer.handler)
+        mcp_client = Client(self._compositor, message_handler=notif_buffer.handler)
         await self._stack.enter_async_context(mcp_client)
         self._compositor_client = mcp_client
         self._notif_buffer = notif_buffer
@@ -326,12 +327,12 @@ class AgentContainer:
         await self._attach_inproc_servers(self._ui_bus)
 
         # Install policy gateway middleware from engine
-        comp.add_middleware(approval_engine.gateway)
+        self._compositor.add_middleware(approval_engine.gateway)
 
         # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
-        await mount_standard_inproc_servers(compositor=comp)
+        await mount_standard_inproc_servers(compositor=self._compositor)
 
-        return (comp, mcp_client, notif_buffer)
+        return (self._compositor, mcp_client, notif_buffer)
 
     async def _setup_agent_runtime(
         self, mcp_client: Client, notifications: NotificationsBuffer, approval_engine: PolicyEngine

@@ -16,14 +16,15 @@ async def test_snapshot_surfaces_invalid_proposal(docker_client, sqlite_persiste
     await sqlite_persistence.create_policy_proposal(agent_id, proposal_id="bad1", content="this is not python\n")
 
     # Build a minimal session with an engine and agent_id so snapshot reads from persistence
-    cm = UiEventHandler()
     approval_engine = PolicyEngine(
         docker_client=docker_client,
         agent_id=agent_id,
         persistence=sqlite_persistence,
         policy_source=load_default_policy_source(),
     )
-    sess = AgentSession(cm, persistence=sqlite_persistence, agent_id=agent_id, approval_engine=approval_engine)
+    sess = AgentSession(
+        UiEventHandler(), persistence=sqlite_persistence, agent_id=agent_id, approval_engine=approval_engine
+    )
 
     # Act
     snap: Snapshot = await sess.build_snapshot()

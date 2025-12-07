@@ -215,5 +215,5 @@ async def generate_commit_message_minicodex(
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     assert submit_state.result is not None, "submit_commit_message not called"
-    cm = submit_state.result
-    return cm.subject if not cm.body else f"{cm.subject}\n\n{cm.body}"
+    commit_msg = submit_state.result
+    return commit_msg.subject if not commit_msg.body else f"{commit_msg.subject}\n\n{commit_msg.body}"

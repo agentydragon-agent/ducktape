@@ -611,24 +611,24 @@ async def _exec_agent(
     dest_root = Path(tempfile.gettempdir()) / "adgn_runs" / label / ts
     dest_root.mkdir(parents=True, exist_ok=True)
 
-    comp = Compositor()
-    await wiring.attach(comp)
-    handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(events_path=dest_root / "events.jsonl")]
-    print(f"[run] Transcript: {dest_root}")
-    async with Client(comp) as mcp_client:
-        agent = await MiniCodex.create(
-            mcp_client=mcp_client,
-            system="You are a code agent. Use tools to execute commands. Respond concisely.",
-            client=build_client(model),
-            handlers=handlers,
-            parallel_tool_calls=True,
-            tool_policy=RequireAnyTool(),
-        )
-        result = await agent.run(prompt_text)
-        if output_final_message:
-            output_final_message.write_text(result.text or "", encoding="utf-8")
-        elif not final_only and (result.text or ""):
-            print(result.text)
+    async with Compositor() as comp:
+        await wiring.attach(comp)
+        handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(events_path=dest_root / "events.jsonl")]
+        print(f"[run] Transcript: {dest_root}")
+        async with Client(comp) as mcp_client:
+            agent = await MiniCodex.create(
+                mcp_client=mcp_client,
+                system="You are a code agent. Use tools to execute commands. Respond concisely.",
+                client=build_client(model),
+                handlers=handlers,
+                parallel_tool_calls=True,
+                tool_policy=RequireAnyTool(),
+            )
+            result = await agent.run(prompt_text)
+            if output_final_message:
+                output_final_message.write_text(result.text or "", encoding="utf-8")
+            elif not final_only and (result.text or ""):
+                print(result.text)
 
 
 # --- Unified run command (structured/freeform; preset/prompt-file/text) ---
