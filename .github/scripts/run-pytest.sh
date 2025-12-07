@@ -13,9 +13,9 @@ pip install uv==0.5.11
 if grep -qE "(dbus-python|PyGObject)" pyproject.toml 2>/dev/null; then
   sudo apt-get update
   # libdbus-1-dev: required for dbus-python
-  # libgirepository1.0-dev: required for PyGObject
+  # libgirepository-2.0-dev: required for PyGObject (girepository-2.0 API)
   # libcairo2-dev: required for pycairo (PyGObject dependency)
-  sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev libcairo2-dev
+  sudo apt-get install -y libdbus-1-dev libgirepository-2.0-dev libcairo2-dev
 fi
 
 # Install project dependencies
