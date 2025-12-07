@@ -26,4 +26,9 @@ I.falsePositive(
     'adgn/src/adgn/agent/server/runtime.py': [[209, 214]],
     'adgn/src/adgn/agent/server/reducer.py': [[101, 150]],
   },
+  relevant_files=[
+    'adgn/src/adgn/agent/server/state.py',
+    'adgn/src/adgn/agent/server/runtime.py',
+    'adgn/src/adgn/agent/server/reducer.py',
+  ],
 )

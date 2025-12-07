@@ -29,6 +29,11 @@ class CapturingOpenAIModel(OpenAIModelProto):
     def model(self) -> str:
         return self._inner.model
 
+    @property
+    def calls(self) -> int:
+        """Forward .calls attribute from inner model (if it has one)."""
+        return getattr(self._inner, "calls", 0)
+
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         self.captured.append(req.model_copy(deep=True))
         return await self._inner.responses_create(req)

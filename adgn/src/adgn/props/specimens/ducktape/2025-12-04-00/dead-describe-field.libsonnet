@@ -1,4 +1,4 @@
-local I = import '../../../lib.libsonnet';
+local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||

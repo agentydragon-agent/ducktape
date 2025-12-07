@@ -18,4 +18,7 @@ I.issue(
     'adgn/src/adgn/agent/persist/__init__.py': [[70, 70], [115, 115]],
     'adgn/src/adgn/agent/persist/models.py': [[57, 57], [115, 115]],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/persist/__init__.py', 'adgn/src/adgn/agent/persist/models.py'],
+  ],
 )

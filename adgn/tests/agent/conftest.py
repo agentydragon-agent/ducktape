@@ -36,7 +36,7 @@ from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
-from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.llm.support.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from tests.support.types import McpServerSpecs
 
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
@@ -167,7 +167,8 @@ def make_test_agent(responses_factory):
     """
 
     async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
-        client = FakeOpenAIModel(responses)
+        fake_client = FakeOpenAIModel(responses)
+        client = CapturingOpenAIModel(fake_client)
         if not handlers:
             handlers = [BaseHandler()]
         if tool_policy is None:

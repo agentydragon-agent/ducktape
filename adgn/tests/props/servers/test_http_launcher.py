@@ -28,7 +28,7 @@ def _create_test_server(token: str) -> FastMCP:
 @pytest.fixture
 async def server_handle() -> AsyncIterator[ServerHandle]:
     """Launch a test HTTP server and yield the handle."""
-    async with launch_mcp_http_server(_create_test_server, container_host="localhost") as handle:
+    async with launch_mcp_http_server(_create_test_server, container_host="host.docker.internal") as handle:
         yield handle
 
 
@@ -62,7 +62,7 @@ class TestLaunchMcpHttpServer:
     @pytest.mark.asyncio
     async def test_server_stops_after_context(self):
         """Server should stop after context manager exits."""
-        async with launch_mcp_http_server(_create_test_server, container_host="localhost") as handle:
+        async with launch_mcp_http_server(_create_test_server, container_host="host.docker.internal") as handle:
             port = handle.port
 
         # Give it a moment to fully shut down

@@ -88,6 +88,7 @@ ducktape/2025-09-03-00:
   - files: ["llm/adgn_llm/src/adgn_llm/mini_codex/local_server.py"]
   - files: ["llm/adgn_llm/src/adgn_llm/mini_codex/local_tools.py"]
   - files: ["llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py"]
+  - files: ["llm/adgn_llm/src/adgn_llm/mini_codex/local_server.py", "llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py"]
 
 ducktape/2025-11-20-00:
   # Individual file scopes (auto-generated from expect_caught_from)
@@ -100,6 +101,7 @@ ducktape/2025-11-20-00:
   - files: ["adgn/src/adgn/agent/mcp_bridge/servers/agents.py"]
   - files: ["adgn/src/adgn/agent/models/policy_error.py"]
   - files: ["adgn/src/adgn/agent/persist/__init__.py"]
+  - files: ["adgn/src/adgn/agent/persist/__init__.py", "adgn/src/adgn/agent/persist/models.py"]
   - files: ["adgn/src/adgn/agent/persist/handler.py"]
   - files: ["adgn/src/adgn/agent/persist/models.py"]
   - files: ["adgn/src/adgn/agent/persist/models.py", "adgn/src/adgn/agent/persist/sqlite.py"]
@@ -339,6 +341,14 @@ ducktape/2025-12-04-00:
   - files: ["adgn/tests/props/conftest.py"]
   - files: ["adgn/tests/props/test_paths.py"]
   - files: ["adgn/tests/support/assertions.py"]
+  - files: ["adgn/src/adgn/mcp/_shared/container_session.py"]
+  - files: ["adgn/src/adgn/mcp/exec/docker/launcher.py"]
+  - files: ["adgn/src/adgn/props/cli_app/main.py"]
+  - files: ["adgn/src/adgn/props/prompts/_base.j2.md"]
+  - files: ["adgn/src/adgn/props/cli_app/shared.py"]
+  - files: ["adgn/src/adgn/props/prompts/_partials.j2"]
+  - files: ["adgn/tests/mcp/git_ro/conftest.py"]
+  - files: ["adgn/docs/llm/sandboxer/JUPYTER_CONFIG_STRATEGY.md", "adgn/src/adgn/mcp/sandboxed_jupyter/launch.py"]
 
 misc/2025-08-29-pyright_watch_report:
   # Individual file scopes (auto-generated from expect_caught_from)
