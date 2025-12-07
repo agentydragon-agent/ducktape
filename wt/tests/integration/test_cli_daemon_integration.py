@@ -85,7 +85,7 @@ class TestCLIIntegration:
         assert (worktree_path / ".git").exists(), "Worktree missing .git"
 
         # Verify branch was created using pygit2
-        repo = pygit2.Repository(str(real_temp_repo))
+        repo = pygit2.Repository(real_temp_repo)
         branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
         assert "refs/heads/test/new-feature" in branch_names
 
@@ -185,13 +185,13 @@ class TestRealGitOperations:
         assert result.returncode == 0, f"Failed: {result.stderr}"
 
         # Check that branch exists using pygit2
-        repo = pygit2.Repository(str(real_temp_repo))
+        repo = pygit2.Repository(real_temp_repo)
         branch_names = [name for name in repo.references if name.startswith("refs/heads/test/")]
         assert "refs/heads/test/test-branch" in branch_names
 
         # Check worktree is on correct branch
         worktree_path = real_temp_repo / "worktrees" / "test-branch"
-        worktree_repo = pygit2.Repository(str(worktree_path))
+        worktree_repo = pygit2.Repository(worktree_path)
         assert worktree_repo.head.shorthand == "test/test-branch"
 
     def test_worktree_git_operations(self, real_temp_repo, wt_cli):
@@ -206,7 +206,7 @@ class TestRealGitOperations:
         test_file.write_text("Test content")
 
         # Add and commit using pygit2
-        worktree_repo = pygit2.Repository(str(worktree_path))
+        worktree_repo = pygit2.Repository(worktree_path)
         worktree_repo.index.add("test.txt")
         worktree_repo.index.write()
 
@@ -231,7 +231,7 @@ class TestRealGitOperations:
         (worktree_path / "untracked.txt").write_text("Untracked content")
 
         # Stage one file using pygit2
-        worktree_repo = pygit2.Repository(str(worktree_path))
+        worktree_repo = pygit2.Repository(worktree_path)
         worktree_repo.index.add("modified.txt")
         worktree_repo.index.write()
 
@@ -248,7 +248,7 @@ class TestRealGitOperations:
         (real_temp_repo / "foo" / "bar" / "baz.txt").write_text("baz")
         (real_temp_repo / "top.txt").write_text("top")
 
-        repo = pygit2.Repository(str(real_temp_repo))
+        repo = pygit2.Repository(real_temp_repo)
         repo.index.add_all()
         repo.index.write()
         sig = pygit2.Signature("Test User", "test@example.com")

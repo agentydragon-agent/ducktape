@@ -321,7 +321,7 @@ class WtClient:
 
         repo_path = result.absolute_path
         try:
-            repository = pygit2.Repository(str(repo_path))
+            repository = pygit2.Repository(repo_path)
         except (pygit2.GitError, ValueError, TypeError):
             return [], []
 

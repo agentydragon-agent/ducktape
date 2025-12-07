@@ -72,7 +72,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     # Resolve config to locate filesystem paths
     wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
-    repo = pygit2.Repository(str(config.main_repo))
+    repo = pygit2.Repository(config.main_repo)
 
     # Step 1: Initial status - should start daemon and show empty state
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
@@ -126,7 +126,7 @@ def test_path_watcher_multiple_worktrees(wt_cli):
     # Resolve config for filesystem checks
     wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
-    repo = pygit2.Repository(str(config.main_repo))
+    repo = pygit2.Repository(config.main_repo)
 
     # Initial status to start daemon
     result = wt_cli.status(timeout=timedelta(seconds=5.0))

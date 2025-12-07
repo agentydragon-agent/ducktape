@@ -98,7 +98,7 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env,
     assert (worktree1_path / ".git").exists(), "Worktree 1 missing .git"
 
     # Verify git branch was created correctly using pygit2
-    repo1 = pygit2.Repository(str(worktree1_path))
+    repo1 = pygit2.Repository(worktree1_path)
     current_branch = repo1.head.shorthand
     assert current_branch == "test/feature1", f"Expected test/feature1 branch, got: {current_branch}"
 

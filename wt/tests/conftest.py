@@ -137,7 +137,7 @@ def pygit2_repo(real_temp_repo) -> pygit2.Repository:
             # Use real_temp_repo for path operations
             (real_temp_repo / "file.txt").write_text("content")
     """
-    return pygit2.Repository(str(real_temp_repo))
+    return pygit2.Repository(real_temp_repo)
 
 
 @pytest.fixture
@@ -215,7 +215,7 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     assert worktree_path.is_dir(), f"Worktree {worktree_path} is not a directory"
 
     if expected_branch:
-        repo = pygit2.Repository(str(worktree_path))
+        repo = pygit2.Repository(worktree_path)
         head_ref = repo.head.shorthand
         assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
 

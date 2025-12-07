@@ -65,7 +65,7 @@ class GitManager:
     config: Configuration
 
     def __post_init__(self) -> None:
-        self._main_repo: pygit2.Repository = pygit2.Repository(str(self.config.main_repo))
+        self._main_repo: pygit2.Repository = pygit2.Repository(self.config.main_repo)
 
     def branch_exists(self, branch_name: str) -> bool:
         return branch_name in self._main_repo.branches
@@ -96,7 +96,7 @@ class GitManager:
     def get_repo(self, path: Path | None = None) -> pygit2.Repository:
         if path is None or path == self.config.main_repo:
             return self._main_repo
-        return pygit2.Repository(str(path))
+        return pygit2.Repository(path)
 
     def get_commit_info(self, ref: str, worktree: Path) -> CommitInfo:
         repo = self.get_repo(worktree)
@@ -142,7 +142,7 @@ class GitManager:
             branch_name = ""
             if exists:
                 try:
-                    wt_repo = pygit2.Repository(str(wt_path))
+                    wt_repo = pygit2.Repository(wt_path)
                     if not wt_repo.head_is_detached:
                         branch_name = wt_repo.head.shorthand or ""
                 except (pygit2.GitError, OSError, ValueError, TypeError):

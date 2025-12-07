@@ -110,7 +110,7 @@ class WorktreeService:
                     self._hydrate_worktree(config, source_worktree, worktree_path)
                 else:
                     logger.info(f"Hydrating new worktree in {worktree_path} by checking out {branch_name}.")
-                    repo: Any = pygit2.Repository(str(worktree_path))
+                    repo: Any = pygit2.Repository(worktree_path)
                     repo.set_head(f"refs/heads/{branch_name}")
                     repo.checkout_head(strategy=pygit2.GIT_CHECKOUT_FORCE)
             else:

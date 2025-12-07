@@ -13,7 +13,7 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     cfg = config_factory(repo_path).minimal(upstream_branch="HEAD")
 
     # Create two worktrees against branches test/aaaaa and test/bbbbb
-    repo = pygit2.Repository(str(repo_path))
+    repo = pygit2.Repository(repo_path)
     head = repo.head.target
     repo.create_branch("test/aaaaa", repo.get(head))
     repo.create_branch("test/bbbbb", repo.get(head))
@@ -43,7 +43,7 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     assert "bbbbb:" in out
 
     # Additionally, query actual worktree branch heads (branch can change over time)
-    repo_a = pygit2.Repository(str(wt_a))
-    repo_b = pygit2.Repository(str(wt_b))
+    repo_a = pygit2.Repository(wt_a)
+    repo_b = pygit2.Repository(wt_b)
     assert repo_a.head.shorthand == "test/aaaaa"
     assert repo_b.head.shorthand == "test/bbbbb"
