@@ -12,6 +12,7 @@ import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 import anyio
 from fastmcp.client import Client
@@ -19,7 +20,7 @@ from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
 
-from adgn.agent.events import AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import ApiRequest, AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
@@ -604,6 +605,18 @@ class MiniCodex:
                 ],
                 reasoning=reasoning_param,
             )
+
+            # Emit ApiRequest event for persistence
+            # TODO: This stores O(N^2) data - full transcript state at each API call.
+            # Consider storing only non-derivable data (e.g., instructions, tool schemas at each phase)
+            # and reconstructing full request from transcript + metadata.
+            request_id = uuid4()
+            phase_number = sum(1 for evt in self._transcript if isinstance(evt, Response))
+            for h in self._handlers:
+                h.on_api_request_event(
+                    ApiRequest(request=req, model=self._client.model, request_id=request_id, phase_number=phase_number)
+                )
+
             resp = await self._client.responses_create(req)
             sdk_usage = resp.usage
             usage = (
@@ -619,7 +632,9 @@ class MiniCodex:
                 else GroundTruthUsage(model=self._client.model)
             )
             for h in self._handlers:
-                h.on_response(Response(response_id=resp.id, usage=usage, model=self._client.model))
+                h.on_response(
+                    Response(response_id=resp.id, request_id=request_id, usage=usage, model=self._client.model)
+                )
             resp_output = resp.output
 
         if resp_output is not None:

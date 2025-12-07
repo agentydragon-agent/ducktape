@@ -12,7 +12,7 @@ import typer
 
 from adgn.agent.agent import MiniCodex, TranscriptItem
 from adgn.agent.display import DisplayEventsHandler
-from adgn.agent.events import AssistantText, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import ForbidAllTools
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
@@ -87,16 +87,6 @@ async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
         model = run.model
         console.print(f"[dim]Using model: {model}[/dim]")
 
-        # Use simple interrogation prompt (same for all agent types)
-        # TODO: This changes the instructions from what the agent would have originally used.
-        # For critics: original was the full critic prompt from Prompt table
-        # For graders: original was the grader system prompt (with or without MCP HTTP instructions)
-        # We use a simpler interrogation prompt instead for speak-with-dead
-        system_instructions = (
-            "You are reviewing your own execution trace. Answer the user's question about why you might be stuck."
-        )
-        console.print("[dim]Using interrogation system prompt[/dim]")
-
         # Load events from DB
         stmt = select(Event).where(Event.transcript_id == transcript_id).order_by(Event.sequence_num)
         events = session.execute(stmt).scalars().all()
@@ -106,6 +96,21 @@ async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
             return
 
         console.print(f"[dim]Loaded {len(events)} events from transcript {transcript_id}[/dim]")
+
+        # Extract system instructions from last ApiRequest event
+        system_instructions: str | None = None
+        for event in reversed(events):
+            if isinstance(event.payload, ApiRequest):
+                system_instructions = event.payload.request.instructions
+                break
+
+        if system_instructions is None:
+            console.print("[yellow]WARNING: No ApiRequest events found, using fallback interrogation prompt[/yellow]")
+            system_instructions = (
+                "You are reviewing your own execution trace. Answer the user's question about why you might be stuck."
+            )
+        else:
+            console.print("[dim]Using system instructions from last ApiRequest event[/dim]")
 
         # Reconstruct transcript from events (while still in session)
         transcript_items: list[TranscriptItem] = []

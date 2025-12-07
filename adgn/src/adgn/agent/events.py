@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Annotated, Literal
+from uuid import UUID
 
 from mcp.types import CallToolResult
 from pydantic import BaseModel, Field
@@ -73,7 +74,7 @@ class ApiRequest(BaseModel):
     model: str
 
     # Correlation metadata
-    request_id: str  # UUID to correlate with Response event
+    request_id: UUID  # Correlate with Response event
     phase_number: int  # Count of Response events so far (which sampling phase)
 
 
@@ -85,7 +86,7 @@ class Response(BaseModel):
 
     type: Literal["response"] = "response"
     response_id: str
-    request_id: str | None = None  # Correlate with ApiRequest
+    request_id: UUID | None = None  # Correlate with ApiRequest
     usage: GroundTruthUsage
     model: str
     created_at: datetime | None = None
