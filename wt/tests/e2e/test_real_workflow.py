@@ -47,7 +47,7 @@ from pathlib import Path
 import pygit2
 import pytest
 
-from ..git_helpers import add_and_commit, get_commit_messages, get_current_branch
+from ..git_helpers import add_and_commit, get_commit_messages
 from ..test_utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
@@ -122,7 +122,8 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env,
     # Note: cd command is emitted to fd3, we can't easily verify it here
 
     # Step 6: Test real git operations in the worktree using pygit2
-    add_and_commit(worktree1_path, {"test.txt": "Hello from feature1!"}, "Add test file")
+    wt1_repo = pygit2.Repository(str(worktree1_path))
+    add_and_commit(wt1_repo, {"test.txt": "Hello from feature1!"}, "Add test file")
 
     # Step 7: Final status check should show the changes
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
@@ -155,19 +156,19 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env, wt_cli):
     assert worktree_path.exists()
 
     # Test git operations in the worktree using pygit2
+    wt_repo = pygit2.Repository(str(worktree_path))
     test_file = worktree_path / "test.txt"
-    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
+    add_and_commit(wt_repo, {"test.txt": "Hello from worktree!"}, "Test commit")
 
     # Verify branch was created correctly using pygit2
-    current_branch = get_current_branch(worktree_path)
-    assert current_branch == "test/git-test"
+    assert wt_repo.head.shorthand == "test/git-test"
 
     # Verify the file exists and has correct content
     assert test_file.exists()
     assert test_file.read_text() == "Hello from worktree!"
 
     # Verify commit was made using pygit2
-    messages = get_commit_messages(worktree_path, count=5)
+    messages = get_commit_messages(wt_repo, count=5)
     assert any("Test commit" in msg for msg in messages)
 
 

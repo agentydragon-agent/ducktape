@@ -25,8 +25,8 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     (repo_path / "worktrees").mkdir(exist_ok=True)
 
     # Use pygit2 to add worktrees
-    add_worktree(repo_path, wt_a, "test/aaaaa")
-    add_worktree(repo_path, wt_b, "test/bbbbb")
+    add_worktree(repo, wt_a, "test/aaaaa")
+    add_worktree(repo, wt_b, "test/bbbbb")
 
     # Use GitManager via daemon handlers indirectly by calling CLI ls (list)
     env = os.environ.copy()

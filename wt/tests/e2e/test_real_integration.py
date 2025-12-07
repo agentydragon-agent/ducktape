@@ -4,9 +4,10 @@ from datetime import timedelta
 import os
 from pathlib import Path
 
+import pygit2
 import pytest
 
-from ..git_helpers import add_and_commit, get_current_branch, worktree_exists
+from ..git_helpers import add_and_commit, worktree_exists
 from ..test_utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
@@ -82,8 +83,8 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     assert worktree_path.exists()
 
     # Perform git operations using pygit2
-    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
+    wt_repo = pygit2.Repository(str(worktree_path))
+    add_and_commit(wt_repo, {"test.txt": "Hello from worktree!"}, "Test commit")
 
     # Verify branch name using pygit2
-    current_branch = get_current_branch(worktree_path)
-    assert current_branch == "test/git-test"
+    assert wt_repo.head.shorthand == "test/git-test"
