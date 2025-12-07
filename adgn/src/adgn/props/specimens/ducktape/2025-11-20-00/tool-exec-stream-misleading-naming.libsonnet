@@ -18,4 +18,8 @@ I.issue(
     'adgn/src/adgn/agent/server/state.py': [[142, 142]],
     'adgn/src/adgn/agent/server/reducer.py': [[101, 101]],
   },
+  expect_caught_from=[
+    ['adgn/src/adgn/agent/server/state.py'],
+    ['adgn/src/adgn/agent/server/reducer.py'],
+  ],
 )

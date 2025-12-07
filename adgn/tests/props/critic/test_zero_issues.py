@@ -81,7 +81,8 @@ def critic_test_db_setup(test_trivial_specimen, test_db):
     Returns:
         tuple[str, str]: (snapshot_slug, prompt_sha256)
     """
-    slug = test_trivial_specimen.slug
+    # HydratedSnapshot doesn't have metadata (slug). Use known slug for test-trivial.
+    slug = "test-fixtures/test-trivial"
 
     # Insert snapshot into database
     with get_session() as session:

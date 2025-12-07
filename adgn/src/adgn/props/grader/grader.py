@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 
 import docker
 from fastmcp import FastMCP
+from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 from rich.console import Group, RenderableType
@@ -321,7 +322,7 @@ async def _run_grader_agent(
             await handle.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
             servers[GRADER_SUBMIT_SERVER_NAME] = grader_submit_server
 
-        async with handle.client() as mcp_client:
+        async with Client(handle) as mcp_client:
             await mount_standard_inproc_servers(compositor=handle)
 
             # Build system prompt with MCP HTTP instructions if in http_mode

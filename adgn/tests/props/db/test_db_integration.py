@@ -244,7 +244,9 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
 
         # SHOULD see valid aggregates via the view
         result = session.execute(
-            text("SELECT specimen, recall FROM valid_full_specimen_grader_metrics WHERE specimen = 'valid/spec-test'")
+            text(
+                "SELECT snapshot_slug, recall FROM valid_full_specimen_grader_metrics WHERE snapshot_slug = 'valid/spec-test'"
+            )
         ).fetchall()
         assert len(result) == 1, (
             "agent_user SHOULD see valid split aggregates via valid_full_specimen_grader_metrics view"
