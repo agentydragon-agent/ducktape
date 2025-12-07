@@ -7,7 +7,7 @@ name = "wt"
 version = "0.0.0"
 description = "Worktree management CLI and daemon"
 authors = [{ name = "Rai" }]
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12"
 dependencies = [
   "anyio>=4.0",
   "click>=8.0",
