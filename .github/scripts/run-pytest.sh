@@ -9,10 +9,13 @@ cd "$project_dir"
 # UV version synced with flake.nix / .envrc
 pip install uv==0.5.11
 
-# Check if project needs dbus-python system dependencies
-if grep -q "dbus-python" pyproject.toml 2>/dev/null; then
+# Check if project needs system dependencies for Python bindings
+if grep -qE "(dbus-python|PyGObject)" pyproject.toml 2>/dev/null; then
   sudo apt-get update
-  sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev
+  # libdbus-1-dev: required for dbus-python
+  # libgirepository1.0-dev: required for PyGObject
+  # libcairo2-dev: required for pycairo (PyGObject dependency)
+  sudo apt-get install -y libdbus-1-dev libgirepository1.0-dev libcairo2-dev
 fi
 
 # Install project dependencies
