@@ -322,29 +322,36 @@ def real_temp_repo(repo_factory, require_gitstatusd):
 
 
 @pytest.fixture
-def real_env(real_temp_repo, config_factory):
+def real_config(real_temp_repo, config_factory) -> Configuration:
+    """Create real configuration for integration tests.
+
+    This fixture provides the Configuration object directly for tests
+    that need to access config properties like worktrees_dir, main_repo, etc.
+    """
+    factory = config_factory(real_temp_repo)
+    return factory.integration(github_enabled=False)
+
+
+@pytest.fixture
+def real_env(real_config):
     """Set up real environment for integration tests with proper cleanup.
 
-    Creates real configuration and environment setup for tests that need
-    to interact with actual daemon processes and gitstatusd.
+    Creates environment dict for tests that need to interact with actual
+    daemon processes and gitstatusd.
 
     The hermetic git environment is applied globally by autouse fixture.
     """
-    # Create config using factory pattern
-    factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=False)
-
     # Ensure clean daemon state for this WT_DIR
-    kill_daemon_at_wt_dir(config.wt_dir)
+    kill_daemon_at_wt_dir(real_config.wt_dir)
 
     # Set up environment
     env = os.environ.copy()
-    env["WT_DIR"] = str(config.wt_dir)
+    env["WT_DIR"] = str(real_config.wt_dir)
 
     yield env
 
     # Cleanup: Kill daemon after test
-    kill_daemon_at_wt_dir(config.wt_dir)
+    kill_daemon_at_wt_dir(real_config.wt_dir)
 
 
 class WtCLI:
