@@ -216,11 +216,17 @@ def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):
     # Step 5: Verify daemon is no longer running
     wait_until(lambda: not pid_file.exists(), timeout_seconds=2.0, interval_seconds=0.05)
 
-    try:
-        os.kill(pid, 0)  # Check if process still exists
+    # Wait for process to actually terminate (SIGKILL may take a moment)
+    def process_dead():
+        try:
+            os.kill(pid, 0)
+            return False
+        except OSError:
+            return True
+
+    if not wait_until(process_dead, timeout_seconds=2.0, interval_seconds=0.05):
         pytest.fail(f"Daemon process {pid} still running after kill command")
-    except OSError:
-        print(f"✅ Daemon process {pid} successfully killed")
+    print(f"✅ Daemon process {pid} successfully killed")
 
     # Step 6: Verify cleanup happened
     # PID file should be removed or contain stale PID
