@@ -37,6 +37,7 @@ from adgn.props.cli.cmd_db import cmd_db_recreate, cmd_sync
 from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
 from adgn.props.cli.cmd_snapshot import cmd_snapshot_list, snapshot_capture_ducktape, snapshot_dump, snapshot_exec
+from adgn.props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from adgn.props.cli.cmd_stats import cmd_stats
 from adgn.props.cli.decorators import async_run
 from adgn.props.cli.shared import BuildOptions, build_cmd, run_check_minicodex_async, save_prompt_to_tmp
@@ -503,6 +504,9 @@ app.command("gepa")(cmd_gepa)
 
 # Stats command
 app.command("stats")(cmd_stats)
+
+# Speak with dead command
+app.command("speak-with-dead")(cmd_speak_with_dead)
 
 
 # ---------- Shared helpers for run ----------

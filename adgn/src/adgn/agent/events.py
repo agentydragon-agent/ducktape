@@ -8,9 +8,10 @@ from typing import Annotated, Literal
 from mcp.types import CallToolResult
 from pydantic import BaseModel, Field
 
-from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem
+from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
 
 __all__ = [
+    "ApiRequest",
     "AssistantText",
     "EventType",
     "GroundTruthUsage",
@@ -56,6 +57,26 @@ class ToolCallOutput(BaseModel):
     result: CallToolResult
 
 
+class ApiRequest(BaseModel):
+    """Full OpenAI API request payload (before sending).
+
+    Captures the complete request including fully-evaluated instructions.
+    """
+
+    type: Literal["api_request"] = "api_request"
+
+    # The complete request (reuses existing typed model)
+    request: ResponsesRequest
+
+    # TODO: Consider moving model into ResponsesRequest and removing the "model handle" layer
+    # Currently model lives on client, not in request object
+    model: str
+
+    # Correlation metadata
+    request_id: str  # UUID to correlate with Response event
+    phase_number: int  # Count of Response events so far (which sampling phase)
+
+
 class Response(BaseModel):
     """One OpenAI responses.create result (non-streaming) with usage.
 
@@ -64,6 +85,7 @@ class Response(BaseModel):
 
     type: Literal["response"] = "response"
     response_id: str
+    request_id: str | None = None  # Correlate with ApiRequest
     usage: GroundTruthUsage
     model: str
     created_at: datetime | None = None
@@ -72,5 +94,6 @@ class Response(BaseModel):
 
 # Union of all current event types (discriminated by "type" field)
 EventType = Annotated[
-    UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem, Field(discriminator="type")
+    UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem,
+    Field(discriminator="type"),
 ]

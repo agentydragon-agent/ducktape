@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from adgn.agent.events import AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, LoopDecision, NoAction
 
 __all__ = ["AbortIf", "AbortTurnDecision", "BaseHandler", "ContinueDecision", "SequenceHandler"]
@@ -59,6 +59,10 @@ class BaseHandler:
 
     def on_response(self, evt: Response) -> None:
         """Called after receiving a complete model response with usage stats."""
+        return
+
+    def on_api_request_event(self, evt: ApiRequest) -> None:
+        """Called before sending a request to the OpenAI API."""
         return
 
     def on_before_sample(self) -> LoopDecision:
