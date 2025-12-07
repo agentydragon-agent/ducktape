@@ -58,6 +58,10 @@ from ..shared.protocol import (
 logger = logging.getLogger(__name__)
 
 
+class EmptyParams(BaseModel):
+    """Empty parameter model for RPC methods that take no parameters."""
+
+
 async def read_daemon_pid(pid_path: Path) -> int | None:
     """Read daemon PID from file.
 
@@ -464,7 +468,7 @@ class WtClient:
 
     async def list_worktrees(self) -> WorktreeListResult:
         await self._start_daemon_if_needed()
-        return await self._rpc("worktree_list", {}, TypeAdapter(WorktreeListResult))
+        return await self._rpc("worktree_list", EmptyParams(), TypeAdapter(WorktreeListResult))
 
     async def identify_worktree(self, absolute_path: Path | str) -> WorktreeIdentifyResult:
         await self._start_daemon_if_needed()
@@ -478,9 +482,7 @@ class WtClient:
             "worktree_get_by_name", WorktreeGetByNameParams(name=name), TypeAdapter(WorktreeGetByNameResult)
         )
 
-    async def _rpc[T](
-        self, method: str, params_model: BaseModel | dict[str, object], result_adapter: TypeAdapter[T]
-    ) -> T:
+    async def _rpc[T](self, method: str, params_model: BaseModel, result_adapter: TypeAdapter[T]) -> T:
         await self._start_daemon_if_needed()
         # Guard against a short race where the socket file is created just after the check.
         # Try a brief, bounded wait for the socket to appear to make CLI flows robust under load.
@@ -491,13 +493,7 @@ class WtClient:
                     break
             else:
                 raise RuntimeError("Daemon socket not available")
-        if isinstance(params_model, BaseModel):
-            params = params_model.model_dump()
-        elif isinstance(params_model, dict):
-            params = params_model
-        else:
-            params = {}
-        req = Request(method=method, params=params, id=uuid.uuid4())
+        req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
             writer.write(req.model_dump_json().encode())
