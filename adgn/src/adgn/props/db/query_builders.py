@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Select, bindparam, cast, func, literal, select, text, type_coerce
+from sqlalchemy import Select, bindparam, cast, column, func, literal, select, table, text, type_coerce
 from sqlalchemy.dialects import postgresql
 
 from adgn.props.db.models import (
@@ -223,8 +223,121 @@ def recent_grader_results(limit: int = 10) -> Select:
         )
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == "train")
+        .where(GraderRun.output.isnot(None))
         .order_by(GraderRun.created_at.desc())
         .limit(limit)
+    )
+
+
+def snapshot_files_with_issues_select() -> Select:
+    """Define the SELECT query for the snapshot_files_with_issues view.
+
+    Computes the set of files with issues for each snapshot by extracting all file paths
+    (dict keys) from true_positives and false_positives occurrences.
+
+    Replicates the logic of Snapshot.files_with_issues() method (models.py:196-204):
+        tp_files = {file_path for tp in self.true_positives
+                    for occurrence in tp.occurrences
+                    for file_path in occurrence.files}
+        fp_files = {file_path for fp in self.false_positives
+                    for occurrence in fp.occurrences
+                    for file_path in occurrence.files}
+        return tp_files | fp_files
+
+    RLS Note: This view inherits RLS from true_positives and false_positives tables,
+    which filter to split='train' for agent_user. For completeness, we also join
+    with snapshots to ensure snapshot_slug is valid.
+
+    Returns:
+        Query selecting snapshot_slug and files_with_issues (text array) for each snapshot
+    """
+    from sqlalchemy import union_all
+
+    # Extract all file paths (dict keys) from TP occurrences
+    # true_positives.occurrences is JSONB array of {files: {...}, ...}
+    # RLS on true_positives ensures only train split is visible to agent_user
+    tp_files = select(
+        TruePositive.snapshot_slug,
+        func.jsonb_object_keys(func.jsonb_array_elements(TruePositive.occurrences).op("->")(literal("files"))).label(
+            "file_path"
+        ),
+    ).select_from(TruePositive)
+
+    # Extract all file paths from FP occurrences
+    # RLS on false_positives ensures only train split is visible to agent_user
+    fp_files = select(
+        FalsePositive.snapshot_slug,
+        func.jsonb_object_keys(func.jsonb_array_elements(FalsePositive.occurrences).op("->")(literal("files"))).label(
+            "file_path"
+        ),
+    ).select_from(FalsePositive)
+
+    # Union and aggregate per snapshot
+    all_files_union = union_all(tp_files, fp_files).subquery()
+
+    # Join with snapshots to ensure snapshot_slug is valid and inherits snapshots RLS (no-op for train filter)
+    return (
+        select(
+            all_files_union.c.snapshot_slug,
+            func.array_agg(func.distinct(all_files_union.c.file_path)).label("files_with_issues"),
+        )
+        .select_from(all_files_union)
+        .join(Snapshot, all_files_union.c.snapshot_slug == Snapshot.slug)
+        .group_by(all_files_union.c.snapshot_slug)
+    )
+
+
+def valid_full_snapshot_grader_metrics_select() -> Select:
+    """Define the SELECT query for the valid_full_snapshot_grader_metrics view.
+
+    Shows grader runs for valid split with full provenance:
+    - Which critique was graded
+    - How it was produced (critic prompt, model)
+    - How it was graded (grader run ID, model)
+    - What score it got (recall)
+
+    Filters to full-snapshot critiques only (where critic reviewed ALL files with issues).
+
+    A full-snapshot run is defined as: CriticRun.files (JSONB array) contains exactly
+    the same files as computed by the snapshot_files_with_issues view (which replicates
+    Snapshot.files_with_issues() method).
+
+    Returns:
+        Query defining the view's row structure (not aggregated)
+    """
+    # Reference the snapshot_files_with_issues view
+    # This view computes files_with_issues for each snapshot (same logic as Snapshot.files_with_issues())
+
+    # Create a table reference for the snapshot_files_with_issues view
+    snapshot_files_view = table("snapshot_files_with_issues", column("snapshot_slug"), column("files_with_issues"))
+
+    # Main query: join to snapshot_files_with_issues view and filter for full-snapshot runs
+    # Use bidirectional array containment (@> and <@) to check set equality
+    return (
+        select(
+            GraderRun.snapshot_slug,
+            GraderRun.critique_id.label("critique_id"),
+            CriticRun.prompt_sha256.label("critic_prompt_sha256"),
+            CriticRun.model.label("critic_model"),
+            GraderRun.id.label("grader_run_id"),
+            GraderRun.model.label("grader_model"),
+            (GraderRun.output["grade"]["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("recall"),
+            GraderRun.created_at,
+        )
+        .select_from(GraderRun)
+        .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
+        .join(Critique, GraderRun.critique_id == Critique.id)
+        .join(CriticRun, Critique.id == CriticRun.critique_id)
+        .join(
+            snapshot_files_view,
+            text(
+                "grader_runs.snapshot_slug::text = snapshot_files_with_issues.snapshot_slug::text AND "
+                "ARRAY(SELECT jsonb_array_elements_text(critic_runs.files)) @> snapshot_files_with_issues.files_with_issues AND "
+                "ARRAY(SELECT jsonb_array_elements_text(critic_runs.files)) <@ snapshot_files_with_issues.files_with_issues"
+            ),
+        )
+        .where(Snapshot.split == "valid")
+        .where(GraderRun.output.isnot(None))
     )
 
 
@@ -232,20 +345,19 @@ def valid_aggregates_view() -> Select:
     """Get aggregate grader metrics for valid split (from view).
 
     Returns:
-        Query selecting avg_recall, avg_precision, snapshot_count, run_count, model
+        Query selecting avg_recall, snapshot_count, run_count, grader_model
     """
-    # This queries the materialized view valid_full_specimen_grader_metrics
+    # This queries the materialized view valid_full_snapshot_grader_metrics
     # We use text() to reference the view since it's not mapped as an ORM model
     return (
         select(
             text("AVG(recall) as avg_recall"),
-            text("AVG(precision) as avg_precision"),
             text("COUNT(DISTINCT snapshot_slug) as snapshot_count"),
             text("COUNT(*) as run_count"),
-            text("model"),
+            text("grader_model"),
         )
-        .select_from(text("valid_full_specimen_grader_metrics"))
-        .group_by(text("model"))
+        .select_from(text("valid_full_snapshot_grader_metrics"))
+        .group_by(text("grader_model"))
         .order_by(text("avg_recall DESC"))
     )
 
@@ -306,6 +418,7 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         .join(CriticRun, Critique.id == CriticRun.critique_id)
         .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
         .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
+        .where(GraderRun.output.isnot(None))
         .limit(limit)
     )
 

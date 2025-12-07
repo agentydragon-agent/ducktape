@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from contextlib import AsyncExitStack
 import logging
-import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -29,9 +28,11 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
+from adgn.props.budget_handler import BudgetEnforcementHandler
 from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
 from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
 from adgn.props.db import get_session, query_builders as qb
+from adgn.props.db.config import get_production_config
 from adgn.props.db.models import PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import get_specimens_base_path, sync_issues_to_db, sync_snapshots_to_db
@@ -323,7 +324,7 @@ async def run_prompt_optimizer(
         verbose: Verbose output flag
 
     Hydrates train snapshots and mounts them with definitions via Docker.
-    The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
+    The agent can query train data and valid aggregates via database (agent_user with RLS).
     """
     # Render system prompt with compiled SQL queries from builders
     system = render_prompt_template(
@@ -386,18 +387,10 @@ async def run_prompt_optimizer(
         # Ground truth issues (TPs/FPs) are now accessed via database
         # No longer mount libsonnet definitions from filesystem
 
-        # Get agent_user database URL from environment
-        agent_db_url = os.environ.get("PROPS_AGENT_DB_URL")
-        logger.info(f"PROPS_AGENT_DB_URL from environment: {agent_db_url}")
-        if not agent_db_url:
-            logger.warning(
-                "PROPS_AGENT_DB_URL not set - agent will not have database access. "
-                "Set to enable querying train data and valid aggregates."
-            )
-        else:
-            # Transform localhost:5433 → props-postgres:5432 for Docker network access
-            agent_db_url = agent_db_url.replace("localhost:5433", "props-postgres:5432")
-            logger.info(f"Transformed agent_db_url for container: {agent_db_url}")
+        # Get agent_user database URL from production config (fails fast if env vars not set)
+        config = get_production_config()
+        agent_db_url = config.container_agent_url()  # Container-to-container access within Docker network
+        logger.info(f"Agent database URL for container: {agent_db_url}")
 
         # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
@@ -407,15 +400,21 @@ async def run_prompt_optimizer(
             extra_volumes=extra_volumes,
             ephemeral=False,  # Use persistent container to maintain environment
             workspace_mode="rw",  # Agent needs to write prompt iterations
-            db_url=agent_db_url,  # Agent-restricted database access
-            network_mode=("props_default" if agent_db_url else None),  # Join postgres network if DB enabled
+            db_url=agent_db_url,  # Agent-restricted database access (critical for PO agent)
+            network_mode="props_default",  # Join postgres network for database access
         )
 
         # Create PromptOptimizationRun record for tracking
 
+        # Generate transcript ID for database event tracking
+        transcript_id = uuid4()
+        logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
+
         with get_session() as session:
             po_run = PromptOptimizationRun(
-                budget_limit=budget, config={"model": model, "session_dir": str(session_dir)}
+                transcript_id=transcript_id,
+                budget_limit=budget,
+                config={"model": model, "session_dir": str(session_dir)},
             )
             session.add(po_run)
             session.flush()
@@ -427,6 +426,13 @@ async def run_prompt_optimizer(
         # Use Compositor as async context manager to ensure cleanup
         async with Compositor() as comp:
             runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
+
+            # TODO: Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it here
+            # The prompt eval server (and grader/critic tools) should be able to auto-detect when they're
+            # being called within a PO session context (e.g., via environment variable, session metadata,
+            # or resource lookup) rather than requiring manual ID propagation through all tool calls.
+            # This would eliminate the need to manually set prompt_optimization_run_id in RunCriticInput
+            # and RunGraderInput.
 
             # Create and mount prompt_eval server, keeping reference for introspection
             prompt_eval_server = await build_server(
@@ -447,10 +453,6 @@ async def run_prompt_optimizer(
 Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
 Prioritize recall first, then precision.
 """
-
-            # Generate transcript ID for database event tracking
-            transcript_id = uuid4()
-            logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
 
             # Use the prompt_eval server reference for introspection
             builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
@@ -474,6 +476,12 @@ Prioritize recall first, then precision.
                     reasoning_summary=ReasoningSummary.detailed,
                     tool_policy=RequireAnyTool(),
                 )
+
+                # Add budget enforcement handler after agent creation (needs agent reference)
+                budget_handler = BudgetEnforcementHandler(
+                    prompt_optimization_run_id=prompt_optimization_run_id, budget_limit=budget, agent=agent
+                )
+                agent._handlers.append(budget_handler)
 
                 await agent.run(user)
         # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here

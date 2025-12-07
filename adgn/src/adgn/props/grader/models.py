@@ -137,16 +137,6 @@ class GraderOutput(BaseModel):
         """Binary recall (0-1) from the grading result."""
         return self.grade.recall
 
-    @property
-    def coverage_recall(self) -> float | None:
-        """Fractional recall from recall credits (0-1), if computed."""
-        total_canonical_tps = len(self.grade.canonical_tp_coverage)
-        if total_canonical_tps == 0:
-            return None
-        # Sum recall credits, clamping each canonical's total credit to 1.0
-        total_credit = sum(min(1.0, cov.recall_credit) for cov in self.grade.canonical_tp_coverage.values())
-        return total_credit / total_canonical_tps
-
 
 # =============================================================================
 # Grader Submit Models

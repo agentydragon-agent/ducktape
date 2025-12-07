@@ -13,6 +13,11 @@ from sqlalchemy import DDL, Engine, inspect, text
 import sqlalchemy.exc
 
 from adgn.props.db.models import Base
+from adgn.props.db.query_builders import (
+    compile_to_sql,
+    snapshot_files_with_issues_select,
+    valid_full_snapshot_grader_metrics_select,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +32,7 @@ def recreate_database(engine: Engine) -> None:
     """
     logger.info("Recreating database from scratch...")
     _drop_all(engine)
-    _create_agent_user(engine)
+    create_agent_user(engine)
     _create_schema(engine)
     logger.info("Database recreation complete")
 
@@ -53,7 +58,7 @@ def _drop_all(engine: Engine) -> None:
         logger.debug("No tables to drop")
 
 
-def _create_agent_user(engine: Engine) -> None:
+def create_agent_user(engine: Engine) -> None:
     """Create agent_user role with read-only permissions (idempotent)."""
     logger.info("Creating agent_user role...")
     with engine.begin() as conn:
@@ -121,15 +126,15 @@ def _create_schema(engine: Engine) -> None:
     _grant_select_on_tables(engine)
 
     # Enable RLS and create policies
-    _enable_rls(engine)
+    enable_rls(engine)
 
     # Create views
-    _create_views(engine)
+    create_views(engine)
 
     logger.info("Schema creation complete")
 
 
-def _enable_rls(engine: Engine) -> None:
+def enable_rls(engine: Engine) -> None:
     """Enable Row-Level Security policies (idempotent).
 
     Access control for agent_user:
@@ -189,39 +194,30 @@ def _enable_rls(engine: Engine) -> None:
     )
 
 
-def _create_views(engine: Engine) -> None:
+def create_views(engine: Engine) -> None:
     """Create database views (idempotent).
 
     Note: run_costs view is created automatically via DDL event listener in models.py
     """
+    # Build view SELECT queries using SQLAlchemy (single source of truth in query_builders.py)
+    snapshot_files_sql = compile_to_sql(snapshot_files_with_issues_select())
+    grader_metrics_sql = compile_to_sql(valid_full_snapshot_grader_metrics_select())
+
     with engine.begin() as conn:
         # Drop old view name if it exists (migration)
         conn.execute(DDL("DROP VIEW IF EXISTS valid_grader_metrics"))
 
-        # Drop and recreate valid_full_specimen_grader_metrics view
-        conn.execute(DDL("DROP VIEW IF EXISTS valid_full_specimen_grader_metrics"))
-        conn.execute(
-            DDL(
-                """
-                CREATE VIEW valid_full_specimen_grader_metrics AS
-                SELECT
-                    g.snapshot_slug,
-                    (g.output->'grade'->>'recall')::float as recall,
-                    (g.output->'grade'->>'precision')::float as precision,
-                    (g.output->'grade'->'metrics'->>'true_positives')::int as tp,
-                    (g.output->'grade'->'metrics'->>'false_positives')::int as fp,
-                    (g.output->'grade'->'metrics'->>'false_negatives')::int as fn,
-                    g.model,
-                    g.created_at
-                FROM grader_runs g
-                JOIN snapshots s ON g.snapshot_slug = s.slug
-                WHERE s.split = 'valid'::split_enum
-                """
-            )
-        )
+        # Create snapshot_files_with_issues view FIRST (dependency for valid_full_snapshot_grader_metrics)
+        conn.execute(DDL("DROP VIEW IF EXISTS snapshot_files_with_issues CASCADE"))
+        conn.execute(DDL(f"CREATE VIEW snapshot_files_with_issues AS {snapshot_files_sql}"))
+
+        # Create valid_full_snapshot_grader_metrics view (depends on snapshot_files_with_issues)
+        conn.execute(DDL("DROP VIEW IF EXISTS valid_full_snapshot_grader_metrics"))
+        conn.execute(DDL(f"CREATE VIEW valid_full_snapshot_grader_metrics AS {grader_metrics_sql}"))
 
         # Grant SELECT on views to agent_user
-        conn.execute(text("GRANT SELECT ON valid_full_specimen_grader_metrics TO agent_user"))
+        conn.execute(text("GRANT SELECT ON snapshot_files_with_issues TO agent_user"))
+        conn.execute(text("GRANT SELECT ON valid_full_snapshot_grader_metrics TO agent_user"))
         conn.execute(text("GRANT SELECT ON run_costs TO agent_user"))
 
     logger.info("Views created")

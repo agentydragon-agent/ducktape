@@ -15,10 +15,12 @@ class DatabaseConfig:
     """Database connection parameters.
 
     Construct URLs on-demand via admin_url() and agent_url() methods.
+    For container-to-container access within Docker network, use container_agent_url().
     """
 
     host: str
     port: int
+    container_name: str
     admin_user: str
     admin_password: str
     agent_user: str
@@ -26,18 +28,26 @@ class DatabaseConfig:
     database: str
 
     def admin_url(self) -> str:
-        """Construct admin connection URL."""
+        """Construct admin connection URL (host-side access)."""
         return f"postgresql://{self.admin_user}:{self.admin_password}@{self.host}:{self.port}/{self.database}"
 
     def agent_url(self) -> str:
-        """Construct agent connection URL."""
+        """Construct agent connection URL (host-side access)."""
         return f"postgresql://{self.agent_user}:{self.agent_password}@{self.host}:{self.port}/{self.database}"
+
+    def container_agent_url(self) -> str:
+        """Construct agent connection URL for container-to-container access within Docker network.
+
+        Uses container_name:5432 instead of host:port for Docker network routing.
+        """
+        return f"postgresql://{self.agent_user}:{self.agent_password}@{self.container_name}:5432/{self.database}"
 
     def with_database(self, database: str) -> DatabaseConfig:
         """Create a new config with a different database name."""
         return DatabaseConfig(
             host=self.host,
             port=self.port,
+            container_name=self.container_name,
             admin_user=self.admin_user,
             admin_password=self.admin_password,
             agent_user=self.agent_user,
@@ -62,6 +72,7 @@ def get_production_config() -> DatabaseConfig:
     Environment variables (set by devenv.nix):
         PROPS_DB_HOST: Database host
         PROPS_DB_PORT: Database port
+        PROPS_DB_CONTAINER_NAME: Container name for Docker network access
         PROPS_DB_ADMIN_USER: Admin username
         PROPS_DB_ADMIN_PASSWORD: Admin password
         PROPS_DB_AGENT_USER: Agent username
@@ -74,6 +85,7 @@ def get_production_config() -> DatabaseConfig:
     return DatabaseConfig(
         host=_get_required_env("PROPS_DB_HOST"),
         port=int(_get_required_env("PROPS_DB_PORT")),
+        container_name=_get_required_env("PROPS_DB_CONTAINER_NAME"),
         admin_user=_get_required_env("PROPS_DB_ADMIN_USER"),
         admin_password=_get_required_env("PROPS_DB_ADMIN_PASSWORD"),
         agent_user=_get_required_env("PROPS_DB_AGENT_USER"),

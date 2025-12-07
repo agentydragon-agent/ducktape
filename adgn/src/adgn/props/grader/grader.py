@@ -210,20 +210,13 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     uncovered_tps = total_canonical_tps - covered_tps
     novel_count = len(obj.novel_critique_issues)
 
-    # Compute fractional coverage recall from recall credits
-    coverage_recall = None
-    if total_canonical_tps > 0:
-        coverage_recall = sum(cov.recall_credit for cov in obj.canonical_tp_coverage.values()) / total_canonical_tps
-
     # Main metrics table
     metrics_tbl = Table(title="Grading Metrics", show_lines=False, expand=True)
     metrics_tbl.add_column("Metric", style="cyan", no_wrap=True)
     metrics_tbl.add_column("Value", style="magenta")
     metrics_tbl.add_column("Description", style="dim")
 
-    metrics_tbl.add_row("Recall (binary)", f"{obj.recall:.1%}", "Weighted fraction of canonicals covered")
-    if coverage_recall is not None:
-        metrics_tbl.add_row("Recall (fractional)", f"{coverage_recall:.1%}", "From recall credits (partial coverage)")
+    metrics_tbl.add_row("Recall", f"{obj.recall:.1%}", "Weighted fraction of canonicals covered")
     if obj.reported_issue_ratios is not None:
         metrics_tbl.add_row("TP ratio", f"{obj.reported_issue_ratios.tp:.1%}", "Reported issues matching canonicals")
         metrics_tbl.add_row("FP ratio", f"{obj.reported_issue_ratios.fp:.1%}", "Reported issues matching known FPs")

@@ -185,6 +185,24 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
         session.merge(valid_specimen)
         session.commit()
 
+        # Create TP records for valid/spec-test (required for snapshot_files_with_issues view)
+        # TEST_FILES_LIST is ["test.py"]
+        from pathlib import Path
+
+        from adgn.props.db.models import TruePositive
+        from adgn.props.models.true_positive import TruePositiveOccurrence
+
+        tp = TruePositive(
+            snapshot_slug="valid/spec-test",
+            tp_id="test-tp-001",
+            rationale="Test issue",
+            occurrences=[
+                TruePositiveOccurrence(files={Path("test.py"): None}, expect_caught_from={frozenset([Path("test.py")])})
+            ],
+        )
+        session.add(tp)
+        session.commit()
+
         # Create a critique for the valid specimen
         valid_critique = Critique(
             id=valid_critique_id,
@@ -245,11 +263,11 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
         # SHOULD see valid aggregates via the view
         result = session.execute(
             text(
-                "SELECT snapshot_slug, recall FROM valid_full_specimen_grader_metrics WHERE snapshot_slug = 'valid/spec-test'"
+                "SELECT snapshot_slug, recall FROM valid_full_snapshot_grader_metrics WHERE snapshot_slug = 'valid/spec-test'"
             )
         ).fetchall()
         assert len(result) == 1, (
-            "agent_user SHOULD see valid split aggregates via valid_full_specimen_grader_metrics view"
+            "agent_user SHOULD see valid split aggregates via valid_full_snapshot_grader_metrics view"
         )
         assert result[0].recall == 0.8
 

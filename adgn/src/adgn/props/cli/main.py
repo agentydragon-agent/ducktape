@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable, Mapping
-from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from importlib import resources
 import logging
@@ -17,19 +16,13 @@ import tempfile
 from typing import Annotated
 from uuid import UUID
 
-from fastmcp.client import Client
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
 from sqlalchemy import select
 import typer
 
-from adgn.agent.agent import MiniCodex
-from adgn.agent.display import DisplayEventsHandler
-from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.logging_config import VALID_LOG_LEVELS, configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
@@ -59,7 +52,7 @@ from adgn.props.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
-from adgn.props.runs_context import RunsContext, format_timestamp_session
+from adgn.props.runs_context import RunsContext
 from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 # Reduce Rich traceback verbosity for CLI errors
@@ -532,106 +525,7 @@ def _render_prompt_with_context(
     return str(tmpl.render(**context))
 
 
-@asynccontextmanager
-async def _open_run_context(
-    path: Path | None, snapshot: SnapshotSlug | None, files: list[str] | None, hydrator: SnapshotHydrator
-):
-    """Yield (wiring, files_spec, label) for either a local path or a hydrated snapshot.
-
-    Args:
-        path: Local directory path (mutually exclusive with snapshot)
-        snapshot: Snapshot slug (mutually exclusive with path)
-        files: Optional file filter (only for snapshots)
-        hydrator: SnapshotHydrator instance (for source code extraction)
-
-    Yields:
-        (wiring, files_spec, label) tuple where files_spec is CriticScopeSpec
-    """
-    if path is not None:
-        wiring = properties_docker_spec(path, mount_properties=True, ephemeral=False)
-        all_files = enumerate_files_from_path(path)
-        yield wiring, all_files, path.name
-        return
-    # Hydrate snapshot source code (issues loaded from DB elsewhere)
-    assert snapshot is not None, "snapshot must be provided if path is None"
-    async with hydrator.hydrate(snapshot) as hydrated:
-        wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
-        files_spec = _filter_files(hydrated.all_discovered_files, files)
-        yield wiring, files_spec, snapshot
-
-
-async def _exec_agent(
-    *,
-    wiring: PropertiesDockerWiring,
-    prompt_text: str,
-    model: str,
-    structured: bool,
-    output_final_message: Path | None,
-    final_only: bool,
-    label: str,
-    snapshot_slug: SnapshotSlug | None,
-    files_spec: CriticScopeSpec | None,
-    dry_run: bool = False,
-) -> None:
-    # Dry-run: save prompt and exit (before any agent/DB/compositor setup)
-    if dry_run:
-        tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        tmpdir.mkdir(parents=True, exist_ok=True)
-        prompt_file = tmpdir / f"codex_prompt_{label}.md"
-        prompt_file.parent.mkdir(parents=True, exist_ok=True)
-        prompt_file.write_text(prompt_text, encoding="utf-8")
-        typer.echo(f"Prompt saved to: {prompt_file}")
-        return
-
-    # Structured mode: use run_critic for execution and DB persistence
-    if structured:
-        assert snapshot_slug is not None, "structured mode requires snapshot_slug"
-        assert files_spec is not None, "structured mode requires files_spec"
-        critic_output, _critic_run_id, _critique_id = await run_critic(
-            input_data=CriticInput(
-                snapshot_slug=snapshot_slug, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt_text)
-            ),
-            client=build_client(model),
-            content_root=wiring.working_dir,
-            mount_properties=True,
-            verbose=True,
-        )
-
-        # Output final message if requested
-        if output_final_message:
-            output_final_message.write_text(critic_output.result.model_dump_json(indent=2), encoding="utf-8")
-
-        # Display results
-        if not final_only:
-            Console().print(render_to_rich(critic_output.result))
-        return
-
-    # Unstructured mode: manual setup with TranscriptHandler
-    ts = format_timestamp_session()
-    dest_root = Path(tempfile.gettempdir()) / "adgn_runs" / label / ts
-    dest_root.mkdir(parents=True, exist_ok=True)
-
-    async with Compositor() as comp:
-        await wiring.attach(comp)
-        handlers = [DisplayEventsHandler(max_lines=10), TranscriptHandler(events_path=dest_root / "events.jsonl")]
-        print(f"[run] Transcript: {dest_root}")
-        async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
-                mcp_client=mcp_client,
-                system="You are a code agent. Use tools to execute commands. Respond concisely.",
-                client=build_client(model),
-                handlers=handlers,
-                parallel_tool_calls=True,
-                tool_policy=RequireAnyTool(),
-            )
-            result = await agent.run(prompt_text)
-            if output_final_message:
-                output_final_message.write_text(result.text or "", encoding="utf-8")
-            elif not final_only and (result.text or ""):
-                print(result.text)
-
-
-# --- Unified run command (structured/freeform; preset/prompt-file/text) ---
+# --- Unified run command (always structured; preset/prompt-file/text) ---
 
 _PRESET_MAP: dict[str, str] = {
     # General review styles
@@ -665,10 +559,9 @@ def _load_preset_text(name: str) -> str:
 @app.command("run")
 @async_run
 async def cmd_run(
-    # Scope (exactly one)
-    path: Path | None = opt.OPT_RUNBOOK_PATH,
-    snapshot: SnapshotSlug | None = opt.OPT_RUNBOOK_SNAPSHOT,
-    # Prompt source (at most one; default by mode)
+    # Scope (required)
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
+    # Prompt source (at most one; default: max-recall-critic)
     preset: str | None = typer.Option(
         None, "--preset", help="Built-in prompt name; see 'adgn-properties list-presets'"
     ),
@@ -676,33 +569,22 @@ async def cmd_run(
     prompt_text: str | None = typer.Option(
         None, "--prompt-text", help="Inline prompt text (discouraged for long prompts)"
     ),
-    # Mode
-    structured: bool = typer.Option(False, help="Attach critic_submit and require structured submit flow"),
     # File filtering
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    final_only: bool = opt.OPT_FINAL_ONLY,
-    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
 ) -> None:
-    """Unified runner: snapshot|path + structured|freeform + preset|prompt-file|text.
+    """Run structured critic on a snapshot with DB persistence.
 
-    Defaults:
-    - structured=false: preset=open (if no prompt source provided)
-    - structured=true: preset=max-recall-critic (if no prompt source provided)
+    Default preset: max-recall-critic. Prints critique JSON on completion.
     """
-    # Initialize DB unconditionally (needed for snapshot file resolution, structured runs, etc.)
     init_db()
 
-    # Validate scope
-    if (path is None and snapshot is None) or (path is not None and snapshot is not None):
-        print("ERROR: Provide exactly one of --path or --snapshot.")
-        raise typer.Exit(2)
     # Validate prompt source
     sources = [x is not None for x in (preset, prompt_file, prompt_text)]
     if sum(sources) == 0:
-        preset = "max-recall-critic" if structured else "open"
+        preset = "max-recall-critic"
     elif sum(sources) > 1:
         print("ERROR: Provide at most one of --preset, --prompt-file, or --prompt-text.")
         raise typer.Exit(2)
@@ -715,41 +597,42 @@ async def cmd_run(
     else:
         prompt_raw = prompt_text or ""
 
-    # Validate --files only works with snapshots
-    if files and path is not None:
-        print("ERROR: --files only works with --snapshot, not --path.")
-        raise typer.Exit(2)
-
-    # Validate structured mode requires snapshot (for DB persistence)
-    if structured and path is not None:
-        print("ERROR: --structured requires --snapshot (not --path) for database persistence.")
-        raise typer.Exit(2)
-
-    # Create hydrator once at CLI entry point (always, even for path mode - lightweight)
+    # Create hydrator
     hydrator = SnapshotHydrator.from_package_resources()
 
-    # Enter workspace context and run (same path for dry-run and real execution)
-    async with _open_run_context(path, snapshot, files, hydrator) as (wiring, files_spec, label):
-        # Resolve files for prompt rendering (snapshot mode resolves sentinel, path mode is already explicit)
-        if snapshot is not None:
-            resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
-        else:
-            # Path mode: files_spec is already set[Path]
-            resolved_files = files_spec  # type: ignore[assignment]
+    # Hydrate snapshot and run
+    async with hydrator.hydrate(snapshot) as hydrated:
+        wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
+        files_spec = _filter_files(hydrated.all_discovered_files, files)
+        resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
 
         prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, files=resolved_files)
-        await _exec_agent(
-            wiring=wiring,
-            prompt_text=prompt,
-            model=model,
-            structured=structured,
-            output_final_message=output_final_message,
-            final_only=final_only,
-            label=label,
-            snapshot_slug=snapshot,
-            files_spec=files_spec if snapshot is not None else None,
-            dry_run=dry_run,
+
+        if dry_run:
+            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            tmpdir.mkdir(parents=True, exist_ok=True)
+            prompt_path = tmpdir / f"codex_prompt_{snapshot}.md"
+            prompt_path.write_text(prompt, encoding="utf-8")
+            typer.echo(f"Prompt saved to: {prompt_path}")
+            return
+
+        # Run critic with DB persistence
+        critic_output, critic_run_id, critique_id = await run_critic(
+            input_data=CriticInput(
+                snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
+            ),
+            client=build_client(model),
+            content_root=hydrated.content_root,
+            mount_properties=True,
+            verbose=True,
         )
+
+        # Print results
+        typer.echo("\n=== Critique Complete ===")
+        typer.echo(f"Critic Run ID: {critic_run_id}")
+        typer.echo(f"Critique ID: {critique_id}")
+        typer.echo(f"Issues found: {len(critic_output.result.issues)}")
+        typer.echo(f"\n{critic_output.result.model_dump_json(indent=2)}")
 
 
 @app.command("list-presets")

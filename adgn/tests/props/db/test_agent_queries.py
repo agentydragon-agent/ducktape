@@ -16,6 +16,7 @@ Does NOT test:
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -102,15 +103,26 @@ def query_test_data(test_db):
         for fp in false_positives:
             session.merge(fp)
 
+        # Create TP for valid/spec-a (required for snapshot_files_with_issues view)
+        # TEST_FILES_LIST is ["test.py"]
+        tp_valid = TruePositive(
+            snapshot_slug=SnapshotSlug("valid/spec-a"),
+            tp_id="tp-valid-001",
+            rationale="Test issue for valid snapshot",
+            occurrences=[{"files": {"test.py": None}, "expect_caught_from": [frozenset({Path("test.py")})]}],
+        )
+        session.merge(tp_valid)
+
         # Create prompt
         prompt = Prompt(prompt_sha256="a" * 64, prompt_text="Test prompt for query validation")
         session.merge(prompt)
 
         session.flush()
 
-        # Create critiques
+        # Create critiques (train and valid)
         critique_a_id = uuid4()
         critique_b_id = uuid4()
+        critique_valid_id = uuid4()
         critiques = [
             Critique(
                 id=critique_a_id,
@@ -122,13 +134,18 @@ def query_test_data(test_db):
                 snapshot_slug="train/spec-b",
                 payload={"issues": [{"id": "issue-2", "rationale": "Another issue"}], "notes_md": ""},
             ),
+            Critique(
+                id=critique_valid_id,
+                snapshot_slug="valid/spec-a",
+                payload={"issues": [{"id": "issue-3", "rationale": "Valid issue"}], "notes_md": ""},
+            ),
         ]
         for critique in critiques:
             session.merge(critique)
 
         session.flush()
 
-        # Create critic runs (linked to critiques)
+        # Create critic runs (linked to critiques, including valid/spec-a)
         critic_runs = [
             CriticRun(
                 transcript_id=uuid4(),
@@ -146,6 +163,16 @@ def query_test_data(test_db):
                 snapshot_slug="train/spec-b",
                 model="test-model",
                 critique_id=critique_b_id,
+                files=TEST_FILES_LIST,
+                files_hash=TEST_FILES_HASH,
+                output={"tag": "success"},
+            ),
+            CriticRun(
+                transcript_id=uuid4(),
+                prompt_sha256="a" * 64,
+                snapshot_slug="valid/spec-a",
+                model="test-model",
+                critique_id=critique_valid_id,
                 files=TEST_FILES_LIST,
                 files_hash=TEST_FILES_HASH,
                 output={"tag": "success"},
@@ -188,7 +215,7 @@ def query_test_data(test_db):
                 transcript_id=uuid4(),
                 snapshot_slug="valid/spec-a",
                 model="test-model-2",
-                critique_id=critique_a_id,
+                critique_id=critique_valid_id,
                 output={
                     "grade": {
                         "recall": 0.75,
@@ -350,13 +377,13 @@ class TestQueryBuilders:
             assert len(result) >= 1
 
             # Check aggregate columns (find our test-model-2 row)
-            test_model_2_rows = [row for row in result if row.model == "test-model-2"]
+            test_model_2_rows = [row for row in result if row.grader_model == "test-model-2"]
             assert len(test_model_2_rows) >= 1
 
             row = test_model_2_rows[0]
             # Use approximate comparison for floats
             assert abs(row.avg_recall - 0.75) < 0.01
-            assert abs(row.avg_precision - 0.95) < 0.01
+            # Note: precision is not in the view (user requested only recall)
             assert row.snapshot_count >= 1  # At least 1 distinct snapshot
             assert row.run_count >= 1  # At least 1 total valid grader run
 

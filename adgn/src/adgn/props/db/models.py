@@ -19,6 +19,7 @@ from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
+from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
 from adgn.props.models.critic_scopes import CriticScopeSpec
@@ -406,7 +407,7 @@ class Critique(Base):
     # TODO: Add critic_scope_id FK to critic_scopes table to track which scope was used
     # for targeted reviews (not full-snapshot). This enables per-scope evaluation metrics
     # and better attribution of critique results to specific training examples.
-    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, comment="CriticSubmitPayload as dict")
+    payload: Mapped[CriticSubmitPayload] = mapped_column(PydanticColumn(CriticSubmitPayload), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
