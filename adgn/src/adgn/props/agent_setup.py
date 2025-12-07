@@ -20,7 +20,7 @@ def build_props_handlers(*, transcript_id: UUID, verbose_prefix: str | None, ser
 
     Args:
         transcript_id: Transcript ID for database event tracking
-        verbose_prefix: Optional prefix for verbose display (e.g., "[CRITIC specimen-slug] ").
+        verbose_prefix: Optional prefix for verbose display (e.g., "[CRITIC snapshot-slug] ").
                        If None, no verbose handler is added.
         servers: Server dict for RichDisplayHandler (maps server names to FastMCP instances)
     """

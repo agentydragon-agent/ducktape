@@ -61,7 +61,7 @@ class RunsContext:
         """Get output directory for issue evaluation runs (lint_issue harness).
 
         Args:
-            identifier: Identifier for the eval (e.g., specimen_issue_id or "all")
+            identifier: Identifier for the eval (e.g., snapshot_issue_id or "all")
             timestamp: Optional timestamp string (defaults to creating new one)
 
         Returns:

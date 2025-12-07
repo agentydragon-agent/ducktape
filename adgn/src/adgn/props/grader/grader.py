@@ -175,6 +175,12 @@ Grader submission server for critique evaluation.
 Use submit_result to submit the final grading comparing critique against ground truth.
 """
 
+GRADER_COMMON_INSTRUCTIONS = """\
+You will exclusively act by calling tools. Do not send any text messages at any point. When you successfully submit your result, this conversation will abort automatically. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
+
+If your submission is rejected or returns an error from the grader_submit server, read the error message carefully, fix the issues in your payload (such as incorrect field types, missing required fields, or validation errors), and resubmit the corrected result. Keep retrying until the submission succeeds.\
+"""
+
 
 def make_grader_submit_server(
     state: GradeSubmitState, inputs: GradeInputs, auth: AuthProvider | None = None
@@ -335,11 +341,15 @@ You do not have direct access to invoke the server's tools - the MCP server is n
 
 Important: MCP sessions must be initialized (session.initialize()) before you can use tools, list resources, etc. When used in one-off Python scripts, the session will be closed at the end of the script.
 
-You will exclusively act by calling tools. Do not send any text messages at any point. When you successfully submit your result, this conversation will abort automatically. As long as this conversation continues, you have not yet correctly sent a submission to the MCP server.
+{GRADER_COMMON_INSTRUCTIONS}
 
 {MCP_HTTP_CONNECTION_INSTRUCTIONS}"""
             else:
-                system = "You are a strict grader. Return only metrics via submit_result."
+                system = f"""You are a strict grader evaluating a code critique.
+
+Grade the critique, then submit your result by invoking the grader_submit server's submit_result tool.
+
+{GRADER_COMMON_INSTRUCTIONS}"""
 
             # Build handlers list, add bootstrap for HTTP mode
             handlers_list: list[BaseHandler] = []

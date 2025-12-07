@@ -478,7 +478,9 @@ class WtClient:
             "worktree_get_by_name", WorktreeGetByNameParams(name=name), TypeAdapter(WorktreeGetByNameResult)
         )
 
-    async def _rpc[T](self, method: str, params_model: BaseModel | dict[str, object], result_adapter: TypeAdapter[T]) -> T:
+    async def _rpc[T](
+        self, method: str, params_model: BaseModel | dict[str, object], result_adapter: TypeAdapter[T]
+    ) -> T:
         await self._start_daemon_if_needed()
         # Guard against a short race where the socket file is created just after the check.
         # Try a brief, bounded wait for the socket to appear to make CLI flows robust under load.

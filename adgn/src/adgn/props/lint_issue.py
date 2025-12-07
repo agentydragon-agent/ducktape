@@ -119,7 +119,7 @@ def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit"
 
 @dataclass
 class LintConfig:
-    specimen: str
+    snapshot: str
     tp_id: BaseIssueID
     model: str = "gpt-5"
     dry_run: bool = False
@@ -273,7 +273,7 @@ def make_linter_handlers(
 
 
 async def lint_issue_run(
-    specimen: SnapshotSlug | None,
+    snapshot_slug: SnapshotSlug | None,
     issue_core: IssueCore,
     occurrence: Occurrence,
     *,
@@ -285,7 +285,7 @@ async def lint_issue_run(
     """Run the lint-issue agent and return the exact structured payload.
 
     If content_root provided: uses it directly (caller manages hydration).
-    If content_root not provided: hydrates specimen source code using hydrator.
+    If content_root not provided: hydrates snapshot source code using hydrator.
     Launches in-proc submit server and docker_exec MCP with bootstrap injection
     and gating handlers as the CLI path.
     """
@@ -299,12 +299,12 @@ async def lint_issue_run(
         )
 
     # Hydrate source code and run
-    if specimen is None:
-        raise ValueError("Either specimen or content_root must be provided")
+    if snapshot_slug is None:
+        raise ValueError("Either snapshot_slug or content_root must be provided")
     if hydrator is None:
         raise ValueError("hydrator required when content_root not provided")
 
-    async with hydrator.hydrate(specimen) as hydrated:
+    async with hydrator.hydrate(snapshot_slug) as hydrated:
         return await _lint_issue_run_with_hydrated_root(
             hydrated.content_root, issue_core, occurrence, client, submit_state, handlers
         )
@@ -318,7 +318,7 @@ async def _lint_issue_run_with_hydrated_root(
     submit_state: LintSubmitState,
     handlers: Sequence[BaseHandler],
 ) -> LintSubmitPayload:
-    """Core lint logic with pre-hydrated specimen root."""
+    """Core lint logic with pre-hydrated snapshot root."""
     wiring = properties_docker_spec(content_root, mount_properties=True)
 
     props: list[Path] = []
@@ -381,7 +381,7 @@ async def _lint_issue_run_with_hydrated_root(
 
 
 async def run_specimen_lint_issue_async(
-    specimen: SnapshotSlug,
+    snapshot_slug: SnapshotSlug,
     tp_id: BaseIssueID,
     *,
     model: str = "gpt-5",
@@ -393,11 +393,11 @@ async def run_specimen_lint_issue_async(
     # Load issues from database
 
     with get_session() as session:
-        db_snapshot = session.query(Snapshot).filter_by(slug=specimen).one()
+        db_snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
         # Find TP by id directly from ORM
         tp_orm = next((tp for tp in db_snapshot.true_positives if tp.tp_id == str(tp_id)), None)
         if tp_orm is None:
-            raise SystemExit(f"True positive '{tp_id}' not found in snapshot '{specimen}'")
+            raise SystemExit(f"True positive '{tp_id}' not found in snapshot '{snapshot_slug}'")
 
         # Require a single occurrence; do not run on the full issue or mutate the Issue
         if not (0 <= occurrence_index < len(tp_orm.occurrences)):
@@ -415,7 +415,7 @@ async def run_specimen_lint_issue_async(
         submit_tool_name = build_mcp_function("lint_submit", "submit_result")
 
     # Hydrate source code for both dry-run and real execution
-    async with hydrator.hydrate(specimen) as hydrated:
+    async with hydrator.hydrate(snapshot_slug) as hydrated:
         if dry_run:
             # Build a wiring for prompt rendering (no container launched in dry-run)
             wiring = properties_docker_spec(hydrated.content_root, mount_properties=True)
@@ -440,7 +440,7 @@ async def run_specimen_lint_issue_async(
         run_dir.mkdir(parents=True, exist_ok=True)
 
         res = await lint_issue_run(
-            specimen=None,  # Not needed when content_root provided
+            snapshot_slug=None,  # Not needed when content_root provided
             issue_core=issue_core,
             occurrence=occ,
             client=client,

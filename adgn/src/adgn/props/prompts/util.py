@@ -94,7 +94,7 @@ def build_scope_text(files: Iterable[Path]) -> str:
     """Generate explicit file list for prompt headers.
 
     Args:
-        files: Iterable of Path objects (typically SpecimenRelativePath from all_discovered_files.keys())
+        files: Iterable of Path objects (typically SnapshotRelativePath from all_discovered_files.keys())
 
     Returns:
         Formatted string with bullet list of files, e.g.:

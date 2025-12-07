@@ -45,7 +45,7 @@ class FilesystemLoader:
         self.specimens_dir = specimens_dir.resolve()
 
     def load_snapshots(self) -> dict[SnapshotSlug, Snapshot]:
-        """Load specimens/snapshots.yaml → Snapshot objects.
+        """Load snapshots.yaml → Snapshot objects.
 
         Returns:
             Dict mapping snapshot slug → validated Snapshot objects
@@ -120,7 +120,7 @@ class FilesystemLoader:
         )
 
     def load_critic_scopes(self) -> dict[SnapshotSlug, list[CriticScope]]:
-        """Load specimens/critic_scopes.yaml → CriticScope objects.
+        """Load critic_scopes.yaml → CriticScope objects.
 
         Returns:
             Dict mapping snapshot slug → list of critic scopes

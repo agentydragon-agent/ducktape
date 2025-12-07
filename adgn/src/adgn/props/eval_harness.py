@@ -70,19 +70,19 @@ class OccurrenceCase(BaseModel):
 
 
 class IssueEvalSpec(BaseModel):
-    """One issue under a specimen with multiple occurrence cases."""
+    """One issue under a snapshot with multiple occurrence cases."""
 
-    specimen: SnapshotSlug
+    snapshot: SnapshotSlug
     issue: IssueCore
     cases: list[OccurrenceCase]
 
 
-# Placeholder for eval samples - populate with real specimen data as needed
-# TODO: Add evaluation test cases from actual specimens
+# Placeholder for eval samples - populate with real snapshot data as needed
+# TODO: Add evaluation test cases from actual snapshots
 
 
 class SampleRunSummary(BaseModel):
-    specimen: str
+    snapshot: str
     tp_id: BaseIssueID
     total: int
     passed: int
@@ -162,7 +162,7 @@ async def eval_issue_spec(
     Returns a structured SampleRunSummary and writes summary.json to out_dir.
     """
     ts = format_timestamp_session()
-    base = Path(out_dir) if out_dir is not None else ctx.issue_eval_dir(f"{spec.specimen}_{spec.issue.id}", ts)
+    base = Path(out_dir) if out_dir is not None else ctx.issue_eval_dir(f"{spec.snapshot}_{spec.issue.id}", ts)
 
     results: list[dict[str, Any]] = []
     passes = 0
@@ -187,7 +187,7 @@ async def eval_issue_spec(
         entity = occ.note or ""
 
         payload = await lint_issue_run(
-            specimen=spec.specimen,
+            snapshot_slug=spec.snapshot,
             issue_core=spec.issue,
             occurrence=occ,
             client=client,
@@ -195,7 +195,7 @@ async def eval_issue_spec(
         )
 
         # Print the structured output object produced by the agent for this case
-        Console().print(f"[bold]{spec.specimen} {spec.issue.id} case {idx} {path}[/bold]")
+        Console().print(f"[bold]{spec.snapshot} {spec.issue.id} case {idx} {path}[/bold]")
         Console().print(render_to_rich(payload))
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
@@ -269,7 +269,7 @@ async def eval_issue_spec(
         results.append(item)
 
     summary_obj = {
-        "specimen": spec.specimen,
+        "snapshot": spec.snapshot,
         "tp_id": spec.issue.id,
         "total": len(spec.cases),
         "passed": passes,
@@ -279,7 +279,7 @@ async def eval_issue_spec(
     (base / "summary.json").write_text(json.dumps(summary_obj, indent=2), encoding="utf-8")
 
     return SampleRunSummary(
-        specimen=spec.specimen,
+        snapshot=spec.snapshot,
         tp_id=spec.issue.id,
         total=len(spec.cases),
         passed=passes,
@@ -289,9 +289,9 @@ async def eval_issue_spec(
 
 
 def _load_samples() -> list[IssueEvalSpec]:
-    """Load eval samples from real specimen data.
+    """Load eval samples from real snapshot data.
 
-    TODO: Populate with actual test cases from current specimens.
+    TODO: Populate with actual test cases from current snapshots.
     """
     # Return empty list for now - add real evaluation cases as needed
     return []
@@ -331,7 +331,7 @@ async def run_all_evals(
     table.add_column("Summary Path")
 
     for ent in eval_index.samples:
-        table.add_row(ent.specimen, ent.tp_id, str(ent.total), str(ent.passed), str(ent.failed), ent.summary_path)
+        table.add_row(ent.snapshot, ent.tp_id, str(ent.total), str(ent.passed), str(ent.failed), ent.summary_path)
     Console().print(table)
 
     return eval_index

@@ -62,7 +62,7 @@ async def test_iss014_anchor_windows(
     occ = Occurrence(files={path: [LineRange(start_line=s, end_line=e)]}, note=entity)
 
     payload = await lint_issue_run(
-        specimen=specimen, issue_core=issue_core, occurrence=occ, client=build_client("gpt-5")
+        snapshot_slug=specimen, issue_core=issue_core, occurrence=occ, client=build_client("gpt-5")
     )
 
     # Extract corrected anchors from AnchorIncorrect findings

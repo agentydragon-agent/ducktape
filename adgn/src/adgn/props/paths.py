@@ -1,4 +1,4 @@
-"""Path types for specimen-relative paths with conditional validation."""
+"""Path types for snapshot-relative paths with conditional validation."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pydantic import PlainSerializer, ValidationInfo, WrapValidator
 
 
 class FileType(StrEnum):
-    """File type classification for specimen paths."""
+    """File type classification for snapshot paths."""
 
     REGULAR = "regular"
     SYMLINK = "symlink"
@@ -37,7 +37,7 @@ def classify_path(p: Path) -> FileType:
 
 
 def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo) -> Path:
-    """Validate specimen-relative path with format and existence checks.
+    """Validate snapshot-relative path with format and existence checks.
 
     WrapValidator that combines format validation, type coercion, and existence checking.
 
@@ -78,7 +78,7 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
         ctx = info.context["snapshots"]
 
         if p not in ctx.all_discovered_files:
-            raise ValueError(f"Path not found in specimen: {p}")
+            raise ValueError(f"Path not found in snapshot: {p}")
 
         if ctx.all_discovered_files[p] != FileType.REGULAR:
             raise ValueError(f"Path must be a regular file, got {ctx.all_discovered_files[p].value}: {p}")
@@ -86,12 +86,12 @@ def _validate_specimen_relative_path(v: Any, handler: Any, info: ValidationInfo)
     return p
 
 
-SpecimenRelativePath = Annotated[
+SnapshotRelativePath = Annotated[
     Path,
     WrapValidator(_validate_specimen_relative_path),
     PlainSerializer(lambda x: str(x), return_type=str, when_used="json"),
 ]
-"""Path type for specimen-relative paths with strict validation.
+"""Path type for snapshot-relative paths with strict validation.
 
 Requires snapshots in validation context (raises KeyError if missing).
 
@@ -99,7 +99,7 @@ Validates:
 - Path is relative (not absolute)
 - Path has no parent references (..)
 - Path is non-empty
-- Path exists in specimen's all_discovered_files
+- Path exists in snapshot's all_discovered_files
 - Path is a regular file (not directory/symlink/other)
 
 Serializes to string in JSON output.

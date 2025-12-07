@@ -7,11 +7,11 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from adgn.props.models.true_positive import LineRange
-from adgn.props.paths import SpecimenRelativePath
+from adgn.props.paths import SnapshotRelativePath
 
 
 class Correction(BaseModel):
-    file: SpecimenRelativePath
+    file: SnapshotRelativePath
     range: LineRange
 
     model_config = ConfigDict(extra="forbid")

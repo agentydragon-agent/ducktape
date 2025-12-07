@@ -218,10 +218,10 @@ async def build_server(
         - events (full execution trace by transcript_id)
 
         Files parameter:
-        - Set of Path objects: scope to specific files (train specimens only)
+        - Set of Path objects: scope to specific files (train snapshots only)
         - "all": evaluate all files with known ground-truth issues (required for validation split)
 
-        Validation split restriction: must use files="all" (full specimen evaluation only).
+        Validation split restriction: must use files="all" (full snapshot evaluation only).
 
         Cost tracking (TODO): costs embedded in output JSONB but not enforced at tool level yet.
         """
@@ -322,7 +322,7 @@ async def run_prompt_optimizer(
         model: Model to use (default gpt-5)
         verbose: Verbose output flag
 
-    Hydrates train specimens and mounts them with definitions via Docker.
+    Hydrates train snapshots and mounts them with definitions via Docker.
     The agent can query train data and valid aggregates via database if PROPS_AGENT_DB_URL is set.
     """
     # Render system prompt with compiled SQL queries from builders
@@ -335,7 +335,7 @@ async def run_prompt_optimizer(
         sql_recent_graders=qb.compile_to_sql(qb.recent_grader_results(limit=10)),
         sql_valid_agg_view=qb.compile_to_sql(qb.valid_aggregates_view()),
         # Parameterized queries - compile with placeholders for agent to fill in
-        sql_critique_for_specimen=qb.compile_to_sql_with_placeholders(qb.critiques_for_snapshot_parameterized()),
+        sql_critique_for_snapshot=qb.compile_to_sql_with_placeholders(qb.critiques_for_snapshot_parameterized()),
         sql_link_to_prompt=qb.compile_to_sql_with_placeholders(qb.link_grader_to_prompt_parameterized()),
         sql_tools_used=qb.compile_to_sql_with_placeholders(qb.tools_used_by_transcript_parameterized()),
         sql_tool_sequence=qb.compile_to_sql_with_placeholders(qb.tool_sequence_by_transcript_parameterized()),
@@ -355,33 +355,33 @@ async def run_prompt_optimizer(
         session_dir.mkdir(parents=True, exist_ok=True)
         session_dir = session_dir.resolve()
 
-    # Get train specimens from database and hydrate them
+    # Get train snapshots from database and hydrate them
     with get_session() as session:
         train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN.value).all()
         train_slugs = [SnapshotSlug(s.slug) for s in train_snapshots]
 
-    logger.info(f"Hydrating {len(train_slugs)} train specimens (for direct Docker mount)")
+    logger.info(f"Hydrating {len(train_slugs)} train snapshots (for direct Docker mount)")
 
-    # Hydrate train specimens and keep alive for Docker mounting
-    specimen_paths: dict[SnapshotSlug, Path] = {}
+    # Hydrate train snapshots and keep alive for Docker mounting
+    snapshot_paths: dict[SnapshotSlug, Path] = {}
     defs_root = specimens_definitions_root()
 
     async with AsyncExitStack() as stack:
-        # Hydrate each train specimen and keep alive
+        # Hydrate each train snapshot and keep alive
         for slug in train_slugs:
             hydrated = await stack.enter_async_context(hydrator.hydrate(slug))
-            specimen_paths[slug] = hydrated.content_root
+            snapshot_paths[slug] = hydrated.content_root
             logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as /snapshots/train/{slug})")
 
         logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
 
-        # Build extra volumes for Docker (specimens + definitions)
+        # Build extra volumes for Docker (snapshots + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
-        extra_volumes = {}
-
         # Train snapshots source code (ro) - mount each separately
-        for slug, path in specimen_paths.items():
-            extra_volumes[str(path.resolve())] = {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
+        extra_volumes = {
+            str(path.resolve()): {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
+            for slug, path in snapshot_paths.items()
+        }
 
         # Ground truth issues (TPs/FPs) are now accessed via database
         # No longer mount libsonnet definitions from filesystem

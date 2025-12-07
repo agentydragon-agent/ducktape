@@ -33,7 +33,8 @@ OPT_CONTEXT = typer.Option(
 OPT_WORKDIR_CRITIC = typer.Option(CRITIC_WORKDIR, "--workdir", help="Container working dir (default: /workspace)")
 
 # Options - Snapshot & Files
-OPT_SNAPSHOT = typer.Option(None, "--snapshot", help="Snapshot slug")
+OPT_SNAPSHOT = typer.Option(None, "--snapshot", help="Snapshot slug", click_type=SNAPSHOT_SLUG)
+OPT_SNAPSHOT_REQUIRED = typer.Option(..., "--snapshot", help="Snapshot slug (required)", click_type=SNAPSHOT_SLUG)
 OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific files (relative paths)")
 
 # Options - Grading & Critique

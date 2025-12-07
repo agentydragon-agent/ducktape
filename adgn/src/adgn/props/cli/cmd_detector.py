@@ -70,26 +70,26 @@ class CoverageSummary:
 
 
 def fetch_coverage_data(
-    detector_prompts: list[tuple[str, str]], all_specimens: set[SnapshotSlug]
+    detector_prompts: list[tuple[str, str]], all_snapshots: set[SnapshotSlug]
 ) -> list[DetectorCoverage]:
-    """Query database for (detector, specimen) pair coverage."""
+    """Query database for (detector, snapshot) pair coverage."""
     with get_session() as session:
         return [
-            _build_detector_coverage(session, filename, prompt_sha256, all_specimens)
+            _build_detector_coverage(session, filename, prompt_sha256, all_snapshots)
             for filename, prompt_sha256 in detector_prompts
         ]
 
 
 def _build_detector_coverage(
-    session, filename: str, prompt_sha256: str, all_specimens: set[SnapshotSlug]
+    session, filename: str, prompt_sha256: str, all_snapshots: set[SnapshotSlug]
 ) -> DetectorCoverage:
     """Build coverage data for a single detector."""
-    # Get all specimens this detector has been run against
+    # Get all snapshots this detector has been run against
     evaluated_snapshots_raw = (
         session.query(CriticRun.snapshot_slug).filter(CriticRun.prompt_sha256 == prompt_sha256).distinct().all()
     )
     evaluated_set = {SnapshotSlug(row[0]) for row in evaluated_snapshots_raw}
-    missing_snapshots = [s for s in all_specimens if s not in evaluated_set]
+    missing_snapshots = [s for s in all_snapshots if s not in evaluated_set]
 
     # Get total run count
     total_runs = session.query(func.count(CriticRun.id)).filter(CriticRun.prompt_sha256 == prompt_sha256).scalar() or 0
@@ -105,13 +105,13 @@ def _build_detector_coverage(
 
 def build_coverage_table(coverage_data: list[DetectorCoverage], total_specimens: int) -> Table:
     """Build Rich table for coverage display."""
-    table = Table(title="Detector Prompt Coverage (by Specimen)")
+    table = Table(title="Detector Prompt Coverage (by Snapshot)")
     table.add_column("Detector", style="cyan")
     table.add_column("Hash", style="dim")
     table.add_column("Total Runs", justify="right")
-    table.add_column("Specimens", justify="right")
+    table.add_column("Snapshots", justify="right")
     table.add_column("Coverage", justify="right")
-    table.add_column("Missing Specimens", style="yellow")
+    table.add_column("Missing Snapshots", style="yellow")
 
     for data in coverage_data:
         evaluated_count = len(data.evaluated_snapshots)
@@ -135,8 +135,8 @@ def build_coverage_table(coverage_data: list[DetectorCoverage], total_specimens:
 
 
 def collect_missing_pairs(coverage_data: list[DetectorCoverage]) -> list[tuple[str, SnapshotSlug]]:
-    """Extract all missing (detector, specimen) pairs."""
-    return [(data.filename, SnapshotSlug(specimen)) for data in coverage_data for specimen in data.missing_snapshots]
+    """Extract all missing (detector, snapshot) pairs."""
+    return [(data.filename, SnapshotSlug(snapshot)) for data in coverage_data for snapshot in data.missing_snapshots]
 
 
 async def run_detector_on_specimen(
@@ -147,7 +147,7 @@ async def run_detector_on_specimen(
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> tuple[str, str, bool]:
-    """Run a single detector on a specimen.
+    """Run a single detector on a snapshot.
 
     Returns:
         (detector_filename, snapshot_slug, success)
@@ -175,7 +175,7 @@ async def run_missing_evaluations(
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> int:
-    """Run all missing (detector, specimen) pairs in parallel.
+    """Run all missing (detector, snapshot) pairs in parallel.
 
     Returns:
         Number of successful evaluations.
@@ -187,8 +187,8 @@ async def run_missing_evaluations(
     console.print(f"\n[yellow]Running {len(missing_pairs)} missing evaluations in parallel...[/yellow]")
 
     tasks = [
-        run_detector_on_specimen(detector, specimen, client=client, verbose=verbose, hydrator=hydrator)
-        for detector, specimen in missing_pairs
+        run_detector_on_specimen(detector, snapshot, client=client, verbose=verbose, hydrator=hydrator)
+        for detector, snapshot in missing_pairs
     ]
     results = await asyncio.gather(*tasks)
 
@@ -211,17 +211,17 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
     hydrator = SnapshotHydrator.from_package_resources()
 
-    # Get all specimens from database
+    # Get all snapshots from database
     with get_session() as session:
         snapshots = session.query(Snapshot).all()
-        all_specimens = {s.slug for s in snapshots}
+        all_snapshots = {s.slug for s in snapshots}
 
     # Fetch current coverage
-    coverage_data = fetch_coverage_data(detector_prompts, all_specimens)
-    summary = CoverageSummary.from_coverage_data(coverage_data, len(all_specimens))
+    coverage_data = fetch_coverage_data(detector_prompts, all_snapshots)
+    summary = CoverageSummary.from_coverage_data(coverage_data, len(all_snapshots))
 
     # Display initial table and summary
-    table = build_coverage_table(coverage_data, len(all_specimens))
+    table = build_coverage_table(coverage_data, len(all_snapshots))
     console.print(table)
 
     typer.echo(f"\nTotal detectors: {summary.total_detectors}")
@@ -243,9 +243,9 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
                 typer.echo("Updated coverage after running missing evaluations:")
                 typer.echo("=" * 60 + "\n")
 
-                updated_coverage = fetch_coverage_data(detector_prompts, all_specimens)
-                updated_summary = CoverageSummary.from_coverage_data(updated_coverage, len(all_specimens))
-                updated_table = build_coverage_table(updated_coverage, len(all_specimens))
+                updated_coverage = fetch_coverage_data(detector_prompts, all_snapshots)
+                updated_summary = CoverageSummary.from_coverage_data(updated_coverage, len(all_snapshots))
+                updated_table = build_coverage_table(updated_coverage, len(all_snapshots))
 
                 console.print(updated_table)
 
@@ -255,7 +255,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
                 typer.echo(f"Evaluated pairs: {updated_summary.evaluated_pairs} ({updated_summary.coverage_pct:.1f}%)")
                 typer.echo(f"Missing pairs: {updated_summary.missing_pairs}")
         else:
-            typer.echo("\n✓ All (detector, specimen) pairs already evaluated!")
+            typer.echo("\n✓ All (detector, snapshot) pairs already evaluated!")
 
 
 # ---------- CLI command wrappers ----------
@@ -265,7 +265,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
     """Filter available files to requested subset, with validation.
 
     Args:
-        all_files: All available files from specimen
+        all_files: All available files from snapshot
         requested_files: Optional list of relative paths to filter to
 
     Returns:
@@ -285,7 +285,7 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
     invalid = requested_set - available
 
     if invalid:
-        typer.echo("Error: The following files are not in the specimen:", err=True)
+        typer.echo("Error: The following files are not in the snapshot:", err=True)
         for f in sorted(str(p) for p in invalid):
             typer.echo(f"  - {f}", err=True)
         typer.echo(f"\nAvailable files ({len(all_files)}):", err=True)
@@ -302,18 +302,12 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
 @async_run
 async def cmd_run_detector(
     filename: str = typer.Argument(..., help="Detector filename (e.g., 'dead_code.md')"),
-    specimen_str: str | None = opt.OPT_SNAPSHOT,
+    snapshot: SnapshotSlug = opt.OPT_SNAPSHOT_REQUIRED,
     files: list[str] | None = opt.OPT_FILES_FILTER,
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Run detector (always structured mode)."""
-    if specimen_str is None:
-        typer.echo("ERROR: --specimen is required")
-        raise typer.Exit(2)
-
-    specimen = SnapshotSlug(specimen_str)
-
     init_db()
 
     # Load current file content and upsert to DB (auto-sync)
@@ -321,10 +315,10 @@ async def cmd_run_detector(
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
     hydrator = SnapshotHydrator.from_package_resources()
-    async with hydrator.hydrate(specimen) as hydrated:
+    async with hydrator.hydrate(snapshot) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
-            input_data=CriticInput(snapshot_slug=specimen, files=files_spec, prompt_sha256=prompt_sha256),
+            input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
             content_root=hydrated.content_root,
             mount_properties=False,
@@ -338,14 +332,14 @@ async def cmd_run_detector(
 
 @async_run
 async def cmd_detector_coverage(
-    run_missing: bool = typer.Option(False, "--run-missing", help="Run missing (detector, specimen) pairs"),
+    run_missing: bool = typer.Option(False, "--run-missing", help="Run missing (detector, snapshot) pairs"),
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
-    """Check evaluation coverage for all (detector, specimen) pairs.
+    """Check evaluation coverage for all (detector, snapshot) pairs.
 
-    Shows which detector prompts have been evaluated against which specimens.
-    Use --run-missing to automatically evaluate all missing (detector, specimen) pairs.
+    Shows which detector prompts have been evaluated against which snapshots.
+    Use --run-missing to automatically evaluate all missing (detector, snapshot) pairs.
     """
     init_db()
     await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose)

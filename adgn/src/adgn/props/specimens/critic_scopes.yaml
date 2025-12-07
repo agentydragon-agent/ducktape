@@ -348,7 +348,7 @@ ducktape/2025-12-04-00:
   - files: ["adgn/src/adgn/props/cli_app/shared.py"]
   - files: ["adgn/src/adgn/props/prompts/_partials.j2"]
   - files: ["adgn/tests/mcp/git_ro/conftest.py"]
-  - files: ["adgn/docs/llm/sandboxer/JUPYTER_CONFIG_STRATEGY.md", "adgn/src/adgn/mcp/sandboxed_jupyter/launch.py"]
+  - files: ["adgn/src/adgn/mcp/sandboxed_jupyter/launch.py", "adgn/docs/llm/sandboxer/JUPYTER_CONFIG_STRATEGY.md"]
 
 misc/2025-08-29-pyright_watch_report:
   # Individual file scopes (auto-generated from expect_caught_from)

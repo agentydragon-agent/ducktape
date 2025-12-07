@@ -17,11 +17,11 @@ from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.models import GraderInput
 from adgn.props.ids import BaseIssueID, SnapshotSlug
-from adgn.props.paths import SpecimenRelativePath
+from adgn.props.paths import SnapshotRelativePath
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
 from adgn.props.snapshot_hydrator import SnapshotHydrator
-from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
+from adgn.props.validation_context import GradedCritiqueContext, SnapshotContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 # Common test data for database fixtures
@@ -47,23 +47,23 @@ def base_issue_id_model():
 
 
 @pytest.fixture
-def specimen_relative_path_model():
-    """Fixture providing a Pydantic model with SpecimenRelativePath field."""
+def snapshot_relative_path_model():
+    """Fixture providing a Pydantic model with SnapshotRelativePath field."""
 
     class Model(BaseModel):
-        path: SpecimenRelativePath
+        path: SnapshotRelativePath
 
     return Model
 
 
 @pytest.fixture
-def validate_specimen_path(specimen_relative_path_model):
-    """Factory for validating specimen paths with context, reducing test duplication."""
+def validate_snapshot_path(snapshot_relative_path_model):
+    """Factory for validating snapshot paths with context, reducing test duplication."""
 
-    def _validate(path_str: str, context: SpecimenContext):
-        """Validate a path string against specimen context."""
+    def _validate(path_str: str, context: SnapshotContext):
+        """Validate a path string against snapshot context."""
         ctx = {"snapshots": context}
-        return specimen_relative_path_model.model_validate({"path": path_str}, context=ctx)
+        return snapshot_relative_path_model.model_validate({"path": path_str}, context=ctx)
 
     return _validate
 
@@ -79,12 +79,12 @@ def rationale_model():
 
 
 @pytest.fixture
-def make_specimen_ctx():
-    """Factory for creating specimen contexts with custom allowed IDs."""
+def make_snapshot_ctx():
+    """Factory for creating snapshot contexts with custom allowed IDs."""
 
     def _make(tp_ids=(), fp_ids=(), all_discovered_files=None):
-        return SpecimenContext(
-            snapshot_slug=SnapshotSlug("test/specimen"),
+        return SnapshotContext(
+            snapshot_slug=SnapshotSlug("test/snapshot"),
             all_discovered_files=all_discovered_files or {},
             allowed_tp_ids=frozenset(tp_ids),
             allowed_fp_ids=frozenset(fp_ids),
@@ -94,15 +94,15 @@ def make_specimen_ctx():
 
 
 @pytest.fixture
-def specimen_ctx_multiple_tp(make_specimen_ctx):
+def snapshot_ctx_multiple_tp(make_snapshot_ctx):
     """Snapshot context with multiple TP IDs (for testing hashability/sets)."""
-    return make_specimen_ctx(tp_ids=["issue-001", "issue-002"])
+    return make_snapshot_ctx(tp_ids=["issue-001", "issue-002"])
 
 
 @pytest.fixture
-def specimen_ctx_tp_fp(make_specimen_ctx):
+def snapshot_ctx_tp_fp(make_snapshot_ctx):
     """Snapshot context with same ID in both TP and FP (for namespace discrimination)."""
-    return make_specimen_ctx(tp_ids=["issue-001"], fp_ids=["issue-001"])
+    return make_snapshot_ctx(tp_ids=["issue-001"], fp_ids=["issue-001"])
 
 
 @pytest.fixture

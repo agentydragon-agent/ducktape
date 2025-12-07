@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 from adgn.props.ids import BaseIssueID
-from adgn.props.paths import SpecimenRelativePath
+from adgn.props.paths import SnapshotRelativePath
 from adgn.props.rationale import Rationale
 
 
@@ -48,7 +48,7 @@ class Occurrence(BaseModel):
       TruePositive.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[SpecimenRelativePath, list[LineRange] | None] = Field(
+    files: dict[SnapshotRelativePath, list[LineRange] | None] = Field(
         description=(
             "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
             + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
@@ -63,7 +63,7 @@ class Occurrence(BaseModel):
     )
 
     @field_serializer("files", when_used="json")
-    def _serialize_files(self, value: dict[SpecimenRelativePath, list[LineRange] | None]) -> dict[str, Any]:
+    def _serialize_files(self, value: dict[SnapshotRelativePath, list[LineRange] | None]) -> dict[str, Any]:
         """Convert Path keys to strings for JSON serialization."""
         return {str(k): v for k, v in value.items()}
 

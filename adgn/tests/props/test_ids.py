@@ -9,7 +9,7 @@ import pytest
 from adgn.props.grader.models import FalsePositiveID, GradeSubmitInput, TruePositiveID
 from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.paths import FileType
-from adgn.props.validation_context import GradedCritiqueContext, SpecimenContext
+from adgn.props.validation_context import GradedCritiqueContext, SnapshotContext
 
 
 class TestBaseIssueID:
@@ -159,18 +159,18 @@ class TestValidationContexts:
     """Tests for validation context classes."""
 
     def test_specimen_context_from_hydrated_specimen(self, tmp_path: Path):
-        """SpecimenContext.from_hydrated_specimen should build context correctly."""
+        """SnapshotContext.from_hydrated_snapshot should build context correctly."""
         # Create a fake hydrated specimen
         (tmp_path / "file1.py").write_text("# test")
         (tmp_path / "file2.txt").write_text("test")
         (tmp_path / "subdir").mkdir()
         (tmp_path / "subdir" / "file3.py").write_text("# test")
 
-        ctx = SpecimenContext.from_hydrated_specimen(
+        ctx = SnapshotContext.from_hydrated_snapshot(
             snapshot_slug=SnapshotSlug("test/specimen"),
             hydrated_root=tmp_path,
-            specimen_issues={"issue-001", "issue-002"},
-            specimen_fps={"false-pos"},
+            snapshot_issues={"issue-001", "issue-002"},
+            snapshot_fps={"false-pos"},
         )
 
         # Check snapshot_slug
