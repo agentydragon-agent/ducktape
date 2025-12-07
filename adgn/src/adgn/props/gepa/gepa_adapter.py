@@ -34,7 +34,7 @@ import logging
 from pathlib import Path
 import pickle
 import tempfile
-from typing import Any
+from typing import Any, cast as type_cast
 from uuid import UUID
 
 import gepa
@@ -45,7 +45,7 @@ from pydantic import BaseModel
 from sqlalchemy import cast
 from sqlalchemy.dialects.postgresql import JSONB
 
-from adgn.agent.events import EventType
+from adgn.agent.events import REFLECTION_EVENT_TYPES, EventType
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput, CriticSubmitPayload
@@ -61,6 +61,33 @@ from adgn.props.snapshot_hydrator import SnapshotHydrator
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# Event Filtering
+# =============================================================================
+
+
+def _filter_reflection_events(transcript_id: UUID) -> list[EventType]:
+    """Load and filter events for GEPA reflection dataset.
+
+    Fetches events for a transcript and filters to reflection-relevant types
+    (excludes ApiRequest/Response to prevent O(n²) context blowup in reflection LM).
+
+    Args:
+        transcript_id: Transcript UUID to fetch events for
+
+    Returns:
+        List of filtered events (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
+    """
+    with get_session() as session:
+        event_rows = (
+            session.query(Event).filter(Event.transcript_id == transcript_id).order_by(Event.sequence_num).all()
+        )
+        # Filter using isinstance against REFLECTION_EVENT_TYPES tuple
+        return type_cast(
+            list[EventType], [e.payload for e in event_rows if isinstance(e.payload, REFLECTION_EVENT_TYPES)]
+        )
 
 
 # =============================================================================
@@ -347,19 +374,16 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                 verbose=self.verbose,
             )
 
-        # Get transcript_id and events
+        # Get transcript_id
         with get_session() as session:
             critic_run = session.get(DBCriticRun, critic_run_id)
             assert critic_run is not None, f"CriticRun {critic_run_id} not found"
             transcript_id = critic_run.transcript_id
 
-            events: list[EventType] = []
-            if capture_traces:
-                event_rows = (
-                    session.query(Event).filter(Event.transcript_id == transcript_id).order_by(Event.sequence_num).all()
-                )
-                # Payload is already a typed EventType thanks to PydanticColumn
-                events = [e.payload for e in event_rows]
+        # Load and filter events for reflection (separate session)
+        events: list[EventType] = []
+        if capture_traces:
+            events = _filter_reflection_events(transcript_id)
 
         # Grade and fetch output in single session
         # CRITICAL: Extract grader_output inside session before object becomes detached
@@ -408,13 +432,10 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         # Fetch trajectory if requested
         trajectory: CriticTrajectory | None = None
         if capture_traces:
-            with get_session() as session:
-                event_rows = (
-                    session.query(Event).filter(Event.transcript_id == transcript_id).order_by(Event.sequence_num).all()
-                )
-                events = [e.payload for e in event_rows]
-
-            trajectory = CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=critique_payload)
+            filtered_events = _filter_reflection_events(transcript_id)
+            trajectory = CriticTrajectory(
+                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload
+            )
 
         return EvaluationResult(
             output=self._build_critic_output(grader_output, critique_id),

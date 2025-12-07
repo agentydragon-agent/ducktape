@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from adgn.openai_utils.model import InputTokensDetails, OutputTokensDetails, ReasoningItem, ResponsesRequest
 
 __all__ = [
+    "REFLECTION_EVENT_TYPES",
     "ApiRequest",
     "AssistantText",
     "EventType",
@@ -98,3 +99,6 @@ EventType = Annotated[
     UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem,
     Field(discriminator="type"),
 ]
+
+# Event types relevant for GEPA reflection - excludes ApiRequest/Response to prevent O(n²) context blowup
+REFLECTION_EVENT_TYPES = (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
