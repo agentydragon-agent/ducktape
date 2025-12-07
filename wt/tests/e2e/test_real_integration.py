@@ -83,8 +83,8 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     assert worktree_path.exists()
 
     # Perform git operations using pygit2
-    wt_repo = pygit2.Repository(str(worktree_path))
-    add_and_commit(wt_repo, {"test.txt": "Hello from worktree!"}, "Test commit")
+    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
 
     # Verify branch name using pygit2
+    wt_repo = pygit2.Repository(worktree_path)
     assert wt_repo.head.shorthand == "test/git-test"

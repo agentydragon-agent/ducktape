@@ -1,8 +1,6 @@
 from datetime import timedelta
 from pathlib import Path
 
-import pygit2
-
 from ..git_helpers import add_and_commit
 
 
@@ -17,8 +15,7 @@ def test_copy_dirty_state_cli(wt_cli, real_temp_repo):
     (src_path / "untracked.txt").write_text("hello")
 
     # Create tracked file and commit using pygit2
-    src_repo = pygit2.Repository(str(src_path))
-    add_and_commit(src_repo, {"README.md": "base\n"}, "add readme")
+    add_and_commit(src_path, {"README.md": "base\n"}, "add readme")
 
     # Now modify the tracked file (creates dirty state)
     tracked = src_path / "README.md"

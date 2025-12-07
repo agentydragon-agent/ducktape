@@ -2,9 +2,6 @@
 
 This module provides pygit2 wrappers that replace subprocess git calls in tests,
 improving performance and reducing subprocess overhead.
-
-All functions accept pygit2.Repository instances. Use the pygit2_repo fixture
-or create Repository instances directly for worktrees.
 """
 
 from pathlib import Path
@@ -14,13 +11,8 @@ import pygit2
 from .test_data import TestData
 
 
-def get_workdir(repo: pygit2.Repository) -> Path:
-    """Get the working directory path from a Repository."""
-    return Path(repo.workdir or repo.path).resolve()
-
-
 def add_and_commit(
-    repo: pygit2.Repository,
+    repo_path: Path,
     files: dict[str, str],
     message: str,
     *,
@@ -30,7 +22,7 @@ def add_and_commit(
     """Stage files and create a commit using pygit2.
 
     Args:
-        repo: pygit2.Repository instance
+        repo_path: Path to the git repository (or worktree)
         files: Dict of filename -> content to write and stage
         message: Commit message
         author_name: Optional author name (defaults to test data)
@@ -39,7 +31,7 @@ def add_and_commit(
     Returns:
         The commit OID
     """
-    repo_path = get_workdir(repo)
+    repo = pygit2.Repository(repo_path)
 
     # Write and stage files
     for filename, content in files.items():
@@ -100,26 +92,4 @@ def add_worktree(repo: pygit2.Repository, worktree_path: Path, branch: str) -> N
 
     # Add worktree - name is typically the last component of the path
     worktree_name = worktree_path.name
-    repo.add_worktree(worktree_name, str(worktree_path), branch_ref)
-
-
-def get_commit_messages(repo: pygit2.Repository, count: int = 10) -> list[str]:
-    """Get recent commit messages using pygit2.
-
-    Args:
-        repo: pygit2.Repository instance
-        count: Maximum number of commits to return
-
-    Returns:
-        List of commit messages (most recent first)
-    """
-    if repo.head_is_unborn:
-        return []
-
-    messages = []
-    for commit in repo.walk(repo.head.target, pygit2.GIT_SORT_TIME):
-        messages.append(commit.message.strip())
-        if len(messages) >= count:
-            break
-
-    return messages
+    repo.add_worktree(worktree_name, worktree_path, branch_ref)
