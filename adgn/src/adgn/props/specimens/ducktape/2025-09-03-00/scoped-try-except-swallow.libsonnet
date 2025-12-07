@@ -27,5 +27,10 @@ I.issueMulti(
       note: 'scoped try/except swallows errors',
       expect_caught_from: [['llm/adgn_llm/src/adgn_llm/git_commit_ai/cli.py']],
     },
+    {
+      files: { 'llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py': [[55, 59]] },
+      note: 'mkdir failure silently falls back to cwd, hiding operational problems',
+      expect_caught_from: [['llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py']],
+    },
   ],
 )
