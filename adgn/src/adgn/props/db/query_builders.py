@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Select, bindparam, cast, column, func, literal, select, table, text, type_coerce
+from sqlalchemy import Select, bindparam, cast, column, func, literal, select, table, text, type_coerce, union_all
 from sqlalchemy.dialects import postgresql
 
 from adgn.props.db.models import (
@@ -251,8 +251,6 @@ def snapshot_files_with_issues_select() -> Select:
     Returns:
         Query selecting snapshot_slug and files_with_issues (text array) for each snapshot
     """
-    from sqlalchemy import union_all
-
     # Extract all file paths (dict keys) from TP occurrences
     # true_positives.occurrences is JSONB array of {files: {...}, ...}
     # RLS on true_positives ensures only train split is visible to agent_user

@@ -33,12 +33,22 @@ class TestGraderModels:
         """GraderOutput should wrap GradeSubmitInput with computed properties."""
         grade = GradeSubmitInput.model_validate(
             {
-                "canonical_tp_coverage": {
-                    "issue-001": {"covered_by": {"input-001": 1.0}, "recall_credit": 1.0, "rationale": "Fully covered"},
-                    "issue-002": {"covered_by": {}, "recall_credit": 0.0, "rationale": "Not covered"},
-                },
-                "canonical_fp_coverage": {},
-                "novel_critique_issues": {},
+                "canonical_tp_coverage": [
+                    {
+                        "canonical_id": "issue-001",
+                        "coverage": {
+                            "covered_by": [{"input_id": "input-001", "credit": 1.0}],
+                            "recall_credit": 1.0,
+                            "rationale": "Fully covered",
+                        },
+                    },
+                    {
+                        "canonical_id": "issue-002",
+                        "coverage": {"covered_by": [], "recall_credit": 0.0, "rationale": "Not covered"},
+                    },
+                ],
+                "canonical_fp_coverage": [],
+                "novel_critique_issues": [],
                 "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
                 "recall": 0.5,
                 "summary": "Test summary",
@@ -54,9 +64,9 @@ class TestGraderModels:
         """GraderOutput.coverage_recall should be None when no canonical TPs."""
         grade = GradeSubmitInput.model_validate(
             {
-                "canonical_tp_coverage": {},
-                "canonical_fp_coverage": {},
-                "novel_critique_issues": {},
+                "canonical_tp_coverage": [],
+                "canonical_fp_coverage": [],
+                "novel_critique_issues": [],
                 "reported_issue_ratios": {"tp": 0.0, "fp": 0.0, "unlabeled": 1.0},
                 "recall": 0.0,
                 "summary": "No canonicals",

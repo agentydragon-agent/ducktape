@@ -205,8 +205,8 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     # Compute derived metrics for display
     total_canonical_tps = len(obj.canonical_tp_coverage)
     total_canonical_fps = len(obj.canonical_fp_coverage)
-    covered_tps = sum(1 for cov in obj.canonical_tp_coverage.values() if cov.covered_by)
-    matched_fps = sum(1 for cov in obj.canonical_fp_coverage.values() if cov.covered_by)
+    covered_tps = sum(1 for entry in obj.canonical_tp_coverage if entry.coverage.covered_by)
+    matched_fps = sum(1 for entry in obj.canonical_fp_coverage if entry.coverage.covered_by)
     uncovered_tps = total_canonical_tps - covered_tps
     novel_count = len(obj.novel_critique_issues)
 

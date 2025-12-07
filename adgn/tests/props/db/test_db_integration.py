@@ -19,6 +19,7 @@ this module run in the same worker process.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -27,8 +28,9 @@ from sqlalchemy.orm import sessionmaker
 
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot
+from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.true_positive import TruePositiveOccurrence
 from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -187,11 +189,6 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
 
         # Create TP records for valid/spec-test (required for snapshot_files_with_issues view)
         # TEST_FILES_LIST is ["test.py"]
-        from pathlib import Path
-
-        from adgn.props.db.models import TruePositive
-        from adgn.props.models.true_positive import TruePositiveOccurrence
-
         tp = TruePositive(
             snapshot_slug="valid/spec-test",
             tp_id="test-tp-001",

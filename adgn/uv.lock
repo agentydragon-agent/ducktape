@@ -37,6 +37,7 @@ dependencies = [
     { name = "ipykernel" },
     { name = "jinja2" },
     { name = "jsonnet" },
+    { name = "jsonschema" },
     { name = "jupyter-core" },
     { name = "jupyter-mcp-server" },
     { name = "jupyter-server" },
@@ -95,6 +96,7 @@ dev = [
     { name = "types-colorama" },
     { name = "types-docker" },
     { name = "types-jinja2" },
+    { name = "types-jsonschema" },
     { name = "types-psutil" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
@@ -119,6 +121,7 @@ typing = [
     { name = "types-colorama" },
     { name = "types-docker" },
     { name = "types-jinja2" },
+    { name = "types-jsonschema" },
     { name = "types-psutil" },
     { name = "types-pyyaml" },
     { name = "types-requests" },
@@ -154,6 +157,7 @@ requires-dist = [
     { name = "ipykernel", specifier = ">=6" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "jsonnet", specifier = ">=0.20.0" },
+    { name = "jsonschema", specifier = ">=4.0" },
     { name = "jupyter-core" },
     { name = "jupyter-mcp-server", specifier = ">=0.11.0" },
     { name = "jupyter-server" },
@@ -210,6 +214,8 @@ requires-dist = [
     { name = "types-docker", marker = "extra == 'typing'" },
     { name = "types-jinja2", marker = "extra == 'dev'" },
     { name = "types-jinja2", marker = "extra == 'typing'" },
+    { name = "types-jsonschema", marker = "extra == 'dev'" },
+    { name = "types-jsonschema", marker = "extra == 'typing'" },
     { name = "types-psutil", marker = "extra == 'dev'" },
     { name = "types-psutil", marker = "extra == 'typing'" },
     { name = "types-pygit2", specifier = ">=1.15.0" },
@@ -4243,6 +4249,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/46/c4/b82309bfed8195de7997672deac301bd6f5bd5cbb6a3e392b7fe780d7852/types-Jinja2-2.11.9.tar.gz", hash = "sha256:dbdc74a40aba7aed520b7e4d89e8f0fe4286518494208b35123bcf084d4b8c81", size = 13302, upload-time = "2021-11-26T06:21:17.496Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/b0/e79d84748f1d34304f13191424348a719c3febaa3493835370fe9528e1e6/types_Jinja2-2.11.9-py3-none-any.whl", hash = "sha256:60a1e21e8296979db32f9374d8a239af4cb541ff66447bb915d8ad398f9c63b2", size = 18190, upload-time = "2021-11-26T06:21:16.18Z" },
+]
+
+[[package]]
+name = "types-jsonschema"
+version = "4.25.1.20251009"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "referencing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/ef/da/5b901088da5f710690b422137e8ae74197fb1ca471e4aa84dd3ef0d6e295/types_jsonschema-4.25.1.20251009.tar.gz", hash = "sha256:75d0f5c5dd18dc23b664437a0c1a625743e8d2e665ceaf3aecb29841f3a5f97f", size = 15661, upload-time = "2025-10-09T02:54:36.963Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/6a/e5146754c0dfc272f176db9c245bc43cc19030262d891a5a85d472797e60/types_jsonschema-4.25.1.20251009-py3-none-any.whl", hash = "sha256:f30b329037b78e7a60146b1146feb0b6fb0b71628637584409bada83968dad3e", size = 15925, upload-time = "2025-10-09T02:54:35.847Z" },
 ]
 
 [[package]]

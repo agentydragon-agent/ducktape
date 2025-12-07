@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import logging
 from uuid import UUID
 
-from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from adgn.agent.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.handler import BaseHandler
 from adgn.openai_utils.model import ReasoningItem
 from adgn.props.db import get_session
@@ -37,7 +37,7 @@ class DatabaseEventHandler(BaseHandler):
         self._sequence_num = 0
 
     def _write_event(
-        self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem
+        self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem | ApiRequest
     ) -> None:
         """Write event to database with sequence number."""
         event_type = evt.type
@@ -74,4 +74,7 @@ class DatabaseEventHandler(BaseHandler):
         self._write_event(item)
 
     def on_response(self, evt: Response) -> None:
+        self._write_event(evt)
+
+    def on_api_request_event(self, evt: ApiRequest) -> None:
         self._write_event(evt)

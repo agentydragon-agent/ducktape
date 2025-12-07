@@ -246,7 +246,7 @@ async def _run_ephemeral_container(
     ephemeral_config = ephemeral_opts.to_container_config(
         cmd=prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd],
         working_dir=input.cwd,  # Override if specified
-        env=input.env,  # Override if specified
+        env=input.env_dict(),  # Override if specified
         auto_remove=True,  # Ephemeral containers should auto-remove on exit
     )
 
@@ -356,7 +356,7 @@ async def _run_session_container(
         stdin=False,
         tty=False,  # No TTY to ensure stdout/stderr separation
         workdir=str(input.cwd) if input.cwd is not None else str(s.working_dir),
-        environment=input.env,
+        environment=input.env_dict(),
         user=input.user or "",
     )
 

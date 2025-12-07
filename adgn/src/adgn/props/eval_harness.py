@@ -172,10 +172,11 @@ async def eval_issue_spec(
         exps: list[Expectation] = list(exps_raw) if exps_raw is not None else []
 
         occ = case.occurrence
-        files_items = list(occ.files.items())
-        if len(files_items) != 1:
+        if len(occ.files) != 1:
             raise SystemExit("Case occurrence must target exactly one file")
-        path, ranges = files_items[0]
+        file_occ = occ.files[0]
+        path = file_occ.path
+        ranges = file_occ.ranges
         # Occurrence.files values are list[LineRange] | None in the schema; enforce exactly one range here.
         if ranges is None:
             raise SystemExit(f"Case occurrence for {path} must have exactly one range (got None)")

@@ -131,6 +131,15 @@ class ExecOutcome(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EnvVar(BaseModel):
+    """Single environment variable key-value pair."""
+
+    name: str = Field(description="Environment variable name")
+    value: str = Field(description="Environment variable value")
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ExecInput(BaseModel):
     """Typed payload for container exec tool.
 
@@ -142,12 +151,31 @@ class ExecInput(BaseModel):
 
     cmd: list[str] = Field(description="Command to run; pass list to avoid shell quoting issues")
     cwd: Path | None = Field(default=None, description="Working directory inside container")
-    env: dict[str, str] | None = Field(default=None, description="Environment variables for the process")
+    env: list[EnvVar] | None = Field(default=None, description="Environment variables for the process")
     user: str | None = Field(default=None, description="Username inside container")
     shell: bool = Field(default=False, description="Run via sh -lc <cmd>")
     timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)")
 
     model_config = ConfigDict(extra="forbid")
+
+    @classmethod
+    def from_env_dict(
+        cls,
+        cmd: list[str],
+        *,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
+        user: str | None = None,
+        shell: bool = False,
+        timeout_ms: int,
+    ) -> ExecInput:
+        """Convenience constructor accepting env as dict."""
+        env_list = [EnvVar(name=k, value=v) for k, v in env.items()] if env else None
+        return cls(cmd=cmd, env=env_list, cwd=cwd, user=user, shell=shell, timeout_ms=timeout_ms)
+
+    def env_dict(self) -> dict[str, str]:
+        """Convert env to dict for internal use (e.g., Docker client)."""
+        return {item.name: item.value for item in self.env} if self.env else {}
 
 
 class BaseExecResult(BaseModel):

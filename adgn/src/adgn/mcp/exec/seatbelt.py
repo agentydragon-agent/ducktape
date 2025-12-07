@@ -118,7 +118,7 @@ def make_seatbelt_exec_server(name: str = SERVER_NAME) -> NotifyingFastMCP:
         else:
             child_env = {k: v for k, v in env_parent.items() if k in wl}
         if input.env:
-            child_env.update({k: str(v) for k, v in input.env.items()})
+            child_env.update(input.env_dict())
 
         # Run with apopen so we can enforce timeout and kill if needed
         try:

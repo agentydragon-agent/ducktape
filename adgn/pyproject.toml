@@ -51,6 +51,7 @@ dependencies = [
   "anyio>=4.4",
   "mcp[cli]>=1.13.1",
   "jsonnet>=0.20.0",
+  "jsonschema>=4.0",
   "requests>=2.32.5",
   "aiolimiter>=1.1.0",
   "pyhamcrest>=2.1",
@@ -96,6 +97,7 @@ dev = [
   'asyncpg-stubs',
   'pandas-stubs',
   'types-Jinja2',
+  'types-jsonschema',
 ]
 typing = [
     'types-colorama',
@@ -107,6 +109,7 @@ typing = [
     'asyncpg-stubs',
     'pandas-stubs',
     'types-Jinja2',
+    'types-jsonschema',
 ]
 # GNOME console script deps (install when needed)
 gnome = [

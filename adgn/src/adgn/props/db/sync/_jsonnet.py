@@ -66,59 +66,44 @@ def evaluate_snapshot_issues(snapshot_dir: Path) -> tuple[dict[str, dict], dict[
     if not issue_files:
         raise SnapshotIssuesLoadError([f"No issue files found in: {snapshot_dir}"])
 
-    # Build Jsonnet snippet to batch-load all files
+    # Build Jsonnet snippet to batch-load all files and separate TPs/FPs
     imports = []
     for p in issue_files:
         name = p.stem
         abs_path = str(p.resolve())
         imports.append(f"  {json.dumps(name)}: (import {json.dumps(abs_path)}) + {{id: {json.dumps(name)}}}")
 
-    snippet = "{\n" + ",\n".join(imports) + "\n}"
+    # Generate snippet that separates TPs and FPs in Jsonnet
+    snippet = (
+        "local all = {\n" + ",\n".join(imports) + "\n};\n"
+        "{\n"
+        "  tps: {[k]: all[k] for k in std.objectFields(all) if all[k].should_flag == true},\n"
+        "  fps: {[k]: all[k] for k in std.objectFields(all) if all[k].should_flag == false},\n"
+        "}"
+    )
 
     # Evaluate jsonnet (⚠️ THE ONLY PLACE THIS HAPPENS)
     # Uses jpathdir for lib.libsonnet resolution; nested imports work via default resolution
     eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
     try:
-        raw_obj = eval_snippet("<batch:flat>", snippet, jpathdir=[str(JSONNET_LIBDIR)])
+        raw_obj = eval_snippet("<batch:separated>", snippet, jpathdir=[str(JSONNET_LIBDIR)])
     except Exception as e:
         raise SnapshotIssuesLoadError([f"Jsonnet evaluation failed: {e}"]) from e
 
     if not isinstance(raw_obj, str):
         raise SnapshotIssuesLoadError(["Jsonnet returned non-string"])
 
-    all_issues = json.loads(raw_obj)
-    if not isinstance(all_issues, dict):
-        raise SnapshotIssuesLoadError([f"Expected dict, got {type(all_issues)}"])
+    result = json.loads(raw_obj)
+    if not isinstance(result, dict):
+        raise SnapshotIssuesLoadError([f"Expected dict, got {type(result)}"])
 
-    # Split into TPs and FPs based on occurrence structure
-    true_positives: dict[str, dict] = {}
-    false_positives: dict[str, dict] = {}
+    # Extract pre-separated TPs and FPs from Jsonnet
+    true_positives = result.get("tps", {})
+    false_positives = result.get("fps", {})
 
-    for issue_id, issue_dict in all_issues.items():
-        if not isinstance(issue_dict, dict):
-            continue
-
-        occurrences = issue_dict.get("occurrences", [])
-        if not occurrences:
-            continue
-
-        # Check first occurrence to determine type
-        first_occ = occurrences[0]
-        is_tp = "expect_caught_from" in first_occ
-        is_fp = "relevant_files" in first_occ
-
-        if is_tp:
-            issue_dict["should_flag"] = True
-            true_positives[issue_id] = issue_dict
-        elif is_fp:
-            issue_dict["should_flag"] = False
-            false_positives[issue_id] = issue_dict
-        else:
-            raise SnapshotIssuesLoadError(
-                [
-                    f"Issue {issue_id!r}: First occurrence is malformed - "
-                    f"must have either 'expect_caught_from' (TP) or 'relevant_files' (FP), got keys: {list(first_occ.keys())}"
-                ]
-            )
+    if not isinstance(true_positives, dict):
+        raise SnapshotIssuesLoadError([f"Expected tps to be dict, got {type(true_positives)}"])
+    if not isinstance(false_positives, dict):
+        raise SnapshotIssuesLoadError([f"Expected fps to be dict, got {type(false_positives)}"])
 
     return true_positives, false_positives

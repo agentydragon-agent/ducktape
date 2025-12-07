@@ -125,6 +125,7 @@ repos:
           - types-aiofiles
           - types-colorama
           - types-psutil
+          - types-jsonschema
           - pandas-stubs
 
       - id: mypy

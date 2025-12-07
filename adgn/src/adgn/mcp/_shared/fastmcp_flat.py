@@ -336,8 +336,7 @@ class FlatModelFastMCP(FastMCP):
             **kwargs: Other tool arguments passed through to FastMCP.tool
         """
         if not flat:
-            base_tool = super().tool  # type: ignore[misc]
-            return base_tool(*args, **kwargs)
+            return super().tool(*args, **kwargs)  # type: ignore[misc]
 
         # Extract flat_output_model from kwargs if provided
         flat_output_model = kwargs.pop("flat_output_model", None)
@@ -348,8 +347,8 @@ class FlatModelFastMCP(FastMCP):
             base_tool = super(FlatModelFastMCP, self).tool  # type: ignore[misc]
             filtered = {k: v for k, v in mcp_tool_kwargs.items() if v is not None}
             decorator = base_tool(**filtered)
-            decorator(fn)  # register the wrapper
-            return fn
+            result: Callable[..., Any] = decorator(fn)  # register the wrapper
+            return result
 
         return cast(
             Callable[[Callable[..., Any]], Callable[..., Any]],

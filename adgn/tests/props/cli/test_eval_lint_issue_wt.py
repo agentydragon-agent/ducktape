@@ -59,7 +59,7 @@ async def test_iss014_anchor_windows(
         # properties=["no-dead-code"],  # deprecated; omit
     )
     s, e = initial_range
-    occ = Occurrence(files={path: [LineRange(start_line=s, end_line=e)]}, note=entity)
+    occ = Occurrence.from_files_dict(files={path: [LineRange(start_line=s, end_line=e)]}, note=entity)
 
     payload = await lint_issue_run(
         snapshot_slug=specimen, issue_core=issue_core, occurrence=occ, client=build_client("gpt-5")

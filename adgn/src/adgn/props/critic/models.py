@@ -67,7 +67,7 @@ class ReportedIssue(BaseModel):
 
     id: BaseIssueID
     rationale: Rationale
-    occurrences: list[Occurrence] = Field(default_factory=list)
+    occurrences: list[Occurrence] = Field(description="Issue occurrences")
 
     model_config = ConfigDict(extra="forbid")
 
@@ -75,10 +75,9 @@ class ReportedIssue(BaseModel):
 class CriticSubmitPayload(BaseModel):
     """Structured critic output."""
 
-    issues: list[ReportedIssue] = Field(default_factory=list, description="Issues found")
+    issues: list[ReportedIssue] = Field(description="Issues found")
     notes_md: str | None = Field(
-        default=None,
-        description="Optional Markdown note. Only for info not represented in structured form in `issues`.",
+        description="Optional Markdown note. Only for info not represented in structured form in `issues`."
     )
     model_config = ConfigDict(extra="forbid")
 

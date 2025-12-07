@@ -71,12 +71,16 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
     # Extract unknown issues
     return [
         UnknownIssue(
-            tp_id=ClusteredIssueID(critique_id=critique_id, tp_id=input_id),
+            tp_id=ClusteredIssueID(critique_id=critique_id, tp_id=entry.input_id),
             rationale=matching_issue.rationale,
-            files={f for occ in matching_issue.occurrences for f in occ.files},
+            files={Path(fo.path) for occ in matching_issue.occurrences for fo in occ.files},
         )
-        for input_id in db_run.output.grade.novel_critique_issues
-        if (matching_issue := next((issue for issue in critique_payload.issues if issue.id == str(input_id)), None))
+        for entry in db_run.output.grade.novel_critique_issues
+        if (
+            matching_issue := next(
+                (issue for issue in critique_payload.issues if issue.id == str(entry.input_id)), None
+            )
+        )
         is not None
     ]
 

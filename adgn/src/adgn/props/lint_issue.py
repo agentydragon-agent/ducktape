@@ -152,7 +152,7 @@ def make_linter_bootstrap_calls(
     calls.append(read_resource_call(builder, server=wiring.server_name, uri=RUNTIME_CONTAINER_INFO_URI))
 
     # Step 2: Directory listing
-    files = list((occ.files or {}).keys())
+    files = [fo.path for fo in occ.files]
     dirs = sorted({str(Path(p).parent) for p in files})
     if dirs:
         targets = [str(wiring.working_dir / d) for d in dirs]
@@ -406,7 +406,7 @@ async def run_specimen_lint_issue_async(
             )
         tp_occ = tp_orm.occurrences[occurrence_index]
         # Convert TruePositiveOccurrence to Occurrence (drop expect_caught_from field)
-        occ = Occurrence(files=tp_occ.files, note=tp_occ.note)
+        occ = Occurrence.from_files_dict(files=tp_occ.files, note=tp_occ.note)
 
         # Build IssueCore for lint prompt (id + rationale only)
         issue_core = IssueCore(id=BaseIssueID(tp_orm.tp_id), rationale=Rationale(tp_orm.rationale))

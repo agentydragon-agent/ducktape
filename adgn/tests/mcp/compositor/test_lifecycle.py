@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import patch
 
 from fastmcp.server import FastMCP
 import pytest
 
-from adgn.mcp.compositor.mount import MountState
+from adgn.mcp.compositor.mount import Mount, MountState
 from adgn.mcp.compositor.server import Compositor, CompositorState
 
 
@@ -61,7 +62,7 @@ async def test_mount_after_close_raises():
 
     # Try to mount after close
     server = FastMCP("backend")
-    with pytest.raises(RuntimeError, match="compositor .* is closed"):
+    with pytest.raises(RuntimeError, match=r"compositor .* is closed"):
         await comp.mount_inproc("backend", server)
 
 
@@ -201,10 +202,6 @@ async def test_mount_failure_does_not_leak():
 
     async with Compositor("test") as comp:
         # Mock the Mount.setup_inproc to simulate failure
-        from unittest.mock import patch
-
-        from adgn.mcp.compositor.mount import Mount
-
         async def failing_setup(self, server, handler_factory=None):
             raise RuntimeError("Simulated mount failure")
 
@@ -327,8 +324,6 @@ async def test_compositor_warns_on_leak(make_backend_server):
     capture doesn't work reliably with ResourceWarnings from __del__.
     This test verifies the leak detection logic is correct.
     """
-    from unittest.mock import patch
-
     backend = make_backend_server("backend")
 
     # Create compositor without context manager

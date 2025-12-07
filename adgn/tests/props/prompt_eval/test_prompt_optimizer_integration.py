@@ -125,15 +125,18 @@ def critic_agent_steps():
 def grader_agent_steps():
     """Declarative steps for Grader agent - evaluates critic output."""
     grade_input = {
-        "canonical_tp_coverage": {
-            "test-issue": {
-                "covered_by": {"test-issue": 1.0},
-                "recall_credit": 1.0,
-                "rationale": "Test issue matches canonical TP.",
+        "canonical_tp_coverage": [
+            {
+                "canonical_id": "test-issue",
+                "coverage": {
+                    "covered_by": [{"input_id": "test-issue", "credit": 1.0}],
+                    "recall_credit": 1.0,
+                    "rationale": "Test issue matches canonical TP.",
+                },
             }
-        },
-        "canonical_fp_coverage": {},
-        "novel_critique_issues": {},
+        ],
+        "canonical_fp_coverage": [],
+        "novel_critique_issues": [],
         "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
         "recall": 0.8,
         "summary": "Good coverage of canonical issues.",

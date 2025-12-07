@@ -7,12 +7,19 @@ from uuid import uuid4
 
 import pytest
 
+from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Prompt, Snapshot
 from adgn.props.files_hash import hash_critic_scope_files
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
-from adgn.props.grader.models import GraderOutput, GradeSubmitInput, NovelIssueReasoning, ReportedIssueRatios
+from adgn.props.grader.models import (
+    GraderOutput,
+    GradeSubmitInput,
+    NovelIssueEntry,
+    NovelIssueReasoning,
+    ReportedIssueRatios,
+)
 from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.splits import Split
 
@@ -21,11 +28,14 @@ def make_grader_output(recall: float) -> GraderOutput:
     """Helper to create GraderOutput for tests."""
     return GraderOutput(
         grade=GradeSubmitInput(
-            canonical_tp_coverage={},
-            canonical_fp_coverage={},
-            novel_critique_issues={
-                InputIssueID("test-issue"): NovelIssueReasoning(rationale="Test rationale for grader")
-            },
+            canonical_tp_coverage=[],
+            canonical_fp_coverage=[],
+            novel_critique_issues=[
+                NovelIssueEntry(
+                    input_id=InputIssueID("test-issue"),
+                    reasoning=NovelIssueReasoning(rationale="Test rationale for grader"),
+                )
+            ],
             reported_issue_ratios=ReportedIssueRatios(tp=0.0, fp=0.0, unlabeled=1.0),
             recall=recall,
             summary="Test grader output",
@@ -69,11 +79,12 @@ def db_with_historical_runs(test_db):
         session.add_all([prompt_a, prompt_b])
 
         # Create critiques (with snapshot_slug required)
-        critique_1 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload={})
-        critique_2 = Critique(id=uuid4(), snapshot_slug=snap_valid_2.slug, payload={})
-        critique_3 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload={})
-        critique_incomplete = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload={})
-        critique_train = Critique(id=uuid4(), snapshot_slug=snap_train.slug, payload={})
+        empty_payload = CriticSubmitPayload(issues=[], notes_md=None)
+        critique_1 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
+        critique_2 = Critique(id=uuid4(), snapshot_slug=snap_valid_2.slug, payload=empty_payload)
+        critique_3 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
+        critique_incomplete = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
+        critique_train = Critique(id=uuid4(), snapshot_slug=snap_train.slug, payload=empty_payload)
         session.add_all([critique_1, critique_2, critique_3, critique_incomplete, critique_train])
 
         session.commit()

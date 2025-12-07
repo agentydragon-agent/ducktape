@@ -21,9 +21,11 @@ from uuid import uuid4
 
 import pytest
 
+from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.models import CriticRun, Critique, Event, FalsePositive, GraderRun, Prompt, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.true_positive import FileOccurrence, Occurrence
 from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -123,21 +125,55 @@ def query_test_data(test_db):
         critique_a_id = uuid4()
         critique_b_id = uuid4()
         critique_valid_id = uuid4()
+
         critiques = [
             Critique(
                 id=critique_a_id,
                 snapshot_slug="train/spec-a",
-                payload={"issues": [{"id": "issue-1", "rationale": "Test issue"}], "notes_md": ""},
+                payload=CriticSubmitPayload(
+                    issues=[
+                        ReportedIssue(
+                            id="issue-1",
+                            rationale="Test issue",
+                            occurrences=[
+                                Occurrence(files=[FileOccurrence(path=Path("file1.py"), ranges=None)], note=None)
+                            ],
+                        )
+                    ],
+                    notes_md="",
+                ),
             ),
             Critique(
                 id=critique_b_id,
                 snapshot_slug="train/spec-b",
-                payload={"issues": [{"id": "issue-2", "rationale": "Another issue"}], "notes_md": ""},
+                payload=CriticSubmitPayload(
+                    issues=[
+                        ReportedIssue(
+                            id="issue-2",
+                            rationale="Another issue",
+                            occurrences=[
+                                Occurrence(files=[FileOccurrence(path=Path("file2.py"), ranges=None)], note=None)
+                            ],
+                        )
+                    ],
+                    notes_md="",
+                ),
             ),
             Critique(
                 id=critique_valid_id,
                 snapshot_slug="valid/spec-a",
-                payload={"issues": [{"id": "issue-3", "rationale": "Valid issue"}], "notes_md": ""},
+                payload=CriticSubmitPayload(
+                    issues=[
+                        ReportedIssue(
+                            id="issue-3",
+                            rationale="Valid issue",
+                            occurrences=[
+                                Occurrence(files=[FileOccurrence(path=Path("test.py"), ranges=None)], note=None)
+                            ],
+                        )
+                    ],
+                    notes_md="",
+                ),
             ),
         ]
         for critique in critiques:

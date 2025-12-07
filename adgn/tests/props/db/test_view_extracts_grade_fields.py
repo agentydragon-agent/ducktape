@@ -15,7 +15,9 @@ from adgn.props.grader.models import (
     GraderOutput,
     GradeSubmitInput,
     InputIssueID,
+    IssueCoverageEntry,
     ReportedIssueRatios,
+    TPCoverageEntry,
     TruePositiveID,
 )
 from adgn.props.ids import SnapshotSlug
@@ -37,13 +39,18 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
 
     # Create a GradeSubmitInput with the actual schema
     grade = GradeSubmitInput(
-        canonical_tp_coverage={
-            TruePositiveID("tp-test-001"): CanonicalTPCoverage(
-                covered_by={InputIssueID("input-test-001"): 1.0}, recall_credit=1.0, rationale="Fully covered"
+        canonical_tp_coverage=[
+            TPCoverageEntry(
+                canonical_id=TruePositiveID("tp-test-001"),
+                coverage=CanonicalTPCoverage(
+                    covered_by=[IssueCoverageEntry(input_id=InputIssueID("input-test-001"), credit=1.0)],
+                    recall_credit=1.0,
+                    rationale="Fully covered",
+                ),
             )
-        },
-        canonical_fp_coverage={},
-        novel_critique_issues={},
+        ],
+        canonical_fp_coverage=[],
+        novel_critique_issues=[],
         reported_issue_ratios=ReportedIssueRatios(tp=1.0, fp=0.0, unlabeled=0.0),
         recall=0.75,  # 75% recall
         summary="Test grading",
@@ -63,7 +70,9 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             rationale="Test issue in file1",
             occurrences=[
                 TruePositiveOccurrence(
-                    files={Path("test/file1.py"): None}, expect_caught_from={frozenset([Path("test/file1.py")])}
+                    files={Path("test/file1.py"): None},
+                    expect_caught_from={frozenset([Path("test/file1.py")])},
+                    note=None,
                 )
             ],
         )
@@ -75,14 +84,16 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             rationale="Test issue in file2",
             occurrences=[
                 TruePositiveOccurrence(
-                    files={Path("test/file2.py"): None}, expect_caught_from={frozenset([Path("test/file2.py")])}
+                    files={Path("test/file2.py"): None},
+                    expect_caught_from={frozenset([Path("test/file2.py")])},
+                    note=None,
                 )
             ],
         )
         session.add(tp2)
 
         # Insert critique (required FK for grader_run)
-        critique_payload = CriticSubmitPayload(issues=[])
+        critique_payload = CriticSubmitPayload(issues=[], notes_md=None)
         critique = Critique(id=critique_id, snapshot_slug=snapshot_slug, payload=critique_payload)
         session.add(critique)
 

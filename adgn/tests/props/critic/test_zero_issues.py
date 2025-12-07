@@ -148,8 +148,8 @@ async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, ma
         critique = session.get(Critique, critique_id)
         assert critique is not None
         payload = critique.payload
-        assert payload["issues"] == []
-        assert len(payload["issues"]) == 0
+        assert payload.issues == []
+        assert len(payload.issues) == 0
 
 
 @pytest.mark.requires_docker

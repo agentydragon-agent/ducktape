@@ -185,7 +185,7 @@ def mock_prompt_sha256() -> str:
 @pytest.fixture
 def sample_critic_success() -> CriticSuccess:
     """Sample CriticSuccess with empty issues list."""
-    return CriticSuccess(result=CriticSubmitPayload(issues=[]))
+    return CriticSuccess(result=CriticSubmitPayload(issues=[], notes_md=None))
 
 
 @pytest.fixture

@@ -79,6 +79,7 @@ local issue(rationale, filesToRanges, expect_caught_from=null) =
     else error 'Multi-file issue requires explicit expect_caught_from. Specify minimal file sets required to detect this issue (AND/OR semantics). Files: ' + std.manifestJson(files_list);
   {
     rationale: rationale,
+    should_flag: true,
     occurrences: [{
       files: normFiles(filesToRanges),
       expect_caught_from: inferred_expect_caught_from,
@@ -145,6 +146,7 @@ local issueMulti(rationale, occurrences) =
 
   {
     rationale: rationale,
+    should_flag: true,
     occurrences: [
       {
         files: normFiles(occ.files),
@@ -176,6 +178,7 @@ local falsePositive(rationale, filesToRanges, relevant_files=null) =
     else std.objectFields(filesToRanges);
   {
     rationale: rationale,
+    should_flag: false,
     occurrences: [{
       files: normFiles(filesToRanges),
       relevant_files: inferred_relevant_files,
@@ -208,6 +211,7 @@ local falsePositiveMulti(rationale, occurrences) =
 
   {
     rationale: rationale,
+    should_flag: false,
     occurrences: [
       {
         files: normFiles(occ.files),

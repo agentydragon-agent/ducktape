@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from uuid import UUID
 
 from fastmcp.client import Client as MCPClient
@@ -17,6 +16,7 @@ from adgn.agent.loop_control import ForbidAllTools
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import AssistantMessage, FunctionCallItem, UserMessage
+from adgn.props.cli.decorators import async_run
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun, Event, GraderRun
 
@@ -53,14 +53,34 @@ def _find_transcript_by_prefix(prefix: str) -> UUID:
         return results[0]
 
 
-async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
-    """Load agent state from DB and ask it a question.
+@async_run
+async def cmd_speak_with_dead(
+    agent_type: str,
+    transcript_prefix: str,
+    question: str,
+    turn_index: int | None = typer.Option(
+        None, "--turn-index", "-t", help="Truncate transcript at this turn index (0-based)"
+    ),
+) -> None:
+    """Interrogate a stuck agent by loading its state and asking a question.
 
     Args:
-        transcript_id: Full UUID of the transcript
-        question: Question to ask the agent
+        agent_type: Type of agent (e.g., 'grader', 'critic') - currently informational only
+        transcript_prefix: Hex prefix of the transcript ID to load
+        question: Question to ask the agent about why it's stuck
+        turn_index: Optional turn index to truncate transcript at (useful for debugging specific points)
+
+    Example:
+        adgn-properties speak-with-dead grader 4a969972 'why are you stuck?'
+        adgn-properties speak-with-dead critic 1e070b96 'what happened?' --turn-index 10
     """
     console = Console()
+    console.print(f"[dim]Loading {agent_type} agent with transcript prefix {transcript_prefix}...[/dim]\n")
+
+    # Find transcript by prefix
+    transcript_id = _find_transcript_by_prefix(transcript_prefix)
+    console.print(f"[dim]Found transcript: {transcript_id}[/dim]\n")
+
     init_db()
 
     # Load run metadata and events from DB
@@ -128,6 +148,17 @@ async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
             elif isinstance(payload, ToolCallOutput):
                 transcript_items.append(payload)
 
+    # Truncate transcript at turn_index if specified
+    if turn_index is not None:
+        if turn_index < 0 or turn_index >= len(transcript_items):
+            console.print(
+                f"[yellow]WARNING: turn_index {turn_index} out of range (0-{len(transcript_items) - 1}), "
+                f"using full transcript[/yellow]"
+            )
+        else:
+            transcript_items = transcript_items[: turn_index + 1]
+            console.print(f"[dim]Truncated transcript at turn_index {turn_index}[/dim]")
+
     console.print(f"[dim]Reconstructed transcript with {len(transcript_items)} items[/dim]\n")
 
     # Create agent with loaded transcript
@@ -149,25 +180,3 @@ async def _speak_with_dead_async(transcript_id: UUID, question: str) -> None:
 
         # Run the agent with the question
         await agent.run(question)
-
-
-def cmd_speak_with_dead(agent_type: str, transcript_prefix: str, question: str) -> None:
-    """Interrogate a stuck agent by loading its state and asking a question.
-
-    Args:
-        agent_type: Type of agent (e.g., 'grader', 'critic') - currently informational only
-        transcript_prefix: Hex prefix of the transcript ID to load
-        question: Question to ask the agent about why it's stuck
-
-    Example:
-        adgn-properties speak-with-dead grader 4a969972 'why are you stuck?'
-    """
-    console = Console()
-    console.print(f"[dim]Loading {agent_type} agent with transcript prefix {transcript_prefix}...[/dim]\n")
-
-    # Find transcript by prefix
-    transcript_id = _find_transcript_by_prefix(transcript_prefix)
-    console.print(f"[dim]Found transcript: {transcript_id}[/dim]\n")
-
-    # Run async interrogation
-    asyncio.run(_speak_with_dead_async(transcript_id, question))

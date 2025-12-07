@@ -105,23 +105,36 @@ class TestNamespacedIDsWithNewType:
 
 
 def test_grade_submit_uses_typed_id_dicts():
-    """GradeSubmitInput should use dicts with typed NewType IDs as keys (strings at runtime)."""
+    """GradeSubmitInput should use lists with typed NewType IDs (strings at runtime)."""
     payload = GradeSubmitInput.model_validate(
         {
-            "canonical_tp_coverage": {
-                "issue-001": {"covered_by": {"input-001": 1.0}, "recall_credit": 1.0, "rationale": "Fully covered"},
-                "issue-002": {"covered_by": {}, "recall_credit": 0.0, "rationale": "Not covered"},
-            },
-            "canonical_fp_coverage": {"fp-001": {"covered_by": [], "rationale": "Not matched"}},
-            "novel_critique_issues": {"input-002": {"rationale": "Novel issue not in canonicals"}},
+            "canonical_tp_coverage": [
+                {
+                    "canonical_id": "issue-001",
+                    "coverage": {
+                        "covered_by": [{"input_id": "input-001", "credit": 1.0}],
+                        "recall_credit": 1.0,
+                        "rationale": "Fully covered",
+                    },
+                },
+                {
+                    "canonical_id": "issue-002",
+                    "coverage": {"covered_by": [], "recall_credit": 0.0, "rationale": "Not covered"},
+                },
+            ],
+            "canonical_fp_coverage": [
+                {"canonical_id": "fp-001", "coverage": {"covered_by": [], "rationale": "Not matched"}}
+            ],
+            "novel_critique_issues": [
+                {"input_id": "input-002", "reasoning": {"rationale": "Novel issue not in canonicals"}}
+            ],
             "reported_issue_ratios": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1},
             "recall": 0.5,
             "summary": "Test summary",
         }
     )
 
-    # Pydantic already validates dict keys are correctly typed IDs (NewType[str])
-    # No need for redundant runtime assertions
+    # Pydantic validates that IDs are correctly typed NewType IDs (strings at runtime)
 
     # Verify specific structure
     assert_that(payload.canonical_tp_coverage, has_length(2))
@@ -133,15 +146,18 @@ def test_grade_submit_serialization_round_trip():
     """GradeSubmitInput should serialize and deserialize correctly."""
     original = GradeSubmitInput.model_validate(
         {
-            "canonical_tp_coverage": {
-                "issue-001": {
-                    "covered_by": {"input-001": 1.0},
-                    "recall_credit": 1.0,
-                    "rationale": "Fully matched the canonical issue",
+            "canonical_tp_coverage": [
+                {
+                    "canonical_id": "issue-001",
+                    "coverage": {
+                        "covered_by": [{"input_id": "input-001", "credit": 1.0}],
+                        "recall_credit": 1.0,
+                        "rationale": "Fully matched the canonical issue",
+                    },
                 }
-            },
-            "canonical_fp_coverage": {},
-            "novel_critique_issues": {},
+            ],
+            "canonical_fp_coverage": [],
+            "novel_critique_issues": [],
             "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
             "recall": 1.0,
             "summary": "All issues were matched correctly",

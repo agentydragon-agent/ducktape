@@ -62,7 +62,7 @@ async def test_lint_issue_bootstrap_small_files(
     f2.write_text("print('b')\n", encoding="utf-8")
 
     # Occurrence: two files, no explicit ranges (whole-file path)
-    occ = Occurrence(files={Path("pkg/a.py"): None, Path("pkg/b.py"): None})
+    occ = Occurrence.from_files_dict(files={Path("pkg/a.py"): None, Path("pkg/b.py"): None})
 
     # Real MCP manager (in-proc docker exec) and mocked OpenAI client
     opts = make_container_opts("python:3.12-slim")

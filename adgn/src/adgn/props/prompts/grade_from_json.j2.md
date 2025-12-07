@@ -1,5 +1,7 @@
 {% extends "_base.j2.md" %}
-{% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %}
+{# Schemas commented out - may be confusing the model when also provided via tool definitions #}
+{# {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %} #}
+{% set header_schema_names = [] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
 {% set include_properties = false %}

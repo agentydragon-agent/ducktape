@@ -137,6 +137,14 @@ class GraderOutput(BaseModel):
         """Binary recall (0-1) from the grading result."""
         return self.grade.recall
 
+    @property
+    def coverage_recall(self) -> float | None:
+        """Fractional coverage-based recall, or None if no canonical TPs."""
+        if not self.grade.canonical_tp_coverage:
+            return None
+        total_credit = sum(entry.coverage.recall_credit for entry in self.grade.canonical_tp_coverage)
+        return total_credit / len(self.grade.canonical_tp_coverage)
+
 
 # =============================================================================
 # Grader Submit Models
@@ -196,17 +204,22 @@ class GradeMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class IssueCoverageEntry(BaseModel):
+    """Single input issue's contribution to canonical coverage."""
+
+    input_id: InputIssueID = Field(description="Input issue ID")
+    credit: RatioFloat = Field(description="Individual recall credit contribution")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class CanonicalTPCoverage(BaseModel):
     """Coverage of a canonical TP: which inputs matched, recall credit, rationale."""
 
-    covered_by: dict[InputIssueID, RatioFloat] = Field(
-        default_factory=dict,
-        description="Input issue IDs -> individual recall credit contributions. Empty dict = not covered.",
-    )
+    covered_by: list[IssueCoverageEntry] = Field(description="Input issue contributions. Empty list = not covered.")
 
     recall_credit: RatioFloat = Field(
-        ...,
-        description="Total recall credit. 0=not covered, 1=fully covered, 0.x=partial. Must satisfy: min(covered_by.values()) <= recall_credit <= sum(covered_by.values()).",
+        description="Total recall credit. 0=not covered, 1=fully covered, 0.x=partial. Must satisfy: min(credits) <= recall_credit <= sum(credits)."
     )
 
     rationale: Rationale = Field(
@@ -220,6 +233,16 @@ class CanonicalTPCoverage(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @classmethod
+    def from_covered_by_dict(cls, covered_by: dict[InputIssueID, RatioFloat], **kwargs) -> CanonicalTPCoverage:
+        """Construct from covered_by dict (convenience for migration/tests)."""
+        entries = [IssueCoverageEntry(input_id=k, credit=v) for k, v in covered_by.items()]
+        return cls(covered_by=entries, **kwargs)
+
+    def covered_by_dict(self) -> dict[InputIssueID, RatioFloat]:
+        """Get covered_by as dict (for backwards compatibility)."""
+        return {entry.input_id: entry.credit for entry in self.covered_by}
+
     @model_validator(mode="after")
     def validate_recall_credit_bounds(self) -> CanonicalTPCoverage:
         """Validate that recall_credit is bounded by individual contributions."""
@@ -229,14 +252,14 @@ class CanonicalTPCoverage(BaseModel):
                 raise ValueError(f"covered_by is empty but recall_credit is {self.recall_credit}, expected 0.0")
             return self
 
-        individual_credits = list(self.covered_by.values())
+        individual_credits = [entry.credit for entry in self.covered_by]
         min_credit = min(individual_credits)
         sum_credit = sum(individual_credits)
 
         if not (min_credit <= self.recall_credit <= sum_credit):
             raise ValueError(
                 f"recall_credit {self.recall_credit} must be in [{min_credit}, {sum_credit}] "
-                f"(min and sum of individual contributions: {dict(self.covered_by)})"
+                f"(min and sum of individual contributions: {self.covered_by_dict()})"
             )
         return self
 
@@ -245,7 +268,7 @@ class CanonicalFPCoverage(BaseModel):
     """Coverage of a known FP: which inputs matched (if any), rationale."""
 
     covered_by: set[InputIssueID] = Field(
-        default_factory=set, description="Input issue IDs that matched this known FP. Empty set = not matched."
+        description="Input issue IDs that matched this known FP. Empty set = not matched."
     )
 
     rationale: Rationale = Field(
@@ -267,6 +290,33 @@ class NovelIssueReasoning(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
+
+
+class TPCoverageEntry(BaseModel):
+    """Coverage for one canonical true positive."""
+
+    canonical_id: TruePositiveID = Field(description="Canonical TP ID")
+    coverage: CanonicalTPCoverage = Field(description="Coverage details")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class FPCoverageEntry(BaseModel):
+    """Coverage for one known false positive."""
+
+    canonical_id: FalsePositiveID = Field(description="Known FP ID")
+    coverage: CanonicalFPCoverage = Field(description="Coverage details")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class NovelIssueEntry(BaseModel):
+    """Novel aspects for one input issue."""
+
+    input_id: InputIssueID = Field(description="Input issue ID with novel aspects")
+    reasoning: NovelIssueReasoning = Field(description="Why this issue is novel")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class ReportedIssueRatios(BaseModel):
@@ -400,18 +450,18 @@ class GradeSubmitInput(BaseModel):
     """
 
     # Coverage for ground truth issues
-    canonical_tp_coverage: dict[TruePositiveID, CanonicalTPCoverage] = Field(
-        ..., description="Coverage for EVERY canonical TP. Keys are typed IDs (TruePositiveID)."
+    canonical_tp_coverage: list[TPCoverageEntry] = Field(
+        ..., description="Coverage for EVERY canonical TP. Must include all canonical TPs."
     )
 
-    canonical_fp_coverage: dict[FalsePositiveID, CanonicalFPCoverage] = Field(
-        ..., description="Coverage for EVERY known FP. Keys are typed IDs (FalsePositiveID)."
+    canonical_fp_coverage: list[FPCoverageEntry] = Field(
+        ..., description="Coverage for EVERY known FP. Must include all known FPs."
     )
 
     # Novel/unknown input issues
-    novel_critique_issues: dict[InputIssueID, NovelIssueReasoning] = Field(
+    novel_critique_issues: list[NovelIssueEntry] = Field(
         ...,
-        description="Input issues with novel aspects. Keys are typed IDs (InputIssueID). Can be pure novel (not in any covered_by) or hybrid (appears in covered_by but has additional novel content). Empty dict if all input issues fully match canonicals/FPs.",
+        description="Input issues with novel aspects. Can be pure novel (not in any covered_by) or hybrid (appears in covered_by but has additional novel content). Empty list if all input issues fully match canonicals/FPs.",
     )
 
     # Metrics
@@ -434,6 +484,26 @@ class GradeSubmitInput(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    @classmethod
+    def from_canonical_tp_coverage_dict(
+        cls, canonical_tp_coverage: dict[TruePositiveID, CanonicalTPCoverage], **kwargs
+    ) -> GradeSubmitInput:
+        """Construct from canonical_tp_coverage dict (convenience for migration)."""
+        entries = [TPCoverageEntry(canonical_id=k, coverage=v) for k, v in canonical_tp_coverage.items()]
+        return cls(canonical_tp_coverage=entries, **kwargs)
+
+    def canonical_tp_coverage_dict(self) -> dict[TruePositiveID, CanonicalTPCoverage]:
+        """Get canonical_tp_coverage as dict (for backwards compatibility)."""
+        return {entry.canonical_id: entry.coverage for entry in self.canonical_tp_coverage}
+
+    def canonical_fp_coverage_dict(self) -> dict[FalsePositiveID, CanonicalFPCoverage]:
+        """Get canonical_fp_coverage as dict (for backwards compatibility)."""
+        return {entry.canonical_id: entry.coverage for entry in self.canonical_fp_coverage}
+
+    def novel_critique_issues_dict(self) -> dict[InputIssueID, NovelIssueReasoning]:
+        """Get novel_critique_issues as dict (for backwards compatibility)."""
+        return {entry.input_id: entry.reasoning for entry in self.novel_critique_issues}
+
     def _get_validation_context(self, info: ValidationInfo) -> GradeValidationContext | None:
         """Get validation context if available and correct type."""
         if info.context is None:
@@ -444,24 +514,23 @@ class GradeSubmitInput(BaseModel):
     @property
     def _mentioned_tp_ids(self) -> set[InputIssueID]:
         """Input IDs mentioned in canonical TP coverage."""
-        return set().union(*(cov.covered_by.keys() for cov in self.canonical_tp_coverage.values()))
+        return set().union(*(entry.coverage.covered_by_dict().keys() for entry in self.canonical_tp_coverage))
 
     @property
     def _mentioned_fp_ids(self) -> set[InputIssueID]:
         """Input IDs mentioned in canonical FP coverage."""
-        return set().union(*(cov.covered_by for cov in self.canonical_fp_coverage.values()))
+        return set().union(*(entry.coverage.covered_by for entry in self.canonical_fp_coverage))
 
     @model_validator(mode="after")
     def validate_tp_coverage_complete(self, info: ValidationInfo) -> GradeSubmitInput:
         """Validate all canonical TPs are covered."""
         if (ctx := self._get_validation_context(info)) is None:
             return self
-        missing_tp = ctx.allowed_tp_ids - self.canonical_tp_coverage.keys()
-        if missing_tp:
+        covered_tp_ids = {entry.canonical_id for entry in self.canonical_tp_coverage}
+        if missing_tp := ctx.allowed_tp_ids - covered_tp_ids:
             raise ValueError(f"Missing canonical TP coverage for: {sorted(missing_tp)}")
 
-        extra_tp = self.canonical_tp_coverage.keys() - ctx.allowed_tp_ids
-        if extra_tp:
+        if extra_tp := covered_tp_ids - ctx.allowed_tp_ids:
             raise ValueError(f"Unknown canonical TP IDs: {sorted(extra_tp)}")
 
         return self
@@ -471,12 +540,11 @@ class GradeSubmitInput(BaseModel):
         """Validate all known FPs are covered."""
         if (ctx := self._get_validation_context(info)) is None:
             return self
-        missing_fp = ctx.allowed_fp_ids - self.canonical_fp_coverage.keys()
-        if missing_fp:
+        covered_fp_ids = {entry.canonical_id for entry in self.canonical_fp_coverage}
+        if missing_fp := ctx.allowed_fp_ids - covered_fp_ids:
             raise ValueError(f"Missing FP coverage for: {sorted(missing_fp)}")
 
-        extra_fp = self.canonical_fp_coverage.keys() - ctx.allowed_fp_ids
-        if extra_fp:
+        if extra_fp := covered_fp_ids - ctx.allowed_fp_ids:
             raise ValueError(f"Unknown FP IDs: {sorted(extra_fp)}")
 
         return self
@@ -500,8 +568,8 @@ class GradeSubmitInput(BaseModel):
         """Validate all novel issue IDs are valid input IDs."""
         if (ctx := self._get_validation_context(info)) is None:
             return self
-        extra_novel = self.novel_critique_issues.keys() - ctx.allowed_input_ids
-        if extra_novel:
+        novel_input_ids = {entry.input_id for entry in self.novel_critique_issues}
+        if extra_novel := novel_input_ids - ctx.allowed_input_ids:
             raise ValueError(f"Unknown input IDs in novel_critique_issues: {sorted(extra_novel)}")
 
         return self
@@ -513,10 +581,8 @@ class GradeSubmitInput(BaseModel):
             return self
 
         # All input IDs must be either mentioned or in novel_critique_issues
-        missing_input = ctx.allowed_input_ids - (
-            self._mentioned_tp_ids | self._mentioned_fp_ids | self.novel_critique_issues.keys()
-        )
-        if missing_input:
+        novel_input_ids = {entry.input_id for entry in self.novel_critique_issues}
+        if missing_input := ctx.allowed_input_ids - (self._mentioned_tp_ids | self._mentioned_fp_ids | novel_input_ids):
             raise ValueError(
                 f"Missing input IDs: {sorted(missing_input)}. "
                 f"Every input issue MUST appear in covered_by or novel_critique_issues."

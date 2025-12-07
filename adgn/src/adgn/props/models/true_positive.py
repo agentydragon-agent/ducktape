@@ -11,10 +11,8 @@ from adgn.props.rationale import Rationale
 
 
 class LineRange(BaseModel):
-    start_line: int = Field(..., ge=1, description="1-based start line number")
-    end_line: int | None = Field(
-        default=None, description="1-based end line number (inclusive); omit for single-line anchor"
-    )
+    start_line: int = Field(ge=1, description="1-based start line number")
+    end_line: int | None = Field(description="1-based end line number (inclusive); None for single-line anchor")
     # TODO: Add optional per-range note/context field
     # Currently notes are only at occurrence level; per-range notes would help explain
     # why specific line ranges matter within a single occurrence (e.g., "definition site"
@@ -37,6 +35,14 @@ class LineRange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FileOccurrence(BaseModel):
+    """One file in an occurrence (for OpenAI strict mode compatibility)."""
+
+    path: Path = Field(description="File path")
+    ranges: list[LineRange] | None = Field(default=None, description="Line ranges or None for unspecified")
+    model_config = ConfigDict(extra="forbid")
+
+
 class Occurrence(BaseModel):
     """One occurrence of a TruePositive.
 
@@ -48,24 +54,29 @@ class Occurrence(BaseModel):
       TruePositive.rationale for the global explanation and acceptance criteria.
     """
 
-    files: dict[SnapshotRelativePath, list[LineRange] | None] = Field(
+    files: list[FileOccurrence] = Field(
         description=(
-            "Maps file paths -> list of LineRanges within that file or `None` to indicate an unspecified anchor in the file. "
+            "List of files with their line ranges. "
             + "One Occurrence may reference multiple files (e.g., multi-file code fragment) but represents a single logical location instance."
         )
     )
     note: str | None = Field(
-        default=None,
         description=(
             "Occurrence-specific explanatory note, for details unique to this occurrence; "
             "do not repeat issue-level rationale here."
-        ),
+        )
     )
 
-    @field_serializer("files", when_used="json")
-    def _serialize_files(self, value: dict[SnapshotRelativePath, list[LineRange] | None]) -> dict[str, Any]:
-        """Convert Path keys to strings for JSON serialization."""
-        return {str(k): v for k, v in value.items()}
+    @classmethod
+    def from_files_dict(
+        cls, files: dict[SnapshotRelativePath, list[LineRange] | None], note: str | None = None
+    ) -> Occurrence:
+        """Create Occurrence from dict-based files (migration helper)."""
+        return cls(files=[FileOccurrence(path=path, ranges=ranges) for path, ranges in files.items()], note=note)
+
+    def files_dict(self) -> dict[Path, list[LineRange] | None]:
+        """Convert files list to dict (for backward compatibility)."""
+        return {fo.path: fo.ranges for fo in self.files}
 
     model_config = ConfigDict(extra="forbid")
 

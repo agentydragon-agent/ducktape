@@ -24,6 +24,7 @@ from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
+import typer
 
 from adgn.agent.agent import MiniCodex
 from adgn.agent.bootstrap import TypedBootstrapBuilder
@@ -71,7 +72,7 @@ class CriticSubmitState:
     result: CriticSubmitPayload | None = None
     error: str | None = None
     # In-progress incremental payload (used by upsert/add_* tools before submit)
-    work: CriticSubmitPayload = field(default_factory=CriticSubmitPayload)
+    work: CriticSubmitPayload = field(default_factory=lambda: CriticSubmitPayload(issues=[], notes_md=None))
 
 
 class CriticFailure(BaseModel):
@@ -166,14 +167,23 @@ class SubmitInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FileRanges(BaseModel):
+    """File path with associated line ranges."""
+
+    path: Path
+    ranges: list[RangeAtom]
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class AddOccurrenceFilesInput(BaseModel):
     """Add one occurrence spanning multiple files and ranges.
 
-    files: map of file -> list of range atoms (int or [start,end]).
+    files: list of files with their line ranges.
     """
 
     tp_id: BaseIssueID
-    files: dict[Annotated[str, StringConstraints(pattern=r"^[^\n]+$")], list[RangeAtom]]
+    files: list[FileRanges]
 
     model_config = ConfigDict(extra="forbid")
 
@@ -199,7 +209,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
     def _parse_ranges(atoms: list[RangeAtom]) -> list[LineRange]:
         def _parse_range_atom(a: RangeAtom) -> LineRange:
             if isinstance(a, int):
-                return LineRange(start_line=a)
+                return LineRange(start_line=a, end_line=None)
             if isinstance(a, list) and len(a) == 2 and all(isinstance(x, int) for x in a):
                 return LineRange(start_line=a[0], end_line=a[1])
             raise ValueError(f"Invalid range atom: {a!r}. Expected int or [start, end]")
@@ -234,7 +244,7 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         if result is None:
             raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
         issue = result[1]
-        issue.occurrences.append(Occurrence(files={Path(payload.file): _parse_ranges(payload.ranges)}))
+        issue.occurrences.append(Occurrence.from_files_dict(files={Path(payload.file): _parse_ranges(payload.ranges)}))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
         return (
             f"occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
@@ -252,9 +262,11 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
         if result is None:
             raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
         issue = result[1]
-        issue.occurrences.append(
-            Occurrence(files={Path(p): _parse_ranges(r) for p, r in (payload.files or {}).items()})
-        )
+        # Convert list of FileRanges to dict for Occurrence.from_files_dict
+        files_dict: dict[Path, list[LineRange] | None] = {
+            Path(fr.path): _parse_ranges(fr.ranges) for fr in payload.files
+        }
+        issue.occurrences.append(Occurrence.from_files_dict(files=files_dict))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
         return (
             f"multi-file occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
@@ -298,7 +310,7 @@ def _format_file_ranges(path: Path, ranges: list[LineRange] | None) -> str:
 
 def _format_occurrence(occ: Occurrence) -> str:
     """Format a single occurrence (multiple files with optional note)."""
-    files = [_format_file_ranges(p, ranges) for p, ranges in (occ.files or {}).items()]
+    files = [_format_file_ranges(fo.path, fo.ranges) for fo in occ.files]
     result = "; ".join(files)
     if occ.note:
         result += f" ({occ.note})"
@@ -441,6 +453,8 @@ async def run_critic(
         logger.info(
             f"Created initial critic run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
         )
+        # Print IDs early to console for easy retrieval if run is interrupted
+        typer.echo(f"[critic] transcript_id={transcript_id} run_id={run_id}", err=True)
 
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
