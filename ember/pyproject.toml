@@ -3,7 +3,7 @@ name = "ember"
 version = "0.0.1"
 description = "Minimal containerised agent pilot (Matrix + OpenAI)"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110",
     "uvicorn>=0.22",

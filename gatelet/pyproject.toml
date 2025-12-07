@@ -7,7 +7,7 @@ name = "gatelet"
 version = "0.1.0"
 description = "LLM-friendly API for Home Assistant and webhooks"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 license = "MIT"
 authors = [
     {name = "agentydragon", email = "agentydragon@example.com"},
