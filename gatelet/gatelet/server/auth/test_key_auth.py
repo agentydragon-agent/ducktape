@@ -7,9 +7,11 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gatelet.server.auth.key_auth import KeyAuthError, validate_key
-from gatelet.server.config import settings
 from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
+
+# Explicit test value - tests should not depend on production config
+TEST_KEY_VALIDITY = timedelta(days=365)
 
 
 async def test_validate_valid_key(db_session: AsyncSession):
@@ -22,7 +24,7 @@ async def test_validate_valid_key(db_session: AsyncSession):
     key = await persist(db_session, key)
 
     # Validate key
-    validated_key = await validate_key(key.key_value, db_session)
+    validated_key = await validate_key(key.key_value, db_session, TEST_KEY_VALIDITY)
     assert validated_key.id == key.id
     assert validated_key.key_value == key.key_value
 
@@ -30,7 +32,7 @@ async def test_validate_valid_key(db_session: AsyncSession):
 async def test_validate_nonexistent_key(db_session: AsyncSession):
     """Test validating a non-existent key."""
     with pytest.raises(KeyAuthError):
-        await validate_key("nonexistent-key", db_session)
+        await validate_key("nonexistent-key", db_session, TEST_KEY_VALIDITY)
 
 
 async def test_validate_revoked_key(db_session: AsyncSession):
@@ -47,15 +49,14 @@ async def test_validate_revoked_key(db_session: AsyncSession):
 
     # Validate key
     with pytest.raises(KeyAuthError):
-        await validate_key(key.key_value, db_session)
+        await validate_key(key.key_value, db_session, TEST_KEY_VALIDITY)
 
 
 async def test_validate_expired_key(db_session: AsyncSession):
     """Test validating an expired key."""
     # Create a key that was created beyond the validity period with unique value
     unique_id = uuid.uuid4().hex[:8]
-    expiry_period = settings.auth.key_in_url.key_validity
-    created_at = datetime.now() - expiry_period - timedelta(days=1)
+    created_at = datetime.now() - TEST_KEY_VALIDITY - timedelta(days=1)
 
     key = AuthKey(
         key_value=f"expired-test-key-{unique_id}", description=f"Expired test key {unique_id}", created_at=created_at
@@ -64,4 +65,4 @@ async def test_validate_expired_key(db_session: AsyncSession):
 
     # Validate key
     with pytest.raises(KeyAuthError):
-        await validate_key(key.key_value, db_session)
+        await validate_key(key.key_value, db_session, TEST_KEY_VALIDITY)
