@@ -124,6 +124,23 @@ def repo_factory(temp_dir):
 
 
 @pytest.fixture
+def pygit2_repo(real_temp_repo) -> pygit2.Repository:
+    """Provide a pygit2.Repository instance for the test's real_temp_repo.
+
+    Use this fixture when you need to perform multiple pygit2 operations
+    on the same repository, avoiding repeated Repository instantiation.
+
+    Example:
+        def test_something(pygit2_repo, real_temp_repo):
+            # Use pygit2_repo for git operations
+            branch = pygit2_repo.head.shorthand
+            # Use real_temp_repo for path operations
+            (real_temp_repo / "file.txt").write_text("content")
+    """
+    return pygit2.Repository(str(real_temp_repo))
+
+
+@pytest.fixture
 def config_factory(temp_dir):
     """Factory for creating test configurations with presets and overrides."""
 

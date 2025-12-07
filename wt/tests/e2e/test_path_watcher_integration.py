@@ -6,6 +6,7 @@ Refactored to use wt_cli fixture for invoking the CLI.
 from datetime import timedelta
 from pathlib import Path
 
+import pygit2
 import pytest
 
 from wt.shared.configuration import Configuration
@@ -71,7 +72,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     # Resolve config to locate filesystem paths
     wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
-    repo_path = Path(config.main_repo)
+    repo = pygit2.Repository(str(config.main_repo))
 
     # Step 1: Initial status - should start daemon and show empty state
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
@@ -98,7 +99,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     result = wt_cli.sh("rm", "feature-test", "--force", timeout=timedelta(seconds=5.0))
     assert result.returncode == 0, f"Remove command failed: {result.stderr}"
     # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
-    assert not worktree_exists(repo_path, worktree_path), "Worktree still listed in main repo after removal"
+    assert not worktree_exists(repo, worktree_path), "Worktree still listed in main repo after removal"
 
     # Verify worktree was removed from filesystem
     assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
@@ -125,7 +126,7 @@ def test_path_watcher_multiple_worktrees(wt_cli):
     # Resolve config for filesystem checks
     wt_dir = Path(wt_cli.env["WT_DIR"])
     config = Configuration.resolve(wt_dir)
-    repo_path = Path(config.main_repo)
+    repo = pygit2.Repository(str(config.main_repo))
 
     # Initial status to start daemon
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
@@ -168,7 +169,7 @@ def test_path_watcher_multiple_worktrees(wt_cli):
         assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
         # Verify git no longer lists the worktree entry
         wt_path = Path(config.worktrees_dir) / name
-        assert not worktree_exists(repo_path, wt_path), f"Worktree {name} still listed in main repo after removal"
+        assert not worktree_exists(repo, wt_path), f"Worktree {name} still listed in main repo after removal"
         remaining.remove(name)
 
         assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"

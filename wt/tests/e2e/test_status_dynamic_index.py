@@ -9,7 +9,7 @@ pytestmark = pytest.mark.timeout(20)
 
 
 @pytest.mark.integration
-def test_worktree_add_then_remove_reflected_in_status(wt_cli, real_temp_repo):
+def test_worktree_add_then_remove_reflected_in_status(wt_cli, pygit2_repo, real_temp_repo):
     # Initially, status should show no worktrees
     r0 = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert r0.returncode == 0
@@ -32,7 +32,7 @@ def test_worktree_add_then_remove_reflected_in_status(wt_cli, real_temp_repo):
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)
     worktree_path = real_temp_repo / "worktrees" / name
-    assert not worktree_exists(real_temp_repo, worktree_path), (
+    assert not worktree_exists(pygit2_repo, worktree_path), (
         "Worktree still listed in main repo after removal"
     )
 

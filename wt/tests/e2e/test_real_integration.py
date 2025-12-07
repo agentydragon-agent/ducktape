@@ -12,7 +12,7 @@ from ..test_utils import wait_until
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
 
 
-def test_real_program_workflow(real_temp_repo, wt_cli):
+def test_real_program_workflow(pygit2_repo, real_temp_repo, wt_cli):
     # Initial status
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
     assert result.returncode == 0
@@ -46,7 +46,7 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     assert result.returncode == 0
 
     def _removed() -> bool:
-        return not worktree_exists(real_temp_repo, worktree2_path)
+        return not worktree_exists(pygit2_repo, worktree2_path)
 
     assert wt_cli.wait_for(_removed, timeout=timedelta(seconds=5.0))
 
