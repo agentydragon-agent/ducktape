@@ -1,6 +1,7 @@
 from datetime import timedelta
 from pathlib import Path
-import subprocess
+
+from ..git_helpers import add_and_commit
 
 
 def test_copy_dirty_state_cli(wt_cli, real_temp_repo):
@@ -10,14 +11,14 @@ def test_copy_dirty_state_cli(wt_cli, real_temp_repo):
     assert result.returncode == 0, result.stderr
     src_path = Path(real_temp_repo) / "worktrees" / src
 
-    # Add untracked and modified files in source
+    # Add untracked file in source
     (src_path / "untracked.txt").write_text("hello")
-    tracked = src_path / "README.md"
-    tracked.write_text("base\n")
-    # stage and commit in source worktree so file is tracked
 
-    subprocess.run(["git", "add", "README.md"], cwd=src_path, check=True)
-    subprocess.run(["git", "commit", "-m", "add readme"], cwd=src_path, check=True)
+    # Create tracked file and commit using pygit2
+    add_and_commit(src_path, {"README.md": "base\n"}, "add readme")
+
+    # Now modify the tracked file (creates dirty state)
+    tracked = src_path / "README.md"
     tracked.write_text("modified\n")
 
     # Create destination by copying from source

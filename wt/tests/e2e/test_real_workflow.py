@@ -43,11 +43,11 @@ that catch real-world deployment issues like this socket path problem.
 from datetime import timedelta
 import os
 from pathlib import Path
-import subprocess
 
 import pygit2
 import pytest
 
+from ..git_helpers import add_and_commit, get_commit_messages, get_current_branch
 from ..test_utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
@@ -121,13 +121,8 @@ def test_real_workflow_git_repo_to_worktrees_to_status(real_temp_repo, real_env,
     assert result.returncode == 0
     # Note: cd command is emitted to fd3, we can't easily verify it here
 
-    # Step 6: Test real git operations in the worktree
-    test_file = worktree1_path / "test.txt"
-    test_file.write_text("Hello from feature1!")
-
-    # Add and commit in the worktree
-    subprocess.run(["git", "add", "test.txt"], cwd=worktree1_path, check=True)
-    subprocess.run(["git", "commit", "-m", "Add test file"], cwd=worktree1_path, check=True)
+    # Step 6: Test real git operations in the worktree using pygit2
+    add_and_commit(worktree1_path, {"test.txt": "Hello from feature1!"}, "Add test file")
 
     # Step 7: Final status check should show the changes
     result = wt_cli.status(timeout=timedelta(seconds=10.0))
@@ -159,27 +154,21 @@ def test_real_git_operations_in_worktrees(real_temp_repo, real_env, wt_cli):
 
     assert worktree_path.exists()
 
-    # Test git operations in the worktree
+    # Test git operations in the worktree using pygit2
     test_file = worktree_path / "test.txt"
-    test_file.write_text("Hello from worktree!")
+    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
 
-    # Add and commit
-    subprocess.run(["git", "add", "test.txt"], cwd=worktree_path, check=True)
-    subprocess.run(["git", "commit", "-m", "Test commit"], cwd=worktree_path, check=True)
-
-    # Verify branch was created correctly
-    result = subprocess.run(
-        ["git", "branch", "--show-current"], cwd=worktree_path, capture_output=True, text=True, check=False
-    )
-    assert "test/git-test" in result.stdout
+    # Verify branch was created correctly using pygit2
+    current_branch = get_current_branch(worktree_path)
+    assert current_branch == "test/git-test"
 
     # Verify the file exists and has correct content
     assert test_file.exists()
     assert test_file.read_text() == "Hello from worktree!"
 
-    # Verify commit was made
-    result = subprocess.run(["git", "log", "--oneline"], cwd=worktree_path, capture_output=True, text=True, check=False)
-    assert "Test commit" in result.stdout
+    # Verify commit was made using pygit2
+    messages = get_commit_messages(worktree_path, count=5)
+    assert any("Test commit" in msg for msg in messages)
 
 
 def test_real_daemon_startup_and_kill(real_temp_repo, real_env, wt_cli):

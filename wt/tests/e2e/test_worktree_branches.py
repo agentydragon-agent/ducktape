@@ -3,7 +3,7 @@ import os
 import pygit2
 import pytest
 
-from wt.shared.git_utils import git_run
+from ..git_helpers import add_worktree
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -21,8 +21,12 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     wt_a = repo_path / "worktrees" / "aaaaa"
     wt_b = repo_path / "worktrees" / "bbbbb"
 
-    git_run(["worktree", "add", str(wt_a), "test/aaaaa"], cwd=repo_path)
-    git_run(["worktree", "add", str(wt_b), "test/bbbbb"], cwd=repo_path)
+    # Create worktrees directory
+    (repo_path / "worktrees").mkdir(exist_ok=True)
+
+    # Use pygit2 to add worktrees
+    add_worktree(repo_path, wt_a, "test/aaaaa")
+    add_worktree(repo_path, wt_b, "test/bbbbb")
 
     # Use GitManager via daemon handlers indirectly by calling CLI ls (list)
     env = os.environ.copy()

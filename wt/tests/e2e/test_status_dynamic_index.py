@@ -2,8 +2,7 @@ from datetime import timedelta
 
 import pytest
 
-from wt.shared.git_utils import git_run
-
+from ..git_helpers import worktree_exists
 from ..test_utils import wait_until
 
 pytestmark = pytest.mark.timeout(20)
@@ -32,9 +31,8 @@ def test_worktree_add_then_remove_reflected_in_status(wt_cli, real_temp_repo):
     assert r2.returncode == 0
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)
-
-    git_list = git_run(["worktree", "list"], cwd=real_temp_repo)
-    assert str(real_temp_repo / "worktrees" / name) not in git_list.stdout.decode(), (
+    worktree_path = real_temp_repo / "worktrees" / name
+    assert not worktree_exists(real_temp_repo, worktree_path), (
         "Worktree still listed in main repo after removal"
     )
 

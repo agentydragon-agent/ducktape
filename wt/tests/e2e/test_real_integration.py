@@ -6,8 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from wt.shared.git_utils import git_run
-
+from ..git_helpers import add_and_commit, get_current_branch, worktree_exists
 from ..test_utils import wait_until
 
 pytestmark = [pytest.mark.timeout(10), pytest.mark.xdist_group("wt-daemon-e2e")]
@@ -47,8 +46,7 @@ def test_real_program_workflow(real_temp_repo, wt_cli):
     assert result.returncode == 0
 
     def _removed() -> bool:
-        out = git_run(["worktree", "list"], cwd=real_temp_repo).stdout.decode()
-        return str(worktree2_path) not in out
+        return not worktree_exists(real_temp_repo, worktree2_path)
 
     assert wt_cli.wait_for(_removed, timeout=timedelta(seconds=5.0))
 
@@ -83,11 +81,9 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     worktree_path = real_temp_repo / "worktrees" / "git-test"
     assert worktree_path.exists()
 
-    # Perform git operations
-    (worktree_path / "test.txt").write_text("Hello from worktree!")
-    git_run(["add", "test.txt"], cwd=worktree_path)
-    git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
+    # Perform git operations using pygit2
+    add_and_commit(worktree_path, {"test.txt": "Hello from worktree!"}, "Test commit")
 
-    # Verify branch name
-    result = git_run(["branch", "--show-current"], cwd=worktree_path)
-    assert "test/git-test" in result.stdout.decode()
+    # Verify branch name using pygit2
+    current_branch = get_current_branch(worktree_path)
+    assert current_branch == "test/git-test"

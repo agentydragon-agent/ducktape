@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 
 from wt.shared.configuration import Configuration
-from wt.shared.git_utils import git_run
 
+from ..git_helpers import worktree_exists
 from ..test_data import WATCHER_DEBOUNCE_SECS
 from ..test_utils import wait_until
 
@@ -98,8 +98,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     result = wt_cli.sh("rm", "feature-test", "--force", timeout=timedelta(seconds=5.0))
     assert result.returncode == 0, f"Remove command failed: {result.stderr}"
     # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
-    git_list = git_run(["worktree", "list"], cwd=repo_path)
-    assert str(worktree_path) not in git_list.stdout.decode(), "Worktree still listed in main repo after removal"
+    assert not worktree_exists(repo_path, worktree_path), "Worktree still listed in main repo after removal"
 
     # Verify worktree was removed from filesystem
     assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
@@ -169,8 +168,7 @@ def test_path_watcher_multiple_worktrees(wt_cli):
         assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
         # Verify git no longer lists the worktree entry
         wt_path = Path(config.worktrees_dir) / name
-        git_list = git_run(["worktree", "list"], cwd=repo_path)
-        assert str(wt_path) not in git_list.stdout.decode(), f"Worktree {name} still listed in main repo after removal"
+        assert not worktree_exists(repo_path, wt_path), f"Worktree {name} still listed in main repo after removal"
         remaining.remove(name)
 
         assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"

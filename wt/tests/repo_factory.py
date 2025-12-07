@@ -1,7 +1,6 @@
 """Git repository factory to eliminate fixture duplication."""
 
 from pathlib import Path
-import subprocess
 
 import pygit2
 
@@ -110,7 +109,7 @@ class GitRepoFactory:
     def _create_worktrees(
         self, repo: pygit2.Repository, repo_path: Path, with_worktrees: bool | list[str], branches: list[str] | None
     ) -> None:
-        """Create worktrees for branches."""
+        """Create worktrees for branches using pygit2."""
         if isinstance(with_worktrees, bool) and with_worktrees:
             # Create worktrees for all non-main branches
             worktree_names = [b for b in (branches or []) if b != TestData.Branches.MAIN]
@@ -128,23 +127,15 @@ class GitRepoFactory:
             worktree_path = worktrees_dir / worktree_name
             branch_name = worktree_name  # Assume worktree name matches branch name
 
-            try:
-                # Use git command to create worktree (pygit2 doesn't support worktrees well)
+            # Get or create branch reference
+            branch_ref = repo.lookup_branch(branch_name)
+            if branch_ref is None:
+                # Create branch from HEAD
+                commit = repo.head.peel(pygit2.Commit)
+                branch_ref = repo.branches.local.create(branch_name, commit)
 
-                subprocess.run(
-                    ["git", "worktree", "add", worktree_path, branch_name],
-                    cwd=repo_path,
-                    check=True,
-                    capture_output=True,
-                )
-            except subprocess.CalledProcessError:
-                # If branch doesn't exist, create it first
-                subprocess.run(
-                    ["git", "worktree", "add", "-b", branch_name, worktree_path],
-                    cwd=repo_path,
-                    check=True,
-                    capture_output=True,
-                )
+            # Add worktree using pygit2
+            repo.add_worktree(worktree_name, str(worktree_path), branch_ref)
 
 
 class RepoPresets:
