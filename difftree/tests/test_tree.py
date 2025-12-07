@@ -29,7 +29,7 @@ def test_build_tree_single_file():
     assert "test.py" in root.children
 
     test_file = root.children["test.py"]
-    assert test_file == TreeNode(name="test.py", is_file=True, additions=10, deletions=5)
+    assert test_file == TreeNode(name="test.py", is_file=True, additions=10, deletions=5, path="test.py")
 
 
 def test_build_tree_nested_files(sample_changes: list[FileChange]):
