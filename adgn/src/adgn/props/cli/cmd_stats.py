@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -182,18 +182,129 @@ class PromptStats:
     valid_best_count: int = 0  # Number of valid samples where this prompt is best (or tied)
 
 
+def _display_split_analysis(
+    console: Console,
+    split_name: str,
+    sample_results: dict[tuple[str, str], dict[str, float]],
+    tp_counts_per_sample: dict[tuple[str, str], int],
+    total_available: int,
+    show_all_prompts: bool = False,
+) -> None:
+    """Display analysis of which prompts are best on which examples for a split.
+
+    Args:
+        console: Rich console for output
+        split_name: Name of the split (e.g., "Training", "Validation")
+        sample_results: Dict mapping (snapshot_slug, files_hash) -> {prompt_sha: recall_pct}
+        tp_counts_per_sample: Dict mapping (snapshot_slug, files_hash) -> TP count
+        total_available: Total number of examples available in this split
+        show_all_prompts: If True, show all prompts instead of top 15
+    """
+    num_evaluated = len(sample_results)
+    num_unknown = total_available - num_evaluated
+
+    console.print(f"\n[bold]{split_name} Split Analysis[/bold] ({total_available} examples total)\n")
+
+    # Categorize examples by best recall
+    zero_recall_samples = []
+    nonzero_recall_samples = []
+    evaluated_sample_keys = set()  # Track which samples have been evaluated
+    for sample_key, recalls in sample_results.items():
+        evaluated_sample_keys.add(sample_key)
+        max_recall = max(recalls.values())
+        if max_recall == 0:
+            zero_recall_samples.append((sample_key, recalls))
+        else:
+            nonzero_recall_samples.append((sample_key, recalls, max_recall))
+
+    console.print(f"  Examples evaluated: {num_evaluated}")
+    console.print(f"  Examples with best recall = 0: {len(zero_recall_samples)}")
+    console.print(f"  Examples with best recall > 0: {len(nonzero_recall_samples)}")
+    console.print(f"  [dim]Examples not evaluated (unknown): {num_unknown}[/dim]")
+
+    # For zero-recall examples, show which prompts have been tried most
+    if zero_recall_samples:
+        console.print(f"\n[bold]Zero-Recall Examples ({split_name}):[/bold]")
+        prompt_counts_zero: Counter[str] = Counter()
+        for _, recalls in zero_recall_samples:
+            prompt_counts_zero.update(recalls.keys())
+
+        # Show top prompts tried on zero-recall examples
+        for sha, count in prompt_counts_zero.most_common(10):
+            pct = 100.0 * count / len(zero_recall_samples)
+            console.print(f"  {sha[:SHORT_SHA_LENGTH]}: evaluated on {count}/{len(zero_recall_samples)} ({pct:.0f}%)")
+
+    # For nonzero-recall examples, show prompt best-coverage heatmap
+    if nonzero_recall_samples:
+        console.print(f"\n[bold]Nonzero-Recall Examples ({split_name} - Prompt Best Coverage):[/bold]")
+
+        # Build matrix: for each prompt, which examples is it best on?
+        # Also track which prompts have evaluated which examples
+        prompt_best_on = defaultdict(list)  # sha -> [(example_idx, recall, tp_count)]
+        prompt_evaluated_on = defaultdict(set)  # sha -> set of example indices evaluated
+
+        for idx, (sample_key, recalls, max_recall) in enumerate(nonzero_recall_samples):
+            tp_count = tp_counts_per_sample.get(sample_key, 0)
+            for sha, recall in recalls.items():
+                prompt_evaluated_on[sha].add(idx)
+                if recall == max_recall:  # This prompt is best (or tied) on this example
+                    prompt_best_on[sha].append((idx, recall, tp_count))
+
+        # Sort prompts by number of examples they're best on
+        sorted_prompts = sorted(
+            prompt_best_on.items(), key=lambda x: (len(x[1]), sum(r for _, r, _ in x[1])), reverse=True
+        )
+
+        # Create table
+        # Show one character per example (not bucketed) since we have relatively few
+        coverage_width = len(nonzero_recall_samples) + 2  # +2 for brackets
+        coverage_table = Table(
+            show_header=True, header_style="bold cyan", box=box.SIMPLE, show_edge=False, padding=(0, 1)
+        )
+        coverage_table.add_column("Prompt", style="dim", width=SHORT_SHA_LENGTH)
+        coverage_table.add_column("Best On", justify="right", width=7)
+        coverage_table.add_column("Pct", justify="right", width=5)
+        coverage_table.add_column("Coverage", width=coverage_width)
+
+        # Display each prompt's coverage
+        prompts_to_show = sorted_prompts if show_all_prompts else sorted_prompts[:15]
+        for sha, best_examples in prompts_to_show:
+            count = len(best_examples)
+            pct = 100.0 * count / len(nonzero_recall_samples)
+
+            # Create visual bar: one character per example
+            # Three states: not evaluated (' '), evaluated but not best ('░'), best ('▓')
+            best_example_indices = {idx for idx, _, _ in best_examples}
+            evaluated_indices = prompt_evaluated_on.get(sha, set())
+            visual_chars = []
+            for idx in range(len(nonzero_recall_samples)):
+                if idx in best_example_indices:
+                    visual_chars.append("▓")
+                elif idx in evaluated_indices:
+                    visual_chars.append("░")
+                else:
+                    visual_chars.append(" ")
+            visual = "".join(visual_chars)
+
+            coverage_table.add_row(
+                sha[:SHORT_SHA_LENGTH], f"{count}/{len(nonzero_recall_samples)}", f"{pct:.0f}%", f"[{visual}]"
+            )
+
+        console.print(coverage_table)
+
+
 def cmd_stats() -> None:
     """Display prompt statistics: count, runs per split, recall metrics."""
     init_db()
 
     console = Console()
-    max_recalls_per_sample: list[float] = []
-    tp_counts_per_sample: dict[tuple[str, str], int] = {}  # (snapshot_slug, files_hash) -> TP count
+    max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
+    tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
 
     with get_session() as session:
         # First, compute total available training examples per split
         # Training examples = critic_scopes (explicit) + snapshots without scopes (1 implicit example each)
-        total_samples_by_split: dict[Split, int] = {}
+        total_samples_by_split: dict[Split, int] = defaultdict(int)
         for split in [Split.TRAIN, Split.VALID, Split.TEST]:
             # Count explicit critic scopes for this split
             critic_scopes_count = (
@@ -274,47 +385,53 @@ def cmd_stats() -> None:
 
             prompt_stats_list.append(stats)
 
-        # Compute valid_best_count: how many valid samples each prompt is best on (or tied for best)
-        # Query all valid grader runs with their critic runs
-        valid_graders_query = (
-            select(GraderRun, CriticRun)
-            .join(GraderRun.critique_obj)
-            .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
-            .join(GraderRun.snapshot_obj)
-            .where(GraderRun.snapshot_obj.has(split=Split.VALID))
-            .where(GraderRun.output.isnot(None))
-        )
-        valid_graders = session.execute(valid_graders_query).all()
+        # Compute best_count per split: how many samples each prompt is best on (or tied for best)
+        # Query all grader runs with their critic runs, grouped by split
+        sample_results_by_split: dict[Split, dict[tuple[str, str], dict[str, float]]] = {
+            Split.TRAIN: defaultdict(dict),
+            Split.VALID: defaultdict(dict),
+            Split.TEST: defaultdict(dict),
+        }
 
-        # Group by training example (snapshot + files combination)
-        # Key: (snapshot_slug, files_hash) -> {prompt_sha: recall}
-        sample_results: dict[tuple[str, str], dict[str, float]] = defaultdict(dict)
-        for grader_run, critic_run in valid_graders:
-            # Skip grader runs with no output (should be filtered by query, but check again)
-            if grader_run.output is None:
-                continue
-            recall_pct = grader_run.output.grade.recall * 100.0
-            sample_key = (critic_run.snapshot_slug, critic_run.files_hash)
-            sample_results[sample_key][critic_run.prompt_sha256] = recall_pct
+        for split in [Split.TRAIN, Split.VALID, Split.TEST]:
+            graders_query = (
+                select(GraderRun, CriticRun)
+                .join(GraderRun.critique_obj)
+                .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
+                .join(GraderRun.snapshot_obj)
+                .where(GraderRun.snapshot_obj.has(split=split))
+                .where(GraderRun.output.isnot(None))
+            )
+            graders = session.execute(graders_query).all()
 
-            # Collect TP count for this sample (only need to record once per sample)
-            if sample_key not in tp_counts_per_sample:
-                tp_count = len(grader_run.output.grade.canonical_tp_coverage)
-                tp_counts_per_sample[sample_key] = tp_count
+            # Group by training example (snapshot + files combination)
+            for grader_run, critic_run in graders:
+                if grader_run.output is None:
+                    continue
+                recall_pct = grader_run.output.grade.recall * 100.0
+                sample_key = (critic_run.snapshot_slug, critic_run.files_hash)
+                sample_results_by_split[split][sample_key][critic_run.prompt_sha256] = recall_pct
 
-        # For each sample, find which prompt(s) achieved max recall
-        prompt_best_counts: dict[str, int] = defaultdict(int)
-        for sample_recalls in sample_results.values():
-            if not sample_recalls:
-                continue
-            max_recall = max(sample_recalls.values())
-            max_recalls_per_sample.append(max_recall)
-            # All prompts that achieved max recall on this sample
-            best_prompts = [sha for sha, recall in sample_recalls.items() if recall == max_recall]
-            for sha in best_prompts:
-                prompt_best_counts[sha] += 1
+                # Collect TP count for this sample (only need to record once per sample)
+                if sample_key not in tp_counts_per_sample[split]:
+                    tp_count = len(grader_run.output.grade.canonical_tp_coverage)
+                    tp_counts_per_sample[split][sample_key] = tp_count
 
-        # Update stats with best counts
+        # For each split and sample, find which prompt(s) achieved max recall
+        prompt_best_counts: Counter[str] = Counter()
+        for split in [Split.TRAIN, Split.VALID, Split.TEST]:
+            for sample_recalls in sample_results_by_split[split].values():
+                if not sample_recalls:
+                    continue
+                max_recall = max(sample_recalls.values())
+                max_recalls_per_sample[split].append(max_recall)
+
+                # Count best prompts for valid split only (for table display)
+                if split == Split.VALID:
+                    best_prompts = [sha for sha, recall in sample_recalls.items() if recall == max_recall]
+                    prompt_best_counts.update(best_prompts)
+
+        # Update stats with valid best counts
         for stats in prompt_stats_list:
             stats.valid_best_count = prompt_best_counts.get(stats.prompt_sha256, 0)
 
@@ -424,21 +541,42 @@ def cmd_stats() -> None:
             f"({best[0].splits[Split.VALID].completed} samples)"
         )
 
-    # Display distribution of max recall scores per validation example
-    if max_recalls_per_sample:
-        recall_buckets = _generate_buckets(max_recalls_per_sample, num_buckets=10)
-        _display_distribution(
-            console,
-            max_recalls_per_sample,
-            "Max Recall Distribution (Valid Examples)",
-            recall_buckets,
-            value_format="{:.1f}%",
-        )
+    # Display distributions for each split
+    for split in [Split.TRAIN, Split.VALID, Split.TEST]:
+        split_name = split.value.capitalize()
 
-    # Display distribution of TP counts per validation example
-    if tp_counts_per_sample:
-        tp_counts = list(tp_counts_per_sample.values())
-        tp_buckets = _generate_buckets(tp_counts, num_buckets=10)
-        _display_distribution(
-            console, tp_counts, "True Positive Count Distribution (Valid Examples)", tp_buckets, value_format="{:.0f}"
+        # Display distribution of max recall scores
+        if max_recalls_per_sample[split]:
+            recall_buckets = _generate_buckets(max_recalls_per_sample[split], num_buckets=10)
+            _display_distribution(
+                console,
+                max_recalls_per_sample[split],
+                f"Max Recall Distribution ({split_name} Examples)",
+                recall_buckets,
+                value_format="{:.1f}%",
+            )
+
+        # Display distribution of TP counts
+        if tp_counts_per_sample[split]:
+            tp_counts = list(tp_counts_per_sample[split].values())
+            tp_buckets = _generate_buckets(tp_counts, num_buckets=10)
+            _display_distribution(
+                console,
+                tp_counts,
+                f"True Positive Count Distribution ({split_name} Examples)",
+                tp_buckets,
+                value_format="{:.0f}",
+            )
+
+        # Display split analysis (zero-recall and best coverage)
+        # Show all prompts for training split, top 15 for others
+        show_all = split == Split.TRAIN
+        split_total = train_total if split == Split.TRAIN else (valid_total if split == Split.VALID else test_total)
+        _display_split_analysis(
+            console,
+            split_name,
+            sample_results_by_split[split],
+            tp_counts_per_sample[split],
+            total_available=split_total,
+            show_all_prompts=show_all,
         )
