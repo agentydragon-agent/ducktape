@@ -132,7 +132,7 @@ async def authenticated_root_handler(request: Request, auth: Auth, settings: Set
     async with get_db_session(request) as db_session:
         recent = await get_latest_payloads(db_session, limit=5)
     ha_states = await fetch_states(settings)
-    aw_summary = await activitywatch.fetch_recent_activity()
+    aw_summary = await activitywatch.fetch_recent_activity(settings.activitywatch)
     return request.app.state.templates.TemplateResponse(
         "index.html",
         {

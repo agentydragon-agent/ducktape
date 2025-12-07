@@ -9,17 +9,17 @@ from urllib.parse import urlparse
 
 from aw_client import ActivityWatchClient
 
-from ..config import settings
+from ..config import ActivityWatchSettings
 
 logger = logging.getLogger(__name__)
 
 
-async def fetch_recent_activity(minutes: int = 15) -> dict[str, Any] | None:
+async def fetch_recent_activity(aw_settings: ActivityWatchSettings, minutes: int = 15) -> dict[str, Any] | None:
     """Fetch ActivityWatch activity summary for the given window."""
-    if not settings.activitywatch.enabled:
+    if not aw_settings.enabled:
         return None
 
-    parsed = urlparse(settings.activitywatch.server_url)
+    parsed = urlparse(aw_settings.server_url)
 
     def _duration_seconds(ev: Any) -> float:
         dur = ev.get("duration", 0)

@@ -1,11 +1,11 @@
 """Key-in-path authentication for Gatelet."""
 
+from datetime import timedelta
 import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..config import settings
 from ..models import AuthKey
 
 logger = logging.getLogger(__name__)
@@ -15,12 +15,13 @@ class KeyAuthError(Exception):
     """Authentication error for key-in-path."""
 
 
-async def validate_key(key: str, db_session: AsyncSession) -> AuthKey:
+async def validate_key(key: str, db_session: AsyncSession, key_validity: timedelta) -> AuthKey:
     """Validate a key from the URL path.
 
     Args:
         key: The key to validate
         db_session: Database session
+        key_validity: How long keys remain valid after creation
 
     Returns:
         AuthKey if valid
@@ -49,7 +50,7 @@ async def validate_key(key: str, db_session: AsyncSession) -> AuthKey:
         raise KeyAuthError
 
     # Check if key is valid based on creation time
-    if not auth_key.is_valid(settings.auth.key_in_url.key_validity):
+    if not auth_key.is_valid(key_validity):
         logger.warning("Key is expired: %s...", key[:4])
         raise KeyAuthError
 

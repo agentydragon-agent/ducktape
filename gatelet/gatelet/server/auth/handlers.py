@@ -144,13 +144,15 @@ class AdminAuthContext:
         return f"{base_url}?{urlencode(query_params)}"
 
 
-async def key_path_auth(key: str, db_session: AsyncSession = Depends(get_db_session)) -> KeyPathAuthContext:
+async def key_path_auth(
+    key: str, db_session: AsyncSession = Depends(get_db_session), settings: Settings = Depends(get_settings)
+) -> KeyPathAuthContext:
     """Authenticate using key in path."""
     logger.debug("key_path_auth called with key: %s...", key[:4])
 
     try:
         logger.debug("Validating key")
-        auth_key = await validate_key(key, db_session)
+        auth_key = await validate_key(key, db_session, settings.auth.key_in_url.key_validity)
         logger.debug("Key validation successful")
         return KeyPathAuthContext(auth_key)
     except KeyAuthError:

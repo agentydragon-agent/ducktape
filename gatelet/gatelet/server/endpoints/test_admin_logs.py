@@ -4,7 +4,7 @@ import re
 
 from httpx import AsyncClient
 
-from gatelet.server.config import settings
+from gatelet.server.config import Settings
 
 
 def _extract_csrf(page_text: str) -> str:
@@ -21,10 +21,11 @@ async def _login(client: AsyncClient) -> str:
     return response.cookies["admin_session"]
 
 
-async def test_view_logs(client: AsyncClient, tmp_path: Path, monkeypatch):
-    log_file = tmp_path / "gatelet.log"
+async def test_view_logs(client: AsyncClient, test_settings: Settings):
+    # test_settings fixture already injects settings via dependency override
+    # Write test content to the log file configured in test_settings
+    log_file = Path(test_settings.server.log_file)
     log_file.write_text("line1\nline2\nline3\n", encoding="utf-8")
-    monkeypatch.setattr(settings.server, "log_file", str(log_file))
 
     session = await _login(client)
     response = await client.get("/admin/logs/", cookies={"admin_session": session})

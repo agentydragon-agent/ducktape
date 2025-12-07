@@ -23,17 +23,23 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent.parent / "gatelet.toml"))
 # pylint: disable=wrong-import-position
 # Imports must follow environment setup so modules see configured GATELET_CONFIG
-from gatelet.server.app import app  # type: ignore[import] - Imports after env setup (required for config)
-from gatelet.server.config import settings  # type: ignore[import] - Imports after env setup (required for config)
-from gatelet.server.database import (
-    get_db_session,  # type: ignore[import] - Imports after env setup (required for config)
+from gatelet.server.app import app
+from gatelet.server.config import (
+    AdminSettings,
+    AuthSettings,
+    ChallengeResponseAuthSettings,
+    DatabaseSettings,
+    HomeAssistantSettings,
+    KeyInUrlAuthSettings,
+    SecuritySettings,
+    ServerSettings,
+    Settings,
+    WebhookSettings,
+    get_settings,
 )
-from gatelet.server.models import (  # type: ignore[import] - Imports after env setup (required for config)
-    AuthCRSession,
-    AuthKey,
-    Base,
-)
-from gatelet.server.tests.utils import persist  # type: ignore[import] - Imports after env setup (required for config)
+from gatelet.server.database import get_db_session
+from gatelet.server.models import AuthCRSession, AuthKey, Base
+from gatelet.server.tests.utils import persist
 
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
@@ -46,7 +52,6 @@ def _postgres():
     # The service container provides PostgreSQL at localhost:5432
     if os.environ.get("CI") == "true" or os.environ.get("GITHUB_ACTIONS") == "true":
         os.environ["DATABASE_URL"] = "postgresql+asyncpg://postgres:postgres@localhost:5432/gatelet"
-        settings.database.dsn = os.environ["DATABASE_URL"]
         yield
         return
 
@@ -66,8 +71,6 @@ def _postgres():
     subprocess.check_call(["sudo", "-u", "postgres", str(pg_ctl), "-D", datadir, "-w", "-o", f"-p {port}", "start"])
     subprocess.check_call(["sudo", "-u", "postgres", str(createdb), "-p", port, "gatelet"])
     os.environ["DATABASE_URL"] = f"postgresql+asyncpg://postgres@localhost:{port}/gatelet"
-    settings.database.dsn = os.environ["DATABASE_URL"]
-    os.environ.setdefault("GATELET_CONFIG", str(Path(__file__).resolve().parent.parent / "gatelet.toml"))
     time.sleep(0.5)
     try:
         yield
@@ -122,17 +125,43 @@ def _patch_get_db_session(monkeypatch, db_session: AsyncSession) -> None:
     monkeypatch.setattr("gatelet.server.app.get_db_session", _override)
 
 
+@pytest.fixture
+def test_settings(tmp_path: Path) -> Settings:
+    """Create test settings with explicit test values.
+
+    Tests should use this fixture and override specific values as needed.
+    This ensures tests don't depend on production config.
+    """
+    return Settings(
+        database=DatabaseSettings(dsn=os.environ.get("DATABASE_URL", "postgresql://test@localhost/test")),
+        server=ServerSettings(log_file=str(tmp_path / "test.log")),
+        auth=AuthSettings(
+            key_in_url=KeyInUrlAuthSettings(enabled=True, key_valid_days=365),
+            challenge_response=ChallengeResponseAuthSettings(enabled=True, num_options=16),
+        ),
+        home_assistant=HomeAssistantSettings(api_url="http://test:8123", api_token="test-token"),
+        webhook=WebhookSettings(),
+        admin=AdminSettings(password_hash="$2b$12$test"),  # bcrypt hash for "gatelet"
+        security=SecuritySettings(csrf_secret="test-csrf-secret"),
+    )
+
+
 @pytest_asyncio.fixture
-async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
-    """Get a test client connected to the test database."""
+async def client(db_session: AsyncSession, test_settings: Settings) -> AsyncGenerator[AsyncClient, None]:
+    """Get a test client connected to the test database with test settings."""
 
     async def override_db() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
+    def override_settings() -> Settings:
+        return test_settings
+
     app.dependency_overrides[get_db_session] = override_db
+    app.dependency_overrides[get_settings] = override_settings
     async with AsyncClient(app=app, base_url="http://testserver") as client:
         yield client
     app.dependency_overrides.pop(get_db_session, None)
+    app.dependency_overrides.pop(get_settings, None)
 
 
 @pytest_asyncio.fixture

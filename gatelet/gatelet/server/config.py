@@ -48,12 +48,17 @@ class BearerAuth(BaseModel):
 WebhookAuthConfig = NoAuth | BearerAuth
 
 
+def _default_dsn() -> str:
+    """Get default database DSN, respecting DATABASE_URL env var."""
+    return os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gatelet")
+
+
 class DatabaseSettings(BaseModel):
     # Use a simple string so we can support both Postgres and SQLite for tests.
     # The DATABASE_URL environment variable overrides the value from the
     # configuration file. This makes it easy to point tests at a temporary
     # database.
-    dsn: str = Field(default=os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/gatelet"))
+    dsn: str = Field(default_factory=_default_dsn)
 
 
 class ServerSettings(BaseModel):
