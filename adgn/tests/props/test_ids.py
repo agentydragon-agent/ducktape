@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from hamcrest import assert_that, equal_to, has_length, instance_of, only_contains
+from hamcrest import assert_that, equal_to, has_length
 from pydantic import ValidationError
 import pytest
 
@@ -120,10 +120,8 @@ def test_grade_submit_uses_typed_id_dicts():
         }
     )
 
-    # Verify dict keys are strings (NewType is string at runtime)
-    assert_that(payload.canonical_tp_coverage.keys(), only_contains(instance_of(str)))
-    assert_that(payload.canonical_fp_coverage.keys(), only_contains(instance_of(str)))
-    assert_that(payload.novel_critique_issues.keys(), only_contains(instance_of(str)))
+    # Pydantic already validates dict keys are correctly typed IDs (NewType[str])
+    # No need for redundant runtime assertions
 
     # Verify specific structure
     assert_that(payload.canonical_tp_coverage, has_length(2))

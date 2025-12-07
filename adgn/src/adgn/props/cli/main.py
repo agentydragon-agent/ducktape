@@ -692,9 +692,8 @@ async def cmd_run(
     - structured=false: preset=open (if no prompt source provided)
     - structured=true: preset=max-recall-critic (if no prompt source provided)
     """
-    # Initialize DB for structured runs (calls run_critic/run_grader)
-    if structured:
-        init_db()
+    # Initialize DB unconditionally (needed for snapshot file resolution, structured runs, etc.)
+    init_db()
 
     # Validate scope
     if (path is None and snapshot is None) or (path is not None and snapshot is not None):

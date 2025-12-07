@@ -24,18 +24,15 @@ class CapturingOpenAIModel(OpenAIModelProto):
     def __init__(self, inner: OpenAIModelProto) -> None:
         self._inner = inner
         self.captured: list[ResponsesRequest] = []
+        self.calls = 0
 
     @property
     def model(self) -> str:
         return self._inner.model
 
-    @property
-    def calls(self) -> int:
-        """Forward .calls attribute from inner model (if it has one)."""
-        return getattr(self._inner, "calls", 0)
-
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         self.captured.append(req.model_copy(deep=True))
+        self.calls += 1
         return await self._inner.responses_create(req)
 
 
