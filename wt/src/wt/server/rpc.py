@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from inspect import signature
 import logging
-from typing import TYPE_CHECKING, Any, Protocol, TypeVar, get_origin, get_type_hints
+from typing import TYPE_CHECKING, Any, Protocol, get_origin, get_type_hints
 
 from punq import Container
 from pydantic import BaseModel, ValidationError
@@ -29,9 +29,6 @@ if TYPE_CHECKING:
     from .wt_server import WtDaemon
 
 logger = logging.getLogger(__name__)
-
-ParamsT = TypeVar("ParamsT", bound=BaseModel)
-ResultT = TypeVar("ResultT")
 
 
 class Emitter(Protocol):
@@ -138,7 +135,7 @@ class RpcRegistry:
                 args.append(c.resolve(anno))
         return args
 
-    def _wrap_method(self, method: str, params_model: type[ParamsT] | None, handler) -> None:
+    def _wrap_method[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT] | None, handler) -> None:
         async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params) if params_model is not None else None
@@ -160,7 +157,7 @@ class RpcRegistry:
 
         self._handlers[method] = _wrapped
 
-    def _wrap_stream(self, method: str, params_model: type[ParamsT], handler) -> None:
+    def _wrap_stream[ParamsT: BaseModel](self, method: str, params_model: type[ParamsT], handler) -> None:
         async def _wrapped(req: Request, daemon: WtDaemon, writer, start_time: datetime) -> Response | ErrorResponse:
             try:
                 params = params_model.model_validate(req.params)
@@ -185,7 +182,7 @@ class RpcRegistry:
         self._handlers[method] = _wrapped
         self._stream_methods.add(method)
 
-    def method(self, name: str, *, params: type[ParamsT] | None = None):
+    def method[ParamsT: BaseModel](self, name: str, *, params: type[ParamsT] | None = None):
         def deco(fn: Callable[..., Awaitable[Any]]):
             # Allow DI-driven signatures; if params_model is provided,
             # function must accept a matching params type somewhere
@@ -194,7 +191,7 @@ class RpcRegistry:
 
         return deco
 
-    def stream(self, name: str, *, params: type[ParamsT]):
+    def stream[ParamsT: BaseModel](self, name: str, *, params: type[ParamsT]):
         def deco(fn: Callable[..., Awaitable[Any]]):
             # Allow DI-driven signatures; DI resolver will inject api/config/params/stream
             self._wrap_stream(name, params, fn)

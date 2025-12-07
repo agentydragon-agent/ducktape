@@ -5,13 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from functools import wraps
 import logging
-from typing import Any, TypeVar
+from typing import Any
 
 from .constants import RESERVED_NAMES
 from .github_models import GitHubError
 
 logger = logging.getLogger(__name__)
-T = TypeVar("T")
 
 
 class WorktreeManagerError(Exception):
@@ -22,7 +21,7 @@ class GitHubUnavailableError(WorktreeManagerError):
     pass
 
 
-def handle_github_errors(func: Callable[..., T]) -> Callable[..., T]:
+def handle_github_errors[T](func: Callable[..., T]) -> Callable[..., T]:
     @wraps(func)
     def wrapper(*args, **kwargs) -> T:
         try:
