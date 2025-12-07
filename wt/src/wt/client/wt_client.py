@@ -354,7 +354,6 @@ class WtClient:
         """Read a mixed event/response stream; return (response_json, stdout, stderr)."""
         hook_stdout: list[str] = []
         hook_stderr: list[str] = []
-        response_json: dict | None = None
         progress_cb = self._progress_callback
         hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
         stream_adapter = TypeAdapter(StreamMessage)
@@ -379,10 +378,9 @@ class WtClient:
                 continue
 
             # Not an event - must be the final JSON-RPC response
-            response_json = obj
-            break
+            return obj, hook_stdout, hook_stderr
 
-        return response_json, hook_stdout, hook_stderr
+        raise RuntimeError("Stream ended without receiving JSON-RPC response")
 
     def _validate_post_hook(self, post: HookRunResult) -> None:
         """Validate and surface post-creation hook outcome; raise RuntimeError on failure."""
