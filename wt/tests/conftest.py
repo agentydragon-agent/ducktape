@@ -283,13 +283,19 @@ def create_integration_test_config_file(repo_path: Path) -> Path:
     return wt_dir / "config.yaml"
 
 
-@pytest.fixture(scope="session", autouse=True)
-def _require_gitstatusd_on_path():
-    assert shutil.which("gitstatusd"), "integration tests require gitstatusd on PATH"
+@pytest.fixture(scope="session")
+def require_gitstatusd():
+    """Fixture that skips test if gitstatusd is not on PATH.
+
+    Integration tests that need gitstatusd should depend on this fixture.
+    Not autouse - unit tests can run without gitstatusd.
+    """
+    if not shutil.which("gitstatusd"):
+        pytest.skip("gitstatusd not available on PATH")
 
 
 @pytest.fixture
-def real_temp_repo(repo_factory):
+def real_temp_repo(repo_factory, require_gitstatusd):
     """Create real temporary git repository for integration tests.
 
     Uses modern repo_factory internally but maintains compatibility with

@@ -89,5 +89,5 @@ def test_real_git_operations(real_temp_repo, wt_cli):
     git_run(["commit", "-m", "Test commit"], cwd=worktree_path)
 
     # Verify branch name
-    result = git_run(["branch", "--show-current"], cwd=worktree_path, capture_output=True)
+    result = git_run(["branch", "--show-current"], cwd=worktree_path)
     assert "test/git-test" in result.stdout.decode()

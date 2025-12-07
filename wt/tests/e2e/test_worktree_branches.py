@@ -8,7 +8,7 @@ from wt.shared.git_utils import git_run
 pytestmark = pytest.mark.timeout(10)
 
 
-def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli):
+def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, require_gitstatusd):
     repo_path = repo_factory.create_repo()
     cfg = config_factory(repo_path).minimal(upstream_branch="HEAD")
 

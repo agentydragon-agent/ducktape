@@ -234,9 +234,15 @@ async def _cmd_create_sh(config, remaining_args, ctx, **_):
     if not remaining_args:
         click.echo("Error: create requires a worktree name")
         ctx.exit(1)
-    name = remaining_args[0]
+    confirm = "--yes" not in remaining_args
+    try:
+        name = next(arg for arg in remaining_args if arg != "--yes")
+    except StopIteration:
+        click.echo("Error: create requires a worktree name")
+        ctx.exit(1)
+        return
     await handle_create_worktree(
-        config, name, CreateWorktreeOptions(from_default=True, from_branch=None, from_worktree=None, confirm=False)
+        config, name, CreateWorktreeOptions(from_default=True, from_branch=None, from_worktree=None, confirm=confirm)
     )
 
 
