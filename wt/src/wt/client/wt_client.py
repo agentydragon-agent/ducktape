@@ -37,6 +37,7 @@ from ..shared.protocol import (
     StartupMessage,
     StatusParams,
     StatusResponse,
+    StreamMessage,
     TeleportCdThere,
     TeleportDoesNotExist,
     TeleportResult,
@@ -298,22 +299,22 @@ class WtClient:
         params = StatusParams(worktree_ids=ids)
         return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
-    async def get_working_directory_status(self, worktree_path: Path) -> tuple[list[str], list[str]]:
+    async def get_working_directory_status(self, worktree_path: Path) -> tuple[set[Path], set[Path]]:
         """Get working directory status for a single worktree via daemon response flags."""
         # Use server-side identification to safely convert path to WorktreeID
         try:
             identify_result = await self.identify_worktree(worktree_path)
             if identify_result.wtid is None:
-                return [], []
+                return set(), set()
             status_response = await self.get_status([identify_result.wtid])
         except RpcError as e:
             # Only special-case unmanaged worktrees by code; otherwise bubble up
             if e.code == ErrorCodes.WORKTREE_NOT_FOUND:
-                return [], []
+                return set(), set()
             raise
 
         if not status_response.items:
-            return [], []
+            return set(), set()
 
         # Extract the single result
         item = next(iter(status_response.items.values()))
@@ -321,32 +322,31 @@ class WtClient:
 
         repo_path = result.absolute_path
         try:
-            repository = pygit2.Repository(str(repo_path))
+            repository = pygit2.Repository(repo_path)
         except (pygit2.GitError, ValueError, TypeError):
-            return [], []
+            return set(), set()
 
-        dirty_flags = {
-            pygit2.GIT_STATUS_INDEX_MODIFIED,
-            pygit2.GIT_STATUS_INDEX_DELETED,
-            pygit2.GIT_STATUS_INDEX_RENAMED,
-            pygit2.GIT_STATUS_INDEX_TYPECHANGE,
-            pygit2.GIT_STATUS_INDEX_NEW,
-            pygit2.GIT_STATUS_WT_MODIFIED,
-            pygit2.GIT_STATUS_WT_DELETED,
-            pygit2.GIT_STATUS_WT_RENAMED,
-            pygit2.GIT_STATUS_WT_TYPECHANGE,
-            pygit2.GIT_STATUS_CONFLICTED,
-        }
-        dirty_files: list[str] = []
-        untracked_files: list[str] = []
+        dirty_mask = (
+            pygit2.GIT_STATUS_INDEX_MODIFIED
+            | pygit2.GIT_STATUS_INDEX_DELETED
+            | pygit2.GIT_STATUS_INDEX_RENAMED
+            | pygit2.GIT_STATUS_INDEX_TYPECHANGE
+            | pygit2.GIT_STATUS_INDEX_NEW
+            | pygit2.GIT_STATUS_WT_MODIFIED
+            | pygit2.GIT_STATUS_WT_DELETED
+            | pygit2.GIT_STATUS_WT_RENAMED
+            | pygit2.GIT_STATUS_WT_TYPECHANGE
+            | pygit2.GIT_STATUS_CONFLICTED
+        )
         repo_root = Path(repo_path)
-        for file_path, flags in repository.status().items():
-            abs_path = str(repo_root / file_path)
-            if flags & pygit2.GIT_STATUS_WT_NEW:
-                untracked_files.append(abs_path)
-                continue
-            if any(flags & flag for flag in dirty_flags):
-                dirty_files.append(abs_path)
+        status = repository.status()
+
+        untracked_files = {repo_root / fp for fp, flags in status.items() if flags & pygit2.GIT_STATUS_WT_NEW}
+        dirty_files = {
+            repo_root / fp
+            for fp, flags in status.items()
+            if (flags & dirty_mask) and not (flags & pygit2.GIT_STATUS_WT_NEW)
+        }
 
         return dirty_files, untracked_files
 
@@ -354,29 +354,33 @@ class WtClient:
         """Read a mixed event/response stream; return (response_json, stdout, stderr)."""
         hook_stdout: list[str] = []
         hook_stderr: list[str] = []
-        response_json: dict | None = None
         progress_cb = self._progress_callback
         hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
+        stream_adapter = TypeAdapter(StreamMessage)
+
         while line := await reader.readline():
             text = line.decode().strip()
             if not text:
                 continue
             obj = json.loads(text)
-            ev = obj.get("event") if isinstance(obj, dict) else None
-            if ev == "hook_output":
-                hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
-                if callable(hook_cb):
-                    hook_cb(hook_ev)
-                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.output)
+
+            # Check if this is a stream event (has "event" discriminator field)
+            if isinstance(obj, dict) and "event" in obj:
+                event = stream_adapter.validate_python(obj)
+                match event:
+                    case HookOutputEvent() as hook_ev:
+                        if callable(hook_cb):
+                            hook_cb(hook_ev)
+                        (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.output)
+                    case ProgressEvent() as prog_ev:
+                        if callable(progress_cb):
+                            progress_cb(prog_ev)
                 continue
-            if ev == "progress":
-                prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
-                if callable(progress_cb):
-                    progress_cb(prog_ev)
-                continue
-            response_json = obj
-            break
-        return response_json, hook_stdout, hook_stderr
+
+            # Not an event - must be the final JSON-RPC response
+            return obj, hook_stdout, hook_stderr
+
+        raise RuntimeError("Stream ended without receiving JSON-RPC response")
 
     def _validate_post_hook(self, post: HookRunResult) -> None:
         """Validate and surface post-creation hook outcome; raise RuntimeError on failure."""

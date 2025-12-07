@@ -3,7 +3,7 @@ import os
 import pygit2
 import pytest
 
-from wt.shared.git_utils import git_run
+from ..git_helpers import add_worktree
 
 pytestmark = pytest.mark.timeout(10)
 
@@ -13,7 +13,7 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     cfg = config_factory(repo_path).minimal(upstream_branch="HEAD")
 
     # Create two worktrees against branches test/aaaaa and test/bbbbb
-    repo = pygit2.Repository(str(repo_path))
+    repo = pygit2.Repository(repo_path)
     head = repo.head.target
     repo.create_branch("test/aaaaa", repo.get(head))
     repo.create_branch("test/bbbbb", repo.get(head))
@@ -21,8 +21,12 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     wt_a = repo_path / "worktrees" / "aaaaa"
     wt_b = repo_path / "worktrees" / "bbbbb"
 
-    git_run(["worktree", "add", str(wt_a), "test/aaaaa"], cwd=repo_path)
-    git_run(["worktree", "add", str(wt_b), "test/bbbbb"], cwd=repo_path)
+    # Create worktrees directory
+    (repo_path / "worktrees").mkdir(exist_ok=True)
+
+    # Use pygit2 to add worktrees
+    add_worktree(repo, wt_a, "test/aaaaa")
+    add_worktree(repo, wt_b, "test/bbbbb")
 
     # Use GitManager via daemon handlers indirectly by calling CLI ls (list)
     env = os.environ.copy()
@@ -39,7 +43,7 @@ def test_worktree_branch_names_are_actual(repo_factory, config_factory, wtcli, r
     assert "bbbbb:" in out
 
     # Additionally, query actual worktree branch heads (branch can change over time)
-    repo_a = pygit2.Repository(str(wt_a))
-    repo_b = pygit2.Repository(str(wt_b))
+    repo_a = pygit2.Repository(wt_a)
+    repo_b = pygit2.Repository(wt_b)
     assert repo_a.head.shorthand == "test/aaaaa"
     assert repo_b.head.shorthand == "test/bbbbb"

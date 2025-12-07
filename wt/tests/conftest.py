@@ -124,6 +124,23 @@ def repo_factory(temp_dir):
 
 
 @pytest.fixture
+def pygit2_repo(real_temp_repo) -> pygit2.Repository:
+    """Provide a pygit2.Repository instance for the test's real_temp_repo.
+
+    Use this fixture when you need to perform multiple pygit2 operations
+    on the same repository, avoiding repeated Repository instantiation.
+
+    Example:
+        def test_something(pygit2_repo, real_temp_repo):
+            # Use pygit2_repo for git operations
+            branch = pygit2_repo.head.shorthand
+            # Use real_temp_repo for path operations
+            (real_temp_repo / "file.txt").write_text("content")
+    """
+    return pygit2.Repository(real_temp_repo)
+
+
+@pytest.fixture
 def config_factory(temp_dir):
     """Factory for creating test configurations with presets and overrides."""
 
@@ -198,7 +215,7 @@ def assert_worktree_exists(worktree_path: Path, expected_branch: str | None = No
     assert worktree_path.is_dir(), f"Worktree {worktree_path} is not a directory"
 
     if expected_branch:
-        repo = pygit2.Repository(str(worktree_path))
+        repo = pygit2.Repository(worktree_path)
         head_ref = repo.head.shorthand
         assert head_ref == expected_branch, f"Expected branch {expected_branch}, got {head_ref}"
 
@@ -305,29 +322,36 @@ def real_temp_repo(repo_factory, require_gitstatusd):
 
 
 @pytest.fixture
-def real_env(real_temp_repo, config_factory):
+def real_config(real_temp_repo, config_factory) -> Configuration:
+    """Create real configuration for integration tests.
+
+    This fixture provides the Configuration object directly for tests
+    that need to access config properties like worktrees_dir, main_repo, etc.
+    """
+    factory = config_factory(real_temp_repo)
+    return factory.integration(github_enabled=False)
+
+
+@pytest.fixture
+def real_env(real_config):
     """Set up real environment for integration tests with proper cleanup.
 
-    Creates real configuration and environment setup for tests that need
-    to interact with actual daemon processes and gitstatusd.
+    Creates environment dict for tests that need to interact with actual
+    daemon processes and gitstatusd.
 
     The hermetic git environment is applied globally by autouse fixture.
     """
-    # Create config using factory pattern
-    factory = config_factory(real_temp_repo)
-    config = factory.integration(github_enabled=False)
-
     # Ensure clean daemon state for this WT_DIR
-    kill_daemon_at_wt_dir(config.wt_dir)
+    kill_daemon_at_wt_dir(real_config.wt_dir)
 
     # Set up environment
     env = os.environ.copy()
-    env["WT_DIR"] = str(config.wt_dir)
+    env["WT_DIR"] = str(real_config.wt_dir)
 
     yield env
 
     # Cleanup: Kill daemon after test
-    kill_daemon_at_wt_dir(config.wt_dir)
+    kill_daemon_at_wt_dir(real_config.wt_dir)
 
 
 class WtCLI:

@@ -4,13 +4,10 @@ Refactored to use wt_cli fixture for invoking the CLI.
 """
 
 from datetime import timedelta
-from pathlib import Path
 
 import pytest
 
-from wt.shared.configuration import Configuration
-from wt.shared.git_utils import git_run
-
+from ..git_helpers import worktree_exists
 from ..test_data import WATCHER_DEBOUNCE_SECS
 from ..test_utils import wait_until
 
@@ -58,7 +55,7 @@ def wait_for_status_not_contains(wt_cli, needle: str, timeout: float = WATCHER_D
 
 
 @pytest.mark.timeout(30)
-def test_path_watcher_full_lifecycle(wt_cli):
+def test_path_watcher_full_lifecycle(wt_cli, real_config, pygit2_repo):
     """
     Test the path watcher through complete worktree lifecycle:
     1. status (should start daemon)
@@ -67,12 +64,6 @@ def test_path_watcher_full_lifecycle(wt_cli):
     4. remove worktree
     5. status (should detect removal via path watcher)
     """
-
-    # Resolve config to locate filesystem paths
-    wt_dir = Path(wt_cli.env["WT_DIR"])
-    config = Configuration.resolve(wt_dir)
-    repo_path = Path(config.main_repo)
-
     # Step 1: Initial status - should start daemon and show empty state
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
     assert result.returncode == 0, f"Status command failed: {result.stderr}"
@@ -82,7 +73,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     assert result.returncode == 0, f"Create command failed: {result.stderr}"
 
     # Verify worktree was created on filesystem
-    worktree_path = Path(config.worktrees_dir) / "feature-test"
+    worktree_path = real_config.worktrees_dir / "feature-test"
     assert worktree_path.exists(), f"Worktree not created at {worktree_path}"
     assert worktree_path.is_dir(), f"Worktree path is not a directory: {worktree_path}"
 
@@ -98,8 +89,7 @@ def test_path_watcher_full_lifecycle(wt_cli):
     result = wt_cli.sh("rm", "feature-test", "--force", timeout=timedelta(seconds=5.0))
     assert result.returncode == 0, f"Remove command failed: {result.stderr}"
     # Ensure git no longer lists the worktree (verifies git worktree remove succeeded)
-    git_list = git_run(["worktree", "list"], cwd=repo_path)
-    assert str(worktree_path) not in git_list.stdout.decode(), "Worktree still listed in main repo after removal"
+    assert not worktree_exists(pygit2_repo, worktree_path), "Worktree still listed in main repo after removal"
 
     # Verify worktree was removed from filesystem
     assert not worktree_path.exists(), f"Worktree still exists after removal: {worktree_path}"
@@ -117,17 +107,11 @@ def test_path_watcher_full_lifecycle(wt_cli):
 
 
 @pytest.mark.timeout(30)
-def test_path_watcher_multiple_worktrees(wt_cli):
+def test_path_watcher_multiple_worktrees(wt_cli, real_config, pygit2_repo):
     """
     Test path watcher with multiple worktrees created and removed.
     Tests that the daemon can track multiple changes in sequence.
     """
-
-    # Resolve config for filesystem checks
-    wt_dir = Path(wt_cli.env["WT_DIR"])
-    config = Configuration.resolve(wt_dir)
-    repo_path = Path(config.main_repo)
-
     # Initial status to start daemon
     result = wt_cli.status(timeout=timedelta(seconds=5.0))
     assert result.returncode == 0
@@ -168,9 +152,8 @@ def test_path_watcher_multiple_worktrees(wt_cli):
         result = wt_cli.sh("rm", name, "--force", timeout=timedelta(seconds=5.0))
         assert result.returncode == 0, f"Failed to remove {name}: {result.stderr}"
         # Verify git no longer lists the worktree entry
-        wt_path = Path(config.worktrees_dir) / name
-        git_list = git_run(["worktree", "list"], cwd=repo_path)
-        assert str(wt_path) not in git_list.stdout.decode(), f"Worktree {name} still listed in main repo after removal"
+        wt_path = real_config.worktrees_dir / name
+        assert not worktree_exists(pygit2_repo, wt_path), f"Worktree {name} still listed in main repo after removal"
         remaining.remove(name)
 
         assert _wait_until_removed(wt_cli, name), f"Worktree {name} still present in status after removal"
