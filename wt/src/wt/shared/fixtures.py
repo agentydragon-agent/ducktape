@@ -28,7 +28,7 @@ def write_pr_fixtures_file(config: Configuration, fixtures: Mapping[str, PRFixtu
     validated: dict[str, PRFixtureEntry] = {
         k: (v if isinstance(v, PRFixtureEntry) else PRFixtureEntry.model_validate(v)) for k, v in fixtures.items()
     }
-    path = Path(config.wt_dir) / "pr_fixtures.json"
+    path = config.wt_dir / "pr_fixtures.json"
     # Serialize via Pydantic TypeAdapter for stable ordering/shape under tests
     content_bytes = TypeAdapter(dict[str, PRFixtureEntry]).dump_json(validated, by_alias=False)
     path.write_bytes(content_bytes)
@@ -40,7 +40,7 @@ def load_pr_fixture(config: Configuration, branch_name: str) -> PRData | None:
 
     Supports per-branch entries or a catch-all "*" entry. Returns None if no match.
     """
-    path = Path(config.wt_dir) / "pr_fixtures.json"
+    path = config.wt_dir / "pr_fixtures.json"
     if not path.exists():
         return None
     adapter = TypeAdapter(dict[str, PRFixtureEntry])

@@ -152,8 +152,7 @@ def _resolve_worktree_name_to_info(index: WorktreeIndexService, name: str) -> Di
 async def worktree_identify(
     index: WorktreeIndexService, config: Configuration, params: WorktreeIdentifyParams
 ) -> WorktreeIdentifyResult:
-    # params already validated by rpc layer
-    absolute_path = Path(params.absolute_path)
+    absolute_path = params.absolute_path
     # Fail fast on non-existent path
     if not absolute_path.exists():
         raise RpcError(code=ErrorCodes.WORKTREE_NOT_FOUND, message=f"{absolute_path} is not a managed worktree")

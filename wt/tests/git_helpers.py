@@ -44,10 +44,7 @@ def add_and_commit(
 
     # Create commit
     tree = repo.index.write_tree()
-    signature = pygit2.Signature(
-        author_name or TestData.Git.USER_NAME,
-        author_email or TestData.Git.USER_EMAIL,
-    )
+    signature = pygit2.Signature(author_name or TestData.Git.USER_NAME, author_email or TestData.Git.USER_EMAIL)
 
     # Get parent commit(s)
     parents = [repo.head.target] if not repo.head_is_unborn else []

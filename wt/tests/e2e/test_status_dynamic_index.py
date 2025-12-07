@@ -32,9 +32,7 @@ def test_worktree_add_then_remove_reflected_in_status(wt_cli, pygit2_repo, real_
 
     # Ensure git no longer lists the worktree (verifies git worktree remove)
     worktree_path = real_temp_repo / "worktrees" / name
-    assert not worktree_exists(pygit2_repo, worktree_path), (
-        "Worktree still listed in main repo after removal"
-    )
+    assert not worktree_exists(pygit2_repo, worktree_path), "Worktree still listed in main repo after removal"
 
     # Poll until it disappears
     assert wait_until(

@@ -37,6 +37,7 @@ from ..shared.protocol import (
     StartupMessage,
     StatusParams,
     StatusResponse,
+    StreamMessage,
     TeleportCdThere,
     TeleportDoesNotExist,
     TeleportResult,
@@ -298,22 +299,22 @@ class WtClient:
         params = StatusParams(worktree_ids=ids)
         return await self._rpc("get_status", params, TypeAdapter(StatusResponse))
 
-    async def get_working_directory_status(self, worktree_path: Path) -> tuple[list[str], list[str]]:
+    async def get_working_directory_status(self, worktree_path: Path) -> tuple[set[Path], set[Path]]:
         """Get working directory status for a single worktree via daemon response flags."""
         # Use server-side identification to safely convert path to WorktreeID
         try:
             identify_result = await self.identify_worktree(worktree_path)
             if identify_result.wtid is None:
-                return [], []
+                return set(), set()
             status_response = await self.get_status([identify_result.wtid])
         except RpcError as e:
             # Only special-case unmanaged worktrees by code; otherwise bubble up
             if e.code == ErrorCodes.WORKTREE_NOT_FOUND:
-                return [], []
+                return set(), set()
             raise
 
         if not status_response.items:
-            return [], []
+            return set(), set()
 
         # Extract the single result
         item = next(iter(status_response.items.values()))
@@ -323,30 +324,29 @@ class WtClient:
         try:
             repository = pygit2.Repository(repo_path)
         except (pygit2.GitError, ValueError, TypeError):
-            return [], []
+            return set(), set()
 
-        dirty_flags = {
-            pygit2.GIT_STATUS_INDEX_MODIFIED,
-            pygit2.GIT_STATUS_INDEX_DELETED,
-            pygit2.GIT_STATUS_INDEX_RENAMED,
-            pygit2.GIT_STATUS_INDEX_TYPECHANGE,
-            pygit2.GIT_STATUS_INDEX_NEW,
-            pygit2.GIT_STATUS_WT_MODIFIED,
-            pygit2.GIT_STATUS_WT_DELETED,
-            pygit2.GIT_STATUS_WT_RENAMED,
-            pygit2.GIT_STATUS_WT_TYPECHANGE,
-            pygit2.GIT_STATUS_CONFLICTED,
-        }
-        dirty_files: list[str] = []
-        untracked_files: list[str] = []
+        dirty_mask = (
+            pygit2.GIT_STATUS_INDEX_MODIFIED
+            | pygit2.GIT_STATUS_INDEX_DELETED
+            | pygit2.GIT_STATUS_INDEX_RENAMED
+            | pygit2.GIT_STATUS_INDEX_TYPECHANGE
+            | pygit2.GIT_STATUS_INDEX_NEW
+            | pygit2.GIT_STATUS_WT_MODIFIED
+            | pygit2.GIT_STATUS_WT_DELETED
+            | pygit2.GIT_STATUS_WT_RENAMED
+            | pygit2.GIT_STATUS_WT_TYPECHANGE
+            | pygit2.GIT_STATUS_CONFLICTED
+        )
         repo_root = Path(repo_path)
-        for file_path, flags in repository.status().items():
-            abs_path = str(repo_root / file_path)
-            if flags & pygit2.GIT_STATUS_WT_NEW:
-                untracked_files.append(abs_path)
-                continue
-            if any(flags & flag for flag in dirty_flags):
-                dirty_files.append(abs_path)
+        status = repository.status()
+
+        untracked_files = {repo_root / fp for fp, flags in status.items() if flags & pygit2.GIT_STATUS_WT_NEW}
+        dirty_files = {
+            repo_root / fp
+            for fp, flags in status.items()
+            if (flags & dirty_mask) and not (flags & pygit2.GIT_STATUS_WT_NEW)
+        }
 
         return dirty_files, untracked_files
 
@@ -357,25 +357,31 @@ class WtClient:
         response_json: dict | None = None
         progress_cb = self._progress_callback
         hook_cb: Callable[[HookOutputEvent], None] | None = self._hook_output_callback
+        stream_adapter = TypeAdapter(StreamMessage)
+
         while line := await reader.readline():
             text = line.decode().strip()
             if not text:
                 continue
             obj = json.loads(text)
-            ev = obj.get("event") if isinstance(obj, dict) else None
-            if ev == "hook_output":
-                hook_ev: HookOutputEvent = HookOutputEvent.model_validate(obj)
-                if callable(hook_cb):
-                    hook_cb(hook_ev)
-                (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.output)
+
+            # Check if this is a stream event (has "event" discriminator field)
+            if isinstance(obj, dict) and "event" in obj:
+                event = stream_adapter.validate_python(obj)
+                match event:
+                    case HookOutputEvent() as hook_ev:
+                        if callable(hook_cb):
+                            hook_cb(hook_ev)
+                        (hook_stdout if hook_ev.stream.value == "stdout" else hook_stderr).append(hook_ev.output)
+                    case ProgressEvent() as prog_ev:
+                        if callable(progress_cb):
+                            progress_cb(prog_ev)
                 continue
-            if ev == "progress":
-                prog_ev: ProgressEvent = ProgressEvent.model_validate(obj)
-                if callable(progress_cb):
-                    progress_cb(prog_ev)
-                continue
+
+            # Not an event - must be the final JSON-RPC response
             response_json = obj
             break
+
         return response_json, hook_stdout, hook_stderr
 
     def _validate_post_hook(self, post: HookRunResult) -> None:
@@ -482,7 +488,9 @@ class WtClient:
             "worktree_get_by_name", WorktreeGetByNameParams(name=name), TypeAdapter(WorktreeGetByNameResult)
         )
 
-    async def _rpc[T](self, method: str, params_model: BaseModel, result_adapter: TypeAdapter[T]) -> T:
+    async def _rpc[T](
+        self, method: str, params_model: BaseModel | dict[str, object], result_adapter: TypeAdapter[T]
+    ) -> T:
         await self._start_daemon_if_needed()
         # Guard against a short race where the socket file is created just after the check.
         # Try a brief, bounded wait for the socket to appear to make CLI flows robust under load.
@@ -493,7 +501,13 @@ class WtClient:
                     break
             else:
                 raise RuntimeError("Daemon socket not available")
-        req = Request(method=method, params=params_model.model_dump(), id=uuid.uuid4())
+        if isinstance(params_model, BaseModel):
+            params = params_model.model_dump()
+        elif isinstance(params_model, dict):
+            params = params_model
+        else:
+            params = {}
+        req = Request(method=method, params=params, id=uuid.uuid4())
         try:
             reader, writer = await asyncio.open_unix_connection(self.config.daemon_socket_path)
             writer.write(req.model_dump_json().encode())
