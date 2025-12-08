@@ -7,6 +7,8 @@ Candidate issues are expressed as IssueCore + Occurrence(s); freeform notes allo
 Payload is validated with Pydantic.
 
 Critic agent MUST call ``submit(issues_count)`` after building the critique using the incremental tools.
+
+TODO: Enable compaction for critic runs to reduce transcript size.
 """
 
 from __future__ import annotations

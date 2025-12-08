@@ -67,11 +67,11 @@ async def test_mount_after_close_raises():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_removes_non_pinned_servers(make_make_simple_mcp):
+async def test_cleanup_removes_non_pinned_servers():
     """Test that close() removes all non-pinned servers."""
-    backend1 = make_make_simple_mcp("backend1")
-    backend2 = make_make_simple_mcp("backend2")
-    pinned = make_make_simple_mcp("pinned")
+    backend1 = FastMCP("backend1")
+    backend2 = FastMCP("backend2")
+    pinned = FastMCP("pinned")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend1", backend1)

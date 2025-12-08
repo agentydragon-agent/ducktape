@@ -4,6 +4,8 @@ from pathlib import Path
 import re
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
@@ -93,8 +95,14 @@ async def test_specimen_references_are_valid(
 
     for specimen in specimens:
         # Load snapshot from database to get manifest and issues
+        # Use selectinload to eagerly load relationships to avoid DetachedInstanceError
         with get_session() as session:
-            snapshot_db = session.get(Snapshot, specimen)
+            snapshot_db = session.execute(
+                select(Snapshot)
+                .where(Snapshot.slug == specimen)  # type: ignore[arg-type]
+                .options(selectinload(Snapshot.true_positives), selectinload(Snapshot.false_positives))
+            ).scalar_one_or_none()
+
             assert snapshot_db is not None, f"Snapshot {specimen} not found in database"
             manifest = snapshot_db.source
 
@@ -102,9 +110,13 @@ async def test_specimen_references_are_valid(
             if isinstance(manifest, LocalSource):
                 continue  # Skip this specimen
 
-            # Use relationships to get issues (ORM models have occurrences directly)
+            # Use relationships to get issues (now eagerly loaded)
             true_positives_list = snapshot_db.true_positives
             false_positives_list = snapshot_db.false_positives
+
+            # Expunge all instances from session to prevent expiration on commit
+            # This keeps the loaded data accessible after the session closes
+            session.expunge_all()
 
         # Hydrate source code
         async with production_specimens_hydrator.hydrate(specimen) as hydrated:

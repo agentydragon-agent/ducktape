@@ -712,7 +712,6 @@ async def async_main(argv: list[str] | None = None):
         await _commit_immediately(msg, passthru)
     else:
         await _run_editor_flow(repo, msg, previous_message, stats_comment, passthru)
-    # Success - exit 0
 
 
 def main():

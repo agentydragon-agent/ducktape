@@ -40,7 +40,7 @@ async def test_pg_middleware_allow(pg_client):
     ],
 )
 async def test_pg_middleware_deny(make_pg_client, make_decision_engine, make_simple_mcp, decision, expected_msg):
-    engine = make_decision_engine(decision)
+    engine = await make_decision_engine(decision)
     async with make_pg_client({"backend": make_simple_mcp}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
@@ -80,7 +80,7 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, make
 @pytest.mark.requires_docker
 async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_engine, make_simple_mcp):
     """Test ASK decision: tool call blocks until approved via admin server."""
-    engine = make_decision_engine(ApprovalDecision.ASK)
+    engine = await make_decision_engine(ApprovalDecision.ASK)
     call_ids: list[str] = []
 
     async with make_pg_compositor({"backend": make_simple_mcp}, policy_engine=engine) as (sess, policy_engine):

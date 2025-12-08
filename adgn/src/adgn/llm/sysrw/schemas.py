@@ -9,7 +9,7 @@ from openai.types.chat.chat_completion_message import ChatCompletionMessage
 from openai.types.responses import ResponseCreateParams
 from pydantic import BaseModel, Field
 
-from adgn.llm.anthropic.types import Message as AnthropicMessage
+from adgn.llm.anthropic.types import Message as AnthropicMessage, TextBlock
 from adgn.openai_utils.model import InputItem, ResponsesResult
 
 # ------------------------
@@ -50,7 +50,7 @@ class Request(BaseModel):
     Uses adgn.llm.anthropic types (Pydantic) instead of anthropic.types (TypedDicts).
     """
 
-    system: str | None = None
+    system: str | list[TextBlock] | None = None
     messages: list[AnthropicMessage]
     tools: list[ToolParam] | None = None
 

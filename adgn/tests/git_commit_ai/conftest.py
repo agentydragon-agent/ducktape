@@ -40,7 +40,7 @@ def patch_fake_editor(monkeypatch):
     without invoking a real editor.
     """
 
-    async def _fake_get_editor() -> str:
+    async def _fake_get_editor(repo) -> str:
         return "fake-editor"
 
     class _Proc:

@@ -5,7 +5,6 @@ from importlib import resources
 from pathlib import Path
 
 from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
-from openai.types.responses import ResponseInputMessageItem
 import pytest
 
 from adgn.llm.sysrw.run_eval import read_dataset  # type: ignore
@@ -64,8 +63,8 @@ async def test_read_crush_min():
     assert isinstance(s_bad, CrushSample)
     # Responses-native payload preserved as Pydantic model
     oai_req = s_bad.oai_request
-    input_data = oai_req.input  # type: ignore[union-attr]  # Both variants have 'input' field (TypedDict limitation)
+    input_data = oai_req["input"]  # TypedDict access
     assert isinstance(input_data, list)
-    # Extract roles from the input messages (should be proper message objects)
-    roles = [item.role.lower() for item in input_data if isinstance(item, ResponseInputMessageItem)]
+    # Extract roles from the input messages (TypedDict items remain as dicts)
+    roles = [item["role"].lower() for item in input_data if isinstance(item, dict) and "role" in item]
     assert any(r in ("user", "assistant") for r in roles)

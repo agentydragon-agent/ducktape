@@ -451,7 +451,9 @@ def generate_html_report(report_base: Path):
                 # CCR item - validate and use typed Anthropic structures
                 if sample_record.anthropic_request is None:
                     continue
-                original_system = sample_record.anthropic_request.system or ""
+                system_field = sample_record.anthropic_request.system
+                assert isinstance(system_field, str) or system_field is None, "system must be str or None"
+                original_system = system_field or ""
                 rewritten_system = rewrite_system_with_template(original_system, template_file)
                 messages = anthropic_messages_to_standard(sample_record.anthropic_request.messages)
                 last_assistant_index = index_of_last_assistant_before_final(messages)
@@ -563,7 +565,9 @@ async def run_eval(
             if isinstance(item, CCRSample):  # CCR
                 # 1) Rewrite system via Node apply script
                 anthropic_request = item.anthropic_request
-                new_system = rewrite_system_with_template(anthropic_request.system or "", template_path)
+                system_field = anthropic_request.system
+                assert isinstance(system_field, str) or system_field is None, "system must be str or None"
+                new_system = rewrite_system_with_template(system_field or "", template_path)
                 # 2) Find last assistant message in Anthropic messages (before final user complaint)
                 prev_assistant_index = index_of_last_assistant_in_anthropic_messages(anthropic_request.messages)
                 if prev_assistant_index is None:

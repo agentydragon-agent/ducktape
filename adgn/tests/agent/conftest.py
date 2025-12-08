@@ -61,17 +61,6 @@ def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> Con
     return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_policy_server)
 
 
-@pytest.fixture
-def make_policy_evaluator(docker_client, make_approval_policy_server):
-    """Factory that builds a ContainerPolicyEvaluator for a given policy source."""
-
-    def _make(policy_source: str, *, agent_id: str = "tests") -> ContainerPolicyEvaluator:
-        engine = make_approval_policy_server(policy_source, agent_id=agent_id)
-        return ContainerPolicyEvaluator(agent_id=agent_id, docker_client=docker_client, engine=engine)
-
-    return _make
-
-
 # ---- Standard policy text fixtures (string sources) ----
 
 

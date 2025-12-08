@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from unittest.mock import patch
 
 import pygit2
 import pytest
@@ -194,10 +193,8 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     monkeypatch.setattr("adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex", _fake_generate)
     monkeypatch.setattr("adgn.git_commit_ai.cli.Cache.get", lambda self, key: new_message)
 
-    # Run the tool; patch argv to avoid pytest args leaking
-    with patch("sys.exit") as mock_exit:
-        await cli.async_main([])
-        mock_exit.assert_called_with(0)
+    # Run the tool with empty argv (avoid pytest args leaking)
+    await cli.async_main([])
 
     # Verify the committed message contains only the AI message
     fresh = pygit2.Repository(str(tmpdir))

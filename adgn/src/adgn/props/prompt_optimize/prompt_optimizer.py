@@ -204,6 +204,44 @@ async def build_server(
       - Aggregate costs across all child critic_runs/grader_runs linked to the optimization session
       - Persist budget and accumulated costs for resumability
 
+    TODO: Add max wall time constraint for critic runs (5 minutes)
+    Context: Critic agents can get stuck in loops (e.g., running 232 consecutive ls commands)
+    See: src/adgn/props/docs/looping-analysis-2025-12-08/ for detailed analysis
+    Implementation approach:
+    - Add timeout parameter to execute_critic_run in critic.critic module
+    - Wrap critic agent.run() with asyncio.timeout() or similar
+    - On timeout, save partial results to DB with timeout flag
+    - Return timeout status in RunCriticOutput so optimizer can adapt
+    - Consider: Should timeout count as "failed" run or "partial success" for metrics?
+
+    TODO: Consider system message anti-repetition hook (NOT static prompt fix)
+    Context: Agents can get stuck repeating the same tool calls (ls, read, etc.)
+    See: src/adgn/props/docs/looping-analysis-2025-12-08/smoking-gun-findings.md
+    Root cause: Agent didn't know directory contents are stable, kept re-checking
+    Goal: Dynamic hook that detects and intervenes on repetitive behavior patterns
+    Implementation approaches:
+    - Option 1: Event handler that injects system message warnings
+      - Monitor tool call history (e.g., last 10-20 calls)
+      - Detect patterns: same tool+args called 3+ times
+      - Inject warning into system message dynamically:
+        "WARNING: You've called docker_exec(ls /path) 3 times. Directory contents are STABLE and cannot change."
+      - Could append to system message or inject as a synthetic user message
+      - Implementation: Event handler watching ToolCall events, modifying agent state
+    - Option 2: MCP server-side warning in tool response metadata
+      - Docker exec server tracks recent calls per session
+      - When detecting repetition (same cmd 3+ times), add warning field to response
+      - Agent sees: {"exit": ..., "stdout": ..., "warning": "Repeated call detected"}
+      - Simpler than Option 1, doesn't require system message manipulation
+    - Option 3: Tool policy that blocks excessive repetition
+      - Similar to budget enforcement, but tracks call signatures
+      - After N identical calls, policy prevents further identical calls
+      - Returns error: "Tool call blocked: identical to last 5 calls"
+      - Most aggressive, could break legitimate use cases
+    Recommendation: Start with Option 2 (MCP server-side warnings)
+    - Least invasive, doesn't modify agent internals
+    - Can evolve to Option 1 if warnings aren't effective
+    - Option 3 as last resort if warnings fail
+
     Args:
         critic_client: OpenAI client for running critic evaluations
         grader_client: OpenAI client for running grader evaluations

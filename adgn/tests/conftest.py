@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager, suppress
 import os
 from pathlib import Path
@@ -149,16 +149,22 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_approval_policy_server(sqlite_persistence, docker_client, test_agent_id) -> Callable[[str], PolicyEngine]:
+def make_approval_policy_server(
+    sqlite_persistence, docker_client, test_agent_id
+) -> Callable[[str], Awaitable[PolicyEngine]]:
     """Factory producing PolicyEngine instances with per-test defaults.
 
     The returned engine owns .reader, .proposer and .approver sub-servers.
     """
 
-    def _make(policy_source: str, *, agent_id: str | None = None) -> PolicyEngine:
+    async def _make(policy_source: str) -> PolicyEngine:
+        # Create agent in DB first to satisfy FK constraints
+        agent_id_resolved = await sqlite_persistence.create_agent(
+            mcp_config=MCPConfig(), metadata=AgentMetadata(preset="test")
+        )
         return PolicyEngine(
             docker_client=docker_client,
-            agent_id=agent_id or test_agent_id,
+            agent_id=agent_id_resolved,
             persistence=sqlite_persistence,
             policy_source=policy_source,
         )
@@ -485,21 +491,21 @@ if __name__ == "__main__":
 
 @pytest.fixture
 def make_decision_engine(
-    make_approval_policy_server: Callable[[str], PolicyEngine],
-) -> Callable[[ApprovalDecision], PolicyEngine]:
+    make_approval_policy_server: Callable[[str], Awaitable[PolicyEngine]],
+) -> Callable[[ApprovalDecision], Awaitable[PolicyEngine]]:
     """Factory for creating PolicyEngine with a specific decision policy.
 
     Usage:
-        engine = make_decision_engine(ApprovalDecision.ALLOW)
-        engine = make_decision_engine(ApprovalDecision.DENY_ABORT)
-        engine = make_decision_engine(ApprovalDecision.ASK)
+        engine = await make_decision_engine(ApprovalDecision.ALLOW)
+        engine = await make_decision_engine(ApprovalDecision.DENY_ABORT)
+        engine = await make_decision_engine(ApprovalDecision.ASK)
 
     Thin wrapper around make_approval_policy_server that handles policy source generation.
     """
 
-    def _make(decision: ApprovalDecision) -> PolicyEngine:
+    async def _make(decision: ApprovalDecision) -> PolicyEngine:
         policy_source = make_policy_source(decision)
-        return make_approval_policy_server(policy_source)
+        return await make_approval_policy_server(policy_source)
 
     return _make
 
