@@ -1,21 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from pathlib import Path
-from typing import Any
 
-from adgn.agent.events import AssistantText, ToolCall, ToolCallOutput, UserText
-from adgn.agent.handler import BaseHandler
+from adgn.agent.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
+from adgn.agent.handler import BaseHandler, Response
 from adgn.openai_utils.model import ReasoningItem
 
-
-@dataclass
-class _Event:
-    ts: str
-    kind: str
-    payload: Any
+# Union of all event types we write to transcript
+TranscriptEvent = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem | Response | ApiRequest
 
 
 class TranscriptHandler(BaseHandler):
@@ -28,7 +22,7 @@ class TranscriptHandler(BaseHandler):
             raise FileExistsError(f"Transcript already exists: {self._path}")
 
     # ---- Event helpers ----
-    def _write_event(self, evt: Any) -> None:
+    def _write_event(self, evt: TranscriptEvent) -> None:
         # Create parent directory if needed (lazy initialization)
         self._path.parent.mkdir(parents=True, exist_ok=True)
         rec = evt.model_dump(mode="json", exclude_none=True)
@@ -53,6 +47,10 @@ class TranscriptHandler(BaseHandler):
     def on_reasoning(self, item: ReasoningItem) -> None:
         self._write_event(item)
 
-    def on_response(self, evt: Any) -> None:
+    def on_response(self, evt: Response) -> None:
         # Record one responses.create result per model call with usage
+        self._write_event(evt)
+
+    def on_api_request_event(self, evt: ApiRequest) -> None:
+        # Record the full API request before sending
         self._write_event(evt)

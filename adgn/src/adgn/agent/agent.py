@@ -1,4 +1,4 @@
-"""MiniCodex agent on OpenAI Responses API with MCP tool wiring.
+"""Agent on OpenAI Responses API with MCP tool wiring.
 
 For stateless reasoning/tool replay demo, see :/adgn/examples/openai_api/stateless_two_step_demo.py
 """
@@ -64,7 +64,7 @@ class AgentResult:
     text: str
     # NOTE: We intentionally do NOT return transcript/events in agent result.
     # Tests or callers that need access to the event sequence should register a handler
-    # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to MiniCodex.create().
+    # (e.g. a test-only RecordingHandler) and pass it via `handlers` argument to Agent.create().
 
 
 @dataclass
@@ -326,7 +326,7 @@ def _sanitize_tool_result(result: mcp_types.CallToolResult) -> mcp_types.CallToo
     )
 
 
-class MiniCodex:
+class Agent:
     def __init__(
         self,
         *,
@@ -369,6 +369,57 @@ class MiniCodex:
                 "  • SequenceHandler([...]) - for fixed action sequences\n"
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
+
+    def _extract_text_from_user_message(self, msg: UserMessage) -> str:
+        """Extract text content from UserMessage's content parts."""
+        return "\n".join(part.text for part in msg.content)
+
+    def _extract_text_from_assistant_message(self, msg: AssistantMessage) -> str:
+        """Extract text content from AssistantMessage's content parts."""
+        if not msg.content:
+            return ""
+        return "\n".join(part.text for part in msg.content)
+
+    def _notify_user_text(self, text: str) -> None:
+        """Notify all handlers of a user text event."""
+        evt = UserText(text=text)
+        for h in self._handlers:
+            h.on_user_text_event(evt)
+
+    def _notify_assistant_text(self, text: str) -> None:
+        """Notify all handlers of an assistant text event."""
+        evt = AssistantText(text=text)
+        for h in self._handlers:
+            h.on_assistant_text_event(evt)
+
+    def _notify_handlers_for_transcript_item(self, item: TranscriptItem) -> None:
+        """Dispatch handler notifications based on transcript item type.
+
+        This is the single source of truth for "what handler events does this item type trigger".
+        Called for both injected items and items added from API responses.
+        """
+        if isinstance(item, UserMessage):
+            text = self._extract_text_from_user_message(item)
+            self._notify_user_text(text)
+
+        elif isinstance(item, AssistantMessage):
+            text = self._extract_text_from_assistant_message(item)
+            self._notify_assistant_text(text)
+
+        elif isinstance(item, FunctionCallItem):
+            for h in self._handlers:
+                h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id))
+
+        elif isinstance(item, ToolCallOutput):
+            for h in self._handlers:
+                h.on_tool_result_event(item)
+
+        elif isinstance(item, ReasoningItem):
+            for h in self._handlers:
+                h.on_reasoning(item)
+
+        elif isinstance(item, SystemMessage):
+            pass  # No handler notification for system messages
 
     def set_system_instructions(self, instructions: str | None) -> None:
         """Override base system instructions for future turns."""
@@ -470,9 +521,7 @@ class MiniCodex:
     async def run(self, user_text: str) -> AgentResult:
         self._transcript.append(UserMessage.text(user_text))
         # Notify all handlers
-        evt = UserText(text=user_text)
-        for h in self._handlers:
-            h.on_user_text_event(evt)
+        self._notify_user_text(user_text)
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -662,15 +711,16 @@ class MiniCodex:
             await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
             return  # Continue to next iteration after compaction
 
-        # Handle InjectItems: append all items to transcript
+        # Handle InjectItems: append all items to transcript and notify handlers
         if isinstance(decision, InjectItems):
-            self._transcript.extend(decision.items)
-            # Notify handlers about injected function calls and add to pending
             for item in decision.items:
+                self._transcript.append(item)
+                self._notify_handlers_for_transcript_item(item)
+
+                # Handle item-specific side effects
                 if isinstance(item, FunctionCallItem):
-                    for h in self._handlers:
-                        h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=item.call_id))
                     self.pending_function_calls.append(item)
+
             # Skip sampling this iteration
             # Main loop will execute any pending function calls, then iterate again
             return
@@ -758,44 +808,44 @@ class MiniCodex:
             if isinstance(iid, str) and iid in existing_ids:
                 continue
             if isinstance(item, ReasoningItem):
-                for h in self._handlers:
-                    h.on_reasoning(item)
                 self._transcript.append(item)
+                self._notify_handlers_for_transcript_item(item)
+
             elif isinstance(item, AssistantMessageOut):
-                text = item.text
-                self.assistant_text_chunks.append(text)
-                for h in self._handlers:
-                    h.on_assistant_text_event(AssistantText(text=text))
-                # Store assistant as our input item type to avoid secondary translation
-                self._transcript.append(item.to_input_item())
+                # Convert API output type to transcript type
+                self.assistant_text_chunks.append(item.text)
+                assistant_msg = item.to_input_item()
+                self._transcript.append(assistant_msg)
+                self._notify_handlers_for_transcript_item(assistant_msg)
+
             elif isinstance(item, FunctionCallOutputItem):
+                # Convert API output type to transcript type
                 if item.output is None:
                     raise ValueError("FunctionCallOutputItem.output is None")
                 result = mcp_types.CallToolResult.model_validate_json(item.output)
                 original_call_id = item.call_id
                 assert isinstance(original_call_id, str)
                 assert original_call_id
-                event = ToolCallOutput(call_id=original_call_id, result=result)
+                tool_output = ToolCallOutput(call_id=original_call_id, result=result)
                 handled_cids.add(original_call_id)
-                for h in self._handlers:
-                    h.on_tool_result_event(event)
-                self._transcript.append(event)
+                self._transcript.append(tool_output)
+                self._notify_handlers_for_transcript_item(tool_output)
+                # Update pending function calls
                 if self.pending_function_calls:
                     self.pending_function_calls = [
                         fc for fc in self.pending_function_calls if fc.call_id != original_call_id
                     ]
+
             elif isinstance(item, FunctionCallItem):
                 # Enforce a proper call_id for indexing/pending management
                 call_id = _require_call_id(item)
-                fc_local = item  # No conversion needed anymore
-                for h in self._handlers:
-                    h.on_tool_call_event(ToolCall(name=item.name, args_json=item.arguments, call_id=call_id))
-                self._transcript.append(fc_local)
+                self._transcript.append(item)
+                self._notify_handlers_for_transcript_item(item)
                 # Store in map for quick lookup when processing outputs
-                self._function_call_map[call_id] = fc_local
+                self._function_call_map[call_id] = item
                 if call_id in handled_cids:
                     continue
-                self.pending_function_calls.append(fc_local)
+                self.pending_function_calls.append(item)
             else:
                 # Crash fast on unknown items to surface mismatches early
                 raise TypeError(f"Unsupported Responses output item: {type(item)}")
@@ -813,8 +863,8 @@ class MiniCodex:
         parallel_tool_calls: bool = True,
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
-    ) -> MiniCodex:
-        """Create a MiniCodex agent.
+    ) -> Agent:
+        """Create an Agent.
 
         Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
         Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage(), ForbidAllTools().

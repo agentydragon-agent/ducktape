@@ -27,7 +27,7 @@ Not responsibilities
 ## 2. Architecture & Data Flow
 
 - In‑proc (V1 baseline)
-  - Agent (MiniCodex) → Compositor (FastMCP proxy mounts + policy middleware) → Upstream servers
+  - Agent (Agent) → Compositor (FastMCP proxy mounts + policy middleware) → Upstream servers
   - Container client → Compositor over loopback (host.docker.internal) → Upstream servers
 - Human UI integrates separately via the UI server and/or human‑only MCP servers (e.g., policy authoring). The policy middleware does not own chat/inbox flows.
 

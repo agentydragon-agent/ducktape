@@ -28,7 +28,7 @@ Critics need to spawn sub-agents and share resources (transcripts, MCP servers, 
 - `src/adgn/props/db/models.py` - SQLAlchemy models (`Prompt`, `PromptOptimizationRun`, `CriticRun`, `GraderRun`, ...)
 - `src/adgn/agent/runtime/container.py` - AgentContainer actor (150+ line init, god object)
 - `src/adgn/mcp/compositor/server.py` - Compositor (mount/unmount servers, notify on changes)
-- `src/adgn/agent/agent.py` - MiniCodex agent (MCP client, handlers, transcript)
+- `src/adgn/agent/agent.py` - Agent agent (MCP client, handlers, transcript)
 
 ## Solution: Resource Capability Tokens
 
@@ -271,7 +271,7 @@ resource://subagents/{token}/transcript
 ### Implementation: Server-Side State
 
 ```python
-# Capability registry (in-memory, per MiniCodex backend instance)
+# Capability registry (in-memory, per Agent backend instance)
 @dataclass
 class AgentCapability:
     agent_id: str
@@ -418,7 +418,7 @@ def read_transcript(token: str) -> TranscriptResult:
 **Garbage collection**:
 ```python
 async def cleanup_session(session_id: str):
-    """Called when a MiniCodex session disconnects."""
+    """Called when a Agent session disconnects."""
     # Find root agent for this session
     root_agent_id = session_to_agent[session_id]
     # Cascade cleanup (subagents, sub-subagents, etc.)
@@ -615,7 +615,7 @@ async def run_critic(specimen, prompt_sha256, ...):
 
     # Create agent
     async with Client(compositor) as client:
-        agent = await MiniCodex.create(client, handlers=[...])
+        agent = await Agent.create(client, handlers=[...])
         result = await agent.run(prompt)
 
     # Extract structured output from state
@@ -726,7 +726,7 @@ async def grade_critique_by_id(critique_id, ...):
     # ... (duplicate setup from critic)
 
     async with Client(compositor) as client:
-        agent = await MiniCodex.create(client, handlers=[...])
+        agent = await Agent.create(client, handlers=[...])
         result = await agent.run(grader_prompt)
 
     return grader_state.grade  # GradeSubmitPayload
@@ -803,7 +803,7 @@ async def optimize_prompt(initial_prompt, train_specimens):
     # ... which INTERNALLY spawn critics/graders with manual setup
 
     async with Client(compositor) as client:
-        optimizer_agent = await MiniCodex.create(client, ...)
+        optimizer_agent = await Agent.create(client, ...)
         await optimizer_agent.run("Optimize this prompt for max recall")
 
     # Problem: optimizer can't access sub-agent transcripts
@@ -1277,7 +1277,7 @@ The **highest-priority win** is unifying critic/grader/optimizer invocations und
    - Call `create_agent_role(agent_id)` → get username, password
    - Create Compositor from `mcp_config` param
    - Inject DB credentials into container env: `PGUSER`, `PGPASSWORD`, `PGHOST`, `PGDATABASE`
-   - Create MiniCodex agent with handlers
+   - Create Agent agent with handlers
    - Run agent with prompt
 
 2. **Parent-child grant creation**
@@ -1314,14 +1314,14 @@ The **highest-priority win** is unifying critic/grader/optimizer invocations und
 
 **Deliverables**:
 1. **Refactor `run_critic`**
-   - Remove manual Compositor/MiniCodex setup (~50 lines)
+   - Remove manual Compositor/Agent setup (~50 lines)
    - Call `run_subagent` with critic prompt + critic_submit server
    - Extract `CriticSubmitPayload` from `final_result`
    - Preserve DB writes (critic_runs table with agent_id + parent_agent_id)
    - Critics automatically get DB credentials (can query specimens, prompts, etc.)
 
 2. **Refactor `grade_critique_by_id`**
-   - Remove manual Compositor/MiniCodex setup (~50 lines)
+   - Remove manual Compositor/Agent setup (~50 lines)
    - Call `run_subagent` with grader prompt + grader_submit server
    - Extract `GradeSubmitPayload` from `final_result`
    - Preserve DB writes (grader_runs table with agent_id + parent_agent_id)

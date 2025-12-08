@@ -1,4 +1,4 @@
-# MiniCodex UI/Protocol Migration — Pending Items
+# Agent UI/Protocol Migration — Pending Items
 
 - Frontend approval UX
   - Add a clear transcript/system note after a decision:

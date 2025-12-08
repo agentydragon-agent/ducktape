@@ -1,5 +1,5 @@
 """
-System message for the MiniCodex HTML interface (Python module).
+System message for the Agent HTML interface (Python module).
 
 Intent
 - Provide a single source of truth for system instructions used when the HTML UI

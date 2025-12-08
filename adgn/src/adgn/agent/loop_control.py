@@ -1,4 +1,4 @@
-"""Generic loop-control primitives for MiniCodex agents.
+"""Generic loop-control primitives for Agent agents.
 
 This module intentionally avoids application-specific concerns. It exposes
 minimal algebraic types used by handlers to influence the agent loop each

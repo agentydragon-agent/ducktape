@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
@@ -32,7 +32,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
         }
         assert expected <= tool_names
 
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
 

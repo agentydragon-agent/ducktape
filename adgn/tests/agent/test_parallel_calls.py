@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
 from adgn.openai_utils.builders import ItemFactory
@@ -41,7 +41,7 @@ async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
     async with make_compositor({"dummy": slow_server}) as (mcp_client, _):
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             system="test",
             mcp_client=mcp_client,
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI

@@ -1,6 +1,6 @@
 # AGENTS.md — Agent Guide for `adgn`
 
-This file helps AI agents work on the `adgn` package: environment setup, common commands, testing, module map, LLM tooling (MiniCodex), MCP/approvals, and conventions.
+This file helps AI agents work on the `adgn` package: environment setup, common commands, testing, module map, LLM tooling (Agent), MCP/approvals, and conventions.
 See `README.md` for a shorter overview.
 
 ## Environment and Setup (direnv + devenv)
@@ -13,16 +13,16 @@ See `README.md` for a shorter overview.
   - `echo "$VIRTUAL_ENV"` contains `.../adgn/.devenv/state/venv`
   - `which python` resolves to `.../adgn/.devenv/state/venv/bin/python`
 - Running commands:
-  - Inside `adgn/`, tools are on PATH (pytest, ruff, pre-commit, wt, rspcache, adgn-mini-codex, ...)
+  - Inside `adgn/`, tools are on PATH (pytest, ruff, pre-commit, wt, rspcache, adgn-agent, ...)
   - From outside: prefix with `direnv exec adgn <command>`
 - Refresh after edits:
   - `devenv.nix`/`.envrc` changes → `direnv reload`
   - `pyproject.toml` dependency changes → `direnv reload` (reinstalls dev extras on entry)
 
 ### Devenv Helper Scripts
-- `ui-dev` → run Vite dev server for MiniCodex UI (`http://127.0.0.1:5173`)
+- `ui-dev` → run Vite dev server for Agent UI (`http://127.0.0.1:5173`)
 - `ui-build` → build UI assets into `src/adgn/agent/server/static/web`
-- `mini-codex-serve` → start MiniCodex backend server (`http://127.0.0.1:8765`)
+- `agent-serve` → start Agent backend server (`http://127.0.0.1:8765`)
 - Background: `devenv up` starts the Vite dev server in the background
 
 ## Common Dev Commands
@@ -54,13 +54,13 @@ See `README.md` for a shorter overview.
 - Response cache (`src/adgn/rspcache/`)
   - `responses_db.py`; CLI `rspcache`
 - LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
-  - MiniCodex UI/server, MCP utilities, instruction optimizer, properties/specimens
+  - Agent UI/server, MCP utilities, instruction optimizer, properties/specimens
 
-## MiniCodex (CLI + Local UI)
+## Agent (CLI + Local UI)
 - Commands:
-  - REPL: `adgn-mini-codex run`
-  - UI server: `adgn-mini-codex serve` (opens WS UI at `http://127.0.0.1:8765/`)
-  - Dev: `adgn-mini-codex dev` (backend + Vite HMR; auto-picks free ports)
+  - REPL: `adgn-agent run`
+  - UI server: `adgn-agent serve` (opens WS UI at `http://127.0.0.1:8765/`)
+  - Dev: `adgn-agent dev` (backend + Vite HMR; auto-picks free ports)
 - Model/system defaults: `--model` (OPENAI_MODEL, default `o4-mini`), `--system` (SYSTEM_INSTRUCTIONS)
 - MCP configuration:
   - Baseline: if present, `./.mcp.json` in CWD is loaded first
@@ -75,8 +75,8 @@ See `README.md` for a shorter overview.
 
 
 ### UI Development and Builds
-- Dev (recommended): `adgn-mini-codex dev` — starts FastAPI + Vite, with proxying for `/ws` and `/transcript`
-- Split dev: `adgn-mini-codex serve` (backend) + `npm --prefix src/adgn/agent/web run dev` (optionally set `VITE_BACKEND_ORIGIN=http://127.0.0.1:8765`)
+- Dev (recommended): `adgn-agent dev` — starts FastAPI + Vite, with proxying for `/ws` and `/transcript`
+- Split dev: `adgn-agent serve` (backend) + `npm --prefix src/adgn/agent/web run dev` (optionally set `VITE_BACKEND_ORIGIN=http://127.0.0.1:8765`)
 - Build assets (REQUIRED before `serve`):
   - `npm --prefix src/adgn/agent/web install`
   - `npm --prefix src/adgn/agent/web run build`
@@ -88,7 +88,7 @@ See `README.md` for a shorter overview.
 
 ## LLM Toolkit and CLIs
 - Core scripts (see `[project.scripts]`):
-  - `adgn-mini-codex` → MiniCodex UI/REPL
+  - `adgn-agent` → Agent UI/REPL
   - `adgn-llm-edit` → `adgn.llm.llm_edit:app`
   - `adgn-sysrw` → `adgn.llm.sysrw.cli:app`
   - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties` Typer UI)

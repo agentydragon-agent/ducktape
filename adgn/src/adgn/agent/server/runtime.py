@@ -7,7 +7,7 @@ import logging
 from typing import Any
 import uuid
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.handler import BaseHandler
 from adgn.agent.persist import Persistence
@@ -101,7 +101,7 @@ class AgentSession:
     ) -> None:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
-        self._agent: MiniCodex | None = None
+        self._agent: Agent | None = None
         self._manager = manager
         self._persistence: Persistence = persistence
         self.ui_bus: ServerBus | None = ui_bus
@@ -110,7 +110,7 @@ class AgentSession:
         self._persist_handler: RunPersistenceHandler | None = None
         self.agent_id: AgentID = agent_id
 
-    def attach_agent(self, agent: MiniCodex, *, model: str | None = None, system: str | None = None) -> None:
+    def attach_agent(self, agent: Agent, *, model: str | None = None, system: str | None = None) -> None:
         self._agent = agent
         self._model = model
         self._system_text = system

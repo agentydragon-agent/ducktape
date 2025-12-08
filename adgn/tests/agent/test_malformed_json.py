@@ -6,7 +6,7 @@ from collections.abc import Callable
 
 from hamcrest import all_of, assert_that, contains_string
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.events import ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
@@ -30,7 +30,7 @@ async def _run_malformed_json_test(
         return factory.make_assistant_message("I received an error")
 
     client = make_mock(handle_request)
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=pg_client_echo,
         system="test",
         client=client,

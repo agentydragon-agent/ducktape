@@ -7,4 +7,4 @@ Bug fixes and improvements applied after reviewing findings from specimen 2025-1
 Python and Svelte code in `adgn/src/adgn/` including:
 - `git_commit_ai/` - AI-powered commit message generation
 - `mcp/git_ro/` - Read-only Git MCP server
-- `agent/` - MiniCodex agent framework
+- `agent/` - Agent agent framework

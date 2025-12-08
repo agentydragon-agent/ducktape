@@ -6,7 +6,7 @@ import json
 from fastmcp.client import Client
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.constants import PENDING_CALLS_URI
@@ -35,7 +35,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
     # Use make_pg_compositor with custom policy engine
     servers = dict(echo_spec)
     async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, policy_engine):
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
 

@@ -423,7 +423,7 @@ Phase 4 — MCP semantics and interruptions
 - Record `mcp.resource_*` events and ensure `runtime/exec` calls map cleanly to `tool_call`/`tool_result` with correlation ids. Emit `interruption`/`substitution` where applicable.
 
 Phase 5 — UI and subagents
-- Expose a compact `Snapshot` JSON under `indexes/` for MiniCodex to render; add a summarization subagent that reads long transcripts and commits `summary` objects when thresholds are reached.
+- Expose a compact `Snapshot` JSON under `indexes/` for Agent to render; add a summarization subagent that reads long transcripts and commits `summary` objects when thresholds are reached.
 
 Testing and quality gates
 - Add pytest suites for canonical hashing (idempotence), schema validation, and incremental reconstruction from events at HEAD. Ensure ruff + mypy clean.

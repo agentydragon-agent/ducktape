@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import EchoInput
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
@@ -27,7 +27,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     else:
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=pg_client_echo,
         system="test",
         client=client,

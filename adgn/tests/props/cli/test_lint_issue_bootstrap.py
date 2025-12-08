@@ -9,7 +9,7 @@ import uuid
 from platformdirs import user_cache_dir
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.exec.docker.server import make_container_exec_server
@@ -73,7 +73,7 @@ async def test_lint_issue_bootstrap_small_files(
     handlers = make_linter_handlers(state=state, occ=occ, content_root=content_root, docker_wiring=wiring)
 
     async with make_pg_client({"runtime": runtime_server}) as mcp_client:
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             system="test",
             client=client,

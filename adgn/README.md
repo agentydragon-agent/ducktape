@@ -3,7 +3,7 @@
 Local tools and libraries for my dev/worktree/LLM workflows.
 
 - Tana export: convert Tana JSON dumps to Markdown/TanaPaste
-- LLM utilities: MiniCodex client/UI, properties/specimens, system rewriter, etc.
+- LLM utilities: Agent client/UI, properties/specimens, system rewriter, etc.
 
 Environment and setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv; Python 3.11+
@@ -20,7 +20,7 @@ Environment and setup (direnv + devenv)
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`
 
-## Agent Presets (MiniCodex UI)
+## Agent Presets (Agent UI)
 - Agents are created from presets (YAML) discovered via platformdirs:
   - `platformdirs.user_config_dir('adgn')/presets`
   - Examples: Linux `~/.config/adgn/presets`, macOS `~/Library/Application Support/adgn/presets`
@@ -38,7 +38,7 @@ Environment and setup (direnv + devenv)
 
 ## Console scripts
 - rspcache → adgn.rspcache.cli:main
-- LLM: adgn-mini-codex, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
+- LLM: adgn-agent, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
 - Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
 
 ## More details

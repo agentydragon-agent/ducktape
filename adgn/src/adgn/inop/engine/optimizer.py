@@ -44,7 +44,7 @@ import sys
 
 from fastmcp.client import Client
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.inop.config import OptimizerConfig
@@ -160,7 +160,7 @@ class OptimizeMcpArgs:
 async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     """Run prompt optimization via an MCP server that evaluates prompts.
 
-    The Prompt Engineer (MiniCodex) will call propose_prompt(prompt) N times in one
+    The Prompt Engineer (Agent) will call propose_prompt(prompt) N times in one
     outer run; the MCP server will run rollouts+grading+persistence and maintain
     per-session state (last_prompt, last_feedback). We return the output dir.
     """
@@ -280,7 +280,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
         _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
         await comp.mount_inproc("prompt_feedback", _server)
         async with Client(comp) as mcp_client:
-            # Create MiniCodex PE with system prompt at init
+            # Create Agent PE with system prompt at init
             model = args.pe_model
             # Build the expert prompt-engineer system message (same wording formerly in PromptEngineer.prompt_messages)
             agent_description = "a coding agent"
@@ -310,7 +310,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             # TODO(mpokorny): AbortIf(max_iters) and current ProposePromptNTimes can be exceeded under
             # parallel_tool_calls if multiple calls are in flight when the budget flips. Centralize budget
             # accounting at the server boundary or serialize within 1 of the limit to enforce a hard cap.
-            pe = await MiniCodex.create(
+            pe = await Agent.create(
                 mcp_client=mcp_client,
                 client=model,
                 system=system_message,
@@ -384,7 +384,7 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
     cfg : OptimizerConfig
         Configuration for the optimizer.
     runner_name : str
-        Name of the runner to use (e.g., "claude", "mini_codex").
+        Name of the runner to use (e.g., "claude", "agent").
     task_types : dict
         Task type configurations.
     runner_configs : dict

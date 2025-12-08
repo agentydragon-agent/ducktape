@@ -27,7 +27,7 @@ from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy.orm import Session
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import AbortIf, BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.llm.rendering.rich_renderers import render_to_rich
@@ -370,7 +370,7 @@ Grade the critique, then submit your result by invoking the grader_submit server
                 ]
             )
 
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=system,
                 client=client,

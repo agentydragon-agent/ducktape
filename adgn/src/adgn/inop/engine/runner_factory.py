@@ -4,7 +4,7 @@ from typing import Any
 
 from adgn.inop.runners.base import AgentRunner
 from adgn.inop.runners.claude_runner import ClaudeRunner
-from adgn.inop.runners.minicodex_runner import MiniCodexRunner
+from adgn.inop.runners.openai_runner import OpenAIRunner
 from adgn.openai_utils.model import OpenAIModelProto
 
 
@@ -14,7 +14,7 @@ def create_runner(
     """Create an agent runner based on configuration.
 
     Args:
-        runner_name: Name of the runner (e.g., "claude", "mini_codex")
+        runner_name: Name of the runner (e.g., "claude", "agent")
         runner_configs: Dictionary of runner configurations from runners.yaml
         openai_client: (deprecated) removed; pass OpenAIModelProto via openai_model
 
@@ -34,8 +34,8 @@ def create_runner(
     # Create runner based on type
     if runner_type == "claude_runner":
         return ClaudeRunner(runner_id=runner_name, config=config)
-    if runner_type == "minicodex_runner":
+    if runner_type == "openai_runner":
         if openai_model is None:
-            raise ValueError("MiniCodexRunner requires openai_model")
-        return MiniCodexRunner(runner_id=runner_name, config=config, openai_model=openai_model)
+            raise ValueError("OpenAIRunner requires openai_model")
+        return OpenAIRunner(runner_id=runner_name, config=config, openai_model=openai_model)
     raise ValueError(f"Unknown runner type: {runner_type}")

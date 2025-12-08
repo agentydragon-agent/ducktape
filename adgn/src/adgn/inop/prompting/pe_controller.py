@@ -6,8 +6,8 @@ from adgn.agent.loop_control import Abort, NoAction
 """Prompt Engineer loop controller(s).
 
 These controllers implement minimal, application-level policies on top of the
-MiniCodex generic loop-control API without baking any app-specific behavior into
-MiniCodex itself.
+Agent generic loop-control API without baking any app-specific behavior into
+Agent itself.
 """
 
 

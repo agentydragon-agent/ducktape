@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.events import GroundTruthUsage, Response
 from adgn.agent.handler import BaseHandler
@@ -41,7 +41,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     """Test basic transcript compaction."""
     await mock_openai.setup_summary_response("User asked about compaction. Assistant explained the concept.")
 
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=compositor_client,
         client=mock_openai,
         handlers=[BaseHandler()],
@@ -92,7 +92,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
 @pytest.mark.asyncio
 async def test_compact_transcript_insufficient_history(compositor_client, mock_openai):
     """Test that compaction doesn't happen when history is too short."""
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=compositor_client,
         client=mock_openai,
         handlers=[BaseHandler()],
@@ -154,7 +154,7 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     # Create agent with compaction handler (low threshold for testing)
     handler = CompactionHandler(threshold_tokens=100, keep_recent_turns=2)
 
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=compositor_client,
         client=mock_openai,
         handlers=[handler],

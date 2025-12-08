@@ -1,6 +1,6 @@
-# MiniCodex (local agent + UI)
+# Agent (local agent + UI)
 
-MiniCodex is a small, local, OpenAI Responses‑based code agent with an MCP-based UI.
+Agent is a small, local, OpenAI Responses‑based code agent with an MCP-based UI.
 It can run as a CLI REPL or launch a local FastAPI server with a Svelte frontend.
 
 ## Requirements
@@ -10,9 +10,9 @@ It can run as a CLI REPL or launch a local FastAPI server with a Svelte frontend
 - Authentication token in `~/.config/adgn/tokens.yaml` (see Authentication below)
 
 ## Quick start
-- REPL (stdin/stdout): `adgn-mini-codex run`
-- Local UI server: `adgn-mini-codex serve` (prints authenticated URL with token)
-- Dev mode (auto‑picks free ports starting at 8765/5173 for backend+frontend): `adgn-mini-codex dev`
+- REPL (stdin/stdout): `adgn-agent run`
+- Local UI server: `adgn-agent serve` (prints authenticated URL with token)
+- Dev mode (auto‑picks free ports starting at 8765/5173 for backend+frontend): `adgn-agent dev`
 
 ## Authentication
 The UI requires bearer token authentication via MCP. Create `~/.config/adgn/tokens.yaml`:
@@ -73,11 +73,11 @@ The CLI will print the authenticated URL with `?token=...` when you run `serve` 
 There are two convenient ways to develop the UI + backend:
 
 1) One‑command dev (recommended):
-   - `adgn-mini-codex dev`
+   - `adgn-agent dev`
    - Starts FastAPI backend and Vite (frontend HMR). The CLI sets up ports, wiring, and MCP endpoint automatically.
 
 2) Split processes:
-   - Shell A: `adgn-mini-codex serve` (backend)
+   - Shell A: `adgn-agent serve` (backend)
    - Shell B: `npm --prefix src/adgn/agent/web run dev` (Vite)
    - By default, the frontend uses Vite's proxy to forward `/mcp` to the backend.
    - You can set `VITE_BACKEND_ORIGIN=http://127.0.0.1:8765` for Vite if needed; otherwise the CLI/dev mode will pass it for you.
@@ -97,16 +97,16 @@ Notes:
 ## Commands recap
 ```bash
 # REPL
-adgn-mini-codex run --model o4-mini --mcp-config /path/a.json --mcp-config /path/b.json
+adgn-agent run --model o4-mini --mcp-config /path/a.json --mcp-config /path/b.json
 
 # UI server
-adgn-mini-codex serve --host 127.0.0.1 --port 8765 --mcp-config /path/extra.json
+adgn-agent serve --host 127.0.0.1 --port 8765 --mcp-config /path/extra.json
 
 # Dev (frontend HMR + backend)
-adgn-mini-codex dev --port 8765 --frontend-port 5173 --mcp-config /path/extra.json
+adgn-agent dev --port 8765 --frontend-port 5173 --mcp-config /path/extra.json
 
 # Split dev (backend + Vite in separate shells)
-adgn-mini-codex serve --port 8765 --mcp-config /path/extra.json
+adgn-agent serve --port 8765 --mcp-config /path/extra.json
 npm --prefix src/adgn/agent/web run dev
 # (optional) Vite: export VITE_BACKEND_ORIGIN=http://127.0.0.1:8765
 ```

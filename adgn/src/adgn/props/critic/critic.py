@@ -28,7 +28,7 @@ from rich.panel import Panel
 from rich.table import Table
 import typer
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
@@ -507,7 +507,7 @@ async def run_critic(
         # Run critic agent
         async with Client(comp) as mcp_client:
             await mount_standard_inproc_servers(compositor=comp)
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=system_prompt,
                 client=client,

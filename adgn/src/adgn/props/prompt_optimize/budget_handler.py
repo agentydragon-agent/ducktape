@@ -23,7 +23,7 @@ from adgn.openai_utils.model import UserMessage
 from adgn.props.db import get_session, query_builders as qb
 
 if TYPE_CHECKING:
-    from adgn.agent.agent import MiniCodex
+    from adgn.agent.agent import Agent
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,7 @@ class BudgetEnforcementHandler(BaseHandler):
         *,
         prompt_optimization_run_id: UUID,
         budget_limit: float,  # USD
-        agent: MiniCodex,
+        agent: Agent,
     ) -> None:
         self._po_run_id = prompt_optimization_run_id
         self._budget_limit = budget_limit

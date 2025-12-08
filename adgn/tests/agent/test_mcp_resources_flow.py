@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.resources.server import ResourcesReadArgs
@@ -28,7 +28,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
             ]
         )
         client = make_mock(runner.handle_request_async)
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             client=client,
             system="test",

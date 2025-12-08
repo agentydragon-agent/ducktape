@@ -53,7 +53,7 @@ async def run_critic(
 2. **Phase 1 DB write**: Create initial run in database (output=None) - BEFORE agent runs
 3. Setup compositor and mount servers
 4. Create handlers including `DatabaseEventHandler(agent_run_id=transcript_id)`
-5. Run MiniCodex agent
+5. Run Agent agent
 6. Extract result from state
 7. Build typed output (`CriticSuccess` or `CriticFailure`)
 8. **Phase 2 DB write**: Update run with output, create critique if successful

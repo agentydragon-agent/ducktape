@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from adgn.agent.agent import AgentResult, MiniCodex
+from adgn.agent.agent import Agent, AgentResult
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
@@ -41,7 +41,7 @@ async def test_live_llm_exec_echo(pg_client_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=pg_client_box,
         system=(
             "You are testing an MCP exec tool.\n"

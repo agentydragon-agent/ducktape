@@ -9,7 +9,7 @@ from rich.console import Console
 from sqlalchemy import String, cast, select
 import typer
 
-from adgn.agent.agent import MiniCodex, TranscriptItem
+from adgn.agent.agent import Agent, TranscriptItem
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.display.rich_display import CompactDisplayHandler
 from adgn.agent.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
@@ -188,7 +188,7 @@ async def cmd_speak_with_dead(
 
     # Create empty MCP compositor (no tools for interrogation)
     async with Compositor() as compositor, MCPClient(compositor) as mcp_client:
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             system=system_instructions,
             client=client,

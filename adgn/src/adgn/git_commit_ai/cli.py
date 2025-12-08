@@ -1,7 +1,7 @@
 """
 git-commit-ai
 
-* Runs an AI agent (MiniCodex) to draft the initial commit message shown in your editor.
+* Runs an AI agent (Agent) to draft the initial commit message shown in your editor.
 * Runs repo's pre-commit hook **in parallel** so you don't wait twice.
 * Caches per-repo for one week keyed by staged diff hash.
 
@@ -48,7 +48,7 @@ import time
 
 import pygit2
 
-from adgn.git_commit_ai.minicodex_backend import generate_commit_message_minicodex
+from adgn.git_commit_ai.agent_backend import generate_commit_message_agent
 
 from .core import _diff, has_uncommitted_changes
 from .editor_template import SCISSORS_MARK, build_commit_template
@@ -494,7 +494,7 @@ def _init_logging(repo: pygit2.Repository, debug: bool) -> logging.Logger:
         logger.addHandler(console_handler)
 
     # Silence noisy libraries
-    for name in ("mini_codex", "MiniCodex", "adgn_llm.mini_codex", "mcp", "openai"):
+    for name in ("agent", "Agent", "adgn_llm.mini_codex", "mcp", "openai"):
         logging.getLogger(name).setLevel(logging.WARNING)
 
     return logger
@@ -604,12 +604,12 @@ class ProduceMessageInput:
 
 
 async def _produce_message(inp: ProduceMessageInput) -> tuple[str, bool]:
-    """Return (message, cached). Runs MiniCodex and pre-commit where applicable."""
+    """Return (message, cached). Runs Agent and pre-commit where applicable."""
     if (msg := inp.cache.get(inp.key)) is not None:
         return msg, True
 
     ai_task: asyncio.Task[str] = asyncio.create_task(
-        generate_commit_message_minicodex(
+        generate_commit_message_agent(
             inp.repo, model=inp.model_name, debug=inp.debug, amend=inp.previous_message is not None
         )
     )

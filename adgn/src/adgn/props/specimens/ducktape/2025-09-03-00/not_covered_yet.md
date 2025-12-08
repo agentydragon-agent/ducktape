@@ -212,6 +212,6 @@
   - Rationale: Simplicity/clarity; not covered explicitly.
 
 - Import spacing (ruff)
-  - Finding: Ensure one blank line between imports and constants/variables (ruff fix); e.g., after `from adgn_llm.mini_codex.agent import MiniCodex, load_mcp_file` before `LOCAL_EXEC_SERVER_NAME`.
+  - Finding: Ensure one blank line between imports and constants/variables (ruff fix); e.g., after `from adgn_llm.mini_codex.agent import Agent, load_mcp_file` before `LOCAL_EXEC_SERVER_NAME`.
   - Anchor: llm/adgn_llm/src/adgn_llm/mini_codex/mcp_manager.py (module header)
   - Rationale: Style; not covered explicitly.

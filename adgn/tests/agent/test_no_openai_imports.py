@@ -41,7 +41,7 @@ def _assert_no_openai_imports(root: Path) -> None:
                 "Layering violation: OpenAI SDK must not be imported directly in this layer.\n"
                 "Intended design: SDK usage is confined to adapter/translation points\n"
                 "(e.g., adgn.openai_utils.*) which expose Pydantic models and a small\n"
-                "protocol (OpenAIModelProto). All higher layers (MiniCodex, git_commit_ai)\n"
+                "protocol (OpenAIModelProto). All higher layers (Agent, git_commit_ai)\n"
                 "must depend only on adapter types and protocols.\n\n"
                 "Offending imports:\n"
             )

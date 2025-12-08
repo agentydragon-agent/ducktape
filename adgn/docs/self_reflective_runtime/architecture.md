@@ -28,14 +28,14 @@ This note sketches a path toward a “self-healing” / self-reflective MCP runt
 
 ### Agent Container (self-managed sandbox)
 
-- **Loop Daemon (MiniCodex + handlers)**
+- **Loop Daemon (Agent + handlers)**
   - Runs the agent turn loop; hot-swappable via a lightweight supervisor process.
   - Maintains the agent transcript/event stream and loop-control latch; any UI projection (`UiState`) is built in the control plane.
   - Implementation sketch:
     ```text
     agentd/
       supervisor.py    # entrypoint; handles control API, restarts
-      loop_worker.py   # MiniCodex loop + handler stack
+      loop_worker.py   # Agent loop + handler stack
       hooks.py         # hook registry & scheduler
       mcp_clients.py   # shared MCP clients (chat, resources, policy gateway)
       db.py            # thin wrapper around agent-scoped DB (SQLite/functional)

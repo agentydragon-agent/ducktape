@@ -5,7 +5,7 @@ from fastmcp.server import FastMCP
 from pydantic import BaseModel, ConfigDict
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.naming import build_mcp_function
@@ -60,7 +60,7 @@ def server() -> FastMCP:
 
 async def _make_agent_with_notifications(mcp_client, buf, client):
     """Helper to create agent with NotificationsHandler wired."""
-    return await MiniCodex.create(
+    return await Agent.create(
         mcp_client=mcp_client,
         handlers=[NotificationsHandler(buf.poll)],
         client=client,
@@ -86,7 +86,7 @@ async def test_notifications_pre_sampling_out_of_band(
             return result
 
         client = make_mock(_create)
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             handlers=[NotificationsHandler(buf.poll)],
             client=client,

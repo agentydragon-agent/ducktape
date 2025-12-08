@@ -23,7 +23,7 @@ from hamcrest import (
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.enhanced import EnhancedFastMCP
@@ -166,7 +166,7 @@ async def test_agent_compositor_flat_tools_request_schema(
     client_phase1 = make_mock(mock_phase1.handle_request_async)
 
     async with make_compositor({"server_a": server_a}) as (mcp_client, _comp):
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase1,
@@ -195,7 +195,7 @@ async def test_agent_compositor_flat_tools_request_schema(
     client_phase2 = make_mock(mock_phase2.handle_request_async)
 
     async with make_compositor({"server_a": server_a, "server_b": server_b}) as (mcp_client, _comp):
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             system="You are a helpful assistant.",
             client=client_phase2,

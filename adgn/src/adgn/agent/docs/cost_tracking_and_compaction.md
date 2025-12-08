@@ -2,7 +2,7 @@
 
 ## Overview
 
-MiniCodex agents need to:
+Agent agents need to:
 1. **Track cumulative token usage and cost** across a session
 2. **Compact transcripts** when approaching context limits to stay within model constraints
 
@@ -149,7 +149,7 @@ class CostTrackingHandler(BaseHandler):
 ```python
 cost_handler = CostTrackingHandler(model="gpt-5")
 
-agent = MiniCodex.create(
+agent = Agent.create(
     client=openai_client,
     handlers=[cost_handler],
 )
@@ -390,7 +390,7 @@ Guidelines:
 """Simple REPL with cost tracking and auto-compaction."""
 
 import asyncio
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.compaction import CompactionHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.compositor import Compositor
@@ -426,7 +426,7 @@ async def main():
         client = build_client(model)
 
         # Create agent with handlers
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             client=client,
             handlers=[cost_handler, compaction_handler],
@@ -465,7 +465,7 @@ def build_handlers(
     ui_bus: ServerBus | None = None,
     model: str,  # Single source of truth for model
 ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
-    """Build standard handler list for MiniCodex agents.
+    """Build standard handler list for Agent agents.
 
     Args:
         model: Model ID - used to derive pricing and context limits for handlers
@@ -544,7 +544,7 @@ class AgentContainer:
                 self._compaction_handler = h
 
         # Create agent
-        agent = await MiniCodex.create(...)
+        agent = await Agent.create(...)
         ...
 
     @property
@@ -563,7 +563,7 @@ class AgentContainer:
 For CLI tools, print cost summary after each run:
 
 ```python
-# In adgn-mini-codex run command
+# In adgn-agent run command
 
 for line in sys.stdin:
     user = line.rstrip("\n")

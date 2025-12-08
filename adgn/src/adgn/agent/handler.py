@@ -1,4 +1,4 @@
-"""Handler interface and decision types for MiniCodex agent loop.
+"""Handler interface and decision types for Agent agent loop.
 
 This module defines the BaseHandler interface and loop control decisions.
 """

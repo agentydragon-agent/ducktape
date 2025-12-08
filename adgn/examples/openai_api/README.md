@@ -36,7 +36,7 @@ Canonical references
   - reasoning_items.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/responses_api/reasoning_items.ipynb
   - reasoning_function_calls.ipynb: https://github.com/openai/openai-cookbook/blob/main/examples/reasoning_function_calls.ipynb
 
-Integration note: The agent loop (MiniCodex) references these demos as
+Integration note: The agent loop (Agent) references these demos as
 examples for how to serialize transcript items for stateless continuation.
 See: src/adgn_llm/mini_codex/agent.py (top-of-file example link).
 

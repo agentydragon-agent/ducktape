@@ -16,7 +16,7 @@
 ## MCP Wiring & Prompt Authoring
 
 ### What the agent already sees automatically
-- MiniCodex prepends an MCP “wiring banner” to the system message before sampling (see `src/adgn/agent/agent.py`: `_build_effective_instructions`).
+- The Agent prepends an MCP "wiring banner" to the system message before sampling (see `src/adgn/agent/agent.py`: `_build_effective_instructions`).
 - The banner is computed from a live MCP snapshot: running server names, their tool names/descriptions, and a short list of resources (URIs) per server.
 - For the Docker exec server, the `container.info` resource includes image tag/ID, image build history (e.g., `pip install ... ruff==…`), mounted volumes (e.g., `/workspace`, `/props`), working directory, and network mode.
 - The banner lists only a few resources per server for readability; the agent can call `resources/list`/`resources/read` to enumerate/read more.

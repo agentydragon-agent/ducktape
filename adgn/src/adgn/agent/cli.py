@@ -2,28 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime
 import logging
 import os
 from pathlib import Path
 import socket
 import subprocess
-import sys
 import threading
 from urllib.parse import urlencode, urlunparse
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
+from rich.console import Console
+from rich.prompt import Prompt
 import typer
 from typer.main import get_command
 import uvicorn
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.compaction_handler import CompactionHandler
-from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.server.app import create_app
 from adgn.agent.server.system_message import get_ui_system_message
+from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.cli_utils import async_run
 from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.config_loader import build_mcp_config
@@ -63,6 +66,9 @@ MCP_CONFIGS_OPT = typer.Option(
     dir_okay=False,
     readable=True,
     resolve_path=True,
+)
+TRANSCRIPT_OPT = typer.Option(
+    None, "--transcript", help="Write full transcript (API requests/responses) to this JSONL file"
 )
 HOST_OPT = typer.Option("127.0.0.1", "--host", help="Host to bind UI server")
 PORT_OPT = typer.Option(8765, "--port", help="Port to bind UI server")
@@ -145,41 +151,51 @@ async def run(
     compact_at_tokens: int | None = typer.Option(
         None, "--compact-at-tokens", help="Enable compaction at this token threshold (e.g., 150000 for 75% of 200k)"
     ),
+    transcript: Path | None = TRANSCRIPT_OPT,
 ) -> None:
     """Start a simple stdin/stdout REPL."""
     _configure_logging_info()
-    print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
+    console = Console()
+    console.print("[bold green]Agent ready.[/] Ctrl-D to exit.", highlight=False)
 
     cfg = _build_cfg_and_print(mcp_configs)
 
     # Build model client
     client = build_client(model)
 
-    # Build handlers
-    handlers: list = [DisplayEventsHandler()]
+    # Setup transcript path (always write transcript)
+    if transcript is None:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        transcript = Path(f"/tmp/adgn-agent-transcript-{timestamp}.jsonl")
+    console.print(f"[dim]Writing transcript to: {transcript}[/dim]")
+
+    # Build handlers with compact rich display
+    handlers: list = [CompactDisplayHandler(console=console), TranscriptHandler(events_path=transcript)]
     if compact_at_tokens is not None:
         handlers.append(CompactionHandler(threshold_tokens=compact_at_tokens))
-        print(f"Compaction enabled: will compact at {compact_at_tokens} tokens")
+        console.print(f"[dim]Compaction enabled: will compact at {compact_at_tokens} tokens[/dim]")
 
     # Build in-proc Compositor and mount servers
     # Use Compositor as async context manager to ensure cleanup
     async with Compositor() as comp:
         await comp.mount_servers_from_config(cfg)
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=system,
                 client=client,
                 handlers=handlers,
                 tool_policy=AllowAnyToolOrTextMessage(),
             )
-            for line in sys.stdin:
-                user = line.rstrip("\n")
-                if not user:
-                    continue
-                res = await agent.run(user_text=user)
-                if res.text:
-                    print(res.text)
+            while True:
+                try:
+                    user = Prompt.ask("\n[bold cyan]>[/bold cyan]", console=console)
+                    if not user:
+                        continue
+                    await agent.run(user_text=user)
+                except EOFError:
+                    console.print("\n[dim]Exiting...[/dim]")
+                    break
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
 
@@ -189,7 +205,7 @@ async def serve(host: str = HOST_OPT, port: int = PORT_OPT, mcp_configs: list[Pa
     """Launch the local FastAPI UI server and keep running."""
     _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
-    print("mini-codex serve: starting agent + UI server")
+    print("Agent serve: starting agent + UI server")
 
     _ = _build_cfg_and_print(mcp_configs)
     # Build the FastAPI app; agent lifecycle is handled by the runtime container (registry)

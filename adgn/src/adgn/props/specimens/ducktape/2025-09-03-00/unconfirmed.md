@@ -103,7 +103,7 @@ Mypy/pyright import resolution/type issues (environment/type stubs or missing de
 Dead code / unused symbols (violates “No dead code”)
 - agent.py: unused import field (line 5); class ToolRun appears unused (lines 57–63)
 - vulture suspects: agent.metrics fields flagged as unused; verify usage or suppress carefully (agent.py:63, 68–70, 77)
-- agent.py: in MiniCodex.close, dataclass field names tool_calls/turns flagged (agent.py:251, 254)
+- agent.py: in Agent.close, dataclass field names tool_calls/turns flagged (agent.py:251, 254)
 - cli.py: MAX_CYCLES constant unused (cli.py:39); run_in_sandbox unused (cli.py:110)
 - local_exec_server.py: attribute invocations unused outside increment (local_exec_server.py:13, 17)
 - local_tools.py: build_local_tools unused (local_tools.py:127)
@@ -129,7 +129,7 @@ Ruff style findings (selected; many similar)
 - Prefer dict/list/tuple builtins in annotations — widespread in agent.py/local_server.py/local_exec_server.py
 
 Radon complexity “D” (consider refactor for readability/maintainability)
-- agent.MiniCodex.run (agent.py:148) — D (23)
+- agent.Agent.run (agent.py:148) — D (23)
 - cli.responses_turn (cli.py:188) — C (20)
 - cli.responses_followup_with_tool_outputs (cli.py:277) — D (21)
 - examples.run_demo (examples/run_minicodex_docker_demo.py:41) — D (21)

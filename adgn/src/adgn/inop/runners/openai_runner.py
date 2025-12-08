@@ -14,7 +14,7 @@ import uuid
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
@@ -40,11 +40,11 @@ from adgn.mcp.exec.direct import make_direct_exec_server
 from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.openai_utils.model import OpenAIModelProto
 
-"""Mini Codex runner that delegates execution to the MiniCodex agent."""
+"""OpenAI runner that delegates execution to the Agent agent."""
 
 
-class MiniCodexRunner(AgentRunner):
-    """Runner that executes tasks via the MiniCodex agent."""
+class OpenAIRunner(AgentRunner):
+    """Runner that executes tasks via the Agent agent."""
 
     def __init__(self, runner_id: str, config: dict[str, Any], *, openai_model: OpenAIModelProto) -> None:
         super().__init__(runner_id, config)
@@ -53,7 +53,7 @@ class MiniCodexRunner(AgentRunner):
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
-        self._agent: MiniCodex | None = None
+        self._agent: Agent | None = None
         # Note: Compositor + Client are managed per-setup; no manager retained
         self._openai_model = openai_model
         # Optional: allow callers/tests to pass their own handlers
@@ -79,13 +79,13 @@ class MiniCodexRunner(AgentRunner):
         for name, factory in server_factories.items():
             await comp.mount_inproc(name, factory(None))
         # Per-run transcript directory
-        run_dir = Path.cwd() / "logs" / "mini_codex" / "minicodex_runner"
+        run_dir = Path.cwd() / "logs" / "agent" / "openai_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         default_handlers: list = [DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")]
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             system=None,
             mcp_client=mcp_client,
             client=self._openai_model,
@@ -93,7 +93,7 @@ class MiniCodexRunner(AgentRunner):
             handlers=handlers,
             tool_policy=RequireAnyTool(),
         )
-        # Note: MiniCodex doesn't own resources, no cleanup needed
+        # Note: Agent doesn't own resources, no cleanup needed
         self._agent = agent
 
     def _build_mcp_server_factories(self, setup) -> dict[str, Callable[..., FastMCP]]:
@@ -149,7 +149,7 @@ class MiniCodexRunner(AgentRunner):
         result = await self._agent.run(user_text=task.prompt)
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]
-        # MiniCodex intentionally does not expose its internal event sequence; callers requiring
+        # Agent intentionally does not expose its internal event sequence; callers requiring
         # fine-grained events must install a RecordingHandler when creating the agent.
 
         if result.text:

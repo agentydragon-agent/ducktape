@@ -10,7 +10,7 @@ from fastmcp.client import Client
 from pydantic import TypeAdapter
 import typer
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.server.bus import ServerBus
@@ -29,7 +29,7 @@ from adgn.mcp.matrix.control import make_matrix_control_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client
 
-app = typer.Typer(help="Matrix-driven MiniCodex entrypoint (docker + yield-only control)", no_args_is_help=True)
+app = typer.Typer(help="Matrix-driven Agent entrypoint (docker + yield-only control)", no_args_is_help=True)
 
 
 def _configure_logging_info() -> None:
@@ -51,7 +51,7 @@ def run(
     system: str | None = typer.Option(None, "--system", help="Override default system instructions"),
     initial_since: str | None = typer.Option(os.getenv("MATRIX_SINCE"), "--since"),
 ) -> None:
-    """Run MiniCodex in headless Matrix mode using docker_exec + yield-only control."""
+    """Run Agent in headless Matrix mode using docker_exec + yield-only control."""
 
     async def _run() -> None:
         _configure_logging_info()
@@ -91,7 +91,7 @@ def run(
             # Client with notifications buffer so UI can reflect MCP updates
             notif_buffer = NotificationsBuffer(compositor=comp)
             async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
-                agent = await MiniCodex.create(
+                agent = await Agent.create(
                     mcp_client=mcp_client,
                     system=effective_system,
                     client=client,

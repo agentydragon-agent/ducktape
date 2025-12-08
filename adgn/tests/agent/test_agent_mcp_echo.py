@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import EchoInput
 from tests.agent.test_matchers import assert_function_call_output_structured
@@ -15,7 +15,7 @@ async def test_agent_mcp_echo_tool_use(
 ) -> None:
     runner = make_step_runner(steps=[MakeCall("echo", "echo", EchoInput(text="hello")), AssistantMessage("done")])
     client = make_mock(runner.handle_request_async)
-    agent = await MiniCodex.create(
+    agent = await Agent.create(
         mcp_client=pg_client_echo,
         system="test",
         client=client,

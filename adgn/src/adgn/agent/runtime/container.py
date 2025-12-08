@@ -14,7 +14,7 @@ from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from pydantic import BaseModel, Field
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.approvals import load_default_policy_source
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist import ApprovalOutcome
@@ -180,7 +180,7 @@ class AgentContainer:
     # Populated after Start
     approval_engine: PolicyEngine | None = None
     session: AgentSession | None = None
-    agent: MiniCodex | None = None
+    agent: Agent | None = None
     persist_handler: RunPersistenceHandler | None = None
     ui: UiFacet | None = None
     # Optional system prompt override (e.g., from preset)
@@ -336,7 +336,7 @@ class AgentContainer:
 
     async def _setup_agent_runtime(
         self, mcp_client: Client, notifications: NotificationsBuffer, approval_engine: PolicyEngine
-    ) -> tuple[AgentSession, MiniCodex]:
+    ) -> tuple[AgentSession, Agent]:
         """Phase 3: Set up agent runtime.
 
         Creates the agent session, builds message handlers, creates the agent,
@@ -389,7 +389,7 @@ class AgentContainer:
             return text
 
         # Start agent
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client,
             system=base_system,
             client=client,
@@ -397,7 +397,7 @@ class AgentContainer:
             dynamic_instructions=_dynamic_instructions,
             tool_policy=RequireAnyTool(),
         )
-        # Note: MiniCodex doesn't own resources, no cleanup needed
+        # Note: Agent doesn't own resources, no cleanup needed
 
         # Session tracks the system used for persisted run metadata; store base system
         sess.attach_agent(agent, model=self.model, system=base_system)

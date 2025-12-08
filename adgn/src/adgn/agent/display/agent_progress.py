@@ -17,7 +17,7 @@ class OneLineProgressHandler(BaseHandler):
     Displays a single-line status with a spinner, number of tool calls, and a brief
     last action. Non-blocking: updates are printed inline using carriage return.
 
-    Usage: register as a handler in MiniCodex.create(..., handlers=[BaseHandler(), OneLineProgressHandler()])
+    Usage: register as a handler in Agent.create(..., handlers=[BaseHandler(), OneLineProgressHandler()])
     """
 
     def __init__(self, *, console: Console | None = None) -> None:

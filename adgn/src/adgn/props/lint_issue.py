@@ -14,7 +14,7 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
@@ -359,7 +359,7 @@ async def _lint_issue_run_with_hydrated_root(
 
         await comp.mount_inproc(LINT_SUBMIT_SERVER_NAME, submit_srv)
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=client,
@@ -435,7 +435,7 @@ async def run_specimen_lint_issue_async(
 
         # Shared core: run and capture structured payload (reuses hydrated content_root)
         # Add per-run transcript logger handler (logs/ for ad-hoc debugging)
-        run_dir = Path.cwd() / "logs" / "mini_codex" / "lint_issue"
+        run_dir = Path.cwd() / "logs" / "agent" / "lint_issue"
         run_dir = run_dir / f"run_{format_timestamp_session()}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
 

@@ -87,6 +87,8 @@ class OutputTextPart(BaseModel):
 class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
     content: list[OutputTextPart] | None = None
+    # When an assistant message follows a reasoning item, OpenAI requires id
+    id: str | None = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod
@@ -122,11 +124,16 @@ class ReasoningSummaryItem(BaseModel):
 
 
 class ReasoningItem(BaseModel):
-    """Our internal reasoning item representation."""
+    """Our internal reasoning item representation.
+
+    Note: status is not included when serializing for input - OpenAI treats it as
+    output-only metadata even though the Param type allows it.
+    """
 
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
     summary: list[ReasoningSummaryItem] = Field(default_factory=list)
+    # Don't serialize status for input - use Field(exclude=True) or model_dump(exclude={'status'})
     model_config = ConfigDict(extra="allow")
 
 
@@ -208,10 +215,14 @@ class AssistantMessageOut(BaseModel):
     Matches the SDK's message content shape we actually use: a list of text parts
     with optional annotations. This keeps a stable, Pydantic-validated shape
     for downstream use and can be extended if we support non-text parts later.
+
+    When an assistant message follows a reasoning item, OpenAI requires the message
+    id when sending back as input (to link the message to the reasoning item).
     """
 
     kind: Literal["assistant_message"] = "assistant_message"
     parts: list[OutputText]
+    id: str | None = None  # Message ID from SDK response (required for reasoning continuation)
     model_config = ConfigDict(extra="allow")
 
     @property
@@ -224,7 +235,8 @@ class AssistantMessageOut(BaseModel):
             part_data = part.model_dump()
             part_data.setdefault("type", "output_text")
             content_parts.append(OutputTextPart.model_validate(part_data))
-        return AssistantMessage(role="assistant", content=content_parts)
+        # When following a reasoning item, OpenAI requires id
+        return AssistantMessage(role="assistant", content=content_parts, id=self.id)
 
 
 ResponseOutItem = ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut
@@ -262,7 +274,8 @@ def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMes
     ]
     if not parts:
         raise ValueError("ResponseOutputMessage has no text parts")
-    return AssistantMessageOut(parts=parts)
+    # Preserve id - OpenAI requires it when the message follows a reasoning item
+    return AssistantMessageOut(parts=parts, id=message.id)
 
 
 class ResponsesResult(BaseModel):
@@ -282,6 +295,7 @@ class ResponsesResult(BaseModel):
                         summary=[ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
                         if item.summary
                         else [],
+                        # Don't include status - it causes "Unknown parameter" error when sent back as input
                     )
                 )
             elif isinstance(item, ResponseFunctionToolCall):
@@ -345,5 +359,6 @@ class BoundOpenAIModel(OpenAIModelProto):
         kwargs["model"] = self.model
         if self.reasoning_effort and "reasoning" not in kwargs:
             kwargs["reasoning"] = build_reasoning_params(effort=self.reasoning_effort)
+
         sdk_resp: Response = await self.client.responses.create(**kwargs)
         return ResponsesResult.from_sdk(sdk_resp)

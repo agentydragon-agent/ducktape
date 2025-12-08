@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from rich.json import JSON
 from rich.pretty import Pretty
 
-# TODO(mpokorny): Consider wiring MiniCodex event-display into this layer as well.
+# TODO(mpokorny): Consider wiring Agent event-display into this layer as well.
 # - Provide a bridge adapter to surface event-stream pretty-printing (ConsoleEventRenderer)
 #   as Rich renderables when desired
 # - Optionally unify final-output and event-stream rendering under a shared entrypoint

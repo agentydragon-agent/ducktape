@@ -28,7 +28,7 @@ from uuid import UUID, uuid4
 from fastmcp.client import Client
 from pydantic import Field, model_validator
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, read_resource_call
 from adgn.agent.handler import SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
@@ -61,10 +61,6 @@ from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
-
-
-# NOTE: BudgetHandler removed pending refactor - PromptEvalState no longer exists
-# Budget tracking needs to be reimplemented with the new prompt_eval server API
 
 
 # ============================================================================
@@ -677,7 +673,7 @@ Prioritize recall first, then precision.
             ]
             async with Client(comp) as mcp_client:
                 await mount_standard_inproc_servers(compositor=comp)
-                agent = await MiniCodex.create(
+                agent = await Agent.create(
                     mcp_client=mcp_client,
                     system=system,
                     client=build_client(optimizer_model),
@@ -697,5 +693,4 @@ Prioritize recall first, then precision.
         # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
         logger.info(f"Optimization session complete. Results in: {session_dir}")
-        # NOTE: Cost tracking removed pending refactor - pe_state no longer available
         logger.info(f"Budget: ${budget:.2f}")

@@ -2,7 +2,7 @@
 adgn_llm_edit
 
 Notes / Design:
-- Uses MiniCodex as the orchestration layer (system instructions, tool policy, MCP tool wiring)
+- Uses Agent as the orchestration layer (system instructions, tool policy, MCP tool wiring)
 - Editing operations should be exposed as tools (read_line_range, replace_text, save_file, ...)
 - Use structured results (Pydantic) for tool outputs; avoid string-parsing for success/failure
 - Centralize file-type detection + syntax checks (python-only for now; unknown => no check)
@@ -19,7 +19,7 @@ from typing import Annotated
 from fastmcp.client import Client
 import typer
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
@@ -50,13 +50,13 @@ async def _execute(
     async with Compositor() as comp:
         await comp.mount_inproc(EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME))
 
-        # Create a per-run transcript directory (aligned with MiniCodex defaults)
-        run_dir = Path.cwd() / "logs" / "mini_codex" / "llm_edit"
+        # Create a per-run transcript directory (aligned with Agent defaults)
+        run_dir = Path.cwd() / "logs" / "agent" / "llm_edit"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
 
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=(
                     "You are a code editor assistant. Use tools to read/modify/save files.\n"

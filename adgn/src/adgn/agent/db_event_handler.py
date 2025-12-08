@@ -1,4 +1,4 @@
-"""Database event handler for MiniCodex runs."""
+"""Database event handler for Agent runs."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseEventHandler(BaseHandler):
-    """Database event writer for MiniCodex runs.
+    """Database event writer for Agent runs.
 
     Writes events to the database events table, maintaining sequence order.
     Each event is linked to the agent run via transcript_id.
@@ -24,7 +24,7 @@ class DatabaseEventHandler(BaseHandler):
     Usage:
         from uuid import UUID
         handler = DatabaseEventHandler(transcript_id=UUID('...'))
-        MiniCodex.create(..., handlers=[handler, ...])
+        Agent.create(..., handlers=[handler, ...])
     """
 
     def __init__(self, *, transcript_id: UUID) -> None:

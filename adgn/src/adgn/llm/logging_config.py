@@ -69,7 +69,7 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
             "loggers": {
                 # Ensure library loggers propagate to root (no own handlers)
                 "mcp": {"level": "INFO", "propagate": True, "handlers": []},
-                "mini_codex": {"level": "INFO", "propagate": True, "handlers": []},
+                "agent": {"level": "INFO", "propagate": True, "handlers": []},
             },
         }
     )

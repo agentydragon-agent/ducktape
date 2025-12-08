@@ -100,7 +100,7 @@ class Compositor(FastMCP):
         async with Compositor() as comp:
             await comp.mount_inproc("runtime", make_runtime_server(...))
             async with Client(comp) as client:
-                agent = await MiniCodex.create(mcp_client=client)
+                agent = await Agent.create(mcp_client=client)
                 await agent.run("review this code")
 
     2. Long-lived server:

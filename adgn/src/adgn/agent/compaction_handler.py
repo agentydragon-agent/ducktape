@@ -1,4 +1,4 @@
-"""Automatic transcript compaction handler for MiniCodex agents.
+"""Automatic transcript compaction handler for Agent agents.
 
 Monitors cumulative token usage and triggers compaction when approaching limits.
 """

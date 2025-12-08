@@ -425,7 +425,7 @@ async def read(server: str, uri: str) -> list[mcp_types.EmbeddedResource]:
 
 1. **Experiment**: Try `read_embedded` in a branch and test with real resources
 2. **Measure**: Profile memory usage with large resources
-3. **Validate**: Ensure MiniCodex UI and other clients render EmbeddedResource correctly
+3. **Validate**: Ensure Agent UI and other clients render EmbeddedResource correctly
 4. **Decide**: Based on results, choose migration option
 5. **Document**: Update client code to use the simpler interface
 

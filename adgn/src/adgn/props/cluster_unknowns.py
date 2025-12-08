@@ -8,7 +8,7 @@ from uuid import UUID
 from fastmcp.client import Client
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.handler import AbortIf
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
@@ -121,7 +121,7 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
         system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
         input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=system,
                 client=build_client(model),

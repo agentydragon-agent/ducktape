@@ -13,7 +13,7 @@ from fastmcp.client import Client
 from fastmcp.server import FastMCP
 import tiktoken
 
-from adgn.agent.agent import MiniCodex, TranscriptItem
+from adgn.agent.agent import Agent, TranscriptItem
 from adgn.agent.display import OneLineProgressHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
@@ -35,9 +35,9 @@ async def run_prompt_async(
     client: OpenAIModelProto,
     system_prompt: str = "You are a code agent. Be concise.",
 ) -> AgentResult:
-    """Run the prompt using MiniCodex + MCP specs and return an AgentResult.
+    """Run the prompt using Agent + MCP specs and return an AgentResult.
 
-    This is the low-level primitive for running prompts through MCP-backed MiniCodex.
+    This is the low-level primitive for running prompts through MCP-backed Agent.
     Uses quiet single-line progress handler and per-run transcript directory.
     """
     transcript: list[TranscriptItem] = []
@@ -48,11 +48,11 @@ async def run_prompt_async(
             await comp.mount_inproc(name, server)
         # Quiet, single-line progress by default (DisplayEventsHandler available for verbose UI)
         # Per-run transcript directory (logs/ for ad-hoc debugging)
-        run_dir = Path.cwd() / "logs" / "mini_codex" / "agent_runner"
+        run_dir = Path.cwd() / "logs" / "agent" / "agent_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"
         run_dir.mkdir(parents=True, exist_ok=True)
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system=system_prompt,
                 client=client,

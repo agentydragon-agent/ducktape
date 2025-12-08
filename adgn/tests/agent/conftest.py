@@ -17,7 +17,7 @@ import mcp.types
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.events import EventType, ToolCall, ToolCallOutput, UserText
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
@@ -142,7 +142,7 @@ def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]
 
 @pytest.fixture
 def make_test_agent(responses_factory):
-    """Factory to create MiniCodex backed by FakeOpenAIModel with canned responses.
+    """Factory to create Agent backed by FakeOpenAIModel with canned responses.
 
     Returns (agent, fake_client) tuple so tests can inspect the client after run.
 
@@ -162,7 +162,7 @@ def make_test_agent(responses_factory):
             handlers = [BaseHandler()]
         if tool_policy is None:
             tool_policy = RequireAnyTool()
-        agent = await MiniCodex.create(
+        agent = await Agent.create(
             mcp_client=mcp_client, system=system, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
         )
         return agent, client

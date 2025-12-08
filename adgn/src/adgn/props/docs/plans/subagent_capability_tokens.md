@@ -454,7 +454,7 @@ class AgentLoop:
     agent_id: UUID
     task: asyncio.Task
     compositor: Compositor
-    agent_runtime: MiniCodex
+    agent_runtime: Agent
 
 async def start_agent_loop(agent_id: UUID):
     """Start agent execution loop (non-blocking)."""

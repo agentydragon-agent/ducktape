@@ -8,7 +8,7 @@ from fastmcp.client import Client
 from pydantic import BaseModel, Field
 import pygit2
 
-from adgn.agent.agent import MiniCodex
+from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler, SequenceHandler
@@ -183,10 +183,10 @@ class CommitController(BaseHandler):
         return NoAction()
 
 
-async def generate_commit_message_minicodex(
+async def generate_commit_message_agent(
     repo: pygit2.Repository, model: str, *, debug: bool = False, amend: bool = False
 ) -> str:
-    """Run MiniCodex with docker_exec + submit_commit_message MCP servers and return the commit message text."""
+    """Run Agent with docker_exec + submit_commit_message MCP servers and return the commit message text."""
     repo_root = Path(repo.workdir or repo.path).parent
 
     submit_state = SubmitState()
@@ -227,7 +227,7 @@ async def generate_commit_message_minicodex(
             handlers.append(DisplayEventsHandler(write=lambda s: print(s, file=sys.stderr)))
 
         async with Client(comp) as mcp_client:
-            agent = await MiniCodex.create(
+            agent = await Agent.create(
                 mcp_client=mcp_client,
                 system="You are a code agent. Be concise.",
                 client=build_client(model),
