@@ -400,6 +400,7 @@ async def run_critic(
     input_data: CriticInput,
     client: OpenAIModelProto,
     content_root,
+    prompt_optimization_run_id: UUID | None = None,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
@@ -443,7 +444,7 @@ async def run_critic(
             snapshot_slug=input_data.snapshot_slug,
             model=client.model,
             critique_id=None,  # Will be set in Phase 2 if successful
-            prompt_optimization_run_id=input_data.prompt_optimization_run_id,
+            prompt_optimization_run_id=prompt_optimization_run_id,
             files=sorted(str(p) for p in resolved_files),
             files_hash=hash_file_set(resolved_files),
             output=None,  # Will be set in Phase 2

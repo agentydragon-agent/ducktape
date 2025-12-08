@@ -16,10 +16,9 @@ from mcp import types as mcp_types
 from mcp.server.lowlevel.server import InitializationOptions, NotificationOptions
 from mcp.server.session import ServerSession
 from mcp.shared.message import SessionMessage
-from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP, mcp_flat_model
 from adgn.mcp._shared.urls import ANY_URL
 
 logger = logging.getLogger(__name__)
@@ -212,23 +211,14 @@ class NotifyingFastMCP(FlatModelFastMCP):
         title: str | None = None,
         description: str | None = None,
         annotations: Any | None = None,
-        structured_output: bool = True,
-        output_model: type[BaseModel] | None = None,
+        tags: set[str] | None = None,
     ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         """Member-style flat model tool registration.
 
-        Equivalent to using @self.tool(..., flat=True, flat_output_model=...). Provided
-        for discoverability; prefer @self.tool(flat=True) where comfortable.
+        Uses mcp_flat_model() with structured output always enabled and output
+        model inferred from the function's return type annotation.
         """
         return cast(
             Callable[[Callable[..., Any]], Callable[..., Any]],
-            self.tool(
-                name=name,
-                title=title,
-                description=description,
-                annotations=annotations,
-                structured_output=structured_output,
-                flat=True,
-                flat_output_model=output_model,
-            ),
+            mcp_flat_model(self, name=name, title=title, description=description, annotations=annotations, tags=tags),
         )

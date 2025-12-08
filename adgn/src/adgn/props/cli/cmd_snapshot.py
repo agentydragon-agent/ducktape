@@ -101,6 +101,11 @@ async def snapshot_exec(
             typer.echo(f"ERROR: hydrated snapshot is empty: {hydrated.content_root}")
             raise typer.Exit(2) from None
         name = f"adgn_spec_shell_{int(time.time())}"
+        # TODO: Deduplicate Docker container creation logic with docker_env.py and MCP server wiring.
+        # The real duplication is at the MCP layer where critic/grader/optimizer servers manage
+        # their containers. This CLI command manually constructs what those servers build via
+        # ContainerOptions/properties_docker_spec. Consider extracting a shared container factory
+        # or making the MCP container session logic more reusable for interactive/non-MCP cases.
         volumes, _defs = build_critic_volumes(hydrated.content_root, mount_properties=True, workspace_mode="rw")
         container = dclient.containers.run(
             image=PROPERTIES_DOCKER_IMAGE,

@@ -17,13 +17,18 @@
 
 // Normalize a line spec into a LineRange object.
 // Accepts either an int (single line) or a [start,end] array; also accepts objects that already have start_line/end_line.
+// NOTE: end_line must always be present (even if null) for OpenAI strict mode compatibility
 // TODO: Support per-range notes/context: [[10, 20, 'note about this range'], [30, 40, 'note about that range']]
 //       Currently only occurrence-level notes are supported; inline comments are for human readers only.
 //       Per-range notes would help explain why specific line ranges matter within one occurrence.
 local toRange(x) =
-  if std.type(x) == 'number' then { start_line: x }
+  if std.type(x) == 'number' then { start_line: x, end_line: null }
   else if std.type(x) == 'array' && std.length(x) == 2 then { start_line: x[0], end_line: x[1] }
-  else if std.type(x) == 'object' && std.objectHas(x, 'start_line') then x
+  else if std.type(x) == 'object' && std.objectHas(x, 'start_line') then (
+    // Ensure end_line is present for objects too
+    if std.objectHas(x, 'end_line') then x
+    else x + { end_line: null }
+  )
   else error 'Invalid line spec: ' + std.manifestJson(x);
 
 // Normalize an array of mixed line specs to LineRange[]

@@ -13,6 +13,9 @@ from adgn.props.rationale import Rationale
 class LineRange(BaseModel):
     start_line: int = Field(ge=1, description="1-based start line number")
     end_line: int | None = Field(description="1-based end line number (inclusive); None for single-line anchor")
+    # NOTE: No default on end_line for OpenAI strict mode compatibility (used in MCP inputs)
+    # TODO: Decouple DB state and MCP I/O shapes so database models can have sensible defaults
+    # while MCP inputs maintain strict mode compliance
     # TODO: Add optional per-range note/context field
     # Currently notes are only at occurrence level; per-range notes would help explain
     # why specific line ranges matter within a single occurrence (e.g., "definition site"

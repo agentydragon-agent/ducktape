@@ -22,7 +22,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
                 MakeCall(
                     "resources",
                     "read",
-                    ResourcesReadArgs(server="docker", uri="resource://container.info", max_bytes=1024),
+                    ResourcesReadArgs(server="docker", uri="resource://container.info", start_offset=0, max_bytes=1024),
                 ),
                 AssistantMessage("ok"),
             ]

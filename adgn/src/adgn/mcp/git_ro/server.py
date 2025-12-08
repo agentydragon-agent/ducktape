@@ -77,9 +77,7 @@ def get_oid(obj: Any):
 class StatusInput(BaseModel):
     """Input model for git_status with optional pagination."""
 
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(), description="Pagination for status entries (limit<=5000)"
-    )
+    list_slice: ListSlice = Field(description="Pagination for status entries (limit<=5000)")
 
 
 class DiffFormat(StrEnum):
@@ -89,47 +87,36 @@ class DiffFormat(StrEnum):
 
 
 class DiffInput(BaseModel):
-    format: DiffFormat = Field(default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat"')
-    staged: bool = Field(default=False, description="If true, diff --cached (staged changes)")
+    format: DiffFormat = Field(description='Output format: "patch" | "name-status" | "stat"')
+    staged: bool = Field(description="If true, diff --cached (staged changes)")
     unified: int = Field(
-        default=0,
-        ge=0,
-        le=1000,
-        description="Context lines (-U<N>) for patch format (0..1000; 0 shows only headers/hunks)",
+        ge=0, le=1000, description="Context lines (-U<N>) for patch format (0..1000; 0 shows only headers/hunks)"
     )
-    rev_a: str | None = Field(default=None, description="Left side rev for range diff (e.g., HEAD^)")
-    rev_b: str | None = Field(default=None, description="Right side rev for range diff (e.g., HEAD)")
-    paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit diff")
-    find_renames: bool = Field(default=True, description="Detect renames (-M)")
-    slice: TextSlice = Field(
-        default_factory=TextSlice, description="Pagination for patch output (format=patch; max_chars<=500k)"
-    )
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat; limit<=5000)"
-    )
+    rev_a: str | None = Field(description="Left side rev for range diff (e.g., HEAD^)")
+    rev_b: str | None = Field(description="Right side rev for range diff (e.g., HEAD)")
+    paths: list[str] | None = Field(description="Optional pathspecs to limit diff")
+    find_renames: bool = Field(description="Detect renames (-M)")
+    slice: TextSlice = Field(description="Pagination for patch output (format=patch; max_chars<=500k)")
+    list_slice: ListSlice = Field(description="Pagination for list outputs (name-status/stat; limit<=5000)")
 
 
 class LogInput(BaseModel):
-    rev: str = Field(default="HEAD", description="Revision or range (e.g., HEAD, HEAD~10..HEAD)")
-    max_count: int = Field(default=50, description="Maximum number of entries")
-    oneline: bool = Field(default=True, description="Format each commit as one line")
-    slice: TextSlice = Field(default_factory=TextSlice, description="Pagination controls for large outputs")
+    rev: str = Field(description="Revision or range (e.g., HEAD, HEAD~10..HEAD)")
+    max_count: int = Field(description="Maximum number of entries")
+    oneline: bool = Field(description="Format each commit as one line")
+    slice: TextSlice = Field(description="Pagination controls for large outputs")
 
 
 class ShowInput(BaseModel):
     object: str = Field(description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content")
-    format: DiffFormat = Field(
-        default=DiffFormat.PATCH, description='Output format: "patch" | "name-status" | "stat" (patch for blobs)'
-    )
-    slice: TextSlice = Field(default_factory=TextSlice, description="Pagination for patch/blob text outputs")
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(), description="Pagination for list outputs (name-status/stat)"
-    )
+    format: DiffFormat = Field(description='Output format: "patch" | "name-status" | "stat" (patch for blobs)')
+    slice: TextSlice = Field(description="Pagination for patch/blob text outputs")
+    list_slice: ListSlice = Field(description="Pagination for list outputs (name-status/stat)")
 
 
 class RevParseInput(BaseModel):
-    arg: str = Field(default="HEAD", description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
-    short: bool = Field(default=False, description="If true, shorten OIDs")
+    arg: str = Field(description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
+    short: bool = Field(description="If true, shorten OIDs")
 
 
 ## moved to formatting.py
@@ -141,33 +128,31 @@ class RevParseResult(BaseModel):
 
 
 class LsFilesInput(BaseModel):
-    cached: bool = Field(default=False, description="List index entries (same as non-cached here); kept for parity")
-    list_slice: ListSlice = Field(default_factory=lambda: ListSlice(), description="Pagination controls for file lists")
+    cached: bool = Field(description="List index entries (same as non-cached here); kept for parity")
+    list_slice: ListSlice = Field(description="Pagination controls for file lists")
 
 
 class BranchListInput(BaseModel):
-    remote: bool = Field(default=False, description="List remote branches instead of local")
-    list_slice: ListSlice = Field(
-        default_factory=lambda: ListSlice(), description="Pagination controls for branch lists"
-    )
+    remote: bool = Field(description="List remote branches instead of local")
+    list_slice: ListSlice = Field(description="Pagination controls for branch lists")
 
 
 # Structured diff listing inputs/outputs
 class DiffListInput(BaseModel):
-    staged: bool = Field(default=False, description="If true, examine staged (index) changes; else worktree")
-    paths: list[str] | None = Field(default=None, description="Optional pathspecs to limit the diff")
-    find_renames: bool = Field(default=True, description="Detect renames (diff.find_similar)")
-    list_slice: ListSlice = Field(default_factory=lambda: ListSlice(), description="Pagination controls for file lists")
+    staged: bool = Field(description="If true, examine staged (index) changes; else worktree")
+    paths: list[str] | None = Field(description="Optional pathspecs to limit the diff")
+    find_renames: bool = Field(description="Detect renames (diff.find_similar)")
+    list_slice: ListSlice = Field(description="Pagination controls for file lists")
 
 
 ## moved to formatting.py
 
 
 class LogEntriesInput(BaseModel):
-    rev: str = Field(default="HEAD", description="Revision to start from (e.g., HEAD)")
-    offset: int = Field(default=0, ge=0, description="Number of commits to skip (pagination offset)")
-    limit: int = Field(default=50, gt=0, le=1000, description="Max commits to return")
-    include_message: bool = Field(default=False, description="Include full commit message body")
+    rev: str = Field(description="Revision to start from (e.g., HEAD)")
+    offset: int = Field(ge=0, description="Number of commits to skip (pagination offset)")
+    limit: int = Field(gt=0, le=1000, description="Max commits to return")
+    include_message: bool = Field(description="Include full commit message body")
 
 
 class CommitEntry(BaseModel):

@@ -152,8 +152,12 @@ async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None,
     # Load unknown issues from grader runs in database, partitioned by snapshot
     by_spec: dict[str, list[UnknownIssue]] = defaultdict(list)
     with get_session() as session:
-        # Join GraderRun with Critique to avoid N+1 queries
-        results = session.query(GraderRun, Critique).join(Critique, GraderRun.critique_id == Critique.id).all()
+        results = (
+            session.query(GraderRun, Critique)
+            .join(Critique, GraderRun.critique_id == Critique.id)
+            .filter(GraderRun.output.is_not(None))
+            .all()
+        )
         for db_run, critique in results:
             by_spec[db_run.snapshot_slug].extend(_extract_unknowns_from_run(db_run, critique))
 
@@ -162,15 +166,9 @@ async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None,
     if out_dir is not None:
         root: Path = Path(out_dir).expanduser().resolve()
     else:
-        # Inline cluster_output_dir (only called here)
-        timestamp = format_timestamp_session()
-        root = ctx.base_dir / "cluster" / timestamp
+        root = ctx.base_dir / "cluster" / format_timestamp_session()
     root.mkdir(parents=True, exist_ok=True)
 
     # Run clustering tasks in parallel (one per snapshot)
-    tasks = []
-    for spec, items in by_spec.items():
-        out_spec = root / spec
-        tasks.append(_cluster_snapshot(items, out_spec, model))
-    await asyncio.gather(*tasks)
+    await asyncio.gather(*(_cluster_snapshot(items, root / spec, model) for spec, items in by_spec.items()))
     return root

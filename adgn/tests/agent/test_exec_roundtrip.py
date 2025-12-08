@@ -8,9 +8,10 @@ from adgn.agent.agent import AgentResult, MiniCodex
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
+from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.client_factory import build_client
+from tests.conftest import make_exec_input
 
 # Use /bin/echo -n for portability and to avoid trailing newline
 ECHO_CMD = ["/bin/echo", "-n", "hello"]
@@ -21,7 +22,7 @@ SERVER_NAME = "box"
 async def _assert_exec_echo(sess) -> None:
     # Call via compositor using namespaced tool key
     stub = ToolStub(sess, build_mcp_function(SERVER_NAME, "exec"), BaseExecResult)
-    res = await stub(ExecInput(cmd=ECHO_CMD, timeout_ms=10_000))
+    res = await stub(make_exec_input(ECHO_CMD))
     assert isinstance(res.exit, Exited)
     assert res.exit.exit_code == 0
     assert (res.stdout or "") == "hello"

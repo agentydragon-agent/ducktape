@@ -50,7 +50,7 @@ class PresetInfo(BaseModel):
 class CreateAgentInput(BaseModel):
     """Input for create_agent tool."""
 
-    preset: str | None = Field(default=None, description="Preset name to use (default: 'default')")
+    preset: str | None = Field(description="Preset name to use (None = use default preset)")
 
 
 class CreateAgentOutput(BaseModel):
@@ -138,14 +138,14 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> Notifying
         presets = discover_presets()
         return [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
         """Create a new agent from a preset and boot it."""
         container = await registry.create_agent(preset=input.preset)
         await mcp.broadcast_resource_updated(AGENTS_LIST_URI)
         return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def delete_agent(input: DeleteAgentInput) -> DeleteAgentOutput:
         """Delete an agent."""
         await registry.shutdown_agent(input.agent_id)
@@ -153,7 +153,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> Notifying
         await mcp.broadcast_resource_updated(AGENTS_LIST_URI)
         return DeleteAgentOutput(id=input.agent_id, status="deleted")
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
         """Boot an existing agent from the database."""
         container = await registry.boot_agent(input.agent_id)

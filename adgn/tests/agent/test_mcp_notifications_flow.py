@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
-
+from fastmcp import Context
 from fastmcp.server import FastMCP
-from fastmcp.server.context import Context
 from pydantic import BaseModel, ConfigDict
 import pytest
 
@@ -12,6 +10,7 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import parse_any_url
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
@@ -23,13 +22,17 @@ from tests.support.responses import ResponsesFactory
 
 
 class NotifyPolicyInput(BaseModel):
-    uri: str = "notifier://policy.py"
+    uri: str
     model_config = ConfigDict(extra="forbid")
 
 
 class NotifyPolicyOutput(BaseModel):
     ok: bool
     uri: str
+    model_config = ConfigDict(extra="forbid")
+
+
+class PrimeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
@@ -42,17 +45,11 @@ class _NotifierServer(FastMCP):
     def __init__(self) -> None:
         super().__init__(name="notifier", instructions="Test notifier server")
 
-        @mcp_flat_model(
-            self,
-            name="notify_policy",
-            title="Notify policy",
-            description="Emit a ResourceUpdated notification",
-            structured_output=True,
-        )
-        async def notify_policy(input: NotifyPolicyInput, ctx: Context) -> NotifyPolicyOutput:
+        @mcp_flat_model(self)
+        async def notify_policy(input: NotifyPolicyInput, context: Context) -> NotifyPolicyOutput:
             # Protocol-level notification: emit ResourceUpdatedNotification from server to client
-            assert ctx.request_context is not None, "request_context must be present in tool handler"
-            sess = ctx.request_context.session  # low-level ServerSession
+            assert context.request_context is not None, "request_context must be present in tool handler"
+            sess = context.request_context.session  # low-level ServerSession
             await sess.send_resource_updated(parse_any_url(input.uri))
             return NotifyPolicyOutput(ok=True, uri=input.uri)
 
@@ -80,7 +77,7 @@ async def test_notifications_pre_sampling_out_of_band(
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Prime a protocol-level notification before sampling by calling the server tool once
         stub = ToolStub(mcp_client, build_mcp_function("notifier", "notify_policy"), NotifyPolicyOutput)
-        await stub(NotifyPolicyInput())
+        await stub(NotifyPolicyInput(uri="notifier://policy.py"))
 
         captured: list[ResponsesRequest] = []
 
@@ -129,7 +126,7 @@ async def test_notifications_within_turn_from_tool(
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
             tool_call_result: ResponsesResult = responses_factory.make_mcp_tool_call(
-                "notifier", "notify_policy", NotifyPolicyInput()
+                "notifier", "notify_policy", NotifyPolicyInput(uri="notifier://policy.py")
             )
             return tool_call_result
         # Second (and later) model output: nothing else to do
@@ -161,8 +158,8 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
     server = NotifyingFastMCP(name="notifier", instructions="Notifier test")
 
     @server.tool()
-    async def prime() -> dict[str, Any]:
-        return {"ok": True}
+    async def prime(input: PrimeInput) -> SimpleOk:
+        return SimpleOk()
 
     # no server specs needed for this test
     captured: list[ResponsesRequest] = []

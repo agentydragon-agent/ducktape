@@ -6,11 +6,10 @@ from typing import Annotated, Literal
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.agent.events import AssistantText, ToolCall, UserText
+from adgn.agent.events import ToolCall, UserText
 from adgn.agent.models.policy_error import PolicyTestsSummary
 from adgn.agent.models.proposal_status import ProposalStatus
 from adgn.agent.server.bus import MimeType
-from adgn.mcp.snapshots import SamplingSnapshot  # structured snapshot model (module-level)
 
 # --------------------------
 # Core state
@@ -86,13 +85,6 @@ class FunctionCallOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ReasoningChunk(BaseModel):
-    type: Literal["reasoning"] = "reasoning"
-    text: str
-
-    model_config = ConfigDict(extra="forbid")
-
-
 class UiMessagePayload(BaseModel):
     mime: MimeType = MimeType.MARKDOWN
     content: str
@@ -110,38 +102,20 @@ class UiEndTurnEvt(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-TranscriptItem = Annotated[
-    UserText | AssistantText | ToolCall | FunctionCallOutput | ReasoningChunk | UiMessageEvt | UiEndTurnEvt,
-    Field(discriminator="type"),
-]
-
 ## Client -> Server message types are no longer used; REST handles mutations.
 
 # --------------------------
 # Server -> Client messages
 # --------------------------
-# NOTE: WebSocket has been replaced by MCP. Many of these event types are
-# now dead code (only used in send_payload which is a no-op). They're kept
-# for internal state management (reducer, snapshots) where still needed.
+# NOTE: WebSocket has been replaced by MCP. These event types are used
+# for internal state management (reducer).
 
 
-class Snapshot(BaseModel):
-    type: Literal["snapshot"] = "snapshot"
-    session_state: SessionState
-    approval_policy: ApprovalPolicyInfo | None = None
-    sampling: SamplingSnapshot | None = None
-    model_config = ConfigDict(extra="forbid")
-
-
-# ServerMessage union - Used for reducer and HTTP snapshot endpoint
-# Dead WebSocket event types removed in Phase 6 cleanup
+# ServerMessage union - Used for reducer
 ServerMessage = Annotated[
-    Snapshot  # HTTP snapshot endpoint
-    | UserText  # Reducer
-    | AssistantText  # Reducer
+    UserText  # Reducer
     | ToolCall  # Reducer
     | FunctionCallOutput  # Reducer
-    | ReasoningChunk  # Transcript items
     | UiMessageEvt  # Reducer
     | UiEndTurnEvt,  # Reducer
     Field(discriminator="type"),

@@ -147,13 +147,21 @@ class ExecInput(BaseModel):
     'sh -lc <cmd>' when providing a single string command assembled server-side.
 
     Note: TTY is not allocated for processes to ensure stdout/stderr separation.
+
+    OpenAI strict mode compatible: all fields are required (no defaults).
+    - cmd: Command to run
+    - cwd: Working directory (None = container default)
+    - env: Environment variables (None = inherit)
+    - user: Username (None = container default)
+    - shell: Whether to run via sh -lc
+    - timeout_ms: Timeout in milliseconds
     """
 
     cmd: list[str] = Field(description="Command to run; pass list to avoid shell quoting issues")
-    cwd: Path | None = Field(default=None, description="Working directory inside container")
-    env: list[EnvVar] | None = Field(default=None, description="Environment variables for the process")
-    user: str | None = Field(default=None, description="Username inside container")
-    shell: bool = Field(default=False, description="Run via sh -lc <cmd>")
+    cwd: Path | None = Field(description="Working directory inside container (None = container default)")
+    env: list[EnvVar] | None = Field(description="Environment variables for the process (None = inherit)")
+    user: str | None = Field(description="Username inside container (None = container default)")
+    shell: bool = Field(description="Run via sh -lc <cmd>")
     timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)")
 
     model_config = ConfigDict(extra="forbid")
@@ -162,16 +170,20 @@ class ExecInput(BaseModel):
     def from_env_dict(
         cls,
         cmd: list[str],
+        timeout_ms: int,
         *,
         env: dict[str, str] | None = None,
         cwd: Path | None = None,
         user: str | None = None,
         shell: bool = False,
-        timeout_ms: int,
     ) -> ExecInput:
-        """Convenience constructor accepting env as dict."""
+        """Convenience constructor accepting env as dict.
+
+        Note: timeout_ms is positional to match strict mode requirement.
+        Other fields have defaults for convenience in this helper.
+        """
         env_list = [EnvVar(name=k, value=v) for k, v in env.items()] if env else None
-        return cls(cmd=cmd, env=env_list, cwd=cwd, user=user, shell=shell, timeout_ms=timeout_ms)
+        return cls(cmd=cmd, cwd=cwd, env=env_list, user=user, shell=shell, timeout_ms=timeout_ms)
 
     def env_dict(self) -> dict[str, str]:
         """Convert env to dict for internal use (e.g., Docker client)."""
@@ -267,31 +279,6 @@ def render_raw_to_result(
     exit_status = TimedOut() if timed_out else Exited(exit_code=exit_code if exit_code is not None else 0)
 
     return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, duration_ms)
-
-
-def read_stream_limited_sync(fh, store_limit: int, chunk_size: int = 8192) -> StreamReadResult:
-    """Read a blocking binary stream to EOF, storing at most store_limit bytes.
-
-    - Always drains to EOF to compute total_bytes
-    - Returns stored_text (UTF-8), truncated flag, and total_bytes
-    """
-    assert store_limit >= 0
-    stored = bytearray()
-    total = 0
-    while True:
-        buf = fh.read(chunk_size)
-        if not buf:
-            break
-        total += len(buf)
-        # Store only up to the cap
-        if len(stored) < store_limit:
-            # How many bytes from this chunk can we still store?
-            remaining = store_limit - len(stored)
-            if remaining > 0:
-                stored.extend(buf[:remaining])
-        # else: we still need to drain to count total
-    truncated = total > store_limit
-    return StreamReadResult(stored_bytes=bytes(stored), truncated=truncated, total_bytes=total)
 
 
 async def read_stream_limited_async(

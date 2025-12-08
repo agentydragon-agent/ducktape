@@ -103,7 +103,7 @@ def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit"
     """
     mcp = NotifyingFastMCP(name, instructions="Final result submission for linting run")
 
-    @mcp.flat_model(structured_output=True)
+    @mcp.flat_model()
     async def submit_result(input: LintSubmitPayload) -> SimpleOk:
         """Submit final linter result."""
         state.result = input

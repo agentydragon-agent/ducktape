@@ -11,13 +11,13 @@ import pygit2
 
 
 class ListSlice(BaseModel):
-    offset: int = Field(default=0, ge=0, description="Start index of the window")
-    limit: int = Field(default=100, ge=0, description="Max items to return (0 = unbounded)")
+    offset: int = Field(ge=0, description="Start index of the window")
+    limit: int = Field(ge=0, description="Max items to return (0 = unbounded)")
 
 
 class TextSlice(BaseModel):
-    offset_chars: int = Field(default=0, ge=0, description="Start character offset")
-    max_chars: int = Field(default=0, ge=0, description="Max characters to return (0 = all)")
+    offset_chars: int = Field(ge=0, description="Start character offset")
+    max_chars: int = Field(ge=0, description="Max characters to return (0 = all)")
 
 
 class TextPage(BaseModel):
@@ -93,7 +93,7 @@ class ChangedFileItem(BaseModel):
     """
 
     path: Path = Field(description="New/current path (destination for renames)")
-    old_path: Path | None = Field(default=None, description="Old path (for renames only)")
+    old_path: Path | None = Field(description="Old path (for renames only)")
     status: int = Field(description="Delta status (pygit2.GIT_DELTA_*)")
 
 
@@ -138,7 +138,7 @@ class StatItem(BaseModel):
     """
 
     path: Path
-    old_path: Path | None = Field(default=None, description="Old path (for renames only)")
+    old_path: Path | None = Field(description="Old path (for renames only)")
     additions: int
     deletions: int
 

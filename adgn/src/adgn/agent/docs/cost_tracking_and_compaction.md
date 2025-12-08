@@ -764,7 +764,7 @@ compaction_handler = CompactionHandler(
 
 - OpenAI pricing: https://openai.com/api/pricing/
 - Model metadata: `src/adgn/openai_utils/model_metadata.py`
-- Cost calculation: `src/adgn/openai_utils/cost.py`
+- Cost calculation: Database `run_costs` view in `src/adgn/props/db/models.py` (aggregates from events table)
 - Compaction handler: `src/adgn/agent/compaction.py`
 - Loop control: `src/adgn/agent/loop_control.py`
 - OpenAI SDK types: `/code/github.com/openai/openai-python/src/openai/types/completion_usage.py`

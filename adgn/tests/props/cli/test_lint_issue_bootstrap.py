@@ -13,27 +13,19 @@ from adgn.agent.agent import MiniCodex
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
 from adgn.props.lint_issue import LintSubmitState, make_linter_handlers
 from adgn.props.models.true_positive import Occurrence
 from tests.conftest import make_container_opts
 from tests.llm.support.openai_mock import make_mock
-from tests.support.steps import AssistantMessage as StepAssistantMessage, MakeCall
+from tests.support.steps import AssistantMessage as StepAssistantMessage, DockerExecCall
 
 
 @pytest.fixture
 def lint_bootstrap_steps():
-    """Create steps for linter handlers bootstrap test.
-
-    NOTE: Uses typed ExecInput model for docker_exec arguments to ensure
-    correct validation and serialization for the MCP runtime server.
-    """
-    return [
-        MakeCall("docker", "docker_exec", ExecInput(cmd=["bash", "-lc", "echo from_llm"], timeout_ms=10_000)),
-        StepAssistantMessage("FINAL"),
-    ]
+    """Create steps for linter handlers bootstrap test."""
+    return [DockerExecCall(["bash", "-lc", "echo from_llm"], tool_name="docker_exec"), StepAssistantMessage("FINAL")]
 
 
 @pytest.fixture

@@ -16,7 +16,6 @@ from unittest.mock import patch
 from hamcrest import assert_that, equal_to, has_length, has_properties, instance_of, not_none
 import pytest
 
-from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
 from adgn.props.critic.models import CriticInput
@@ -34,7 +33,7 @@ from adgn.props.prompt_optimizer import (
 )
 from adgn.props.runs_context import RunsContext
 from tests.support.responses import _StepRunner
-from tests.support.steps import CheckThenCall, ExtractThenCall, Finish, MakeCall
+from tests.support.steps import CheckThenCall, DockerExecCall, ExtractThenCall, Finish, MakeCall
 
 logger = logging.getLogger(__name__)
 
@@ -75,13 +74,9 @@ def test_specimen(test_db):
 def po_agent_steps():
     """Declarative steps for PO agent - prompt optimization workflow."""
     return [
-        MakeCall(
-            "docker",
-            "exec",
-            ExecInput(
-                cmd=["sh", "-c", "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt"],
-                timeout_ms=30000,
-            ),
+        DockerExecCall(
+            ["sh", "-c", "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt"],
+            timeout_ms=30000,
         ),
         CheckThenCall(
             "docker_exec", "prompt_eval", "upsert_prompt", UpsertPromptInput(file_path="/workspace/prompt-v1.txt")

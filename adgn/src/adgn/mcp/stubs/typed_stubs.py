@@ -28,14 +28,13 @@ def _structured_content(result: CallToolResult, *, tool_name: str) -> dict[str, 
 class ToolStub[T_Out]:
     """Awaitable callable bound to a (session, tool_name, out_type)."""
 
-    def __init__(self, session: Client, name: str, out_type: type[T_Out], *, exclude_none: bool = True) -> None:
+    def __init__(self, session: Client, name: str, out_type: type[T_Out]) -> None:
         self._session = session
         self._name = name
         self._out_type = out_type
-        self._exclude_none = exclude_none
 
     async def __call__(self, payload: T_In) -> T_Out:
-        args = payload.model_dump(exclude_none=self._exclude_none)
+        args = payload.model_dump(exclude_none=False)
         result = await self._session.call_tool(name=self._name, arguments=args)
 
         # FastMCP wraps non-object schemas (unions, primitives) in {"result": ...}
@@ -108,20 +107,19 @@ class TypedClient:
       res = await client.sandbox_exec(ExecArgs(...))
     """
 
-    def __init__(self, session: Client, *, exclude_none: bool = True) -> None:
+    def __init__(self, session: Client) -> None:
         self._session = session
-        self._exclude_none = exclude_none
         self._models: dict[str, ToolModels] = {}
 
     def stub(self, name: str, out_type: type[T_Out]) -> ToolStub[T_Out]:
-        return ToolStub(self._session, name, out_type, exclude_none=self._exclude_none)
+        return ToolStub(self._session, name, out_type)
 
     @property
     def models(self) -> dict[str, ToolModels]:
         return self._models
 
     @classmethod
-    def from_server(cls, server: FastMCP, session: Client, *, exclude_none: bool = True) -> TypedClient:
+    def from_server(cls, server: FastMCP, session: Client) -> TypedClient:
         """Create a TypedClient introspecting FastMCP's tool registry.
 
         Requires a server created via FastMCP. Uses server._tool_manager.list_tools()
@@ -139,7 +137,7 @@ class TypedClient:
             raise RuntimeError("Server tool manager does not expose _tools") from exc
         tools = list(tools_by_name.values())
 
-        client = cls(session, exclude_none=exclude_none)
+        client = cls(session)
         for t in tools:
             try:
                 fm = t.fn_metadata  # type: ignore[attr-defined]
@@ -196,13 +194,12 @@ class TypedClient:
         models = self._models.get(name)
         if not models:
             raise AttributeError(name)
-        exclude_none = self._exclude_none
         session = self._session
 
         async def _err(payload: BaseModel) -> str:
             if models.Input is not None and not isinstance(payload, models.Input):
                 raise TypeError(f"{name} expects {models.Input.__name__}, got {type(payload).__name__}")
-            args_dict = payload.model_dump(exclude_none=exclude_none)
+            args_dict = payload.model_dump(exclude_none=False)
             # Call; FastMCP raises on tool error by default. Capture and return message.
             try:
                 raw = await session.call_tool(name=name, arguments=args_dict)

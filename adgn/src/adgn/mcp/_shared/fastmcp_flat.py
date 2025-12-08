@@ -5,17 +5,21 @@ import functools
 import inspect
 import json
 import logging
-from typing import Annotated, Any, TypeVar, cast, get_args, get_origin, get_type_hints
+from types import UnionType
+from typing import Annotated, Any, TypeVar, Union, cast, get_args, get_origin, get_type_hints
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
+from fastmcp.tools.tool import FunctionTool
 from mcp import types as mcp_types
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 from pydantic_core import PydanticUndefined
 
 logger = logging.getLogger(__name__)
 
 InputModelT = TypeVar("InputModelT", bound=BaseModel)
+OutputModelT = TypeVar("OutputModelT")
 RegisterTool = Callable[[Callable[..., Any], dict[str, Any]], Callable[..., Any]]
 
 
@@ -327,42 +331,6 @@ class FlatModelFastMCP(FastMCP):
         structured_output: bool = True
         model_config = ConfigDict(extra="ignore")
 
-    def tool(self, *args: Any, flat: bool = False, **kwargs: Any):  # type: ignore[misc]
-        """Wrapper around FastMCP.tool with optional flat-model support.
-
-        Args:
-            flat: If True, enable flat-model mode (output model inferred from return type)
-            flat_output_model: Optional explicit output model (overrides inference from return annotation)
-            **kwargs: Other tool arguments passed through to FastMCP.tool
-        """
-        if not flat:
-            return super().tool(*args, **kwargs)  # type: ignore[misc]
-
-        # Extract flat_output_model from kwargs if provided
-        flat_output_model = kwargs.pop("flat_output_model", None)
-        opts = self._ToolOpts.model_validate(kwargs or {})
-
-        def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
-            # Only pass kwargs accepted by FastMCP.tool overload (drop unsupported ones)
-            base_tool = super(FlatModelFastMCP, self).tool  # type: ignore[misc]
-            filtered = {k: v for k, v in mcp_tool_kwargs.items() if v is not None}
-            decorator = base_tool(**filtered)
-            result: Callable[..., Any] = decorator(fn)  # register the wrapper
-            return result
-
-        return cast(
-            Callable[[Callable[..., Any]], Callable[..., Any]],
-            _flat_model_decorator(
-                _register,
-                name=opts.name,
-                title=opts.title,
-                description=opts.description,
-                annotations=opts.annotations,
-                structured_output=opts.structured_output,
-                output_model=flat_output_model,  # Use provided output_model or infer from return type
-            ),
-        )
-
     async def _call_tool_mcp(
         self, key: str, arguments: dict[str, Any]
     ) -> list[mcp_types.ContentBlock] | tuple[list[mcp_types.ContentBlock], dict[str, Any]] | mcp_types.CallToolResult:
@@ -396,38 +364,148 @@ def mcp_flat_model(
     name: str | None = None,
     title: str | None = None,
     description: str | None = None,
-    annotations: Any | None = None,
-    structured_output: bool = True,
-    output_model: type[BaseModel] | None = None,
-):
-    if isinstance(mcp, FlatModelFastMCP):
-        return cast(
-            Callable[[Callable[..., Any]], Callable[..., Any]],
-            mcp.tool(
-                name=name,
-                title=title,
-                description=description,
-                annotations=annotations,
-                structured_output=structured_output,
-                flat=True,
-                flat_output_model=output_model,
-            ),
+    annotations: ToolAnnotations | None = None,
+    tags: set[str] | None = None,
+) -> Callable[[Callable[..., OutputModelT]], Callable[[InputModelT], OutputModelT]]:
+    """Decorator for flat-model tools that flattens Pydantic model parameters.
+
+    Structured output is always enabled for flat-model tools.
+    Output model is always read from the function's return type annotation.
+
+    ═══════════════════════════════════════════════════════════════════════════════
+    CRITICAL: NO SCHEMA POST-PROCESSING OR MONKEYPATCHING ALLOWED HERE OR ANYWHERE.
+    ═══════════════════════════════════════════════════════════════════════════════
+
+    Pydantic models MUST generate correct JSON schemas directly via model_config.
+    FastMCP MUST accept and transmit those schemas as-is without modification.
+
+    If schemas don't match OpenAI strict mode requirements (additionalProperties, etc.),
+    fix the ROOT CAUSE:
+      - Pydantic model definitions (model_config, Field annotations, etc.)
+      - FastMCP's schema generation logic
+
+    DO NOT fix by massaging/patching/monkeypatching schemas after generation.
+    ═══════════════════════════════════════════════════════════════════════════════
+    """
+
+    def outer(fn: Callable[[InputModelT], OutputModelT]) -> Callable[[InputModelT], OutputModelT]:
+        if not inspect.isfunction(fn):
+            raise TypeError("@mcp_flat_model requires a plain function (not a callable object)")
+
+        # Extract signature and resolve input model
+        payload_param, context_param, context_name = _extract_signature_params(fn)
+        hints = _collect_type_hints(fn)
+        globs = fn.__globals__
+
+        model_in = _resolve_base_model(
+            name=payload_param.name,
+            annotation=payload_param.annotation,
+            hints=hints,
+            globals_ns=globs,
+            error_prefix="Parameter",
         )
 
-    def _register(fn: Callable[..., Any], mcp_tool_kwargs: dict[str, Any]) -> Callable[..., Any]:
-        decorator = cast(Callable[[Callable[..., Any]], Callable[..., Any]], mcp.tool(**mcp_tool_kwargs))
-        decorator(fn)  # register the wrapper
-        return fn
+        # Resolve output model from function signature
+        sig = inspect.signature(fn)
+        model_out = hints.get("return", sig.return_annotation)
 
-    return cast(
-        Callable[[Callable[..., Any]], Callable[..., Any]],
-        _flat_model_decorator(
-            _register,
-            name=name,
+        # Structured output is always enabled, so return annotation is required
+        if model_out is inspect.Signature.empty:
+            raise TypeError(
+                "Return annotation is required for flat-model tools (structured output is always enabled). "
+                f"Function {fn.__name__!r} has no return type annotation."
+            )
+
+        if isinstance(model_out, str):
+            try:
+                model_out = globs[model_out]
+            except Exception as exc:
+                raise NotImplementedError(
+                    "mcp_flat_model requires real types for output; string annotations not resolved. "
+                    "Move models to module scope."
+                ) from exc
+
+        # Rebuild models to resolve forward references
+        _ensure_model_rebuild(model_in, kind="Input")
+
+        rt = model_out
+        if get_origin(rt) is Annotated:
+            rt = get_args(rt)[0]
+        if isinstance(rt, type) and issubclass(rt, BaseModel):
+            _ensure_model_rebuild(rt, kind="Output")
+
+        # Build the flat wrapper function
+        wrapper = _build_flat_wrapper(
+            fn, model_in=model_in, model_out=model_out, context_param=context_param, context_name=context_name
+        )
+
+        # Apply flattened signature to wrapper (for introspection)
+        _apply_wrapper_metadata(wrapper, model_in=model_in, model_out=model_out, context_param=context_param)
+
+        # Generate input schema DIRECTLY from the Pydantic model
+        # This preserves model_config (extra="forbid" -> additionalProperties: false)
+        input_schema = model_in.model_json_schema()
+
+        # Generate output schema (structured output is always enabled, so this is required)
+        output_schema: dict[str, Any]
+
+        # Check if output is a union type (for wrapping)
+        is_union = get_origin(model_out) in (Union, UnionType)
+        if get_origin(model_out) is Annotated:
+            base_type = get_args(model_out)[0]
+            is_union = get_origin(base_type) in (Union, UnionType)
+
+        if isinstance(model_out, type) and issubclass(model_out, BaseModel):
+            # Direct BaseModel subclass
+            output_schema = model_out.model_json_schema()
+        elif get_origin(model_out) is Annotated:
+            # Annotated type - check if base is BaseModel
+            base_type = get_args(model_out)[0]
+            if isinstance(base_type, type) and issubclass(base_type, BaseModel):
+                output_schema = base_type.model_json_schema()
+            else:
+                # Use TypeAdapter for non-BaseModel annotated types
+                output_schema = TypeAdapter(model_out).json_schema()
+        else:
+            # Fallback: use TypeAdapter for unions and other types
+            output_schema = TypeAdapter(model_out).json_schema()
+
+        # FastMCP wraps union types in {"result": ...} for MCP protocol compatibility
+        if is_union:
+            # Extract $defs from union schema (if present) and hoist to root level
+            defs = output_schema.pop("$defs", None)
+
+            # Wrap the union schema in an object with a "result" property
+            wrapped_schema = {
+                "type": "object",
+                "properties": {"result": output_schema},
+                "required": ["result"],
+                "x-fastmcp-wrap-result": True,
+            }
+
+            # Add $defs at root level so $ref pointers work correctly
+            if defs:
+                wrapped_schema["$defs"] = defs
+
+            output_schema = wrapped_schema
+
+        # Create FunctionTool directly with our schema (bypasses FastMCP introspection)
+        tool = FunctionTool(
+            fn=wrapper,
+            name=name or fn.__name__,
             title=title,
-            description=description,
+            description=description or inspect.getdoc(fn),
+            parameters=input_schema,
+            output_schema=output_schema,
             annotations=annotations,
-            structured_output=structured_output,
-            output_model=output_model,
-        ),
-    )
+            tags=tags or set(),
+            enabled=True,
+        )
+
+        # Register the tool with FastMCP's tool manager
+        mcp._tool_manager.add_tool(tool)  # type: ignore[attr-defined]
+
+        # Return wrapper (with flattened signature) for proper introspection
+        return cast(Callable[[InputModelT], OutputModelT], wrapper)
+
+    return outer

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from adgn.mcp.git_ro.server import LogInput, StatusInput, TextPage, TextSlice
+from adgn.mcp.git_ro.formatting import ListSlice, TextSlice
+from adgn.mcp.git_ro.server import LogInput, StatusInput, TextPage
 
 
 async def test_git_status_basic(typed_git_ro) -> None:
     async with typed_git_ro() as client:
-        sp = await client.git_status(StatusInput())
+        sp = await client.git_status(StatusInput(list_slice=ListSlice(offset=0, limit=100)))
         assert isinstance(sp.entries, list)
 
 

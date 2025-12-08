@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import os
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
+from adgn.mcp.exec.models import EnvVar, ExecInput
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
     AssistantMessageOut,
@@ -80,6 +82,37 @@ class ResponsesFactory:
     def make_mcp_tool_call(self, server: str, tool: str, arguments: BaseModel) -> ResponsesResult:
         """Create tool call response for MCP server/tool with automatic naming."""
         return self.make(self.mcp_tool_call(server, tool, arguments))
+
+    def docker_exec(
+        self,
+        cmd: list[str],
+        *,
+        timeout_ms: int = 30000,
+        cwd: Path | None = None,
+        env: list[dict[str, str]] | None = None,
+        user: str | None = None,
+        shell: bool = False,
+        tool_name: str = "exec",
+    ) -> FunctionCallItem:
+        """Create docker exec tool call with sensible defaults.
+
+        Convenience helper that creates ExecInput and wraps in an MCP tool call.
+
+        Args:
+            cmd: Command to execute
+            timeout_ms: Timeout in milliseconds (default: 30000)
+            cwd: Working directory (default: None)
+            env: Environment variables as list of dicts (default: None)
+            user: User to run as (default: None)
+            shell: Whether to use shell (default: False)
+            tool_name: Tool name on docker server (default: "exec")
+
+        Returns:
+            FunctionCallItem for docker/{tool_name} tool
+        """
+        env_vars = [EnvVar(name=k, value=v) for d in env for k, v in d.items()] if env else None
+        exec_input = ExecInput(cmd=cmd, cwd=cwd, env=env_vars, user=user, shell=shell, timeout_ms=timeout_ms)
+        return self.mcp_tool_call("docker", tool_name, exec_input)
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")

@@ -18,7 +18,6 @@ from adgn.props.prop_utils import props_definitions_root
 logger = logging.getLogger(__name__)
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
-# Shared startup command for long-lived containers
 
 
 @dataclass(slots=True)
@@ -70,7 +69,7 @@ def ensure_critic_image() -> None:
 def build_critic_volumes(
     workspace_root: Path,
     *,
-    mount_properties: bool = True,
+    mount_properties: bool,
     workspace_mode: str = "ro",
     extra_volumes: dict[str, dict[str, str]] | None = None,
 ) -> tuple[dict[str, dict[str, str]], Path | None]:
@@ -96,7 +95,7 @@ def build_critic_volumes(
 def properties_docker_spec(
     workspace_root: Path,
     *,
-    mount_properties: bool = True,
+    mount_properties: bool,
     extra_volumes: dict[str, dict[str, str]] | None = None,
     ephemeral: bool = True,
     workspace_mode: str = "ro",

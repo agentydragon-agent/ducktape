@@ -14,7 +14,6 @@ from contextlib import asynccontextmanager
 import logging
 from pathlib import Path
 import shutil
-import subprocess
 import tarfile
 import tempfile
 from urllib.error import HTTPError, URLError
@@ -23,6 +22,7 @@ from urllib.request import urlopen
 
 from filelock import FileLock
 from platformdirs import user_cache_dir
+import pygit2
 import yaml
 
 from .ids import SnapshotSlug, get_snapshot_manifest_path
@@ -137,34 +137,21 @@ def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
     tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-git-"))
 
     try:
-        # Handle bundle files
-        if url.startswith("file://"):
-            file_path = url.removeprefix("file://")
-            if file_path.endswith(".bundle"):
-                subprocess.run(
-                    ["git", "clone", file_path, str(tmpdir)],
-                    check=True,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                )
-                subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
-            else:
-                # Regular file:// repository
-                subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL)
-                subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True)
-                subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True)
-                subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
-        else:
-            # For non-file URLs, use git commands
-            subprocess.run(["git", "init", str(tmpdir)], check=True, stdout=subprocess.DEVNULL)
-            subprocess.run(["git", "-C", str(tmpdir), "remote", "add", "origin", url], check=True)
-            subprocess.run(["git", "-C", str(tmpdir), "fetch", "--depth", "1", "origin", ref], check=True)
-            subprocess.run(["git", "-C", str(tmpdir), "checkout", "--detach", ref], check=True)
+        # Clone repository (pygit2.clone_repository handles file://, bundles, and remote URLs)
+        repo = pygit2.clone_repository(url, str(tmpdir), bare=False)
+
+        # Checkout the specific ref in detached HEAD state
+        commit = repo.revparse_single(ref)
+        repo.checkout_tree(commit)
+        repo.set_head(commit.id)
 
         # Drop VCS internals to keep archives small and writable on extract
         shutil.rmtree(tmpdir / ".git", ignore_errors=True)
         _repack_dir_with_mtime(tmpdir, out_archive, mtime=0)
         return True
+    except (pygit2.GitError, KeyError) as e:
+        logger.warning(f"Git operation failed for {url}@{ref}: {e}")
+        return False
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

@@ -11,7 +11,9 @@ async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_re
     await compositor.mount_inproc("origin", origin)
 
     # Subscribe to an origin resource via the resources server tool
-    await typed_resources_client.subscribe(ResourcesReadArgs(server="origin", uri="resource://foo/bar"))
+    await typed_resources_client.subscribe(
+        ResourcesReadArgs(server="origin", uri="resource://foo/bar", start_offset=0, max_bytes=0)
+    )
     assert hooks.subscribed, "expected origin to receive subscribe"
     # Index reflects the subscription
     idx = await typed_resources_client.list_subscriptions()

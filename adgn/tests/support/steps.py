@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -88,3 +89,38 @@ class AssistantMessage:
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         return factory.make_assistant_message(self.message)
+
+
+@dataclass
+class DockerExecCall:
+    """Make a docker exec tool call with convenient parameters.
+
+    Uses factory.docker_exec() helper to avoid manual ExecInput construction.
+
+    Example:
+        DockerExecCall(["echo", "hello"], timeout_ms=5000)
+
+    Instead of:
+        MakeCall("docker", "exec", make_exec_input(["echo", "hello"], timeout_ms=5000))
+    """
+
+    cmd: list[str]
+    timeout_ms: int = 30000
+    cwd: Path | None = None
+    env: list[dict[str, str]] | None = None
+    user: str | None = None
+    shell: bool = False
+    tool_name: str = "exec"
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make(
+            factory.docker_exec(
+                self.cmd,
+                timeout_ms=self.timeout_ms,
+                cwd=self.cwd,
+                env=self.env,
+                user=self.user,
+                shell=self.shell,
+                tool_name=self.tool_name,
+            )
+        )

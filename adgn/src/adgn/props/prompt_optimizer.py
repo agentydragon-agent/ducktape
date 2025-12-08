@@ -173,7 +173,7 @@ async def build_server(
         """
         return prompt_optimization_run_id
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
         """Hash prompt text and upsert to database.
 
@@ -206,7 +206,7 @@ async def build_server(
 
         return UpsertPromptOutput(prompt_sha256=prompt_sha256)
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def run_critic(payload: CriticInput) -> RunCriticOutput:
         """Execute critic agent on specimen to generate critique (list of reported issues).
 
@@ -259,6 +259,7 @@ async def build_server(
                 input_data=payload,
                 client=client,
                 content_root=hydrated.content_root,
+                prompt_optimization_run_id=prompt_optimization_run_id,
                 mount_properties=False,
                 extra_handlers=(),
                 verbose=verbose,
@@ -268,7 +269,7 @@ async def build_server(
                 raise RuntimeError("Critic run completed but no critique was created")
             return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
 
-    @mcp.tool(flat=True)
+    @mcp.flat_model()
     async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
         """Execute grader agent to evaluate a critique against ground truth.
 

@@ -2,7 +2,7 @@ local I = import '../../lib.libsonnet';
 
 I.issueMulti(
   rationale= |||
-    Several useless comments that restate what the code obviously does or duplicate information already present in docstrings/types. These add no value and clutter the code.
+    Useless comments that restate what the code obviously does, duplicate information already present in docstrings/types, or refer to non-existent code. These add no value and clutter the code.
   |||,
   occurrences=[
     {
@@ -18,6 +18,11 @@ I.issueMulti(
     {
       files: {'adgn/src/adgn/agent/server/runtime.py': [96]},
       note: 'Vague comment about middleware behavior without adding useful detail',
+      expect_caught_from: [['adgn/src/adgn/agent/server/runtime.py']],
+    },
+    {
+      files: {'adgn/src/adgn/agent/server/runtime.py': [124]},
+      note: 'Comment "Agent identifier for persistence" restates what field name already communicates',
       expect_caught_from: [['adgn/src/adgn/agent/server/runtime.py']],
     },
     {
@@ -66,6 +71,41 @@ I.issueMulti(
       expect_caught_from: [['adgn/src/adgn/mcp/sandboxed_jupyter/wrapper.py']],
     },
     {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [156]},
+      note: 'Comment about non-existent child_* helpers',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [[227, 229]]},
+      note: 'Comment about non-existent resource helper methods',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [328]},
+      note: 'Historical comment about removed Python-only mount listing',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [331]},
+      note: 'Comment stating obvious default (inherit FastMCP protocol handlers)',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [333]},
+      note: 'Comment stating obvious default (resource operations not overridden)',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [341]},
+      note: 'Comment about non-existent manual slot construction',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
+      files: {'adgn/src/adgn/mcp/compositor/server.py': [354]},
+      note: 'Comment about non-existent URI decoding helpers',
+      expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
+    },
+    {
       files: {'adgn/src/adgn/props/grader/grader.py': [188]},
       note: 'Comment "Generate unique IDs for this run" states the obvious (uuid4() calls)',
       expect_caught_from: [['adgn/src/adgn/props/grader/grader.py']],
@@ -109,6 +149,36 @@ I.issueMulti(
       files: {'adgn/src/adgn/props/grader/grader.py': [314]},
       note: 'Comment "Execute grader run" restates what run_grader function call obviously does',
       expect_caught_from: [['adgn/src/adgn/props/grader/grader.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/cluster_unknowns.py': [145]},
+      note: 'Comment "Inline cluster_output_dir (only called here)" describes what was already done, obvious from code',
+      expect_caught_from: [['adgn/src/adgn/props/cluster_unknowns.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/docker_env.py': [21]},
+      note: 'Comment "Shared startup command for long-lived containers" is misplaced, no startup command follows',
+      expect_caught_from: [['adgn/src/adgn/props/docker_env.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/prompt_optimizer.py': [182]},
+      note: 'Comment "Map container path to host path" restates obvious transformation',
+      expect_caught_from: [['adgn/src/adgn/props/prompt_optimizer.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/prompt_optimizer.py': [[195, 199]]},
+      note: 'Comments "Read prompt text from host filesystem" and "Hash and upsert to database" restate self-documenting function names',
+      expect_caught_from: [['adgn/src/adgn/props/prompt_optimizer.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/prompt_optimizer.py': [223]},
+      note: 'Comment "Check snapshot split and enforce validation restriction" restates what the code block does',
+      expect_caught_from: [['adgn/src/adgn/props/prompt_optimizer.py']],
+    },
+    {
+      files: {'adgn/src/adgn/props/prompt_optimizer.py': [358]},
+      note: 'Comment "Build extra volumes for Docker" restates obvious dict construction',
+      expect_caught_from: [['adgn/src/adgn/props/prompt_optimizer.py']],
     },
   ],
 )

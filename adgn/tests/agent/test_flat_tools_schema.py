@@ -26,7 +26,7 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP
+from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP, mcp_flat_model
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
@@ -53,7 +53,7 @@ def server_a() -> FlatModelFastMCP:
     """Create server A with a simple flat tool."""
     mcp = FlatModelFastMCP("server_a")
 
-    @mcp.tool(flat=True)
+    @mcp_flat_model(mcp)
     def tool_a(input: ToolAInput) -> ToolAResult:
         """Perform tool A on the inputs."""
         return ToolAResult(value=input.param_x + input.param_y)
@@ -120,7 +120,7 @@ def server_b() -> FlatModelFastMCP:
     """Create server B with complex nested schema."""
     mcp = FlatModelFastMCP("server_b")
 
-    @mcp.tool(flat=True)
+    @mcp_flat_model(mcp)
     def tool_b(input: ToolBInput) -> ToolBResult:
         """Perform tool B with complex validation.
 

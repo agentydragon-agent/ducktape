@@ -90,5 +90,10 @@ I.issueMulti(
       note: 'Variable client_factory assigned at line 173 and used only at line 174',
       expect_caught_from: [['adgn/src/adgn/mcp/compositor/server.py']],
     },
+    {
+      files: {'adgn/src/adgn/props/cluster_unknowns.py': [[146, 147]]},
+      note: 'Variable timestamp assigned at line 146 and used only once at line 147',
+      expect_caught_from: [['adgn/src/adgn/props/cluster_unknowns.py']],
+    },
   ],
 )

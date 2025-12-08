@@ -82,17 +82,53 @@ class Compositor(FastMCP):
 
     MUST be used as async context manager:
         async with Compositor() as comp:
-            await comp.mount_server(...)
+            await comp.mount_inproc("runtime", runtime_server)
             async with Client(comp) as client:
-                # Use client
-                ...
+                result = await client.call_tool("runtime_exec", {"command": ["ls"]})
         # All non-pinned servers cleaned up here
 
+    Features:
     - Namespaces tools as {server}_{tool}
     - Reuses persistent upstream sessions per mount
     - Relays resource updates as notifications
-    - Exposes a Python management API (mount/unmount); state is served via the
-      separate compositor_meta server resources
+    - Exception-safe mount/unmount (no leaks on failure)
+    - Pinned servers (e.g., compositor_meta) persist through close()
+
+    Common Patterns:
+
+    1. Short-lived script:
+        async with Compositor() as comp:
+            await comp.mount_inproc("runtime", make_runtime_server(...))
+            async with Client(comp) as client:
+                agent = await MiniCodex.create(mcp_client=client)
+                await agent.run("review this code")
+
+    2. Long-lived server:
+        stack = AsyncExitStack()
+        comp = Compositor()
+        await stack.enter_async_context(comp)  # Adds to parent stack
+        await comp.mount_servers_from_config(config)
+        # Later: await stack.aclose() cleans up compositor
+
+    3. With pinned servers:
+        async with Compositor() as comp:
+            await comp.mount_inproc("resources", resources_server, pinned=True)
+            await comp.mount_inproc("runtime", runtime_server)  # Not pinned
+            # On exit: runtime unmounted, resources stays
+
+    Safeguards (raises RuntimeError/ValueError):
+    - Cannot double-enter same compositor
+    - Cannot reuse closed compositor
+    - Cannot mount/unmount after close
+    - Cannot mount duplicate server names
+    - Cannot unmount pinned servers
+    - Invalid server names (must match ^[a-z][a-z0-9_]*$)
+    - __del__ warning if leaked (container leak detection)
+
+    See also:
+    - Mount class for per-server lifecycle
+    - mount_standard_inproc_servers() helper for standard servers
+    - docs/compositor-lifecycle-design.md for exception safety proofs
     """
 
     def __init__(self, name: str = "compositor", *, instructions: str | None = None) -> None:
@@ -164,8 +200,6 @@ class Compositor(FastMCP):
         names = sorted(self._pending_resource_list_changes)
         self._pending_resource_list_changes.clear()
         return names
-
-    # No child_* helpers; callers should use server_entries()/sampling_snapshot()
 
     async def server_entries(self) -> dict[str, ServerEntry]:
         """Return per-child status entries keyed by child name.
@@ -242,15 +276,29 @@ class Compositor(FastMCP):
         async with self._mount_lock:
             return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}
 
-    # No resource helper methods: resources are aggregated and served via the
-    # mounted proxy. Callers should use a client connected to this Compositor
-    # (or the gateway) to list/read resources.
-
     # ---- Management API (Python-only) --------------------------------------
 
-    async def mount_server(
-        self, name: str, spec: MCPServerTypes, prefix: str | None = None, *, pinned: bool = False
-    ) -> None:
+    async def _mount_common(self, name: str, mount: Mount) -> None:
+        """Common mounting logic after Mount object is created and setup.
+
+        Args:
+            name: Server name
+            mount: Mount object (already setup)
+        """
+        # Register the mount (under lock)
+        async with self._mount_lock:
+            self._mounts[name] = mount
+
+        # Mount proxy on FastMCP surface
+        if mount.is_active:
+            self.mount(mount.proxy, prefix=name)
+            await self._notify_mount_listeners(name, MountEvent.STATE)
+            await self._notify_mount_listeners(name, MountEvent.MOUNTED)
+        else:
+            # Mount failed but is registered (for status reporting)
+            await self._notify_mount_listeners(name, MountEvent.STATE)
+
+    async def mount_server(self, name: str, spec: MCPServerTypes, *, pinned: bool = False) -> None:
         """Mount server from MCP config (stdio, HTTP, etc).
 
         Exception-safe: if mount fails, no server is registered and no resources leak.
@@ -258,7 +306,6 @@ class Compositor(FastMCP):
         Args:
             name: Server name (used in tool prefixes: {name}_{tool})
             spec: Server configuration (StdioMCPServer, RemoteMCPServer, etc)
-            prefix: Optional prefix (defaults to name)
             pinned: If True, server won't be unmounted on close()
 
         Raises:
@@ -273,9 +320,6 @@ class Compositor(FastMCP):
         # Validate name
         if not name or not re.match(r"^[a-z][a-z0-9_]*$", name):
             raise ValueError(f"Invalid server name: {name!r}")
-
-        # Prefix equals server name (semantic only)
-        prefix = prefix or name
 
         # Check for duplicate under lock
         async with self._mount_lock:
@@ -286,22 +330,10 @@ class Compositor(FastMCP):
         mount = Mount(name=name, pinned=pinned, spec=spec)
         await mount.setup_external(spec, self._fm_transport_from_spec, lambda n: ChildNotificationHandler(self, n))
 
-        # Register the mount (under lock)
-        async with self._mount_lock:
-            self._mounts[name] = mount
+        # Register and notify
+        await self._mount_common(name, mount)
 
-        # Mount proxy on FastMCP surface
-        if mount.is_active:
-            self.mount(mount.proxy, prefix=name)
-            await self._notify_mount_listeners(name, MountEvent.STATE)
-            await self._notify_mount_listeners(name, MountEvent.MOUNTED)
-        else:
-            # Mount failed but is registered (for status reporting)
-            await self._notify_mount_listeners(name, MountEvent.STATE)
-
-    async def mount_inproc(
-        self, name: str, server: FastMCP, prefix: str | None = None, *, pinned: bool = False
-    ) -> None:
+    async def mount_inproc(self, name: str, server: FastMCP, *, pinned: bool = False) -> None:
         """Mount in-process FastMCP server.
 
         Exception-safe: if mount fails, no server is registered and no resources leak.
@@ -309,7 +341,6 @@ class Compositor(FastMCP):
         Args:
             name: Server name (used in tool prefixes: {name}_{tool})
             server: FastMCP server instance
-            prefix: Optional prefix (defaults to name)
             pinned: If True, server won't be unmounted on close()
 
         Raises:
@@ -325,9 +356,6 @@ class Compositor(FastMCP):
         if not name or not re.match(r"^[a-z][a-z0-9_]*$", name):
             raise ValueError(f"Invalid server name: {name!r}")
 
-        # Prefix equals server name (semantic only)
-        prefix = prefix or name
-
         # Check for duplicate under lock
         async with self._mount_lock:
             if name in self._mounts:
@@ -337,18 +365,8 @@ class Compositor(FastMCP):
         mount = Mount(name=name, pinned=pinned, spec=None)
         await mount.setup_inproc(server, lambda n: ChildNotificationHandler(self, n))
 
-        # Register the mount (under lock)
-        async with self._mount_lock:
-            self._mounts[name] = mount
-
-        # Mount proxy on FastMCP surface
-        if mount.is_active:
-            self.mount(mount.proxy, prefix=name)
-            await self._notify_mount_listeners(name, MountEvent.STATE)
-            await self._notify_mount_listeners(name, MountEvent.MOUNTED)
-        else:
-            # Mount failed but is registered (for status reporting)
-            await self._notify_mount_listeners(name, MountEvent.STATE)
+        # Register and notify
+        await self._mount_common(name, mount)
 
     async def unmount_server(self, name: str) -> None:
         """Unmount a specific server.
@@ -452,7 +470,7 @@ class Compositor(FastMCP):
 
             self._state = CompositorState.ACTIVE
 
-        return self  # Return self, NOT a separate handle
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Exit context, cleanup all non-pinned servers.
@@ -473,22 +491,12 @@ class Compositor(FastMCP):
         Logs warnings for per-server failures but continues cleanup.
         Safe to call multiple times (idempotent).
         """
-        # Defensive check: warn if called when already closed
         if self._state == CompositorState.CLOSED:
-            logger.debug(f"Compositor '{self.name}' close() called when already CLOSED (idempotent, but unexpected)")
-            return
+            raise RuntimeError(f"Compositor '{self.name}' is already closed")
 
         # Snapshot non-pinned servers under lock
         async with self._mount_lock:
             names = [name for name, mount in self._mounts.items() if not mount.pinned]
-
-        # Defensive check: detect if we have unexpected mounts
-        if self._state == CompositorState.CREATED and names:
-            logger.warning(
-                f"Compositor '{self.name}' close() called in CREATED state "
-                f"but has {len(names)} non-pinned server(s). This suggests "
-                "servers were mounted without entering context manager."
-            )
 
         # Unmount each server (exception-safe)
         for name in names:
@@ -505,7 +513,7 @@ class Compositor(FastMCP):
         that were created without using 'async with Compositor() as comp:'.
         """
         # Check if we have unclosed non-pinned mounts
-        if not hasattr(self, "_mounts") or not self._mounts:
+        if not self._mounts:
             return
 
         non_pinned = [name for name, mount in self._mounts.items() if not mount.pinned]
@@ -513,14 +521,13 @@ class Compositor(FastMCP):
             return
 
         # Determine the specific problem
-        state = getattr(self, "_state", None)
-        if state == CompositorState.CREATED:
+        if self._state == CompositorState.CREATED:
             problem = "was never used as context manager"
             hint = "ALWAYS use: async with Compositor() as comp:"
-        elif state == CompositorState.ACTIVE:
+        elif self._state == CompositorState.ACTIVE:
             problem = "entered but never exited"
             hint = "Did the async context manager fail to exit?"
-        elif state == CompositorState.CLOSED:
+        elif self._state == CompositorState.CLOSED:
             problem = "has unclosed servers after exit"
             hint = "This may indicate a cleanup failure in close()"
         else:
@@ -537,20 +544,12 @@ class Compositor(FastMCP):
         warnings.warn(msg, ResourceWarning, stacklevel=2)
         print(msg, file=sys.stderr)
 
-    # Python-only mount listing and server_status removed — prefer resources via compositor_meta
-
-    # ---- Aggregated surface (protocol handlers) ----------------------------
-    # Note: inherit FastMCP protocol handlers directly; no overrides required.
-
-    # Resource operations are not overridden; FastMCP mount handles routing
-
     # ---- Internals ----------------------------------------------------------
     async def _mount_names(self) -> list[str]:
         async with self._mount_lock:
             return list(self._mounts.keys())
 
     # ---- Slot factory (transport-agnostic) ---------------------------------
-    # No manual slot construction; composition is done via FastMCP proxy mounts
 
     def _fm_transport_from_spec(self, spec: MCPServerTypes) -> ClientTransport:
         # Use FastMCP's typed server config classes
@@ -562,8 +561,6 @@ class Compositor(FastMCP):
         if isinstance(spec, StdioMCPServer | TransformingStdioMCPServer):
             return StdioTransport(spec.command, args=list(spec.args or []), env=spec.env, cwd=spec.cwd)
         raise ValueError("unsupported transport for fastmcp client")
-
-    # No URI decoding helpers needed; rely on FastMCP mount semantics
 
     def get_child_client(self, name: str) -> Client:
         """Return the persistent child client for a mounted server.

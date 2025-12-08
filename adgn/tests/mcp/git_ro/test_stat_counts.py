@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pygit2
 
-from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, DiffFormat, DiffInput, ListSlice, make_git_ro_server
+from adgn.mcp.git_ro.formatting import ListSlice, TextSlice
+from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, DiffFormat, DiffInput, make_git_ro_server
 
 
 async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
@@ -29,7 +30,17 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
     async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _):
         # Call the git_diff tool with format=stat and staged=True
         result = await client.git_diff(
-            DiffInput(format=DiffFormat.STAT, staged=True, find_renames=True, list_slice=ListSlice(offset=0, limit=100))
+            DiffInput(
+                format=DiffFormat.STAT,
+                staged=True,
+                unified=0,
+                rev_a=None,
+                rev_b=None,
+                paths=None,
+                find_renames=True,
+                slice=TextSlice(offset_chars=0, max_chars=0),
+                list_slice=ListSlice(offset=0, limit=100),
+            )
         )
 
         # result is a flattened StatResult (DiffStatPage fields directly available)

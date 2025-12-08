@@ -23,9 +23,10 @@ class EchoOutput(BaseModel):
 @pytest.fixture
 def echo_server():
     """Echo server for testing flat model helpers."""
+
     mcp = FlatModelFastMCP("echo")
 
-    @mcp.tool(name="echo", title="Echo", description="Echo a message", structured_output=True, flat=True)
+    @mcp_flat_model(mcp, name="echo", title="Echo", description="Echo a message")
     def echo(input: EchoInput) -> EchoOutput:
         text = input.msg.upper() if input.upper else input.msg
         return EchoOutput(text=text)
@@ -63,11 +64,13 @@ def list_tools_via_client():
 
 
 async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
+    # Structured output is now always enabled, but flat model still works
+
     legacy = FastMCP("legacy")
 
-    @mcp_flat_model(legacy, name="legacy_echo", structured_output=False)
-    def legacy_echo(input: EchoInput):
-        return {"text": input.msg}
+    @mcp_flat_model(legacy, name="legacy_echo")
+    def legacy_echo(input: EchoInput) -> EchoOutput:
+        return EchoOutput(text=input.msg)
 
     tools = await list_tools_via_client(legacy)
     tool = next(t for t in tools if t.name == "legacy_echo")
@@ -78,9 +81,11 @@ async def test_mcp_flat_model_backward_compatibility(list_tools_via_client):
 
 
 async def test_tool_flat_explicit_models(list_tools_via_client):
+    # Output model is now always inferred from return annotation
+
     mcp = FlatModelFastMCP("echo2")
 
-    @mcp.tool(name="echo", flat=True, flat_output_model=EchoOutput)
+    @mcp_flat_model(mcp, name="echo")
     def echo_again(payload: EchoInput) -> EchoOutput:
         return EchoOutput(text=payload.msg)
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from hamcrest import assert_that, empty, has_item, has_properties
 
-from adgn.mcp.resources.server import ResourcesReadArgs
+from adgn.mcp.resources.server import ResourcesSubscribeArgs
 
 
 async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, typed_resources_client):
@@ -11,7 +11,7 @@ async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_re
     await compositor.mount_inproc("origin", origin)
 
     # Subscribe to an origin resource via the resources server tool
-    await typed_resources_client.subscribe(ResourcesReadArgs(server="origin", uri="resource://foo/bar"))
+    await typed_resources_client.subscribe(ResourcesSubscribeArgs(server="origin", uri="resource://foo/bar"))
 
     # Verify origin subscribe handler ran and index reflects the subscription
     assert hooks.subscribed, "expected origin to receive subscribe"

@@ -25,6 +25,7 @@ from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.models import EnvVar, ExecInput
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import TypedClient
@@ -569,3 +570,29 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 def echo_spec(make_backend_server) -> McpServerSpecs:
     """In-proc FastMCP server spec for echo tests."""
     return {"echo": make_backend_server("echo")}
+
+
+# --- Helpers for constructing MCP tool inputs ---
+
+
+def make_exec_input(
+    cmd: list[str],
+    *,
+    timeout_ms: int = 10_000,
+    cwd: Path | None = None,
+    env: list[dict[str, str]] | None = None,
+    user: str | None = None,
+    shell: bool = False,
+) -> ExecInput:
+    """Convenience helper for constructing ExecInput with all required fields.
+
+    Mirrors the pattern from bootstrap.docker_exec_call() but returns an ExecInput
+    instead of a bootstrap call. Use this in tests to avoid repeating the full
+    6-field constructor.
+
+    Example:
+        exec_input = make_exec_input(["echo", "hello"])
+        # Instead of: ExecInput(cmd=["echo", "hello"], cwd=None, env=None, user=None, shell=False, timeout_ms=10_000)
+    """
+    env_vars = [EnvVar(name=k, value=v) for d in env for k, v in d.items()] if env else None
+    return ExecInput(cmd=cmd, cwd=cwd, env=env_vars, user=user, shell=shell, timeout_ms=timeout_ms)

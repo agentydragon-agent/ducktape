@@ -184,7 +184,11 @@ def docker_exec_call(
     builder: TypedBootstrapBuilder, server: str, cmd: list[str], *, timeout_ms: int = 10_000
 ) -> FunctionCallItem:
     """Bootstrap helper for docker exec."""
-    return builder.call(server, RUNTIME_EXEC_TOOL_NAME, ExecInput(cmd=cmd, timeout_ms=timeout_ms))
+    return builder.call(
+        server,
+        RUNTIME_EXEC_TOOL_NAME,
+        ExecInput(cmd=cmd, cwd=None, env=None, user=None, shell=False, timeout_ms=timeout_ms),
+    )
 
 
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)

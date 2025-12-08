@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Literal
-from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,9 +44,6 @@ class CriticInput(BaseModel):
         description=f'Files to review: explicit set or "{ALL_FILES_WITH_ISSUES}" sentinel for ground truth files'
     )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")
-    prompt_optimization_run_id: UUID | None = Field(
-        default=None, description="Optional link to prompt optimization session"
-    )
 
     model_config = ConfigDict(extra="forbid")
 

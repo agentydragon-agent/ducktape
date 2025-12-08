@@ -27,7 +27,7 @@ class OutModel(BaseModel):
 async def test_flat_model_infers_types_and_emits_schema():
     m = NotifyingFastMCP("decorator_test")
 
-    @mcp_flat_model(m, structured_output=True)
+    @mcp_flat_model(m)
     def demo(input: InModel) -> OutModel:
         """Demo tool docstring used as description."""
         return OutModel(ok=True, note=str(input.b) if input.b is not None else None)
@@ -50,7 +50,7 @@ async def test_flat_model_infers_types_and_emits_schema():
     # Required contains 'a' (since 'b' is optional)
     required = set(schema.get("required") or [])
     assert "a" in required
-    # Ensure output schema present (structured_output=True)
+    # Ensure output schema present (structured output always enabled)
     out_schema = t.outputSchema
     assert isinstance(out_schema, dict)
     out_props = out_schema.get("properties") or {}
@@ -107,7 +107,7 @@ def test_structured_requires_return_annotation():
 
     with pytest.raises(TypeError):
 
-        @mcp_flat_model(m, structured_output=True)
+        @mcp_flat_model(m)
         def bad(input: InModel):
             return {"ok": True}
 

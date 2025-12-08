@@ -14,12 +14,8 @@ from adgn.agent.persist import Persistence
 from adgn.agent.persist.handler import RunPersistenceHandler
 from adgn.agent.server.bus import ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.protocol import (
-    ApprovalPolicyInfo,
     FunctionCallOutput,
-    ProposalInfo,
     ServerMessage,
-    SessionState,
-    Snapshot,
     ToolCall as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
@@ -80,19 +76,16 @@ class UiEventHandler(BaseHandler):
         await asyncio.gather(*list(self._bg_tasks), return_exceptions=True)
 
     def on_user_text_event(self, evt: UserText) -> None:
-        ut = UiUserText(text=evt.text)
-        self._spawn(self._send_and_reduce(ut))
+        self._spawn(self._send_and_reduce(UiUserText(text=evt.text)))
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
         raise RuntimeError("assistant_text not allowed in UI mode; use ui.send_message tool instead")
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
-        tc = UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)
-        self._spawn(self._send_and_reduce(tc))
+        self._spawn(self._send_and_reduce(UiToolCall(name=evt.name, args_json=evt.args_json, call_id=evt.call_id)))
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        fco = FunctionCallOutput(call_id=evt.call_id, result=evt.result)
-        self._spawn(self._send_and_reduce(fco))
+        self._spawn(self._send_and_reduce(FunctionCallOutput(call_id=evt.call_id, result=evt.result)))
         self._spawn(self._emit_ui_bus_messages())
 
 
@@ -115,29 +108,7 @@ class AgentSession:
         self.ui_state: UiState = new_state()
         self.approval_engine: PolicyEngine = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
-        # Agent identifier for persistence
         self.agent_id: AgentID = agent_id
-
-    async def build_snapshot(self, sampling=None) -> Snapshot:
-        # Note: pending_approvals not populated here; UI reads pending://calls resource via MCP
-
-        content, version = self.approval_engine.get_policy()
-        # Load proposals from persistence policy store
-        proposals = [
-            ProposalInfo(id=r.id, status=r.status) for r in await self._persistence.list_policy_proposals(self.agent_id)
-        ]
-        approval_policy = ApprovalPolicyInfo(content=content, version=version, proposals=proposals)
-
-        return Snapshot(
-            session_state=SessionState(
-                session_id=self._manager._session_id,
-                version="1.0.0",
-                capabilities=[],
-                last_event_id=self._manager._event_id or None,
-            ),
-            approval_policy=approval_policy,
-            sampling=sampling,
-        )
 
     def attach_agent(self, agent: MiniCodex, *, model: str | None = None, system: str | None = None) -> None:
         self._agent = agent
@@ -196,7 +167,6 @@ class AgentSession:
                 if self._persist_handler is not None:
                     # Ensure all transcript events have been persisted
                     await self._persist_handler.drain()
-            return
-        # Error now logged, not sent via dead send_payload
-        logger.error("no_agent_attached")
-        return
+        else:
+            # Error now logged, not sent via dead send_payload
+            logger.error("no_agent_attached")

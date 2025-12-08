@@ -10,7 +10,6 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.exec.models import ExecInput
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
@@ -102,9 +101,7 @@ def _make_critic_response_sequence() -> list:
 
     return [
         # 1. Read the Python file
-        factory.make_mcp_tool_call(
-            "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
-        ),
+        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000, tool_name="docker_exec")),
         # 2. Call submit with zero issues
         factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
     ]
@@ -169,10 +166,8 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     # If the bug exists, this will fail because agent keeps calling docker_exec
     factory = ResponsesFactory("gpt-5-nano")
     responses = [
-        factory.make_mcp_tool_call("docker", "docker_exec", ExecInput(cmd=["ls", "/workspace"], timeout_ms=5000)),
-        factory.make_mcp_tool_call(
-            "docker", "docker_exec", ExecInput(cmd=["cat", "/workspace/subtract.py"], timeout_ms=5000)
-        ),
+        factory.make(factory.docker_exec(["ls", "/workspace"], timeout_ms=5000, tool_name="docker_exec")),
+        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000, tool_name="docker_exec")),
         # After reading file, should call submit(issues_count=0), NOT more docker_exec
         factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
     ]

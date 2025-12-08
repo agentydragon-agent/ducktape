@@ -22,8 +22,8 @@ from adgn.mcp.snapshots import RunningServerEntry
 
 
 class ResourcesListArgs(BaseModel):
-    server: str | None = Field(default=None, description="Filter by server name (optional)")
-    uri_prefix: str | None = Field(default=None, description="Restrict to URIs starting with this prefix (optional)")
+    server: str | None = Field(description="Filter by server name (None = all servers)")
+    uri_prefix: str | None = Field(description="Restrict to URIs starting with this prefix (None = no filter)")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -48,8 +48,14 @@ Typed read result is defined after WindowedPart to avoid forward refs.
 class ResourcesReadArgs(BaseModel):
     server: str = Field(description="Origin MCP server name that owns the resource")
     uri: str = Field(description="Resource URI as reported by the origin server's list")
-    start_offset: int = Field(default=0, ge=0, description="Start byte offset for windowed reads")
-    max_bytes: int = Field(default=0, ge=0, description="Max bytes to return (0 means no limit)")
+    start_offset: int = Field(ge=0, description="Start byte offset for windowed reads")
+    max_bytes: int = Field(ge=0, description="Max bytes to return (0 means no limit)")
+    model_config = ConfigDict(extra="forbid")
+
+
+class ResourcesSubscribeArgs(BaseModel):
+    server: str = Field(description="Origin MCP server name")
+    uri: str = Field(description="Resource URI to subscribe to")
     model_config = ConfigDict(extra="forbid")
 
 
@@ -383,7 +389,7 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
         return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
 
     @mcp.flat_model()
-    async def subscribe(input: ResourcesReadArgs) -> SimpleOk:
+    async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
         """Subscribe to updates for a resource."""
         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
@@ -410,7 +416,7 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
             return SimpleOk(ok=True)
 
     @mcp.flat_model()
-    async def unsubscribe(input: ResourcesReadArgs) -> SimpleOk:
+    async def unsubscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
         """Unsubscribe from updates for a resource."""
         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)

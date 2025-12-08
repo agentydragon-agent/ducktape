@@ -38,7 +38,7 @@ def _row_to_message(row: Row) -> ChatMessage:
 
 
 class PostInput(BaseModel):
-    mime: str = Field(default="text/markdown")
+    mime: str = Field(description="MIME type for the content")
     content: str
 
 
@@ -47,7 +47,7 @@ class PostResult(BaseModel):
 
 
 class ReadPendingInput(BaseModel):
-    limit: int | None = Field(default=50, ge=1, le=1000)
+    limit: int | None = Field(ge=1, le=1000, description="Max messages to return (None = unlimited)")
 
 
 class ReadPendingResult(BaseModel):
