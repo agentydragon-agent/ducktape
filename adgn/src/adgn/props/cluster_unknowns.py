@@ -13,7 +13,7 @@ from adgn.agent.handler import AbortIf
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
@@ -92,7 +92,7 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
 
     # Use Compositor as async context manager to ensure cleanup
     async with Compositor() as comp:
-        srv = NotifyingFastMCP("cluster_submit", instructions="Cluster submit")
+        srv = EnhancedFastMCP("cluster_submit", instructions="Cluster submit")
 
         @srv.tool()
         def submit_result(payload: ClusterSubmitPayload) -> str:

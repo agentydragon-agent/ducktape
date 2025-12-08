@@ -11,7 +11,7 @@ from adgn.props.db.sync import sync_snapshots_to_db, sync_issues_to_db, sync_cri
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.hydration import SnapshotHydrator
 
 
 @pytest.fixture

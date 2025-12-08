@@ -7,15 +7,21 @@ from typing import TypeVar
 from pydantic import BaseModel, Field
 import pygit2
 
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+
 # -------------------------- pagination models -------------------------------
 
 
-class ListSlice(BaseModel):
+class ListSlice(OpenAIStrictModeBaseModel):
+    """Pagination controls for list outputs."""
+
     offset: int = Field(ge=0, description="Start index of the window")
     limit: int = Field(ge=0, description="Max items to return (0 = unbounded)")
 
 
-class TextSlice(BaseModel):
+class TextSlice(OpenAIStrictModeBaseModel):
+    """Pagination controls for text outputs."""
+
     offset_chars: int = Field(ge=0, description="Start character offset")
     max_chars: int = Field(ge=0, description="Max characters to return (0 = all)")
 

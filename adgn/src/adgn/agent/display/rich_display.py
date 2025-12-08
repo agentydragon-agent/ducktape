@@ -17,7 +17,7 @@ from rich.segment import Segment
 from rich.text import Text
 
 from adgn.mcp._shared.naming import parse_tool_name
-from adgn.mcp.exec.models import BaseExecResult, ExecInput, TruncatedStream
+from adgn.mcp.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
 
 from ..handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
@@ -26,6 +26,9 @@ from ..tool_schemas import extract_tool_input_schemas, extract_tool_schemas
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
+# Display configuration constants
+DEFAULT_MAX_LINES = 20  # Default maximum lines for rendered content (both Panel height and truncation)
+
 # Event types that can be rendered
 TurnEventType = UserText | AssistantText | ToolCall | ToolCallOutput | ReasoningItem
 
@@ -33,7 +36,7 @@ TurnEventType = UserText | AssistantText | ToolCall | ToolCallOutput | Reasoning
 def _unwrap_shell_command(cmd: list[str]) -> str | None:
     """Unwrap shell -c/-lc wrappers, returning the actual command or None."""
     match cmd:
-        case ["bash" | "/bin/sh", "-c" | "-lc", actual_cmd]:
+        case ["bash" | "sh" | "/bin/sh", "-c" | "-lc", actual_cmd]:
             return actual_cmd
         case _:
             return None
@@ -100,7 +103,7 @@ class RichDisplayHandler(BaseHandler):
     def __init__(
         self,
         *,
-        max_lines: int = 50,
+        max_lines: int = DEFAULT_MAX_LINES,
         console: Console | None = None,
         prefix: str = "",
         servers: dict[str, FastMCP] | None = None,
@@ -322,7 +325,7 @@ class CompactDisplayHandler(BaseHandler):
     def __init__(
         self,
         *,
-        max_lines: int = 50,
+        max_lines: int = DEFAULT_MAX_LINES,
         console: Console | None = None,
         prefix: str = "",
         servers: dict[str, FastMCP] | None = None,
@@ -380,11 +383,8 @@ class CompactDisplayHandler(BaseHandler):
 
         # Render compact usage line
         text = Text()
-        text.append("  [tokens] ", style="dim yellow")
-        text.append(f"{self._format_tokens(input_tok)}", style="cyan")
-        text.append(" in / ", style="dim")
-        text.append(f"{self._format_tokens(output_tok)}", style="green")
-        text.append(" out", style="dim")
+        text.append("  [tokens] ", style="dim")
+        text.append(f"{self._format_tokens(input_tok)} in / {self._format_tokens(output_tok)} out", style="dim")
 
         # Model name (optional)
         if evt.usage.model:
@@ -398,7 +398,8 @@ class CompactDisplayHandler(BaseHandler):
         """Render a single event immediately."""
         renderable = self._create_renderable(event)
         if renderable is not None:
-            self._console.print(renderable)
+            # Wrap in MaxHeight to enforce max_lines constraint
+            self._console.print(MaxHeight(renderable, self._max_lines))
 
     def _format_exec_command(self, input_data: ExecInput) -> str:
         """Format ExecInput as a shell command."""
@@ -427,13 +428,39 @@ class CompactDisplayHandler(BaseHandler):
 
         return "  ".join(parts)
 
-    def _truncate_lines(self, text: str, max_lines: int) -> str:
-        """Truncate text to max_lines with indicator."""
+    def _truncate_lines(self, text: str, max_lines: int, indent: int = 0) -> str:
+        """Truncate text to max_lines with indicator.
+
+        Handles both too many lines and individual lines that are too long.
+        Long lines are hard-wrapped at console width to prevent Rich from
+        word-wrapping them later (which would make MaxHeight less effective).
+
+        Args:
+            text: Text to truncate
+            max_lines: Maximum number of lines
+            indent: Number of spaces this text will be indented (affects line wrapping)
+        """
         lines = text.splitlines()
-        if len(lines) <= max_lines:
-            return text
-        truncated = lines[:max_lines]
-        return "\n".join(truncated) + f"\n... ({len(lines) - max_lines} more lines)"
+
+        # Break up very long lines (that would wrap and consume multiple visual lines)
+        max_line_length = self._console.width - indent
+        wrapped_lines = []
+        for original_line in lines:
+            if len(original_line) <= max_line_length:
+                wrapped_lines.append(original_line)
+            else:
+                # Hard-wrap at max_line_length
+                remaining = original_line
+                while remaining:
+                    wrapped_lines.append(remaining[:max_line_length])
+                    remaining = remaining[max_line_length:]
+
+        # Now truncate to max_lines
+        if len(wrapped_lines) <= max_lines:
+            return "\n".join(wrapped_lines)
+
+        truncated = wrapped_lines[:max_lines]
+        return "\n".join(truncated) + f"\n... ({len(wrapped_lines) - max_lines} more lines)"
 
     def _indent(self, text: str, spaces: int = 2) -> str:
         """Indent each line of text."""
@@ -508,30 +535,30 @@ class CompactDisplayHandler(BaseHandler):
             text = Text()
             # Bullet with prefix and tool name
             prefix_part = self._format_prefix_label(default="")
-            text.append(f"● {prefix_part}", style="cyan")
-            text.append(event.name, style="bold cyan")
+            text.append(f"● {prefix_part}")
+            text.append(event.name, style="bold")
 
             # Special handling for exec
             if isinstance(typed_input, ExecInput):
                 cmd_str = self._format_exec_command(typed_input)
-                truncated_cmd = self._truncate_lines(cmd_str, self._max_lines)
-                text.append(f": {truncated_cmd}", style="cyan")
+                truncated_cmd = self._truncate_lines(cmd_str, self._max_lines, indent=0)
+                text.append(f": {truncated_cmd}")
                 # Add cwd if present and not default
                 if typed_input.cwd and typed_input.cwd != "/workspace":
-                    text.append(f"  [cwd={typed_input.cwd}]", style="dim cyan")
+                    text.append(f"  [cwd={typed_input.cwd}]", style="dim")
             elif args:
                 # Args with smart line wrapping
                 formatter = Formatter(max_inline_length=self._console.width - self._TOOL_CALL_INDENT)
                 json_str = formatter.serialize(args)
-                truncated_json = self._truncate_lines(json_str, self._max_lines)
+                truncated_json = self._truncate_lines(json_str, self._max_lines, indent=self._TOOL_CALL_INDENT)
                 # If it fits on one line and is short enough, keep it inline
                 if "\n" not in truncated_json and len(truncated_json) < 80:
-                    text.append(f": {truncated_json}", style="dim cyan")
+                    text.append(f": {truncated_json}", style="dim")
                 else:
                     # Multi-line or long - indent on next line
                     text.append("\n")
                     indented = self._indent(truncated_json, self._TOOL_CALL_INDENT)
-                    text.append(indented, style="dim cyan")
+                    text.append(indented, style="dim")
 
             return text
 
@@ -554,8 +581,8 @@ class CompactDisplayHandler(BaseHandler):
             # Special handling for exec results
             if isinstance(display_data, BaseExecResult):
                 metadata = self._format_exec_metadata(display_data)
-                text.append(self._TOOL_RESULT_PREFIX, style="yellow")
-                text.append(metadata, style="dim yellow")
+                text.append(self._TOOL_RESULT_PREFIX)
+                text.append(metadata, style="dim")
 
                 # Determine if we need labels for stdout/stderr
                 has_stdout = bool(
@@ -570,54 +597,49 @@ class CompactDisplayHandler(BaseHandler):
                 )
                 both_present = has_stdout and has_stderr
 
-                # Stdout
-                if has_stdout:
-                    stdout_text = self._extract_stream_text(display_data.stdout)
-                    truncated = self._truncate_lines(stdout_text, self._max_lines)
+                # Helper to render a stream (stdout or stderr)
+                def append_stream(stream: ExecStream, label: str, style: str = ""):
+                    stream_text = self._extract_stream_text(stream)
+                    truncated = self._truncate_lines(stream_text, self._max_lines, indent=self._TOOL_RESULT_INDENT)
                     if both_present:
-                        text.append("\n    stdout:\n")
+                        text.append(f"\n    {label}:\n", style=style)
                     else:
                         text.append("\n")
-                    text.append(self._indent(truncated, self._TOOL_RESULT_INDENT))
+                    text.append(self._indent(truncated, self._TOOL_RESULT_INDENT), style=style)
 
-                # Stderr
+                if has_stdout:
+                    append_stream(display_data.stdout, "stdout")
                 if has_stderr:
-                    stderr_text = self._extract_stream_text(display_data.stderr)
-                    truncated = self._truncate_lines(stderr_text, self._max_lines)
-                    if both_present:
-                        text.append("\n    stderr:\n", style="red")
-                    else:
-                        text.append("\n")
-                    text.append(self._indent(truncated, self._TOOL_RESULT_INDENT), style="red")
+                    append_stream(display_data.stderr, "stderr", style="red")
 
                 return text
 
             # Handle error results
             if result.isError:
-                text.append("  ⎿ ERROR: ", style="bold red")
+                text.append("  ⎿ ✗ ", style="bold red")
                 # Extract error message from content blocks
                 if isinstance(display_data, list):
                     error_texts = [block.text for block in display_data if isinstance(block, mcp_types.TextContent)]
                     error_msg = "\n".join(error_texts) if error_texts else str(display_data)
                 else:
                     error_msg = str(display_data)
-                truncated = self._truncate_lines(error_msg, self._max_lines)
-                text.append(error_msg)
+                truncated = self._truncate_lines(error_msg, self._max_lines, indent=0)
+                text.append(truncated, style="red")
                 return text
 
             # Handle text content blocks
             if isinstance(display_data, list) and display_data and isinstance(display_data[0], mcp_types.TextContent):
                 texts = [block.text for block in display_data if isinstance(block, mcp_types.TextContent)]
                 combined = "\n".join(texts)
-                truncated = self._truncate_lines(combined, self._max_lines)
-                text.append(self._TOOL_RESULT_PREFIX, style="yellow")
+                truncated = self._truncate_lines(combined, self._max_lines, indent=self._TOOL_RESULT_INDENT)
+                text.append(self._TOOL_RESULT_PREFIX)
                 if len(texts) == 1 and "\n" not in combined:
                     # Single line - keep inline
-                    text.append(combined, style="yellow")
+                    text.append(truncated)
                 else:
                     # Multi-line - indent
                     text.append("\n")
-                    text.append(self._indent(truncated, self._TOOL_RESULT_INDENT), style="yellow")
+                    text.append(self._indent(truncated, self._TOOL_RESULT_INDENT))
                 return text
 
             # Default: compact JSON with smart line wrapping
@@ -625,13 +647,13 @@ class CompactDisplayHandler(BaseHandler):
             available_width = self._console.width - len(self._TOOL_RESULT_PREFIX) - self._TOOL_RESULT_INDENT
             formatter = Formatter(max_inline_length=available_width)
             json_str = formatter.serialize(display_data)
-            truncated = self._truncate_lines(json_str, self._max_lines)
+            truncated = self._truncate_lines(json_str, self._max_lines, indent=len(self._TOOL_RESULT_PREFIX))
             lines = truncated.splitlines()
             if lines:
-                text.append(self._TOOL_RESULT_PREFIX, style="yellow")
-                text.append(lines[0] + "\n", style="dim yellow")
+                text.append(self._TOOL_RESULT_PREFIX)
+                text.append(lines[0] + "\n", style="dim")
                 if len(lines) > 1:
-                    text.append(self._indent("\n".join(lines[1:]), self._TOOL_RESULT_INDENT), style="dim yellow")
+                    text.append(self._indent("\n".join(lines[1:]), self._TOOL_RESULT_INDENT), style="dim")
             return text
 
         # Fallback

@@ -12,11 +12,13 @@ import plotext as plt  # type: ignore[import-untyped]
 from rich import box
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import CriticRun, CriticScopeDB, GraderRun, Prompt, Snapshot
+from adgn.props.db.datapoints import count_available_examples_for_split
+from adgn.props.db.models import CriticRun, CriticScopeDB, GraderRun, Prompt
+from adgn.props.db.staleness import check_staleness
 from adgn.props.splits import Split
 
 # Display constants
@@ -302,29 +304,14 @@ def cmd_stats() -> None:
     tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
 
     with get_session() as session:
-        # First, compute total available training examples per split
-        # Training examples = critic_scopes (explicit) + snapshots without scopes (1 implicit example each)
-        total_samples_by_split: dict[Split, int] = defaultdict(int)
-        for split in [Split.TRAIN, Split.VALID, Split.TEST]:
-            # Count explicit critic scopes for this split
-            critic_scopes_count = (
-                session.execute(
-                    select(func.count(CriticScopeDB.id)).join(CriticScopeDB.snapshot_obj).where(Snapshot.split == split)
-                ).scalar()
-                or 0
-            )
-
-            # Count snapshots without any critic scopes (they have 1 implicit full-snapshot example)
-            snapshots_without_scopes = (
-                session.execute(
-                    select(func.count(Snapshot.slug))
-                    .where(Snapshot.split == split)
-                    .where(~select(CriticScopeDB.id).where(CriticScopeDB.snapshot_slug == Snapshot.slug).exists())
-                ).scalar()
-                or 0
-            )
-
-            total_samples_by_split[split] = critic_scopes_count + snapshots_without_scopes
+        # Compute total available training examples per split using shared logic
+        # IMPORTANT: Uses same logic as GEPA's dataset loading:
+        # - TRAIN: all critic scopes (per-file + full-specimen for tighter feedback loops)
+        # - VALID/TEST: only full-specimen scopes (terminal metric - comprehensive review)
+        total_samples_by_split: dict[Split, int] = {
+            split: count_available_examples_for_split(session, split)
+            for split in [Split.TRAIN, Split.VALID, Split.TEST]
+        }
 
         # Query all prompts with their critic runs
         prompts_query = (
@@ -394,11 +381,18 @@ def cmd_stats() -> None:
         }
 
         for split in [Split.TRAIN, Split.VALID, Split.TEST]:
+            # Only include grader runs that match current critic scopes
+            # This filters out stale runs from when valid/test used per-file scopes
             graders_query = (
                 select(GraderRun, CriticRun)
                 .join(GraderRun.critique_obj)
                 .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
                 .join(GraderRun.snapshot_obj)
+                .join(
+                    CriticScopeDB,
+                    (CriticScopeDB.snapshot_slug == CriticRun.snapshot_slug)
+                    & (CriticScopeDB.files_hash == CriticRun.files_hash),
+                )
                 .where(GraderRun.snapshot_obj.has(split=split))
                 .where(GraderRun.output.isnot(None))
             )
@@ -580,3 +574,35 @@ def cmd_stats() -> None:
             total_available=split_total,
             show_all_prompts=show_all,
         )
+
+    # Check for stale grader runs
+    console.print("\n[bold cyan]Grader Run Staleness Check[/bold cyan]")
+    console.print("=" * 60)
+
+    total_runs, stale_runs, by_snapshot = check_staleness()
+
+    if total_runs == 0:
+        console.print("No grader runs found in database")
+    else:
+        stale_pct = (stale_runs / total_runs * 100) if total_runs > 0 else 0
+        console.print(f"\nTotal grader runs: {total_runs}")
+        console.print(f"Stale runs: {stale_runs} ({stale_pct:.1f}%)")
+        console.print(f"Up-to-date runs: {total_runs - stale_runs} ({100 - stale_pct:.1f}%)")
+
+        if stale_runs > 0:
+            console.print("\n[bold]Stale runs by snapshot:[/bold]")
+            table = Table(box=box.SIMPLE, show_header=True)
+            table.add_column("Snapshot", style="cyan")
+            table.add_column("Total", justify="right")
+            table.add_column("Stale", justify="right")
+            table.add_column("Stale %", justify="right")
+
+            for slug in sorted(by_snapshot.keys()):
+                snapshot_stats = by_snapshot[slug]
+                if snapshot_stats["stale"] > 0:
+                    pct = (
+                        (snapshot_stats["stale"] / snapshot_stats["total"] * 100) if snapshot_stats["total"] > 0 else 0
+                    )
+                    table.add_row(str(slug), str(snapshot_stats["total"]), str(snapshot_stats["stale"]), f"{pct:.1f}%")
+
+            console.print(table)

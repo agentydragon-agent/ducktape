@@ -5,9 +5,7 @@ See `README.md` for a shorter overview.
 
 ## Environment and Setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv, Python 3.11+. Node 20 is available in the dev shell for the UI.
-- First time here:
-  - `cd adgn`
-  - `direnv allow`
+- First time here: `cd adgn`, `direnv allow`
   - This loads `.envrc` → devenv, creates a Python venv, and installs `adgn` in editable mode with dev extras.
 - Re-entering later: just `cd adgn`; direnv activates the environment.
 - Verify environment:
@@ -122,14 +120,11 @@ from adgn.agent.bootstrap import TypedBootstrapBuilder, BootstrapHandler, read_r
 # Create builder with introspection (validates payload types against server schema)
 builder = TypedBootstrapBuilder.for_server(runtime_server)
 
-# Build calls immediately - no factories, no inheritance
-calls = [
+# Create handler. Build calls immediately - no factories, no inheritance
+bootstrap = BootstrapHandler([
     read_resource_call(builder, server="resources", uri="resource://foo/bar"),
     docker_exec_call(builder, server="runtime", cmd=["ls", "-la"]),
-]
-
-# Create handler
-bootstrap = BootstrapHandler(calls)
+])
 handlers = [bootstrap, ...other handlers...]
 ```
 
@@ -143,6 +138,11 @@ handlers = [bootstrap, ...other handlers...]
 **Future enhancement:** See `docs/bootstrap_type_safety_plans.md` for plans to eliminate string literals via generic/typed stubs
 
 ## Conventions and Tips
+- Production code changes and test updates
+  - When editing production code in `src/...`, always check what code in `tests/...` uses the interfaces/bits you touched and propagate any necessary edits.
+  - Type signature changes, parameter additions/removals, renamed functions/classes, or changed behavior patterns all require corresponding test updates.
+  - Example: Changing a function's type from `set[Path]` to `list[str]` requires updating all test callsites that pass data to that function.
+  - Run mypy on both `src/` and `tests/` to catch type mismatches after interface changes.
 - MCP naming
   - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` from `adgn.mcp._shared.naming`.
   - Avoid hard-coded strings like `server_tool` in code. Literal forms in docs/examples are illustrative only.

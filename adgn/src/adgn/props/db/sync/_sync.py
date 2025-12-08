@@ -19,9 +19,11 @@ import yaml
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticScopeDB, FalsePositive, ModelMetadata, Snapshot, TruePositive
-from adgn.props.files_hash import hash_critic_scope_files
+from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScope
 from adgn.props.models.snapshot import SnapshotDoc
+from adgn.props.splits import Split
 
 from ._loader import FilesystemLoader
 
@@ -318,6 +320,15 @@ def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
     Loads critic scopes from specimens/critic_scopes.yaml and upserts to
     critic_scopes table with proper hash calculation for uniqueness.
 
+    IMPORTANT: The files_hash is ALWAYS computed from resolved files, never a sentinel.
+    For AllFilesScope, we resolve to actual files with issues before hashing.
+    This ensures CriticRun.files_hash (always from resolved files) can join to
+    CriticScopeDB.files_hash for any scope type.
+
+    Auto-adds full-specimen scopes: For valid/test snapshots, automatically adds a
+    full-specimen scope (all files with issues) if not already present. This ensures
+    the terminal metric (comprehensive review) is always available for validation/test.
+
     Args:
         session: SQLAlchemy session
         base_path: Specimens base directory
@@ -328,6 +339,26 @@ def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
     # Load critic scopes from YAML
     loader = FilesystemLoader(base_path)
     scopes_by_slug = loader.load_critic_scopes()
+
+    # Load snapshots to check splits
+    snapshots = loader.load_snapshots()
+
+    # Auto-add full-specimen scopes for valid/test snapshots
+    # Per training strategy: valid/test use ONLY full-specimen scopes (terminal metric)
+    # Replace any per-file scopes with a single full-specimen scope
+    for slug, snapshot in snapshots.items():
+        if snapshot.split in (Split.VALID, Split.TEST):
+            snapshot_scopes = scopes_by_slug.get(slug, [])
+            has_full_specimen = any(isinstance(scope.files, AllFilesScope) for scope in snapshot_scopes)
+
+            if not has_full_specimen:
+                # Replace all scopes with full-specimen scope for validation/test split
+                logger.info(
+                    f"Replacing {len(snapshot_scopes)} per-file scopes with full-specimen scope "
+                    f"for {snapshot.split.value} snapshot: {slug}"
+                )
+                full_scope = CriticScope(files=AllFilesScope())
+                scopes_by_slug[slug] = [full_scope]  # Replace, not append
 
     # Get existing critic scopes from DB
     existing_scopes = {(scope.snapshot_slug, scope.files_hash): scope for scope in session.query(CriticScopeDB).all()}
@@ -341,36 +372,44 @@ def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
     updated = 0
     deleted = 0
 
+    # Cache for resolved "all files" per snapshot (avoid re-loading issues)
+    all_files_cache: dict[SnapshotSlug, set[Path]] = {}
+
+    def get_all_files_for_snapshot(slug: SnapshotSlug) -> set[Path]:
+        """Get all files with issues for a snapshot (cached)."""
+        if slug not in all_files_cache:
+            tps, fps = loader.load_issues_for_snapshot(slug)
+            all_files_cache[slug] = loader._collect_all_files_from_issues(tps, fps)
+        return all_files_cache[slug]
+
     # Process each snapshot's critic scopes
     for slug, scope_list in scopes_by_slug.items():
         for scope in scope_list:
-            # Calculate hash for uniqueness
-            files_hash = hash_critic_scope_files(scope.files)
+            # Resolve scope to actual files before hashing
+            # This ensures AllFilesScope gets hashed by its resolved file list,
+            # matching how CriticRun computes its files_hash
+            all_files = get_all_files_for_snapshot(slug)
+            resolved_files = loader._resolve_critic_scope(scope, all_files, slug)
+            resolved_files_list = sorted(str(f) for f in resolved_files)
+            files_hash = hash_file_set(resolved_files)
             key = (slug, files_hash)
             seen_scope_keys.add(key)
 
             if key not in existing_scopes:
                 # New critic scope - create ORM instance
                 logger.debug(f"Adding critic scope: {slug} (hash={files_hash[:8]}...)")
-                orm_scope = CriticScopeDB(snapshot_slug=slug, files=scope.files, files_hash=files_hash)
+                orm_scope = CriticScopeDB(snapshot_slug=slug, files=resolved_files_list, files_hash=files_hash)
                 session.add(orm_scope)
                 added += 1
-                total += 1
             else:
                 # Existing critic scope - check if update needed
                 existing = existing_scopes[key]
-                needs_update = False
-
-                # Check if files changed (though hash should catch this)
-                if existing.files != scope.files:
+                if existing.files != resolved_files_list:
                     logger.debug(f"Updating critic scope files: {slug}")
-                    existing.files = scope.files
-                    needs_update = True
-
-                if needs_update:
+                    existing.files = resolved_files_list
                     updated += 1
 
-                total += 1
+            total += 1
 
     # Delete orphaned critic scopes (in DB but not in source)
     for key in set(existing_scopes.keys()) - seen_scope_keys:

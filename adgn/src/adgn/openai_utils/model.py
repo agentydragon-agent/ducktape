@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Literal, Protocol, Self, cast
+from typing import Any, Literal, Self
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
@@ -13,9 +14,9 @@ from openai.types.responses import (
     response_usage as sdk_usage_types,
 )
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.openai_utils.types import ReasoningEffort, ReasoningParams
+from adgn.openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
 # ------------------------------
 # Usage types (wrapped from OpenAI SDK)
@@ -71,14 +72,26 @@ class InputTextPart(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
+class OutputTextPart(BaseModel):
+    """Text content from assistant messages.
+
+    When assistant messages appear in the input (multi-turn conversations),
+    they use type='output_text' not 'input_text'.
+    """
+
+    type: Literal["output_text"] = "output_text"
+    text: str
+    model_config = ConfigDict(extra="allow")
+
+
 class AssistantMessage(BaseModel):
     role: Literal["assistant"] = "assistant"
-    content: list[InputTextPart] | None = None
+    content: list[OutputTextPart] | None = None
     model_config = ConfigDict(extra="allow")
 
     @classmethod
     def text(cls, text: str) -> Self:
-        return cls(content=[InputTextPart(text=text)])
+        return cls(content=[OutputTextPart(text=text)])
 
 
 class UserMessage(BaseModel):
@@ -109,14 +122,11 @@ class ReasoningSummaryItem(BaseModel):
 
 
 class ReasoningItem(BaseModel):
-    """Our internal reasoning item representation.
-
-    Gets converted to SDK format when sending to API.
-    """
+    """Our internal reasoning item representation."""
 
     type: Literal["reasoning"] = "reasoning"
     id: str | None = None
-    summary: list[ReasoningSummaryItem] = Field(default_factory=list)  # API requires this field
+    summary: list[ReasoningSummaryItem] = Field(default_factory=list)
     model_config = ConfigDict(extra="allow")
 
 
@@ -131,7 +141,6 @@ class FunctionCallItem(BaseModel):
 
 
 class FunctionCallOutputItem(BaseModel):
-    # Responses API prefers the payload under "output".
     type: Literal["function_call_output"] = "function_call_output"
     call_id: str
     output: str | None = Field(default=None, description="Tool output as string (JSON if structured)")
@@ -181,16 +190,6 @@ class ResponsesRequest(BaseModel):
     # Allow unknown fields for forward-compat (timeouts, metadata, etc.)
     model_config = ConfigDict(extra="allow")
 
-    def to_kwargs(self) -> dict[str, Any]:
-        """Normalize to kwargs compatible with AsyncOpenAI.responses.create()."""
-        payload = self.model_dump(exclude_none=True)
-        input_value = payload.get("input")
-        if isinstance(input_value, list):
-            payload["input"] = [
-                it.model_dump(exclude_none=True) if isinstance(it, BaseModel) else it for it in input_value
-            ]
-        return payload
-
 
 # ------------------------------
 # Structured response types (our layer)
@@ -215,30 +214,16 @@ class AssistantMessageOut(BaseModel):
     parts: list[OutputText]
     model_config = ConfigDict(extra="allow")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _coerce_text(cls, data: str | dict[str, Any]) -> dict[str, Any]:
-        if isinstance(data, str):
-            return {"parts": [{"text": data}]}
-        if isinstance(data, dict) and "parts" not in data:
-            text = data.get("text")
-            if isinstance(text, str):
-                new_data = dict(data)
-                new_data.pop("text", None)
-                new_data["parts"] = [{"text": text}]
-                return new_data
-        return data
-
     @property
     def text(self) -> str:
         return "\n".join(part.text for part in self.parts if part.text)
 
     def to_input_item(self) -> AssistantMessage:
-        content_parts: list[InputTextPart] = []
+        content_parts: list[OutputTextPart] = []
         for part in self.parts:
-            part_data = part.model_dump(exclude_none=True)
-            part_data.setdefault("type", "input_text")
-            content_parts.append(InputTextPart.model_validate(part_data))
+            part_data = part.model_dump()
+            part_data.setdefault("type", "output_text")
+            content_parts.append(OutputTextPart.model_validate(part_data))
         return AssistantMessage(role="assistant", content=content_parts)
 
 
@@ -250,19 +235,13 @@ def response_out_item_to_input(item: BaseModel) -> InputItem:
     raise TypeError(f"Unsupported response item type: {type(item)!r}")
 
 
-@response_out_item_to_input.register
-def _(item: ReasoningItem) -> InputItem:
-    return item  # No conversion needed, ReasoningItem is already an InputItem
+def _identity(item: InputItem) -> InputItem:
+    return item
 
 
-@response_out_item_to_input.register
-def _(item: FunctionCallItem) -> InputItem:
-    return item  # No conversion needed, FunctionCallItem is already an InputItem
-
-
-@response_out_item_to_input.register
-def _(item: FunctionCallOutputItem) -> InputItem:
-    return item  # No conversion needed, FunctionCallOutputItem is already an InputItem
+response_out_item_to_input.register(ReasoningItem)(_identity)
+response_out_item_to_input.register(FunctionCallItem)(_identity)
+response_out_item_to_input.register(FunctionCallOutputItem)(_identity)
 
 
 @response_out_item_to_input.register
@@ -270,23 +249,20 @@ def _(item: AssistantMessageOut) -> InputItem:
     return item.to_input_item()
 
 
-def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMessageOut | None:
-    parts: list[OutputText] = []
-    for content_item in message.content:
-        if isinstance(content_item, ResponseOutputText):
-            part = OutputText(
-                text=content_item.text,
-                annotations=[annotation.model_dump(exclude_none=True) for annotation in content_item.annotations]
-                if content_item.annotations
-                else None,
-            )
-            parts.append(part)
+def _message_output_to_assistant(message: ResponseOutputMessage) -> AssistantMessageOut:
+    parts = [
+        OutputText(
+            text=content_item.text,
+            annotations=[annotation.model_dump() for annotation in content_item.annotations]
+            if content_item.annotations
+            else None,
+        )
+        for content_item in message.content
+        if isinstance(content_item, ResponseOutputText)
+    ]
     if not parts:
-        return None
+        raise ValueError("ResponseOutputMessage has no text parts")
     return AssistantMessageOut(parts=parts)
-
-
-# Removed legacy aliases; use AssistantMessageOut and OutputText explicitly
 
 
 class ResponsesResult(BaseModel):
@@ -300,29 +276,40 @@ class ResponsesResult(BaseModel):
         out_items: list[ResponseOutItem] = []
         for item in sdk_resp.output:
             if isinstance(item, ResponseReasoningItem):
-                # Convert SDK Summary objects to our ReasoningSummaryItem
-                summary_items = []
-                if item.summary:
-                    summary_items = [ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
-                out_items.append(ReasoningItem(id=item.id, summary=summary_items))
+                out_items.append(
+                    ReasoningItem(
+                        id=item.id,
+                        summary=[ReasoningSummaryItem(text=s.text, type=s.type) for s in item.summary]
+                        if item.summary
+                        else [],
+                    )
+                )
             elif isinstance(item, ResponseFunctionToolCall):
                 out_items.append(
                     FunctionCallItem(
-                        name=item.name,
-                        arguments=item.arguments,  # Already string from SDK
-                        call_id=item.call_id,
-                        id=item.id,
-                        status=item.status,
+                        name=item.name, arguments=item.arguments, call_id=item.call_id, id=item.id, status=item.status
                     )
                 )
             elif isinstance(item, ResponseOutputMessage):
-                converted = _message_output_to_assistant(item)
-                if converted is not None:
-                    out_items.append(converted)
+                out_items.append(_message_output_to_assistant(item))
             else:
                 raise NotImplementedError(f"Unsupported output item type: {type(item)}")
         usage = ResponseUsage.from_sdk(sdk_resp.usage) if sdk_resp.usage else None
         return cls(id=sdk_resp.id, usage=usage, output=out_items)
+
+
+# ------------------------------
+# Protocol for bound model interface
+# ------------------------------
+
+
+class OpenAIModelProto(ABC):
+    """Abstract base class for AsyncOpenAI adapters with bound model."""
+
+    model: str
+
+    @abstractmethod
+    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
 
 
 # ------------------------------
@@ -331,64 +318,32 @@ class ResponsesResult(BaseModel):
 
 
 @dataclass
-class OpenAIModel:
+class OpenAIModel(OpenAIModelProto):
     client: AsyncOpenAI
-
-    @property
-    def responses(self):  # Pydantic-only surface: .responses.create(ResponsesRequest)
-        outer = self
-
-        class _Compat:
-            async def create(self, req: ResponsesRequest) -> ResponsesResult:
-                result = await outer.responses_create(req)
-                return cast(ResponsesResult, result)
-
-        return _Compat()
+    model: str
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         """Create a Responses completion (non-streaming) and convert to our types."""
         if not isinstance(req, ResponsesRequest):
             raise TypeError("responses_create expects a ResponsesRequest instance")
-        # No baked-in defaults; caller must set model/tool_choice/reasoning explicitly
 
-        kwargs = req.to_kwargs()
+        kwargs = req.model_dump()
         sdk_resp: Response = await self.client.responses.create(**kwargs)
         return ResponsesResult.from_sdk(sdk_resp)
 
 
-# ------------------------------
-# Test-friendly fake (records typed CapturedRequest, returns canned outputs)
-# ------------------------------
-
-
 @dataclass
-class BoundOpenAIModel:
-    """AsyncOpenAI adapter that binds a specific model and returns Pydantic results.
-
-    Implements the OpenAIModelProto protocol.
-    """
+class BoundOpenAIModel(OpenAIModelProto):
+    """AsyncOpenAI adapter that binds a specific model and returns Pydantic results."""
 
     client: AsyncOpenAI
     model: str
     reasoning_effort: ReasoningEffort | None = None
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        kwargs = req.to_kwargs()
-        # Enforce bound-model contract: always use the instance's model
+        kwargs = req.model_dump()
         kwargs["model"] = self.model
         if self.reasoning_effort and "reasoning" not in kwargs:
-            kwargs["reasoning"] = {"effort": self.reasoning_effort.value}
+            kwargs["reasoning"] = build_reasoning_params(effort=self.reasoning_effort)
         sdk_resp: Response = await self.client.responses.create(**kwargs)
         return ResponsesResult.from_sdk(sdk_resp)
-
-
-# ---------------------------------------------
-# Protocol for MiniCodex consumption (bound model)
-# ---------------------------------------------
-
-
-class OpenAIModelProto(Protocol):  # pragma: no cover - structural typing only
-    @property
-    def model(self) -> str: ...
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...

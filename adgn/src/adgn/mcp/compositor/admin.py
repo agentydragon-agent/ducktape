@@ -1,33 +1,34 @@
 from fastmcp.mcp_config import MCPServerTypes
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
-class AttachServerArgs(BaseModel):
+class AttachServerArgs(OpenAIStrictModeBaseModel):
     name: str = Field(description="Mount name (must be unique and not contain '__')")
     spec: MCPServerTypes = Field(description="Typed MCP server spec (stdio/http/transforming)")
     model_config = ConfigDict(extra="forbid")
 
 
-class DetachServerArgs(BaseModel):
+class DetachServerArgs(OpenAIStrictModeBaseModel):
     name: str
     model_config = ConfigDict(extra="forbid")
 
 
 def make_compositor_admin_server(
     *, compositor: Compositor, name: str = COMPOSITOR_ADMIN_SERVER_NAME
-) -> NotifyingFastMCP:
+) -> EnhancedFastMCP:
     """Create an admin MCP server for mounting/unmounting/listing servers.
 
     Notes
     - Attaches external transports only (stdio/http). In-proc mounts are wired by the host runtime.
     - All tool calls go through the Compositor and policy middleware (when mounted under it).
     """
-    mcp = NotifyingFastMCP(
+    mcp = EnhancedFastMCP(
         name,
         instructions=(
             "Compositor mount lifecycle admin (attach/detach/list). In-proc servers are managed by the runtime."

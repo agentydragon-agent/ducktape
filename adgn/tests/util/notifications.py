@@ -59,7 +59,7 @@ def parse_system_notification_payload(message: str | UserMessage) -> dict:
 
 
 def enable_resources_caps(server: Any, *, subscribe: bool | None = None, list_changed: bool | None = None) -> None:
-    """Monkeypatch a FastMCP/NotifyingFastMCP server to advertise resources capabilities.
+    """Monkeypatch a FastMCP/EnhancedFastMCP server to advertise resources capabilities.
 
     This wraps the server's low-level create_initialization_options() to inject
     experimental_capabilities for the 'resources' group.

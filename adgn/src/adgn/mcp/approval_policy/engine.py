@@ -51,7 +51,8 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
     from adgn.mcp.compositor.server import Compositor
@@ -80,11 +81,11 @@ class ProposalDecision(StrEnum):
 # ---- Pydantic models ----
 
 
-class CreateProposalArgs(BaseModel):
+class CreateProposalArgs(OpenAIStrictModeBaseModel):
     content: str
 
 
-class WithdrawProposalArgs(BaseModel):
+class WithdrawProposalArgs(OpenAIStrictModeBaseModel):
     id: str
 
 
@@ -95,17 +96,17 @@ class ProposalDescriptor(BaseModel):
     decided_at: datetime | None = None
 
 
-class DecideCallArgs(BaseModel):
+class DecideCallArgs(OpenAIStrictModeBaseModel):
     call_id: str
     decision: CallDecision
 
 
-class DecideProposalArgs(BaseModel):
+class DecideProposalArgs(OpenAIStrictModeBaseModel):
     proposal_id: str
     decision: ProposalDecision
 
 
-class SetPolicyTextArgs(BaseModel):
+class SetPolicyTextArgs(OpenAIStrictModeBaseModel):
     """Direct policy set input for admin endpoint."""
 
     source: str
@@ -384,7 +385,7 @@ class PolicyEngine:
     """Complete policy subsystem - servers, state, and middleware.
 
     Owns:
-    - reader: NotifyingFastMCP with evaluate_policy, policy resources, pending://calls
+    - reader: EnhancedFastMCP with evaluate_policy, policy resources, pending://calls
     - policy_proposer: FastMCP with propose/withdraw tools
     - admin: FastMCP with decide_call, decide_proposal, set_policy tools
     - _hub: Internal ApprovalHub for pending call coordination
@@ -410,9 +411,9 @@ class PolicyEngine:
         self._hub = _ApprovalHub(on_change=self._on_hub_change)
 
         # Create owned servers
-        self.reader = NotifyingFastMCP(name="reader", instructions=_load_instructions())
-        self.policy_proposer = NotifyingFastMCP(name="policy_proposer", instructions=None)
-        self.admin = NotifyingFastMCP(name="admin", instructions=None)
+        self.reader = EnhancedFastMCP(name="reader", instructions=_load_instructions())
+        self.policy_proposer = EnhancedFastMCP(name="policy_proposer", instructions=None)
+        self.admin = EnhancedFastMCP(name="admin", instructions=None)
 
         # Register tools/resources on each server
         self._register_reader()
@@ -634,7 +635,7 @@ class PolicyEngine:
 # ---- Compositor attach helpers ----
 
 
-async def attach_reader(comp: Compositor, engine: PolicyEngine, *, name: str = "reader") -> NotifyingFastMCP:
+async def attach_reader(comp: Compositor, engine: PolicyEngine, *, name: str = "reader") -> EnhancedFastMCP:
     """Attach the policy reader server (resources + evaluate_policy tool)."""
     await comp.mount_inproc(name, engine.reader)
     return engine.reader
@@ -654,7 +655,7 @@ async def attach_admin(comp: Compositor, engine: PolicyEngine, *, name: str = "a
 
 async def attach_approval_policy_readonly(
     comp: Compositor, engine: PolicyEngine, *, name: str = APPROVAL_POLICY_SERVER_NAME
-) -> NotifyingFastMCP:
+) -> EnhancedFastMCP:
     """Attach the policy reader server with the standard approval_policy name."""
     return await attach_reader(comp, engine, name=name)
 

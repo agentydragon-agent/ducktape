@@ -10,7 +10,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, GraderRun as DBGraderRun, Prompt, Snapshot
-from adgn.props.files_hash import hash_critic_scope_files
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
@@ -54,9 +53,9 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
     """
     # Build valset index: (snapshot_slug, files_hash) -> validation dataset index
     # This maps database keys to GEPA DataIds (list indices)
+    # files_hash is precomputed during sync (from resolved files)
     valset_idx_by_key: dict[tuple[SnapshotSlug, str], int] = {
-        (snapshot_input.slug, hash_critic_scope_files(snapshot_input.target_files)): idx
-        for idx, snapshot_input in enumerate(valset)
+        (snapshot_input.slug, snapshot_input.files_hash): idx for idx, snapshot_input in enumerate(valset)
     }
 
     with get_session() as session:

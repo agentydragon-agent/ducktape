@@ -8,11 +8,10 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.notifications.handler import NotificationsHandler
-from adgn.mcp._shared.fastmcp_flat import mcp_flat_model
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import parse_any_url
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
 
 # Note: build_mcp_function still needed for ToolStub construction (line 66) and direct call_tool (line 159)
@@ -36,8 +35,8 @@ class PrimeInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class _NotifierServer(FastMCP):
-    """Test helper FastMCP that can emit resource-updated notifications via a callback.
+class _NotifierServer(EnhancedFastMCP):
+    """Test helper EnhancedFastMCP that can emit resource-updated notifications via a callback.
 
     Emits ResourceUpdated notifications via the protocol inside tool logic.
     """
@@ -45,7 +44,7 @@ class _NotifierServer(FastMCP):
     def __init__(self) -> None:
         super().__init__(name="notifier", instructions="Test notifier server")
 
-        @mcp_flat_model(self)
+        @self.flat_model()
         async def notify_policy(input: NotifyPolicyInput, context: Context) -> NotifyPolicyOutput:
             # Protocol-level notification: emit ResourceUpdatedNotification from server to client
             assert context.request_context is not None, "request_context must be present in tool handler"
@@ -155,7 +154,7 @@ async def test_notifications_within_turn_from_tool(
 
 async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
     # Server that can broadcast notifications outside a tool
-    server = NotifyingFastMCP(name="notifier", instructions="Notifier test")
+    server = EnhancedFastMCP(name="notifier", instructions="Notifier test")
 
     @server.tool()
     async def prime(input: PrimeInput) -> SimpleOk:

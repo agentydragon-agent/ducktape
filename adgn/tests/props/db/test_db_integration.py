@@ -31,7 +31,8 @@ from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import TruePositiveOccurrence
-from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
+from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
+from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST, make_grader_output
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -229,16 +230,15 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
             snapshot_slug="valid/spec-test",
             model="test-model",
             critique_id=valid_critique_id,
-            output={
-                "grade": {
-                    "canonical_tp_coverage": {},
-                    "canonical_fp_coverage": {},
-                    "novel_critique_issues": {},
-                    "reported_issue_ratios": {"tp": 0.8, "fp": 0.1, "unlabeled": 0.1},
-                    "recall": 0.8,
-                    "summary": "Test grader run for RLS validation",
-                }
-            },
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+            output=make_grader_output(
+                tp_count=2,
+                fp_count=1,
+                recall=0.8,
+                tp_ratio=0.8,
+                fp_ratio=0.1,
+                summary="Test grader run for RLS validation",
+            ),
         )
         session.add(valid_grader_run)
         session.commit()

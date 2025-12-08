@@ -20,6 +20,7 @@ from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
+from pydantic import TypeAdapter
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -35,16 +36,16 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
+from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
 from adgn.props.grader.models import (
-    FILTER_TPS_BY_CRITIC_SCOPE,
     CritiqueInputIssue,
     FalsePositiveID,
     GraderInput,
@@ -55,14 +56,13 @@ from adgn.props.grader.models import (
     TruePositiveID,
     TruePositiveIssue,
 )
+from adgn.props.hydration import HydratedSnapshot, SnapshotHydrator
 from adgn.props.ids import InputIssueID, SnapshotSlug
 from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.prompts.util import MCP_HTTP_CONNECTION_INSTRUCTIONS
 from adgn.props.rationale import Rationale
 from adgn.props.servers.http_launcher import launch_mcp_http_server
-from adgn.props.snapshot_hydrated import HydratedSnapshot
-from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 logger = logging.getLogger(__name__)
 
@@ -147,7 +147,7 @@ class GradeInputs:
     reviewed_files: set[Path] | None = None  # Files reviewed by critic (for scope filtering)
 
 
-def build_grader_submit_tools(mcp: NotifyingFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
+def build_grader_submit_tools(mcp: EnhancedFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
     """Register grader submit tool with validation context."""
     # Load ORM snapshot from database for ground truth issues
     with get_session() as session:
@@ -184,7 +184,7 @@ If your submission is rejected or returns an error from the grader_submit server
 
 def make_grader_submit_server(
     state: GradeSubmitState, inputs: GradeInputs, auth: AuthProvider | None = None
-) -> NotifyingFastMCP:
+) -> EnhancedFastMCP:
     """Create MCP server with submit_result tool.
 
     Args:
@@ -192,7 +192,7 @@ def make_grader_submit_server(
         inputs: Grading context (snapshot slug and critique).
         auth: Auth provider for HTTP mode (None for inproc).
     """
-    mcp = NotifyingFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
+    mcp = EnhancedFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
     build_grader_submit_tools(mcp, state, inputs=inputs)
     return mcp
 
@@ -304,6 +304,7 @@ async def _run_grader_agent(
     verbose: bool,
     extra_handlers: tuple[BaseHandler, ...],
     http_mode: bool = False,
+    max_lines: int = DEFAULT_MAX_LINES,
 ) -> None:
     """Run the grader agent.
 
@@ -363,6 +364,7 @@ Grade the critique, then submit your result by invoking the grader_submit server
                         if verbose
                         else None,
                         servers=servers,
+                        max_lines=max_lines,
                     ),
                     *extra_handlers,
                 ]
@@ -394,6 +396,7 @@ async def run_grader(
     canonical_fps: list[KnownFalsePositive],
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
+    max_lines: int = DEFAULT_MAX_LINES,
 ) -> tuple[GraderOutput, UUID]:
     """Run grader agent: evaluate critique against ground truth, persist to DB.
 
@@ -419,6 +422,11 @@ async def run_grader(
         snapshot = session.query(Snapshot).filter_by(slug=input_data.snapshot_slug).one()
         snapshot_split = snapshot.split
 
+        # Serialize canonical issues for snapshot tracking
+        tp_data = TypeAdapter(list[TruePositiveIssue]).dump_python(canonical_tps, mode="json")
+        fp_data = TypeAdapter(list[KnownFalsePositive]).dump_python(canonical_fps, mode="json")
+        canonical_snapshot = {"true_positives": tp_data, "false_positives": fp_data}
+
         session.add(
             DBGraderRun(
                 id=run_id,
@@ -427,6 +435,7 @@ async def run_grader(
                 model=client.model,
                 critique_id=input_data.critique_id,
                 prompt_optimization_run_id=input_data.prompt_optimization_run_id,
+                canonical_issues_snapshot=canonical_snapshot,
                 output=None,  # Will be set in Phase 2
             )
         )
@@ -445,7 +454,7 @@ async def run_grader(
         # grade_critique_by_id (for prompt filtering). Consider refactoring to single source
         # or making the critique → files relationship more explicit.
         reviewed_files: set[Path] | None = None
-        if FILTER_TPS_BY_CRITIC_SCOPE and critique_orm.critic_run:
+        if critique_orm.critic_run:
             reviewed_files = {Path(f) for f in critique_orm.critic_run.files}
 
     # Convert critique issues to CritiqueInputIssue
@@ -461,7 +470,7 @@ async def run_grader(
     # Run agent with either HTTP or in-proc server based on toggle
     @asynccontextmanager
     async def _http_context():
-        def server_factory(token: str) -> NotifyingFastMCP:
+        def server_factory(token: str) -> EnhancedFastMCP:
             auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
             return make_grader_submit_server(grader_state, inputs, auth)
 
@@ -516,6 +525,7 @@ async def run_grader(
             verbose=verbose,
             extra_handlers=extra_handlers,
             http_mode=bool(extra_env),
+            max_lines=max_lines,
         )
 
     if grader_state.result is None:
@@ -535,7 +545,11 @@ async def run_grader(
 
 
 async def grade_critique_by_id(
-    session: Session, critique_id: UUID, client: OpenAIModelProto, verbose: bool = False
+    session: Session,
+    critique_id: UUID,
+    client: OpenAIModelProto,
+    prompt_optimization_run_id: UUID | None = None,
+    verbose: bool = False,
 ) -> UUID:
     """Grade critique by ID, return grader_run_id.
 
@@ -543,7 +557,7 @@ async def grade_critique_by_id(
         session: Database session (caller manages transaction)
         critique_id: ID of critique to grade
         client: OpenAI client
-        registry: Snapshot registry (still required for source hydration)
+        prompt_optimization_run_id: Optional link to prompt optimization session
         verbose: Enable verbose output
 
     Returns:
@@ -560,14 +574,21 @@ async def grade_critique_by_id(
     canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
     canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
 
-    # Filter TPs/FPs by critic scope if enabled
-    if FILTER_TPS_BY_CRITIC_SCOPE and critique.critic_run:
+    # Filter TPs/FPs by critic scope
+    if critique.critic_run:
         reviewed_files = {Path(f) for f in critique.critic_run.files}
 
         # Only include TPs where at least one occurrence is catchable from reviewed files
+        original_tp_count = len(canonical_tps)
         canonical_tps = [
             tp for tp in canonical_tps if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
         ]
+
+        # Raise error if no TPs are catchable from reviewed files
+        if original_tp_count > 0 and len(canonical_tps) == 0:
+            raise ValueError(
+                f"Cannot grade: 0/{original_tp_count} TPs catchable from reviewed files {sorted(str(f) for f in reviewed_files)}"
+            )
 
         # Only include FPs where at least one occurrence is relevant to reviewed files
         canonical_fps = [
@@ -575,7 +596,9 @@ async def grade_critique_by_id(
         ]
 
     # Create grader input
-    grader_input = GraderInput(snapshot_slug=snapshot_slug, critique_id=critique_id)
+    grader_input = GraderInput(
+        snapshot_slug=snapshot_slug, critique_id=critique_id, prompt_optimization_run_id=prompt_optimization_run_id
+    )
 
     # Hydrate source code only (not issues - already loaded from DB)
     hydrator = SnapshotHydrator.from_package_resources()

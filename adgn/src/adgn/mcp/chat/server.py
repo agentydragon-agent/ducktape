@@ -6,7 +6,8 @@ from aiosqlite import Row
 from pydantic import BaseModel, Field
 
 from adgn.agent.persist.sqlite import SQLitePersistence
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Server names (mounted in-proc with a shared store)
 CHAT_HUMAN_SERVER_NAME = "chat.human"
@@ -37,7 +38,7 @@ def _row_to_message(row: Row) -> ChatMessage:
     )
 
 
-class PostInput(BaseModel):
+class PostInput(OpenAIStrictModeBaseModel):
     mime: str = Field(description="MIME type for the content")
     content: str
 
@@ -46,7 +47,7 @@ class PostResult(BaseModel):
     id: str
 
 
-class ReadPendingInput(BaseModel):
+class ReadPendingInput(OpenAIStrictModeBaseModel):
     limit: int | None = Field(ge=1, le=1000, description="Max messages to return (None = unlimited)")
 
 
@@ -57,8 +58,8 @@ class ReadPendingResult(BaseModel):
 
 @dataclass
 class _ServerRefs:
-    human: NotifyingFastMCP | None = None
-    assistant: NotifyingFastMCP | None = None
+    human: EnhancedFastMCP | None = None
+    assistant: EnhancedFastMCP | None = None
 
 
 class ChatStore:
@@ -76,7 +77,7 @@ class ChatStore:
         self._last_read: dict[str, int | None] = {CHAT_HUMAN_SERVER_NAME: None, CHAT_ASSISTANT_SERVER_NAME: None}
         self._servers = _ServerRefs()
 
-    def register_servers(self, *, human: NotifyingFastMCP | None, assistant: NotifyingFastMCP | None) -> None:
+    def register_servers(self, *, human: EnhancedFastMCP | None, assistant: EnhancedFastMCP | None) -> None:
         self._servers = _ServerRefs(human=human, assistant=assistant)
 
     @property
@@ -283,10 +284,10 @@ class ChatStorePersisted(ChatStore):
         return msgs, (str(global_last) if global_last is not None else None)
 
 
-def make_chat_server(*, name: str, author: ChatAuthor, store: ChatStore) -> NotifyingFastMCP:
+def make_chat_server(*, name: str, author: ChatAuthor, store: ChatStore) -> EnhancedFastMCP:
     """Build a chat server bound to a fixed author and a shared store."""
 
-    m = NotifyingFastMCP(name=name, instructions=None)
+    m = EnhancedFastMCP(name=name, instructions=None)
 
     # Head sentinel: last_id only (small)
     @m.resource("chat://head", name="chat.head", mime_type="application/json")

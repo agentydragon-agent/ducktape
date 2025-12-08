@@ -26,7 +26,7 @@ import pytest
 from adgn.agent.agent import MiniCodex
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP, mcp_flat_model
+from adgn.mcp.enhanced import EnhancedFastMCP
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
@@ -49,11 +49,11 @@ class ToolAResult(BaseModel):
 
 
 @pytest.fixture
-def server_a() -> FlatModelFastMCP:
+def server_a() -> EnhancedFastMCP:
     """Create server A with a simple flat tool."""
-    mcp = FlatModelFastMCP("server_a")
+    mcp = EnhancedFastMCP("server_a")
 
-    @mcp_flat_model(mcp)
+    @mcp.flat_model()
     def tool_a(input: ToolAInput) -> ToolAResult:
         """Perform tool A on the inputs."""
         return ToolAResult(value=input.param_x + input.param_y)
@@ -116,11 +116,11 @@ ToolBResult = Annotated[ResponseA | ResponseB, Field(discriminator="status")]
 
 
 @pytest.fixture
-def server_b() -> FlatModelFastMCP:
+def server_b() -> EnhancedFastMCP:
     """Create server B with complex nested schema."""
-    mcp = FlatModelFastMCP("server_b")
+    mcp = EnhancedFastMCP("server_b")
 
-    @mcp_flat_model(mcp)
+    @mcp.flat_model()
     def tool_b(input: ToolBInput) -> ToolBResult:
         """Perform tool B with complex validation.
 

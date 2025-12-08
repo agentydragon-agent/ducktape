@@ -13,6 +13,7 @@ from adgn.mcp._shared.constants import DOCKER_SERVER_NAME, PROPS_DIR, WORKING_DI
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.props.db.config import DbConnectionConfig
 from adgn.props.prop_utils import props_definitions_root
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ def properties_docker_spec(
     extra_volumes: dict[str, dict[str, str]] | None = None,
     ephemeral: bool = True,
     workspace_mode: str = "ro",
-    db_url: str | None = None,
+    db_conn: DbConnectionConfig | None = None,
     network_mode: str | None = None,
     extra_env: dict[str, str] | None = None,
 ) -> PropertiesDockerWiring:
@@ -114,7 +115,7 @@ def properties_docker_spec(
         extra_volumes: Additional volumes to mount (merged with standard volumes).
         ephemeral: Whether container should be removed after use.
         workspace_mode: Mount mode for workspace ("ro" or "rw").
-        db_url: Database URL to inject as DATABASE_URL environment variable.
+        db_conn: Database connection config. Sets PG* env vars from its fields directly.
         network_mode: Docker network mode (default "none" for isolation).
         extra_env: Additional environment variables to inject (e.g., MCP_SERVER_URL).
     """
@@ -136,12 +137,20 @@ def properties_docker_spec(
         "PYTHONPYCACHEPREFIX": "/tmp/__pycache__",
     }
 
-    # Inject database URL if provided
-    if db_url:
-        env["DATABASE_URL"] = db_url
-        logger.info(f"Setting DATABASE_URL in container environment: {db_url[:50]}...")
+    # Inject database connection config if provided
+    if db_conn:
+        # Set PG* env vars directly from config - psql respects these natively
+        env["PGHOST"] = db_conn.host
+        env["PGPORT"] = str(db_conn.port)
+        env["PGDATABASE"] = db_conn.database
+        env["PGUSER"] = db_conn.user
+        env["PGPASSWORD"] = db_conn.password
+        logger.info(
+            f"Set PG* env vars: PGHOST={db_conn.host}, "
+            f"PGPORT={db_conn.port}, PGDATABASE={db_conn.database}, PGUSER={db_conn.user}"
+        )
     else:
-        logger.warning("No db_url provided - container will not have database access")
+        logger.warning("No db_conn provided - container will not have database access")
 
     # Merge extra environment variables (e.g., MCP_SERVER_URL, MCP_SERVER_TOKEN)
     env.update(extra_env or {})

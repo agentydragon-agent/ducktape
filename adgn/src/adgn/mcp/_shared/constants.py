@@ -44,6 +44,9 @@ GRADER_SUBMIT_SERVER_NAME: Final[str] = "grader_submit"
 RESOURCES_SERVER_NAME: Final[str] = "resources"
 SEATBELT_EXEC_SERVER_NAME: Final[str] = "seatbelt_exec"
 
+# Prompt evaluation server resource URIs
+PROMPT_OPTIMIZATION_RUN_ID_URI: Final[str] = "resource://prompt_eval/prompt_optimization_run_id"
+
 # Approval policy resource URI (neutral/logical; no host mount implications)
 APPROVAL_POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
 APPROVAL_POLICY_PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"

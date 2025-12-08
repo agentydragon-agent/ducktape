@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import anyio
 
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 
-m = NotifyingFastMCP("stdio_child")
+m = EnhancedFastMCP("stdio_child")
 
 
 @m.tool(name="emit")

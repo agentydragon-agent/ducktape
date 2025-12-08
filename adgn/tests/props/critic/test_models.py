@@ -3,13 +3,12 @@
 Tests for models defined in critic/models.py.
 """
 
-from pathlib import Path
-
 from hamcrest import assert_that, equal_to
 import pytest
 
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticSubmitPayload, CriticSuccess
+from adgn.props.critic.models import CriticInput, CriticSubmitPayload, CriticSuccess
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 
 
 @pytest.fixture
@@ -23,22 +22,22 @@ class TestCriticModels:
 
     def test_critic_input_valid(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
         """CriticInput should accept valid snapshot_slug, files, and prompt hash."""
-        critic_input = CriticInput(
-            snapshot_slug=mock_snapshot_slug, files={Path("src/main.py")}, prompt_sha256=mock_prompt_sha256
-        )
+        files_spec = ExplicitFileScope(files=["src/main.py"])
+        critic_input = CriticInput(snapshot_slug=mock_snapshot_slug, files=files_spec, prompt_sha256=mock_prompt_sha256)
 
         assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to({Path("src/main.py")}))
+        assert_that(critic_input.files, equal_to(files_spec))
         assert_that(critic_input.prompt_sha256, equal_to(mock_prompt_sha256))
 
     def test_critic_input_with_sentinel(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
-        """CriticInput should accept ALL_FILES_WITH_ISSUES sentinel."""
+        """CriticInput should accept AllFilesScope sentinel."""
+        all_files_spec = AllFilesScope()
         critic_input = CriticInput(
-            snapshot_slug=mock_snapshot_slug, files=ALL_FILES_WITH_ISSUES, prompt_sha256=mock_prompt_sha256
+            snapshot_slug=mock_snapshot_slug, files=all_files_spec, prompt_sha256=mock_prompt_sha256
         )
 
         assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to(ALL_FILES_WITH_ISSUES))
+        assert_that(critic_input.files, equal_to(all_files_spec))
 
     def test_critic_success_variant(self):
         """CriticSuccess should wrap successful critique result."""

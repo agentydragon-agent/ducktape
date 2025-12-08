@@ -11,14 +11,16 @@ import typer
 
 from adgn.agent.agent import MiniCodex, TranscriptItem
 from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.display.rich_display import CompactDisplayHandler
 from adgn.agent.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import ForbidAllTools
+from adgn.cli_utils import async_run
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import AssistantMessage, FunctionCallItem, UserMessage
-from adgn.props.cli.decorators import async_run
+from adgn.openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage
+from adgn.props.cli.common_options import OPT_MAX_LINES
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import CriticRun, Event, GraderRun
+from adgn.props.db.models import Event
 
 
 def _find_transcript_by_prefix(prefix: str) -> UUID:
@@ -55,27 +57,33 @@ def _find_transcript_by_prefix(prefix: str) -> UUID:
 
 @async_run
 async def cmd_speak_with_dead(
-    agent_type: str,
     transcript_prefix: str,
     question: str,
     turn_index: int | None = typer.Option(
         None, "--turn-index", "-t", help="Truncate transcript at this turn index (0-based)"
     ),
+    display: bool = typer.Option(
+        True, "--display/--no-display", "-d", help="Display transcript before asking question"
+    ),
+    max_lines: int = OPT_MAX_LINES,
 ) -> None:
     """Interrogate a stuck agent by loading its state and asking a question.
 
     Args:
-        agent_type: Type of agent (e.g., 'grader', 'critic') - currently informational only
         transcript_prefix: Hex prefix of the transcript ID to load
         question: Question to ask the agent about why it's stuck
         turn_index: Optional turn index to truncate transcript at (useful for debugging specific points)
+        display: Display transcript before asking question
+        max_lines: Max lines per event in display
 
     Example:
-        adgn-properties speak-with-dead grader 4a969972 'why are you stuck?'
-        adgn-properties speak-with-dead critic 1e070b96 'what happened?' --turn-index 10
+        adgn-properties speak-with-dead 4a969972 'why are you stuck?'
+        adgn-properties speak-with-dead 1e070b96 'what happened?' --turn-index 10
+        adgn-properties speak-with-dead 7a2919d5 'Test' --display --max-lines 5
     """
     console = Console()
-    console.print(f"[dim]Loading {agent_type} agent with transcript prefix {transcript_prefix}...[/dim]\n")
+
+    console.print(f"[dim]Loading transcript {transcript_prefix}...[/dim]\n")
 
     # Find transcript by prefix
     transcript_id = _find_transcript_by_prefix(transcript_prefix)
@@ -83,31 +91,8 @@ async def cmd_speak_with_dead(
 
     init_db()
 
-    # Load run metadata and events from DB
+    # Load events from DB
     with get_session() as session:
-        # Try to find CriticRun first
-        critic_run = session.execute(
-            select(CriticRun).where(CriticRun.transcript_id == transcript_id)
-        ).scalar_one_or_none()
-
-        # If not found, try GraderRun
-        grader_run = None
-        if not critic_run:
-            grader_run = session.execute(
-                select(GraderRun).where(GraderRun.transcript_id == transcript_id)
-            ).scalar_one_or_none()
-
-        if not critic_run and not grader_run:
-            console.print(f"[red]ERROR: No CriticRun or GraderRun found for transcript {transcript_id}[/red]")
-            return
-
-        # Extract model from run
-        run = critic_run or grader_run
-        assert run is not None, "Run should not be None after the check above"
-        model = run.model
-        console.print(f"[dim]Using model: {model}[/dim]")
-
-        # Load events from DB
         stmt = select(Event).where(Event.transcript_id == transcript_id).order_by(Event.sequence_num)
         events = session.execute(stmt).scalars().all()
 
@@ -117,20 +102,57 @@ async def cmd_speak_with_dead(
 
         console.print(f"[dim]Loaded {len(events)} events from transcript {transcript_id}[/dim]")
 
-        # Extract system instructions from last ApiRequest event
+        # Extract model and system instructions from last ApiRequest event
+        model: str | None = None
         system_instructions: str | None = None
         for event in reversed(events):
             if isinstance(event.payload, ApiRequest):
+                model = event.payload.model
                 system_instructions = event.payload.request.instructions
                 break
 
+        if model is None:
+            console.print("[red]ERROR: No ApiRequest events found, cannot determine model[/red]")
+            return
+
+        console.print(f"[dim]Using model: {model}[/dim]")
+
         if system_instructions is None:
-            console.print("[yellow]WARNING: No ApiRequest events found, using fallback interrogation prompt[/yellow]")
+            console.print("[yellow]WARNING: No system instructions found in ApiRequest, using fallback prompt[/yellow]")
             system_instructions = (
                 "You are reviewing your own execution trace. Answer the user's question about why you might be stuck."
             )
         else:
             console.print("[dim]Using system instructions from last ApiRequest event[/dim]")
+
+        # Display transcript if requested (while still in session to access payload)
+        if display:
+            console.print(f"\n[cyan]{'=' * console.width}[/cyan]")
+            console.print(f"[cyan]Displaying transcript (width={console.width}, max_lines={max_lines})[/cyan]")
+            console.print(f"[cyan]{'=' * console.width}[/cyan]\n")
+
+            # Create display console with terminal width
+            display_console = Console(width=console.width)
+            display_handler = CompactDisplayHandler(console=display_console, max_lines=max_lines, servers={})
+
+            # Replay events through display handler
+            for event in events:
+                payload = event.payload
+
+                if isinstance(payload, UserText):
+                    display_handler.on_user_text_event(payload)
+                elif isinstance(payload, AssistantText):
+                    display_handler.on_assistant_text_event(payload)
+                elif isinstance(payload, ToolCall):
+                    display_handler.on_tool_call_event(payload)
+                elif isinstance(payload, ToolCallOutput):
+                    display_handler.on_tool_result_event(payload)
+                elif isinstance(payload, ReasoningItem):
+                    display_handler.on_reasoning(payload)
+
+            console.print(f"\n[cyan]{'=' * console.width}[/cyan]")
+            console.print("[cyan]End of transcript display[/cyan]")
+            console.print(f"[cyan]{'=' * console.width}[/cyan]\n")
 
         # Reconstruct transcript from events (while still in session)
         transcript_items: list[TranscriptItem] = []

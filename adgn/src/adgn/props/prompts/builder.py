@@ -13,7 +13,7 @@ from adgn.props.grader.models import (
     ReportedIssueRatios,
     TruePositiveIssue,
 )
-from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
+from adgn.props.models.true_positive import LineRange, Occurrence
 
 from .schemas import build_input_schemas_json, compact_json_serialize
 from .util import render_prompt_template
@@ -48,7 +48,6 @@ def build_grade_from_json_prompt(
         [
             Occurrence,
             LineRange,
-            IssueCore,
             ReportedIssue,
             CriticSubmitPayload,
             CanonicalTPCoverage,

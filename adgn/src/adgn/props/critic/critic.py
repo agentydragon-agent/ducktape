@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import logging
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
@@ -35,12 +35,13 @@ from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
+from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.models import (
-    ALL_FILES_WITH_ISSUES,
     CriticInput,
     CriticScopeSpec,
     CriticSubmitPayload,
@@ -54,6 +55,7 @@ from adgn.props.docker_env import properties_docker_spec
 from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.util import render_prompt_template
 
@@ -88,12 +90,10 @@ class CriticFailure(BaseModel):
 CriticOutput = Annotated[CriticSuccess | CriticFailure, Field(discriminator="tag")]
 
 
-class ReportFailureInput(BaseModel):
+class ReportFailureInput(OpenAIStrictModeBaseModel):
     """Input for report_failure tool."""
 
     message: str = Field(description="Error message explaining why critique could not be completed")
-
-    model_config = ConfigDict(extra="forbid")
 
 
 # =============================================================================
@@ -123,24 +123,20 @@ def _ensure_not_submitted(state: CriticSubmitState) -> None:
 RangeAtom = int | list[int]
 
 
-class UpsertIssueInput(BaseModel):
+class UpsertIssueInput(OpenAIStrictModeBaseModel):
     """Create or update an issue header (id + rationale)."""
 
     tp_id: BaseIssueID
     description: str = Field(description="Issue rationale/description")
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class CancelIssueInput(BaseModel):
+class CancelIssueInput(OpenAIStrictModeBaseModel):
     """Remove an issue and all its occurrences by id."""
 
     tp_id: BaseIssueID
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class AddOccurrenceInput(BaseModel):
+class AddOccurrenceInput(OpenAIStrictModeBaseModel):
     """Add one occurrence for an issue.
 
     ranges is a list of either integers (single-line) or 2-element lists [start,end].
@@ -153,10 +149,8 @@ class AddOccurrenceInput(BaseModel):
         list[RangeAtom], Field(min_length=1, description="List of single lines (int) or spans [start,end]")
     ]
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class SubmitInput(BaseModel):
+class SubmitInput(OpenAIStrictModeBaseModel):
     """Finalize: the model must state the number of issues it believes it created."""
 
     issues_count: int = Field(
@@ -164,19 +158,15 @@ class SubmitInput(BaseModel):
         description="Number of issues created. REQUIRED: Use 0 if no issues found. Must exactly match the count of issues you created via upsert_issue.",
     )
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class FileRanges(BaseModel):
+class FileRanges(OpenAIStrictModeBaseModel):
     """File path with associated line ranges."""
 
-    path: Path
+    path: str
     ranges: list[RangeAtom]
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class AddOccurrenceFilesInput(BaseModel):
+class AddOccurrenceFilesInput(OpenAIStrictModeBaseModel):
     """Add one occurrence spanning multiple files and ranges.
 
     files: list of files with their line ranges.
@@ -184,8 +174,6 @@ class AddOccurrenceFilesInput(BaseModel):
 
     tp_id: BaseIssueID
     files: list[FileRanges]
-
-    model_config = ConfigDict(extra="forbid")
 
 
 CRITIC_MCP_INSTRUCTIONS = (
@@ -203,7 +191,7 @@ CRITIC_MCP_INSTRUCTIONS = (
 )
 
 
-def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -> None:
+def build_critic_submit_tools(mcp: EnhancedFastMCP, state: CriticSubmitState) -> None:
     """Register critic submit tools on the provided server (tools-builder pattern)."""
 
     def _parse_ranges(atoms: list[RangeAtom]) -> list[LineRange]:
@@ -251,8 +239,15 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
             f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
         )
 
-    @mcp.tool()
-    async def show_critique() -> CriticSubmitPayload:
+    @mcp.flat_model()
+    async def get_critique() -> CriticSubmitPayload:
+        """Get current state of the critique (inspection only).
+
+        Use this to double-check what issues the server has collected so far.
+
+        This is a READ-ONLY inspection tool. It does NOT complete the review.
+        To finish the review, you MUST call submit().
+        """
         return state.work
 
     @mcp.flat_model()
@@ -275,10 +270,19 @@ def build_critic_submit_tools(mcp: NotifyingFastMCP, state: CriticSubmitState) -
 
     @mcp.flat_model()
     async def submit(payload: SubmitInput) -> SimpleOk:
-        """Finalize critique and complete the review.
+        """**REQUIRED FINAL STEP** - Submit your critique and end the review task.
 
-        ALWAYS call this when finished analyzing, even if you found zero issues.
-        The 'issues' count must exactly match the number of issues you created via upsert_issue.
+        This is the ONE AND ONLY gate to complete the critique task. You MUST call this function
+        to signal completion, whether you found issues or not. Until you call submit(), you will
+        continue being prompted to take actions.
+
+        Call this when you have finished your analysis, even if you found zero issues.
+
+        Args:
+            issues_count: Number of issues you created via upsert_issue (can be 0)
+            notes_md: Optional notes about your review
+
+        The issues_count must exactly match the number of issues you created via upsert_issue.
         """
         _ensure_not_submitted(state)
         missing = [it.id for it in state.work.issues if not it.occurrences]
@@ -358,22 +362,22 @@ def _render_critic_submit_payload(obj: CriticSubmitPayload):
 
 
 async def resolve_critic_scope(snapshot_slug: SnapshotSlug, files: CriticScopeSpec) -> ResolvedFileScope:
-    """Resolve file scope for critic, handling ALL_FILES_WITH_ISSUES sentinel.
+    """Resolve file scope for critic, handling discriminated union.
 
     Loads files with issues from database (no jsonnet evaluation).
 
     Args:
         snapshot_slug: Target snapshot
-        files: Explicit file set or ALL_FILES_WITH_ISSUES sentinel
+        files: Discriminated union of ExplicitFileScope or AllFilesScope
 
     Returns:
         Resolved file set (guaranteed non-empty)
 
     Raises:
-        ValueError: If sentinel is used but snapshot has no files with issues
+        ValueError: If AllFilesScope is used but snapshot has no files with issues
     """
     resolved_files: set[Path]
-    if files == ALL_FILES_WITH_ISSUES:
+    if isinstance(files, AllFilesScope):
         # Load files with issues from database (not from jsonnet!)
         with get_session() as session:
             snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
@@ -381,11 +385,12 @@ async def resolve_critic_scope(snapshot_slug: SnapshotSlug, files: CriticScopeSp
             if not resolved_files:
                 raise ValueError(
                     f"Snapshot '{snapshot_slug}' has no files with ground truth issues. "
-                    f"Cannot use '{ALL_FILES_WITH_ISSUES}' sentinel."
+                    "Cannot use AllFilesScope sentinel."
                 )
     else:
-        # Type narrowing: if not ALL_FILES_WITH_ISSUES, must be set[Path]
-        resolved_files = cast(set[Path], files)
+        # Type narrowing: must be ExplicitFileScope
+        assert isinstance(files, ExplicitFileScope)
+        resolved_files = {Path(f) for f in files.files}
 
     return resolved_files
 
@@ -404,6 +409,7 @@ async def run_critic(
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
+    max_lines: int = DEFAULT_MAX_LINES,
 ) -> tuple[CriticSuccess, UUID, UUID]:
     """Execute critic agent to produce candidate issues and persist to DB.
 
@@ -467,7 +473,7 @@ async def run_critic(
         runtime_server = await wiring.attach(comp)
 
         # Mount critic submit server
-        critic_server = NotifyingFastMCP(CRITIC_SUBMIT_SERVER_NAME, instructions=CRITIC_MCP_INSTRUCTIONS)
+        critic_server = EnhancedFastMCP(CRITIC_SUBMIT_SERVER_NAME, instructions=CRITIC_MCP_INSTRUCTIONS)
         build_critic_submit_tools(critic_server, critic_state)
         await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, critic_server)
 
@@ -490,6 +496,7 @@ async def run_critic(
                 if verbose
                 else None,
                 servers=servers,
+                max_lines=max_lines,
             ),
             AbortIf(should_abort=_ready_state),
             *extra_handlers,

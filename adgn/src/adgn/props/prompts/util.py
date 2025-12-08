@@ -8,10 +8,10 @@ from typing import Any
 from compact_json import Formatter  # type: ignore[import-untyped]
 from jinja2 import Environment, PackageLoader
 
-from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
+from adgn.props.critic.models import ReportedIssue
 from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
-from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
+from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
 
 
@@ -142,7 +142,7 @@ def build_standard_context(
 
     if include_schemas:
         context["schemas_json"] = build_input_schemas_json(
-            [Occurrence, LineRange, IssueCore, ReportedIssue, CriticSubmitPayload, GradeMetrics, GradeSubmitInput]
+            [Occurrence, LineRange, ReportedIssue, GradeMetrics, GradeSubmitInput]
         )
 
     return context

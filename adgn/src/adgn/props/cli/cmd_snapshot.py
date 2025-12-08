@@ -1,4 +1,4 @@
-"""Snapshot management commands: list, dump, exec, capture-ducktape."""
+"""Snapshot management commands: list, dump, exec, shell, capture-ducktape."""
 
 from __future__ import annotations
 
@@ -14,16 +14,19 @@ import pygit2
 import typer
 import yaml
 
+from adgn.cli_utils import async_run
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_build_bundle import cmd_build_bundle
-from adgn.props.cli.decorators import async_run
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_volumes, ensure_critic_image
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.snapshot_hydrator import SnapshotHydrator
+
+# Snapshot subcommand group
+snapshot_app = typer.Typer(help="Snapshot commands")
 
 
 @async_run
@@ -74,15 +77,28 @@ async def snapshot_dump(
         raise typer.Exit(2) from e
 
 
-@async_run
-async def snapshot_exec(
-    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
-    workdir: Path = opt.OPT_WORKDIR_CRITIC,
-    interactive: bool = opt.OPT_INTERACTIVE,
-    tty_exec: bool = opt.OPT_TTY_EXEC,
-    cmd: list[str] = opt.ARG_CMD_LIST,
-) -> None:
-    """Execute a command in a container with hydrated snapshot mounted at /workspace (RW)."""
+async def _run_in_snapshot_container(
+    snapshot: SnapshotSlug,
+    workdir: Path,
+    exec_command: list[str],
+    *,
+    interactive: bool = False,
+    tty_exec: bool = False,
+    setup_script: str | None = None,
+) -> int:
+    """Shared logic for running commands in a snapshot container.
+
+    Args:
+        snapshot: Snapshot slug to hydrate
+        workdir: Working directory in container
+        exec_command: Command to execute in container (e.g., ["sed", "-n", "1,10p", "file"])
+        interactive: If True, pass -i flag to docker exec
+        tty_exec: If True, pass -t flag to docker exec
+        setup_script: Optional bash script to run before exec_command
+
+    Returns:
+        Exit code from executed command
+    """
     # Docker sanity
     try:
         dclient = docker.from_env()
@@ -120,18 +136,54 @@ async def snapshot_exec(
             stdin_open=True,
         )
         try:
-            exec_cmd = ["docker", "exec"]
+            # Apply optional setup script
+            if setup_script:
+                exec_result = container.exec_run(["bash", "-c", setup_script], demux=False)
+                if exec_result.exit_code != 0:
+                    typer.echo(f"WARNING: Setup script failed: {exec_result.output.decode()}", err=True)
+
+            # Execute main command
+            # Docker syntax: docker exec [OPTIONS] CONTAINER COMMAND [ARGS...]
+            exec_flags = []
             if interactive:
-                exec_cmd.append("-i")
+                exec_flags.append("-i")
             if tty_exec:
-                exec_cmd.append("-t")
-            exec_cmd.append(name)
-            exec_cmd.extend(cmd)
-            proc = await asyncio.create_subprocess_exec(*exec_cmd)
-            rc = await proc.wait()
-            raise typer.Exit(rc)
+                exec_flags.append("-t")
+            full_cmd = ["docker", "exec", *exec_flags, name, *exec_command]
+            proc = await asyncio.create_subprocess_exec(*full_cmd)
+            return await proc.wait()
         finally:
             container.stop()
+
+
+@async_run
+async def snapshot_exec(
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
+    workdir: Path = opt.OPT_WORKDIR_CRITIC,
+    interactive: bool = opt.OPT_INTERACTIVE,
+    tty_exec: bool = opt.OPT_TTY_EXEC,
+    cmd: list[str] = opt.ARG_CMD_LIST,
+) -> None:
+    """Execute a command in a container with hydrated snapshot mounted at /workspace (RW)."""
+    rc = await _run_in_snapshot_container(snapshot, workdir, cmd, interactive=interactive, tty_exec=tty_exec)
+    raise typer.Exit(rc)
+
+
+@async_run
+async def snapshot_shell(snapshot: SnapshotSlug = opt.ARG_SNAPSHOT, workdir: Path = opt.OPT_WORKDIR_CRITIC) -> None:
+    """Open an interactive bash shell in a container with hydrated snapshot mounted at /workspace (RW).
+
+    Applies snapshot_shell_setup.sh for editor configuration.
+    """
+    # Load shell setup script
+    setup_script_path = Path(__file__).parent.parent / "snapshot_shell_setup.sh"
+    setup_script = setup_script_path.read_text(encoding="utf-8")
+
+    # Launch interactive bash with setup
+    rc = await _run_in_snapshot_container(
+        snapshot, workdir, ["/bin/bash"], interactive=True, tty_exec=True, setup_script=setup_script
+    )
+    raise typer.Exit(rc)
 
 
 def snapshot_capture_ducktape(
@@ -208,8 +260,22 @@ def snapshot_capture_ducktape(
     typer.echo()
     typer.echo("Rebuilding bundle with new snapshot...")
 
-    # Rebuild bundle with new snapshot
-    cmd_build_bundle(specimens_dir=get_specimens_base_path())
+    # Rebuild bundle with new snapshot and get tag->commit mapping
+    tag_to_commit = cmd_build_bundle(specimens_dir=get_specimens_base_path())
+
+    # Update snapshots.yaml with the actual bundle commit SHA
+    if tag_name in tag_to_commit:
+        bundle_commit_sha = str(tag_to_commit[tag_name])
+
+        with snapshots_yaml_path.open() as f:
+            snapshots_data = yaml.safe_load(f)
+
+        snapshots_data[slug]["source"]["commit"] = bundle_commit_sha
+
+        with snapshots_yaml_path.open("w") as f:
+            yaml.dump(snapshots_data, f, default_flow_style=False, sort_keys=False)
+
+        typer.echo(f"✓ Updated snapshots.yaml with bundle commit: {bundle_commit_sha[:12]}")
 
     typer.echo()
     typer.echo(f"✓ Snapshot captured: {slug}")
@@ -217,8 +283,13 @@ def snapshot_capture_ducktape(
     typer.echo(f"  snapshots.yaml: {snapshots_yaml_path}")
     typer.echo()
     typer.echo("Next steps:")
-    typer.echo(f"  1. Update snapshots.yaml {slug} entry with the correct 'source.commit' SHA from bundle")
-    typer.echo(f"  2. Add issues to {issues_dir}/")
-    typer.echo(
-        f"  3. Commit changes: git add {snapshot_dir} {snapshots_yaml_path} src/adgn/props/specimens/ducktape/snapshots.bundle"
-    )
+    typer.echo(f"  1. Add issues to {issues_dir}/")
+    typer.echo("  2. Commit changes")
+
+
+# Register commands
+snapshot_app.command("list")(cmd_snapshot_list)
+snapshot_app.command("dump")(snapshot_dump)
+snapshot_app.command("exec")(snapshot_exec)
+snapshot_app.command("shell")(snapshot_shell)
+snapshot_app.command("capture-ducktape")(snapshot_capture_ducktape)

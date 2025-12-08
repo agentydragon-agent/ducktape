@@ -16,6 +16,7 @@ from adgn.agent.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from adgn.mcp._shared.constants import SUBMIT_COMMIT_MESSAGE_SERVER_NAME
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.git_ro.server import (
     GIT_RO_SERVER_NAME,
     DiffFormat,
@@ -26,7 +27,6 @@ from adgn.mcp.git_ro.server import (
     TextSlice,
     attach_git_ro,
 )
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem
 
@@ -150,7 +150,7 @@ class SubmitState:
 
 
 def make_submit_server(state: SubmitState):
-    m = NotifyingFastMCP("submit_commit_message", instructions="Submit commit message (subject/body) and finish")
+    m = EnhancedFastMCP("submit_commit_message", instructions="Submit commit message (subject/body) and finish")
 
     @m.flat_model()
     def submit_commit_message(payload: CommitMessage) -> SimpleOk:

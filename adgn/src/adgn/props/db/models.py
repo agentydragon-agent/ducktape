@@ -22,7 +22,6 @@ from adgn.agent.events import EventType
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.grader.models import GraderOutput
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
-from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 from adgn.props.splits import Split
@@ -203,6 +202,19 @@ class Snapshot(Base):
         }
         return tp_files | fp_files
 
+    def is_full_specimen_scope(self, scope: CriticScopeDB) -> bool:
+        """Check if a critic scope represents all files with issues (full-specimen).
+
+        Args:
+            scope: CriticScopeDB instance to check
+
+        Returns:
+            True if scope.files matches this snapshot's files_with_issues()
+        """
+        all_files_with_issues = {str(f) for f in self.files_with_issues()}
+        scope_files_set = set(scope.files)
+        return scope_files_set == all_files_with_issues
+
 
 class TruePositive(Base):
     """True positive (expected findings).
@@ -316,9 +328,7 @@ class CriticScopeDB(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
     )
-    files: Mapped[CriticScopeSpec] = mapped_column(
-        PydanticColumn(CriticScopeSpec), nullable=False, comment="Files to review: set[Path] or 'all' sentinel"
-    )
+    files: Mapped[list[str]] = mapped_column(JSONB, nullable=False, comment="List of file paths to review")
     # Hash of files field for unique constraint (JSONB not directly indexable)
     files_hash: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="SHA256 hash of normalized files field for uniqueness"
@@ -463,6 +473,15 @@ class GraderRun(Base):
     """Single grader run (critique + snapshot → metrics).
 
     No direct prompt link; linked via critique → critic_run → prompt.
+
+    Tracking canonical issues:
+        canonical_issues_snapshot stores the TPs+FPs used at grading time.
+        This enables detecting stale grader runs after editing issue files.
+
+        To find stale runs for a snapshot:
+            1. Load current canonical TPs+FPs from registry
+            2. Serialize with TypeAdapter + canonicaljson (same as grader.py)
+            3. Query for runs where canonical_issues_snapshot != current snapshot
     """
 
     __tablename__ = "grader_runs"
@@ -476,6 +495,11 @@ class GraderRun(Base):
     critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=False)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
+    )
+    canonical_issues_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSONB,
+        nullable=False,
+        comment="Snapshot of canonical TPs+FPs used at grading time. Keys: 'true_positives', 'false_positives'",
     )
     output: Mapped[GraderOutput] = mapped_column(PydanticColumn(GraderOutput), nullable=False)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -536,26 +560,6 @@ class Event(Base):
     )
 
 
-class ModelPricing(Base):
-    """OpenAI model pricing and context limits (mirrors model_metadata.py).
-
-    Synchronized from adgn.openai_utils.model_metadata.MODEL_METADATA via CLI.
-    Enables post-hoc cost calculation in SQL.
-    """
-
-    __tablename__ = "model_pricing"
-
-    model_id: Mapped[str] = mapped_column(String, primary_key=True)
-    input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
-    cached_input_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
-    output_usd_per_1m_tokens: Mapped[float] = mapped_column(nullable=False)
-    context_window_tokens: Mapped[int] = mapped_column(nullable=False)
-    max_output_tokens: Mapped[int] = mapped_column(nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-
 class RunCost(Base):
     """Cost metrics from run_costs database VIEW (not a table).
 
@@ -607,9 +611,9 @@ def create_run_costs_view(target, connection, **kw):
 
     uncached_tokens = input_tokens_int - cached_tokens_int
     cost_usd = (
-        uncached_tokens * ModelPricing.input_usd_per_1m_tokens / 1000000.0
-        + cached_tokens_int * ModelPricing.cached_input_usd_per_1m_tokens / 1000000.0
-        + output_tokens_int * ModelPricing.output_usd_per_1m_tokens / 1000000.0
+        uncached_tokens * ModelMetadata.input_usd_per_1m_tokens / 1000000.0
+        + cached_tokens_int * ModelMetadata.cached_input_usd_per_1m_tokens / 1000000.0
+        + output_tokens_int * ModelMetadata.output_usd_per_1m_tokens / 1000000.0
     ).label("cost_usd")
 
     run_costs_query = (
@@ -625,7 +629,7 @@ def create_run_costs_view(target, connection, **kw):
             Event.timestamp,
         )
         .select_from(Event)
-        .join(ModelPricing, Event.payload["usage"]["model"].astext == ModelPricing.model_id)
+        .join(ModelMetadata, Event.payload["usage"]["model"].astext == ModelMetadata.model_id)
         .where(Event.event_type == "response", Event.payload["usage"] != None)  # noqa: E711
     )
 

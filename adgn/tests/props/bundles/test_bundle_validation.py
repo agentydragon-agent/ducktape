@@ -6,9 +6,9 @@ from pathlib import Path
 import pytest
 
 from adgn.props.db.sync import get_specimens_base_path, load_manifests_from_yaml
+from adgn.props.hydration import SnapshotHydrator, resolve_bundle_url
 from adgn.props.ids import get_snapshot_manifest_path
 from adgn.props.models.snapshot import GitSource
-from adgn.props.snapshot_hydrator import SnapshotHydrator, resolve_bundle_url
 
 # Size limit for files in bundle (2MB)
 MAX_FILE_SIZE = 2 * 1024 * 1024

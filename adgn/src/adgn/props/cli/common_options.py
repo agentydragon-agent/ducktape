@@ -19,12 +19,21 @@ ARG_PROMPT = typer.Argument(..., help="Candidate critic system prompt to evaluat
 # Options - General
 OPT_MODEL = typer.Option("gpt-5", help="Model id")
 OPT_DRY_RUN = typer.Option(False, help="Compose prompt only; do not run")
+
+# Options - Model Selection (shared between prompt-optimize and gepa)
+OPT_OPTIMIZER_MODEL = typer.Option("gpt-5.1", help="Model for prompt optimizer/reflection agent")
+OPT_CRITIC_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for critic execution")
+OPT_GRADER_MODEL = typer.Option("gpt-5.1-codex-mini", help="Model for grader execution")
 OPT_FINAL_ONLY = typer.Option(False, help="Print only final message")
 OPT_OUTPUT_FINAL_MESSAGE = typer.Option(None, help="Write final message to this path")
 OPT_ALLOW_GENERAL = typer.Option(False, help="Allow general code-quality findings beyond formal properties")
 OPT_OUTPUT_DIR = typer.Option(None, help="Root directory for run artifacts")
 OPT_MAX_ITERS = typer.Option(10, help="Maximum number of prompt evaluations (tool calls)")
 OPT_VERBOSE = typer.Option(False, "--verbose", "-v", help="Enable verbose output")
+
+# Options - Display
+DEFAULT_MAX_LINES = 10  # Default max lines per event in verbose display
+OPT_MAX_LINES = typer.Option(DEFAULT_MAX_LINES, "--max-lines", "-m", help="Max lines per event in verbose display")
 
 # Options - Context & Environment
 OPT_CONTEXT = typer.Option(
@@ -39,6 +48,7 @@ OPT_FILES_FILTER = typer.Option(None, "--files", help="Limit review to specific 
 
 # Options - Grading & Critique
 OPT_CRITIQUE = typer.Option(..., "--critique", exists=True, help="Path to the input critique JSON file")
+OPT_MAX_PARALLEL = typer.Option(4, "--max-parallel", help="Maximum number of parallel operations")
 
 # Options - Docker Execution
 OPT_INTERACTIVE = typer.Option(False, "-i", help="Attach STDIN (docker exec -i)")

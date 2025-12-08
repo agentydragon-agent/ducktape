@@ -11,7 +11,7 @@ from tests.agent.testdata.approval_policy import fetch_policy
 
 @pytest.mark.requires_docker
 async def test_container_timeout_causes_deny_abort(
-    monkeypatch: pytest.MonkeyPatch, make_pg_client, make_approval_policy_server, backend_server
+    monkeypatch: pytest.MonkeyPatch, make_pg_client, make_approval_policy_server, make_simple_mcp
 ):
     # Force short timeout to trigger evaluator timeout
     monkeypatch.setenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "0.1")
@@ -22,7 +22,7 @@ async def test_container_timeout_causes_deny_abort(
     # Reader server
     reader = engine.reader
 
-    async with make_pg_client({"backend": backend_server, "approval_policy": reader}) as sess:
+    async with make_pg_client({"backend": make_simple_mcp, "approval_policy": reader}) as sess:
         # High-level client surfaces ToolError with message only; assert the canonical message
         with pytest.raises(Exception, match=POLICY_EVALUATOR_ERROR_MSG) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "timeout"})

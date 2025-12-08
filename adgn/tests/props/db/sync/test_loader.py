@@ -16,7 +16,7 @@ from adgn.props.db.sync import (
 )
 from adgn.props.db.sync._loader import FilesystemLoader
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScope
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScope, ExplicitFileScope
 
 
 @pytest.fixture
@@ -52,11 +52,11 @@ def test_load_critic_scopes(loader: FilesystemLoader):
     assert len(ducktape_scopes) > 0
     assert all(isinstance(scope, CriticScope) for scope in ducktape_scopes)
 
-    # Verify scope has required fields (files is set[Path] or "all")
+    # Verify scope has required fields (files is ExplicitFileScope or AllFilesScope)
     first_scope = ducktape_scopes[0]
-    assert first_scope.files == ALL_FILES_WITH_ISSUES or isinstance(first_scope.files, set)
-    if first_scope.files != ALL_FILES_WITH_ISSUES:
-        assert len(first_scope.files) > 0
+    assert isinstance(first_scope.files, ExplicitFileScope | AllFilesScope)
+    if isinstance(first_scope.files, ExplicitFileScope):
+        assert len(first_scope.files.files) > 0
 
 
 def test_load_critic_scopes_missing_file(tmp_path: Path):

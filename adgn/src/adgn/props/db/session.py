@@ -62,7 +62,7 @@ def init_db(config: DatabaseConfig | None = None) -> None:
         config = get_production_config()
 
     url = config.admin_url()
-    logger.info(f"Connecting to database: {config.host}:{config.port}/{config.database}")
+    logger.info(f"Connecting to database: {config.admin.host}:{config.admin.port}/{config.admin.database}")
     # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
     # pool_size: number of connections kept open
     # max_overflow: additional connections beyond pool_size

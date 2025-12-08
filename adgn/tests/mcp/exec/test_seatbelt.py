@@ -141,7 +141,7 @@ async def test_sandbox_exec_cwd_and_env(tmp_path: Path, seatbelt_session) -> Non
         SandboxExecArgs(
             policy=policy,
             argv=["/bin/sh", "-lc", "pwd; echo $FOO"],
-            cwd=tmp_path,
+            cwd=str(tmp_path),
             env={"FOO": "BAR"},
             max_bytes=100000,
             timeout_ms=5_000,

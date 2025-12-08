@@ -260,13 +260,16 @@ def discover_snapshots_to_build(specimens_dir: Path) -> list[tuple[str, Snapshot
     return results
 
 
-def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_bundle: Path) -> None:
+def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_bundle: Path) -> dict[str, pygit2.Oid]:
     """Internal bundle building implementation.
 
     Args:
         specimens_dir: Base directory containing snapshot definitions
         source_repo_path: Path to source git repository
         output_bundle: Output path for bundle file
+
+    Returns:
+        Mapping of tag names to commit OIDs for newly created tags
     """
     # Open source repository
     source_repo = pygit2.Repository(str(source_repo_path))
@@ -276,13 +279,16 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
 
     if not snapshots_to_build:
         print("No snapshots with bundle metadata found")
-        return
+        return {}
 
     print("=== Building snapshot bundle ===")
     print(f"Found {len(snapshots_to_build)} snapshots with bundle metadata:")
     for slug, _ in snapshots_to_build:
         print(f"  - {slug}")
     print()
+
+    # Track newly created tags and their commit OIDs
+    tag_to_commit: dict[str, pygit2.Oid] = {}
 
     # Check if bundle already exists for incremental building
     existing_tags: set[str] = set()
@@ -344,7 +350,7 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
                 continue
 
             # Create filtered commit for new snapshot
-            create_filtered_commit(
+            commit_oid = create_filtered_commit(
                 source_repo=source_repo,
                 bundle_repo=bundle_repo,
                 source_commit_sha=snapshot.bundle.source_commit,
@@ -353,6 +359,8 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
                 include=snapshot.bundle.include or (),
                 exclude=snapshot.bundle.exclude or (),
             )
+            # Store tag -> commit OID mapping
+            tag_to_commit[tag_name] = commit_oid
 
         # Create bundle using git command (pygit2 doesn't support bundle creation)
         # Remove existing bundle first (git bundle create doesn't have --force)
@@ -376,6 +384,8 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
         tags = [line.split()[-1].removeprefix("refs/tags/") for line in list_heads_result.stdout.strip().split("\n")]
         print(f"Tags in bundle: {', '.join(tags)}")
 
+    return tag_to_commit
+
 
 def get_specimens_dir() -> Path:
     """Get the specimens directory from package resources."""
@@ -388,13 +398,16 @@ def get_specimens_dir() -> Path:
 
 def cmd_build_bundle(
     specimens_dir: Path | None = None, source_repo_path: Path | None = None, output_bundle: Path | None = None
-):
+) -> dict[str, pygit2.Oid]:
     """Build snapshot bundle with per-snapshot filters.
 
     Args:
         specimens_dir: Base directory containing snapshots.yaml and snapshot subdirs (default: from package resources)
         source_repo_path: Path to source git repository (default: auto-discovered from current directory)
         output_bundle: Output path for bundle file (default: specimens_dir/ducktape/snapshots.bundle)
+
+    Returns:
+        Mapping of tag names to commit OIDs for newly created tags
 
     Note: The default output path matches the relative URL in snapshots.yaml (file://../snapshots.bundle
     resolved from specimens/ducktape/{snapshot}/ directories).
@@ -413,5 +426,5 @@ def cmd_build_bundle(
         # Default to specimens/ducktape/snapshots.bundle to match snapshots.yaml URLs
         output_bundle = specimens_dir / "ducktape" / "snapshots.bundle"
 
-    # Call internal implementation
-    _build_bundle_internal(specimens_dir, source_repo_path, output_bundle)
+    # Call internal implementation and return the tag->commit mapping
+    return _build_bundle_internal(specimens_dir, source_repo_path, output_bundle)

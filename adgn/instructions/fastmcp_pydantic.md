@@ -39,7 +39,7 @@ def done(payload: DoneInput) -> DoneResult:
 ## DOs
 - Annotate every parameter precisely; prefer a single BaseModel argument for complex tools
 - Use Field(..., description=...) to help the planner
-- Use Literal/enums for closed sets; Optional[T] for nullable
+- Use Literal/enums for closed sets; `Optional[T]` or `T | None` for nullable (prefer `T | None = None` for OpenAI strict mode)
 - Use discriminated unions for Union[...] (Field(discriminator="type")).
 - Keep models small and descriptive; nest when needed
 
@@ -78,6 +78,20 @@ asyncio.run(main())
   - description: FastMCP tool description
   - parameters: inputSchema as returned by FastMCP (JSON Schema)
 - If your tool is correctly typed, the model sees the exact parameter schema and can call it without extra prompt instructions.
+
+## OpenAI Strict Mode
+For tools exposed to OpenAI's API, use `OpenAIStrictModeBaseModel`:
+
+```python
+from adgn.mcp._shared.openai_strict_mode import OpenAIStrictModeBaseModel
+
+class MyToolInput(OpenAIStrictModeBaseModel):
+    cwd: str | None = None        # str not Path
+    files: list[str]               # list not set
+    max_bytes: int = Field(ge=0, le=100_000)
+```
+
+Auto-validates at class definition. Key rules: no `Path`, no `set`, all fields required (use `T | None = None`). Or use `validate_model(YourModel)` for one-off checks.
 
 ## Common pitfalls and fixes
 - Multiple positional params with missing annotations → add full typing or consolidate into a BaseModel

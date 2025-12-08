@@ -18,14 +18,14 @@ import pytest
 
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
-from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Snapshot
 from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.prompt_optimizer import (
+from adgn.props.prompt_optimize.prompt_optimizer import (
     RunCriticOutput,
+    RunCriticToolInput,
     RunGraderInput,
     UpsertPromptInput,
     UpsertPromptOutput,
@@ -33,7 +33,14 @@ from adgn.props.prompt_optimizer import (
 )
 from adgn.props.runs_context import RunsContext
 from tests.support.responses import _StepRunner
-from tests.support.steps import CheckThenCall, DockerExecCall, ExtractThenCall, Finish, MakeCall
+from tests.support.steps import (
+    AssertDockerExecThenFinish,
+    CheckThenCall,
+    DockerExecCall,
+    ExtractThenCall,
+    Finish,
+    MakeCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -87,8 +94,11 @@ def po_agent_steps():
             lambda out: (
                 "prompt_eval",
                 "run_critic",
-                CriticInput(
-                    snapshot_slug=SnapshotSlug(TEST_SPECIMEN_SLUG), files="all", prompt_sha256=out.prompt_sha256
+                RunCriticToolInput(
+                    snapshot_slug=SnapshotSlug(TEST_SPECIMEN_SLUG),
+                    scope_kind="all",
+                    scope_paths=None,
+                    prompt_sha256=out.prompt_sha256,
                 ),
             ),
         ),
@@ -149,10 +159,7 @@ class WorkflowMock(OpenAIModelProto):
         self.critic_runner = critic_runner
         self.grader_runner = grader_runner
         self.dump_requests_to = dump_requests_to
-
-    @property
-    def model(self) -> str:
-        return "fake-model"
+        self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         """Determine which agent from request context and delegate to appropriate runner."""
@@ -201,6 +208,7 @@ async def test_full_workflow_po_agent_critic_grader(
     critic_agent_steps,
     grader_agent_steps,
     test_specimens_hydrator,
+    patch_prompt_optimizer_for_test_db,
 ):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
@@ -227,13 +235,16 @@ async def test_full_workflow_po_agent_critic_grader(
         po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
     )
 
-    with patch("adgn.props.prompt_optimizer.build_client", return_value=mock):
+    # patch_prompt_optimizer_for_test_db fixture already applies the necessary patches
+    with patch("adgn.props.prompt_optimize.prompt_optimizer.build_client", return_value=mock):
         await run_prompt_optimizer(
             budget=1.0,
             ctx=RunsContext.from_pkg_dir(),
             hydrator=test_specimens_hydrator,
             out_dir=tmp_path,
-            model="gpt-5-nano",
+            optimizer_model="gpt-5-nano",
+            critic_model="gpt-5-nano",
+            grader_model="gpt-5-nano",
         )
 
     # make_step_runner fixture automatically validates all steps were executed for all three agents
@@ -249,3 +260,81 @@ async def test_full_workflow_po_agent_critic_grader(
     assert_that(grader_run, has_properties(critique_id=equal_to(critic_run.critique_id), model=equal_to("fake-model")))
     assert_that(grader_run.output.grade, instance_of(GradeSubmitInput))
     assert_that(grader_run.output.grade.recall, equal_to(0.8))
+
+
+@pytest.fixture
+def patch_prompt_optimizer_for_test_db(test_db, test_specimens_hydrator):
+    """Patch prompt optimizer to use test database and test specimens.
+
+    Yields with patches active:
+    - get_production_config() to return test database config
+    - get_specimens_base_path() to return test fixtures path (for DB sync)
+    - specimens_definitions_root() to return test fixtures path (patched where imported in hydration.py)
+    """
+    with (
+        patch("adgn.props.prompt_optimize.prompt_optimizer.get_production_config", return_value=test_db),
+        patch(
+            "adgn.props.prompt_optimize.prompt_optimizer.get_specimens_base_path",
+            return_value=test_specimens_hydrator._base_path,
+        ),
+        patch("adgn.props.hydration.specimens_definitions_root", return_value=test_specimens_hydrator._base_path),
+    ):
+        yield
+
+
+@pytest.fixture
+def psql_connectivity_steps():
+    """Steps for PO agent testing psql connectivity via PG* env vars.
+
+    This tests that the agent container can connect to postgres using the
+    environment variables (PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD)
+    that are injected via properties_docker_spec.
+    """
+    return [
+        DockerExecCall(["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
+        AssertDockerExecThenFinish(expected_output="1", message="psql connectivity verified"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(10)
+@pytest.mark.requires_docker
+async def test_po_agent_psql_connectivity(
+    test_specimen,
+    tmp_path,
+    make_step_runner,
+    psql_connectivity_steps,
+    test_specimens_hydrator,
+    patch_prompt_optimizer_for_test_db,
+):
+    """Test that psql works from the agent container using PG* env vars.
+
+    Verifies that:
+    1. The container has access to psql
+    2. PG* environment variables (PGHOST, PGPORT, etc.) are correctly injected
+    3. Container can reach postgres via Docker network
+    4. psql respects the PG* env vars and connects without explicit arguments
+    """
+    po_runner = make_step_runner(steps=psql_connectivity_steps)
+    # Empty steps for critic/grader - they won't be invoked
+    critic_runner = make_step_runner(steps=[])
+    grader_runner = make_step_runner(steps=[])
+
+    dump_dir = Path(os.environ.get("DUMP_REQUESTS", str(tmp_path / "agent_requests")))
+    mock = WorkflowMock(
+        po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
+    )
+
+    # patch_prompt_optimizer_for_test_db fixture already applies the necessary patches
+    with patch("adgn.props.prompt_optimize.prompt_optimizer.build_client", return_value=mock):
+        await run_prompt_optimizer(
+            budget=1.0,
+            ctx=RunsContext.from_pkg_dir(),
+            hydrator=test_specimens_hydrator,
+            out_dir=tmp_path,
+            optimizer_model="gpt-5-nano",
+            critic_model="gpt-5-nano",
+            grader_model="gpt-5-nano",
+        )
+
+    # Step runner validates that psql executed successfully and returned "1"

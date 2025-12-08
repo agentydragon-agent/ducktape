@@ -14,22 +14,38 @@ from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary
 from adgn.mcp.snapshots import RunningServerEntry
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
+# Default max bytes for resource reading operations
+DEFAULT_MAX_BYTES = 25_000
 
-class ResourcesListArgs(BaseModel):
+
+class ResourcesListArgs(OpenAIStrictModeBaseModel):
     server: str | None = Field(description="Filter by server name (None = all servers)")
     uri_prefix: str | None = Field(description="Restrict to URIs starting with this prefix (None = no filter)")
-    model_config = ConfigDict(extra="forbid")
 
 
 class ResourcesListResult(BaseModel):
     resources: list[ResourceEntry] = Field(
         description="Aggregated resources across servers (each item includes origin server)"
+    )
+    model_config = ConfigDict(extra="forbid")
+
+
+class ResourceTemplateEntry(BaseModel):
+    server: str = Field(description="Origin MCP server name that owns this template")
+    template: mcp_types.ResourceTemplate = Field(description="Resource template from origin server")
+    model_config = ConfigDict(extra="forbid")
+
+
+class ResourceTemplatesListResult(BaseModel):
+    templates: list[ResourceTemplateEntry] = Field(
+        description="Aggregated resource templates across servers (each item includes origin server)"
     )
     model_config = ConfigDict(extra="forbid")
 
@@ -45,21 +61,21 @@ Typed read result is defined after WindowedPart to avoid forward refs.
 """
 
 
-class ResourcesReadArgs(BaseModel):
+class ResourcesReadArgs(OpenAIStrictModeBaseModel):
     server: str = Field(description="Origin MCP server name that owns the resource")
     uri: str = Field(description="Resource URI as reported by the origin server's list")
     start_offset: int = Field(ge=0, description="Start byte offset for windowed reads")
-    max_bytes: int = Field(ge=0, description="Max bytes to return (0 means no limit)")
-    model_config = ConfigDict(extra="forbid")
+    max_bytes: int | None = Field(
+        description=f"Max bytes to return (None means use default limit of {DEFAULT_MAX_BYTES:,} bytes)"
+    )
 
 
-class ResourcesSubscribeArgs(BaseModel):
+class ResourcesSubscribeArgs(OpenAIStrictModeBaseModel):
     server: str = Field(description="Origin MCP server name")
     uri: str = Field(description="Resource URI to subscribe to")
-    model_config = ConfigDict(extra="forbid")
 
 
-# No compositor meta resources here; see adgn.mcp.compositor_meta.server
+# No compositor meta resources here; see adgn.mcp.compositor.meta_server
 
 # ---- Top-level types for resources server (was nested) --------------------
 
@@ -73,9 +89,8 @@ class SubscriptionRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class ListSubscribeArgs(BaseModel):
+class ListSubscribeArgs(OpenAIStrictModeBaseModel):
     server: str
-    model_config = ConfigDict(extra="forbid")
 
 
 class ResourceCapabilityFeature(StrEnum):
@@ -126,6 +141,45 @@ class ResourceReadResult(BaseModel):
     window: ResourceWindowInfo = Field(description="Windowing parameters reflected back")
     parts: list[WindowedPart] = Field(description="Windowed parts (text/base64)")
     total_parts: int = Field(description="Total number of parts reported by the origin server")
+    model_config = ConfigDict(extra="forbid")
+
+
+# ---- Block-level windowing types (new implementation) --------------------
+
+BaseResourceContents = mcp_types.TextResourceContents | mcp_types.BlobResourceContents
+
+
+class TruncatedBlock(BaseModel):
+    """Represents a partially returned resource block with truncation metadata."""
+
+    kind: Literal["truncated"] = "truncated"
+    block_index: int = Field(description="Index of this block in the full resource (0-based)")
+    started_at: int = Field(description="Byte offset where returned content starts within this block")
+    ended_at: int = Field(description="Byte offset where returned content ends within this block")
+    full_size: int = Field(description="Total size of the complete block in bytes")
+    content: BaseResourceContents = Field(description="The partial content for this block")
+    model_config = ConfigDict(extra="forbid")
+
+
+BlockContent = Annotated[BaseResourceContents | TruncatedBlock, Field(discriminator="kind")]
+
+
+class ReadBlocksArgs(OpenAIStrictModeBaseModel):
+    server: str = Field(description="Origin MCP server name")
+    uri: str = Field(description="Resource URI")
+    start_block: int = Field(ge=0, description="Block index to start from (0-based)")
+    start_offset: int = Field(ge=0, description="Byte offset within start_block to begin reading")
+    max_bytes: int | None = Field(
+        description=f"Maximum bytes to return (None means use default limit of {DEFAULT_MAX_BYTES:,} bytes)"
+    )
+
+
+class ReadBlocksResult(BaseModel):
+    """Result of reading resource blocks."""
+
+    blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = Field(
+        description="Resource content blocks, with TruncatedBlock markers for partial blocks"
+    )
     model_config = ConfigDict(extra="forbid")
 
 
@@ -199,6 +253,12 @@ def _build_window_payload(
     start_offset: int,
     max_bytes: int | None,
 ) -> ResourceReadResult:
+    # TODO: Optimization for full resource reads
+    # When reading a full resource (start_offset=0 and max_bytes covers the entire resource),
+    # return the content as native MCP blocks instead of the current windowed response format.
+    # This would be more efficient and idiomatic for full resource reads.
+    # Current behavior: Always returns windowed response with {"window": {...}, "parts": [...], "total_parts": N}
+    # Proposed: When full resource is read, return as standard MCP TextResourceContents or BlobResourceContents
     parts_out: list[WindowedPart] = list(_iter_window_parts(contents, start_offset, max_bytes))
     return ResourceReadResult(
         window=ResourceWindowInfo(start_offset=start_offset, max_bytes=max_bytes or 0),
@@ -207,7 +267,7 @@ def _build_window_payload(
     )
 
 
-def make_resources_server(name: str = "resources", *, compositor: Compositor) -> NotifyingFastMCP:
+def make_resources_server(name: str = "resources", *, compositor: Compositor) -> EnhancedFastMCP:
     """Create a MCP server that aggregates resources across servers.
 
     Args:
@@ -216,30 +276,33 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
 
     - Synthetic server injected by the runtime; reserved name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
+    - Only servers that advertise ``initialize.capabilities.resources`` are queried.
 
     **Policy enforcement architecture:**
     - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
     - This server's internal operations use direct compositor methods to avoid client dependency
     - This prevents double policy enforcement and keeps the resources server as a pure facade
 
-    Tools
-    - ``list(server?: string, uri_prefix?: string) -> { resources: [...] }``
-      Server-side filters by server name and URI prefix.
-    - ``read(server: string, uri: string, start_offset?: int = 0, max_bytes?: int)``
-      Returns a windowed payload for large text/base64 resources.
-    - TODO: ``list_resource_templates(server?: string)`` — expose origin templates via tool surface for LLMs.
-
-    Window semantics
+    **Window semantics:**
     - Windowing is byte-based across the concatenation of all parts reported by the
       underlying server. Text is sliced by UTF-8 bytes and decoded with
       ``errors="replace"`` if a multi-byte character is split at the boundary.
     - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
-
-    Capability gating
-    - Only servers that advertise ``initialize.capabilities.resources`` are queried.
     """
-    mcp = NotifyingFastMCP(
-        name, instructions=("Resources aggregator for listing/reading resources across mounted servers.")
+    mcp = EnhancedFastMCP(
+        name,
+        instructions=(
+            "Resources aggregator for discovering and reading MCP resources that servers explicitly expose.\n\n"
+            "Use `list` to discover available MCP resources (optionally filtered by server name or URI prefix). "
+            "Each resource has an origin server name and URI. "
+            "Use `read` to fetch MCP resource contents with optional windowing for large resources. "
+            "Use `list_resource_templates` to discover URI templates (RFC 6570) that describe patterns "
+            "for constructing resource URIs.\n\n"
+            "For subscription management: use `subscribe`/`unsubscribe` to track individual resource updates, "
+            "or `subscribe_list_changes`/`unsubscribe_list_changes` to track when a server's resource list changes. "
+            "Check the subscriptions index resource for the current subscription state.\n\n"
+            "Note: Only servers that advertise the resources capability in their initialize response are queried."
+        ),
     )
 
     # ---- Subscriptions index (single resource) -----------------------------
@@ -337,17 +400,20 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
         ]
         return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
 
-    # TODO: Consider adding tools to subscribe/unsubscribe to resource list changes
-    # (notifications/resources/list_changed). This would let the agent opt-in to
-    # server-level list change notifications in addition to per-resource updates.
-    # Design questions:
-    # - Scope (global vs per-origin server)
-    # - Persistence/lifetime (session-bound vs durable)
-    # - Whether to expose a "refresh/list" tool to fetch the latest list on notify
+    # TODO: Investigate if agents can subscribe to resource template list changes.
+    # The MCP protocol does not currently define template list change notifications
+    # (only resource list changes via notifications/resources/list_changed).
+    # If/when MCP adds template notifications, add subscribe_template_list_changes
+    # and unsubscribe_template_list_changes tools following the same pattern as
+    # subscribe_list_changes/unsubscribe_list_changes.
 
     @mcp.flat_model()
     async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
-        """List resources via aggregator; derive origin using FastMCP prefix logic."""
+        """List MCP resources that are exposed by servers (if any). Filter by server name or URI prefix if desired.
+
+        Returns only resources that MCP servers explicitly expose via the resources capability.
+        Call this first to see what resources are available before trying to read them.
+        """
         # Call compositor's internal _list_resources_mcp directly to avoid client dependency
         # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
         mcp_list = await compositor._list_resources_mcp()
@@ -372,21 +438,158 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
         return ResourcesListResult(resources=out)
 
     @mcp.flat_model()
-    async def read(input: ResourcesReadArgs) -> ResourceReadResult:
-        """Read a resource with optional windowing (text/base64).
+    async def list_resource_templates() -> ResourceTemplatesListResult:
+        """List URI templates (RFC 6570) that servers expose for constructing resource URIs, tagged by origin server.
 
-        Windowing semantics:
-        - Byte-based across all parts reported by the origin server.
-        - Set max_bytes to limit returned bytes (0 means unbounded).
-        - For large content, use a chunk size (e.g., 16-64 KiB) and call again with
-          start_offset advanced by the bytes_returned of the previous window.
+        Returns templates only from servers that expose them via the resources capability.
+        Use this to discover what resource URIs can be constructed (e.g., resource://runtime/container.info).
+        """
+        # Query each mounted server individually to track template ownership
+        entries = await compositor.server_entries()
+        out: list[ResourceTemplateEntry] = []
+        for server_name, entry in entries.items():
+            if not isinstance(entry, RunningServerEntry):
+                continue
+            # Only query servers that advertise resources capability
+            # (templates are part of the resources capability)
+            if entry.initialize.capabilities.resources is None:
+                continue
+            # Query this server's templates
+            child_client = compositor.get_child_client(server_name)
+            templates = await child_client.list_resource_templates()
+            for template in templates:
+                out.append(ResourceTemplateEntry(server=server_name, template=template))
+        return ResourceTemplatesListResult(templates=out)
+
+    @mcp.flat_model()
+    async def read(input: ResourcesReadArgs) -> ResourceReadResult:
+        """Read contents of an MCP resource that a server exposes. Use start_offset and max_bytes for pagination.
+
+        Only works for resources that servers explicitly expose via their resources capability.
+        Use list_resources_tool first to see what resources are available.
         """
         prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
         uri_value = ANY_URL.validate_python(prefixed)
         # Call compositor method that converts FastMCP types to MCP protocol types
         # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
         contents = await compositor.read_resource_contents(uri_value)
-        return _build_window_payload(contents, input.start_offset, None if input.max_bytes == 0 else input.max_bytes)
+        max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
+        return _build_window_payload(contents, input.start_offset, max_bytes)
+
+    @mcp.flat_model()
+    async def read_blocks(input: ReadBlocksArgs) -> ReadBlocksResult:
+        """Read MCP resource with block-level windowing. Returns complete blocks plus truncation markers for partial blocks.
+
+        Only works for resources that servers explicitly expose via their resources capability.
+        Use list_resources_tool first to see what resources are available.
+
+        Size semantics:
+        - Text blocks: size measured in UTF-8 bytes (not characters)
+        - Blob blocks: size measured in base64 string length (not decoded bytes)
+        - max_bytes limit applies to the sum across all block types
+
+        Slicing behavior:
+        - Text: slice at UTF-8 byte boundaries (may split multi-byte characters, uses errors='replace')
+        - Blob: slice base64 string directly (always valid since base64 is ASCII)
+        """
+        prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
+        uri_value = ANY_URL.validate_python(prefixed)
+        contents = await compositor.read_resource_contents(uri_value)
+
+        max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
+        result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []
+        bytes_accumulated = 0
+
+        for block_idx, block in enumerate(contents):
+            # Skip blocks before start_block
+            if block_idx < input.start_block:
+                continue
+
+            # Get block size
+            if isinstance(block, mcp_types.TextResourceContents):
+                # For text, measure size in UTF-8 bytes
+                block_bytes = block.text.encode("utf-8")
+                block_size = len(block_bytes)
+                is_text = True
+            elif isinstance(block, mcp_types.BlobResourceContents):
+                # For blob, size is base64 string length (no need for bytes representation)
+                block_size = len(block.blob)
+                is_text = False
+                block_bytes = b""  # Not used for blobs
+            else:
+                raise TypeError(f"Unsupported content type: {type(block).__name__}")
+
+            # Determine slice range for this block
+            slice_start = input.start_offset if block_idx == input.start_block else 0
+            remaining_budget = max_bytes - bytes_accumulated
+
+            if slice_start >= block_size:
+                # start_offset is beyond this block, skip it
+                continue
+
+            available_in_block = block_size - slice_start
+            can_take = min(available_in_block, remaining_budget)
+
+            sliced_content: BaseResourceContents
+            if can_take >= available_in_block:
+                # Can include full remainder of block
+                if slice_start == 0:
+                    # Full block, no truncation
+                    result_blocks.append(block)
+                else:
+                    # Partial from start
+                    slice_end = block_size
+                    if is_text:
+                        sliced_bytes = block_bytes[slice_start:slice_end]
+                        sliced_content = mcp_types.TextResourceContents(
+                            uri=block.uri, mimeType=block.mimeType, text=sliced_bytes.decode("utf-8", errors="replace")
+                        )
+                    else:
+                        # blob is base64 string, slice directly
+                        assert isinstance(block, mcp_types.BlobResourceContents)
+                        sliced_content = mcp_types.BlobResourceContents(
+                            uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
+                        )
+                    result_blocks.append(
+                        TruncatedBlock(
+                            block_index=block_idx,
+                            started_at=slice_start,
+                            ended_at=slice_end,
+                            full_size=block_size,
+                            content=sliced_content,
+                        )
+                    )
+                bytes_accumulated += available_in_block
+            else:
+                # Must truncate this block
+                slice_end = slice_start + can_take
+                if is_text:
+                    sliced_bytes = block_bytes[slice_start:slice_end]
+                    sliced_content = mcp_types.TextResourceContents(
+                        uri=block.uri, mimeType=block.mimeType, text=sliced_bytes.decode("utf-8", errors="replace")
+                    )
+                else:
+                    # blob is base64 string, slice directly
+                    assert isinstance(block, mcp_types.BlobResourceContents)
+                    sliced_content = mcp_types.BlobResourceContents(
+                        uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
+                    )
+                result_blocks.append(
+                    TruncatedBlock(
+                        block_index=block_idx,
+                        started_at=slice_start,
+                        ended_at=slice_end,
+                        full_size=block_size,
+                        content=sliced_content,
+                    )
+                )
+                bytes_accumulated += can_take
+                break  # Hit budget limit
+
+            if bytes_accumulated >= max_bytes:
+                break
+
+        return ReadBlocksResult(blocks=result_blocks)
 
     @mcp.flat_model()
     async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
@@ -443,10 +646,7 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
 
     @mcp.flat_model(name="subscribe_list_changes")
     async def subscribe_list_changes(input: ListSubscribeArgs) -> SimpleOk:
-        """Subscribe to resources/list_changed for a single origin server.
-
-        Multiple origins may be selected; repeated calls add servers to the selection.
-        """
+        """Track when a server's resource list changes. Can subscribe to multiple servers."""
         await _ensure_capability(input.server, feature=ResourceCapabilityFeature.LIST_CHANGED)
         async with subs_lock:
             list_subscribed_servers.add(input.server)
@@ -455,7 +655,7 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
 
     @mcp.flat_model(name="unsubscribe_list_changes")
     async def unsubscribe_list_changes(input: ListSubscribeArgs) -> SimpleOk:
-        """Remove an origin from the list-changed subscription set (no-op if absent)."""
+        """Stop tracking resource list changes for a server."""
         async with subs_lock:
             list_subscribed_servers.discard(input.server)
         await _broadcast_subs_updated()

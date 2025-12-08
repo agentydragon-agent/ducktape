@@ -19,7 +19,7 @@ async def test_ui_send_message_and_end_turn_bus(bus, make_typed_mcp) -> None:
 
     async with make_typed_mcp(server, "ui") as (client, _sess):
         # Send a markdown message directly via typed client
-        msg = SendMessageInput(mime=MimeType.MARKDOWN, content="**hello**")
+        msg = SendMessageInput(mime=MimeType.MARKDOWN.value, content="**hello**")
         out: UiMessage = await client.send_message(msg)
         assert out.mime == "text/markdown"
         assert out.content == "**hello**"

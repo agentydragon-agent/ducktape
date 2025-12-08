@@ -6,10 +6,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 PYTHON_SUFFIXES = {".py", ".pyi"}
 
@@ -21,86 +22,74 @@ def is_python_path(path: Path) -> bool:
 # -------------------------- Typed inputs/outputs -----------------------------
 
 
-class ReadInfoArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class ReadInfoArgs(OpenAIStrictModeBaseModel):
+    pass
 
 
 class ReadInfoResult(BaseModel):
     ok: bool
     path: Path
     lines: int
-    model_config = ConfigDict(extra="forbid")
 
 
-class ReadLineRangeArgs(BaseModel):
+class ReadLineRangeArgs(OpenAIStrictModeBaseModel):
     start: int
     end: int | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
 class ReadLineRangeResult(BaseModel):
     ok: bool
     body: str | None = None
     error: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
-class ReplaceTextArgs(BaseModel):
+class ReplaceTextArgs(OpenAIStrictModeBaseModel):
     old_text: str
     new_text: str
-    model_config = ConfigDict(extra="forbid")
 
 
 class ReplaceTextResult(BaseModel):
     ok: bool
     error: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
-class ReplaceTextAllArgs(BaseModel):
+class ReplaceTextAllArgs(OpenAIStrictModeBaseModel):
     old_text: str
     new_text: str
-    model_config = ConfigDict(extra="forbid")
 
 
 class ReplaceTextAllResult(BaseModel):
     ok: bool
     replacements: int | None = None
     error: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
-class DeleteLineArgs(BaseModel):
+class DeleteLineArgs(OpenAIStrictModeBaseModel):
     line_number: int
-    model_config = ConfigDict(extra="forbid")
 
 
 class DeleteLineResult(BaseModel):
     ok: bool
     deleted: str | None = None
     error: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
-class AddLineAfterArgs(BaseModel):
+class AddLineAfterArgs(OpenAIStrictModeBaseModel):
     line_number: int
     content: str
-    model_config = ConfigDict(extra="forbid")
 
 
 class AddLineAfterResult(BaseModel):
     ok: bool
     error: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
-class SaveArgs(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class SaveArgs(OpenAIStrictModeBaseModel):
+    pass
 
 
 class SaveResult(BaseModel):
     ok: bool
-    model_config = ConfigDict(extra="forbid")
 
 
 class EditorOutcome(str, Enum):
@@ -110,29 +99,25 @@ class EditorOutcome(str, Enum):
     FAILURE = "failure"
 
 
-class DoneInput(BaseModel):
+class DoneInput(OpenAIStrictModeBaseModel):
     """Single-argument payload for the done() tool.
 
     - outcome: enum EditorOutcome (success|failure)
     - summary: optional note included in the result
     """
 
-    outcome: EditorOutcome = EditorOutcome.SUCCESS
+    outcome: EditorOutcome
     summary: str | None = None
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class Success(BaseModel):
     kind: Literal["Success"] = "Success"
     summary: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
 class Failure(BaseModel):
     kind: Literal["Failure"] = "Failure"
     summary: str | None = None
-    model_config = ConfigDict(extra="forbid")
 
 
 DoneResponse = Success | Failure
@@ -151,7 +136,7 @@ class EditorState:
 ## Simple file IO helpers are inlined at call sites to avoid trivial indirection
 
 
-def _build_editor_tools(mcp: NotifyingFastMCP, state: EditorState) -> None:
+def _build_editor_tools(mcp: EnhancedFastMCP, state: EditorState) -> None:
     @mcp.flat_model()
     def read_info(input: ReadInfoArgs) -> ReadInfoResult:
         """Return basic info about the current file."""
@@ -254,10 +239,10 @@ async def attach_editor(comp: Compositor, file_path: Path, *, name: str = "edito
     return server
 
 
-def make_editor_server(file_path: Path, *, name: str = "editor") -> NotifyingFastMCP:
+def make_editor_server(file_path: Path, *, name: str = "editor") -> EnhancedFastMCP:
     """Construct an in-process editor server for the given file with standard tools."""
     text = file_path.read_text(encoding="utf-8")
     state = EditorState(file_path=file_path, content=text, original=text)
-    server = NotifyingFastMCP(name, instructions="In-process file editor")
+    server = EnhancedFastMCP(name, instructions="In-process file editor")
     _build_editor_tools(server, state)
     return server

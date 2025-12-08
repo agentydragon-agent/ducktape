@@ -67,11 +67,11 @@ async def test_mount_after_close_raises():
 
 
 @pytest.mark.asyncio
-async def test_cleanup_removes_non_pinned_servers(make_backend_server):
+async def test_cleanup_removes_non_pinned_servers(make_make_simple_mcp):
     """Test that close() removes all non-pinned servers."""
-    backend1 = make_backend_server("backend1")
-    backend2 = make_backend_server("backend2")
-    pinned = make_backend_server("pinned")
+    backend1 = make_make_simple_mcp("backend1")
+    backend2 = make_make_simple_mcp("backend2")
+    pinned = make_make_simple_mcp("pinned")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend1", backend1)
@@ -97,9 +97,9 @@ async def test_cleanup_removes_non_pinned_servers(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_mount_state_transitions(make_backend_server):
+async def test_mount_state_transitions(make_make_simple_mcp):
     """Test that mounts follow correct state transitions."""
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend", backend)
@@ -121,9 +121,9 @@ async def test_mount_state_transitions(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_mount_cleanup_is_idempotent(make_backend_server):
+async def test_mount_cleanup_is_idempotent(make_make_simple_mcp):
     """Test that mount cleanup can be called multiple times safely."""
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend", backend)
@@ -143,9 +143,9 @@ async def test_mount_cleanup_is_idempotent(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_accessing_inactive_mount_raises(make_backend_server):
+async def test_accessing_inactive_mount_raises(make_make_simple_mcp):
     """Test that accessing proxy/client on inactive mount raises."""
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend", backend)
@@ -169,9 +169,9 @@ async def test_accessing_inactive_mount_raises(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_exception_in_body_still_cleans_up(make_backend_server):
+async def test_exception_in_body_still_cleans_up(make_make_simple_mcp):
     """Test that exceptions in context body still trigger cleanup."""
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     comp = Compositor("test")
     try:
@@ -219,10 +219,10 @@ async def test_mount_failure_does_not_leak():
 
 
 @pytest.mark.asyncio
-async def test_close_continues_on_per_server_failure(make_backend_server):
+async def test_close_continues_on_per_server_failure(make_make_simple_mcp):
     """Test that close() continues cleanup even if one server fails."""
-    backend1 = make_backend_server("backend1")
-    backend2 = make_backend_server("backend2")
+    backend1 = make_make_simple_mcp("backend1")
+    backend2 = make_make_simple_mcp("backend2")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend1", backend1)
@@ -251,7 +251,7 @@ async def test_close_continues_on_per_server_failure(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_mount_operations_safe(make_backend_server):
+async def test_concurrent_mount_operations_safe(make_make_simple_mcp):
     """Test that concurrent mount operations don't corrupt state."""
 
     async def mount_many(comp, prefix, count):
@@ -259,7 +259,7 @@ async def test_concurrent_mount_operations_safe(make_backend_server):
         tasks = []
         for i in range(count):
             name = f"{prefix}_{i}"
-            server = make_backend_server(name)
+            server = make_make_simple_mcp(name)
             tasks.append(comp.mount_inproc(name, server))
         await asyncio.gather(*tasks)
 
@@ -275,9 +275,9 @@ async def test_concurrent_mount_operations_safe(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_get_child_client_validates_state(make_backend_server):
+async def test_get_child_client_validates_state(make_make_simple_mcp):
     """Test that get_child_client validates mount state."""
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("backend", backend)
@@ -295,9 +295,9 @@ async def test_get_child_client_validates_state(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_pinned_server_survives_close(make_backend_server):
+async def test_pinned_server_survives_close(make_make_simple_mcp):
     """Test that pinned servers remain after close()."""
-    pinned = make_backend_server("pinned")
+    pinned = make_make_simple_mcp("pinned")
 
     async with Compositor("test") as comp:
         await comp.mount_inproc("pinned", pinned, pinned=True)
@@ -317,14 +317,14 @@ async def test_pinned_server_survives_close(make_backend_server):
 
 
 @pytest.mark.asyncio
-async def test_compositor_warns_on_leak(make_backend_server):
+async def test_compositor_warns_on_leak(make_make_simple_mcp):
     """Test that __del__ detects leaked compositors.
 
     Note: The actual warning emission is tested manually as pytest's warning
     capture doesn't work reliably with ResourceWarnings from __del__.
     This test verifies the leak detection logic is correct.
     """
-    backend = make_backend_server("backend")
+    backend = make_make_simple_mcp("backend")
 
     # Create compositor without context manager
     comp = Compositor("test")

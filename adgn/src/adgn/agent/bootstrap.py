@@ -147,7 +147,7 @@ class TypedBootstrapBuilder:
         return FunctionCallItem(
             call_id=call_id or self.next_call_id(),
             name=build_mcp_function(server, tool),
-            arguments=json.dumps(payload.model_dump(exclude_none=True)),
+            arguments=json.dumps(payload.model_dump()),
         )
 
     @classmethod
@@ -185,9 +185,7 @@ def docker_exec_call(
 ) -> FunctionCallItem:
     """Bootstrap helper for docker exec."""
     return builder.call(
-        server,
-        RUNTIME_EXEC_TOOL_NAME,
-        ExecInput(cmd=cmd, cwd=None, env=None, user=None, shell=False, timeout_ms=timeout_ms),
+        server, RUNTIME_EXEC_TOOL_NAME, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
     )
 
 

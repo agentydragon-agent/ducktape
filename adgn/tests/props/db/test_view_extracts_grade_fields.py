@@ -22,6 +22,7 @@ from adgn.props.grader.models import (
 )
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import TruePositiveOccurrence
+from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 
 
 def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
@@ -116,6 +117,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             snapshot_slug=snapshot_slug,
             critique_id=critique_id,
             model="test-grader-model",
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
             output=grader_output,
         )
         session.add(grader_run)

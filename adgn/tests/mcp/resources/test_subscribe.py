@@ -1,4 +1,4 @@
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.server import ResourcesSubscribeArgs
 from tests.util.notifications import enable_resources_caps, install_subscription_recorder
 
@@ -9,7 +9,7 @@ async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resou
     Uses an origin that exposes a dummy resource and advertises subscribe capability.
     """
     # Compositor with a simple origin that exposes the resource to subscribe to
-    origin = NotifyingFastMCP("origin")
+    origin = EnhancedFastMCP("origin")
     recorder = install_subscription_recorder(origin)
     enable_resources_caps(origin, subscribe=True)
 

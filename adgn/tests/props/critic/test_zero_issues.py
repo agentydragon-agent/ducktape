@@ -6,8 +6,6 @@ instead of calling submit(issues=0) when finding no violations.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from adgn.props.critic.critic import run_critic
@@ -15,6 +13,7 @@ from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.models.critic_scopes import ExplicitFileScope
 from adgn.props.models.snapshot import LocalSource
 from tests.support.responses import ResponsesFactory
 
@@ -122,7 +121,9 @@ async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, ma
     client = make_openai_client(_make_critic_response_sequence())
 
     # Run critic
-    input_data = CriticInput(snapshot_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+    input_data = CriticInput(
+        snapshot_slug=slug, files=ExplicitFileScope(files=["subtract.py"]), prompt_sha256=prompt_sha256
+    )
 
     # This should complete successfully without infinite loop
     output, critic_run_id, critique_id = await run_critic(
@@ -174,7 +175,9 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     client = make_openai_client(responses)
 
-    input_data = CriticInput(snapshot_slug=slug, files={Path("subtract.py")}, prompt_sha256=prompt_sha256)
+    input_data = CriticInput(
+        snapshot_slug=slug, files=ExplicitFileScope(files=["subtract.py"]), prompt_sha256=prompt_sha256
+    )
 
     # This should complete in 3 turns, not loop infinitely
     output, _, _ = await run_critic(

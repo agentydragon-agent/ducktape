@@ -24,15 +24,20 @@ from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.exec.models import EnvVar, ExecInput
+from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.mcp.stubs.typed_stubs import TypedClient
-from adgn.mcp.testing.simple_servers import make_simple_mcp
+from adgn.mcp.testing.simple_servers import make_simple_mcp as _make_simple_mcp
 from tests.support.responses import _StepRunner
 from tests.support.steps import Step
 from tests.support.types import McpServerSpecs
+
+# Empty canonical issues snapshot for GraderRun fixtures.
+# Format matches GraderRun.canonical_issues_snapshot JSONB column.
+EMPTY_CANONICAL_ISSUES_SNAPSHOT: dict[str, list[str]] = {"true_positives": [], "false_positives": []}
 
 
 @pytest.fixture
@@ -191,15 +196,9 @@ def make_typed_mcp():
 
 
 @pytest.fixture
-def make_backend_server() -> Callable[[str], FastMCP]:
-    """Factory for lightweight FastMCP backends used across tests."""
-
-    return make_simple_mcp
-
-
-@pytest.fixture
-def backend_server(make_backend_server: Callable[[str], FastMCP]) -> FastMCP:
-    return make_backend_server("backend")
+def make_simple_mcp() -> FlatModelMixin:
+    """Lightweight FastMCP backend with simple tools for tests."""
+    return _make_simple_mcp()
 
 
 @pytest.fixture
@@ -328,12 +327,12 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
 
 
 @pytest.fixture
-async def pg_client(make_pg_client, backend_server):
-    """Ready-to-use client with backend_server mounted and allow-all policy.
+async def pg_client(make_pg_client, make_simple_mcp):
+    """Ready-to-use client with make_simple_mcp mounted and allow-all policy.
 
     For tests that just need a simple compositor with a backend server.
     """
-    async with make_pg_client({"backend": backend_server}) as sess:
+    async with make_pg_client({"backend": make_simple_mcp}) as sess:
         yield sess
 
 
@@ -457,7 +456,7 @@ def live_openai(request):
 
 
 @pytest.fixture
-def docker_inproc_spec_py312() -> NotifyingFastMCP:
+def docker_inproc_spec_py312() -> EnhancedFastMCP:
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = make_container_opts("python:3.12-alpine")
     return make_container_exec_server(opts)
@@ -567,9 +566,9 @@ def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemera
 
 
 @pytest.fixture
-def echo_spec(make_backend_server) -> McpServerSpecs:
+def echo_spec(make_simple_mcp) -> McpServerSpecs:
     """In-proc FastMCP server spec for echo tests."""
-    return {"echo": make_backend_server("echo")}
+    return {"echo": make_simple_mcp}
 
 
 # --- Helpers for constructing MCP tool inputs ---
@@ -580,19 +579,17 @@ def make_exec_input(
     *,
     timeout_ms: int = 10_000,
     cwd: Path | None = None,
-    env: list[dict[str, str]] | None = None,
+    env: list[str] | None = None,
     user: str | None = None,
-    shell: bool = False,
 ) -> ExecInput:
     """Convenience helper for constructing ExecInput with all required fields.
 
     Mirrors the pattern from bootstrap.docker_exec_call() but returns an ExecInput
     instead of a bootstrap call. Use this in tests to avoid repeating the full
-    6-field constructor.
+    5-field constructor.
 
     Example:
         exec_input = make_exec_input(["echo", "hello"])
-        # Instead of: ExecInput(cmd=["echo", "hello"], cwd=None, env=None, user=None, shell=False, timeout_ms=10_000)
+        exec_input_with_env = make_exec_input(["printenv"], env=["FOO=bar", "BAZ=qux"])
     """
-    env_vars = [EnvVar(name=k, value=v) for d in env for k, v in d.items()] if env else None
-    return ExecInput(cmd=cmd, cwd=cwd, env=env_vars, user=user, shell=shell, timeout_ms=timeout_ms)
+    return ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)

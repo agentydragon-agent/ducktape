@@ -9,13 +9,18 @@ from typing import Any
 from compact_json import Formatter  # type: ignore[import-untyped]
 from pydantic import BaseModel
 
+from adgn.openai_utils.json_schema import openai_json_schema
+
 
 def build_input_schemas_json(models: Iterable[type[BaseModel]]) -> dict[str, dict]:
     """Return {ModelName: model_json_schema()} for all given Pydantic models.
 
+    Uses OpenAICompatibleSchema to convert oneOf (from discriminated unions) to anyOf
+    for compatibility with OpenAI's strict mode.
+
     This is passed wholesale to Jinja; templates choose which to render.
     """
-    return {m.__name__: m.model_json_schema() for m in models}
+    return {m.__name__: openai_json_schema(m) for m in models}
 
 
 def compact_json_serialize(value: Any, max_width: int = 100) -> str:

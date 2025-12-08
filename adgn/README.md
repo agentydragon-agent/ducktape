@@ -2,7 +2,6 @@
 
 Local tools and libraries for my dev/worktree/LLM workflows.
 
-- Worktree tools (wt): local server/CLI for git worktrees + GitHub display
 - Tana export: convert Tana JSON dumps to Markdown/TanaPaste
 - LLM utilities: MiniCodex client/UI, properties/specimens, system rewriter, etc.
 

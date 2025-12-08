@@ -12,6 +12,7 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
+from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.openai_utils.model import ResponsesRequest, ResponsesResult
 from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
@@ -92,6 +93,36 @@ class AssistantMessage:
 
 
 @dataclass
+class AssertDockerExecThenFinish:
+    """Assert docker exec succeeded and stdout contains expected text, then finish.
+
+    Use to validate that a command executed successfully and produced expected output.
+    Fails if:
+    - Previous call was not docker_exec
+    - Exit code is not 0
+    - stdout doesn't contain expected_output
+    """
+
+    expected_output: str
+    message: str = "Done"
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        assert_last_call(req, "docker_exec")
+        output = assert_and_extract(req, "docker_exec", BaseExecResult)
+
+        # Assert exit code is 0
+        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
+            raise AssertionError(f"Expected exit code 0, got {output.exit}")
+
+        # Assert stdout contains expected text
+        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+        if self.expected_output not in stdout_text:
+            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
+
+        return factory.make_assistant_message(self.message)
+
+
+@dataclass
 class DockerExecCall:
     """Make a docker exec tool call with convenient parameters.
 
@@ -107,9 +138,8 @@ class DockerExecCall:
     cmd: list[str]
     timeout_ms: int = 30000
     cwd: Path | None = None
-    env: list[dict[str, str]] | None = None
+    env: list[str] | None = None
     user: str | None = None
-    shell: bool = False
     tool_name: str = "exec"
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
@@ -120,7 +150,6 @@ class DockerExecCall:
                 cwd=self.cwd,
                 env=self.env,
                 user=self.user,
-                shell=self.shell,
                 tool_name=self.tool_name,
             )
         )

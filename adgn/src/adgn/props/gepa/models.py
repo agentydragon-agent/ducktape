@@ -23,9 +23,14 @@ class SnapshotInput:
     For warm-start to work, load_datasets() must return these in deterministic
     order across all runs. See gepa_adapter.load_datasets() for ordering strategy.
 
+    The files_hash is precomputed during sync (from resolved files) and used for:
+    - Matching historical database runs by (slug, files_hash)
+    - Storing CriticRun records with consistent hash keys
+
     TODO: Rename to something clearer (e.g., EvaluationContext, CriticTestCase).
     Current name is ambiguous with CriticInput.
     """
 
     slug: SnapshotSlug
     target_files: CriticScopeSpec
+    files_hash: str

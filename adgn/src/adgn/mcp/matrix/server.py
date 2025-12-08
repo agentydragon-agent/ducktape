@@ -2,7 +2,7 @@
 
 Features (MVP):
 - Background sync watcher that collects new text messages in a single room.
-- Emits ResourceUpdatedNotification on each new message via NotifyingFastMCP.
+- Emits ResourceUpdatedNotification on each new message via EnhancedFastMCP.
 
 - Notes
 - Designed for unencrypted rooms first; E2EE can be added later with mautrix + a persisted
@@ -30,7 +30,8 @@ from mautrix.types import EventType, MessageEvent, RoomAlias, RoomID, TextMessag
 from pydantic import BaseModel, Field
 
 from adgn.agent.server.bus import ServerBus, UiEndTurn
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Matrix SDK uses millisecond timeouts for sync; keep constants explicit
 SYNC_PRIME_TIMEOUT_MS = 1_000
@@ -63,11 +64,15 @@ class DrainResult(BaseModel):
     last_event_id: str | None = None
 
 
-class SendMessageInput(BaseModel):
+class DrainInput(OpenAIStrictModeBaseModel):
+    """Input for drain_new_messages tool (empty - no parameters)."""
+
+
+class SendMessageInput(OpenAIStrictModeBaseModel):
     content: str = Field(description="Plaintext content to send to the room")
 
 
-class YieldInput(BaseModel):
+class YieldInput(OpenAIStrictModeBaseModel):
     last_seen_event_id: str = Field(description="The last event id the agent processed; used to advance cursor")
 
 
@@ -230,7 +235,7 @@ class _MatrixClient:
         return {"ok": True, "event_id": str(event_id)}
 
 
-def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> NotifyingFastMCP:
+def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> EnhancedFastMCP:
     inbox = _Inbox()
     # Background client managed via server lifespan; broadcast notifications on new msgs
     client_holder: dict[str, _MatrixClient] = {}
@@ -239,7 +244,7 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
     @asynccontextmanager
     async def _lifespan(server: FastMCP):
         async def _broadcast(uri: str) -> None:
-            srv = cast(NotifyingFastMCP, server)
+            srv = cast(EnhancedFastMCP, server)
             await srv.broadcast_resource_updated(uri)
 
         mc = _MatrixClient(cfg, inbox, _broadcast)
@@ -253,7 +258,7 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
             except Exception as e:
                 logger.debug("matrix client stop failed: %s", e)
 
-    mcp = NotifyingFastMCP(
+    mcp = EnhancedFastMCP(
         name=name,
         instructions=(
             "Matrix bridge: receive DMs via notifications; use the provided tools to\n"
@@ -274,7 +279,7 @@ def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> Notifyin
         return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
 
     @mcp.flat_model()
-    def drain_new_messages() -> DrainResult:
+    def drain_new_messages(input: DrainInput) -> DrainResult:
         """Return and clear queued inbound messages."""
         return inbox.drain()
 

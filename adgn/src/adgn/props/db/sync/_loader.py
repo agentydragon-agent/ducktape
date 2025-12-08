@@ -21,7 +21,13 @@ from pathlib import Path
 import yaml
 
 from ...ids import split_snapshot_slug
-from ...models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScope, CriticScopeSpec
+from ...models.critic_scopes import (
+    ALL_FILES_WITH_ISSUES,
+    AllFilesScope,
+    CriticScope,
+    CriticScopeSpec,
+    ExplicitFileScope,
+)
 from ...models.snapshot import Snapshot, SnapshotSlug
 from ._jsonnet import evaluate_snapshot_issues
 from ._models import FalsePositive, TruePositive
@@ -151,11 +157,11 @@ class FilesystemLoader:
                 files_raw = scope_data.get("files")
                 parsed_files: CriticScopeSpec
                 if files_raw == ALL_FILES_WITH_ISSUES:
-                    # "all" sentinel
-                    parsed_files = ALL_FILES_WITH_ISSUES
+                    # "all" sentinel -> AllFilesScope
+                    parsed_files = AllFilesScope()
                 elif isinstance(files_raw, list):
-                    # List of strings -> set[Path]
-                    parsed_files = {Path(f) for f in files_raw}
+                    # List of strings -> ExplicitFileScope
+                    parsed_files = ExplicitFileScope(files=files_raw)
                 else:
                     raise ValueError(f"Scope files for '{slug_str}' must be list or 'all', got {type(files_raw)}")
 
@@ -205,10 +211,12 @@ class FilesystemLoader:
         Raises:
             ValueError: If scope references files not in the snapshot
         """
-        if scope.files == ALL_FILES_WITH_ISSUES:
+        if isinstance(scope.files, AllFilesScope):
             return all_files.copy()
-        # Type narrowing: if not ALL_FILES_WITH_ISSUES, must be set[Path]
-        scope_paths = scope.files
+        # Type narrowing: must be ExplicitFileScope
+        assert isinstance(scope.files, ExplicitFileScope)
+        # Convert list[str] to set[Path] for validation
+        scope_paths = {Path(f) for f in scope.files.files}
         # Validate that scope files exist in the snapshot
         missing = scope_paths - all_files
         if missing:

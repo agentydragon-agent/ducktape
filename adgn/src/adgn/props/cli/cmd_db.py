@@ -1,4 +1,4 @@
-"""Database management commands: sync, db-recreate."""
+"""Database management commands: sync, recreate."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from rich.table import Table
 from sqlalchemy import create_engine, text
 import typer
 
-from adgn.props.cli.decorators import async_run
+from adgn.cli_utils import async_run
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session, init_db, recreate_database as recreate_db_schema
 from adgn.props.db.config import get_production_config
@@ -24,6 +24,9 @@ from adgn.props.db.sync import (
     sync_model_metadata_with_session,
     sync_snapshots_to_db,
 )
+
+# Database subcommand group
+db_app = typer.Typer(help="Database management commands")
 
 
 @dataclass
@@ -94,25 +97,27 @@ def ensure_databases_exist() -> None:
 
     with engine.connect() as conn:
         # Create eval_results database if it doesn't exist
-        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": config.database})
+        result = conn.execute(
+            text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": config.admin.database}
+        )
         if not result.fetchone():
-            typer.echo(f"  Creating database: {config.database}")
+            typer.echo(f"  Creating database: {config.admin.database}")
             # Use psycopg2.sql for safe identifier quoting
             raw_conn = conn.connection
             cursor = raw_conn.cursor()
-            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(config.database)))
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(config.admin.database)))
             cursor.close()
 
         # Create agent_user role if it doesn't exist
-        result = conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :rolname"), {"rolname": config.agent_user})
+        result = conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :rolname"), {"rolname": config.agent.user})
         if not result.fetchone():
-            typer.echo(f"  Creating role: {config.agent_user}")
+            typer.echo(f"  Creating role: {config.agent.user}")
             # Use psycopg2.sql for safe identifier and literal quoting
             raw_conn = conn.connection
             cursor = raw_conn.cursor()
             cursor.execute(
                 sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(
-                    sql.Identifier(config.agent_user), sql.Literal(config.agent_password)
+                    sql.Identifier(config.agent.user), sql.Literal(config.agent.password)
                 )
             )
             cursor.close()
@@ -204,3 +209,8 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
     table.add_row("Detector prompts", f"{len(result.detector_prompts)} synced")
     console.print(table)
+
+
+# Register commands
+db_app.command("sync")(cmd_sync)
+db_app.command("recreate")(cmd_db_recreate)

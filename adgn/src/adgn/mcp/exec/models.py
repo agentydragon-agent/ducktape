@@ -4,12 +4,13 @@ import asyncio
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from pathlib import Path
 from signal import SIGKILL, SIGTERM
 import time
 from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Signal exit codes for process termination
 SIGNAL_EXIT_OFFSET: Final[int] = 128
@@ -76,28 +77,23 @@ class TruncatedStream(BaseModel):
     truncated_text: str
     total_bytes: int
 
-    model_config = ConfigDict(extra="forbid")
-
 
 # Union type for exec output that may or may not be truncated
 ExecStream = str | TruncatedStream
 
 
-class ExecOutput(BaseModel):
-    """Raw stdout/stderr produced by an executed process."""
+@dataclass(frozen=True)
+class ExecOutput:
+    """Raw stdout/stderr produced by an executed process (internal model)."""
 
     stdout: bytes
     stderr: bytes
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class TimedOut(BaseModel):
     """Process was terminated after exceeding the timeout."""
 
     kind: Literal["timed_out"] = "timed_out"
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class Exited(BaseModel):
@@ -106,8 +102,6 @@ class Exited(BaseModel):
     kind: Literal["exited"] = "exited"
     exit_code: int
 
-    model_config = ConfigDict(extra="forbid")
-
 
 class Killed(BaseModel):
     """Process was killed by a signal."""
@@ -115,83 +109,83 @@ class Killed(BaseModel):
     kind: Literal["killed"] = "killed"
     signal: int
 
-    model_config = ConfigDict(extra="forbid")
-
 
 ExitStatus = Annotated[TimedOut | Exited | Killed, Field(discriminator="kind")]
 
 
-class ExecOutcome(BaseModel):
-    """Complete execution outcome with output and exit status."""
+@dataclass(frozen=True)
+class ExecOutcome:
+    """Complete execution outcome with output and exit status (internal model)."""
 
     output: ExecOutput
     exit: ExitStatus
-    duration_ms: int = Field(description="Execution duration in milliseconds")
-
-    model_config = ConfigDict(extra="forbid")
+    duration_ms: int
 
 
-class EnvVar(BaseModel):
-    """Single environment variable key-value pair."""
+# Corresponds to Docker Engine API v1.52 ContainerExec:
+# https://docs.docker.com/reference/api/engine/version/v1.52/#tag/Exec/operation/ContainerExec
+# Specifically: Cmd (command array) and Env (environment variables as "NAME=value" strings)
 
-    name: str = Field(description="Environment variable name")
-    value: str = Field(description="Environment variable value")
+# Type alias for environment variable validation
+EnvVar = Annotated[
+    str,
+    Field(
+        description="Environment variable in 'NAME=value' format",
+        pattern=r"^[^=]+=.*$",  # Must have at least one char before '=', anything after
+    ),
+]
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class ExecInput(BaseModel):
+class ExecInput(OpenAIStrictModeBaseModel):
     """Typed payload for container exec tool.
 
-    Prefer passing cmd as a list to avoid shell quoting issues. Set shell=True to run via
-    'sh -lc <cmd>' when providing a single string command assembled server-side.
+    The cmd array is passed directly to Docker's exec API (execve-style execution, no shell).
+    For shell features (pipes, globs, variable expansion), wrap in a shell:
+        ["sh", "-c", "echo hello | tr a-z A-Z"]
+        ["sh", "-c", "sed -n 1,10p file.txt"]
+
+    No quoting needed - array elements are literal arguments.
+
+    Environment variables use Docker's native format: list of "NAME=value" strings.
 
     Note: TTY is not allocated for processes to ensure stdout/stderr separation.
 
     OpenAI strict mode compatible: all fields are required (no defaults).
-    - cmd: Command to run
+    - cmd: Command array passed directly to Docker exec (no shell quoting)
     - cwd: Working directory (None = container default)
-    - env: Environment variables (None = inherit)
+    - env: Environment variables as ["NAME=value", ...] (None = inherit)
     - user: Username (None = container default)
-    - shell: Whether to run via sh -lc
     - timeout_ms: Timeout in milliseconds
     """
 
-    cmd: list[str] = Field(description="Command to run; pass list to avoid shell quoting issues")
-    cwd: Path | None = Field(description="Working directory inside container (None = container default)")
-    env: list[EnvVar] | None = Field(description="Environment variables for the process (None = inherit)")
+    cmd: list[str] = Field(
+        description="Command array passed directly to Docker exec API (no shell). "
+        "DO NOT include shell quotes around arguments - array elements are passed as-is. "
+        "WRONG: ['sed', '-n', \"'1,10p'\", 'file'] (quotes in string). "
+        "RIGHT: ['sed', '-n', '1,10p', 'file'] (no quotes). "
+        "For shell features (pipes, globs), use: ['sh', '-c', 'sed -n 1,10p file | head']"
+    )
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+    cwd: str | None = Field(description="Working directory inside container (None = container default)")
+    env: list[EnvVar] | None = Field(
+        description="Environment variables as ['NAME=value', ...] (None = inherit container env)"
+    )
     user: str | None = Field(description="Username inside container (None = container default)")
-    shell: bool = Field(description="Run via sh -lc <cmd>")
     timeout_ms: TimeoutMs = Field(description="Timeout in milliseconds; sends TERM (exit status becomes TimedOut)")
 
-    model_config = ConfigDict(extra="forbid")
-
-    @classmethod
-    def from_env_dict(
-        cls,
-        cmd: list[str],
-        timeout_ms: int,
-        *,
-        env: dict[str, str] | None = None,
-        cwd: Path | None = None,
-        user: str | None = None,
-        shell: bool = False,
-    ) -> ExecInput:
-        """Convenience constructor accepting env as dict.
-
-        Note: timeout_ms is positional to match strict mode requirement.
-        Other fields have defaults for convenience in this helper.
-        """
-        env_list = [EnvVar(name=k, value=v) for k, v in env.items()] if env else None
-        return cls(cmd=cmd, cwd=cwd, env=env_list, user=user, shell=shell, timeout_ms=timeout_ms)
-
     def env_dict(self) -> dict[str, str]:
-        """Convert env to dict for internal use (e.g., Docker client)."""
-        return {item.name: item.value for item in self.env} if self.env else {}
+        """Convert env list to dict for internal use."""
+        if not self.env:
+            return {}
+        result = {}
+        for env_str in self.env:
+            name, value = env_str.split("=", 1)
+            result[name] = value
+        return result
 
 
 class BaseExecResult(BaseModel):
-    """Standard MCP exec response - basic servers return this directly.
+    """Standard MCP exec response - basic servers return this directly (output model).
 
     Preserves str | TruncatedStream distinction to encode truncation information.
     """
@@ -200,7 +194,6 @@ class BaseExecResult(BaseModel):
     stdout: ExecStream
     stderr: ExecStream
     duration_ms: int = Field(description="Execution duration in milliseconds")
-
     model_config = ConfigDict(extra="forbid")
 
     @classmethod

@@ -12,19 +12,20 @@ from rich.table import Table
 from sqlalchemy import func
 import typer
 
+from adgn.cli_utils import async_run
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.decorators import async_run
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput, CriticScopeSpec
+from adgn.props.critic.models import CriticInput
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import CriticRun, Snapshot
 from adgn.props.db.prompts import load_and_upsert_detector_prompt
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
 
 
 @dataclass
@@ -155,11 +156,7 @@ async def run_detector_on_specimen(
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
     async with hydrator.hydrate(snapshot_slug) as hydrated:
         await run_critic(
-            input_data=CriticInput(
-                snapshot_slug=snapshot_slug,
-                files=set(hydrated.all_discovered_files.keys()),
-                prompt_sha256=prompt_sha256,
-            ),
+            input_data=CriticInput(snapshot_slug=snapshot_slug, files=AllFilesScope(), prompt_sha256=prompt_sha256),
             client=client,
             content_root=hydrated.content_root,
             mount_properties=False,
@@ -269,20 +266,19 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
         requested_files: Optional list of relative paths to filter to
 
     Returns:
-        ALL_FILES_WITH_ISSUES sentinel if no filter requested,
-        otherwise validated set of requested paths
+        AllFilesScope if no filter requested, otherwise ExplicitFileScope with validated paths
 
     Raises:
         typer.Exit: If requested files are invalid or not found
     """
-    # No filter → return sentinel for downstream resolution
+    # No filter → return AllFilesScope sentinel for downstream resolution
     if requested_files is None:
-        return ALL_FILES_WITH_ISSUES
+        return AllFilesScope()
 
-    # Validate requested files exist
-    available = set(all_files.keys())
-    requested_set = {Path(f) for f in requested_files}
-    invalid = requested_set - available
+    # Validate requested files exist (work with Path internally)
+    available: set[Path] = set(all_files.keys())
+    requested_set: set[Path] = {Path(f) for f in requested_files}
+    invalid: set[Path] = requested_set - available
 
     if invalid:
         typer.echo("Error: The following files are not in the snapshot:", err=True)
@@ -295,8 +291,9 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
             typer.echo(f"  ... and {len(all_files) - 10} more", err=True)
         raise typer.Exit(1)
 
-    # Return validated requested files
-    return requested_set & available
+    # Convert validated Path set to ExplicitFileScope
+    validated: set[Path] = requested_set & available
+    return ExplicitFileScope(files=[str(p) for p in sorted(validated)])
 
 
 @async_run

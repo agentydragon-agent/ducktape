@@ -16,17 +16,30 @@ Does NOT test:
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import text
 
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.db import get_session, query_builders as qb
-from adgn.props.db.models import CriticRun, Critique, Event, FalsePositive, GraderRun, Prompt, Snapshot, TruePositive
+from adgn.props.db.models import (
+    CriticRun,
+    CriticScopeDB,
+    Critique,
+    Event,
+    FalsePositive,
+    GraderRun,
+    Prompt,
+    Snapshot,
+    TruePositive,
+)
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import FileOccurrence, Occurrence
-from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST
+from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
+from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST, make_grader_output
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -220,45 +233,42 @@ def query_test_data(test_db):
         session.flush()
 
         # Create grader runs (2 train, 1 valid)
+        # Output built from GraderOutput Pydantic model via make_grader_output()
         grader_runs = [
             GraderRun(
                 transcript_id=uuid4(),
                 snapshot_slug="train/spec-a",
                 model="test-model-1",
                 critique_id=critique_a_id,
-                output={
-                    "grade": {
-                        "recall": 0.8,
-                        "precision": 0.9,
-                        "metrics": {"true_positives": 4, "false_positives": 1, "false_negatives": 1},
-                    }
-                },
+                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+                output=make_grader_output(
+                    tp_count=4, fp_count=1, recall=0.8, tp_ratio=0.8, fp_ratio=0.1, summary="Test grading spec-a"
+                ),
             ),
             GraderRun(
                 transcript_id=uuid4(),
                 snapshot_slug="train/spec-b",
                 model="test-model-1",
                 critique_id=critique_b_id,
-                output={
-                    "grade": {
-                        "recall": 0.9,
-                        "precision": 0.85,
-                        "metrics": {"true_positives": 9, "false_positives": 2, "false_negatives": 1},
-                    }
-                },
+                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+                output=make_grader_output(
+                    tp_count=9, fp_count=2, recall=0.9, tp_ratio=0.85, fp_ratio=0.1, summary="Test grading spec-b"
+                ),
             ),
             GraderRun(
                 transcript_id=uuid4(),
                 snapshot_slug="valid/spec-a",
                 model="test-model-2",
                 critique_id=critique_valid_id,
-                output={
-                    "grade": {
-                        "recall": 0.75,
-                        "precision": 0.95,
-                        "metrics": {"true_positives": 3, "false_positives": 0, "false_negatives": 1},
-                    }
-                },
+                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+                output=make_grader_output(
+                    tp_count=3,
+                    fp_count=0,
+                    recall=0.75,
+                    tp_ratio=0.95,
+                    fp_ratio=0.03,
+                    summary="Test grading valid/spec-a",
+                ),
             ),
         ]
         for grader_run in grader_runs:
@@ -384,7 +394,14 @@ class TestQueryBuilders:
             assert len(result[0].occurrences) == 1
 
     def test_recent_grader_results(self, query_test_data):
-        """recent_grader_results() returns train grader runs with metrics."""
+        """recent_grader_results() returns train grader runs with metrics.
+
+        Query returns columns matching GraderOutput Pydantic schema:
+        - recall: direct field
+        - canonical_tp_count: array length of canonical_tp_coverage
+        - canonical_fp_count: array length of canonical_fp_coverage
+        - reported_tp_ratio, reported_fp_ratio: from reported_issue_ratios
+        """
         with get_session() as session:
             result = session.execute(qb.recent_grader_results(limit=10)).fetchall()
 
@@ -396,10 +413,12 @@ class TestQueryBuilders:
             row = result[0]
             assert row.snapshot_slug in ("train/spec-a", "train/spec-b")
             assert row.recall in ("0.8", "0.9")  # JSONB returns strings
-            assert row.precision in ("0.9", "0.85")
-            assert row.tp in ("4", "9")
-            assert row.fp in ("1", "2")
-            assert row.fn in ("1", "1")
+            # canonical_tp_count: spec-a has 4 TPs, spec-b has 9 TPs
+            assert row.canonical_tp_count in (4, 9)
+            # canonical_fp_count: spec-a has 1 FP, spec-b has 2 FPs
+            assert row.canonical_fp_count in (1, 2)
+            # reported_tp_ratio from reported_issue_ratios.tp
+            assert row.reported_tp_ratio in ("0.8", "0.85")
             assert row.model == "test-model-1"
             assert row.transcript_id is not None
             assert row.created_at is not None
@@ -499,3 +518,223 @@ class TestQueryBuilders:
             row = result[0]
             assert row.tool_name == "Grep"
             assert row.is_error == "true"  # JSONB returns string
+
+
+class TestJsonbNullFiltering:
+    """Test that queries properly filter out JSONB null values.
+
+    JSONB null is different from SQL NULL:
+    - SQL NULL: column value is not present (output IS NULL) - NOT possible in schema
+    - JSONB null: column contains the JSON literal `null` (output = 'null'::jsonb)
+
+    The database schema has output NOT NULL, so only JSONB null values are possible.
+    Queries must filter out JSONB null values to avoid null metrics in results.
+
+    Note: We use raw SQL to insert test data to precisely control JSONB content.
+    """
+
+    def test_recent_grader_results_excludes_jsonb_null_output(self, test_db, test_prompt_sha):
+        """Grader runs with JSONB null output are excluded from recent_grader_results.
+
+        This tests the case where output column IS NOT NULL but contains JSON `null`.
+        """
+        critique_id = uuid4()
+        grader_with_jsonb_null_id = uuid4()
+
+        with get_session() as session:
+            # Setup: snapshot and critique
+            session.merge(Snapshot(slug="train/jsonb-null-test", split="train"))
+            session.flush()
+
+            session.add(
+                Critique(id=critique_id, snapshot_slug="train/jsonb-null-test", payload={"issues": [], "notes_md": ""})
+            )
+            session.commit()
+
+            # Insert grader run with JSONB null output using raw SQL
+            session.execute(
+                text(
+                    """
+                    INSERT INTO grader_runs (
+                        id, transcript_id, snapshot_slug, model, critique_id,
+                        canonical_issues_snapshot, output
+                    ) VALUES (
+                        gen_random_uuid(), :tid, 'train/jsonb-null-test', 'test-jsonb-null-model', :cid,
+                        '{"true_positives": [], "false_positives": []}'::jsonb,
+                        'null'::jsonb
+                    )
+                    """
+                ),
+                {"tid": str(grader_with_jsonb_null_id), "cid": str(critique_id)},
+            )
+            session.commit()
+
+            # Verify the JSONB null was set correctly
+            check = session.execute(
+                text(
+                    """
+                    SELECT
+                        output IS NULL as is_sql_null,
+                        output = 'null'::jsonb as is_jsonb_null,
+                        output->'grade' IS NULL as grade_is_null
+                    FROM grader_runs
+                    WHERE transcript_id = :tid
+                    """
+                ),
+                {"tid": str(grader_with_jsonb_null_id)},
+            ).fetchone()
+            assert check is not None, "Expected row not found"
+            assert check.is_sql_null is False, "Column should NOT be SQL NULL"
+            assert check.is_jsonb_null is True, "Column should contain JSONB null"
+            assert check.grade_is_null is True, "grade field should be null"
+
+        with get_session() as session:
+            result = session.execute(qb.recent_grader_results(limit=100)).fetchall()
+            jsonb_null_runs = [r for r in result if r.snapshot_slug == "train/jsonb-null-test"]
+            assert len(jsonb_null_runs) == 0, "Grader runs with JSONB null output should be excluded"
+
+    def test_recent_grader_results_excludes_missing_grade_field(self, test_db, test_prompt_sha):
+        """Grader runs with output missing 'grade' field are excluded from recent_grader_results."""
+        critique_id = uuid4()
+        grader_missing_grade_id = uuid4()
+
+        with get_session() as session:
+            session.merge(Snapshot(slug="train/missing-grade-test", split="train"))
+            session.flush()
+
+            session.add(
+                Critique(
+                    id=critique_id, snapshot_slug="train/missing-grade-test", payload={"issues": [], "notes_md": ""}
+                )
+            )
+            session.commit()
+
+            # Insert grader run with output that has NO 'grade' field
+            session.execute(
+                text(
+                    """
+                    INSERT INTO grader_runs (
+                        id, transcript_id, snapshot_slug, model, critique_id,
+                        canonical_issues_snapshot, output
+                    ) VALUES (
+                        gen_random_uuid(), :tid, 'train/missing-grade-test', 'test-model', :cid,
+                        '{"true_positives": [], "false_positives": []}'::jsonb,
+                        '{"error": "grading failed", "partial": true}'::jsonb
+                    )
+                    """
+                ),
+                {"tid": str(grader_missing_grade_id), "cid": str(critique_id)},
+            )
+            session.commit()
+
+        with get_session() as session:
+            result = session.execute(qb.recent_grader_results(limit=100)).fetchall()
+            missing_grade_runs = [r for r in result if r.snapshot_slug == "train/missing-grade-test"]
+            assert len(missing_grade_runs) == 0, "Grader runs with missing grade field should be excluded"
+
+    def test_recent_grader_results_includes_valid_output(self, test_db, test_prompt_sha):
+        """Grader runs with proper output containing grade field are included."""
+        critique_id = uuid4()
+        grader_valid_id = uuid4()
+
+        with get_session() as session:
+            session.merge(Snapshot(slug="train/valid-output-test", split="train"))
+            session.flush()
+
+            session.add(
+                Critique(
+                    id=critique_id, snapshot_slug="train/valid-output-test", payload={"issues": [], "notes_md": ""}
+                )
+            )
+            session.commit()
+
+            # Build valid output JSON matching GraderOutput Pydantic schema
+            valid_output = make_grader_output(
+                tp_count=2, fp_count=1, recall=0.5, tp_ratio=0.6, fp_ratio=0.2, summary="Valid output test"
+            )
+            valid_output_json = json.dumps(valid_output)
+
+            # Insert grader run with valid output using raw SQL
+            session.execute(
+                text(
+                    """
+                    INSERT INTO grader_runs (
+                        id, transcript_id, snapshot_slug, model, critique_id,
+                        canonical_issues_snapshot, output
+                    ) VALUES (
+                        gen_random_uuid(), :tid, 'train/valid-output-test', 'test-valid-model', :cid,
+                        '{"true_positives": [], "false_positives": []}'::jsonb,
+                        CAST(:output AS jsonb)
+                    )
+                    """
+                ),
+                {"tid": str(grader_valid_id), "cid": str(critique_id), "output": valid_output_json},
+            )
+            session.commit()
+
+        with get_session() as session:
+            result = session.execute(qb.recent_grader_results(limit=100)).fetchall()
+            valid_runs = [r for r in result if r.snapshot_slug == "train/valid-output-test"]
+            assert len(valid_runs) == 1, "Grader runs with valid output should be included"
+            assert valid_runs[0].recall == "0.5"
+            # Verify new schema fields work
+            assert valid_runs[0].canonical_tp_count == 2
+            assert valid_runs[0].canonical_fp_count == 1
+            assert valid_runs[0].reported_tp_ratio == "0.6"
+
+    def test_grader_runs_by_scope_excludes_jsonb_null(self, test_db, test_prompt_sha):
+        """grader_runs_by_scope_train() excludes grader runs with JSONB null output."""
+        critique_id = uuid4()
+        grader_id = uuid4()
+
+        with get_session() as session:
+            session.merge(Snapshot(slug="train/scope-null-test", split="train"))
+            session.flush()
+
+            session.add(
+                Critique(id=critique_id, snapshot_slug="train/scope-null-test", payload={"issues": [], "notes_md": ""})
+            )
+            session.flush()
+
+            # Create scope and critic run with matching files_hash
+            session.add(
+                CriticScopeDB(snapshot_slug="train/scope-null-test", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH)
+            )
+            session.flush()
+
+            session.add(
+                CriticRun(
+                    transcript_id=uuid4(),
+                    prompt_sha256=test_prompt_sha,
+                    snapshot_slug="train/scope-null-test",
+                    model="test-model",
+                    critique_id=critique_id,
+                    files=TEST_FILES_LIST,
+                    files_hash=TEST_FILES_HASH,
+                    output={"tag": "success"},
+                )
+            )
+            session.commit()
+
+            # Insert grader run with JSONB null output using raw SQL
+            session.execute(
+                text(
+                    """
+                    INSERT INTO grader_runs (
+                        id, transcript_id, snapshot_slug, model, critique_id,
+                        canonical_issues_snapshot, output
+                    ) VALUES (
+                        gen_random_uuid(), :tid, 'train/scope-null-test', 'test-model', :cid,
+                        '{"true_positives": [], "false_positives": []}'::jsonb,
+                        'null'::jsonb
+                    )
+                    """
+                ),
+                {"tid": str(grader_id), "cid": str(critique_id)},
+            )
+            session.commit()
+
+        with get_session() as session:
+            result = session.execute(qb.grader_runs_by_scope_train(limit=100)).fetchall()
+            scope_null_runs = [r for r in result if r.snapshot_slug == "train/scope-null-test"]
+            assert len(scope_null_runs) == 0, "grader_runs_by_scope_train should exclude JSONB null output"

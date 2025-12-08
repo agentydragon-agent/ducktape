@@ -12,19 +12,18 @@ purely local state + UI bus signaling.
 
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from adgn.agent.server.bus import ServerBus, UiEndTurn
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
-class YieldInput(BaseModel):
+class YieldInput(OpenAIStrictModeBaseModel):
     pass
 
 
-def make_matrix_control_server(name: str, bus: ServerBus) -> NotifyingFastMCP:
-    mcp = NotifyingFastMCP(name, instructions=("Matrix control: yield-only control to signal end of turn."))
+def make_matrix_control_server(name: str, bus: ServerBus) -> EnhancedFastMCP:
+    mcp = EnhancedFastMCP(name, instructions=("Matrix control: yield-only control to signal end of turn."))
 
     @mcp.flat_model()
     def do_yield(input: YieldInput) -> UiEndTurn:

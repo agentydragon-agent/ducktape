@@ -1,21 +1,20 @@
 from __future__ import annotations
 
-from pydantic import BaseModel
-
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
-class YieldTurnArgs(BaseModel):
+class YieldTurnArgs(OpenAIStrictModeBaseModel):
     pass
 
 
-def make_loop_server(name: str = "loop") -> NotifyingFastMCP:
+def make_loop_server(name: str = "loop") -> EnhancedFastMCP:
     """Create a minimal loop-control MCP server.
 
     Tools are self-describing via MCP; avoid duplicating per-tool instructions here.
     """
-    mcp = NotifyingFastMCP(name, instructions=("Loop control tools for orchestrator/agent turn coordination."))
+    mcp = EnhancedFastMCP(name, instructions=("Loop control tools for orchestrator/agent turn coordination."))
 
     @mcp.flat_model()
     async def yield_turn(_: YieldTurnArgs) -> SimpleOk:

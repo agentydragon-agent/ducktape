@@ -34,7 +34,7 @@ Before committing a snapshot, verify all of these criteria:
 - [ ] **Clear rationale**: Explains why this is NOT an issue (intentional, acceptable pattern, etc.)
 
 ### Jsonnet Style
-- [ ] **Triple-bar spacing**: Two-space indent inside, closing on own line with comma
+- [ ] **Triple-bar format**: Two-space indent inside, closing `|||,` on own line with comma. Space before opening `|||` is optional (`rationale=|||` or `rationale= |||` are both acceptable)
 - [ ] **Minimal comments**: Prefer structured fields over comments
 - [ ] **Comments only for metadata**: Comments exist only to describe what cannot fit in structured data fields
 - [ ] **No duplicated info**: Comments don't restate what's in rationale

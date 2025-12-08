@@ -48,7 +48,7 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
         assert isinstance(items, list)
 
         # Find the file.txt item and compare all fields at once
-        file_items = [it for it in items if it.path == "file.txt"]
+        file_items = [it for it in items if it.path == Path("file.txt")]
         assert len(file_items) == 1, "Expected exactly one file.txt in stat items"
         file_item = file_items[0]
         assert (int(file_item.additions), int(file_item.deletions)) == (2, 0)

@@ -23,12 +23,9 @@ class CapturingOpenAIModel(OpenAIModelProto):
 
     def __init__(self, inner: OpenAIModelProto) -> None:
         self._inner = inner
+        self.model = inner.model
         self.captured: list[ResponsesRequest] = []
         self.calls = 0
-
-    @property
-    def model(self) -> str:
-        return self._inner.model
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         self.captured.append(req.model_copy(deep=True))
@@ -46,7 +43,7 @@ class CapturedRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
 
-class FakeOpenAIModel:
+class FakeOpenAIModel(OpenAIModelProto):
     """Mock OpenAI model that returns predefined responses.
 
     This is a basic mock implementation of OpenAIModelProto.
@@ -56,10 +53,7 @@ class FakeOpenAIModel:
     def __init__(self, outputs: list[ResponsesResult] | tuple[ResponsesResult, ...]) -> None:
         self._outputs: list[ResponsesResult] = list(outputs)
         self.calls = 0
-
-    @property
-    def model(self) -> str:
-        return "fake-model"
+        self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
@@ -80,12 +74,11 @@ def make_mock(responses_create_fn: ResponsesCreateFn) -> CapturingOpenAIModel:
     The returned client has a .captured attribute that records all requests.
     """
 
-    class _MockClient:
+    class _MockClient(OpenAIModelProto):
         """Mock OpenAI client that delegates responses_create to provided function."""
 
-        @property
-        def model(self) -> str:
-            return "test-model"
+        def __init__(self) -> None:
+            self.model = "test-model"
 
         async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
             return await responses_create_fn(req)

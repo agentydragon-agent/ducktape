@@ -12,6 +12,7 @@ from rich.table import Table
 
 from adgn.agent.display import OneLineProgressHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
+from adgn.openai_utils.json_schema import openai_json_schema
 from adgn.openai_utils.model import (
     FunctionCallItem,
     FunctionToolParam,
@@ -20,11 +21,11 @@ from adgn.openai_utils.model import (
     ToolChoiceFunction,
     UserMessage,
 )
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import extract_corrections
 from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 from .lint_issue import lint_issue_run
 
@@ -104,7 +105,7 @@ async def _grade_rationale_with_llm(
         FunctionToolParam(
             name="grade_rationale",
             description="Return verdict and brief reason.",
-            parameters=GradeRationaleArgs.model_json_schema(),
+            parameters=openai_json_schema(GradeRationaleArgs),
             strict=True,
         )
     ]

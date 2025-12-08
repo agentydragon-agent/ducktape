@@ -8,26 +8,35 @@ from uuid import UUID
 from adgn.agent.db_event_handler import DatabaseEventHandler
 from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.handler import BaseHandler
+from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 
 logger = logging.getLogger(__name__)
 
 
-def build_props_handlers(*, transcript_id: UUID, verbose_prefix: str | None, servers: dict) -> list[BaseHandler]:
+def build_props_handlers(
+    *, transcript_id: UUID, verbose_prefix: str | None, servers: dict, max_lines: int = DEFAULT_MAX_LINES
+) -> list[BaseHandler]:
     """Build standard handlers for props agent workflows.
 
+    # TODO: Refactor display config threading. Currently `verbose` and `max_lines` are passed
+    # separately from CLI through run_critic/run_grader, while `verbose_prefix` is constructed
+    # mid-way from internal context (transcript_id, snapshot_slug, etc.). Consider consolidating
+    # into a single `DisplayConfig | None` param constructed at the same level as the prefix,
+    # with CLI just passing `max_lines: int | None` (None = no display).
+
     Always includes DatabaseEventHandler for transcript persistence.
-    Conditionally includes RichDisplayHandler if verbose_prefix is provided.
+    Conditionally includes CompactDisplayHandler if verbose_prefix is provided.
 
     Args:
         transcript_id: Transcript ID for database event tracking
         verbose_prefix: Optional prefix for verbose display (e.g., "[CRITIC snapshot-slug] ").
                        If None, no verbose handler is added.
-        servers: Server dict for RichDisplayHandler (maps server names to FastMCP instances)
+        servers: Server dict for CompactDisplayHandler (maps server names to FastMCP instances)
+        max_lines: Max lines per event in verbose display (default from common_options)
     """
     handlers: list[BaseHandler] = [DatabaseEventHandler(transcript_id=transcript_id)]
 
     if verbose_prefix is not None:
-        # handlers.append(RichDisplayHandler(max_lines=10, prefix=verbose_prefix, servers=servers))
-        handlers.append(CompactDisplayHandler(max_lines=50, prefix=verbose_prefix, servers=servers))
+        handlers.append(CompactDisplayHandler(max_lines=max_lines, prefix=verbose_prefix, servers=servers))
 
     return handlers

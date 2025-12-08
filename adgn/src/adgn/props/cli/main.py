@@ -21,22 +21,23 @@ from rich.traceback import install as rich_traceback_install
 from sqlalchemy import select
 import typer
 
+from adgn.cli_utils import async_run
 from adgn.llm.logging_config import VALID_LOG_LEVELS, configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.cmd_db import cmd_db_recreate, cmd_sync
+from adgn.props.cli.cmd_db import db_app
 from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
-from adgn.props.cli.cmd_snapshot import cmd_snapshot_list, snapshot_capture_ducktape, snapshot_dump, snapshot_exec
+from adgn.props.cli.cmd_grade_validation import cmd_grade_validation
+from adgn.props.cli.cmd_snapshot import snapshot_app
 from adgn.props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from adgn.props.cli.cmd_stats import cmd_stats
-from adgn.props.cli.decorators import async_run
 from adgn.props.cli.shared import BuildOptions, build_cmd, run_check_minicodex_async, save_prompt_to_tmp
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
-from adgn.props.critic.models import ALL_FILES_WITH_ISSUES, CriticInput
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
@@ -44,29 +45,26 @@ from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grader.grader import grade_critique_by_id
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
-from adgn.props.models.critic_scopes import CriticScopeSpec
-from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
-from adgn.props.prompt_optimizer import run_prompt_optimizer
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
+from adgn.props.models.true_positive import LineRange, Occurrence
+from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
 from adgn.props.runs_context import RunsContext
-from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="adgn-properties (Typer) — properties tooling", add_completion=False)
+app = typer.Typer(help="adgn-properties — properties tooling", add_completion=False)
 
 # Subcommand groups
-db_app = typer.Typer(help="Database management commands")
 app.add_typer(db_app, name="db")
-
-snapshot_app = typer.Typer(help="Snapshot commands")
 app.add_typer(snapshot_app, name="snapshot")
 
 
@@ -161,20 +159,19 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
         requested_files: Optional list of relative paths to filter to
 
     Returns:
-        ALL_FILES_WITH_ISSUES sentinel if no filter requested,
-        otherwise validated set of requested paths
+        AllFilesScope if no filter requested, otherwise ExplicitFileScope with validated paths
 
     Raises:
         typer.Exit: If requested files are invalid or not found
     """
-    # No filter → return sentinel for downstream resolution
+    # No filter → return AllFilesScope sentinel for downstream resolution
     if requested_files is None:
-        return ALL_FILES_WITH_ISSUES
+        return AllFilesScope()
 
-    # Validate requested files exist
-    available = set(all_files.keys())
-    requested_set = {Path(f) for f in requested_files}
-    invalid = requested_set - available
+    # Validate requested files exist (work with Path internally)
+    available: set[Path] = set(all_files.keys())
+    requested_set: set[Path] = {Path(f) for f in requested_files}
+    invalid: set[Path] = requested_set - available
 
     if invalid:
         typer.echo("Error: The following files are not in the snapshot:", err=True)
@@ -187,8 +184,9 @@ def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] |
             typer.echo(f"  ... and {len(all_files) - 10} more", err=True)
         raise typer.Exit(1)
 
-    # Return validated requested files
-    return requested_set & available
+    # Convert validated Path set to ExplicitFileScope
+    validated: set[Path] = requested_set & available
+    return ExplicitFileScope(files=[str(p) for p in sorted(validated)])
 
 
 async def _run_snapshot_minicodex_async(
@@ -308,14 +306,22 @@ async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None 
 @async_run
 async def prompt_optimize(
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
-    model: str = opt.OPT_MODEL,
+    optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
+    critic_model: str = opt.OPT_CRITIC_MODEL,
+    grader_model: str = opt.OPT_GRADER_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
     hydrator = SnapshotHydrator.from_package_resources()
     await run_prompt_optimizer(
-        budget=budget, ctx=RunsContext.from_pkg_dir(), hydrator=hydrator, model=model, verbose=verbose
+        budget=budget,
+        ctx=RunsContext.from_pkg_dir(),
+        hydrator=hydrator,
+        optimizer_model=optimizer_model,
+        critic_model=critic_model,
+        grader_model=grader_model,
+        verbose=verbose,
     )
 
 
@@ -351,9 +357,7 @@ async def snapshot_grade(
 @app.command("grade-missing")
 @async_run
 async def cmd_grade_missing(
-    model: str = typer.Option("gpt-5.1-codex-mini", "--model", help="Grader model to use"),
-    max_parallel: int = typer.Option(1, "--max-parallel", help="Maximum number of parallel grader runs"),
-    verbose: bool = opt.OPT_VERBOSE,
+    grader_model: str = opt.OPT_GRADER_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
 ) -> None:
     """Grade all critiques missing grader runs for the specified model.
 
@@ -369,7 +373,7 @@ async def cmd_grade_missing(
         ungraded_critique_ids = (
             session.execute(
                 select(Critique.id)
-                .outerjoin(DBGraderRun, (DBGraderRun.critique_id == Critique.id) & (DBGraderRun.model == model))
+                .outerjoin(DBGraderRun, (DBGraderRun.critique_id == Critique.id) & (DBGraderRun.model == grader_model))
                 .where(
                     DBGraderRun.id.is_(None),  # No grader run exists for this model
                     Critique.payload.is_not(None),  # Payload is not SQL NULL
@@ -380,10 +384,10 @@ async def cmd_grade_missing(
         )
 
         if not ungraded_critique_ids:
-            typer.echo(f"No critiques missing grader runs for model '{model}'")
+            typer.echo(f"No critiques missing grader runs for model '{grader_model}'")
             return
 
-        typer.echo(f"Found {len(ungraded_critique_ids)} critiques missing grader runs for model '{model}'")
+        typer.echo(f"Found {len(ungraded_critique_ids)} critiques missing grader runs for model '{grader_model}'")
         typer.echo(f"Grading with max_parallel={max_parallel}...")
 
     # Create semaphore for concurrency control
@@ -395,7 +399,7 @@ async def cmd_grade_missing(
             try:
                 with get_session() as session:
                     grader_run_id = await grade_critique_by_id(
-                        session, critique_id, build_client(model), verbose=verbose
+                        session, critique_id, build_client(grader_model), verbose=verbose
                     )
                     if not verbose:
                         typer.echo(f"✓ Graded critique {critique_id} → grader_run {grader_run_id}")
@@ -426,7 +430,7 @@ def cmd_fix(
 ) -> None:
     """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
 
-    schemas_json = build_input_schemas_json([Occurrence, LineRange, IssueCore])
+    schemas_json = build_input_schemas_json([Occurrence, LineRange])
     wiring = properties_docker_spec(workdir, mount_properties=True)
     prompt = build_enforce_prompt(scope, wiring=wiring, schemas_json=schemas_json)
     cmd = build_cmd(
@@ -478,16 +482,6 @@ async def cmd_eval_all() -> None:
     await run_all_evals(client=build_client("gpt-5"), hydrator=hydrator, ctx=RunsContext.from_pkg_dir())
 
 
-# DB commands
-db_app.command("sync")(cmd_sync)
-db_app.command("recreate")(cmd_db_recreate)
-
-# Snapshot commands
-snapshot_app.command("list")(cmd_snapshot_list)
-snapshot_app.command("dump")(snapshot_dump)
-snapshot_app.command("exec")(snapshot_exec)
-snapshot_app.command("capture-ducktape")(snapshot_capture_ducktape)
-
 # Detector commands
 app.command("run-detector")(cmd_run_detector)
 app.command("detector-coverage")(cmd_detector_coverage)
@@ -497,6 +491,9 @@ app.command("gepa")(cmd_gepa)
 
 # Stats command
 app.command("stats")(cmd_stats)
+
+# Grade validation set command
+app.command("grade-validation")(cmd_grade_validation)
 
 # Speak with dead command
 app.command("speak-with-dead")(cmd_speak_with_dead)
@@ -574,6 +571,7 @@ async def cmd_run(
     # Common options
     model: str = opt.OPT_MODEL,
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
+    max_lines: int = opt.OPT_MAX_LINES,
 ) -> None:
     """Run structured critic on a snapshot with DB persistence.
 
@@ -625,6 +623,7 @@ async def cmd_run(
             content_root=hydrated.content_root,
             mount_properties=True,
             verbose=True,
+            max_lines=max_lines,
         )
 
         # Print results

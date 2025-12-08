@@ -9,19 +9,20 @@ from typing import Annotated
 from rich.console import Console
 import typer
 
+from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
-from adgn.props.cli.decorators import async_run
+from adgn.props.cli import common_options as opt
 from adgn.props.db import init_db
 from adgn.props.db.config import get_production_config
 from adgn.props.gepa.gepa_adapter import optimize_with_gepa
-from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.hydration import SnapshotHydrator
 
 
 @async_run
 async def cmd_gepa(
-    critic_model: Annotated[str, typer.Option(help="Model for critic execution")] = "gpt-5.1-codex-mini",
-    grader_model: Annotated[str, typer.Option(help="Model for grader execution")] = "gpt-5.1-codex-mini",
-    reflection_model: Annotated[str, typer.Option(help="Model for GEPA's reflection/evolution")] = "gpt-5.1",
+    critic_model: str = opt.OPT_CRITIC_MODEL,
+    grader_model: str = opt.OPT_GRADER_MODEL,
+    reflection_model: str = opt.OPT_OPTIMIZER_MODEL,
     initial_prompt: Annotated[
         str | None, typer.Option(help="Initial prompt (ignored if warm-start loads historical data)")
     ] = None,
@@ -72,7 +73,7 @@ async def cmd_gepa(
 
     # Initialize database
     config = get_production_config()
-    console.print(f"[dim]Database: {config.host}:{config.port}/{config.database}[/dim]")
+    console.print(f"[dim]Database: {config.admin.host}:{config.admin.port}/{config.admin.database}[/dim]")
     init_db(config=config)
 
     # Create hydrator

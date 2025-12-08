@@ -6,8 +6,8 @@ from adgn.mcp._shared.constants import (
     POLICY_PROPOSER_SERVER_NAME,
     POLICY_READER_SERVER_NAME,
 )
+from adgn.mcp.compositor.meta_server import make_compositor_meta_server
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor_meta.server import make_compositor_meta_server
 from adgn.mcp.resources.server import make_resources_server
 
 """Helpers to mount the standard in-proc servers under a Compositor.

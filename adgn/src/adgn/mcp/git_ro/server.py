@@ -27,7 +27,8 @@ import pygit2
 from pygit2.enums import BranchType
 
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 from .formatting import (
     ChangedFilesPage,
@@ -74,10 +75,10 @@ def get_oid(obj: Any):
 # -------------------------- inputs ------------------------------------------
 
 
-class StatusInput(BaseModel):
+class StatusInput(OpenAIStrictModeBaseModel):
     """Input model for git_status with optional pagination."""
 
-    list_slice: ListSlice = Field(description="Pagination for status entries (limit<=5000)")
+    list_slice: ListSlice
 
 
 class DiffFormat(StrEnum):
@@ -86,8 +87,8 @@ class DiffFormat(StrEnum):
     STAT = "stat"
 
 
-class DiffInput(BaseModel):
-    format: DiffFormat = Field(description='Output format: "patch" | "name-status" | "stat"')
+class DiffInput(OpenAIStrictModeBaseModel):
+    format: DiffFormat
     staged: bool = Field(description="If true, diff --cached (staged changes)")
     unified: int = Field(
         ge=0, le=1000, description="Context lines (-U<N>) for patch format (0..1000; 0 shows only headers/hunks)"
@@ -96,25 +97,25 @@ class DiffInput(BaseModel):
     rev_b: str | None = Field(description="Right side rev for range diff (e.g., HEAD)")
     paths: list[str] | None = Field(description="Optional pathspecs to limit diff")
     find_renames: bool = Field(description="Detect renames (-M)")
-    slice: TextSlice = Field(description="Pagination for patch output (format=patch; max_chars<=500k)")
-    list_slice: ListSlice = Field(description="Pagination for list outputs (name-status/stat; limit<=5000)")
+    slice: TextSlice
+    list_slice: ListSlice
 
 
-class LogInput(BaseModel):
+class LogInput(OpenAIStrictModeBaseModel):
     rev: str = Field(description="Revision or range (e.g., HEAD, HEAD~10..HEAD)")
     max_count: int = Field(description="Maximum number of entries")
     oneline: bool = Field(description="Format each commit as one line")
-    slice: TextSlice = Field(description="Pagination controls for large outputs")
+    slice: TextSlice
 
 
-class ShowInput(BaseModel):
+class ShowInput(OpenAIStrictModeBaseModel):
     object: str = Field(description="Object spec, e.g., HEAD, <sha>, or REV:PATH for blob content")
-    format: DiffFormat = Field(description='Output format: "patch" | "name-status" | "stat" (patch for blobs)')
-    slice: TextSlice = Field(description="Pagination for patch/blob text outputs")
-    list_slice: ListSlice = Field(description="Pagination for list outputs (name-status/stat)")
+    format: DiffFormat
+    slice: TextSlice
+    list_slice: ListSlice
 
 
-class RevParseInput(BaseModel):
+class RevParseInput(OpenAIStrictModeBaseModel):
     arg: str = Field(description="Argument to rev-parse (e.g., HEAD, --show-toplevel)")
     short: bool = Field(description="If true, shorten OIDs")
 
@@ -127,28 +128,28 @@ class RevParseResult(BaseModel):
     value: str | Path
 
 
-class LsFilesInput(BaseModel):
+class LsFilesInput(OpenAIStrictModeBaseModel):
     cached: bool = Field(description="List index entries (same as non-cached here); kept for parity")
-    list_slice: ListSlice = Field(description="Pagination controls for file lists")
+    list_slice: ListSlice
 
 
-class BranchListInput(BaseModel):
+class BranchListInput(OpenAIStrictModeBaseModel):
     remote: bool = Field(description="List remote branches instead of local")
-    list_slice: ListSlice = Field(description="Pagination controls for branch lists")
+    list_slice: ListSlice
 
 
 # Structured diff listing inputs/outputs
-class DiffListInput(BaseModel):
+class DiffListInput(OpenAIStrictModeBaseModel):
     staged: bool = Field(description="If true, examine staged (index) changes; else worktree")
     paths: list[str] | None = Field(description="Optional pathspecs to limit the diff")
     find_renames: bool = Field(description="Detect renames (diff.find_similar)")
-    list_slice: ListSlice = Field(description="Pagination controls for file lists")
+    list_slice: ListSlice
 
 
 ## moved to formatting.py
 
 
-class LogEntriesInput(BaseModel):
+class LogEntriesInput(OpenAIStrictModeBaseModel):
     rev: str = Field(description="Revision to start from (e.g., HEAD)")
     offset: int = Field(ge=0, description="Number of commits to skip (pagination offset)")
     limit: int = Field(gt=0, le=1000, description="Max commits to return")
@@ -192,7 +193,7 @@ class GitRoState:
     git_repo: Path
 
 
-def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFastMCP:
+def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> EnhancedFastMCP:
     """Create a read-only Git FastMCP server scoped to a single allowed root.
 
     Guidance:
@@ -205,7 +206,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
     """
     state = GitRoState(git_repo=git_repo.resolve())
     display = f"Git (read-only): {git_repo.name}"
-    mcp = NotifyingFastMCP(display, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
+    mcp = EnhancedFastMCP(display, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
 
     @mcp.flat_model()
     def git_status(input: StatusInput) -> StatusPage:
@@ -405,7 +406,7 @@ def make_git_ro_server(git_repo: Path, *, name: str = "git-ro") -> NotifyingFast
     return mcp
 
 
-async def attach_git_ro(comp: Compositor, git_repo: Path, *, name: str = GIT_RO_SERVER_NAME) -> NotifyingFastMCP:
+async def attach_git_ro(comp: Compositor, git_repo: Path, *, name: str = GIT_RO_SERVER_NAME) -> EnhancedFastMCP:
     """Mount read-only Git MCP server in-proc on a Compositor (preferred path)."""
     server = make_git_ro_server(git_repo, name=name)
     await comp.mount_inproc(name, server)

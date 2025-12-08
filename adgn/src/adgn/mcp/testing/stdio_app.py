@@ -12,7 +12,7 @@ def main() -> None:
     launch it via ``python -m adgn.mcp.testing.stdio_app``.
     """
 
-    server = make_simple_mcp("echo")
+    server = make_simple_mcp()
     anyio.run(server.run_stdio_async)
 
 

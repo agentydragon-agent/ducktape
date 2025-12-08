@@ -3,9 +3,9 @@ from __future__ import annotations
 import pytest
 
 
-async def test_unmount_pinned_server_errors_and_kept(compositor, backend_server):
+async def test_unmount_pinned_server_errors_and_kept(compositor, make_simple_mcp):
     # Mount and then pin
-    await compositor.mount_inproc("backend", backend_server, pinned=True)
+    await compositor.mount_inproc("backend", make_simple_mcp, pinned=True)
 
     # Attempt to unmount should raise and keep the server
     with pytest.raises(RuntimeError, match="Cannot unmount pinned server"):

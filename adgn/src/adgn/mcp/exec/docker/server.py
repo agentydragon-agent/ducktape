@@ -8,30 +8,24 @@ FastMCP server: per-session Docker container exec.
 
 from __future__ import annotations
 
+from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.container_session import ContainerOptions, make_container_lifespan, register_container
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 
 
 def make_container_exec_server(
     opts: ContainerOptions, *, name: str = "docker", tool_exec_name: str = "exec"
-) -> NotifyingFastMCP:
-    """Create a generic per-session container exec FastMCP server.
-
-    Callers must pass a fully constructed ContainerOptions (no kwargs).
-    """
-    server = NotifyingFastMCP(
+) -> EnhancedFastMCP:
+    """Create a generic per-session container exec FastMCP server."""
+    server = EnhancedFastMCP(
         name,
-        instructions="Per-session container exec. See resource container.info for details.",
+        instructions=(
+            f"Provides access to a Docker container.\n\n"
+            f"Image history is available by reading the resource {RUNTIME_CONTAINER_INFO_URI}.\n\n"
+            f"/tmp is writable and can be used as a scratchpad for notes, intermediate results, "
+            f"or organizing your thoughts."
+        ),
         lifespan=make_container_lifespan(opts),
     )
     register_container(server, opts, tool_name=tool_exec_name)
     return server
-
-
-async def attach_container_exec(
-    comp, opts: ContainerOptions, *, server_name: str = "docker", tool_exec_name: str = "exec"
-):
-    """Attach a per-session container exec server (no auth, in-proc)."""
-    server = make_container_exec_server(opts, name=server_name, tool_exec_name=tool_exec_name)
-    # Compositor mount path (preferred)
-    await comp.mount_inproc(server_name, server)

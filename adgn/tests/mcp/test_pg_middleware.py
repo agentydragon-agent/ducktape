@@ -39,9 +39,9 @@ async def test_pg_middleware_allow(pg_client):
         (ApprovalDecision.DENY_CONTINUE, POLICY_DENIED_CONTINUE_MSG),
     ],
 )
-async def test_pg_middleware_deny(make_pg_client, make_decision_engine, backend_server, decision, expected_msg):
+async def test_pg_middleware_deny(make_pg_client, make_decision_engine, make_simple_mcp, decision, expected_msg):
     engine = make_decision_engine(decision)
-    async with make_pg_client({"backend": backend_server}, policy_engine=engine) as sess:
+    async with make_pg_client({"backend": make_simple_mcp}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
             await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
         assert expected_msg in str(ei.value)
@@ -64,11 +64,11 @@ async def test_pg_middleware_backend_stamp_misuse(pg_client):
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, backend_server):
+async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, make_simple_mcp):
     # Backend raises an McpError with a spoofed gateway stamp
     # Wrap backend in a FastMCP proxy so downstream errors arrive as result-path
     # CallToolResult (structured ErrorData preserved)
-    proxy = FastMCP.as_proxy(backend_server)
+    proxy = FastMCP.as_proxy(make_simple_mcp)
 
     async with make_pg_client({"proxy": proxy}) as sess:
         with pytest.raises(ToolError) as ei:
@@ -78,12 +78,12 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, back
 
 
 @pytest.mark.requires_docker
-async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_engine, backend_server):
+async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_engine, make_simple_mcp):
     """Test ASK decision: tool call blocks until approved via admin server."""
     engine = make_decision_engine(ApprovalDecision.ASK)
     call_ids: list[str] = []
 
-    async with make_pg_compositor({"backend": backend_server}, policy_engine=engine) as (sess, policy_engine):
+    async with make_pg_compositor({"backend": make_simple_mcp}, policy_engine=engine) as (sess, policy_engine):
         # Start tool call in background - it will block waiting for approval
         call_task = asyncio.create_task(sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"}))
 

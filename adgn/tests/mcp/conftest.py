@@ -11,7 +11,7 @@ import pytest
 
 from adgn.mcp.compositor.clients import CompositorAdminClient
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.server import make_resources_server
 from adgn.mcp.testing.resources_stubs import ResourcesServerStub
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
@@ -83,7 +83,7 @@ async def admin_env(make_compositor):
 @pytest.fixture
 def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
     """Origin server with subscription recorder attached."""
-    m = NotifyingFastMCP("origin")
+    m = EnhancedFastMCP("origin")
     recorder = install_subscription_recorder(m)
 
     @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
@@ -96,4 +96,4 @@ def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
     return m, recorder
 
 
-# Note: backend_server fixture is provided by tests/conftest.py (uses make_simple_mcp)
+# Note: make_simple_mcp fixture is provided by tests/conftest.py (uses make_make_simple_mcp)

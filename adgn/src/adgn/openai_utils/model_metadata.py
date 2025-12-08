@@ -8,7 +8,7 @@ Data provenance:
     - Community reports: https://community.openai.com/t/huge-gpt-5-documentation-gap-flaw-causing-bugs-input-tokens-exceed-the-configured-limit-of-272-000-tokens/1344734
   - Note: OpenAI API /v1/models endpoint does NOT expose context_window or max_output fields
 
-Last updated: 2025-11-30
+Last updated: 2025-12-08
 """
 
 from __future__ import annotations
@@ -75,6 +75,13 @@ MODEL_METADATA: Final[dict[str, ModelMetadata]] = {
         max_output_tokens=128_000,
     ),
     "gpt-5.1-codex": ModelMetadata(
+        input_usd_per_1m_tokens=1.25,
+        cached_input_usd_per_1m_tokens=0.125,
+        output_usd_per_1m_tokens=10.00,
+        context_window_tokens=400_000,
+        max_output_tokens=128_000,
+    ),
+    "gpt-5.1-codex-max": ModelMetadata(
         input_usd_per_1m_tokens=1.25,
         cached_input_usd_per_1m_tokens=0.125,
         output_usd_per_1m_tokens=10.00,

@@ -11,9 +11,9 @@ from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
-async def test_meta_presents_inproc_mounts(make_pg_compositor, backend_server):
+async def test_meta_presents_inproc_mounts(make_pg_compositor, make_simple_mcp):
     # make_pg_compositor auto-creates a PolicyEngine and mounts its reader
-    async with make_pg_compositor({"backend": backend_server}) as (sess, _engine):
+    async with make_pg_compositor({"backend": make_simple_mcp}) as (sess, _engine):
         # First, check that the discovery resource exists and lists mounted servers
         # Note: The URI gets prefixed with the mount name (compositor_meta)
         discovery_uri = add_resource_prefix(COMPOSITOR_META_SERVERS_URI, COMPOSITOR_META_SERVER_NAME)

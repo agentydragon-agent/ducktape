@@ -15,12 +15,23 @@ from adgn.props.db import init_db, recreate_database
 from adgn.props.db.config import get_production_config
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.files_hash import hash_file_set
-from adgn.props.grader.models import GraderInput
+from adgn.props.grader.models import (
+    CanonicalFPCoverage,
+    CanonicalTPCoverage,
+    FalsePositiveID,
+    FPCoverageEntry,
+    GraderInput,
+    GraderOutput,
+    GradeSubmitInput,
+    ReportedIssueRatios,
+    TPCoverageEntry,
+    TruePositiveID,
+)
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.paths import SnapshotRelativePath
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from adgn.props.snapshot_hydrator import SnapshotHydrator
 from adgn.props.validation_context import GradedCritiqueContext, SnapshotContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
@@ -28,6 +39,50 @@ from tests.llm.support.openai_mock import FakeOpenAIModel
 TEST_FILES_LIST = ["test.py"]
 TEST_FILES = {Path(f) for f in TEST_FILES_LIST}
 TEST_FILES_HASH = hash_file_set(TEST_FILES)
+
+
+def make_grader_output(
+    tp_count: int, fp_count: int, recall: float, tp_ratio: float, fp_ratio: float, summary: str
+) -> dict:
+    """Build GraderOutput using Pydantic models, return as dict for DB storage.
+
+    Uses actual Pydantic models to ensure test data matches the real schema.
+    The dict output is JSON-serializable for DB JSONB columns.
+
+    Args:
+        tp_count: Number of canonical TPs to create
+        fp_count: Number of canonical FPs to create
+        recall: Recall value (0-1)
+        tp_ratio: TP ratio in reported_issue_ratios
+        fp_ratio: FP ratio in reported_issue_ratios
+        summary: Summary text
+    """
+    tp_coverage = [
+        TPCoverageEntry(
+            canonical_id=TruePositiveID(f"tp-{i:03d}"),
+            coverage=CanonicalTPCoverage(
+                covered_by=[], recall_credit=0.0, rationale="Test coverage - canonical TP not covered"
+            ),
+        )
+        for i in range(1, tp_count + 1)
+    ]
+    fp_coverage = [
+        FPCoverageEntry(
+            canonical_id=FalsePositiveID(f"fp-{i:03d}"),
+            coverage=CanonicalFPCoverage(covered_by=[], rationale="Test coverage - known FP not triggered"),
+        )
+        for i in range(1, fp_count + 1)
+    ]
+    unlabeled = round(1.0 - tp_ratio - fp_ratio, 2)
+    grade = GradeSubmitInput(
+        canonical_tp_coverage=tp_coverage,
+        canonical_fp_coverage=fp_coverage,
+        novel_critique_issues=[],
+        reported_issue_ratios=ReportedIssueRatios(tp=tp_ratio, fp=fp_ratio, unlabeled=unlabeled),
+        recall=recall,
+        summary=summary,
+    )
+    return GraderOutput(grade=grade).model_dump(mode="json")
 
 
 @pytest.fixture

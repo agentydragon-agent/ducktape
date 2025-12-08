@@ -9,9 +9,9 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import BaseExecResult, ExecOutcome, TimeoutMs, render_outcome_to_result
 from adgn.mcp.exec.subprocess import run_proc
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 BWRAP = os.getenv("BWRAP", "bwrap")
 ALLOW_UNSHARE_NET = os.getenv("DUCK_UNSHARE_NET", "0") == "1"
@@ -57,27 +57,28 @@ async def _run_in_bwrap(cmd: list[str], timeout_s: float, cwd: Path | None, stdi
 
 class BwrapExecArgs(BaseModel):
     cmd: list[str]
-    max_bytes: int = Field(..., description="0..100_000; applies to stdin and captures")
-    cwd: Path | None = None
+    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+    cwd: str | None = None
     timeout_ms: TimeoutMs
     stdin_text: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
-def make_bwrap_exec_server(name: str = "bwrap", *, default_cwd: Path | None = None) -> NotifyingFastMCP:
+def make_bwrap_exec_server(name: str = "bwrap", *, default_cwd: Path | None = None) -> EnhancedFastMCP:
     """FastMCP server exposing a bubblewrap-sandboxed exec tool (Linux only).
 
     - Tool name: exec(cmd, max_bytes, cwd?, timeout_ms, stdin_text?)
     """
-    mcp = NotifyingFastMCP(name, instructions="Local command execution via bubblewrap (Linux)")
+    mcp = EnhancedFastMCP(name, instructions="Local command execution via bubblewrap (Linux)")
 
     @mcp.flat_model()
     async def exec(input: BwrapExecArgs) -> BaseExecResult:
         """Execute a command inside a bubblewrap sandbox (Linux only)."""
         if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
             raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
-        cwd_val: Path | None = input.cwd if isinstance(input.cwd, Path) else None
+        cwd_val: Path | None = Path(input.cwd) if input.cwd else None
         if cwd_val is None and default_cwd is not None:
             cwd_val = default_cwd
 

@@ -22,7 +22,7 @@ async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_client) -> 
         # Namespaced exec via Compositor
         stub = ToolStub(mcp_client, build_mcp_function("runtime", "exec"), BaseExecResult)
 
-        res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500, shell=True))
+        res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
         assert isinstance(res_timeout.exit, TimedOut)
 
         # Next call should work; container should have been restarted

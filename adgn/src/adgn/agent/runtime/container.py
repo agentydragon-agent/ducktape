@@ -36,12 +36,12 @@ from adgn.mcp._shared.constants import (
     UI_SERVER_NAME,
 )
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp._shared.fastmcp_flat import FlatModelFastMCP, mcp_flat_model
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import attach_persisted_chat_servers
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import make_loop_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
@@ -220,7 +220,7 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def make_control_server(self, name: str) -> FlatModelFastMCP:
+    def make_control_server(self, name: str) -> EnhancedFastMCP:
         """Create an agent control MCP server for this container.
 
         Tools:
@@ -231,12 +231,12 @@ class AgentContainer:
             name: Server name
 
         Returns:
-            FlatModelFastMCP server instance
+            EnhancedFastMCP server instance
         """
-        mcp = FlatModelFastMCP(name)
+        mcp = EnhancedFastMCP(name)
         container = self  # capture self for closures
 
-        @mcp_flat_model(mcp)
+        @mcp.flat_model()
         async def send_prompt(input: SendPromptInput) -> SendPromptOutput:
             """Send a prompt to the agent."""
             if container.session is None:
@@ -244,7 +244,7 @@ class AgentContainer:
             await container.session.run(input.prompt)
             return SendPromptOutput(status="started", message="Prompt sent successfully")
 
-        @mcp_flat_model(mcp)
+        @mcp.flat_model()
         async def abort(input: AbortInput) -> AbortOutput:
             """Abort the currently active agent."""
             if container.session is None:

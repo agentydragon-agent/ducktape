@@ -31,11 +31,11 @@ import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.openai_utils.model import FunctionToolParam, ResponsesRequest
+from adgn.openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
 from adgn.openai_utils.types import ReasoningEffort
 
 
-class FakeModelLayer:
+class FakeModelLayer(OpenAIModelProto):
     """Protocol-level fake model used via DI factory (make_model)."""
 
     def __init__(self, responses_factory) -> None:

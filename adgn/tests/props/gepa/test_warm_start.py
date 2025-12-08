@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -10,36 +9,20 @@ import pytest
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Prompt, Snapshot
-from adgn.props.files_hash import hash_critic_scope_files
+from adgn.props.files_hash import hash_file_set
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
-from adgn.props.grader.models import (
-    GraderOutput,
-    GradeSubmitInput,
-    NovelIssueEntry,
-    NovelIssueReasoning,
-    ReportedIssueRatios,
-)
-from adgn.props.ids import InputIssueID, SnapshotSlug
+from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.splits import Split
+from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
+from tests.props.conftest import make_grader_output
 
 
-def make_grader_output(recall: float) -> GraderOutput:
-    """Helper to create GraderOutput for tests."""
-    return GraderOutput(
-        grade=GradeSubmitInput(
-            canonical_tp_coverage=[],
-            canonical_fp_coverage=[],
-            novel_critique_issues=[
-                NovelIssueEntry(
-                    input_id=InputIssueID("test-issue"),
-                    reasoning=NovelIssueReasoning(rationale="Test rationale for grader"),
-                )
-            ],
-            reported_issue_ratios=ReportedIssueRatios(tp=0.0, fp=0.0, unlabeled=1.0),
-            recall=recall,
-            summary="Test grader output",
-        )
+def _make_grader_output_for_recall(recall: float) -> dict:
+    """Thin wrapper for warm-start tests that only care about recall."""
+    return make_grader_output(
+        tp_count=0, fp_count=0, recall=recall, tp_ratio=0.0, fp_ratio=0.0, summary="Test grader output"
     )
 
 
@@ -47,8 +30,16 @@ def make_grader_output(recall: float) -> GraderOutput:
 def standard_valset() -> list[SnapshotInput]:
     """Standard two-snapshot validation set for most tests."""
     return [
-        SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files={Path("hash1")}),
-        SnapshotInput(slug=SnapshotSlug("test/valid-2"), target_files={Path("hash2")}),
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=ExplicitFileScope(files=["hash1"]),
+            files_hash=hash_file_set(["hash1"]),
+        ),
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-2"),
+            target_files=ExplicitFileScope(files=["hash2"]),
+            files_hash=hash_file_set(["hash2"]),
+        ),
     ]
 
 
@@ -58,10 +49,10 @@ def db_with_historical_runs(test_db):
     # test_db fixture already initializes and recreates the database
 
     # Compute proper file hashes for test data
-    hash1 = hash_critic_scope_files({Path("hash1")})
-    hash2 = hash_critic_scope_files({Path("hash2")})
-    hash3 = hash_critic_scope_files({Path("hash3")})
-    hash_train = hash_critic_scope_files({Path("hash_train")})
+    hash1 = hash_file_set(["hash1"])
+    hash2 = hash_file_set(["hash2"])
+    hash3 = hash_file_set(["hash3"])
+    hash_train = hash_file_set(["hash_train"])
 
     with get_session() as session:
         # Create snapshots
@@ -152,21 +143,24 @@ def db_with_historical_runs(test_db):
             snapshot_slug=snap_valid_1.slug,
             model="test-model",
             critique_id=critique_1.id,
-            output=make_grader_output(recall=0.8),
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+            output=_make_grader_output_for_recall(recall=0.8),
         )
         grader_run_2 = GraderRun(
             transcript_id=uuid4(),
             snapshot_slug=snap_valid_2.slug,
             model="test-model",
             critique_id=critique_2.id,
-            output=make_grader_output(recall=0.6),
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+            output=_make_grader_output_for_recall(recall=0.6),
         )
         grader_run_3 = GraderRun(
             transcript_id=uuid4(),
             snapshot_slug=snap_valid_1.slug,
             model="test-model",
             critique_id=critique_3.id,
-            output=make_grader_output(recall=0.9),
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+            output=_make_grader_output_for_recall(recall=0.9),
         )
         # Grader run with JSON null output (simulates incomplete/failed grader)
         grader_run_null = GraderRun(
@@ -174,6 +168,7 @@ def db_with_historical_runs(test_db):
             snapshot_slug=snap_valid_1.slug,
             model="test-model",
             critique_id=critique_incomplete.id,
+            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
             output=None,  # This gets stored as JSON null in JSONB
         )
         session.add_all([grader_run_1, grader_run_2, grader_run_3, grader_run_null])
@@ -248,7 +243,13 @@ def test_empty_database(test_db):
     """Test warm-start with no historical data returns None."""
     # test_db fixture already initializes and recreates database
 
-    valset = [SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files={Path("hash1")})]
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=ExplicitFileScope(files=["hash1"]),
+            files_hash=hash_file_set(["hash1"]),
+        )
+    ]
 
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
 
@@ -259,7 +260,13 @@ def test_model_filtering(db_with_historical_runs):
     """Test that only runs matching specified models are included."""
     # Database already initialized by test_db fixture
 
-    valset = [SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files={Path("hash1")})]
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=ExplicitFileScope(files=["hash1"]),
+            files_hash=hash_file_set(["hash1"]),
+        )
+    ]
 
     # Query with non-matching model
     state = build_historical_gepa_state(valset=valset, critic_model="wrong-model", grader_model="test-model")
@@ -272,7 +279,13 @@ def test_split_filtering(db_with_historical_runs):
     # Database already initialized by test_db fixture
 
     # Query with training example (should find nothing)
-    valset = [SnapshotInput(slug=SnapshotSlug("test/train-1"), target_files={Path("hash_train")})]
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/train-1"),
+            target_files=ExplicitFileScope(files=["hash_train"]),
+            files_hash=hash_file_set(["hash_train"]),
+        )
+    ]
 
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
 
@@ -285,7 +298,13 @@ def test_unknown_examples_skipped(db_with_historical_runs):
     # Database already initialized by test_db fixture
 
     # Valset that doesn't include valid-2 (but database has runs for it)
-    valset = [SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files={Path("hash1")})]
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=ExplicitFileScope(files=["hash1"]),
+            files_hash=hash_file_set(["hash1"]),
+        )
+    ]
 
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
 
@@ -305,7 +324,13 @@ def test_files_hash_matching(db_with_historical_runs):
     # Database already initialized by test_db fixture
 
     # Valset with same snapshot but different files_hash (should not match)
-    valset = [SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files={Path("hash_different")})]
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=ExplicitFileScope(files=["hash_different"]),
+            files_hash=hash_file_set(["hash_different"]),
+        )
+    ]
 
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
 
@@ -317,13 +342,19 @@ def test_critic_scope_spec_all(db_with_historical_runs):
     """Test that CriticScopeSpec 'all' is handled correctly in index mapping."""
     # Database already initialized by test_db fixture
 
-    # Create valset with "all" scope
-    valset = [SnapshotInput(slug=SnapshotSlug("test/valid-1"), target_files="all")]
+    # Create valset with "all" scope - use a distinct hash that won't match explicit file hashes
+    valset = [
+        SnapshotInput(
+            slug=SnapshotSlug("test/valid-1"),
+            target_files=AllFilesScope(),
+            files_hash=hash_file_set(["all_files_sentinel"]),  # Different from "hash1"
+        )
+    ]
 
-    # This should not match database runs (which have specific file hashes)
+    # This should not match database runs (which have specific file hashes like "hash1")
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
 
-    # No matches because "all" hashes to a different value than "hash1"
+    # No matches because "all_files_sentinel" hashes differently than "hash1"
     assert state is None
 
 

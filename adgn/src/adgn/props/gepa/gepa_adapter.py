@@ -28,7 +28,6 @@ from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import datetime
-from itertools import chain
 import json
 import logging
 from pathlib import Path
@@ -50,14 +49,14 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput, CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Event, GraderRun as DBGraderRun, Snapshot
+from adgn.props.db.datapoints import get_datapoints_for_split
+from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Event, GraderRun as DBGraderRun
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.files_hash import hash_critic_scope_files
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.grader.models import GraderOutput, GradeSubmitInput
-from adgn.props.snapshot_hydrator import SnapshotHydrator
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -467,7 +466,8 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         with get_session() as session:
             for idx, specimen_input in enumerate(batch):
-                files_hash = hash_critic_scope_files(specimen_input.target_files)
+                # Use precomputed files_hash from SnapshotInput (computed during sync from resolved files)
+                files_hash = specimen_input.files_hash
 
                 # Query for cached run - joint query to find completed critic+grader pair
                 db_row = (
@@ -599,76 +599,29 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 # =============================================================================
 
 
-def _build_snapshot_inputs_from_snapshot(snapshot: Snapshot) -> list[SnapshotInput]:
-    """Build SnapshotInputs directly from Snapshot ORM object using critic scopes.
-
-    Requires critic scopes to be defined in database (sync validation ensures this).
-
-    Args:
-        snapshot: Snapshot ORM object with relationships loaded
-
-    Returns:
-        List of SnapshotInput objects (one per critic scope)
-
-    Raises:
-        ValueError: If snapshot has no critic scopes (should be caught during sync)
-    """
-    if not snapshot.critic_scopes:
-        raise ValueError(f"Snapshot {snapshot.slug} has no critic scopes - sync validation should have caught this")
-
-    inputs: list[SnapshotInput] = []
-
-    # Generate one SnapshotInput per critic scope
-    for scope_db in snapshot.critic_scopes:
-        # Pass scope spec directly - critic layer will resolve "all" sentinel
-        inputs.append(SnapshotInput(slug=snapshot.slug, target_files=scope_db.files))
-
-    return inputs
-
-
 async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
     """Load train and validation datasets for GEPA from database.
 
-    Builds SnapshotInputs directly from Snapshot ORM objects using critic scopes.
-    Each critic scope becomes one training example. All data comes from database.
+    Uses the shared datapoints module for consistent filtering logic across
+    train/valid/test splits.
 
-    CRITICAL: Dataset Order Determinism
-    ------------------------------------
-    GEPA's ListDataLoader uses list indices as DataIds (0, 1, 2, ...). When saving
-    checkpoints, validation scores are keyed by these integers:
-        prog_candidate_val_subscores[prog_idx] = {0: 0.85, 2: 0.90, ...}
-
-    The mapping SnapshotInput → int is implicit via list position. For warm-start
-    to work correctly, we MUST return datasets in identical order across all runs.
-
-    Ordering strategy:
-    1. Snapshots ordered by slug (deterministic string sort)
-    2. Critic scopes within each snapshot ordered by id (auto-increment)
-
-    See warm_start.py:build_historical_gepa_state() which builds the index
-    mapping (snapshot_slug, files_hash) → valset_idx to match historical runs.
+    Training set: All critic scopes (per-file + full-specimen) for tighter feedback loops
+    Validation set: Only full-specimen scopes to measure terminal goal (comprehensive review)
 
     Returns:
         (trainset, valset) tuple of SnapshotInput lists
 
     Raises:
-        ValueError: If any snapshot has no critic scopes (should be caught during sync)
+        ValueError: If any snapshot has no critic scopes
     """
     logger.info("Loading training examples from critic_scopes database")
 
     with get_session() as session:
-        # CRITICAL: order_by ensures deterministic dataset order for checkpoint compatibility
-        train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).order_by(Snapshot.slug).all()
-        valid_snapshots = session.query(Snapshot).filter_by(split=Split.VALID).order_by(Snapshot.slug).all()
-
-        # Build SnapshotInputs directly from ORM (one per critic scope)
-        # Must do this inside session context to access lazy-loaded relationships
-        # Critic scopes are ordered by id within each snapshot (see Snapshot.critic_scopes relationship)
-        trainset = list(chain.from_iterable(_build_snapshot_inputs_from_snapshot(s) for s in train_snapshots))
-        valset = list(chain.from_iterable(_build_snapshot_inputs_from_snapshot(s) for s in valid_snapshots))
+        # Use shared datapoints module for consistent filtering logic
+        trainset = get_datapoints_for_split(session, Split.TRAIN)
+        valset = get_datapoints_for_split(session, Split.VALID)
 
     logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
-    logger.info(f"From {len(train_snapshots)} train snapshots, {len(valid_snapshots)} valid snapshots")
 
     return trainset, valset
 

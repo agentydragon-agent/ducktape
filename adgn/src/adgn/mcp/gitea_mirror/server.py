@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import requests
 
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 
 
 @dataclass
@@ -225,10 +225,10 @@ def _resolve_owner(base_url: str, token: str) -> str:
     return data.login
 
 
-def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> NotifyingFastMCP:
+def make_gitea_mirror_server(*, base_url: str | None = None, token: str | None = None) -> EnhancedFastMCP:
     cfg = MirrorConfig.resolve(base_url, token)
 
-    server = NotifyingFastMCP(
+    server = EnhancedFastMCP(
         "Gitea Mirror",
         instructions=(
             "Host-side Gitea mirror manager for async pull mirror syncing.\n\n"

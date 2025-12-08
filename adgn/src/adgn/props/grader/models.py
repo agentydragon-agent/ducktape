@@ -13,6 +13,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.props.ids import BaseIssueID, InputIssueID, SnapshotSlug
 from adgn.props.models.true_positive import (
     FalsePositiveOccurrence,
@@ -46,9 +47,6 @@ FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-
 # Constants and Type Aliases
 # =============================================================================
 
-# Feature flag: filter TPs/FPs by critic scope using expect_caught_from
-FILTER_TPS_BY_CRITIC_SCOPE = True
-
 RATIO_SUM_TOLERANCE = 0.01  # Allow ±0.01 deviation from 1.0
 RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 
@@ -79,11 +77,11 @@ class GradeValidationContext:
             snapshot_orm: ORM Snapshot from database (has TPs/FPs)
             critique: Critic's submitted payload
             reviewed_files: Optional set of files that were reviewed by the critic.
-                If provided and FILTER_TPS_BY_CRITIC_SCOPE is True, only include
-                TPs/FPs that are catchable/relevant from those files.
+                If provided, only include TPs/FPs that are catchable/relevant from those files.
+                If None, include all TPs/FPs.
         """
-        # Filter TPs/FPs by scope if enabled and reviewed_files provided
-        if FILTER_TPS_BY_CRITIC_SCOPE and reviewed_files:
+        # Filter TPs/FPs by scope if reviewed_files provided
+        if reviewed_files:
             # Only include TPs where at least one occurrence is catchable from reviewed files
             allowed_tp_ids = {
                 TruePositiveID(tp.tp_id)
@@ -204,16 +202,16 @@ class GradeMetrics(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class IssueCoverageEntry(BaseModel):
+class IssueCoverageEntry(OpenAIStrictModeBaseModel):
     """Single input issue's contribution to canonical coverage."""
 
     input_id: InputIssueID = Field(description="Input issue ID")
     credit: RatioFloat = Field(description="Individual recall credit contribution")
 
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(frozen=True)
 
 
-class CanonicalTPCoverage(BaseModel):
+class CanonicalTPCoverage(OpenAIStrictModeBaseModel):
     """Coverage of a canonical TP: which inputs matched, recall credit, rationale."""
 
     covered_by: list[IssueCoverageEntry] = Field(description="Input issue contributions. Empty list = not covered.")
@@ -264,11 +262,11 @@ class CanonicalTPCoverage(BaseModel):
         return self
 
 
-class CanonicalFPCoverage(BaseModel):
+class CanonicalFPCoverage(OpenAIStrictModeBaseModel):
     """Coverage of a known FP: which inputs matched (if any), rationale."""
 
-    covered_by: set[InputIssueID] = Field(
-        description="Input issue IDs that matched this known FP. Empty set = not matched."
+    covered_by: list[InputIssueID] = Field(
+        description="Input issue IDs that matched this known FP. Empty list = not matched."
     )
 
     rationale: Rationale = Field(
@@ -278,7 +276,7 @@ class CanonicalFPCoverage(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class NovelIssueReasoning(BaseModel):
+class NovelIssueReasoning(OpenAIStrictModeBaseModel):
     """Rationale for novel aspects beyond matched canonicals/FPs."""
 
     rationale: Rationale = Field(
@@ -292,34 +290,37 @@ class NovelIssueReasoning(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class TPCoverageEntry(BaseModel):
+class TPCoverageEntry(OpenAIStrictModeBaseModel):
     """Coverage for one canonical true positive."""
 
     canonical_id: TruePositiveID = Field(description="Canonical TP ID")
-    coverage: CanonicalTPCoverage = Field(description="Coverage details")
+    # Note: no description on $ref fields - OpenAI strict mode doesn't allow it
+    coverage: CanonicalTPCoverage
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class FPCoverageEntry(BaseModel):
+class FPCoverageEntry(OpenAIStrictModeBaseModel):
     """Coverage for one known false positive."""
 
     canonical_id: FalsePositiveID = Field(description="Known FP ID")
-    coverage: CanonicalFPCoverage = Field(description="Coverage details")
+    # Note: no description on $ref fields - OpenAI strict mode doesn't allow it
+    coverage: CanonicalFPCoverage
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class NovelIssueEntry(BaseModel):
+class NovelIssueEntry(OpenAIStrictModeBaseModel):
     """Novel aspects for one input issue."""
 
     input_id: InputIssueID = Field(description="Input issue ID with novel aspects")
-    reasoning: NovelIssueReasoning = Field(description="Why this issue is novel")
+    # Note: no description on $ref fields - OpenAI strict mode doesn't allow it
+    reasoning: NovelIssueReasoning
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class ReportedIssueRatios(BaseModel):
+class ReportedIssueRatios(OpenAIStrictModeBaseModel):
     """Weighted ratios {tp, fp, unlabeled} in [0,1], must sum to ~1.0.
 
     Note: This model should only be instantiated when there are actually reported issues.
@@ -357,7 +358,7 @@ class ReportedIssueRatios(BaseModel):
         return self
 
 
-class GradeSubmitInput(BaseModel):
+class GradeSubmitInput(OpenAIStrictModeBaseModel):
     """Complete grading: coverage for all TPs/FPs/novel issues, metrics, summary.
 
     Validation enforces completeness. Weight issues fractionally by severity/size.
@@ -519,7 +520,10 @@ class GradeSubmitInput(BaseModel):
     @property
     def _mentioned_fp_ids(self) -> set[InputIssueID]:
         """Input IDs mentioned in canonical FP coverage."""
-        return set().union(*(entry.coverage.covered_by for entry in self.canonical_fp_coverage))
+        result: set[InputIssueID] = set()
+        for entry in self.canonical_fp_coverage:
+            result.update(entry.coverage.covered_by)
+        return result
 
     @model_validator(mode="after")
     def validate_tp_coverage_complete(self, info: ValidationInfo) -> GradeSubmitInput:

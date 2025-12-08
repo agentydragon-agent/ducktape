@@ -40,7 +40,7 @@ def extract_input_text_content(messages: Sequence[InputItem | AssistantMessageOu
     texts: list[str] = []
     for item in messages:
         # Convert to dict for uniform content extraction
-        msgd = item.model_dump(exclude_none=True)
+        msgd = item.model_dump()
         # Extract input_text content
         contents = msgd.get("content") or []
         for c in contents:

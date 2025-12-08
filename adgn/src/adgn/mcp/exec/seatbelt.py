@@ -11,6 +11,7 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import (
     BaseExecResult,
     StreamReadResult,
@@ -19,7 +20,6 @@ from adgn.mcp.exec.models import (
     read_stream_limited_async,
     render_raw_to_result,
 )
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 from adgn.seatbelt.model import EnvPassthroughMode, SBPLPolicy
 from adgn.seatbelt.runner import apopen, collect_unified_sandbox_denies
 
@@ -47,8 +47,9 @@ class SandboxExecArgs(BaseModel):
     # Stateless: require a full policy on every call
     policy: SBPLPolicy
     argv: list[str] = Field(min_length=1)
-    max_bytes: int = Field(..., ge=0, le=100_000, description="0..100_000; applies to stdin and captures")
-    cwd: Path | None = None
+    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+    cwd: str | None = None
     # Explicit env to set/override in the child (applied after policy.env passthrough base)
     env: dict[str, str] | None = None
     timeout_ms: TimeoutMs
@@ -68,14 +69,14 @@ class SandboxExecResult(BaseExecResult):
     unified_sandbox_denies_text: str | None = None
 
 
-def make_seatbelt_exec_server(name: str = SERVER_NAME) -> NotifyingFastMCP:
+def make_seatbelt_exec_server(name: str = SERVER_NAME) -> EnhancedFastMCP:
     """Create a seatbelt exec MCP server (macOS only).
 
     Args:
         name: Server name
 
     Returns:
-        NotifyingFastMCP server with sandbox_exec tool registered
+        EnhancedFastMCP server with sandbox_exec tool registered
 
     Raises:
         RuntimeError: If not on macOS
@@ -84,7 +85,7 @@ def make_seatbelt_exec_server(name: str = SERVER_NAME) -> NotifyingFastMCP:
     if sys.platform != "darwin":
         raise RuntimeError("seatbelt_exec is macOS-only (requires sandbox-exec)")
 
-    server = NotifyingFastMCP(
+    server = EnhancedFastMCP(
         name, instructions=("Execute commands via macOS seatbelt (sandbox-exec). Provide a full SBPL policy per call.")
     )
 
@@ -99,7 +100,7 @@ def make_seatbelt_exec_server(name: str = SERVER_NAME) -> NotifyingFastMCP:
         # Pydantic has already validated argv min length and max_bytes range
         max_b = input.max_bytes
 
-        cwd_path = input.cwd.resolve() if isinstance(input.cwd, Path) else None
+        cwd_path = Path(input.cwd).resolve() if input.cwd else None
 
         # Stateless: require inline policy (validated by Pydantic)
         policy = input.policy

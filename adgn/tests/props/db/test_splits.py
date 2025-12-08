@@ -38,7 +38,7 @@ def test_specimen_has_valid_split(synced_test_db):
             assert_that(snapshot.split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
-def test_unknown_specimen_raises():
+def test_unknown_specimen_raises(test_db):
     """Verify query raises for unknown specimens."""
     with get_session() as session:
         result = session.get(Snapshot, "nonexistent/specimen")
@@ -63,7 +63,7 @@ def test_split_distribution(synced_test_db):
         assert_that(test_count, greater_than_or_equal_to(1))
 
 
-async def test_all_specimens_in_splits_can_load(production_specimens_hydrator):
+async def test_all_specimens_in_splits_can_load(synced_test_db, production_specimens_hydrator):
     """Verify every specimen can be loaded without errors."""
     # Get all slugs from database
     with get_session() as session:
@@ -80,7 +80,7 @@ async def test_all_specimens_in_splits_can_load(production_specimens_hydrator):
                 assert_that(len(snapshot.true_positives), greater_than_or_equal_to(1))
 
 
-async def test_split_issue_counts(production_specimens_hydrator):
+async def test_split_issue_counts(synced_test_db, production_specimens_hydrator):
     """Verify issue counts meet minimum constraints (slow test, uses database).
 
     Constraint: Valid and Test must each have at least 60 issues.

@@ -31,9 +31,8 @@ class ServerHandle:
 class NoopOpenAIClient(OpenAIModelProto):
     """No-op OpenAI client for tests that bypass sampling via SyntheticAction."""
 
-    @property
-    def model(self) -> str:
-        return "noop-model"
+    def __init__(self) -> None:
+        self.model = "noop-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         # This should never be called when using SyntheticAction path

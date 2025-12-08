@@ -25,10 +25,11 @@ from adgn.mcp._shared.constants import LINT_SUBMIT_SERVER_NAME, RUNTIME_CONTAINE
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.lint import IssueLintFindingRecord, LintSubmitPayload, extract_corrections
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
@@ -37,7 +38,6 @@ from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import props_definitions_root
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import format_timestamp_session
-from adgn.props.snapshot_hydrator import SnapshotHydrator
 
 from .docker_env import PropertiesDockerWiring, properties_docker_spec
 
@@ -95,13 +95,13 @@ def _render_lint_submit_payload(obj: LintSubmitPayload):
     return Panel(body, title="Lint result")
 
 
-def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> NotifyingFastMCP:
+def make_lint_submit_server(state: LintSubmitState, *, name: str = "lint_submit") -> EnhancedFastMCP:
     """Tiny FastMCP server exposing a single tool: submit_result.
 
     The linter agent must call this exactly once to signal completion. This flips
     shared state so the loop controller will stop the run on the next sampling step.
     """
-    mcp = NotifyingFastMCP(name, instructions="Final result submission for linting run")
+    mcp = EnhancedFastMCP(name, instructions="Final result submission for linting run")
 
     @mcp.flat_model()
     async def submit_result(input: LintSubmitPayload) -> SimpleOk:
@@ -350,7 +350,7 @@ async def _lint_issue_run_with_hydrated_root(
         await wiring.attach(comp)
 
         # Create lint submit server and mount in-proc
-        submit_srv = NotifyingFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
+        submit_srv = EnhancedFastMCP(LINT_SUBMIT_SERVER_NAME, instructions="Lint submit")
 
         @submit_srv.flat_model()
         async def submit_result(result: LintSubmitPayload) -> SimpleOk:

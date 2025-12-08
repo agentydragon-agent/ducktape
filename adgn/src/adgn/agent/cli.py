@@ -18,11 +18,13 @@ from typer.main import get_command
 import uvicorn
 
 from adgn.agent.agent import MiniCodex
+from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.display import DisplayEventsHandler
-from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.server.app import create_app
 from adgn.agent.server.system_message import get_ui_system_message
+from adgn.cli_utils import async_run
 from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp.compositor.server import Compositor
@@ -134,7 +136,17 @@ def _print_auth_url(host: str, port: int) -> None:
         print('    admin: "your-hex-token"')
 
 
-async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> None:
+@app.command("run")
+@async_run
+async def run(
+    model: str = MODEL_OPT,
+    system: str = SYSTEM_OPT,
+    mcp_configs: list[Path] = MCP_CONFIGS_OPT,
+    compact_at_tokens: int | None = typer.Option(
+        None, "--compact-at-tokens", help="Enable compaction at this token threshold (e.g., 150000 for 75% of 200k)"
+    ),
+) -> None:
+    """Start a simple stdin/stdout REPL."""
     _configure_logging_info()
     print("mini-codex ready. Ctrl-D to exit. Type your task and press Enter.")
 
@@ -142,6 +154,12 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
 
     # Build model client
     client = build_client(model)
+
+    # Build handlers
+    handlers: list = [DisplayEventsHandler()]
+    if compact_at_tokens is not None:
+        handlers.append(CompactionHandler(threshold_tokens=compact_at_tokens))
+        print(f"Compaction enabled: will compact at {compact_at_tokens} tokens")
 
     # Build in-proc Compositor and mount servers
     # Use Compositor as async context manager to ensure cleanup
@@ -152,8 +170,8 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
                 mcp_client=mcp_client,
                 system=system,
                 client=client,
-                handlers=[DisplayEventsHandler()],
-                tool_policy=RequireAnyTool(),
+                handlers=handlers,
+                tool_policy=AllowAnyToolOrTextMessage(),
             )
             for line in sys.stdin:
                 user = line.rstrip("\n")
@@ -165,23 +183,20 @@ async def _run_repl_async(model: str, system: str, mcp_configs: list[Path]) -> N
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
 
-@app.command("run")
-def run(model: str = MODEL_OPT, system: str = SYSTEM_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
-    """Start a simple stdin/stdout REPL."""
-    asyncio.run(_run_repl_async(model=model, system=system, mcp_configs=mcp_configs))
-
-
-async def _serve_async(host: str, port: int, mcp_configs: list[Path]) -> None:
+@app.command("serve")
+@async_run
+async def serve(host: str = HOST_OPT, port: int = PORT_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
+    """Launch the local FastAPI UI server and keep running."""
     _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
 
     print("mini-codex serve: starting agent + UI server")
 
     _ = _build_cfg_and_print(mcp_configs)
     # Build the FastAPI app; agent lifecycle is handled by the runtime container (registry)
-    app = create_app()
+    fastapi_app = create_app()
 
     def _run() -> None:
-        uvicorn.run(app, host=host, port=port, log_level="debug")
+        uvicorn.run(fastapi_app, host=host, port=port, log_level="debug")
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()
@@ -190,12 +205,6 @@ async def _serve_async(host: str, port: int, mcp_configs: list[Path]) -> None:
 
     # Keep process alive; UI drives runs via MCP
     await asyncio.Event().wait()
-
-
-@app.command("serve")
-def serve(host: str = HOST_OPT, port: int = PORT_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
-    """Launch the local FastAPI UI server and keep running."""
-    asyncio.run(_serve_async(host=host, port=port, mcp_configs=mcp_configs))
 
 
 @app.command("dev")

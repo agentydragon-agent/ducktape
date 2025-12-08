@@ -9,7 +9,7 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
-from adgn.mcp.exec.models import EnvVar, ExecInput
+from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
     AssistantMessageOut,
@@ -89,9 +89,8 @@ class ResponsesFactory:
         *,
         timeout_ms: int = 30000,
         cwd: Path | None = None,
-        env: list[dict[str, str]] | None = None,
+        env: list[str] | None = None,
         user: str | None = None,
-        shell: bool = False,
         tool_name: str = "exec",
     ) -> FunctionCallItem:
         """Create docker exec tool call with sensible defaults.
@@ -102,16 +101,14 @@ class ResponsesFactory:
             cmd: Command to execute
             timeout_ms: Timeout in milliseconds (default: 30000)
             cwd: Working directory (default: None)
-            env: Environment variables as list of dicts (default: None)
+            env: Environment variables as ["NAME=value", ...] (default: None)
             user: User to run as (default: None)
-            shell: Whether to use shell (default: False)
             tool_name: Tool name on docker server (default: "exec")
 
         Returns:
             FunctionCallItem for docker/{tool_name} tool
         """
-        env_vars = [EnvVar(name=k, value=v) for d in env for k, v in d.items()] if env else None
-        exec_input = ExecInput(cmd=cmd, cwd=cwd, env=env_vars, user=user, shell=shell, timeout_ms=timeout_ms)
+        exec_input = ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)
         return self.mcp_tool_call("docker", tool_name, exec_input)
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:

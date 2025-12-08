@@ -7,9 +7,7 @@
 - File name must equal the issue id (e.g., `issues/iss-032.libsonnet`). Do not include id in the Jsonnet; the loader derives it from the filename.
 
 ## Triple‑bar text blocks (|||) — exact house style
-- Opening delimiter: exactly one space before it
-  - Good: `rationale= |||`
-  - Bad:  `rationale=|||` (no space) or extra spaces
+- Opening delimiter: `rationale=|||` or `rationale= |||` (space is optional)
 - Content lines: indent every line by exactly two spaces
 - Closing delimiter: two spaces + `|||,` on its own line (include the comma there)
 

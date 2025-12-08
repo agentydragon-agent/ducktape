@@ -12,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.props.ids import BaseIssueID, SnapshotSlug
-from adgn.props.models.critic_scopes import ALL_FILES_WITH_ISSUES, CriticScopeSpec
+from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.true_positive import Occurrence
 from adgn.props.rationale import Rationale
 
@@ -21,7 +21,7 @@ from adgn.props.rationale import Rationale
 # =============================================================================
 
 type ResolvedFileScope = set[Path]
-"""Resolved file scope - guaranteed to be an explicit set of paths (no sentinels)."""
+"""Resolved file scope - guaranteed to be an explicit set of paths (no sentinels). Internal only."""
 
 
 # =============================================================================
@@ -32,17 +32,11 @@ type ResolvedFileScope = set[Path]
 class CriticInput(BaseModel):
     """Input for a critic run (codebase → candidate issues).
 
-    Files can be specified as:
-    - ALL_FILES_WITH_ISSUES sentinel: resolved to files with ground truth TP/FP issues
-    - Explicit set[Path]: specific files to review
-
-    Resolution happens inside run_critic().
+    Internal format used by critic execution (after MCP tool converts from CriticFilesInput).
     """
 
     snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    files: CriticScopeSpec = Field(
-        description=f'Files to review: explicit set or "{ALL_FILES_WITH_ISSUES}" sentinel for ground truth files'
-    )
+    files: CriticScopeSpec = Field(description="Files to review")
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")
 
     model_config = ConfigDict(extra="forbid")

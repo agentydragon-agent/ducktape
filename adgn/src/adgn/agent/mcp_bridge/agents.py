@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
 from adgn.mcp._shared.constants import AGENTS_LIST_URI, AGENTS_PRESETS_URI
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
@@ -90,7 +90,7 @@ class BootAgentOutput(BaseModel):
 # ---- Server factory ----------------------------------------------------------
 
 
-def make_agents_server(name: str, registry: InfrastructureRegistry) -> NotifyingFastMCP:
+def make_agents_server(name: str, registry: InfrastructureRegistry) -> EnhancedFastMCP:
     """Create the agents management MCP server.
 
     Resources:
@@ -102,7 +102,7 @@ def make_agents_server(name: str, registry: InfrastructureRegistry) -> Notifying
     - delete_agent(agent_id) - Delete an agent
     - boot_agent(agent_id) - Boot existing agent from DB
     """
-    mcp = NotifyingFastMCP(name)
+    mcp = EnhancedFastMCP(name)
 
     @mcp.resource(AGENTS_LIST_URI)
     async def list_agents() -> list[AgentInfo]:

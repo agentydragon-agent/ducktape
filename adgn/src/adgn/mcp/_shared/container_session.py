@@ -1,12 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-import shlex
 from typing import Any, cast
 
 import aiodocker
@@ -14,10 +12,10 @@ import anyio
 from fastmcp.server import FastMCP
 from fastmcp.server.context import Context
 
-from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, SLEEP_FOREVER_CMD, WORKING_DIR
+from adgn.mcp._shared.constants import EXIT_CODE_SIGTERM, RUNTIME_CONTAINER_INFO_URI, SLEEP_FOREVER_CMD, WORKING_DIR
 from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import MAX_BYTES_CAP, BaseExecResult, ExecInput, async_timer, render_raw_to_result
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +27,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ContainerSessionState:
     docker_client: aiodocker.Docker
-    container: dict[str, Any] | None
+    container_id: str | None
     image: str
     # Raw volumes argument used to start the container (dict/list or None)
     volumes: dict[str, dict[str, str]] | list[str] | None
@@ -47,10 +45,6 @@ class ContainerSessionState:
 
 async def _init_docker() -> aiodocker.Docker:
     return aiodocker.Docker()
-
-
-def _shell_join(cmd: Iterable[str]) -> str:
-    return shlex.join(list(cmd))
 
 
 @dataclass
@@ -139,7 +133,7 @@ def _build_host_config(opts: ContainerOptions, *, auto_remove: bool = False) -> 
     return host_config
 
 
-async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> dict[str, Any]:
+async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) -> str:
     """Create and start a Docker container with the given options.
 
     Args:
@@ -147,7 +141,7 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
         opts: Container configuration options
 
     Returns:
-        Dict with container ID and name
+        Container ID (string)
     """
     # Always set auto_remove=False - we handle cleanup explicitly in the lifespan to ensure
     # containers are removed even if the process crashes before normal exit.
@@ -155,8 +149,7 @@ async def _start_container(*, client: aiodocker.Docker, opts: ContainerOptions) 
 
     container = await client.containers.create(container_config)
     await container.start()
-    # Return dict format to match expected API; aiodocker containers use _id internally
-    return {"Id": container._id, "Name": ""}
+    return container.id
 
 
 # ---- Lifespan factory (per-session container) ----
@@ -166,13 +159,13 @@ def make_container_lifespan(opts: ContainerOptions):
     @asynccontextmanager
     async def lifespan(server: FastMCP):  # yields ContainerSessionState
         client = await _init_docker()
-        container_dict = None
+        container_id = None
         try:
             if not opts.ephemeral:
-                container_dict = await _start_container(client=client, opts=opts)
+                container_id = await _start_container(client=client, opts=opts)
             yield ContainerSessionState(
                 docker_client=client,
-                container=container_dict,
+                container_id=container_id,
                 image=opts.image,
                 volumes=opts.volumes,
                 working_dir=opts.working_dir,
@@ -185,18 +178,18 @@ def make_container_lifespan(opts: ContainerOptions):
             # async operations from parent cancel scopes (FastMCP's transport cancellation).
             # This ensures containers are properly killed even when the client disconnects.
             try:
-                if container_dict is not None:
+                if container_id is not None:
                     with anyio.CancelScope(shield=True):
                         try:
-                            container = await client.containers.get(container_dict["Id"])
+                            container = await client.containers.get(container_id)
                             await container.kill()
                             # Always explicitly delete. We disable auto_remove to ensure deterministic
                             # cleanup behavior - our shielded lifespan cleanup is the single point
                             # of responsibility for container removal.
                             await container.delete(force=True)
-                            logger.debug(f"Container {container_dict['Id']} cleaned up successfully")
+                            logger.debug(f"Container {container_id} cleaned up successfully")
                         except Exception as e:
-                            logger.error(f"Container cleanup failed for {container_dict['Id']}: {e}")
+                            logger.error(f"Container cleanup failed for {container_id}: {e}")
             finally:
                 # Always close the client, even if container cleanup fails
                 try:
@@ -228,7 +221,7 @@ def _render_container_result(
 
 
 async def _run_ephemeral_container(
-    s: ContainerSessionState, prepared_cmd: list[str] | str, input: ExecInput
+    s: ContainerSessionState, cmd: list[str], input: ExecInput
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in ephemeral container using aiodocker."""
     docker_client = s.docker_client
@@ -244,8 +237,8 @@ async def _run_ephemeral_container(
     )
 
     ephemeral_config = ephemeral_opts.to_container_config(
-        cmd=prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd],
-        working_dir=input.cwd,  # Override if specified
+        cmd=cmd,
+        working_dir=Path(input.cwd) if input.cwd is not None else None,  # Override if specified
         env=input.env_dict(),  # Override if specified
         auto_remove=True,  # Ephemeral containers should auto-remove on exit
     )
@@ -329,18 +322,15 @@ async def _run_ephemeral_container(
 
 
 async def _run_session_container(
-    s: ContainerSessionState, prepared_cmd: list[str] | str, input: ExecInput, opts: ContainerOptions
+    s: ContainerSessionState, cmd: list[str], input: ExecInput, opts: ContainerOptions
 ) -> tuple[bytearray, bytearray, int | None, bool]:
     """Run command in per-session container using aiodocker exec."""
-    container = s.container
-    if container is None:
+    container_id = s.container_id
+    if container_id is None:
         raise RuntimeError("No per-session container available")
 
     docker_client = s.docker_client
-    container_instance = await docker_client.containers.get(container["Id"])
-
-    # Prepare command
-    cmd = prepared_cmd if isinstance(prepared_cmd, list) else ["sh", "-c", prepared_cmd]
+    container_instance = await docker_client.containers.get(container_id)
 
     # Execute with timeout handling
     stdout_buf = bytearray()
@@ -400,7 +390,7 @@ async def _run_session_container(
         exit_code = None
         await container_instance.kill()
         await asyncio.sleep(0.5)
-        s.container = await _start_container(client=docker_client, opts=opts)
+        s.container_id = await _start_container(client=docker_client, opts=opts)
     else:
         # Command completed normally - inspect exec for exit code
         inspect_result = await exec_obj.inspect()
@@ -412,7 +402,7 @@ async def _run_session_container(
 # ---- Register exec tool and resources on a FastMCP server -------------------
 
 
-def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_name: str = "exec") -> None:
+def register_container(mcp: EnhancedFastMCP, opts: ContainerOptions, *, tool_name: str = "exec") -> None:
     """Register both container.info resource and exec tool on a FastMCP server.
 
     This folds resource and tool registration into a single call to avoid double registration.
@@ -431,7 +421,7 @@ def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_na
             image=ContainerImageInfo(
                 name=s.image, id=img_info.get("Id", "unknown"), tags=img_info.get("RepoTags", [s.image])
             ),
-            container_id=(s.container["Id"] if s.container is not None else None),
+            container_id=s.container_id,
             volumes=s.volumes,
             working_dir=str(s.working_dir),
             network_mode=s.network_mode,
@@ -444,29 +434,30 @@ def register_container(mcp: NotifyingFastMCP, opts: ContainerOptions, *, tool_na
     # FastMCP treats this as a static resource rather than a template.
     container_info_json.__annotations__["ctx"] = Context
     mcp.resource(
-        "resource://container.info",
+        RUNTIME_CONTAINER_INFO_URI,
         mime_type="application/json",
         name="container.info",
         title="Container session metadata",
         description="Docker container details for this session",
     )(container_info_json)
 
-    @mcp.flat_model(name=tool_name)
+    @mcp.flat_model(name=tool_name)  # type: ignore[arg-type]
     async def tool_exec(input: ExecInput, context: Context) -> BaseExecResult:
-        """Run a shell command inside the per-session Docker container."""
+        """Run a command inside the per-session Docker container.
+
+        The cmd array is passed directly to Docker exec (execve-style, no shell).
+        For shell features, the caller wraps in: ["sh", "-c", "command string"]
+        """
         async with async_timer() as get_duration_ms:
             s = _session_state_from_ctx(context)
 
-            # Build command; for non-shell, run under sh -lc
-            prepared_cmd: list[str] | str
-            prepared_cmd = _shell_join(input.cmd) if input.shell else ["sh", "-lc", _shell_join(input.cmd)]
+            # Pass cmd directly to Docker
+            cmd = input.cmd
 
             if s.ephemeral or opts.ephemeral:
-                stdout_buf, stderr_buf, exit_code, timed_out = await _run_ephemeral_container(s, prepared_cmd, input)
+                stdout_buf, stderr_buf, exit_code, timed_out = await _run_ephemeral_container(s, cmd, input)
             else:
-                stdout_buf, stderr_buf, exit_code, timed_out = await _run_session_container(
-                    s, prepared_cmd, input, opts
-                )
+                stdout_buf, stderr_buf, exit_code, timed_out = await _run_session_container(s, cmd, input, opts)
 
             duration_ms = get_duration_ms()
             return _render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)

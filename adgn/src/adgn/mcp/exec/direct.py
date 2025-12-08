@@ -6,34 +6,35 @@ from fastmcp.exceptions import ToolError
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import BaseExecResult, TimeoutMs, render_outcome_to_result
 from adgn.mcp.exec.subprocess import run_proc
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
 
 
 class DirectExecArgs(BaseModel):
     cmd: list[str]
-    max_bytes: int = Field(..., description="0..100_000; applies to stdin and captures")
-    cwd: Path | None = None
+    max_bytes: int = Field(..., ge=0, le=100_000, description="Applies to stdin and captures")
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+    cwd: str | None = None
     timeout_ms: TimeoutMs
     stdin_text: str | None = None
 
     model_config = ConfigDict(extra="forbid")
 
 
-def make_direct_exec_server(name: str = "exec", *, default_cwd: Path | None = None) -> NotifyingFastMCP:
+def make_direct_exec_server(name: str = "exec", *, default_cwd: Path | None = None) -> EnhancedFastMCP:
     """FastMCP server exposing a direct (unsandboxed) exec tool.
 
     - Tool name: exec(cmd, max_bytes, cwd?, timeout_ms, stdin_text?)
     """
-    mcp = NotifyingFastMCP(name, instructions="Local command execution (unsandboxed)")
+    mcp = EnhancedFastMCP(name, instructions="Local command execution (unsandboxed)")
 
     @mcp.flat_model()
     async def exec(input: DirectExecArgs) -> BaseExecResult:
         """Execute a command locally (no sandbox)."""
         if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
             raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
-        cwd_val: Path | None = input.cwd if isinstance(input.cwd, Path) else None
+        cwd_val: Path | None = Path(input.cwd) if input.cwd else None
         if cwd_val is None and default_cwd is not None:
             cwd_val = default_cwd
 

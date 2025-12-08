@@ -17,11 +17,13 @@ from sqlalchemy.dialects import postgresql
 
 from adgn.props.db.models import (
     CriticRun,
+    CriticScopeDB,
     Critique,
     Event,
     FalsePositive,
     GraderRun,
     Prompt,
+    PromptOptimizationRun,
     RunCost,
     Snapshot,
     TruePositive,
@@ -207,23 +209,32 @@ def recent_grader_results(limit: int = 10) -> Select:
         limit: Maximum number of results (default 10)
 
     Returns:
-        Query selecting grader run details with recall/precision/metrics
+        Query selecting grader run details with recall and coverage counts.
+        Schema matches GraderOutput Pydantic model:
+        - recall: direct field from GradeSubmitInput
+        - canonical_tp_count: array length of canonical_tp_coverage
+        - canonical_fp_count: array length of canonical_fp_coverage
+        - reported_issue_ratios: tp/fp/unlabeled ratios (nullable)
     """
     return (
         select(
             GraderRun.snapshot_slug,
             GraderRun.transcript_id,
             GraderRun.output["grade"]["recall"].astext.label("recall"),
-            GraderRun.output["grade"]["precision"].astext.label("precision"),
-            GraderRun.output["grade"]["metrics"]["true_positives"].astext.label("tp"),
-            GraderRun.output["grade"]["metrics"]["false_positives"].astext.label("fp"),
-            GraderRun.output["grade"]["metrics"]["false_negatives"].astext.label("fn"),
+            # Count canonical TPs/FPs from array lengths
+            func.jsonb_array_length(GraderRun.output["grade"]["canonical_tp_coverage"]).label("canonical_tp_count"),
+            func.jsonb_array_length(GraderRun.output["grade"]["canonical_fp_coverage"]).label("canonical_fp_count"),
+            # Reported issue ratios (can be null for empty critiques)
+            GraderRun.output["grade"]["reported_issue_ratios"]["tp"].astext.label("reported_tp_ratio"),
+            GraderRun.output["grade"]["reported_issue_ratios"]["fp"].astext.label("reported_fp_ratio"),
             GraderRun.model,
             GraderRun.created_at,
         )
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
+        # Filter out JSONB null values (different from SQL NULL)
+        .where(GraderRun.output["grade"].isnot(None))
         .order_by(GraderRun.created_at.desc())
         .limit(limit)
     )
@@ -336,6 +347,8 @@ def valid_full_snapshot_grader_metrics_select() -> Select:
         )
         .where(Snapshot.split == "valid")
         .where(GraderRun.output.isnot(None))
+        # Filter out JSONB null values (different from SQL NULL)
+        .where(GraderRun.output["grade"].isnot(None))
     )
 
 
@@ -417,6 +430,8 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
         .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .where(GraderRun.output.isnot(None))
+        # Filter out JSONB null values (different from SQL NULL)
+        .where(GraderRun.output["grade"].isnot(None))
         .limit(limit)
     )
 
@@ -548,22 +563,23 @@ def po_run_costs(po_run_id: UUID) -> Select:
     Returns:
         Query selecting transcript details with cost/token metrics from run_costs view
     """
-    # CTE for PO transcripts
-    po_transcripts = (
-        select(
-            CriticRun.transcript_id, CriticRun.snapshot_slug, literal("critic").label("run_type"), CriticRun.created_at
-        )
-        .where(CriticRun.prompt_optimization_run_id == po_run_id)
-        .union_all(
-            select(
-                GraderRun.transcript_id,
-                GraderRun.snapshot_slug,
-                literal("grader").label("run_type"),
-                GraderRun.created_at,
-            ).where(GraderRun.prompt_optimization_run_id == po_run_id)
-        )
-        .cte("po_transcripts")
-    )
+    # CTE for PO transcripts (critic runs, grader runs, and PO agent's own transcript)
+    critic_transcripts = select(
+        CriticRun.transcript_id, CriticRun.snapshot_slug, literal("critic").label("run_type"), CriticRun.created_at
+    ).where(CriticRun.prompt_optimization_run_id == po_run_id)
+
+    grader_transcripts = select(
+        GraderRun.transcript_id, GraderRun.snapshot_slug, literal("grader").label("run_type"), GraderRun.created_at
+    ).where(GraderRun.prompt_optimization_run_id == po_run_id)
+
+    po_agent_transcript = select(
+        PromptOptimizationRun.transcript_id,
+        literal(None).label("snapshot_slug"),  # PO agent doesn't target a specific snapshot
+        literal("prompt_optimizer").label("run_type"),
+        PromptOptimizationRun.created_at,
+    ).where(PromptOptimizationRun.id == po_run_id)
+
+    po_transcripts = union_all(critic_transcripts, grader_transcripts, po_agent_transcript).cte("po_transcripts")
 
     # Main query joining with run_costs view (mapped as RunCost ORM model)
     return (
@@ -642,8 +658,60 @@ def blocked_valid_events() -> Select:
 
 
 # ============================================================================
-# Cost tracking queries (require po_run_id parameter)
+# Scope queries
 # ============================================================================
 
 
-# po_run_costs query removed - see comment above
+def list_train_scopes() -> Select:
+    """List all scopes for train split snapshots.
+
+    Returns:
+        Query selecting (snapshot_slug, scope_id, files) for train snapshots
+    """
+    return (
+        select(CriticScopeDB.snapshot_slug, CriticScopeDB.id.label("scope_id"), CriticScopeDB.files)
+        .join(Snapshot, CriticScopeDB.snapshot_slug == Snapshot.slug)
+        .where(Snapshot.split == "train")
+        .order_by(CriticScopeDB.snapshot_slug, CriticScopeDB.id)
+    )
+
+
+def grader_runs_by_scope_train(limit: int = 10) -> Select:
+    """Count completed grader runs per scope for train split.
+
+    Returns grader runs grouped by (snapshot_slug, files_hash) to show
+    how many times each scope has been evaluated.
+
+    Args:
+        limit: Maximum number of results (default 10)
+
+    Returns:
+        Query selecting (snapshot_slug, files_hash, run_count, avg_recall)
+        ordered by run_count descending
+    """
+    return (
+        select(
+            GraderRun.snapshot_slug,
+            CriticScopeDB.files_hash,
+            CriticScopeDB.files,
+            func.count().label("run_count"),
+            func.avg(GraderRun.output["grade"]["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("avg_recall"),
+        )
+        .select_from(GraderRun)
+        .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
+        .join(Critique, GraderRun.critique_id == Critique.id)
+        .join(CriticRun, Critique.id == CriticRun.critique_id)
+        # Join scopes by matching files_hash (critic_runs.files matches scope.files via hash)
+        .join(
+            CriticScopeDB,
+            (CriticRun.snapshot_slug == CriticScopeDB.snapshot_slug)
+            & (CriticRun.files_hash == CriticScopeDB.files_hash),
+        )
+        .where(Snapshot.split == "train")
+        .where(GraderRun.output.isnot(None))
+        # Filter out JSONB null values (different from SQL NULL)
+        .where(GraderRun.output["grade"].isnot(None))
+        .group_by(GraderRun.snapshot_slug, CriticScopeDB.files_hash, CriticScopeDB.files)
+        .order_by(func.count().desc())
+        .limit(limit)
+    )

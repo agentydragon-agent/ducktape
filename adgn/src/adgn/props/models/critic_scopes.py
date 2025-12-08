@@ -6,32 +6,59 @@ as a single unit. Multiple scopes per snapshot allow more granular training sign
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-# Sentinel value for "all files with issues"
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+
+# Sentinel value for "all files with issues" (for backwards compatibility)
 ALL_FILES_WITH_ISSUES: Literal["all"] = "all"
 """Sentinel value: scope critic to all files with ground truth TP/FP issues."""
 
-type CriticScopeSpec = set[Path] | Literal["all"]
-"""Critic scope specification - either explicit file set or ALL_FILES_WITH_ISSUES sentinel."""
+
+class ExplicitFileScope(OpenAIStrictModeBaseModel):
+    """Explicit list of files to review.
+
+    Used when targeting specific files rather than all files with issues.
+    """
+
+    kind: Literal["explicit"] = "explicit"
+    files: list[str] = Field(description="Explicit file paths to review")
+    # list not set: OpenAI strict mode doesn't accept uniqueItems in JSON schemas
+    # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
+
+
+class AllFilesScope(OpenAIStrictModeBaseModel):
+    """Review all files with ground truth issues.
+
+    This sentinel expands to all files that have TP or FP annotations.
+    """
+
+    kind: Literal["all"] = "all"
+
+
+CriticScopeSpec = Annotated[ExplicitFileScope | AllFilesScope, Field(discriminator="kind")]
+"""Critic scope specification - discriminated union for OpenAI strict mode.
+
+Two variants:
+- ExplicitFileScope: Explicit file list
+- AllFilesScope: All files with issues (sentinel)
+
+NOTE: This is the API format. Internally we may convert to set[Path] after resolution.
+"""
 
 
 class CriticScope(BaseModel):
     """A single critic scope: files to review together.
 
-    Defines one training example for a snapshot. Files can be:
-    - Explicit set of Path objects
-    - "all" sentinel for all files with issues
-
-    Rationale for grouping should be documented via YAML comments.
+    Defines one training example for a snapshot.
+    Rationale for groupings should be documented via YAML comments.
     """
 
-    files: CriticScopeSpec = Field(description="Files to review: explicit set or 'all' sentinel")
+    files: CriticScopeSpec = Field(description="Files to review: explicit list or 'all' sentinel")
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-__all__ = ["ALL_FILES_WITH_ISSUES", "CriticScope", "CriticScopeSpec"]
+__all__ = ["ALL_FILES_WITH_ISSUES", "AllFilesScope", "CriticScope", "CriticScopeSpec", "ExplicitFileScope"]

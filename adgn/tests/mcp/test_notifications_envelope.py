@@ -4,16 +4,16 @@ import pytest
 
 from adgn.agent.notifications.handler import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.notifying_fastmcp import NotifyingFastMCP
+from adgn.mcp.enhanced import EnhancedFastMCP
 from tests.util.notifications import parse_system_notification_payload
 
 
 @pytest.fixture
 def make_notifier():
-    """Factory for NotifyingFastMCP servers with emit tool."""
+    """Factory for EnhancedFastMCP servers with emit tool."""
 
     def _make():
-        m = NotifyingFastMCP("child")
+        m = EnhancedFastMCP("child")
 
         @m.tool(name="emit")
         async def emit():
@@ -28,7 +28,7 @@ def make_notifier():
 
 @pytest.fixture
 def notifier(make_notifier):
-    """NotifyingFastMCP server for testing notification envelopes."""
+    """EnhancedFastMCP server for testing notification envelopes."""
     return make_notifier()
 
 
