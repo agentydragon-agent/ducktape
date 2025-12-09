@@ -109,7 +109,7 @@ async def _run_in_snapshot_container(
     ensure_critic_image()
 
     # Hydrate snapshot source code (keep hydrated for entire container lifetime)
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot) as hydrated:
         try:
             _ = next(hydrated.content_root.iterdir())

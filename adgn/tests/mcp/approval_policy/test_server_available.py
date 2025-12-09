@@ -6,6 +6,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.openai_utils.model import UserMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage
 
@@ -33,9 +34,10 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
         assert expected <= tool_names
 
         agent = await Agent.create(
-            mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+            mcp_client=mcp_client, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
+        agent.insert_message(UserMessage.text("test"))
 
         # Run should complete without issues
-        result = await agent.run("test")
+        result = await agent.run()
         assert "approval" in result.text.lower()

@@ -1,28 +1,8 @@
 ## Shell Configuration Migration (2025-10)
 
-- [ ] Clean up manual powerlevel10k installation
-  - Now using Nix-managed `zsh-powerlevel10k` package
-  - Can remove: `~/.oh-my-zsh/custom/themes/powerlevel10k/`
-  - The configuration is now in `nix/home/p10k.zsh` (deployed to `~/.p10k.zsh`)
-
-- [ ] Remove pyenv ansible workarounds from `ansible/inventory.yaml`
-  - Currently all hosts (agentydragon, gpd, wyrm) have:
-    ```yaml
-    # (pyenv breaks interpreter detection)
-    ansible_python_interpreter: /usr/bin/python3
-    ```
-  - Since pyenv has been removed from shell initialization, these workarounds can be removed
-  - Just delete the comment and the `ansible_python_interpreter` override lines
-
-- [ ] Consider uninstalling pyenv entirely
-  - Currently set to "system" (not actively managing Python)
-  - Only one `.python-version` file exists: `homeassistant/iaqi/.python-version` (Python 3.10.12)
-  - Python is now managed via Nix home-manager (`python312` package)
-  - To uninstall: `rm -rf ~/.pyenv`
-
 - [ ] Decide on Node.js version management strategy
   - **Current state**: NVM and Bun are NOT installed (directories don't exist)
-  - **Current approach**: Node.js from Nix (`nodejs_22` package, v20.19.4)
+  - **Current approach**: Node.js from Nix (`nodejs_22` package, v22.17.1)
   - **All NVM/Bun init code removed** from shell initialization
   - **Decision needed**: Keep using Nix-only, or install a version manager?
   - **Alternatives if multiple versions needed**:
@@ -45,6 +25,13 @@
 - [ ] Consider using Home Manager for GitHub CLI (`gh`) config
   - Capture auth/hosts config (if feasible) and any gh extensions
 
+## Infrastructure
+
+- [ ] Set up personal Nix binary cache on homelab
+  - Options: `nix-serve`, `attic`, `harmonia`, or `cachix` self-hosted
+  - Host on atlas or k3s cluster
+  - Share cache between all personal machines via Headscale network
+
 ## Ansible migration items
 
 - install cli packages
@@ -56,28 +43,15 @@
 - cli : Create ~/.local/share directory for gitstatus	TAGS: [dev-tools, gitstatus]
      why were we doing this?
 - Gnome Shell:
-      petermosmans.customize-gnome : Manage fonts	TAGS: [fonts]
       petermosmans.customize-gnome : Manage GNOME Shell extensions	TAGS: [extensions]
       petermosmans.customize-gnome : Modify application settings using dconf	TAGS: [dconf, settings]
-- gnome-terminal-solarized:
-      gnome-terminal-solarized : Clone gnome-terminal-colors-solarized	TAGS: [solarized]
-      gnome-terminal-solarized : Apply Solarized profiles	TAGS: [solarized]
-      gnome-terminal-solarized : Set Solarized Light as the default profile	TAGS: [solarized]
 - Gnome customization:
-      gui : reload user systemd daemon	TAGS: [login_event_webhook_reporter]
-      gui : enable & start login_event_webhook_reporter	TAGS: [login_event_webhook_reporter]
-    s gui : Install ActivityWatch via dpkg from GitHub	TAGS: [activitywatch]
-      gui : Start and enable ActivityWatch tunnel	TAGS: [activitywatch]
 - Kube:
       k3s-client : Copy k3s kubeconfig from atlas	TAGS: [k3s-client]
       k3s-client : Update kubeconfig server URL to k3s master hostname	TAGS: [k3s-client]
       k3s-client : Set kubeconfig permissions	TAGS: [k3s-client]
       k3s-client : Verify cluster access	TAGS: [k3s-client, verify]
       k3s-client : Display cluster status	TAGS: [k3s-client, verify]
-- specific for wyrm:
-      Create pip cache directory on tankshare	TAGS: [pip, storage]
-      Create pip configuration directory	TAGS: [pip, storage]
-      Configure pip to use tankshare	TAGS: [pip, storage]
 
 ## To test
 

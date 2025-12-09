@@ -28,7 +28,7 @@ from adgn.mcp.git_ro.server import (
     attach_git_ro,
 )
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import FunctionCallItem
+from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 
 def make_commit_bootstrap_calls(
@@ -229,13 +229,14 @@ async def generate_commit_message_agent(
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system="You are a code agent. Be concise.",
                 client=build_client(model),
                 handlers=handlers,
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
             )
-            await agent.run(prompt)
+            agent.insert_message(UserMessage.text(prompt))
+            await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     assert submit_state.result is not None, "submit_commit_message not called"

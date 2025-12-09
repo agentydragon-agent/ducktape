@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 import fnmatch
-from importlib import resources
 from pathlib import Path
 import subprocess
 import tempfile
@@ -22,6 +21,7 @@ import pygit2
 import yaml
 
 from adgn.props.models.snapshot import GitSource, SnapshotDoc
+from adgn.props.prop_utils import specimens_definitions_root
 
 
 @dataclass(frozen=True)
@@ -387,22 +387,13 @@ def _build_bundle_internal(specimens_dir: Path, source_repo_path: Path, output_b
     return tag_to_commit
 
 
-def get_specimens_dir() -> Path:
-    """Get the specimens directory from package resources."""
-    traversable = resources.files("adgn.props").joinpath("specimens")
-    with resources.as_file(traversable) as p:
-        if not p.exists() or not p.is_dir():
-            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
-        return p
-
-
 def cmd_build_bundle(
     specimens_dir: Path | None = None, source_repo_path: Path | None = None, output_bundle: Path | None = None
 ) -> dict[str, pygit2.Oid]:
     """Build snapshot bundle with per-snapshot filters.
 
     Args:
-        specimens_dir: Base directory containing snapshots.yaml and snapshot subdirs (default: from package resources)
+        specimens_dir: Base directory containing snapshots.yaml and snapshot subdirs (default: from ADGN_PROPS_SPECIMENS_ROOT)
         source_repo_path: Path to source git repository (default: auto-discovered from current directory)
         output_bundle: Output path for bundle file (default: specimens_dir/ducktape/snapshots.bundle)
 
@@ -414,7 +405,7 @@ def cmd_build_bundle(
     """
     # Use defaults if not provided
     if specimens_dir is None:
-        specimens_dir = get_specimens_dir()
+        specimens_dir = specimens_definitions_root()
     if source_repo_path is None:
         # Discover repository from current directory
         discovered = pygit2.discover_repository(".")

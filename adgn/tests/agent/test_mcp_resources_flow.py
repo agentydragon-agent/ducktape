@@ -4,9 +4,10 @@ import pytest
 
 from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.resources.server import ResourcesReadArgs
-from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
@@ -31,15 +32,15 @@ async def test_model_reads_container_info_with_stubbed_openai(
         agent = await Agent.create(
             mcp_client=mcp_client,
             client=client,
-            system="test",
             handlers=[DisplayEventsHandler(), recording_handler],
             tool_policy=RequireAnyTool(),
         )
+        agent.insert_message(UserMessage.text("read container info"))
 
-        await agent.run("read container info")
-        kinds = [e.get("kind") for e in recording_handler.records]
-        assert "tool_call" in kinds
-        assert "function_call_output" in kinds
+        await agent.run()
+        types = [e.type for e in recording_handler.records if isinstance(e, ToolCall | ToolCallOutput)]
+        assert "tool_call" in types
+        assert "function_call_output" in types
         assert len(client.captured) == 2
         # Verify that the second call included the function_call and function_call_output (stateless replay).
         second = client.captured[1]

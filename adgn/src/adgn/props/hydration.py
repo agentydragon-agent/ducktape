@@ -51,7 +51,7 @@ class HydratedSnapshot:
             fps = snapshot_orm.false_positives
 
     For manifest, use SnapshotRegistry:
-        registry = SnapshotRegistry.from_package_resources()
+        registry = SnapshotRegistry.from_env()
         record = registry.get_record(slug)
         manifest = record.manifest
     """
@@ -322,8 +322,8 @@ class SnapshotHydrator:
         self._manifests = self._load_all_manifests()
 
     @classmethod
-    def from_package_resources(cls) -> SnapshotHydrator:
-        """Create hydrator from package resources (specimens/)."""
+    def from_env(cls) -> SnapshotHydrator:
+        """Create hydrator from ADGN_PROPS_SPECIMENS_ROOT environment variable."""
         return cls(specimens_definitions_root())
 
     def _load_all_manifests(self) -> dict[SnapshotSlug, SnapshotDoc]:
@@ -367,7 +367,7 @@ class SnapshotHydrator:
             HydratedSnapshot with source paths only (no record/issues)
 
         Example:
-            hydrator = SnapshotHydrator.from_package_resources()
+            hydrator = SnapshotHydrator.from_env()
             async with hydrator.hydrate("ducktape/2025-11-26-00") as hydrated:
                 workspace = hydrated.content_root
                 files = hydrated.all_discovered_files

@@ -11,6 +11,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import SystemMessage, UserMessage
 from tests.conftest import make_exec_input
 
 # Use /bin/echo -n for portability and to avoid trailing newline
@@ -42,17 +43,17 @@ async def test_live_llm_exec_echo(pg_client_box) -> None:
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
     agent = await Agent.create(
-        mcp_client=pg_client_box,
-        system=(
+        mcp_client=pg_client_box, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+    )
+    agent.insert_message(
+        SystemMessage.text(
             "You are testing an MCP exec tool.\n"
             "Call the tool "
             f"{build_mcp_function(SERVER_NAME, 'exec')} "
             f"with cmd={ECHO_CMD!r} and return exactly the stdout."
-        ),
-        client=client,
-        handlers=[BaseHandler()],
-        tool_policy=RequireAnyTool(),
+        )
     )
-    res: AgentResult = await agent.run("Run the command now and output exactly the stdout value.")
+    agent.insert_message(UserMessage.text("Run the command now and output exactly the stdout value."))
+    res: AgentResult = await agent.run()
     text = (res.text or "").strip()
     assert text == "hello"

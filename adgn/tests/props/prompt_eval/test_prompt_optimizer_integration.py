@@ -115,12 +115,12 @@ def po_agent_steps():
 def critic_agent_steps():
     """Declarative steps for Critic agent - reports issues."""
     return [
-        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(tp_id="test-issue", description="Test issue")),
+        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue", description="Test issue")),
         CheckThenCall(
             "critic_submit_upsert_issue",
             "critic_submit",
             "add_occurrence",
-            AddOccurrenceInput(tp_id="test-issue", file="subtract.py", ranges=[[10, 15]]),
+            AddOccurrenceInput(issue_id="test-issue", file="subtract.py", ranges=[[10, 15]]),
         ),
         CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues_count=1)),
     ]

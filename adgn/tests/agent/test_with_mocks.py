@@ -5,7 +5,7 @@ import pytest
 from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import EchoInput
-from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto
+from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 from tests.agent.test_matchers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import LIVE, make_mock
 from tests.support.steps import AssistantMessage, MakeCall
@@ -28,14 +28,11 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 
     agent = await Agent.create(
-        mcp_client=pg_client_echo,
-        system="test",
-        client=client,
-        handlers=[recording_handler],
-        tool_policy=RequireAnyTool(),
+        mcp_client=pg_client_echo, client=client, handlers=[recording_handler], tool_policy=RequireAnyTool()
     )
+    agent.insert_message(UserMessage.text("say hi"))
 
-    res = await agent.run("say hi")
+    res = await agent.run()
 
     # Verify final text returned
     assert res.text.strip() == "done"

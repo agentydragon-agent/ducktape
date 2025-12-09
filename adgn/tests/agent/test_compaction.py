@@ -11,7 +11,7 @@ from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.events import GroundTruthUsage, Response
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Compact, NoAction, RequireAnyTool
-from adgn.openai_utils.model import AssistantMessage, AssistantMessageOut, OutputText, UserMessage
+from adgn.openai_utils.model import AssistantMessage, AssistantMessageOut, OutputText, SystemMessage, UserMessage
 
 
 class MockOpenAIClient:
@@ -42,12 +42,9 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     await mock_openai.setup_summary_response("User asked about compaction. Assistant explained the concept.")
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
-        client=mock_openai,
-        handlers=[BaseHandler()],
-        system="Test system prompt",
-        tool_policy=RequireAnyTool(),
+        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
+    agent.insert_message(SystemMessage.text("Test system prompt"))
 
     # Add some conversation history to the transcript
     agent._transcript.extend(
@@ -93,12 +90,9 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
 async def test_compact_transcript_insufficient_history(compositor_client, mock_openai):
     """Test that compaction doesn't happen when history is too short."""
     agent = await Agent.create(
-        mcp_client=compositor_client,
-        client=mock_openai,
-        handlers=[BaseHandler()],
-        system="Test system prompt",
-        tool_policy=RequireAnyTool(),
+        mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
+    agent.insert_message(SystemMessage.text("Test system prompt"))
 
     # Add only a few messages
     agent._transcript.extend([UserMessage.text("Hello"), AssistantMessage.text("Hi there")])
@@ -155,12 +149,9 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     handler = CompactionHandler(threshold_tokens=100, keep_recent_turns=2)
 
     agent = await Agent.create(
-        mcp_client=compositor_client,
-        client=mock_openai,
-        handlers=[handler],
-        system="Test system prompt",
-        tool_policy=RequireAnyTool(),
+        mcp_client=compositor_client, client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
     )
+    agent.insert_message(SystemMessage.text("Test system prompt"))
 
     # Add conversation history
     agent._transcript.extend(

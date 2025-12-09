@@ -1,4 +1,7 @@
 # GPD host-specific home-manager configuration
+#
+# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#gpd --impure
+# (--impure needed for nixGL on non-NixOS systems)
 {
   config,
   pkgs,
@@ -6,11 +9,7 @@
   ...
 }: {
   imports = [
-    (import ../home.nix {
-      inherit config pkgs lib;
-      enableGui = true;
-      enableKube = true;
-    })
+    ../home.nix
   ];
 
   # GPD-specific configuration (laptop with full GUI)

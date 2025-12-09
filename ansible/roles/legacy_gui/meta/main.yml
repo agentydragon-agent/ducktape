@@ -25,7 +25,6 @@ dependencies:
   # Fonts managed by Nix home-manager (legacy: nerd_fonts -> legacy_nerd_fonts)
   - role: legacy_nerd_fonts
     become: true  # needed to write fonts system-wide
-  - role: gnome_terminal_solarized
-    tags: [solarized]
+  # gnome-terminal-solarized now managed by Nix: nix/home/modules/solarized.nix
   - role: timekpr
   # - role: google_drive_client  # Temporarily disabled for wyrm

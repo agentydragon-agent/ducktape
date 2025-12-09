@@ -77,7 +77,7 @@ async def cmd_gepa(
     init_db(config=config)
 
     # Create hydrator
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
 
     # Run optimization
     console.print("\n[bold green]Starting GEPA optimization...[/bold green]\n")

@@ -139,14 +139,16 @@ def properties_docker_spec(
 
     # Inject database connection config if provided
     if db_conn:
-        # Set PG* env vars directly from config - psql respects these natively
+        # Set standard PG* env vars - psql and Python ORM helpers (agent_helpers.py) both use these
+        # Agent gets read-only access via these credentials
         env["PGHOST"] = db_conn.host
         env["PGPORT"] = str(db_conn.port)
         env["PGDATABASE"] = db_conn.database
         env["PGUSER"] = db_conn.user
         env["PGPASSWORD"] = db_conn.password
+
         logger.info(
-            f"Set PG* env vars: PGHOST={db_conn.host}, "
+            f"Set database env vars: PGHOST={db_conn.host}, "
             f"PGPORT={db_conn.port}, PGDATABASE={db_conn.database}, PGUSER={db_conn.user}"
         )
     else:

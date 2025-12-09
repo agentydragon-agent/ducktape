@@ -1,17 +1,20 @@
 # Guide for agents working on `adgn/props` subtree
 
+## Specimens Dataset Location
+
+**Specimens data lives in a separate repository**: [github.com/agentydragon/specimens](https://github.com/agentydragon/specimens)
+
+The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens repo (typically `~/code/specimens`). The adgn package loads specimen data from this external location.
+
 ## Key Documentation
 
-**For critic optimization and prompt improvement:**
+**System documentation (in adgn/props):**
 - @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
 - @docs/prompt_optimizer_context.md — Context specifically for prompt optimization tasks
-
-**For authoring snapshots and issues:**
-- @docs/authoring.md — How to write issue files, Jsonnet conventions, quality standards
-- @docs/quality-checklist.md — Pre-commit checklist for snapshot quality
-
-**For understanding the broader system:**
 - @README.md — Package overview, conventions, workflow
+
+**Specimen authoring (in specimens repo):**
+- Specimens repository has its own CLAUDE.md with format specs, authoring guide, and quality checklist
 
 ## MCP Wiring & Prompt Authoring
 

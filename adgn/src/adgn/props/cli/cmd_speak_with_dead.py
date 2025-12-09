@@ -188,17 +188,22 @@ async def cmd_speak_with_dead(
 
     # Create empty MCP compositor (no tools for interrogation)
     async with Compositor() as compositor, MCPClient(compositor) as mcp_client:
+
+        async def get_instructions() -> str:
+            return system_instructions
+
         agent = await Agent.create(
             mcp_client=mcp_client,
-            system=system_instructions,
             client=client,
             handlers=[DisplayEventsHandler()],
             parallel_tool_calls=False,
             tool_policy=ForbidAllTools(),  # Text-only response, no tool calls
+            dynamic_instructions=get_instructions,
         )
 
-        # Set the reconstructed transcript
-        agent._transcript = transcript_items
+        # Load reconstructed transcript including tool calls and outputs
+        agent.insert_transcript_items(transcript_items)
 
-        # Run the agent with the question
-        await agent.run(question)
+        # Insert question and run
+        agent.insert_message(UserMessage.text(question))
+        await agent.run()

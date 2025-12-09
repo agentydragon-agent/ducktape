@@ -3,9 +3,9 @@
   pkgs,
   lib,
   config,
+  unstablePkgs,
   ...
 }: let
-  unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") {};
   codexSettings = {
     model = "gpt-5.1-codex";
     features = {

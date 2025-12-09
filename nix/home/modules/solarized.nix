@@ -3,25 +3,14 @@
 {
   pkgs,
   lib,
-  enableGui ? true,
-  solarizedLight ? null,
-  solarizedDark ? null,
-  terminalFont ? {
-    family = "JetBrainsMono Nerd Font";
-    size = 11;
-  },
+  enableGui,
+  solarizedLight,
+  solarizedDark,
+  terminalFont,
   ...
 }: let
-  # Import nix-colors for Solarized color schemes
-  nix-colors = import (fetchTarball https://github.com/Misterio77/nix-colors/archive/main.tar.gz) {};
-  solarizedLightScheme =
-    if solarizedLight == null
-    then nix-colors.colorSchemes.solarized-light
-    else solarizedLight;
-  solarizedDarkScheme =
-    if solarizedDark == null
-    then nix-colors.colorSchemes.solarized-dark
-    else solarizedDark;
+  solarizedLightScheme = solarizedLight;
+  solarizedDarkScheme = solarizedDark;
 in {
   # Install Night Theme Switcher extension and theme switching utility
   home.packages = with pkgs;

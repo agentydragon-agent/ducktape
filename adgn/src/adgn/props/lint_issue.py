@@ -26,7 +26,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
+from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, UserMessage
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.hydration import SnapshotHydrator
@@ -232,7 +232,7 @@ def _build_prompt(
     )
 
     prompt_md: str = render_prompt_template(
-        "lint_issue.j2.md",
+        "prompts/lint_issue.j2.md",
         issue_json=issue_json,
         docker_tool_name=docker_tool_name,
         submit_tool_name=submit_tool_name,
@@ -361,13 +361,14 @@ async def _lint_issue_run_with_hydrated_root(
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system="You are a code agent. Be concise.",
                 client=client,
                 handlers=handlers_list,
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
             )
-            await agent.run(prompt)
+            agent.insert_message(UserMessage.text(prompt))
+            await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     assert submit_state.result, "submit_result somehow not called?"

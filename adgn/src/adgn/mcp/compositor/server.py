@@ -25,6 +25,7 @@ from fastmcp.server import FastMCP
 from mcp import types as mcp_types
 
 from adgn.mcp.compositor.mount import Mount
+from adgn.mcp.compositor.rendering import render_compositor_instructions
 from adgn.mcp.snapshots import (
     FailedServerEntry,
     InitializingServerEntry,
@@ -275,6 +276,26 @@ class Compositor(FastMCP):
         """
         async with self._mount_lock:
             return {k: v.spec for k, v in self._mounts.items() if v.spec is not None}
+
+    async def render_agent_dynamic_instructions(self) -> str:
+        """Render the MCP instructions banner for agent dynamic_instructions.
+
+        Returns grouped MCP server instructions/capabilities using the same
+        template as the UI server. Use this as the dynamic_instructions callback
+        for agents that connect to this compositor.
+
+        Example:
+            async with Compositor() as comp:
+                await comp.mount_inproc("runtime", runtime_server)
+                async with Client(comp) as mcp_client:
+                    agent = await Agent.create(
+                        mcp_client=mcp_client,
+                        client=client,
+                        dynamic_instructions=comp.render_agent_dynamic_instructions,
+                    )
+        """
+        states = await self.server_entries()
+        return render_compositor_instructions(states)
 
     # ---- Management API (Python-only) --------------------------------------
 

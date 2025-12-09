@@ -2,8 +2,14 @@
   config,
   pkgs,
   lib,
-  enableGui ? true,
-  enableKube ? true,
+  enableGui,
+  enableKube,
+  nix-colors,
+  oldPkgs,
+  unstablePkgs,
+  solarizedLight,
+  solarizedDark,
+  terminalFont,
   ...
 }:
 # IMPORTANT: Nix/Ansible Split for agentydragon machine
@@ -13,11 +19,11 @@
 #   - GNOME dconf settings and terminal profiles
 #   - XDG autostart entries
 #   - GNOME extensions packages
+#   - oh-my-zsh
 #
 # Ansible continues to manage:
 #   - System packages (via apt)
-#   - Oh-my-zsh git clone (NOT the Nix package)
-#   - Dotfiles via rcm
+#   - Some dotfiles via rcm
 #   - Services and system configuration
 #   - Build dependencies (libssl-dev, etc.)
 #
@@ -26,17 +32,6 @@
 #   - Node.js (Nix: nodejs_22)
 #   - Rust (Nix: rustc/cargo packages)
 let
-  nixpkgsConfig = {config = {allowUnfree = true;};};
-  oldPkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixos-23.11.tar.gz") nixpkgsConfig;
-  unstablePkgs = import (fetchTarball "https://github.com/NixOS/nixpkgs/archive/nixpkgs-unstable.tar.gz") nixpkgsConfig;
-  nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
-  solarizedLight = nix-colors.colorSchemes.solarized-light;
-  solarizedDark = nix-colors.colorSchemes.solarized-dark;
-  homeManagerMaster = fetchTarball {
-    url = "https://github.com/nix-community/home-manager/archive/82b58f38202540bce4e5e00759d115c5a43cab85.tar.gz";
-    sha256 = "1glrqwsg3imzadm6w036jazi9lwpsi30lkfgnnqzd7fkk0526004";
-  };
-
   gnomeNvim = pkgs.vimUtils.buildVimPlugin {
     pname = "gnome.nvim";
     version = "2024-11-26";
@@ -70,32 +65,23 @@ let
     inherit (myKubernetesHelm.passthru) pluginsDir;
   };
 
-  # Import claude-code-router HM module pinned to a specific commit
-  claudeCodeRouter = builtins.getFlake "github:agentydragon/claude-code-router/2b7c2ca";
-
   # Shell initialization scripts (loaded from external files to avoid escaping hell)
   commonShellInit = builtins.readFile ./shell/common-init.sh;
   bashInit = builtins.readFile ./shell/bash-init.sh;
   zshInit = builtins.readFile ./shell/zsh-init.sh;
-  terminalFont = {
-    family = "JetBrainsMono Nerd Font";
-    size = 11;
-  };
 in {
-  imports =
-    [
-      claudeCodeRouter.homeManagerModules.claude-code-router
-      ./packages/google-drive-service.nix
-      "${homeManagerMaster}/modules/programs/codex.nix"
-      ./codex
-      (import ./modules/solarized.nix {inherit pkgs lib enableGui solarizedLight solarizedDark terminalFont;})
-      (import ./terminals {inherit config pkgs lib enableGui unstablePkgs solarizedLight solarizedDark terminalFont;})
-      (import ./claude-code {inherit config pkgs lib unstablePkgs;})
-    ]
-    ++ lib.optionals enableGui [
-      ./modules/gnome-workspace-shortcuts.nix
-      ./modules/flameshot-screenshots.nix
-    ];
+  imports = [
+    ./packages/google-drive-service.nix
+    ./codex
+    ./modules/solarized.nix
+    ./terminals
+    ./claude-code
+    ./modules/gnome-workspace-shortcuts.nix
+    ./modules/flameshot-screenshots.nix
+    ./modules/datetime-format.nix
+    ./services/login-event-webhook-reporter.nix
+    ./services/activitywatch.nix
+  ];
   nixpkgs.config.allowUnfree = true;
   # Home Manager needs a bit of information about you and the paths it should manage.
   home.username = "agentydragon";
@@ -105,10 +91,7 @@ in {
   # NOTE: stateVersion is set per-host in hosts/*.nix files
 
   # Let Home Manager install and manage itself.
-  programs.home-manager = {
-    enable = true;
-    path = homeManagerMaster;
-  };
+  programs.home-manager.enable = true;
 
   # Google Drive service - disabled by default, enabled per-host
   # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
@@ -117,14 +100,28 @@ in {
 
   nix.package = pkgs.nix;
 
-  nix.settings.experimental-features = [
-    "nix-command"
-    "flakes"
-  ];
+  nix.settings = {
+    experimental-features = [
+      "nix-command"
+      "flakes"
+    ];
+    download-buffer-size = 268435456; # 256MB (increased from default 64MB)
+
+    # Add nix-community cache for home-manager, nixGL, etc.
+    substituters = [
+      "https://cache.nixos.org/"
+      "https://nix-community.cachix.org"
+    ];
+    trusted-public-keys = [
+      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
+    ];
+  };
 
   programs.git = {
     enable = true;
     package = pkgs.git.override {withLibsecret = true;};
+    lfs.enable = true;
 
     # Global gitignore file (migrated from dotfiles/config/git/ignore)
     ignores = [
@@ -371,7 +368,6 @@ in {
       bandwhich
       mtr
 
-      # Additional tools migrated from Ansible
       curl
       wget
       pwgen
@@ -402,22 +398,26 @@ in {
       nerd-fonts.meslo-lg
       nerd-fonts.profont
       nerd-fonts.ubuntu-mono
-      # Additional fonts from ansible nerd_fonts defaults
       nerd-fonts.hack
-      nerd-fonts.sauce-code-pro # SourceCodePro
+      nerd-fonts.sauce-code-pro
       nerd-fonts.iosevka
       nerd-fonts.victor-mono
       nerd-fonts.proggy-clean-tt
-      nerd-fonts.caskaydia-cove # CascadiaCode
+      nerd-fonts.caskaydia-cove
 
-      # GNOME Shell Extensions (migrated from Ansible gui role)
-      # These extensions were installed via petermosmans.customize-gnome role:
+      # GNOME Shell Extensions (migrated from Ansible role petermosmans.customize-gnome):
       # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
       gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
       # night-theme-switcher managed by solarized module
       gnomeExtensions.vertical-workspaces # ID 5177: V-Shell (Vertical Workspaces) ✓
       gnomeExtensions.cronomix # ID 6003: Cronomix ✓
       # Note: Pop!_OS includes ubuntu-appindicators, so gnomeExtensions.appindicator not needed
+    ]
+    ++ lib.optionals enableGui [
+      # GUI applications (migrated from Ansible)
+      discord
+      element-desktop
+      syncthing-gtk
     ]
     ++ [
       # Get comby from older nixpkgs where it's not broken

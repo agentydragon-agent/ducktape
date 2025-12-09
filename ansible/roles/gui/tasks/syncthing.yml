@@ -1,8 +1,0 @@
-- name: Install SyncThing
-  become: true
-  ansible.builtin.apt:
-    pkg:
-      - syncthing
-      - syncthing-gtk
-
-# Syncthing-GTK autostart configuration moved to legacy_without_home_manager/gui role

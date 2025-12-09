@@ -18,7 +18,7 @@ from adgn.agent.display import OneLineProgressHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.props.docker_env import properties_docker_spec
 from adgn.props.runs_context import format_timestamp_session
 
@@ -54,12 +54,13 @@ async def run_prompt_async(
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=system_prompt,
                 client=client,
                 handlers=[OneLineProgressHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
                 tool_policy=RequireAnyTool(),
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
             )
-            res_any = await agent.run(prompt)
+            agent.insert_messages([SystemMessage.text(system_prompt), UserMessage.text(prompt)])
+            res_any = await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     return AgentResult(final_text=res_any.text, transcript=transcript)

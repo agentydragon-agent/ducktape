@@ -141,31 +141,41 @@ def make_fake_openai() -> Callable[[Iterable[ResponsesResult]], FakeOpenAIModel]
 
 
 @pytest.fixture
-def make_test_agent(responses_factory):
-    """Factory to create Agent backed by FakeOpenAIModel with canned responses.
-
-    Returns (agent, fake_client) tuple so tests can inspect the client after run.
+def make_capturing_client():
+    """Factory to create a CapturingOpenAIModel wrapping FakeOpenAIModel.
 
     Usage:
-        agent, client = await make_test_agent(
-            mcp_client,
-            [responses_factory.make_assistant_message("done")],
-        )
-        result = await agent.run("hi")
+        client = make_capturing_client([responses_factory.make_assistant_message("done")])
+        # Use client with agent...
         assert client.calls == 1
     """
 
-    async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
+    def _make(responses):
         fake_client = FakeOpenAIModel(responses)
-        client = CapturingOpenAIModel(fake_client)
+        return CapturingOpenAIModel(fake_client)
+
+    return _make
+
+
+@pytest.fixture
+def make_test_agent():
+    """Factory to create Agent with provided client and MCP client.
+
+    Usage:
+        client = make_capturing_client([responses_factory.make_assistant_message("done")])
+        agent = await make_test_agent(mcp_client, client)
+        result = await agent.run()
+        assert client.calls == 1
+    """
+
+    async def _make(mcp_client, client, *, handlers=(), tool_policy=None, **kwargs):
         if not handlers:
             handlers = [BaseHandler()]
         if tool_policy is None:
             tool_policy = RequireAnyTool()
-        agent = await Agent.create(
-            mcp_client=mcp_client, system=system, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
+        return await Agent.create(
+            mcp_client=mcp_client, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
         )
-        return agent, client
 
     return _make
 

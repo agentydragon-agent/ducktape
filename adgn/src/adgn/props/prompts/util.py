@@ -47,10 +47,11 @@ def _compact_json_filter(value: Any, max_width: int = 100) -> str:
 def get_templates_env() -> Environment:
     """Load prompt templates from the installed package using importlib.resources.
 
-    Templates live under the adgn.props.prompts package directory.
+    Templates are rooted at adgn.props package directory.
+    Callers specify paths relative to adgn/props/ (e.g., "prompts/foo.j2.md", "critic/prompts/bar.j2.md").
     """
     env = Environment(
-        loader=PackageLoader("adgn.props", "prompts"),
+        loader=PackageLoader("adgn", "props"),
         autoescape=False,  # Prompts are text for LLMs, not HTML
         trim_blocks=True,
         lstrip_blocks=True,

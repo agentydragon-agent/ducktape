@@ -1,4 +1,7 @@
 # Wyrm host-specific home-manager configuration
+#
+# To apply: cd ~/code/ducktape/nix/home && home-manager switch --flake .#wyrm --impure
+# (--impure needed for nixGL on non-NixOS systems)
 {
   config,
   pkgs,
@@ -6,16 +9,13 @@
   ...
 }: {
   imports = [
-    (import ../home.nix {
-      inherit config pkgs lib;
-      enableGui = true;
-      enableKube = true;
-    })
+    ../home.nix
   ];
 
   # Wyrm-specific configuration (VM/desktop with full GUI)
   home.stateVersion = "24.05";
-  services.google-drive.enable = true;
+  # TODO: Re-enable once k3s cluster is back up
+  # services.google-drive.enable = true;
 
   # Disable screensaver and screen blanking (for VM/wyrm)
   dconf.settings = {

@@ -289,18 +289,27 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
       ``errors="replace"`` if a multi-byte character is split at the boundary.
     - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
     """
+    # TODO: Ensure NotificationsHandler is consistently injected when mounting this server,
+    # or make subscription functionality optionally toggleable (don't advertise subscribe
+    # tools if no handler is wired, to avoid promising notifications we can't deliver).
     mcp = EnhancedFastMCP(
         name,
         instructions=(
-            "Resources aggregator for discovering and reading MCP resources that servers explicitly expose.\n\n"
-            "Use `list` to discover available MCP resources (optionally filtered by server name or URI prefix). "
-            "Each resource has an origin server name and URI. "
-            "Use `read` to fetch MCP resource contents with optional windowing for large resources. "
+            "Resources aggregator for accessing MCP resources across all mounted servers.\n\n"
+            "**Access model:** Resources are identified by (server, URI) pairs. Each resource belongs to "
+            "a specific MCP server that exposes it. Use this server to discover what resources are available "
+            "and read their contents without directly connecting to each origin server.\n\n"
+            "**Discovery:** Use `list` to find available resources (optionally filtered by server name or URI prefix). "
+            "Each result includes the origin server name and the resource URI. "
             "Use `list_resource_templates` to discover URI templates (RFC 6570) that describe patterns "
-            "for constructing resource URIs.\n\n"
-            "For subscription management: use `subscribe`/`unsubscribe` to track individual resource updates, "
+            "for constructing parameterized resource URIs.\n\n"
+            "**Reading:** Use `read` to fetch resource contents by specifying the (server, URI) pair. "
+            "Supports optional windowing for large resources (e.g., read lines 100-200 from a text resource).\n\n"
+            "**Subscriptions:** Use `subscribe`/`unsubscribe` to track individual resource updates, "
             "or `subscribe_list_changes`/`unsubscribe_list_changes` to track when a server's resource list changes. "
-            "Check the subscriptions index resource for the current subscription state.\n\n"
+            "Check the subscriptions index resource for current subscription state.\n\n"
+            "**Important:** Resources are server-specific - the same URI path on different servers "
+            "represents different resources. Always specify both server and URI when accessing resources.\n\n"
             "Note: Only servers that advertise the resources capability in their initialize response are queried."
         ),
     )

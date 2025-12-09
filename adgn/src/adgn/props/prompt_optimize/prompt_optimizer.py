@@ -26,10 +26,11 @@ from typing import Literal
 from uuid import UUID, uuid4
 
 from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 from pydantic import Field, model_validator
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call, read_resource_call
 from adgn.agent.handler import SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, PROMPT_OPTIMIZATION_RUN_ID_URI, WORKING_DIR
@@ -37,7 +38,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto
+from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
@@ -68,10 +69,25 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 
 
-def make_po_bootstrap_calls(builder: TypedBootstrapBuilder) -> list[FunctionCallItem]:
-    """Build bootstrap calls for prompt optimizer: reads PO run ID."""
+def make_po_bootstrap_calls(builder: TypedBootstrapBuilder, runtime_server: str) -> list[FunctionCallItem]:
+    """Build bootstrap calls for prompt optimizer: reads PO run ID and critic template.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        runtime_server: Name of the runtime server (for docker exec calls)
+    """
     return [
-        read_resource_call(builder, server=PROMPT_EVAL_SERVER_NAME, uri=PROMPT_OPTIMIZATION_RUN_ID_URI, max_bytes=256)
+        read_resource_call(builder, server=PROMPT_EVAL_SERVER_NAME, uri=PROMPT_OPTIMIZATION_RUN_ID_URI, max_bytes=256),
+        # Read critic template structure from container to show prompt optimizer how its prompts will be used
+        docker_exec_call(
+            builder,
+            server=runtime_server,
+            cmd=[
+                "python",
+                "-c",
+                "import adgn.props.critic; import pathlib; p = pathlib.Path(adgn.props.critic.__file__).parent / 'prompts' / 'critic_system.j2.md'; print(p.read_text())",
+            ],
+        ),
     ]
 
 
@@ -148,9 +164,9 @@ class RunCriticOutput(OpenAIStrictModeBaseModel):
 
     critic_run_id: UUID = Field(description="critic_runs.id - Query critic_runs table for output, costs, model.")
     critique_id: UUID = Field(description="critiques.id - Pass to run_grader to grade against ground truth.")
-    cumulative_cost_usd: float = Field(
-        description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
-    )
+    # cumulative_cost_usd: float = Field(
+    #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
+    # )
 
 
 class RunGraderInput(OpenAIStrictModeBaseModel):
@@ -163,12 +179,13 @@ class RunGraderInput(OpenAIStrictModeBaseModel):
 
 
 class RunGraderOutput(OpenAIStrictModeBaseModel):
-    """Output for run_grader tool - DB ID and cumulative cost."""
+    """Output for run_grader tool - DB ID and measured recall."""
 
-    grader_run_id: UUID = Field(description="grader_runs.id - Query grader_runs table for output.grade (recall, etc).")
-    cumulative_cost_usd: float = Field(
-        description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
-    )
+    grader_run_id: UUID = Field(description="grader_runs.id - Query grader_runs table for full output.grade.")
+    recall: float = Field(description="Measured recall for this critique (0.0-1.0)")
+    # cumulative_cost_usd: float = Field(
+    #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
+    # )
 
 
 async def build_server(
@@ -179,6 +196,7 @@ async def build_server(
     name: str = "prompt_eval",
     prompt_optimization_run_id: UUID,
     workspace_root: Path,
+    budget_limit: float,
     verbose: bool = False,
 ) -> EnhancedFastMCP:
     """Build prompt_eval server with minimal critic/grader execution tools.
@@ -417,12 +435,7 @@ async def build_server(
             if critique_id is None:
                 raise RuntimeError("Critic run completed but no critique was created")
 
-            # Query cumulative cost after this run
-            cumulative_cost_usd = query_cumulative_cost()
-
-            return RunCriticOutput(
-                critic_run_id=critic_run_id, critique_id=critique_id, cumulative_cost_usd=cumulative_cost_usd
-            )
+            return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
 
     @mcp.flat_model()
     async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
@@ -472,10 +485,18 @@ async def build_server(
                 verbose=verbose,
             )
 
-        # Query cumulative cost after this run
-        cumulative_cost_usd = query_cumulative_cost()
+            # Query recall from the grader run output
+            from adgn.props.db.models import GraderRun as DBGraderRun
 
-        return RunGraderOutput(grader_run_id=grader_run_id, cumulative_cost_usd=cumulative_cost_usd)
+            grader_run = session.get(DBGraderRun, grader_run_id)
+            if not grader_run:
+                raise ToolError(f"Grader run {grader_run_id} not found in database")
+            if not grader_run.output:
+                raise ToolError(f"Grader run {grader_run_id} has no output")
+
+            recall = grader_run.output.recall
+
+        return RunGraderOutput(grader_run_id=grader_run_id, recall=recall)
 
     return mcp
 
@@ -513,7 +534,7 @@ async def run_prompt_optimizer(
     """
     # Render system prompt with compiled SQL queries from builders
     system = render_prompt_template(
-        "prompt_optimizer_system.j2.md",
+        "prompt_optimize/prompts/prompt_optimizer_system.j2.md",
         sql_list_train=qb.compile_to_sql(qb.list_train_snapshots()),
         sql_list_train_tps=qb.compile_to_sql(qb.list_train_true_positives()),
         sql_list_train_fps=qb.compile_to_sql(qb.list_train_false_positives()),
@@ -529,12 +550,9 @@ async def run_prompt_optimizer(
         sql_blocked_valid_critiques=qb.compile_to_sql(qb.blocked_valid_critiques()),
         sql_blocked_valid_grader_runs=qb.compile_to_sql(qb.blocked_valid_grader_runs()),
         sql_blocked_valid_events=qb.compile_to_sql(qb.blocked_valid_events()),
-        sql_po_run_costs=qb.compile_to_sql_with_placeholders(qb.po_run_costs_parameterized()),
         # Scope queries
         sql_list_train_scopes=qb.compile_to_sql(qb.list_train_scopes()),
         sql_grader_runs_by_scope=qb.compile_to_sql(qb.grader_runs_by_scope_train(limit=10)),
-        # Constants
-        prompt_optimization_run_id_uri=PROMPT_OPTIMIZATION_RUN_ID_URI,
     )
 
     # Session directory (inline adhoc_run_dir - only called here)
@@ -637,6 +655,7 @@ async def run_prompt_optimizer(
                 name=PROMPT_EVAL_SERVER_NAME,
                 prompt_optimization_run_id=prompt_optimization_run_id,
                 workspace_root=session_dir,
+                budget_limit=budget,
                 verbose=verbose,
             )
             await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
@@ -659,7 +678,7 @@ Prioritize recall first, then precision.
 
             # Use the prompt_eval server reference for introspection
             builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
-            bootstrap_calls = make_po_bootstrap_calls(builder)
+            bootstrap_calls = make_po_bootstrap_calls(builder, runtime_server=wiring.server_name)
             bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
             handlers: list = [
@@ -675,7 +694,6 @@ Prioritize recall first, then precision.
                 await mount_standard_inproc_servers(compositor=comp)
                 agent = await Agent.create(
                     mcp_client=mcp_client,
-                    system=system,
                     client=build_client(optimizer_model),
                     handlers=handlers,
                     parallel_tool_calls=True,
@@ -689,7 +707,8 @@ Prioritize recall first, then precision.
                 )
                 agent._handlers.append(budget_handler)
 
-                await agent.run(user)
+                agent.insert_messages([SystemMessage.text(system), UserMessage.text(user)])
+                await agent.run()
         # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
         logger.info(f"Optimization session complete. Results in: {session_dir}")

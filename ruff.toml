@@ -6,10 +6,8 @@ line-length = 120
 # Target Python 3.12+ consistently
 target-version = "py312"
 
-# Exclude specimens, testdata, fixtures, third-party and examples from all ruff operations
-# Specimens are deliberately broken examples for testing.
+# Exclude testdata, fixtures, third-party and examples from all ruff operations
 exclude = [
-    "**/specimens",
     "**/testdata",
     "**/fixtures",
     "**/examples",

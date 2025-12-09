@@ -330,7 +330,6 @@ class Agent:
     def __init__(
         self,
         *,
-        system: str | None,
         mcp_client: Client,
         client: OpenAIModelProto,
         reasoning_effort: ReasoningEffort | None = None,
@@ -340,9 +339,6 @@ class Agent:
         tool_policy: ToolPolicy,
         dynamic_instructions: Callable[[], Awaitable[str]] | None = None,
     ) -> None:
-        self._default_system = system or SYSTEM_INSTRUCTIONS
-        self._system = self._default_system
-        self._dynamic_instructions = dynamic_instructions
         self._mcp_client = mcp_client
         self._client = client
         self._parallel_tool_calls = parallel_tool_calls
@@ -350,6 +346,7 @@ class Agent:
         self._transcript: list[TranscriptItem] = []
         self._reasoning_effort = reasoning_effort
         self._reasoning_summary = reasoning_summary
+        self._dynamic_instructions = dynamic_instructions
         # Agent state fields
         self.assistant_text_chunks: list[str] = []
         self.pending_function_calls: list[FunctionCallItem] = []
@@ -370,15 +367,17 @@ class Agent:
                 "  • Custom handler - subclass BaseHandler for specialized control"
             )
 
-    def _extract_text_from_user_message(self, msg: UserMessage) -> str:
-        """Extract text content from UserMessage's content parts."""
-        return "\n".join(part.text for part in msg.content)
+    def _extract_text_from_message(self, msg: UserMessage | AssistantMessage) -> str:
+        """Extract text content from message's content parts.
 
-    def _extract_text_from_assistant_message(self, msg: AssistantMessage) -> str:
-        """Extract text content from AssistantMessage's content parts."""
-        if not msg.content:
-            return ""
-        return "\n".join(part.text for part in msg.content)
+        TODO: This is lossy - joins multiple content part objects with "\n" separator,
+        losing part boundaries and adding separators that weren't in the original OpenAI response.
+        Should preserve the multi-part structure faithfully in handler events.
+        """
+        # UserMessage.content is always present (list[InputTextPart])
+        # AssistantMessage.content can be None or list[OutputTextPart]
+        content = msg.content if msg.content else []
+        return "\n".join(part.text for part in content)
 
     def _notify_user_text(self, text: str) -> None:
         """Notify all handlers of a user text event."""
@@ -399,11 +398,11 @@ class Agent:
         Called for both injected items and items added from API responses.
         """
         if isinstance(item, UserMessage):
-            text = self._extract_text_from_user_message(item)
+            text = self._extract_text_from_message(item)
             self._notify_user_text(text)
 
         elif isinstance(item, AssistantMessage):
-            text = self._extract_text_from_assistant_message(item)
+            text = self._extract_text_from_message(item)
             self._notify_assistant_text(text)
 
         elif isinstance(item, FunctionCallItem):
@@ -421,17 +420,65 @@ class Agent:
         elif isinstance(item, SystemMessage):
             pass  # No handler notification for system messages
 
-    def set_system_instructions(self, instructions: str | None) -> None:
-        """Override base system instructions for future turns."""
-        self._system = (instructions or self._default_system).strip()
+    def insert_message(self, message: Message) -> None:
+        """Insert a message into the transcript without triggering handlers.
 
-    async def _build_effective_instructions(self) -> str:
-        # Compose dynamic instructions if a provider is set; append to base system.
+        Use this to set up initial context (system prompts, user messages) before calling run().
+        These messages become part of the conversation history but do not trigger handler
+        notifications - handlers are only notified during the agent loop for messages/events
+        that occur during execution.
+
+        Args:
+            message: A UserMessage, AssistantMessage, or SystemMessage to add to transcript
+        """
+        self._transcript.append(message)
+
+    def insert_messages(self, messages: Sequence[Message]) -> None:
+        """Insert multiple messages into the transcript without triggering handlers.
+
+        Convenience method for inserting multiple messages at once.
+        Equivalent to calling insert_message() for each message.
+
+        Args:
+            messages: Sequence of UserMessage, AssistantMessage, or SystemMessage to add
+        """
+        self._transcript.extend(messages)
+
+    def insert_transcript_item(self, item: TranscriptItem) -> None:
+        """Insert a transcript item (message, tool call, reasoning, or tool output) without triggering handlers.
+
+        Use this to reconstruct a full transcript including tool calls and their outputs,
+        e.g., when resuming from a saved session or replaying a previous conversation.
+
+        Like insert_message(), this does not trigger handler notifications - handlers are only
+        notified during the agent loop for items that occur during execution.
+
+        Args:
+            item: A TranscriptItem (Message, FunctionCallItem, ReasoningItem, or ToolCallOutput)
+        """
+        self._transcript.append(item)
+
+    def insert_transcript_items(self, items: Sequence[TranscriptItem]) -> None:
+        """Insert multiple transcript items without triggering handlers.
+
+        Convenience method for bulk insertion when reconstructing a transcript.
+        Equivalent to calling insert_transcript_item() for each item.
+
+        Args:
+            items: Sequence of TranscriptItem to add
+        """
+        self._transcript.extend(items)
+
+    async def _build_effective_instructions(self) -> str | None:
+        """Build instructions for the OpenAI API request.
+
+        Returns result of dynamic_instructions callback if provided, otherwise None.
+        Note: This is the 'instructions' field in the API, separate from system messages
+        in the transcript.
+        """
         if self._dynamic_instructions is not None:
-            dyn = await self._dynamic_instructions()
-            base = self._system or ""
-            return (base + (dyn or "")).strip()
-        return (self._system or "").strip()
+            return await self._dynamic_instructions()
+        return None
 
     async def compact_transcript(
         self, *, keep_recent_turns: int = 10, summarization_prompt: str | None = None
@@ -518,10 +565,17 @@ class Agent:
 
         raise RuntimeError("Summary generation failed: LLM response missing assistant message")
 
-    async def run(self, user_text: str) -> AgentResult:
-        self._transcript.append(UserMessage.text(user_text))
-        # Notify all handlers
-        self._notify_user_text(user_text)
+    async def run(self) -> AgentResult:
+        """Run the agent loop until completion.
+
+        Before calling run(), insert messages into the transcript using insert_message() or insert_messages().
+        Example:
+            agent.insert_messages([
+                SystemMessage.text("You are a helpful assistant"),
+                UserMessage.text("Hello"),
+            ])
+            result = await agent.run()
+        """
         self.assistant_text_chunks.clear()
         self.pending_function_calls.clear()
         self.finished = False
@@ -857,7 +911,6 @@ class Agent:
         mcp_client: Client,
         handlers: Iterable[BaseHandler],
         client: OpenAIModelProto,
-        system: str | None = None,
         reasoning_effort: ReasoningEffort | None = None,
         reasoning_summary: ReasoningSummary | None = None,
         parallel_tool_calls: bool = True,
@@ -868,9 +921,11 @@ class Agent:
 
         Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
         Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage(), ForbidAllTools().
+
+        For static system prompts, use insert_message(SystemMessage.text("...")) before calling run().
+        For dynamic instructions that can change between phases, provide dynamic_instructions callback.
         """
         return cls(
-            system=system,
             mcp_client=mcp_client,
             client=client,
             reasoning_effort=reasoning_effort,

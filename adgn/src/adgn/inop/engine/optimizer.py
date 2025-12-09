@@ -68,7 +68,7 @@ from adgn.inop.prompting.prompt_engineer import (
 from adgn.inop.prompting.summarizer import PatternSummarizer
 from adgn.inop.prompting.truncation_utils import TruncationManager
 from adgn.mcp.compositor.server import Compositor
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 
 # TODO: consider showing grader text Assistant messages, not just code
 # TODO: track exact OpenAI & Anthropic model used in database tables
@@ -313,7 +313,6 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             pe = await Agent.create(
                 mcp_client=mcp_client,
                 client=model,
-                system=system_message,
                 handlers=[
                     ProposePromptNTimes(args.iterations),
                     TranscriptHandler(events_path=run_dir / "events.jsonl"),
@@ -321,8 +320,10 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 tool_policy=RequireAnyTool(),
             )
 
+            # Insert user message with instructions
+            pe.insert_message(UserMessage.text(system_message))
             # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
-            await pe.run(user_text="Start prompt optimization.")
+            await pe.run()
 
             # Read final state directly (in-proc) for logging only
             last_prompt = state.last_prompt or ""

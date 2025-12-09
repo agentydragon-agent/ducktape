@@ -27,6 +27,8 @@ from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.cmd_analyze_exec import cmd_analyze_exec
+from adgn.props.cli.cmd_classify_noops import cmd_classify_noops
 from adgn.props.cli.cmd_db import db_app
 from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
@@ -260,7 +262,7 @@ async def cmd_snapshot_discover(
     files: list[str] | None = opt.OPT_FILES_FILTER,
 ) -> None:
     """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     # Get all snapshots from database
     with get_session() as session:
         all_snapshots = session.query(Snapshot).all()
@@ -313,7 +315,7 @@ async def prompt_optimize(
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     await run_prompt_optimizer(
         budget=budget,
         ctx=RunsContext.from_pkg_dir(),
@@ -462,7 +464,7 @@ async def cmd_lint_issue(
     model: str = opt.OPT_MODEL,
     dry_run: bool = opt.OPT_DRY_RUN,
 ) -> None:
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     rc = await run_specimen_lint_issue_async(
         snapshot,
         tp_id,
@@ -478,7 +480,7 @@ async def cmd_lint_issue(
 @app.command("eval-all")
 @async_run
 async def cmd_eval_all() -> None:
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     await run_all_evals(client=build_client("gpt-5"), hydrator=hydrator, ctx=RunsContext.from_pkg_dir())
 
 
@@ -491,6 +493,12 @@ app.command("gepa")(cmd_gepa)
 
 # Stats command
 app.command("stats")(cmd_stats)
+
+# Analyze exec commands
+app.command("analyze-exec")(cmd_analyze_exec)
+
+# Classify no-op commands
+app.command("classify-noops")(cmd_classify_noops)
 
 # Grade validation set command
 app.command("grade-validation")(cmd_grade_validation)
@@ -596,7 +604,7 @@ async def cmd_run(
         prompt_raw = prompt_text or ""
 
     # Create hydrator
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
 
     # Hydrate snapshot and run
     async with hydrator.hydrate(snapshot) as hydrated:

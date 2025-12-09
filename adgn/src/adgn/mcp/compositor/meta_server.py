@@ -19,7 +19,18 @@ def make_compositor_meta_server(*, compositor: Compositor, name: str = COMPOSITO
     m = EnhancedFastMCP(
         name=name,
         instructions=(
-            "Compositor metadata. Resources under this server expose per-mount state, instructions and capabilities."
+            "Compositor metadata server exposing state and configuration of all mounted MCP servers.\n\n"
+            "**What it provides:**\n"
+            "- List of all mounted servers (resource: resource://compositor_meta/servers)\n"
+            "- Per-server state snapshots (initializing, running, or failed)\n"
+            "- Server capabilities (tools, resources, prompts, logging support)\n"
+            "- Server-provided instructions for how to use their tools/resources\n\n"
+            "**Use this to:**\n"
+            "- Discover what servers are available and their current state\n"
+            "- Read server-specific instructions before using their tools\n"
+            "- Check capabilities to understand what features each server supports\n"
+            "- Monitor server health (detect failed mounts, view error messages)\n\n"
+            "Resources follow the pattern `resource://compositor_meta/state/{server}` for per-server state."
         ),
     )
 

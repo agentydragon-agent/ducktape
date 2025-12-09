@@ -27,7 +27,7 @@ from adgn.mcp._shared.constants import EDITOR_SERVER_NAME
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.editor_server import make_editor_server
 from adgn.openai_utils import client_factory
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary
 
 
@@ -58,18 +58,22 @@ async def _execute(
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=(
-                    "You are a code editor assistant. Use tools to read/modify/save files.\n"
-                    "Operate on the provided file only. Prefer precise replace_text edits.\n"
-                    "Finish with done(success, report)."
-                ),
                 client=client,
                 reasoning_effort=reasoning_effort,
                 reasoning_summary=reasoning_summary,
                 handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
                 tool_policy=RequireAnyTool(),
             )
-            res = await agent.run(f"Edit file: {target_path}\nGoal: {prompt}\n")
+            agent.insert_message(
+                SystemMessage.text(
+                    "You are a code editor assistant. Use tools to read/modify/save files.\n"
+                    "Operate on the provided file only. Prefer precise replace_text edits.\n"
+                    "Finish with done(success, report)."
+                )
+            )
+            agent.insert_message(UserMessage.text(f"Edit file: {target_path}\nGoal: {prompt}\n"))
+            res = await agent.run()
             print(res.text)
             return 0
 

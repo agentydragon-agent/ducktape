@@ -10,8 +10,37 @@
   - `props/python/` — Python-specific properties
   - `props/markdown/` — Markdown-specific properties
   - `props/` (root) — language-agnostic properties
-- `specimens/` — specimen manifests and per-issue Jsonnet files
 - `TODO.md` — open questions and planned extensions
+
+## Specimens Dataset
+
+**Specimen data now lives in a separate repository**: [github.com/agentydragon/specimens](https://github.com/agentydragon/specimens)
+
+Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
+- `snapshots.yaml` — central registry of all snapshots with source commits and train/valid/test splits
+- `lib.libsonnet` — Jsonnet helper library for authoring issues
+- Per-snapshot directories with issue files (`.libsonnet`)
+
+### Configuration
+
+Set the `ADGN_PROPS_SPECIMENS_ROOT` environment variable to point to the specimens repository:
+
+```bash
+export ADGN_PROPS_SPECIMENS_ROOT=/path/to/specimens
+```
+
+When using direnv (recommended), this is configured in `.envrc`:
+
+```bash
+REPO_ROOT=$(git rev-parse --show-toplevel)
+export ADGN_PROPS_SPECIMENS_ROOT="$REPO_ROOT/../specimens"
+```
+
+**Required**: The environment variable must be set. The package will raise an error if it's not configured.
+
+### Authoring
+
+See the [specimens repository](https://github.com/agentydragon/specimens) for format specs and authoring guides.
 
 ## Conventions
 - Property IDs are kebab-case and derived from filenames; evolve content rather than renaming IDs when possible.
@@ -50,32 +79,6 @@ Example usage:
   GAP: Clarify boundary vs helper responsibility for short‑array handling so index checks live in one place.
 ```
 
-## Specimens format
-
-Specimens consist of a central registry (`specimens/snapshots.yaml`) plus per-snapshot directories containing issue files.
-
-**Structure:**
-```
-specimens/
-  snapshots.yaml                    # Central registry: all snapshots with source/split
-  lib.libsonnet                     # Jsonnet helpers
-  ducktape/
-    2025-11-26-00/
-      dead-code.libsonnet           # Issue files directly in snapshot directory
-      missing-types.libsonnet
-      fp-intentional-duplication.libsonnet
-```
-
-**Issue files:**
-- Each `.libsonnet` file is a single Jsonnet expression that returns an Issue/FalsePositive object
-- Import helpers: `local I = import '../../lib.libsonnet';`
-- Available constructors:
-  - `I.issue(rationale, filesToRanges, expect_caught_from=null)` - single occurrence true positive
-  - `I.issueMulti(rationale, occurrences)` - multiple occurrences true positive
-  - `I.falsePositive(rationale, filesToRanges, relevant_files=null)` - single occurrence false positive
-  - `I.falsePositiveMulti(rationale, occurrences)` - multiple occurrences false positive
-
-**For detailed authoring rules and guidelines**, see [docs/authoring.md](docs/authoring.md).
 
 ## Behavioral layer and scoping
 
@@ -108,11 +111,11 @@ specimens/
 **Approach:** Generate multiple focused training examples per snapshot (single files, file pairs, component groups) in addition to the full-repo review. This provides tighter feedback loops and more training signal for optimization.
 
 **Dataset model:**
-- **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs)
+- **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs) — specimens from separate repo
 - **Training Example:** `(snapshot, targeted_files)` pair where ground truth is computed based on which issues are "catchable" from those files
 - **True Positive filtering:** Uses `expect_caught_from` to determine which issues should be detectable given a file set
 
-For detailed information on the training dataset model, per-file examples strategy, and optimization approaches, see [Training Strategy](docs/training_strategy.md).
+For detailed information, see [Training Strategy](docs/training_strategy.md).
 
 ```mermaid
 flowchart TD

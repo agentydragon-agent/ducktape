@@ -206,7 +206,7 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
     # Discover all critic system prompts and specimens
     detector_filenames = list_critic_system_prompts()
     detector_prompts = [(f, load_and_upsert_detector_prompt(f)) for f in detector_filenames]
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
 
     # Get all snapshots from database
     with get_session() as session:
@@ -311,7 +311,7 @@ async def cmd_run_detector(
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot) as hydrated:
         files_spec = _filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(

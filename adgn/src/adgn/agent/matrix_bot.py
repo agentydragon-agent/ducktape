@@ -28,6 +28,7 @@ from adgn.mcp.exec.models import BaseExecResult
 from adgn.mcp.matrix.control import make_matrix_control_server
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import SystemMessage, UserMessage
 
 app = typer.Typer(help="Matrix-driven Agent entrypoint (docker + yield-only control)", no_args_is_help=True)
 
@@ -93,7 +94,6 @@ def run(
             async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
                 agent = await Agent.create(
                     mcp_client=mcp_client,
-                    system=effective_system,
                     client=client,
                     handlers=[
                         ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
@@ -101,6 +101,7 @@ def run(
                     ],
                     tool_policy=RequireAnyTool(),
                 )
+                agent.insert_message(SystemMessage.text(effective_system))
 
                 async def _sync_once(since: str | None) -> tuple[str, bool]:
                     qs = {"timeout": "30000"}
@@ -133,7 +134,8 @@ def run(
                     since_token = next_since
                     if not has_new:
                         continue
-                    await agent.run(user_text="process matrix inbox")
+                    agent.insert_message(UserMessage.text("process matrix inbox"))
+                    await agent.run()
 
     asyncio.run(_run())
 

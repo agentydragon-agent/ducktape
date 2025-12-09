@@ -135,7 +135,6 @@ include = ["adgn*"]
 "adgn.props" = [
   "definitions/*.md",
   "definitions/**/*.md",
-  "specimens/**",
   "prompts/*.j2",
   "prompts/**/*.j2",
   "prompts/*.j2.md",

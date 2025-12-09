@@ -38,7 +38,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.bwrap import make_bwrap_exec_server
 from adgn.mcp.exec.direct import make_direct_exec_server
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
 """OpenAI runner that delegates execution to the Agent agent."""
 
@@ -86,7 +86,6 @@ class OpenAIRunner(AgentRunner):
         handlers: list[BaseHandler] = self._handlers or default_handlers
         mcp_client = await self._exit_stack.enter_async_context(Client(comp))
         agent = await Agent.create(
-            system=None,
             mcp_client=mcp_client,
             client=self._openai_model,
             reasoning_effort=self.reasoning_effort,
@@ -143,10 +142,10 @@ class OpenAIRunner(AgentRunner):
         if not self._agent:
             raise RuntimeError("Runner not initialised; call setup() first")
 
-        self._agent.set_system_instructions(agent_instructions)
+        self._agent.insert_messages([SystemMessage.text(agent_instructions), UserMessage.text(task.prompt)])
 
         start_time = time.perf_counter()
-        result = await self._agent.run(user_text=task.prompt)
+        result = await self._agent.run()
 
         trajectory: list[TrajectoryItem] = [UserInput(text=task.prompt)]
         # Agent intentionally does not expose its internal event sequence; callers requiring

@@ -53,7 +53,7 @@
       - virt-viewer  # SPICE/VNC viewer for virtual machines (Proxmox viewer)
       - scrcpy # Android screen mirroring
       - snapd # For Telegram etc.
-      - syncthing-gtk
+      # syncthing-gtk moved to Nix (home.packages)
       - torbrowser-launcher
       - transmission-gtk
       - tuxguitar
@@ -135,20 +135,46 @@
     # See: https://forum.snapcraft.io/t/apparmor-blocking-the-opening-of-slack/29212
     use: apt
 
-# Discord autostart migrated to legacy_without_home_manager/gui, but package install remains:
-- name: Ensure Discord is installed
+# Discord now managed by Nix: nix/home/home.nix (home.packages)
+- name: Uninstall system-level Discord package
   become: true
   ansible.builtin.apt:
     name: discord
-    state: present
-# GNOME terminal configuration moved to legacy_without_home_manager/gui role
+    state: absent
 
-# wm_datetime_format.yml removed - datetime configuration moved to legacy_without_home_manager/gui role
+# Element now managed by Nix: nix/home/home.nix (home.packages)
+- name: Remove Element.io repository and package
+  tags: element
+  become: true
+  block:
+    - name: Remove Element.io repository
+      ansible.builtin.apt_repository:
+        repo: >-
+          deb [signed-by=/usr/share/keyrings/element-io-archive-keyring.gpg]
+          https://packages.element.io/debian/ default main
+        filename: element-io
+        state: absent
+    - name: Uninstall Element package
+      ansible.builtin.apt:
+        pkg: element-desktop
+        state: absent
+    - name: Remove Element keyring
+      ansible.builtin.file:
+        path: /usr/share/keyrings/element-io-archive-keyring.gpg
+        state: absent
+
+# Syncthing-GTK now managed by Nix: nix/home/home.nix (home.packages)
+- name: Uninstall system-level Syncthing-GTK
+  become: true
+  ansible.builtin.apt:
+    pkg: syncthing-gtk
+    state: absent
+
+# GNOME terminal configuration moved to legacy_without_home_manager/gui role
+# Datetime format now managed by Nix: nix/home/modules/datetime-format.nix
+
 - name: Configure X.org terminate shortcut
   ansible.builtin.include_tasks: xorg_terminate.yml
-- name: Install Element Matrix client
-  ansible.builtin.include_tasks: element.yml
-  tags: element
 - name: Install Google Chrome
   ansible.builtin.include_tasks: google_chrome.yml
 
@@ -175,12 +201,17 @@
   ansible.builtin.import_tasks: syncthing.yml
   tags: syncthing
 
-- name: Configure login event webhook reporter
-  ansible.builtin.import_tasks: login_event_webhook_reporter.yml
-  tags: login_event_webhook_reporter
+# login_event_webhook_reporter is now managed by Nix home-manager
+# See: nix/home/services/login-event-webhook-reporter.nix
 
-- name: Configure tunneled ActivityWatch
-  ansible.builtin.import_tasks: tunneled_activitywatch.yml
+# ActivityWatch is now managed by Nix home-manager
+# See: nix/home/services/activitywatch.nix
+# This task uninstalls the old system-level .deb package
+- name: Uninstall system-level ActivityWatch package
+  become: true
+  ansible.builtin.apt:
+    name: activitywatch
+    state: absent
   tags: activitywatch
 
 - name: Configure XDG MIME type associations

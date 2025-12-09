@@ -9,7 +9,7 @@ from hamcrest import all_of, assert_that, contains_string
 from adgn.agent.agent import Agent
 from adgn.agent.events import ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from tests.agent.test_matchers import tool_call_with_error_text
 from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
@@ -32,14 +32,14 @@ async def _run_malformed_json_test(
     client = make_mock(handle_request)
     agent = await Agent.create(
         mcp_client=pg_client_echo,
-        system="test",
         client=client,
         handlers=[recording_handler],
         parallel_tool_calls=parallel,
         tool_policy=RequireAnyTool(),
     )
+    agent.insert_message(UserMessage.text("use echo"))
 
-    res = await agent.run(user_text="use echo")
+    res = await agent.run()
     events = recording_handler.records
     return res.text, events
 

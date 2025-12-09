@@ -23,7 +23,6 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import discover_presets
 from adgn.agent.runtime.images import resolve_runtime_image
 from adgn.agent.server.bus import ServerBus
-from adgn.agent.server.rendering import render_compositor_instructions
 from adgn.agent.server.runtime import AgentSession, UiEventHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.types import AgentID
@@ -49,7 +48,7 @@ from adgn.mcp.runtime.server import make_runtime_server
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
 from adgn.mcp.ui.server import make_ui_server
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage
 
 from .handlers import build_handlers
 
@@ -381,22 +380,15 @@ class AgentContainer:
         base_system = self.system_override or str(get_ui_system_message())
         assert self._compositor is not None
 
-        async def _dynamic_instructions() -> str:
-            # Always read via the compositor_meta resources over MCP, not Python internals
-            meta = CompositorMetaClient(mcp_client)
-            states = await meta.list_states()  # dict[name -> ServerEntry]
-            text: str = render_compositor_instructions(states)
-            return text
-
         # Start agent
         agent = await Agent.create(
             mcp_client=mcp_client,
-            system=base_system,
             client=client,
             handlers=handlers,
-            dynamic_instructions=_dynamic_instructions,
+            dynamic_instructions=self._compositor.render_agent_dynamic_instructions,
             tool_policy=RequireAnyTool(),
         )
+        agent.insert_message(SystemMessage.text(base_system))
         # Note: Agent doesn't own resources, no cleanup needed
 
         # Session tracks the system used for persisted run metadata; store base system

@@ -38,7 +38,7 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
@@ -103,14 +103,14 @@ class ReportFailureInput(OpenAIStrictModeBaseModel):
 # =============================================================================
 
 
-def _find_this_critique(work: CriticSubmitPayload, tp_id: BaseIssueID) -> tuple[int, ReportedIssue] | None:
+def _find_this_critique(work: CriticSubmitPayload, issue_id: BaseIssueID) -> tuple[int, ReportedIssue] | None:
     """Find an issue by ID in the work payload.
 
     Returns:
         Tuple of (index, issue) if found, None otherwise.
     """
     for idx, issue in enumerate(work.issues):
-        if issue.id == tp_id:
+        if issue.id == issue_id:
             return idx, issue
     return None
 
@@ -128,14 +128,14 @@ RangeAtom = int | list[int]
 class UpsertIssueInput(OpenAIStrictModeBaseModel):
     """Create or update an issue header (id + rationale)."""
 
-    tp_id: BaseIssueID
+    issue_id: BaseIssueID
     description: str = Field(description="Issue rationale/description")
 
 
 class CancelIssueInput(OpenAIStrictModeBaseModel):
     """Remove an issue and all its occurrences by id."""
 
-    tp_id: BaseIssueID
+    issue_id: BaseIssueID
 
 
 class AddOccurrenceInput(OpenAIStrictModeBaseModel):
@@ -145,7 +145,7 @@ class AddOccurrenceInput(OpenAIStrictModeBaseModel):
     Example: [123, [140,150]]
     """
 
-    tp_id: BaseIssueID
+    issue_id: BaseIssueID
     file: Annotated[str, StringConstraints(pattern=r"^[^\n]+$")]
     ranges: Annotated[
         list[RangeAtom], Field(min_length=1, description="List of single lines (int) or spans [start,end]")
@@ -174,18 +174,18 @@ class AddOccurrenceFilesInput(OpenAIStrictModeBaseModel):
     files: list of files with their line ranges.
     """
 
-    tp_id: BaseIssueID
+    issue_id: BaseIssueID
     files: list[FileRanges]
 
 
 CRITIC_MCP_INSTRUCTIONS = (
     "Critique builder: incrementally add issues and occurrences, then call submit() when complete.\n\n"
     "Workflow:\n"
-    "1. For each distinct issue: upsert_issue(tp_id, description) with a concise rationale\n"
-    "2. Add occurrences: add_occurrence(tp_id, file, ranges) or add_occurrence_files for multi-file spans\n"
-    "3. When finished reviewing: ALWAYS call submit(true_positives=N) where N matches the number of issues created\n\n"
+    "1. For each distinct issue: upsert_issue(issue_id, description) with a concise rationale\n"
+    "2. Add occurrences: add_occurrence(issue_id, file, ranges) or add_occurrence_files for multi-file spans\n"
+    "3. When finished reviewing: ALWAYS call submit(issues_count=N) where N matches the number of issues created\n\n"
     "Important:\n"
-    "- If you found ZERO issues, call submit(true_positives=0) - this is required\n"
+    "- If you found ZERO issues, call submit(issues_count=0) - this is required\n"
     "- Do not send plain-text responses or summaries outside tool calls\n"
     "- The submit count must exactly match the number of issues you created\n"
     "- Use report_failure only when truly blocked (access issues, no files matched scope)\n"
@@ -209,35 +209,35 @@ def build_critic_submit_tools(mcp: EnhancedFastMCP, state: CriticSubmitState) ->
     @mcp.flat_model()
     async def upsert_issue(payload: UpsertIssueInput) -> str:
         """Create or update an issue header (id + rationale)."""
-        result = _find_this_critique(state.work, payload.tp_id)
+        result = _find_this_critique(state.work, payload.issue_id)
         if result is not None:
             idx, existing = result
             state.work.issues[idx] = ReportedIssue(
-                id=payload.tp_id, rationale=payload.description, occurrences=existing.occurrences
+                id=payload.issue_id, rationale=payload.description, occurrences=existing.occurrences
             )
         else:
-            state.work.issues.append(ReportedIssue(id=payload.tp_id, rationale=payload.description, occurrences=[]))
-        return f"issue {payload.tp_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
+            state.work.issues.append(ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[]))
+        return f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
 
     @mcp.flat_model()
     async def cancel_issue(payload: CancelIssueInput) -> str:
         """Remove an issue and all its occurrences by id."""
-        state.work.issues = [it for it in state.work.issues if it.id != payload.tp_id]
+        state.work.issues = [it for it in state.work.issues if it.id != payload.issue_id]
         after_issues = len(state.work.issues)
         after_occs = sum(len(i.occurrences) for i in state.work.issues)
-        return f"issue {payload.tp_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
+        return f"issue {payload.issue_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
 
     @mcp.flat_model()
     async def add_occurrence(payload: AddOccurrenceInput) -> str:
         """Add one occurrence for an issue."""
-        result = _find_this_critique(state.work, payload.tp_id)
+        result = _find_this_critique(state.work, payload.issue_id)
         if result is None:
-            raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
+            raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
         issue = result[1]
         issue.occurrences.append(Occurrence.from_files_dict(files={Path(payload.file): _parse_ranges(payload.ranges)}))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
         return (
-            f"occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
+            f"occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted. "
             f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
         )
 
@@ -255,9 +255,9 @@ def build_critic_submit_tools(mcp: EnhancedFastMCP, state: CriticSubmitState) ->
     @mcp.flat_model()
     async def add_occurrence_files(payload: AddOccurrenceFilesInput) -> str:
         """Add one occurrence spanning multiple files/ranges."""
-        result = _find_this_critique(state.work, payload.tp_id)
+        result = _find_this_critique(state.work, payload.issue_id)
         if result is None:
-            raise ToolError(f"Unknown issue '{payload.tp_id}'. Create the issue before adding occurrences.")
+            raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
         issue = result[1]
         # Convert list of FileRanges to dict for Occurrence.from_files_dict
         files_dict: dict[Path, list[LineRange] | None] = {
@@ -266,7 +266,7 @@ def build_critic_submit_tools(mcp: EnhancedFastMCP, state: CriticSubmitState) ->
         issue.occurrences.append(Occurrence.from_files_dict(files=files_dict))
         total_occs = sum(len(i.occurrences) for i in state.work.issues)
         return (
-            f"multi-file occurrence recorded for {payload.tp_id}. {total_occs} total occurrences noted. "
+            f"multi-file occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted. "
             f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
         )
 
@@ -422,18 +422,20 @@ async def run_critic(
     Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
     from within an MCP tool that outlives the session.
     """
-    # Fetch system prompt from DB using prompt_sha256 (primary key lookup)
+    # Fetch optimized prompt from DB using prompt_sha256 (primary key lookup)
     with get_session() as session:
         prompt_obj = session.get(Prompt, input_data.prompt_sha256)
         if not prompt_obj:
             raise ValueError(f"Prompt not found in database: {input_data.prompt_sha256}")
-        system_prompt = prompt_obj.prompt_text
+        optimized_prompt = prompt_obj.prompt_text
 
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel - loads from DB)
     resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files)
 
-    # Build user prompt from resolved files
-    user_prompt = render_prompt_template("critic_user_prompt.j2.md", files=sorted(resolved_files, key=str))
+    # Build user prompt from resolved files (just the file list)
+    user_prompt = render_prompt_template(
+        "critic/prompts/critic_user_prompt.j2.md", files=sorted(resolved_files, key=str)
+    )
 
     # Generate unique IDs for this run
     run_id = uuid4()
@@ -504,19 +506,35 @@ async def run_critic(
             *extra_handlers,
         ]
 
+        # Build combined dynamic instructions by rendering the template
+        async def _build_critic_instructions() -> str:
+            """Build critic system instructions by rendering critic_system.j2.md template.
+
+            The template has two placeholders:
+            1. {{ compositor_instructions }} - MCP wiring: servers, tools, resources
+            2. {{ optimized_prompt }} - The prompt being tested/optimized
+            """
+            compositor_instructions = comp.render_agent_dynamic_instructions()
+            return render_prompt_template(
+                "critic/prompts/critic_system.j2.md",
+                compositor_instructions=compositor_instructions,
+                optimized_prompt=optimized_prompt,
+            )
+
         # Run critic agent
         async with Client(comp) as mcp_client:
             await mount_standard_inproc_servers(compositor=comp)
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=system_prompt,
                 client=client,
                 handlers=handlers,
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
                 reasoning_summary=ReasoningSummary.detailed,
+                dynamic_instructions=_build_critic_instructions,
             )
-            await agent.run(user_prompt)
+            agent.insert_message(UserMessage.text(user_prompt))
+            await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     # Convert state to output

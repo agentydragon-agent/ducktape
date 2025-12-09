@@ -58,14 +58,22 @@ def server() -> FastMCP:
     return _NotifierServer()
 
 
+def _has_notification_with_substring(req: ResponsesRequest, substring: str) -> bool:
+    """Check if a request has a system notification containing the given substring."""
+    for msg in req.input or []:
+        if isinstance(msg, UserMessage):
+            for c in msg.content or []:
+                if isinstance(c, InputTextPart) and "<system notification>" in c.text:
+                    payload = c.text.split("\n", 1)[-1]
+                    if substring in payload:
+                        return True
+    return False
+
+
 async def _make_agent_with_notifications(mcp_client, buf, client):
     """Helper to create agent with NotificationsHandler wired."""
     return await Agent.create(
-        mcp_client=mcp_client,
-        handlers=[NotificationsHandler(buf.poll)],
-        client=client,
-        system="n/a",
-        tool_policy=RequireAnyTool(),
+        mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll)], client=client, tool_policy=RequireAnyTool()
     )
 
 
@@ -86,30 +94,15 @@ async def test_notifications_pre_sampling_out_of_band(
             return result
 
         client = make_mock(_create)
-        agent = await Agent.create(
-            mcp_client=mcp_client,
-            handlers=[NotificationsHandler(buf.poll)],
-            client=client,
-            system="n/a",
-            tool_policy=RequireAnyTool(),
-        )
-        await agent.run("hello")
+        agent = await _make_agent_with_notifications(mcp_client, buf, client)
+        agent.insert_message(UserMessage.text("hello"))
+        await agent.run()
 
         # Inspect the input passed to Responses.create; expect a system notification insert
         assert captured, "expected at least one responses.create call"
-
-        def _has_sysfyi(req: ResponsesRequest) -> bool:
-            inp = req.input or []
-            for msg in inp:
-                if isinstance(msg, UserMessage):
-                    for c in msg.content or []:
-                        if isinstance(c, InputTextPart) and "<system notification>" in c.text:
-                            payload = c.text.split("\n", 1)[-1]
-                            if "policy.py" in payload:
-                                return True
-            return False
-
-        assert any(_has_sysfyi(req) for req in captured), "expected system notification in request input"
+        assert any(_has_notification_with_substring(req, "policy.py") for req in captured), (
+            "expected system notification in request input"
+        )
 
 
 async def test_notifications_within_turn_from_tool(
@@ -135,21 +128,14 @@ async def test_notifications_within_turn_from_tool(
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
         agent = await _make_agent_with_notifications(mcp_client, buf, client)
-        await agent.run("go")
+        agent.insert_message(UserMessage.text("go"))
+        await agent.run()
 
         # The second create call (post-tool) should include the injected system notification
         assert len(captured) >= 2, "expected at least two sampling calls"
-        second = captured[-1]
-        found = False
-        for msg in second.input or []:
-            if isinstance(msg, UserMessage):
-                for c in msg.content or []:
-                    if isinstance(c, InputTextPart) and "<system notification>" in c.text:
-                        found = True
-                        break
-            if found:
-                break
-        assert found, "expected system notification after tool-triggered update"
+        assert _has_notification_with_substring(captured[-1], "policy.py"), (
+            "expected system notification after tool-triggered update"
+        )
 
 
 async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
@@ -175,17 +161,10 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
 
         client = make_mock(_create)
         agent = await _make_agent_with_notifications(mcp_client, buf, client)
-        await agent.run("hello")
+        agent.insert_message(UserMessage.text("hello"))
+        await agent.run()
 
         # Expect notification inserted before sampling
-        def _has_sysfyi(req: ResponsesRequest) -> bool:
-            for msg in req.input or []:
-                if isinstance(msg, UserMessage):
-                    for c in msg.content or []:
-                        if isinstance(c, InputTextPart) and "<system notification>" in c.text:
-                            payload = c.text.split("\n", 1)[-1]
-                            if "policy.py" in payload:
-                                return True
-            return False
-
-        assert any(_has_sysfyi(req) for req in captured), "expected system notification after out-of-tool broadcast"
+        assert any(_has_notification_with_substring(req, "policy.py") for req in captured), (
+            "expected system notification after out-of-tool broadcast"
+        )

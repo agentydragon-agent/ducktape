@@ -13,7 +13,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart
+from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart, UserMessage
 from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
 from adgn.props.lint_issue import LintSubmitState, make_linter_handlers
 from adgn.props.models.true_positive import Occurrence
@@ -75,14 +75,14 @@ async def test_lint_issue_bootstrap_small_files(
     async with make_pg_client({"runtime": runtime_server}) as mcp_client:
         agent = await Agent.create(
             mcp_client=mcp_client,
-            system="test",
             client=client,
             handlers=[*handlers, DisplayEventsHandler()],
             tool_policy=RequireAnyTool(),
         )
 
         # Act
-        res = await agent.run(user_text="bootstrap lint")
+        agent.insert_message(UserMessage.text("bootstrap lint"))
+        res = await agent.run()
 
     # Assert final text
     assert res.text.strip() == "FINAL"

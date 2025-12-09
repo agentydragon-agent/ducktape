@@ -27,7 +27,7 @@ def build_enforce_prompt(
     supplemental_text: str | None = None,
 ) -> str:
     return render_prompt_template(
-        "enforce.j2.md",
+        "prompts/enforce.j2.md",
         scope_text=scope_text,
         supplemental_text=supplemental_text,
         wiring=wiring,
@@ -67,7 +67,7 @@ def build_grade_from_json_prompt(
     known_fps_json = compact_json_serialize(TypeAdapter(list[KnownFalsePositive]).dump_python(known_fps, mode="json"))
 
     return render_prompt_template(
-        "grade_from_json.j2.md",
+        "prompts/grade_from_json.j2.md",
         canonical_issues_json=canonical_json,
         critique_issues_json=critique_json,
         known_fps_json=known_fps_json,

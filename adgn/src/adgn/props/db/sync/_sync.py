@@ -7,7 +7,6 @@ Includes model metadata sync (previously in sync_model_metadata.py).
 from __future__ import annotations
 
 from dataclasses import dataclass
-from importlib import resources
 import logging
 from pathlib import Path
 
@@ -23,6 +22,7 @@ from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.critic_scopes import AllFilesScope, CriticScope
 from adgn.props.models.snapshot import SnapshotDoc
+from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.splits import Split
 
 from ._loader import FilesystemLoader
@@ -31,20 +31,16 @@ logger = logging.getLogger(__name__)
 
 
 def get_specimens_base_path() -> Path:
-    """Get specimens base path from package resources.
+    """Get specimens base path from ADGN_PROPS_SPECIMENS_ROOT environment variable.
 
     Returns:
         Path to specimens directory
 
     Raises:
-        FileNotFoundError: If specimens directory doesn't exist
+        ValueError: If ADGN_PROPS_SPECIMENS_ROOT environment variable not set
+        FileNotFoundError: If specimens directory doesn't exist or missing required files
     """
-    traversable = resources.files("adgn.props").joinpath("specimens")
-    with resources.as_file(traversable) as p:
-        if not p.exists() or not p.is_dir():
-            raise FileNotFoundError(f"Specimens directory not found in package resources: {p}")
-        # Return the resolved absolute path (valid after context manager exits)
-        return p.resolve()
+    return specimens_definitions_root()
 
 
 def load_manifests_from_yaml(base_path: Path) -> dict[SnapshotSlug, SnapshotDoc]:

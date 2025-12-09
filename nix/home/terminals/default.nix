@@ -2,30 +2,19 @@
   config,
   pkgs,
   lib,
-  enableGui ? true,
-  unstablePkgs ? pkgs,
-  solarizedLight ? null,
-  solarizedDark ? null,
-  terminalFont ? {
-    family = "JetBrainsMono Nerd Font";
-    size = 11;
-  },
+  enableGui,
+  unstablePkgs,
+  solarizedLight,
+  solarizedDark,
+  terminalFont,
+  nixGLPackages,
   ...
 }: let
-  nix-colors = import (fetchTarball "https://github.com/Misterio77/nix-colors/archive/main.tar.gz") {};
-  lightScheme =
-    if solarizedLight == null
-    then nix-colors.colorSchemes.solarized-light
-    else solarizedLight;
-  darkScheme =
-    if solarizedDark == null
-    then nix-colors.colorSchemes.solarized-dark
-    else solarizedDark;
+  lightScheme = solarizedLight;
+  darkScheme = solarizedDark;
   fontFamily = terminalFont.family;
   fontSizeValue = terminalFont.size;
   fontSizeStr = builtins.toString fontSizeValue;
-
-  nixGLPackages = pkgs.callPackage (fetchTarball "https://github.com/guibou/nixGL/archive/main.tar.gz") {};
 
   kittyPkg = config.lib.nixGL.wrap pkgs.kitty;
   weztermPkg = config.lib.nixGL.wrap pkgs.wezterm;
@@ -223,7 +212,7 @@
   '';
 in {
   config = lib.mkIf enableGui {
-    nixGL.packages = nixGLPackages;
+    targets.genericLinux.nixGL.packages = nixGLPackages;
 
     programs.wezterm = {
       enable = true;
@@ -290,7 +279,7 @@ in {
 
     home.packages = [
       ghosttyPkg
-      nixGLPackages.auto.nixGLDefault
+      nixGLPackages.nixGLDefault
     ];
   };
 

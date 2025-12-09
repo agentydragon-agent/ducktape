@@ -15,6 +15,7 @@ from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import SystemMessage, UserMessage
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun
@@ -120,19 +121,21 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
         await comp.mount_inproc("cluster_submit", srv)
         system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
         input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
+        user_prompt = "Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=system,
                 client=build_client(model),
                 handlers=[
                     TranscriptHandler(events_path=out_root / "events.jsonl"),
                     AbortIf(should_abort=lambda: result is not None),
                 ],
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
             )
-            await agent.run("Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines)
+            agent.insert_messages([SystemMessage.text(system), UserMessage.text(user_prompt)])
+            await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 
     if result is None:

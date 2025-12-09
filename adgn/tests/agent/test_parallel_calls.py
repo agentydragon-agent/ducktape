@@ -1,12 +1,15 @@
 import time
 from typing import Any
 
+from hamcrest import assert_that, greater_than_or_equal_to, has_length
 from pydantic import BaseModel
 
 from adgn.agent.agent import Agent
+from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
 from adgn.openai_utils.builders import ItemFactory
+from adgn.openai_utils.model import UserMessage
 from tests.agent.helpers import NoopOpenAIClient
 
 
@@ -42,16 +45,16 @@ async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server
 
     async with make_compositor({"dummy": slow_server}) as (mcp_client, _):
         agent = await Agent.create(
-            system="test",
             mcp_client=mcp_client,
             client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
             parallel_tool_calls=True,
             handlers=[handler, recording_handler],
             tool_policy=RequireAnyTool(),
         )
+        agent.insert_message(UserMessage.text("go"))
 
         t0 = time.perf_counter()
-        await agent.run("go")
+        await agent.run()
         elapsed = time.perf_counter() - t0
 
     # Assert shorter than serial (~0.60s), with generous headroom for CI noise
@@ -59,10 +62,7 @@ async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server
     assert elapsed < 0.55, f"expected parallel speedup; took {elapsed:.3f}s"
 
     # Sanity checks on outputs/metrics via recording handler
-    tc_count = len([e for e in recording_handler.records if e.get("kind") == "tool_call"])
-    function_call_output_count = len([e for e in recording_handler.records if e.get("kind") == "function_call_output"])
-    assert tc_count >= 2
-    assert function_call_output_count >= 2
-    kinds = [evt.get("kind") for evt in recording_handler.records if isinstance(evt, dict)]
-    assert kinds.count("tool_call") >= 2
-    assert kinds.count("function_call_output") >= 2
+    tool_calls = [e for e in recording_handler.records if isinstance(e, ToolCall)]
+    tool_outputs = [e for e in recording_handler.records if isinstance(e, ToolCallOutput)]
+    assert_that(tool_calls, has_length(greater_than_or_equal_to(2)))
+    assert_that(tool_outputs, has_length(greater_than_or_equal_to(2)))

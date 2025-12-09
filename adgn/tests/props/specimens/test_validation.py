@@ -9,11 +9,14 @@ from sqlalchemy.orm import selectinload
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
-from adgn.props.db.sync import sync_snapshots_to_db, sync_issues_to_db, sync_critic_scopes_to_db
-from adgn.props.db.sync import get_specimens_base_path
-from adgn.props.ids import SnapshotSlug
-from adgn.props.models.snapshot import LocalSource
+from adgn.props.db.sync import (
+    get_specimens_base_path,
+    sync_critic_scopes_to_db,
+    sync_issues_to_db,
+    sync_snapshots_to_db,
+)
 from adgn.props.hydration import SnapshotHydrator
+from adgn.props.models.snapshot import LocalSource
 
 
 @pytest.fixture
@@ -75,9 +78,7 @@ async def test_specimen_issues_and_false_positives_load(
 
 
 @pytest.mark.asyncio
-async def test_specimen_references_are_valid(
-    production_specimens_hydrator: SnapshotHydrator, synced_test_db
-) -> None:
+async def test_specimen_references_are_valid(production_specimens_hydrator: SnapshotHydrator, synced_test_db) -> None:
     """Validate that all file references and line ranges in issues are valid.
 
     For each specimen:

@@ -174,11 +174,11 @@ def critique_ctx_single():
 
 @pytest.fixture
 def production_specimens_hydrator() -> SnapshotHydrator:
-    """Production specimens hydrator from package resources.
+    """Production specimens hydrator from ADGN_PROPS_SPECIMENS_ROOT environment variable.
 
-    Uses installed package specimens (src/adgn/props/specimens/).
+    Uses specimens from the external specimens repository.
     """
-    return SnapshotHydrator.from_package_resources()
+    return SnapshotHydrator.from_env()
 
 
 @pytest.fixture

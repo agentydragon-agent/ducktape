@@ -1,4 +1,4 @@
-exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|adgn/src/adgn/props/specimens/.*|.*/examples/.*\\.py$|^ansible/\\.ansible/.*"
+exclude: ".*/testdata/.*|.*/fixtures/.*|nonrcm-dotfiles/config/cronomix/.*\\.json$|.*/examples/.*\\.py$|^ansible/\\.ansible/.*"
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -75,7 +75,7 @@ repos:
         alias: mypy-adgn
         name: mypy (adgn)
         files: "^adgn/.*\\.py$"
-        exclude: "(/props/specimens/|/third_party/|/testdata/|/fixtures/|/vendor/)"
+        exclude: "(/third_party/|/testdata/|/fixtures/|/vendor/)"
         language_version: python3.12
         args: ["--config-file=mypy.ini"]
         additional_dependencies:
@@ -158,15 +158,6 @@ repos:
         entry: direnv exec . alejandra --quiet
         language: system
         files: \.nix$
-
-  # Jsonnet formatter for specimen .libsonnet files (adgn_llm)
-  # - repo: https://github.com/serokell/jsonnet-pre-commit
-  #   rev: v0.2.0
-  #   hooks:
-  #     - id: jsonnetfmt
-  #       name: jsonnetfmt (format adgn_llm specimen .libsonnet files)
-  #       files: "^llm/adgn_llm/src/adgn_llm/properties/specimens/.*\\.libsonnet$"
-  #       args: ["-i"]
 
   # Svelte/TypeScript checks for MiniCodex UI
   - repo: local

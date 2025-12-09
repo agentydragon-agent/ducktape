@@ -46,7 +46,7 @@ async def cmd_grade_validation(
     """
     init_db()
 
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     critic_client = build_client(critic_model)
     grader_client = build_client(grader_model)
 

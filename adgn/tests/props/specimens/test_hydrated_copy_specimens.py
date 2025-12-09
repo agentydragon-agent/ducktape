@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from adgn.props.ids import SnapshotSlug
 from adgn.props.hydration import SnapshotHydrator
+from adgn.props.ids import SnapshotSlug
 
 
 async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(

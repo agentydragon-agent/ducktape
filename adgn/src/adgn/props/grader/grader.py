@@ -37,7 +37,7 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
@@ -372,14 +372,15 @@ Grade the critique, then submit your result by invoking the grader_submit server
 
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=system,
                 client=client,
                 handlers=handlers_list,
+                dynamic_instructions=handle.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
                 reasoning_summary=ReasoningSummary.detailed,
                 tool_policy=RequireAnyTool(),
             )
-            await agent.run(prompt)
+            agent.insert_messages([SystemMessage.text(system), UserMessage.text(prompt)])
+            await agent.run()
 
 
 # =============================================================================
@@ -601,7 +602,7 @@ async def grade_critique_by_id(
     )
 
     # Hydrate source code only (not issues - already loaded from DB)
-    hydrator = SnapshotHydrator.from_package_resources()
+    hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot_slug) as hydrated:
         # Execute grader run with explicit canonical issues
         _grader_output, grader_run_id = await run_grader(

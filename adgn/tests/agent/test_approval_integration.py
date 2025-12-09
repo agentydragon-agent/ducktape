@@ -12,6 +12,7 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.constants import PENDING_CALLS_URI
 from adgn.mcp.approval_policy.engine import CallDecision
 from adgn.mcp.testing.simple_servers import EchoInput
+from adgn.openai_utils.model import SystemMessage
 from tests.agent.testdata.approval_policy import make_policy
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
@@ -36,11 +37,12 @@ async def test_approval_system_wired_and_blocks_on_ask(
     servers = dict(echo_spec)
     async with make_pg_compositor(servers, policy_engine=engine) as (mcp_client, policy_engine):
         agent = await Agent.create(
-            mcp_client=mcp_client, system="test", client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+            mcp_client=mcp_client, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
         )
+        agent.insert_message(SystemMessage.text("test"))
 
         # Start the agent run in the background
-        run_task = asyncio.create_task(agent.run("test"))
+        run_task = asyncio.create_task(agent.run())
 
         # Wait briefly for the agent to hit the approval block
         # Read pending://calls resource from reader server via MCP

@@ -4,16 +4,10 @@ all:
       ansible_host: agentydragon.com
     agentydragon:
       ansible_connection: local_cached_sudo
-      # (pyenv breaks interpreter detection)
-      ansible_python_interpreter: /usr/bin/python3
     gpd:
       ansible_connection: local_cached_sudo
-      # (pyenv breaks interpreter detection)
-      ansible_python_interpreter: /usr/bin/python3
     wyrm:
       ansible_connection: local_cached_sudo
-      # (pyenv breaks interpreter detection)
-      ansible_python_interpreter: /usr/bin/python3
       ansible_become_pass_ask: true
       # ansible_host: 10.0.167.15
       # ansible_user: agentydragon

@@ -27,6 +27,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.model import SystemMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
@@ -165,16 +166,18 @@ async def test_agent_compositor_flat_tools_request_schema(
     )
     client_phase1 = make_mock(mock_phase1.handle_request_async)
 
+    system_prompt = "You are a helpful assistant. Calculate 10 + 20."
+
     async with make_compositor({"server_a": server_a}) as (mcp_client, _comp):
         agent = await Agent.create(
             mcp_client=mcp_client,
-            system="You are a helpful assistant.",
             client=client_phase1,
             handlers=[BaseHandler()],
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )
-        await agent.run(user_text="What is 10 + 20?")
+        agent.insert_message(SystemMessage.text(system_prompt))
+        await agent.run()
 
     # Verify phase 1
     phase1_request = client_phase1.captured[0]
@@ -197,13 +200,13 @@ async def test_agent_compositor_flat_tools_request_schema(
     async with make_compositor({"server_a": server_a, "server_b": server_b}) as (mcp_client, _comp):
         agent = await Agent.create(
             mcp_client=mcp_client,
-            system="You are a helpful assistant.",
             client=client_phase2,
             handlers=[BaseHandler()],
             parallel_tool_calls=False,
             tool_policy=RequireAnyTool(),
         )
-        await agent.run(user_text="What is 10 + 20?")
+        agent.insert_message(SystemMessage.text(system_prompt))
+        await agent.run()
 
     # Verify phase 2
     first_request = client_phase2.captured[0]

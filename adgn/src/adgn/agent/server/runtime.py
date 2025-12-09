@@ -26,6 +26,7 @@ from adgn.agent.server.reducer import reduce_ui_state
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.types import AgentID
 from adgn.mcp.approval_policy.engine import PolicyEngine
+from adgn.openai_utils.model import UserMessage as OAIUserMessage
 
 logger = logging.getLogger(__name__)
 
@@ -155,7 +156,8 @@ class AgentSession:
         if self._agent is not None:
             # Agent notices are injected via the NotificationsHandler/ServerModeHandler from MCP resource updates
             try:
-                await self._agent.run(user_text=prompt)
+                self._agent.insert_message(OAIUserMessage.text(prompt))
+                await self._agent.run()
             except asyncio.CancelledError:
                 # Error now logged, not sent via dead send_payload
                 logger.debug("agent_run_cancelled")

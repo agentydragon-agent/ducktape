@@ -5,6 +5,7 @@ import pytest
 from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import EchoInput
+from adgn.openai_utils.model import SystemMessage
 from tests.agent.test_matchers import assert_function_call_output_structured
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
@@ -17,14 +18,14 @@ async def test_agent_mcp_echo_tool_use(
     client = make_mock(runner.handle_request_async)
     agent = await Agent.create(
         mcp_client=pg_client_echo,
-        system="test",
         client=client,
         handlers=[recording_handler],
         tool_policy=RequireAnyTool(),
         parallel_tool_calls=False,
     )
+    agent.insert_message(SystemMessage.text("test: use echo"))
 
-    res = await agent.run(user_text="use echo")
+    res = await agent.run()
 
     # The tool output should be emitted (ToolCallOutput) and assistant text should follow
     assert_function_call_output_structured(recording_handler.records, echo="hello")

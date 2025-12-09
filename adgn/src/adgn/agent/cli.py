@@ -32,6 +32,7 @@ from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import SystemMessage, UserMessage
 
 # Defaults via environment with sensible fallbacks
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
@@ -182,17 +183,19 @@ async def run(
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
-                system=system,
                 client=client,
                 handlers=handlers,
                 tool_policy=AllowAnyToolOrTextMessage(),
+                dynamic_instructions=comp.render_agent_dynamic_instructions,
             )
+            agent.insert_message(SystemMessage.text(system))
             while True:
                 try:
                     user = Prompt.ask("\n[bold cyan]>[/bold cyan]", console=console)
                     if not user:
                         continue
-                    await agent.run(user_text=user)
+                    agent.insert_message(UserMessage.text(user))
+                    await agent.run()
                 except EOFError:
                     console.print("\n[dim]Exiting...[/dim]")
                     break
