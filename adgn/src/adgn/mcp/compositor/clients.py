@@ -4,23 +4,13 @@ from typing import cast
 
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
-from fastmcp.mcp_config import MCPServerTypes
-from pydantic import BaseModel, Field
 
 from adgn.mcp._shared.client_helpers import call_simple_ok
 from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.compositor.admin import AttachServerArgs, DetachServerArgs, ServerSpec
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.snapshots import ServerEntry
-
-
-class _AttachServerArgs(BaseModel):
-    name: str = Field(description="Mount name (must be unique and not contain '__')")
-    spec: MCPServerTypes
-
-
-class _DetachServerArgs(BaseModel):
-    name: str
 
 
 class CompositorAdminClient:
@@ -39,12 +29,12 @@ class CompositorAdminClient:
     def client(self) -> Client:
         return self._client
 
-    async def attach_server(self, *, name: str, spec: MCPServerTypes) -> None:
-        args = _AttachServerArgs(name=name, spec=spec)
+    async def attach_server(self, *, name: str, spec: ServerSpec) -> None:
+        args = AttachServerArgs(name=name, spec=spec)
         await call_simple_ok(self._client, name=self._attach_name, arguments=args.model_dump())
 
     async def detach_server(self, *, name: str) -> None:
-        args = _DetachServerArgs(name=name)
+        args = DetachServerArgs(name=name)
         await call_simple_ok(self._client, name=self._detach_name, arguments=args.model_dump())
 
 

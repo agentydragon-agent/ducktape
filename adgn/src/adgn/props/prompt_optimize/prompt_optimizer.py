@@ -22,21 +22,27 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 import logging
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Final, Literal
 from uuid import UUID, uuid4
 
+if TYPE_CHECKING:
+    from adgn.mcp._shared.mounted import Mounted
+    from adgn.mcp.resources.server import ResourcesServer
+
+import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from pydantic import Field, model_validator
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted, read_resource_call
 from adgn.agent.handler import SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
-from adgn.mcp._shared.constants import PROMPT_EVAL_SERVER_NAME, PROMPT_OPTIMIZATION_RUN_ID_URI, WORKING_DIR
+from adgn.agent.turn_limit import MaxTurnsExceededError
+from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -44,13 +50,15 @@ from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.config import get_production_config
-from adgn.props.db.models import PromptOptimizationRun, Snapshot
+from adgn.props.db.models import GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import get_specimens_base_path, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import properties_docker_spec
+from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
@@ -63,25 +71,54 @@ from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
+# Server name and resource URI for this server
+PROMPT_EVAL_SERVER_NAME: Final[str] = "prompt_eval"
+OPTIMIZATION_RUN_ID_URI: Final[str] = "resource://prompt_eval/prompt_optimization_run_id"
+
+# Common error message advice
+_AGENT_STUCK_ADVICE = "Agent likely stuck in a loop, ran out of tokens, or not following instructions."
+
+
+def _trace_query_advice(*, snapshot_slug: str | None = None, critique_id: str | None = None) -> str:
+    """Generate advice for querying execution traces.
+
+    Exactly one of snapshot_slug or critique_id must be provided.
+    """
+    if snapshot_slug is not None and critique_id is None:
+        tables = "critic_runs and events"
+        condition = f"snapshot_slug='{snapshot_slug}'"
+    elif critique_id is not None and snapshot_slug is None:
+        tables = "grader_runs and events"
+        condition = f"critique_id='{critique_id}'"
+    else:
+        raise ValueError("Exactly one of snapshot_slug or critique_id must be provided")
+
+    return f"Query {tables} tables for {condition} to see execution trace."
+
 
 # ============================================================================
 # Bootstrap Helper
 # ============================================================================
 
 
-def make_po_bootstrap_calls(builder: TypedBootstrapBuilder, runtime_server: str) -> list[FunctionCallItem]:
+def make_po_bootstrap_calls(
+    builder: TypedBootstrapBuilder, resources: Mounted[ResourcesServer], runtime: Mounted[ContainerExecServer]
+) -> list[FunctionCallItem]:
     """Build bootstrap calls for prompt optimizer: reads PO run ID and critic template.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
-        runtime_server: Name of the runtime server (for docker exec calls)
+        resources: Mounted resources server (comp.resources)
+        runtime: Mounted runtime server (comp.runtime)
     """
     return [
-        read_resource_call(builder, server=PROMPT_EVAL_SERVER_NAME, uri=PROMPT_OPTIMIZATION_RUN_ID_URI, max_bytes=256),
+        read_resource_call(
+            builder, resources, server=PROMPT_EVAL_SERVER_NAME, uri=OPTIMIZATION_RUN_ID_URI, max_bytes=256
+        ),
         # Read critic template structure from container to show prompt optimizer how its prompts will be used
-        docker_exec_call(
+        docker_exec_call_mounted(
             builder,
-            server=runtime_server,
+            runtime,
             cmd=[
                 "python",
                 "-c",
@@ -124,6 +161,12 @@ class RunCriticToolInput(OpenAIStrictModeBaseModel):
         )
     )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt (from upsert_prompt)")
+    max_turns: int = Field(
+        default=50,
+        ge=1,
+        lt=1000,
+        description="Maximum number of sampling turns allowed for this critic run (1-999, default 50)",
+    )
 
     @model_validator(mode="after")
     def validate_scope_paths_consistency(self) -> RunCriticToolInput:
@@ -176,6 +219,12 @@ class RunGraderInput(OpenAIStrictModeBaseModel):
     """
 
     critique_id: UUID = Field(description="critiques.id - The critique to grade (from run_critic output)")
+    max_turns: int = Field(
+        default=30,
+        ge=1,
+        lt=1000,
+        description="Maximum number of sampling turns allowed for this grader run (1-999, default 30)",
+    )
 
 
 class RunGraderOutput(OpenAIStrictModeBaseModel):
@@ -192,6 +241,7 @@ async def build_server(
     *,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     hydrator: SnapshotHydrator,
     name: str = "prompt_eval",
     prompt_optimization_run_id: UUID,
@@ -284,7 +334,7 @@ async def build_server(
         ),
     )
 
-    @mcp.resource(PROMPT_OPTIMIZATION_RUN_ID_URI)
+    @mcp.resource(OPTIMIZATION_RUN_ID_URI)
     async def get_prompt_optimization_run_id() -> str:
         """Get the prompt optimization run ID for this session.
 
@@ -422,18 +472,40 @@ async def build_server(
                     )
 
             # Execute critic run
-            _critic_success, critic_run_id, critique_id = await execute_critic_run(
-                input_data=critic_input,
-                client=critic_client,
-                content_root=hydrated.content_root,
-                prompt_optimization_run_id=prompt_optimization_run_id,
-                mount_properties=False,
-                extra_handlers=(),
-                verbose=verbose,
-            )
+            try:
+                _critic_success, critic_run_id, critique_id = await execute_critic_run(
+                    input_data=critic_input,
+                    client=critic_client,
+                    docker_client=docker_client,
+                    content_root=hydrated.content_root,
+                    prompt_optimization_run_id=prompt_optimization_run_id,
+                    mount_properties=False,
+                    extra_handlers=(),
+                    verbose=verbose,
+                    max_turns=payload.max_turns,
+                )
+            except CriticExecutionError as e:
+                raise ToolError(
+                    f"Critic agent failed during execution: {e}\n\n"
+                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                ) from e
+            except CriticDidNotSubmitError as e:
+                raise ToolError(
+                    f"Critic agent did not call submit(): {e}\n\n"
+                    f"{_AGENT_STUCK_ADVICE}\n"
+                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                ) from e
+            except MaxTurnsExceededError as e:
+                raise ToolError(
+                    f"Critic agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
+                    f"{_AGENT_STUCK_ADVICE}\n"
+                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                ) from e
 
             if critique_id is None:
-                raise RuntimeError("Critic run completed but no critique was created")
+                raise ToolError(
+                    f"Critic run completed but no critique was created. Query critic_runs with id={critic_run_id}."
+                )
 
             return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
 
@@ -477,17 +549,30 @@ async def build_server(
         """
         # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
         with get_session() as session:
-            grader_run_id = await grade_critique_by_id(
-                session=session,
-                critique_id=payload.critique_id,
-                client=grader_client,
-                prompt_optimization_run_id=prompt_optimization_run_id,
-                verbose=verbose,
-            )
+            try:
+                grader_run_id = await grade_critique_by_id(
+                    session=session,
+                    critique_id=payload.critique_id,
+                    client=grader_client,
+                    docker_client=docker_client,
+                    prompt_optimization_run_id=prompt_optimization_run_id,
+                    verbose=verbose,
+                    max_turns=payload.max_turns,
+                )
+            except GraderDidNotSubmitError as e:
+                raise ToolError(
+                    f"Grader agent did not call submit(): {e}\n\n"
+                    f"{_AGENT_STUCK_ADVICE}\n"
+                    f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
+                ) from e
+            except MaxTurnsExceededError as e:
+                raise ToolError(
+                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
+                    f"{_AGENT_STUCK_ADVICE}\n"
+                    f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
+                ) from e
 
             # Query recall from the grader run output
-            from adgn.props.db.models import GraderRun as DBGraderRun
-
             grader_run = session.get(DBGraderRun, grader_run_id)
             if not grader_run:
                 raise ToolError(f"Grader run {grader_run_id} not found in database")
@@ -513,6 +598,7 @@ async def run_prompt_optimizer(
     optimizer_model: str,
     critic_model: str,
     grader_model: str,
+    docker_client: aiodocker.Docker,
     out_dir: Path | None = None,
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
@@ -584,10 +670,10 @@ async def run_prompt_optimizer(
 
         logger.info(f"Definitions available at {defs_root} (mount subdirs as /defs/{{slug}})")
 
-        # Build extra volumes for Docker (snapshots + definitions)
+        # Build extra bind mounts for Docker (snapshots + definitions)
         # Format: {host_path: {"bind": container_path, "mode": "ro"|"rw"}}
         # Train snapshots source code (ro) - mount each separately
-        extra_volumes = {
+        extra_binds = {
             str(path.resolve()): {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
             for slug, path in snapshot_paths.items()
         }
@@ -604,8 +690,9 @@ async def run_prompt_optimizer(
         # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
         wiring = properties_docker_spec(
             workspace_root=session_dir,
+            docker_client=docker_client,
             mount_properties=False,  # No property definitions mounted
-            extra_volumes=extra_volumes,
+            extra_binds=extra_binds,
             ephemeral=False,  # Use persistent container to maintain environment
             workspace_mode="rw",  # Agent needs to write prompt iterations
             db_conn=agent_conn,  # Agent-restricted database access (critical for PO agent)
@@ -638,7 +725,7 @@ async def run_prompt_optimizer(
 
         # Use Compositor as async context manager to ensure cleanup
         async with Compositor() as comp:
-            runtime_server = await wiring.attach(comp)  # Attaches runtime MCP server
+            runtime = await wiring.attach(comp)  # Attaches runtime MCP server (returns Mounted[T])
 
             # TODO: Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it here
             # The prompt eval server (and grader/critic tools) should be able to auto-detect when they're
@@ -651,6 +738,7 @@ async def run_prompt_optimizer(
             prompt_eval_server = await build_server(
                 critic_client=build_client(critic_model),
                 grader_client=build_client(grader_model),
+                docker_client=docker_client,
                 hydrator=hydrator,
                 name=PROMPT_EVAL_SERVER_NAME,
                 prompt_optimization_run_id=prompt_optimization_run_id,
@@ -661,7 +749,7 @@ async def run_prompt_optimizer(
             await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
 
             # Collect servers for tool schema extraction
-            servers = {wiring.server_name: runtime_server}
+            servers = {runtime.prefix: runtime.server}
 
             user = f"""Your budget is: ${budget:.2f}.
 
@@ -678,7 +766,7 @@ Prioritize recall first, then precision.
 
             # Use the prompt_eval server reference for introspection
             builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
-            bootstrap_calls = make_po_bootstrap_calls(builder, runtime_server=wiring.server_name)
+            bootstrap_calls = make_po_bootstrap_calls(builder, resources=comp.resources, runtime=runtime)
             bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
             handlers: list = [
@@ -690,8 +778,8 @@ Prioritize recall first, then precision.
                     max_lines=max_lines,
                 ),
             ]
+            # Note: resources and compositor_meta are auto-mounted by base Compositor
             async with Client(comp) as mcp_client:
-                await mount_standard_inproc_servers(compositor=comp)
                 agent = await Agent.create(
                     mcp_client=mcp_client,
                     client=build_client(optimizer_model),

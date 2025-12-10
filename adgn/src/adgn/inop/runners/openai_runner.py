@@ -11,6 +11,7 @@ import time
 from typing import Any
 import uuid
 
+import aiodocker
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
 
@@ -35,9 +36,9 @@ from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp._shared.types import NetworkMode
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec.bwrap import make_bwrap_exec_server
-from adgn.mcp.exec.direct import make_direct_exec_server
-from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.bwrap import BwrapExecServer
+from adgn.mcp.exec.direct import DirectExecServer
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
 """OpenAI runner that delegates execution to the Agent agent."""
@@ -46,7 +47,9 @@ from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 class OpenAIRunner(AgentRunner):
     """Runner that executes tasks via the Agent agent."""
 
-    def __init__(self, runner_id: str, config: dict[str, Any], *, openai_model: OpenAIModelProto) -> None:
+    def __init__(
+        self, runner_id: str, config: dict[str, Any], *, openai_model: OpenAIModelProto, docker_client: aiodocker.Docker
+    ) -> None:
         super().__init__(runner_id, config)
         configured_model = config.get("model")
         self.model = configured_model if isinstance(configured_model, str) else os.getenv("OPENAI_MODEL", "o4-mini")
@@ -56,6 +59,7 @@ class OpenAIRunner(AgentRunner):
         self._agent: Agent | None = None
         # Note: Compositor + Client are managed per-setup; no manager retained
         self._openai_model = openai_model
+        self._docker_client = docker_client
         # Optional: allow callers/tests to pass their own handlers
         self._handlers: list[BaseHandler] | None = (
             config.get("handlers") if isinstance(config.get("handlers"), list) else None
@@ -100,23 +104,23 @@ class OpenAIRunner(AgentRunner):
             raise RuntimeError("Workspace not initialised")
 
         if setup and setup.docker:
-            volumes: dict[str, dict[str, str]] = {str(self.workspace_path): {"bind": "/workspace", "mode": "rw"}}
+            binds: dict[str, dict[str, str]] = {str(self.workspace_path): {"bind": "/workspace", "mode": "rw"}}
             for host_path, spec in (setup.docker.volumes or {}).items():
                 if isinstance(spec, dict):
-                    volumes[str(host_path)] = spec
+                    binds[str(host_path)] = spec
             network_mode = NetworkMode.BRIDGE if setup.docker.network_enabled else NetworkMode.NONE
 
             def _factory(verifier) -> FastMCP:
-                return make_container_exec_server(
+                return ContainerExecServer(
                     ContainerOptions(
                         image=setup.docker.image,
                         working_dir=WORKING_DIR,
-                        volumes=volumes,
+                        binds=binds,
                         network_mode=network_mode,
                         environment=setup.docker.env or {},
                         ephemeral=True,
                     ),
-                    name="container",
+                    self._docker_client,
                 )
 
             return {"container": _factory}
@@ -131,10 +135,10 @@ class OpenAIRunner(AgentRunner):
             # When sandbox is required, do not fall back to unsandboxed exec; crash instead.
             if sandbox_enabled:
                 if os.name == "posix" and sys.platform == "linux":
-                    return make_bwrap_exec_server(name="local", default_cwd=self.workspace_path)
+                    return BwrapExecServer(default_cwd=self.workspace_path)
                 raise RuntimeError("Sandbox (bubblewrap) required but not available on this platform")
             # Explicitly unsandboxed path allowed via config/env override
-            return make_direct_exec_server(name="local", default_cwd=self.workspace_path)
+            return DirectExecServer(default_cwd=self.workspace_path)
 
         return {"local": _factory_local}
 

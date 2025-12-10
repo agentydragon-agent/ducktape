@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 from tests.support.responses import ResponsesFactory
+from tests.support.steps import DOCKER_TEST_MOUNT_PREFIX, EXEC_TEST_TOOL_NAME
 
 
 class SampleInput(BaseModel):
@@ -117,7 +118,7 @@ def test_item_factory_mcp_tool_call_auto_id():
 
 
 def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactory):
-    result = responses_factory.make_mcp_tool_call("docker", "exec", SampleInput(text="ls"))
+    result = responses_factory.make_mcp_tool_call(DOCKER_TEST_MOUNT_PREFIX, EXEC_TEST_TOOL_NAME, SampleInput(text="ls"))
 
     assert_that(result, has_properties(id="resp_generic"))
     assert_that(result.output, has_length(1))

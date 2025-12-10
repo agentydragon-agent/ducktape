@@ -1,6 +1,0 @@
-- name: Install Flameshot
-  become: true
-  ansible.builtin.apt:
-    pkg: flameshot
-
-# Flameshot keybinding and autostart configuration moved to legacy_without_home_manager/gui role

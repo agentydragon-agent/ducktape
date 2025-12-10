@@ -58,12 +58,10 @@ Examples
 - Open review with a custom runbook (freeform):
   - `adgn-properties run --prompt-file ./my_review.j2.md --path /repo`
 
-Notes
-
 ## Wiring Defaults (Container)
 - Network disabled; workspace mounted read‑only at `/workspace`.
 - Caches/temp redirected to `/tmp` and Python pycache relocated to `/tmp/__pycache__`.
-- Tool versions/pins are visible via the Docker `container.info` resource (image history shows the build lines). Don’t restate versions in runbooks; the agent can read them when needed.
+- Tool versions/pins are visible via the Docker `container.info` resource (image history shows the build lines).
 
 ## Docker Build
 - Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.

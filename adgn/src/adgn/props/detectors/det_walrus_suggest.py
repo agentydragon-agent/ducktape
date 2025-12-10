@@ -3,12 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .base import BaseDetector
 from .models import Detection, LineRange
-from .registry import DetectorSpec, register
-from .utils import make_root_detector, read_snippet
-
-DET_NAME = "walrus_suggest"
-PROP = "python/walrus"
+from .utils import read_snippet
 
 
 def _is_simple_guard(test: ast.AST, name: str) -> str | None:
@@ -32,52 +29,53 @@ def _is_simple_guard(test: ast.AST, name: str) -> str | None:
     return None
 
 
-def _find_in_file(path: Path) -> list[Detection]:
-    out: list[Detection] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-        node = ast.parse(text)
-    except Exception:
+class WalrusSuggestDetector(BaseDetector):
+    DET_NAME = "walrus_suggest"
+    PROP = "python/walrus"
+
+    def find_detections(self, path: Path, tree: ast.AST, source: str) -> list[Detection]:
+        out: list[Detection] = []
+        for parent in ast.walk(tree):
+            # Look inside functions only (skip module/class levels)
+            if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
+                body = parent.body
+                for i, stmt in enumerate(body[:-1]):
+                    if (
+                        isinstance(stmt, ast.Assign)
+                        and len(stmt.targets) == 1
+                        and isinstance(stmt.targets[0], ast.Name)
+                    ):
+                        name = stmt.targets[0].id
+                        # Next non-empty/non-docstring statement
+                        j = i + 1
+                        next_stmt = body[j]
+                        # Skip standalone string doc/comment statements
+                        if isinstance(next_stmt, ast.Expr) and isinstance(next_stmt.value, ast.Str):
+                            if j + 1 < len(body):
+                                next_stmt = body[j + 1]
+                            else:
+                                continue
+                        if isinstance(next_stmt, ast.If | ast.While):
+                            desc = _is_simple_guard(next_stmt.test, name)
+                            if desc:
+                                sl = getattr(stmt, "lineno", 1)
+                                gl = getattr(next_stmt, "lineno", sl + 1)
+                                out.append(
+                                    Detection(
+                                        property=self.PROP,
+                                        path=str(path),
+                                        ranges=[LineRange(start_line=int(sl), end_line=int(gl))],
+                                        detector=self.DET_NAME,
+                                        confidence=0.8,
+                                        message=(
+                                            f"Assign then immediate guard on '{name}' — consider walrus in guard (assign L{sl}, guard L{gl}, test={desc})."
+                                        ),
+                                        snippet=read_snippet(path, sl, gl, context=0),
+                                    )
+                                )
         return out
 
-    for parent in ast.walk(node):
-        # Look inside functions only (skip module/class levels)
-        if isinstance(parent, ast.FunctionDef | ast.AsyncFunctionDef):
-            body = parent.body
-            for i, stmt in enumerate(body[:-1]):
-                if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name):
-                    name = stmt.targets[0].id
-                    # Next non-empty/non-docstring statement
-                    j = i + 1
-                    next_stmt = body[j]
-                    # Skip standalone string doc/comment statements
-                    if isinstance(next_stmt, ast.Expr) and isinstance(next_stmt.value, ast.Str):
-                        if j + 1 < len(body):
-                            next_stmt = body[j + 1]
-                        else:
-                            continue
-                    if isinstance(next_stmt, ast.If | ast.While):
-                        desc = _is_simple_guard(next_stmt.test, name)
-                        if desc:
-                            sl = getattr(stmt, "lineno", 1)
-                            gl = getattr(next_stmt, "lineno", sl + 1)
-                            out.append(
-                                Detection(
-                                    property=PROP,
-                                    path=str(path),
-                                    ranges=[LineRange(start_line=int(sl), end_line=int(gl))],
-                                    detector=DET_NAME,
-                                    confidence=0.8,
-                                    message=(
-                                        f"Assign then immediate guard on '{name}' — consider walrus in guard (assign L{sl}, guard L{gl}, test={desc})."
-                                    ),
-                                    snippet=read_snippet(path, sl, gl, context=0),
-                                )
-                            )
-    return out
 
-
-find = make_root_detector(_find_in_file)
-
-
-register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))
+_detector = WalrusSuggestDetector()
+find = _detector.get_finder()
+_detector.register_detector()

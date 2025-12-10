@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp._shared.constants import POLICY_EVALUATOR_ERROR_MSG
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.approval_policy.engine import POLICY_EVALUATOR_ERROR_MSG
 from tests.agent.testdata.approval_policy import fetch_policy
 
 ## Removed: template-based seatbelt tests. Seatbelt now accepts only explicit policy.

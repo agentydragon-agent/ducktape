@@ -126,7 +126,7 @@ async def test_optimize_prompts_two_iterations_async(
         def get_environment(self) -> RunnerEnvironment | None:
             return getattr(self, "_env", None)
 
-    def _fake_create_runner(runner_name: str, runner_configs: dict, _openai_model=None):
+    def _fake_create_runner(runner_name: str, runner_configs: dict, _openai_model=None, _docker_client=None):
         return FakeRunner(runner_id=runner_name, config=runner_configs.get(runner_name, {}).get("config", {}))
 
     monkeypatch.setattr(adgn.inop.engine.runner_factory, "create_runner", _fake_create_runner)
@@ -160,27 +160,35 @@ async def test_optimize_prompts_two_iterations_async(
     monkeypatch.setattr(adgn.inop.engine.optimizer.ScoreEvolutionTracker, "generate_report", _no_plot)
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
-    out_dir = await adgn.inop.engine.optimizer.optimize_prompts(
-        adgn.inop.engine.optimizer.OptimizeArgs(
-            anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
-            pe_model=fake_model,
-            runner_model=fake_model,
-            grader_model=fake_model,
-            summarizer_model=fake_model,
-            seed_tasks=seed_tasks,
-            criteria=criteria,
-            cfg=cfg_two_iters,
-            runner_name="claude",
-            task_types=task_types,
-            runner_configs=runner_configs,
-            task_type=AgentTaskType.CODING,
-            iterations=2,
-            rollouts_per_task=1,
-            max_parallel_rollouts=1,
-            tasks_per_iteration=1,
-            base_dir=base_dir,
+    # Create a fake docker client (won't be used since we're mocking create_runner)
+    import aiodocker
+
+    fake_docker = aiodocker.Docker()
+    try:
+        out_dir = await adgn.inop.engine.optimizer.optimize_prompts(
+            adgn.inop.engine.optimizer.OptimizeArgs(
+                anthropic_log=JSONLLogger(base_dir / "anthropic.jsonl"),
+                pe_model=fake_model,
+                runner_model=fake_model,
+                grader_model=fake_model,
+                summarizer_model=fake_model,
+                docker_client=fake_docker,
+                seed_tasks=seed_tasks,
+                criteria=criteria,
+                cfg=cfg_two_iters,
+                runner_name="claude",
+                task_types=task_types,
+                runner_configs=runner_configs,
+                task_type=AgentTaskType.CODING,
+                iterations=2,
+                rollouts_per_task=1,
+                max_parallel_rollouts=1,
+                tasks_per_iteration=1,
+                base_dir=base_dir,
+            )
         )
-    )
+    finally:
+        await fake_docker.close()
 
     # Iteration prompts
     iter1 = out_dir / "iter_001" / "CLAUDE.md"

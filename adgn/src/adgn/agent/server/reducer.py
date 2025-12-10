@@ -6,7 +6,7 @@ from mcp import types as mcp_types
 
 from adgn.agent.approvals import WellKnownTools
 from adgn.agent.server.protocol import FunctionCallOutput, ServerMessage, ToolCall, UiEndTurnEvt, UiMessageEvt, UserText
-from adgn.mcp._shared.constants import UI_SERVER_NAME
+from adgn.mcp._shared.constants import UI_MOUNT_PREFIX
 from adgn.mcp._shared.naming import build_mcp_function
 
 from .state import (
@@ -69,8 +69,8 @@ def reduce_ui_state(state: UiState, evt: ServerMessage) -> UiState:
                 parsed_args = None
         # For ui.send_message and ui.end_turn: do not create a ToolItem; UiMessageEvt/UiEndTurnEvt after execution will surface AssistantMarkdown/EndTurn
         if evt.name in (
-            build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),
-            build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
+            build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE),
+            build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.END_TURN),
         ):
             return state
         return start_tool(state, tool_call=evt, cmd=cmd, args=parsed_args)
@@ -120,8 +120,8 @@ def reduce_ui_state(state: UiState, evt: ServerMessage) -> UiState:
                 tool_name = it.tool_call.name
                 break
         if tool_name in (
-            build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE),
-            build_mcp_function(UI_SERVER_NAME, WellKnownTools.END_TURN),
+            build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE),
+            build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.END_TURN),
         ):
             return state
 

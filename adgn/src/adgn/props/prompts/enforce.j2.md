@@ -1,4 +1,4 @@
-{% extends "_base.j2.md" %}
+{% extends "prompts/_base.j2.md" %}
 {% set header_schema_names = ["Occurrence", "LineRange"] %}
 {% set read_only = false %}
 {% set include_reporting = false %}

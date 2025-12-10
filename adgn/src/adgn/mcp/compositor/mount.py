@@ -89,6 +89,7 @@ class Mount:
         self._pinned = pinned
         self._spec = spec
         self._state_data: _MountStateData = _MountPending()
+        self._server: FastMCP | None = None
 
     # Read-only properties
 
@@ -127,6 +128,11 @@ class Mount:
             return self._state_data.exception
         return None
 
+    @property
+    def inproc_server(self) -> FastMCP | None:
+        """Get the in-process FastMCP server instance if this is an in-process mount."""
+        return self._server
+
     # Safe accessors (raise if not active)
 
     @property
@@ -164,6 +170,9 @@ class Mount:
 
         stack = AsyncExitStack()
         try:
+            # Store server reference
+            self._server = server
+
             # Create client with optional message handler
             handler = child_handler_factory(self._name) if child_handler_factory else None
             child_client = Client(server, message_handler=handler)

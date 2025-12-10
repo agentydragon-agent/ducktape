@@ -11,10 +11,9 @@ import pytest
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, Snapshot
+from adgn.props.db.models import CriticRun, Critique
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.models.critic_scopes import ExplicitFileScope
-from adgn.props.models.snapshot import LocalSource
 from tests.support.responses import ResponsesFactory
 
 # Trivial clean Python code that should have zero issues
@@ -73,20 +72,16 @@ Focus on concrete, actionable findings with specific line numbers.
 
 
 @pytest.fixture
-def critic_test_db_setup(test_trivial_specimen, test_db):
+def critic_test_db_setup(test_trivial_snapshot_record):
     """Set up database records for critic testing: Snapshot + prompt.
+
+    Depends on test_trivial_snapshot_record to ensure snapshot record exists.
 
     Returns:
         tuple[str, str]: (snapshot_slug, prompt_sha256)
     """
-    # HydratedSnapshot doesn't have metadata (slug). Use known slug for test-trivial.
-    slug = "test-fixtures/test-trivial"
-
-    # Insert snapshot into database
-    with get_session() as session:
-        spec_record = Snapshot(slug=slug, split="test", source=LocalSource(vcs="local", root="."))
-        session.add(spec_record)
-        session.commit()
+    # test_trivial_snapshot_record already created the snapshot record
+    slug = test_trivial_snapshot_record
 
     # Upsert prompt using proper helper
     prompt_sha256 = hash_and_upsert_prompt(SIMPLE_MAX_RECALL_PROMPT)
@@ -108,7 +103,9 @@ def _make_critic_response_sequence() -> list:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, make_openai_client, critic_test_db_setup):
+async def test_critic_zero_issues_submits_successfully(
+    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client
+):
     """Test that critic successfully calls submit(issues=0) when finding no issues.
 
     This is a regression test for the infinite loop bug where RequireAnyTool()
@@ -127,7 +124,12 @@ async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, ma
 
     # This should complete successfully without infinite loop
     output, critic_run_id, critique_id = await run_critic(
-        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
+        input_data=input_data,
+        client=client,
+        content_root=specimen_dir,
+        prompt_optimization_run_id=None,
+        docker_client=async_docker_client,
+        mount_properties=False,
     )
 
     # Verify output
@@ -153,7 +155,7 @@ async def test_critic_zero_issues_submits_successfully(test_trivial_specimen, ma
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    test_trivial_specimen, make_openai_client, critic_test_db_setup
+    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
@@ -181,7 +183,12 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     # This should complete in 3 turns, not loop infinitely
     output, _, _ = await run_critic(
-        input_data=input_data, client=client, content_root=specimen_dir, mount_properties=False
+        input_data=input_data,
+        client=client,
+        content_root=specimen_dir,
+        prompt_optimization_run_id=None,
+        docker_client=async_docker_client,
+        mount_properties=False,
     )
 
     assert output.result is not None

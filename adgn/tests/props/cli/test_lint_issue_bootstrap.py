@@ -6,18 +6,17 @@ from pathlib import Path
 import shutil
 import uuid
 
+from fastmcp.client import Client
 from platformdirs import user_cache_dir
 import pytest
 
 from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.mcp.exec.docker.server import make_container_exec_server
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart, UserMessage
-from adgn.props.docker_env import WORKING_DIR, PropertiesDockerWiring
-from adgn.props.lint_issue import LintSubmitState, make_linter_handlers
+from adgn.props.docker_env import properties_docker_spec
+from adgn.props.lint_issue import LintIssueCompositor, LintSubmitState, make_linter_handlers
 from adgn.props.models.true_positive import Occurrence
-from tests.conftest import make_container_opts
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage as StepAssistantMessage, DockerExecCall
 
@@ -42,7 +41,7 @@ def content_root() -> Generator[Path, None, None]:
 
 @pytest.mark.requires_docker
 async def test_lint_issue_bootstrap_small_files(
-    content_root: Path, make_pg_client, make_step_runner, lint_bootstrap_steps
+    content_root: Path, make_step_runner, lint_bootstrap_steps, async_docker_client
 ):
     # Arrange: create a tiny workspace with two small files
     # Colima note: bind mounts from /tmp are blocked; place workspace under XDG cache dir.
@@ -56,33 +55,38 @@ async def test_lint_issue_bootstrap_small_files(
     # Occurrence: two files, no explicit ranges (whole-file path)
     occ = Occurrence.from_files_dict(files={Path("pkg/a.py"): None, Path("pkg/b.py"): None})
 
-    # Real MCP manager (in-proc docker exec) and mocked OpenAI client
-    opts = make_container_opts("python:3.12-slim")
-    opts.volumes = {str(content_root): {"bind": "/workspace", "mode": "ro"}}
-    opts.describe = False
-    runtime_server = make_container_exec_server(opts)
     # Use our shared step runner with typed mock
     runner = make_step_runner(steps=lint_bootstrap_steps)
     client = make_mock(runner.handle_request_async)
 
-    # Now create the handlers with real wiring
-    wiring = PropertiesDockerWiring(
-        server_factory=lambda: runtime_server, working_dir=WORKING_DIR, definitions_container_dir=None, image_name="n/a"
-    )
+    # Create wiring and state using production pattern
+    wiring = properties_docker_spec(content_root, docker_client=async_docker_client, mount_properties=False)
     state = LintSubmitState()
-    handlers = make_linter_handlers(state=state, occ=occ, content_root=content_root, docker_wiring=wiring)
 
-    async with make_pg_client({"runtime": runtime_server}) as mcp_client:
-        agent = await Agent.create(
-            mcp_client=mcp_client,
-            client=client,
-            handlers=[*handlers, DisplayEventsHandler()],
-            tool_policy=RequireAnyTool(),
+    # Use LintIssueCompositor like production code does (no policy middleware needed)
+    async with LintIssueCompositor(wiring, state) as comp:
+        # Build handlers using compositor's mounted servers
+        handlers = make_linter_handlers(
+            state=state,
+            resources=comp.resources,
+            runtime=comp.runtime,
+            occ=occ,
+            content_root=content_root,
+            docker_wiring=wiring,
         )
 
-        # Act
-        agent.insert_message(UserMessage.text("bootstrap lint"))
-        res = await agent.run()
+        # Create agent with Client connected to compositor
+        async with Client(comp) as mcp_client:
+            agent = await Agent.create(
+                mcp_client=mcp_client,
+                client=client,
+                handlers=[*handlers, DisplayEventsHandler()],
+                tool_policy=RequireAnyTool(),
+            )
+
+            # Act
+            agent.insert_message(UserMessage.text("bootstrap lint"))
+            res = await agent.run()
 
     # Assert final text
     assert res.text.strip() == "FINAL"

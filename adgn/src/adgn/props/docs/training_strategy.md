@@ -182,6 +182,9 @@ If `critic_scopes.yaml` doesn't specify scopes for a snapshot, fall back to:
 
 See:
 - `models/training_example.py` - TrainingExample model and filtering logic
-- `loaders/filesystem.py` - FilesystemLoader with get_training_example()
-- `gepa/gepa_adapter.py` - GEPA integration
+- `db/models.py` - ORM models (Snapshot, TruePositive, FalsePositive) for loading issues from database
+- `db/sync/_loader.py` - FilesystemLoader (private, sync-only) for syncing jsonnet to database
+- `gepa/gepa_adapter.py` - GEPA integration (loads training examples from database via ORM)
 - `specimens/critic_scopes.yaml` - Training example specifications (to be created)
+
+**Note:** Training examples are loaded from the database at runtime. The jsonnet files (`.libsonnet`) are synced to the database once via `adgn-properties db sync`.

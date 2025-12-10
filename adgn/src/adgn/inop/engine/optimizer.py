@@ -42,6 +42,7 @@ from pathlib import Path
 import signal
 import sys
 
+import aiodocker
 from fastmcp.client import Client
 
 from adgn.agent.agent import Agent
@@ -80,6 +81,9 @@ from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 
 # Module logger; handler config is applied by DualOutputLogging.setup_logging()
 logger = logging.getLogger(__name__)
+
+# MCP mount prefix for prompt feedback server
+PROMPT_FEEDBACK_MOUNT_PREFIX = "prompt_feedback"
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()
@@ -146,6 +150,7 @@ class OptimizeMcpArgs:
     runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
     summarizer_model: OpenAIModelProto
+    docker_client: aiodocker.Docker
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -198,7 +203,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
                 # Create runner with the configured OpenAI model
                 runner_model = args.runner_model
                 runner = adgn.inop.engine.runner_factory.create_runner(
-                    args.runner_name, args.runner_configs, openai_model=runner_model
+                    args.runner_name, args.runner_configs, openai_model=runner_model, docker_client=args.docker_client
                 )
                 # Prepare task-type specific setup
                 if t.type not in args.task_types:
@@ -278,7 +283,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
     # Use Compositor as async context manager to ensure cleanup
     async with Compositor() as comp:
         _server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
-        await comp.mount_inproc("prompt_feedback", _server)
+        await comp.mount_inproc(PROMPT_FEEDBACK_MOUNT_PREFIX, _server)
         async with Client(comp) as mcp_client:
             # Create Agent PE with system prompt at init
             model = args.pe_model
@@ -354,6 +359,7 @@ class OptimizeArgs:
     runner_model: OpenAIModelProto
     grader_model: OpenAIModelProto
     summarizer_model: OpenAIModelProto
+    docker_client: aiodocker.Docker
     seed_tasks: list[TaskDefinition]
     criteria: list[Criterion]
     cfg: OptimizerConfig
@@ -410,6 +416,7 @@ async def optimize_prompts(args: OptimizeArgs) -> Path:
             runner_model=args.runner_model,
             grader_model=args.grader_model,
             summarizer_model=args.summarizer_model,
+            docker_client=args.docker_client,
             seed_tasks=args.seed_tasks,
             criteria=args.criteria,
             cfg=args.cfg,
@@ -538,29 +545,35 @@ Examples:
     anthropic_log = JSONLLogger(base_dir / "anthropic_api_log.jsonl")
     # Build OpenAI models with debug logging enabled (HTTP frames captured to logger)
     models = create_optimizer_models(cfg, enable_debug_logging=True)
-    run_dir = asyncio.run(
-        optimize_prompts(
-            OptimizeArgs(
-                anthropic_log=anthropic_log,
-                pe_model=models.pe_model,
-                runner_model=models.runner_model,
-                grader_model=models.grader_model,
-                summarizer_model=models.summarizer_model,
-                seed_tasks=seed_tasks,
-                criteria=criteria,
-                cfg=cfg,
-                runner_name=args.runner,
-                task_types=task_types,
-                runner_configs=runner_configs,
-                task_type=task_type_enum,
-                iterations=args.iterations,
-                rollouts_per_task=args.rollouts_per_task,
-                max_parallel_rollouts=args.max_parallel,
-                tasks_per_iteration=args.tasks_per_iteration,
-                base_dir=base_dir,
+    # Create async Docker client for runner
+    docker_client = aiodocker.Docker()
+    try:
+        run_dir = asyncio.run(
+            optimize_prompts(
+                OptimizeArgs(
+                    anthropic_log=anthropic_log,
+                    pe_model=models.pe_model,
+                    runner_model=models.runner_model,
+                    grader_model=models.grader_model,
+                    summarizer_model=models.summarizer_model,
+                    docker_client=docker_client,
+                    seed_tasks=seed_tasks,
+                    criteria=criteria,
+                    cfg=cfg,
+                    runner_name=args.runner,
+                    task_types=task_types,
+                    runner_configs=runner_configs,
+                    task_type=task_type_enum,
+                    iterations=args.iterations,
+                    rollouts_per_task=args.rollouts_per_task,
+                    max_parallel_rollouts=args.max_parallel,
+                    tasks_per_iteration=args.tasks_per_iteration,
+                    base_dir=base_dir,
+                )
             )
         )
-    )
+    finally:
+        asyncio.run(docker_client.close())
 
     # Generate final score evolution report
     final_evolution_report = score_tracker.generate_report(run_dir, run_dir)

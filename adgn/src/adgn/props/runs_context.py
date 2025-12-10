@@ -1,7 +1,7 @@
 """Centralized runs directory context and path derivation.
 
-This module provides the single source of truth for all runs-related path construction.
-No path tokens ("grader", "output.json", etc.) should be hardcoded outside this module.
+This module provides RunsContext for managing runs directory paths and a standard
+timestamp formatting function.
 """
 
 from __future__ import annotations
@@ -10,13 +10,6 @@ from datetime import datetime
 from pathlib import Path
 
 from adgn.props.prop_utils import pkg_dir
-
-# Path token constants - single source of truth
-RUN_TYPE_CRITIC = "critic"
-RUN_TYPE_GRADER = "grader"
-INPUT_JSON = "input.json"
-OUTPUT_JSON = "output.json"
-EVENTS_JSONL = "events.jsonl"
 
 
 def format_timestamp_session(dt: datetime | None = None) -> str:

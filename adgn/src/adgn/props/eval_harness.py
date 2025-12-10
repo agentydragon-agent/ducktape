@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
+import aiodocker
 from hamcrest import assert_that
 from pydantic import BaseModel, ConfigDict, Field
 from rich.console import Console
@@ -156,7 +157,12 @@ async def _grade_rationale_with_llm(
 
 
 async def eval_issue_spec(
-    spec: IssueEvalSpec, *, client: OpenAIModelProto, out_dir: Path | str | None = None, ctx: RunsContext
+    spec: IssueEvalSpec,
+    *,
+    client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
+    out_dir: Path | str | None = None,
+    ctx: RunsContext,
 ) -> SampleRunSummary:
     """Run lint_issue_run over a list of cases and write an eval summary.
 
@@ -193,6 +199,7 @@ async def eval_issue_spec(
             issue_core=spec.issue,
             occurrence=occ,
             client=client,
+            docker_client=docker_client,
             handlers=[OneLineProgressHandler()],
         )
 
@@ -202,7 +209,7 @@ async def eval_issue_spec(
 
         # Effective ranges: derive corrections from AnchorIncorrect findings when present
         corrections = extract_corrections(payload.findings)
-        all_ranges = [(r.start_line, r.end_line) for r in corrections[path]]
+        all_ranges = [(r.start_line, r.end_line) for r in corrections[str(path)]]
         effective: list[tuple[int, int | None]] = all_ranges or [(start_line, end_line)]
 
         estart, eend = effective[0]
@@ -302,6 +309,7 @@ def _load_samples() -> list[IssueEvalSpec]:
 async def run_all_evals(
     *,
     client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     hydrator: SnapshotHydrator,
     root_out: Path | None = None,
     concurrency: int = 4,
@@ -316,7 +324,9 @@ async def run_all_evals(
     async def _run_one(sample: IssueEvalSpec) -> SampleRunSummary:
         async with sem:
             out_dir = root / sample.issue.id
-            return await eval_issue_spec(spec=sample, client=client, out_dir=out_dir, ctx=ctx)
+            return await eval_issue_spec(
+                spec=sample, client=client, docker_client=docker_client, out_dir=out_dir, ctx=ctx
+            )
 
     entries = await asyncio.gather(*[_run_one(s) for s in _load_samples()])
 

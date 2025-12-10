@@ -49,11 +49,21 @@ class BundleFilter(BaseModel):
 class SnapshotDoc(BaseModel):
     """Snapshot document: source, bundle filters, and split assignment.
 
-    This is the schema for entries in snapshots.yaml. Issues are loaded separately
-    from *.libsonnet files in the snapshot directory.
+    This is the schema for entries in snapshots.yaml.
+
+    Issues are stored in the database (TruePositive/FalsePositive ORM tables).
+    The *.libsonnet issue files are synced to the database once via `adgn-properties db sync`.
 
     Bundle is optional - only required for snapshots that use git bundles.
     Split is required - every snapshot must be assigned to train/valid/test.
+
+    TODO: Refactor bundle placement - move bundle into the Source discriminated union
+    instead of top-level optional field. Only GitSource needs bundle (not GitHubSource
+    or LocalSource). This would provide better type safety (can't specify bundle for
+    sources that don't support it) and clearer intent (bundle config co-located with
+    source type). Migration complexity: requires updating all git bundle specimen
+    manifests to nest bundle under source. Deferred until we have more specimen types
+    and clearer patterns.
     """
 
     source: Source

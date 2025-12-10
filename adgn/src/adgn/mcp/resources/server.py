@@ -1,15 +1,15 @@
 import asyncio
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
-from typing import Annotated, Literal
+from typing import Annotated, Final, Literal
 
 from fastmcp.exceptions import ToolError
 from fastmcp.server.server import add_resource_prefix, remove_resource_prefix
+from fastmcp.tools import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.mcp._shared.constants import RESOURCES_SUBSCRIPTIONS_INDEX_URI
 from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
@@ -20,6 +20,12 @@ from adgn.mcp.snapshots import RunningServerEntry
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
+
+# Server naming (internal display name)
+RESOURCES_SERVER_NAME: Final[str] = "Resources Server"
+
+# Resource URI for subscriptions index
+SUBSCRIPTIONS_INDEX_URI: Final[str] = "resources://subscriptions"
 
 # Default max bytes for resource reading operations
 DEFAULT_MAX_BYTES = 25_000
@@ -267,21 +273,19 @@ def _build_window_payload(
     )
 
 
-def make_resources_server(name: str = "resources", *, compositor: Compositor) -> EnhancedFastMCP:
-    """Create a MCP server that aggregates resources across servers.
+class ResourcesServer(EnhancedFastMCP):
+    """Resources MCP server with typed tool access.
 
-    Args:
-        name: Server name
-        compositor: Compositor for resource operations, metadata, and lifecycle listeners
+    Aggregates resources across servers and provides subscription management.
 
-    - Synthetic server injected by the runtime; reserved name is ``resources``.
+    - Synthetic server injected by the runtime; reserved mount name is ``resources``.
     - Provides a uniform API to discover and read resources exposed by other servers.
     - Only servers that advertise ``initialize.capabilities.resources`` are queried.
 
     **Policy enforcement architecture:**
-    - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
-    - This server's internal operations use direct compositor methods to avoid client dependency
-    - This prevents double policy enforcement and keeps the resources server as a pure facade
+        - LLM tool calls to this server go through the policy gateway (tool-level enforcement)
+        - This server's internal operations use direct compositor methods to avoid client dependency
+        - This prevents double policy enforcement and keeps the resources server as a pure facade
 
     **Window semantics:**
     - Windowing is byte-based across the concatenation of all parts reported by the
@@ -289,265 +293,245 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
       ``errors="replace"`` if a multi-byte character is split at the boundary.
     - Base64 parts are sliced as base64 text; decoding is the caller's responsibility.
     """
-    # TODO: Ensure NotificationsHandler is consistently injected when mounting this server,
-    # or make subscription functionality optionally toggleable (don't advertise subscribe
-    # tools if no handler is wired, to avoid promising notifications we can't deliver).
-    mcp = EnhancedFastMCP(
-        name,
-        instructions=(
-            "Resources aggregator for accessing MCP resources across all mounted servers.\n\n"
-            "**Access model:** Resources are identified by (server, URI) pairs. Each resource belongs to "
-            "a specific MCP server that exposes it. Use this server to discover what resources are available "
-            "and read their contents without directly connecting to each origin server.\n\n"
-            "**Discovery:** Use `list` to find available resources (optionally filtered by server name or URI prefix). "
-            "Each result includes the origin server name and the resource URI. "
-            "Use `list_resource_templates` to discover URI templates (RFC 6570) that describe patterns "
-            "for constructing parameterized resource URIs.\n\n"
-            "**Reading:** Use `read` to fetch resource contents by specifying the (server, URI) pair. "
-            "Supports optional windowing for large resources (e.g., read lines 100-200 from a text resource).\n\n"
-            "**Subscriptions:** Use `subscribe`/`unsubscribe` to track individual resource updates, "
-            "or `subscribe_list_changes`/`unsubscribe_list_changes` to track when a server's resource list changes. "
-            "Check the subscriptions index resource for current subscription state.\n\n"
-            "**Important:** Resources are server-specific - the same URI path on different servers "
-            "represents different resources. Always specify both server and URI when accessing resources.\n\n"
-            "Note: Only servers that advertise the resources capability in their initialize response are queried."
-        ),
-    )
 
-    # ---- Subscriptions index (single resource) -----------------------------
-    # Internal store for subscriptions made via this server's subscribe tool.
-    # No principals for now; keys are (server, uri).
-    subs_lock = asyncio.Lock()
-    subs: dict[tuple[str, str], SubscriptionRecord] = {}
-    # Selected origins for list-changed subscriptions (multi-origin)
-    list_subscribed_servers: set[str] = set()
+    # Tool references
+    list_tool: FunctionTool
+    list_templates_tool: FunctionTool
+    read_tool: FunctionTool
+    read_blocks_tool: FunctionTool
+    subscribe_tool: FunctionTool
+    unsubscribe_tool: FunctionTool
+    list_subscriptions_tool: FunctionTool
+    subscribe_list_changes_tool: FunctionTool
+    unsubscribe_list_changes_tool: FunctionTool
 
-    async def _broadcast_subs_updated() -> None:
-        await mcp.broadcast_resource_updated(RESOURCES_SUBSCRIPTIONS_INDEX_URI)
+    def __init__(self, *, compositor: Compositor):
+        """Create a Resources MCP server.
 
-    async def _present_servers() -> set[str]:
-        # Include all mounted servers, including in-proc mounts without typed specs.
-        # Use compositor._mount_names() directly; do not swallow errors.
-        names = await compositor._mount_names()
-        return set(names)
-
-    def _get_or_create_sub(server: str, uri: str) -> SubscriptionRecord:
-        key = (server, uri)
-        rec = subs.get(key)
-        if rec is None:
-            rec = SubscriptionRecord(server=server, uri=uri)
-            subs[key] = rec
-        return rec
-
-    async def _require_running_entry(server: str) -> RunningServerEntry:
-        """Fetch the running server entry for a mounted server or raise a ToolError.
-
-        This uses the Compositor's typed entries to ensure we have the
-        InitializeResult for capabilities checks.
+        Args:
+            compositor: Compositor for resource operations, metadata, and lifecycle listeners
         """
-        entries = await compositor.server_entries()
-        entry = entries.get(server)
-        if entry is None:
-            raise ToolError(f"Unknown server '{server}'")
-        if not isinstance(entry, RunningServerEntry):
-            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
-        return entry
+        # TODO: Ensure NotificationsHandler is consistently injected when mounting this server,
+        # or make subscription functionality optionally toggleable (don't advertise subscribe
+        # tools if no handler is wired, to avoid promising notifications we can't deliver).
 
-    async def _ensure_capability(server: str, *, feature: ResourceCapabilityFeature) -> None:
-        """Ensure the target server advertises a required resources capability.
+        # Initialize state
+        self._compositor = compositor
+        self._subs_lock = asyncio.Lock()
+        self._subs: dict[tuple[str, str], SubscriptionRecord] = {}
+        self._list_subscribed_servers: set[str] = set()
 
-        Supported feature values:
-        - ResourceCapabilityFeature.SUBSCRIBE: requires initialize.capabilities.resources.subscribe is True
-        - ResourceCapabilityFeature.LIST_CHANGED: requires initialize.capabilities.resources.listChanged is True
-        """
-        entry = await _require_running_entry(server)
-        try:
-            caps = entry.initialize.capabilities
-            res_caps = caps.resources
-        except AttributeError as e:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
+        super().__init__(
+            RESOURCES_SERVER_NAME,
+            instructions=(
+                "Resources aggregator for accessing MCP resources across all mounted servers.\n\n"
+                "**Access model:** Resources are identified by (server, URI) pairs. Each resource belongs to "
+                "a specific MCP server that exposes it. Use this server to discover what resources are available "
+                "and read their contents without directly connecting to each origin server.\n\n"
+                "**Discovery:** Use `list` to find available resources (optionally filtered by server name or URI prefix). "
+                "Each result includes the origin server name and the resource URI. "
+                "Use `list_resource_templates` to discover URI templates (RFC 6570) that describe patterns "
+                "for constructing parameterized resource URIs.\n\n"
+                "**Reading:** Use `read` to fetch resource contents by specifying the (server, URI) pair. "
+                "Supports optional windowing for large resources (e.g., read lines 100-200 from a text resource).\n\n"
+                "**Subscriptions:** Use `subscribe`/`unsubscribe` to track individual resource updates, "
+                "or `subscribe_list_changes`/`unsubscribe_list_changes` to track when a server's resource list changes. "
+                "Check the subscriptions index resource for current subscription state.\n\n"
+                "**Important:** Resources are server-specific - the same URI path on different servers "
+                "represents different resources. Always specify both server and URI when accessing resources.\n\n"
+                "Note: Only servers that advertise the resources capability in their initialize response are queried."
+            ),
+        )
 
-        if res_caps is None:
-            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
+        # Register subscriptions index resource FIRST (before tools)
+        @self.resource(
+            SUBSCRIPTIONS_INDEX_URI,
+            name="resources.subscriptions",
+            mime_type="application/json",
+            description=("Index of resource subscriptions made via the resources server."),
+        )
+        async def subscriptions_index() -> SubscriptionsIndex:
+            present = await self._present_servers()
+            async with self._subs_lock:
+                items = list(self._subs.values())
+                lss = set(self._list_subscribed_servers)
+            out = [
+                SubscriptionSummary(
+                    server=rec.server,
+                    uri=rec.uri,
+                    pinned=rec.pinned,
+                    present=(rec.server in present),
+                    active=rec.active and (rec.server in present),
+                    last_error=rec.last_error,
+                )
+                for rec in items
+            ]
+            list_out: list[ListSubscriptionSummary] = [
+                ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
+            ]
+            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
 
-        if feature is ResourceCapabilityFeature.SUBSCRIBE:
-            ok = bool(res_caps.subscribe)
-            needed = "resources.subscribe"
-        elif feature is ResourceCapabilityFeature.LIST_CHANGED:
-            ok = bool(res_caps.listChanged)
-            needed = "resources.listChanged"
-        else:
-            raise ToolError(f"Unknown capability feature: {feature}")
+        # Register tools (8 tools total)
+        async def list_resources(input: ResourcesListArgs) -> ResourcesListResult:
+            """List MCP resources that are exposed by servers (if any). Filter by server name or URI prefix if desired.
 
-        if not ok:
-            raise ToolError(f"Server '{server}' does not support {needed}")
-
-    @mcp.resource(
-        RESOURCES_SUBSCRIPTIONS_INDEX_URI,
-        name="resources.subscriptions",
-        mime_type="application/json",
-        description=("Index of resource subscriptions made via the resources server."),
-    )
-    async def subscriptions_index() -> SubscriptionsIndex:
-        present = await _present_servers()
-        async with subs_lock:
-            items = list(subs.values())
-            lss = set(list_subscribed_servers)
-        out = [
-            SubscriptionSummary(
-                server=rec.server,
-                uri=rec.uri,
-                pinned=rec.pinned,
-                present=(rec.server in present),
-                active=rec.active and (rec.server in present),
-                last_error=rec.last_error,
-            )
-            for rec in items
-        ]
-        list_out: list[ListSubscriptionSummary] = [
-            ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
-        ]
-        return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
-
-    # TODO: Investigate if agents can subscribe to resource template list changes.
-    # The MCP protocol does not currently define template list change notifications
-    # (only resource list changes via notifications/resources/list_changed).
-    # If/when MCP adds template notifications, add subscribe_template_list_changes
-    # and unsubscribe_template_list_changes tools following the same pattern as
-    # subscribe_list_changes/unsubscribe_list_changes.
-
-    @mcp.flat_model()
-    async def list_resources_tool(input: ResourcesListArgs) -> ResourcesListResult:
-        """List MCP resources that are exposed by servers (if any). Filter by server name or URI prefix if desired.
-
-        Returns only resources that MCP servers explicitly expose via the resources capability.
-        Call this first to see what resources are available before trying to read them.
-        """
-        # Call compositor's internal _list_resources_mcp directly to avoid client dependency
-        # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-        mcp_list = await compositor._list_resources_mcp()
-        specs = await compositor.mount_specs()
-        mount_names = list(specs.keys())
-        out: list[ResourceEntry] = []
-        for r in mcp_list:
-            uri_str = str(r.uri)
-            try:
-                origin = derive_origin_server(uri_str, mount_names, compositor.resource_prefix_format)
-            except ValueError:
-                # Skip resources that don't match any known server
-                continue
-            if input.server and origin != input.server:
-                continue
-            # If a uri_prefix filter is provided, match against the raw (de-prefixed) URI
-            if input.uri_prefix:
-                raw_uri = remove_resource_prefix(uri_str, origin, compositor.resource_prefix_format)
-                if not raw_uri.startswith(input.uri_prefix):
+            Returns only resources that MCP servers explicitly expose via the resources capability.
+            Call this first to see what resources are available before trying to read them.
+            """
+            # Call compositor's internal _list_resources_mcp directly to avoid client dependency
+            # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
+            mcp_list = await self._compositor._list_resources_mcp()
+            specs = await self._compositor.mount_specs()
+            mount_names = list(specs.keys())
+            out: list[ResourceEntry] = []
+            for r in mcp_list:
+                uri_str = str(r.uri)
+                try:
+                    origin = derive_origin_server(uri_str, mount_names, self._compositor.resource_prefix_format)
+                except ValueError:
+                    # Skip resources that don't match any known server
                     continue
-            out.append(ResourceEntry(server=origin, resource=r))
-        return ResourcesListResult(resources=out)
+                if input.server and origin != input.server:
+                    continue
+                # If a uri_prefix filter is provided, match against the raw (de-prefixed) URI
+                if input.uri_prefix:
+                    raw_uri = remove_resource_prefix(uri_str, origin, self._compositor.resource_prefix_format)
+                    if not raw_uri.startswith(input.uri_prefix):
+                        continue
+                out.append(ResourceEntry(server=origin, resource=r))
+            return ResourcesListResult(resources=out)
 
-    @mcp.flat_model()
-    async def list_resource_templates() -> ResourceTemplatesListResult:
-        """List URI templates (RFC 6570) that servers expose for constructing resource URIs, tagged by origin server.
+        self.list_tool = self.flat_model()(list_resources)
 
-        Returns templates only from servers that expose them via the resources capability.
-        Use this to discover what resource URIs can be constructed (e.g., resource://runtime/container.info).
-        """
-        # Query each mounted server individually to track template ownership
-        entries = await compositor.server_entries()
-        out: list[ResourceTemplateEntry] = []
-        for server_name, entry in entries.items():
-            if not isinstance(entry, RunningServerEntry):
-                continue
-            # Only query servers that advertise resources capability
-            # (templates are part of the resources capability)
-            if entry.initialize.capabilities.resources is None:
-                continue
-            # Query this server's templates
-            child_client = compositor.get_child_client(server_name)
-            templates = await child_client.list_resource_templates()
-            for template in templates:
-                out.append(ResourceTemplateEntry(server=server_name, template=template))
-        return ResourceTemplatesListResult(templates=out)
+        async def list_resource_templates() -> ResourceTemplatesListResult:
+            """List URI templates (RFC 6570) that servers expose for constructing resource URIs, tagged by origin server.
 
-    @mcp.flat_model()
-    async def read(input: ResourcesReadArgs) -> ResourceReadResult:
-        """Read contents of an MCP resource that a server exposes. Use start_offset and max_bytes for pagination.
+            Returns templates only from servers that expose them via the resources capability.
+            Use this to discover what resource URIs can be constructed (e.g., resource://runtime/container.info).
+            """
+            # Query each mounted server individually to track template ownership
+            entries = await self._compositor.server_entries()
+            out: list[ResourceTemplateEntry] = []
+            for server_name, entry in entries.items():
+                if not isinstance(entry, RunningServerEntry):
+                    continue
+                # Only query servers that advertise resources capability
+                # (templates are part of the resources capability)
+                if entry.initialize.capabilities.resources is None:
+                    continue
+                # Query this server's templates
+                child_client = self._compositor.get_child_client(server_name)
+                templates = await child_client.list_resource_templates()
+                for template in templates:
+                    out.append(ResourceTemplateEntry(server=server_name, template=template))
+            return ResourceTemplatesListResult(templates=out)
 
-        Only works for resources that servers explicitly expose via their resources capability.
-        Use list_resources_tool first to see what resources are available.
-        """
-        prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-        uri_value = ANY_URL.validate_python(prefixed)
-        # Call compositor method that converts FastMCP types to MCP protocol types
-        # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-        contents = await compositor.read_resource_contents(uri_value)
-        max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
-        return _build_window_payload(contents, input.start_offset, max_bytes)
+        self.list_templates_tool = self.flat_model()(list_resource_templates)
 
-    @mcp.flat_model()
-    async def read_blocks(input: ReadBlocksArgs) -> ReadBlocksResult:
-        """Read MCP resource with block-level windowing. Returns complete blocks plus truncation markers for partial blocks.
+        async def read(input: ResourcesReadArgs) -> ResourceReadResult:
+            """Read contents of an MCP resource that a server exposes. Use start_offset and max_bytes for pagination.
 
-        Only works for resources that servers explicitly expose via their resources capability.
-        Use list_resources_tool first to see what resources are available.
+            Only works for resources that servers explicitly expose via their resources capability.
+            Use list_resources first to see what resources are available.
+            """
+            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            uri_value = ANY_URL.validate_python(prefixed)
+            # Call compositor method that converts FastMCP types to MCP protocol types
+            # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
+            contents = await self._compositor.read_resource_contents(uri_value)
+            max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
+            return _build_window_payload(contents, input.start_offset, max_bytes)
 
-        Size semantics:
-        - Text blocks: size measured in UTF-8 bytes (not characters)
-        - Blob blocks: size measured in base64 string length (not decoded bytes)
-        - max_bytes limit applies to the sum across all block types
+        self.read_tool = self.flat_model()(read)
 
-        Slicing behavior:
-        - Text: slice at UTF-8 byte boundaries (may split multi-byte characters, uses errors='replace')
-        - Blob: slice base64 string directly (always valid since base64 is ASCII)
-        """
-        prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-        uri_value = ANY_URL.validate_python(prefixed)
-        contents = await compositor.read_resource_contents(uri_value)
+        async def read_blocks(input: ReadBlocksArgs) -> ReadBlocksResult:
+            """Read MCP resource with block-level windowing. Returns complete blocks plus truncation markers for partial blocks.
 
-        max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
-        result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []
-        bytes_accumulated = 0
+            Only works for resources that servers explicitly expose via their resources capability.
+            Use list_resources first to see what resources are available.
 
-        for block_idx, block in enumerate(contents):
-            # Skip blocks before start_block
-            if block_idx < input.start_block:
-                continue
+            Size semantics:
+            - Text blocks: size measured in UTF-8 bytes (not characters)
+            - Blob blocks: size measured in base64 string length (not decoded bytes)
+            - max_bytes limit applies to the sum across all block types
 
-            # Get block size
-            if isinstance(block, mcp_types.TextResourceContents):
-                # For text, measure size in UTF-8 bytes
-                block_bytes = block.text.encode("utf-8")
-                block_size = len(block_bytes)
-                is_text = True
-            elif isinstance(block, mcp_types.BlobResourceContents):
-                # For blob, size is base64 string length (no need for bytes representation)
-                block_size = len(block.blob)
-                is_text = False
-                block_bytes = b""  # Not used for blobs
-            else:
-                raise TypeError(f"Unsupported content type: {type(block).__name__}")
+            Slicing behavior:
+            - Text: slice at UTF-8 byte boundaries (may split multi-byte characters, uses errors='replace')
+            - Blob: slice base64 string directly (always valid since base64 is ASCII)
+            """
+            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            uri_value = ANY_URL.validate_python(prefixed)
+            contents = await self._compositor.read_resource_contents(uri_value)
 
-            # Determine slice range for this block
-            slice_start = input.start_offset if block_idx == input.start_block else 0
-            remaining_budget = max_bytes - bytes_accumulated
+            max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
+            result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []
+            bytes_accumulated = 0
 
-            if slice_start >= block_size:
-                # start_offset is beyond this block, skip it
-                continue
+            for block_idx, block in enumerate(contents):
+                # Skip blocks before start_block
+                if block_idx < input.start_block:
+                    continue
 
-            available_in_block = block_size - slice_start
-            can_take = min(available_in_block, remaining_budget)
-
-            sliced_content: BaseResourceContents
-            if can_take >= available_in_block:
-                # Can include full remainder of block
-                if slice_start == 0:
-                    # Full block, no truncation
-                    result_blocks.append(block)
+                # Get block size
+                if isinstance(block, mcp_types.TextResourceContents):
+                    # For text, measure size in UTF-8 bytes
+                    block_bytes = block.text.encode("utf-8")
+                    block_size = len(block_bytes)
+                    is_text = True
+                elif isinstance(block, mcp_types.BlobResourceContents):
+                    # For blob, size is base64 string length (no need for bytes representation)
+                    block_size = len(block.blob)
+                    is_text = False
+                    block_bytes = b""  # Not used for blobs
                 else:
-                    # Partial from start
-                    slice_end = block_size
+                    raise TypeError(f"Unsupported content type: {type(block).__name__}")
+
+                # Determine slice range for this block
+                slice_start = input.start_offset if block_idx == input.start_block else 0
+                remaining_budget = max_bytes - bytes_accumulated
+
+                if slice_start >= block_size:
+                    # start_offset is beyond this block, skip it
+                    continue
+
+                available_in_block = block_size - slice_start
+                can_take = min(available_in_block, remaining_budget)
+
+                sliced_content: BaseResourceContents
+                if can_take >= available_in_block:
+                    # Can include full remainder of block
+                    if slice_start == 0:
+                        # Full block, no truncation
+                        result_blocks.append(block)
+                    else:
+                        # Partial from start
+                        slice_end = block_size
+                        if is_text:
+                            sliced_bytes = block_bytes[slice_start:slice_end]
+                            sliced_content = mcp_types.TextResourceContents(
+                                uri=block.uri,
+                                mimeType=block.mimeType,
+                                text=sliced_bytes.decode("utf-8", errors="replace"),
+                            )
+                        else:
+                            # blob is base64 string, slice directly
+                            assert isinstance(block, mcp_types.BlobResourceContents)
+                            sliced_content = mcp_types.BlobResourceContents(
+                                uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
+                            )
+                        result_blocks.append(
+                            TruncatedBlock(
+                                block_index=block_idx,
+                                started_at=slice_start,
+                                ended_at=slice_end,
+                                full_size=block_size,
+                                content=sliced_content,
+                            )
+                        )
+                    bytes_accumulated += available_in_block
+                else:
+                    # Must truncate this block
+                    slice_end = slice_start + can_take
                     if is_text:
                         sliced_bytes = block_bytes[slice_start:slice_end]
                         sliced_content = mcp_types.TextResourceContents(
@@ -568,158 +552,225 @@ def make_resources_server(name: str = "resources", *, compositor: Compositor) ->
                             content=sliced_content,
                         )
                     )
-                bytes_accumulated += available_in_block
-            else:
-                # Must truncate this block
-                slice_end = slice_start + can_take
-                if is_text:
-                    sliced_bytes = block_bytes[slice_start:slice_end]
-                    sliced_content = mcp_types.TextResourceContents(
-                        uri=block.uri, mimeType=block.mimeType, text=sliced_bytes.decode("utf-8", errors="replace")
-                    )
-                else:
-                    # blob is base64 string, slice directly
-                    assert isinstance(block, mcp_types.BlobResourceContents)
-                    sliced_content = mcp_types.BlobResourceContents(
-                        uri=block.uri, mimeType=block.mimeType, blob=block.blob[slice_start:slice_end]
-                    )
-                result_blocks.append(
-                    TruncatedBlock(
-                        block_index=block_idx,
-                        started_at=slice_start,
-                        ended_at=slice_end,
-                        full_size=block_size,
-                        content=sliced_content,
-                    )
-                )
-                bytes_accumulated += can_take
-                break  # Hit budget limit
+                    bytes_accumulated += can_take
+                    break  # Hit budget limit
 
-            if bytes_accumulated >= max_bytes:
-                break
+                if bytes_accumulated >= max_bytes:
+                    break
 
-        return ReadBlocksResult(blocks=result_blocks)
+            return ReadBlocksResult(blocks=result_blocks)
 
-    @mcp.flat_model()
-    async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
-        """Subscribe to updates for a resource."""
-        await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-        prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-        uri_value = ANY_URL.validate_python(prefixed)
-        # Attempt subscribe; reflect success/error in index and re-raise on error.
-        try:
-            # Use the child's persistent session directly (already connected)
-            child_client = compositor.get_child_client(input.server)
-            await child_client.session.subscribe_resource(uri_value)
-        except McpError as e:
-            async with subs_lock:
-                rec = _get_or_create_sub(input.server, input.uri)
-                rec.active = False
-                rec.last_error = f"{type(e).__name__}: {e}"
-            await _broadcast_subs_updated()
-            # Do not degrade on missing method; capability check should prevent reaching here
-            raise
-        else:
-            async with subs_lock:
-                rec = _get_or_create_sub(input.server, input.uri)
-                rec.active = True
-                rec.last_error = None
-            await _broadcast_subs_updated()
-            return SimpleOk(ok=True)
+        self.read_blocks_tool = self.flat_model()(read_blocks)
 
-    @mcp.flat_model()
-    async def unsubscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
-        """Unsubscribe from updates for a resource."""
-        await _ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-        prefixed = add_resource_prefix(input.uri, input.server, compositor.resource_prefix_format)
-        uri_value = ANY_URL.validate_python(prefixed)
-        rec_key = (input.server, input.uri)
-        try:
-            child_client = compositor.get_child_client(input.server)
-            await child_client.session.unsubscribe_resource(uri_value)
-        except McpError as e:
-            # Reflect error in index and re-raise
-            async with subs_lock:
-                if (rec := subs.get(rec_key)) is not None:
+        async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
+            """Subscribe to updates for a resource."""
+            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
+            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            uri_value = ANY_URL.validate_python(prefixed)
+            # Attempt subscribe; reflect success/error in index and re-raise on error.
+            try:
+                # Use the child's persistent session directly (already connected)
+                child_client = self._compositor.get_child_client(input.server)
+                await child_client.session.subscribe_resource(uri_value)
+            except McpError as e:
+                async with self._subs_lock:
+                    rec = self._get_or_create_sub(input.server, input.uri)
                     rec.active = False
                     rec.last_error = f"{type(e).__name__}: {e}"
-            await _broadcast_subs_updated()
-            # Do not degrade on missing method; capability check should prevent reaching here
-            raise
-        else:
-            # Remove record entirely on explicit unsubscribe (no pin semantics yet)
-            async with subs_lock:
-                subs.pop(rec_key, None)
-            await _broadcast_subs_updated()
+                await self._broadcast_subs_updated()
+                # Do not degrade on missing method; capability check should prevent reaching here
+                raise
+            else:
+                async with self._subs_lock:
+                    rec = self._get_or_create_sub(input.server, input.uri)
+                    rec.active = True
+                    rec.last_error = None
+                await self._broadcast_subs_updated()
+                return SimpleOk(ok=True)
+
+        self.subscribe_tool = self.flat_model()(subscribe)
+
+        async def unsubscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
+            """Unsubscribe from updates for a resource."""
+            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
+            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            uri_value = ANY_URL.validate_python(prefixed)
+            rec_key = (input.server, input.uri)
+            try:
+                child_client = self._compositor.get_child_client(input.server)
+                await child_client.session.unsubscribe_resource(uri_value)
+            except McpError as e:
+                # Reflect error in index and re-raise
+                async with self._subs_lock:
+                    if (rec := self._subs.get(rec_key)) is not None:
+                        rec.active = False
+                        rec.last_error = f"{type(e).__name__}: {e}"
+                await self._broadcast_subs_updated()
+                # Do not degrade on missing method; capability check should prevent reaching here
+                raise
+            else:
+                # Remove record entirely on explicit unsubscribe (no pin semantics yet)
+                async with self._subs_lock:
+                    self._subs.pop(rec_key, None)
+                await self._broadcast_subs_updated()
+                return SimpleOk(ok=True)
+
+        self.unsubscribe_tool = self.flat_model()(unsubscribe)
+
+        # Note: list_subscriptions is derived from tool name, not explicitly set
+        async def list_subscriptions() -> SubscriptionsIndex:
+            """List current subscriptions (returns same data as subscriptions_index resource)."""
+            present = await self._present_servers()
+            async with self._subs_lock:
+                items = list(self._subs.values())
+                lss = set(self._list_subscribed_servers)
+            out = [
+                SubscriptionSummary(
+                    server=rec.server,
+                    uri=rec.uri,
+                    pinned=rec.pinned,
+                    present=(rec.server in present),
+                    active=rec.active and (rec.server in present),
+                    last_error=rec.last_error,
+                )
+                for rec in items
+            ]
+            list_out: list[ListSubscriptionSummary] = [
+                ListSubscriptionSummary(server=s, present=(s in present), active=(s in present)) for s in sorted(lss)
+            ]
+            return SubscriptionsIndex(subscriptions=out, list_subscriptions=list_out)
+
+        self.list_subscriptions_tool = self.flat_model()(list_subscriptions)
+
+        async def subscribe_list_changes_impl(input: ListSubscribeArgs) -> SimpleOk:
+            """Track when a server's resource list changes. Can subscribe to multiple servers."""
+            await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.LIST_CHANGED)
+            async with self._subs_lock:
+                self._list_subscribed_servers.add(input.server)
+            await self._broadcast_subs_updated()
             return SimpleOk(ok=True)
 
-    @mcp.flat_model(name="subscribe_list_changes")
-    async def subscribe_list_changes(input: ListSubscribeArgs) -> SimpleOk:
-        """Track when a server's resource list changes. Can subscribe to multiple servers."""
-        await _ensure_capability(input.server, feature=ResourceCapabilityFeature.LIST_CHANGED)
-        async with subs_lock:
-            list_subscribed_servers.add(input.server)
-        await _broadcast_subs_updated()
-        return SimpleOk(ok=True)
+        self.subscribe_list_changes_tool = self.flat_model(name="subscribe_list_changes")(subscribe_list_changes_impl)
 
-    @mcp.flat_model(name="unsubscribe_list_changes")
-    async def unsubscribe_list_changes(input: ListSubscribeArgs) -> SimpleOk:
-        """Stop tracking resource list changes for a server."""
-        async with subs_lock:
-            list_subscribed_servers.discard(input.server)
-        await _broadcast_subs_updated()
-        return SimpleOk(ok=True)
+        async def unsubscribe_list_changes_impl(input: ListSubscribeArgs) -> SimpleOk:
+            """Stop tracking resource list changes for a server."""
+            async with self._subs_lock:
+                self._list_subscribed_servers.discard(input.server)
+            await self._broadcast_subs_updated()
+            return SimpleOk(ok=True)
 
-    # Respond to Compositor lifecycle to keep index correct: tear down underlying
-    # subscriptions on unmount, do not auto-rehydrate on mount. Non-pinned subs are
-    # dropped; pinned kept inactive (no pin controls yet — placeholder for future).
-    async def _on_mount_change(name: str, action: MountEvent) -> None:
-        if action is not MountEvent.UNMOUNTED:
-            return
-        # Server is being unmounted. Do not attempt remote unsubscriptions; the
-        # Compositor tears down underlying sessions. Update local records only.
-        # Drop non-pinned entries for this server; mark pinned (future) inactive.
-        async with subs_lock:
-            to_delete = [(server, uri) for (server, uri), rec in subs.items() if server == name and not rec.pinned]
-            for (server, uri), rec in list(subs.items()):
-                if server == name and rec.pinned:
-                    rec.active = False
-                    subs[(server, uri)] = rec
-            changed = bool(to_delete)
-            for key in to_delete:
-                subs.pop(key, None)
-            # Drop list-changed selection for this origin if it is unmounted
-            if name in list_subscribed_servers:
-                list_subscribed_servers.discard(name)
-                changed = True
-        if changed:
-            await _broadcast_subs_updated()
+        self.unsubscribe_list_changes_tool = self.flat_model(name="unsubscribe_list_changes")(
+            unsubscribe_list_changes_impl
+        )
 
-    compositor.add_mount_listener(_on_mount_change)
+        # Register lifecycle listeners
+        async def _on_mount_change(name: str, action: MountEvent) -> None:
+            if action is not MountEvent.UNMOUNTED:
+                return
+            # Server is being unmounted. Do not attempt remote unsubscriptions; the
+            # Compositor tears down underlying sessions. Update local records only.
+            # Drop non-pinned entries for this server; mark pinned (future) inactive.
+            async with self._subs_lock:
+                to_delete = [
+                    (server, uri) for (server, uri), rec in self._subs.items() if server == name and not rec.pinned
+                ]
+                for (server, uri), rec in list(self._subs.items()):
+                    if server == name and rec.pinned:
+                        rec.active = False
+                        self._subs[(server, uri)] = rec
+                changed = bool(to_delete)
+                for key in to_delete:
+                    self._subs.pop(key, None)
+                # Drop list-changed selection for this origin if it is unmounted
+                if name in self._list_subscribed_servers:
+                    self._list_subscribed_servers.discard(name)
+                    changed = True
+            if changed:
+                await self._broadcast_subs_updated()
 
-    # React to compositor list-changed notifications and reflect updates to the index
-    async def _on_list_changed(name: str) -> None:
-        async with subs_lock:
-            subscribed = set(list_subscribed_servers)
-        if name in subscribed:
-            await _broadcast_subs_updated()
+        compositor.add_mount_listener(_on_mount_change)
 
-    compositor.add_resource_list_change_listener(_on_list_changed)
+        # React to compositor list-changed notifications and reflect updates to the index
+        async def _on_list_changed(name: str) -> None:
+            async with self._subs_lock:
+                subscribed = set(self._list_subscribed_servers)
+            if name in subscribed:
+                await self._broadcast_subs_updated()
 
-    # React to compositor resource-updated notifications: if a subscribed
-    # resource (server, uri) matches, broadcast index update so UIs refresh.
-    async def _on_resource_updated(name: str, uri: str) -> None:
-        key = (name, uri)
-        async with subs_lock:
-            rec = subs.get(key)
-            is_active = bool(rec and rec.active)
-        if is_active:
-            await _broadcast_subs_updated()
+        compositor.add_resource_list_change_listener(_on_list_changed)
 
-    compositor.add_resource_updated_listener(_on_resource_updated)
+        # React to compositor resource-updated notifications: if a subscribed
+        # resource (server, uri) matches, broadcast index update so UIs refresh.
+        async def _on_resource_updated(name: str, uri: str) -> None:
+            key = (name, uri)
+            async with self._subs_lock:
+                rec = self._subs.get(key)
+                is_active = bool(rec and rec.active)
+            if is_active:
+                await self._broadcast_subs_updated()
 
-    # TODO: Consider per-subscription resources like
-    #   resources://subscriptions/{server}/{percent-encoded-uri}
-    # to enable list_changed semantics. For now, a single index resource is enough.
+        compositor.add_resource_updated_listener(_on_resource_updated)
 
-    return mcp
+        # TODO: Consider per-subscription resources like
+        #   resources://subscriptions/{server}/{percent-encoded-uri}
+        # to enable list_changed semantics. For now, a single index resource is enough.
+
+    async def _broadcast_subs_updated(self) -> None:
+        await self.broadcast_resource_updated(SUBSCRIPTIONS_INDEX_URI)
+
+    async def _present_servers(self) -> set[str]:
+        # Include all mounted servers, including in-proc mounts without typed specs.
+        # Use compositor._mount_names() directly; do not swallow errors.
+        names = await self._compositor._mount_names()
+        return set(names)
+
+    def _get_or_create_sub(self, server: str, uri: str) -> SubscriptionRecord:
+        key = (server, uri)
+        rec = self._subs.get(key)
+        if rec is None:
+            rec = SubscriptionRecord(server=server, uri=uri)
+            self._subs[key] = rec
+        return rec
+
+    async def _require_running_entry(self, server: str) -> RunningServerEntry:
+        """Fetch the running server entry for a mounted server or raise a ToolError.
+
+        This uses the Compositor's typed entries to ensure we have the
+        InitializeResult for capabilities checks.
+        """
+        entries = await self._compositor.server_entries()
+        entry = entries.get(server)
+        if entry is None:
+            raise ToolError(f"Unknown server '{server}'")
+        if not isinstance(entry, RunningServerEntry):
+            raise ToolError(f"Server '{server}' is not running (state={entry.state})")
+        return entry
+
+    async def _ensure_capability(self, server: str, *, feature: ResourceCapabilityFeature) -> None:
+        """Ensure the target server advertises a required resources capability.
+
+        Supported feature values:
+        - ResourceCapabilityFeature.SUBSCRIBE: requires initialize.capabilities.resources.subscribe is True
+        - ResourceCapabilityFeature.LIST_CHANGED: requires initialize.capabilities.resources.listChanged is True
+        """
+        entry = await self._require_running_entry(server)
+        try:
+            caps = entry.initialize.capabilities
+            res_caps = caps.resources
+        except AttributeError as e:
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities") from e
+
+        if res_caps is None:
+            raise ToolError(f"Server '{server}' does not advertise resources capabilities")
+
+        if feature is ResourceCapabilityFeature.SUBSCRIBE:
+            ok = bool(res_caps.subscribe)
+            needed = "resources.subscribe"
+        elif feature is ResourceCapabilityFeature.LIST_CHANGED:
+            ok = bool(res_caps.listChanged)
+            needed = "resources.listChanged"
+        else:
+            raise ToolError(f"Unknown capability feature: {feature}")
+
+        if not ok:
+            raise ToolError(f"Server '{server}' does not support {needed}")

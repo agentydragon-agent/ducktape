@@ -1,4 +1,4 @@
-{% extends "_base.j2.md" %}
+{% extends "prompts/_base.j2.md" %}
 {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "LintSubmitPayload", "IssueLintFindingRecord"] %}
 {% set read_only = true %}
 {% set include_reporting = false %}

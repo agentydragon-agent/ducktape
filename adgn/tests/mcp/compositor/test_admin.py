@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp._shared.constants import COMPOSITOR_META_SERVER_NAME
+from adgn.mcp._shared.constants import COMPOSITOR_META_MOUNT_PREFIX
 
 
 async def test_compositor_admin_attach_detach(admin_client, compositor, stdio_echo_spec):
@@ -26,7 +26,7 @@ async def test_compositor_admin_attach_twice_errors(admin_client, stdio_echo_spe
 async def test_compositor_admin_detach_pinned_server_fails(admin_client):
     # Attempt to detach a pinned server should raise
     with pytest.raises(Exception, match=r"pinned|cannot.*detach"):
-        await admin_client.detach_server(name=COMPOSITOR_META_SERVER_NAME)
+        await admin_client.detach_server(name=COMPOSITOR_META_MOUNT_PREFIX)
 
 
 async def test_compositor_admin_attach_invalid_name_errors(admin_client, stdio_echo_spec):

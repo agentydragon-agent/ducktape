@@ -12,6 +12,9 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from tests.agent.test_matchers import assert_function_call_output_structured
 
+# Test MCP server/tool constants for this test
+VALIDATOR_MOUNT_PREFIX = "validator"
+
 
 async def test_tool_error_continues_turn(
     responses_factory, make_pg_client, validation_server, recording_handler, make_test_agent
@@ -30,11 +33,11 @@ async def test_tool_error_continues_turn(
         seq = [
             # First attempt with wrong mime type
             responses_factory.make_mcp_tool_call(
-                "validator", "send_message", SendMessageInput(mime="text/plain", content="Hello")
+                VALIDATOR_MOUNT_PREFIX, "send_message", SendMessageInput(mime="text/plain", content="Hello")
             ),
             # After error, agent retries with correct mime type
             responses_factory.make_mcp_tool_call(
-                "validator", "send_message", SendMessageInput(mime="text/markdown", content="Hello")
+                VALIDATOR_MOUNT_PREFIX, "send_message", SendMessageInput(mime="text/markdown", content="Hello")
             ),
             # Final message
             responses_factory.make_assistant_message("Successfully sent message"),

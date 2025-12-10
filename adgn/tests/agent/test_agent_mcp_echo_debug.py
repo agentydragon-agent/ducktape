@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.mcp.testing.simple_servers import EchoInput
+from tests.support.steps import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
 
 
 async def test_agent_mcp_echo_tool_use(
@@ -11,7 +12,7 @@ async def test_agent_mcp_echo_tool_use(
     agent, _client = await make_test_agent(
         pg_client_echo,
         [
-            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hello")),
+            responses_factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hello")),
             responses_factory.make_assistant_message("done"),
         ],
         handlers=[recording_handler],

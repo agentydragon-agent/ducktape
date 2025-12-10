@@ -5,16 +5,35 @@
 
 from __future__ import annotations
 
-import argparse
-import asyncio
 from pathlib import Path
+from typing import Annotated
+
+import aiodocker
+import typer
+from typer_di import Depends, TyperDI
+
+from adgn.cli_utils import async_run
+from adgn.props.cli.resources import get_async_docker_client
 
 from ..._shared.container_session import ContainerOptions
 from ..._shared.types import NetworkMode
-from .server import make_container_exec_server
+from .server import ContainerExecServer
+
+app = TyperDI(help="Run docker_exec MCP over stdio")
 
 
-def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None:
+def _parse_binds(values: list[str] | None) -> dict[str, dict[str, str]] | None:
+    """Parse bind mount specifications into Docker mount format.
+
+    Args:
+        values: List of bind specs in format "host:container[:mode]"
+
+    Returns:
+        Dict mapping resolved host paths to mount specs, or None if no binds
+
+    Raises:
+        typer.BadParameter: If bind spec format is invalid
+    """
     if not values:
         return None
     result: dict[str, dict[str, str]] = {}
@@ -26,7 +45,7 @@ def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None
             continue
         parts = entry.split(":")
         if len(parts) < 2:
-            raise argparse.ArgumentTypeError(f"Invalid volume spec '{entry}'. Use host:container[:mode].")
+            raise typer.BadParameter(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
         host, container, *mode = parts
         spec: dict[str, str] = {"bind": container}
         if mode:
@@ -35,71 +54,68 @@ def _parse_volumes(values: list[str] | None) -> dict[str, dict[str, str]] | None
     return result
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run docker_exec MCP over stdio")
-    parser.add_argument("--image", required=True, help="Docker image for session containers")
-    parser.add_argument(
-        "--working-dir", default="/workspace", help="Working directory inside the container (default: /workspace)"
-    )
-    parser.add_argument(
-        "--network-mode",
-        default=NetworkMode.NONE.value,
-        choices=[m.value for m in NetworkMode],
-        help="Docker network mode (default: none)",
-    )
-    parser.add_argument(
-        "--volumes",
-        action="append",
-        default=None,
-        help=(
-            "Volume specification host:container[:mode]. May be supplied multiple times or as comma-separated entries."
+def _parse_labels(label_values: list[str] | None) -> dict[str, str] | None:
+    """Parse label key=value pairs into a dict.
+
+    Args:
+        label_values: List of "key=value" strings
+
+    Returns:
+        Dict of labels, or None if no labels provided
+
+    Raises:
+        typer.BadParameter: If label format is invalid
+    """
+    if not label_values:
+        return None
+    labels: dict[str, str] = {}
+    for raw_label in label_values:
+        if "=" not in raw_label:
+            raise typer.BadParameter(f"Invalid label '{raw_label}'. Expected key=value format.")
+        key, value = raw_label.split("=", 1)
+        labels[key] = value
+    return labels
+
+
+@app.command()
+@async_run
+async def main(
+    image: Annotated[str, typer.Option(help="Docker image for session containers")],
+    working_dir: Annotated[str, typer.Option(help="Working directory inside the container")] = "/workspace",
+    network_mode: Annotated[NetworkMode, typer.Option(help="Docker network mode")] = NetworkMode.NONE,
+    binds: Annotated[
+        list[str] | None,
+        typer.Option(
+            help="Bind mount specification host:container[:mode]. May be supplied multiple times or as comma-separated entries."
         ),
-    )
-    parser.add_argument(
-        "--label",
-        action="append",
-        default=None,
-        help="Docker label to apply to the container (key=value). May be repeated.",
-    )
-    parser.add_argument("--describe", action="store_true", help="Include Docker image history in server description")
-    parser.add_argument(
-        "--ephemeral",
-        action="store_true",
-        help="Run each command in a fresh ephemeral container with host-enforced timeouts",
-    )
-    return parser
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    volumes = _parse_volumes(args.volumes)
-    network_mode = NetworkMode(args.network_mode)
-
-    labels: dict[str, str] | None = None
-    if args.label:
-        labels = {}
-        for raw_label in args.label:
-            if "=" not in raw_label:
-                parser.error(f"Invalid label '{raw_label}'. Expected key=value format.")
-            key, value = raw_label.split("=", 1)
-            labels[key] = value
+    ] = None,
+    label: Annotated[
+        list[str] | None, typer.Option(help="Docker label to apply to the container (key=value). May be repeated.")
+    ] = None,
+    ephemeral: Annotated[
+        bool, typer.Option(help="Run each command in a fresh ephemeral container with host-enforced timeouts")
+    ] = False,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),  # noqa: B008
+) -> None:
+    """Run docker_exec MCP server over stdio transport."""
+    binds_dict = _parse_binds(binds)
+    labels_dict = _parse_labels(label)
 
     opts = ContainerOptions(
-        image=args.image,
-        working_dir=args.working_dir,
-        volumes=volumes,
+        image=image,
+        working_dir=Path(working_dir),
+        binds=binds_dict,
         network_mode=network_mode,
-        labels=labels,
-        describe=args.describe,
-        ephemeral=args.ephemeral,
+        labels=labels_dict,
+        ephemeral=ephemeral,
     )
-    server = make_container_exec_server(opts)
 
-    asyncio.run(server.run_stdio_async())
-    return 0
+    try:
+        server = ContainerExecServer(opts, docker_client)
+        await server.run_stdio_async()
+    finally:
+        await docker_client.close()
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    app()

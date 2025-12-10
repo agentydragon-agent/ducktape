@@ -28,11 +28,9 @@ from adgn.props.grader.models import (
     TruePositiveID,
 )
 from adgn.props.hydration import SnapshotHydrator
-from adgn.props.ids import BaseIssueID, SnapshotSlug
-from adgn.props.paths import SnapshotRelativePath
+from adgn.props.ids import SnapshotSlug
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from adgn.props.validation_context import GradedCritiqueContext, SnapshotContext
 from tests.llm.support.openai_mock import FakeOpenAIModel
 
 # Common test data for database fixtures
@@ -92,38 +90,6 @@ def test_prompt_sha():
 
 
 @pytest.fixture
-def base_issue_id_model():
-    """Fixture providing a Pydantic model with BaseIssueID field."""
-
-    class Model(BaseModel):
-        id: BaseIssueID
-
-    return Model
-
-
-@pytest.fixture
-def snapshot_relative_path_model():
-    """Fixture providing a Pydantic model with SnapshotRelativePath field."""
-
-    class Model(BaseModel):
-        path: SnapshotRelativePath
-
-    return Model
-
-
-@pytest.fixture
-def validate_snapshot_path(snapshot_relative_path_model):
-    """Factory for validating snapshot paths with context, reducing test duplication."""
-
-    def _validate(path_str: str, context: SnapshotContext):
-        """Validate a path string against snapshot context."""
-        ctx = {"snapshots": context}
-        return snapshot_relative_path_model.model_validate({"path": path_str}, context=ctx)
-
-    return _validate
-
-
-@pytest.fixture
 def rationale_model():
     """Fixture providing a Pydantic model with Rationale field."""
 
@@ -131,39 +97,6 @@ def rationale_model():
         rationale: Rationale
 
     return Model
-
-
-@pytest.fixture
-def make_snapshot_ctx():
-    """Factory for creating snapshot contexts with custom allowed IDs."""
-
-    def _make(tp_ids=(), fp_ids=(), all_discovered_files=None):
-        return SnapshotContext(
-            snapshot_slug=SnapshotSlug("test/snapshot"),
-            all_discovered_files=all_discovered_files or {},
-            allowed_tp_ids=frozenset(tp_ids),
-            allowed_fp_ids=frozenset(fp_ids),
-        )
-
-    return _make
-
-
-@pytest.fixture
-def snapshot_ctx_multiple_tp(make_snapshot_ctx):
-    """Snapshot context with multiple TP IDs (for testing hashability/sets)."""
-    return make_snapshot_ctx(tp_ids=["issue-001", "issue-002"])
-
-
-@pytest.fixture
-def snapshot_ctx_tp_fp(make_snapshot_ctx):
-    """Snapshot context with same ID in both TP and FP (for namespace discrimination)."""
-    return make_snapshot_ctx(tp_ids=["issue-001"], fp_ids=["issue-001"])
-
-
-@pytest.fixture
-def critique_ctx_single():
-    """Critique context with one allowed input ID."""
-    return GradedCritiqueContext(allowed_input_ids=frozenset(["critique-001"]))
 
 
 # === Snapshot Hydrator Fixtures (DI Pattern) ===
@@ -202,25 +135,45 @@ def test_specimens_hydrator(test_specimens_base: Path) -> SnapshotHydrator:
 
 
 @pytest_asyncio.fixture
-async def loaded_specimen(production_specimens_hydrator):
+async def loaded_specimen(production_specimens_hydrator, test_db):
     """Load a real specimen using hydrator.
 
     Yields HydratedSnapshot object (content_root + all_discovered_files).
     Issues must be loaded separately from database via ORM.
 
     Uses ducktape/2025-11-22-02 as the canonical test specimen.
+    Depends on test_db to ensure database is initialized before hydration.
     """
     async with production_specimens_hydrator.hydrate("ducktape/2025-11-22-02") as hydrated:
         yield hydrated
 
 
+@pytest.fixture
+def test_trivial_snapshot_record(test_db):
+    """Create database record for test-trivial specimen.
+
+    Must run before hydration to ensure snapshot exists in database.
+    """
+    from adgn.props.db import get_session
+    from adgn.props.db.models import Snapshot
+    from adgn.props.models.snapshot import LocalSource
+
+    slug = "test-fixtures/test-trivial"
+    with get_session() as session:
+        spec_record = Snapshot(slug=slug, split="test", source=LocalSource(vcs="local", root="."))
+        session.add(spec_record)
+        session.commit()
+    return slug
+
+
 @pytest_asyncio.fixture
-async def test_trivial_specimen(test_specimens_hydrator):
+async def test_trivial_specimen(test_specimens_hydrator, test_trivial_snapshot_record):
     """Load test-trivial fixture specimen (clean Python code, zero issues).
 
     Test-only specimen for validating zero-issues case.
     Lives in tests/props/fixtures/specimens/test-fixtures/test-trivial/.
     Uses DI - no monkeypatching needed.
+    Depends on test_trivial_snapshot_record to ensure database record exists before hydration.
     """
     async with test_specimens_hydrator.hydrate("test-fixtures/test-trivial") as hydrated:
         yield hydrated
@@ -229,6 +182,12 @@ async def test_trivial_specimen(test_specimens_hydrator):
 # =============================================================================
 # Run managers fixtures
 # =============================================================================
+
+
+@pytest.fixture
+def mock_snapshot_slug() -> SnapshotSlug:
+    """Shared test snapshot slug."""
+    return SnapshotSlug("ducktape/2025-11-26-00")
 
 
 @pytest.fixture
@@ -383,3 +342,22 @@ def test_db(request):
         conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
 
     postgres_engine.dispose()
+
+
+@pytest.fixture
+def synced_test_db(test_db):
+    """Test database with production specimens synced."""
+    from adgn.props.db import get_session
+    from adgn.props.db.sync import (
+        get_specimens_base_path,
+        sync_critic_scopes_to_db,
+        sync_issues_to_db,
+        sync_snapshots_to_db,
+    )
+
+    specimens_dir = get_specimens_base_path()
+    with get_session() as session:
+        sync_snapshots_to_db(session, specimens_dir)
+        sync_issues_to_db(session, specimens_dir)
+        sync_critic_scopes_to_db(session, specimens_dir)
+    return test_db

@@ -7,7 +7,8 @@ import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.exec.direct import DirectExecArgs, make_direct_exec_server
+from adgn.mcp.exec.direct import DirectExecArgs, DirectExecServer
+from adgn.mcp.exec.docker.server import CONTAINER_INFO_URI
 from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.stubs.typed_stubs import ToolStub
 
@@ -50,7 +51,7 @@ async def test_stdio_server_list_tools(make_compositor) -> None:
 async def test_direct_inprocess_server(make_compositor) -> None:
     """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
 
-    srv = make_direct_exec_server("local")
+    srv = DirectExecServer()
     async with make_compositor({"local": srv}) as (sess, _comp):
         tools = await sess.list_tools()
         # Tools are composed under the compositor with namespaced tool names
@@ -69,5 +70,5 @@ async def test_inproc_container_exec_exposes_container_info_resource(docker_inpr
 
     # Call the server directly to read the resource; no manager needed here
     async with Client(docker_inproc_spec_py312) as sess:
-        res = await sess.read_resource_mcp("resource://container.info")
+        res = await sess.read_resource_mcp(CONTAINER_INFO_URI)
         assert res.contents, "container.info returned no contents"

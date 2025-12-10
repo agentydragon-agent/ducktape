@@ -13,14 +13,22 @@ from dataclasses import dataclass
 import logging
 import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+import aiodocker
 import docker
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
+from fastmcp.tools import FunctionTool
 from pydantic import TypeAdapter
+
+if TYPE_CHECKING:
+    from adgn.mcp._shared.mounted import Mounted
+    from adgn.mcp.exec.docker.server import ContainerExecServer
+
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -30,12 +38,10 @@ from sqlalchemy.orm import Session
 from adgn.agent.agent import Agent
 from adgn.agent.handler import AbortIf, BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.turn_limit import MaxTurnsHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.constants import GRADER_SUBMIT_SERVER_NAME
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningSummary
@@ -45,6 +51,7 @@ from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
+from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.models import (
     CritiqueInputIssue,
     FalsePositiveID,
@@ -147,28 +154,6 @@ class GradeInputs:
     reviewed_files: set[Path] | None = None  # Files reviewed by critic (for scope filtering)
 
 
-def build_grader_submit_tools(mcp: EnhancedFastMCP, state: GradeSubmitState, *, inputs: GradeInputs) -> None:
-    """Register grader submit tool with validation context."""
-    # Load ORM snapshot from database for ground truth issues
-    with get_session() as session:
-        snapshot_orm = session.query(Snapshot).filter_by(slug=inputs.snapshot_slug).one()
-
-        # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
-        # Pass reviewed_files for scope filtering if available
-        context = GradeValidationContext.from_specimen_and_critique(
-            snapshot_orm, inputs.critique, reviewed_files=inputs.reviewed_files
-        )
-
-    @mcp.flat_model()
-    async def submit_result(payload: GradeSubmitInput) -> SimpleOk:
-        """Submit the final grading result."""
-        # Re-validate with context to trigger all validators
-        state.result = GradeSubmitInput.model_validate(
-            payload.model_dump(), context={"grade_validation_context": context}
-        )
-        return SimpleOk(ok=True)
-
-
 GRADER_SUBMIT_INSTRUCTIONS = """\
 Grader submission server for critique evaluation.
 
@@ -182,19 +167,48 @@ If your submission is rejected or returns an error from the grader_submit server
 """
 
 
-def make_grader_submit_server(
-    state: GradeSubmitState, inputs: GradeInputs, auth: AuthProvider | None = None
-) -> EnhancedFastMCP:
-    """Create MCP server with submit_result tool.
+class GraderSubmitServer(EnhancedFastMCP):
+    """Grader submit MCP server with typed tool access.
 
-    Args:
-        state: State container for submitted result.
-        inputs: Grading context (snapshot slug and critique).
-        auth: Auth provider for HTTP mode (None for inproc).
+    Provides submit_result tool for grading workflow.
     """
-    mcp = EnhancedFastMCP(GRADER_SUBMIT_SERVER_NAME, instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
-    build_grader_submit_tools(mcp, state, inputs=inputs)
-    return mcp
+
+    # Tool name constant (for test infrastructure only)
+    SUBMIT_RESULT_TOOL_NAME = "submit_result"
+
+    # Tool reference (assigned in __init__)
+    submit_result_tool: FunctionTool
+
+    def __init__(self, state: GradeSubmitState, inputs: GradeInputs, auth: AuthProvider | None = None):
+        """Create grader submit server with state container and validation context.
+
+        Args:
+            state: State container for submitted result.
+            inputs: Grading context (snapshot slug and critique).
+            auth: Auth provider for HTTP mode (None for inproc).
+        """
+        super().__init__("Grader Submit Server", instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
+
+        # Load ORM snapshot from database for ground truth issues
+        with get_session() as session:
+            snapshot_orm = session.query(Snapshot).filter_by(slug=inputs.snapshot_slug).one()
+
+            # Build validation context using factory method (INPUT BOUNDARY - typed IDs created here)
+            # Pass reviewed_files for scope filtering if available
+            context = GradeValidationContext.from_specimen_and_critique(
+                snapshot_orm, inputs.critique, reviewed_files=inputs.reviewed_files
+            )
+
+        # Register tool - name derived from function name
+        async def submit_result(payload: GradeSubmitInput) -> SimpleOk:
+            """Submit the final grading result."""
+            # Re-validate with context to trigger all validators
+            state.result = GradeSubmitInput.model_validate(
+                payload.model_dump(), context={"grade_validation_context": context}
+            )
+            return SimpleOk(ok=True)
+
+        self.submit_result_tool = self.flat_model()(submit_result)
 
 
 @render_to_rich.register
@@ -251,6 +265,66 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
 
 
 # =============================================================================
+# Grader Compositor (Phase 2 pattern)
+# =============================================================================
+
+
+class GraderCompositor(Compositor):
+    """Compositor with grader servers pre-mounted (inproc mode only).
+
+    Mounts:
+    - runtime: Docker exec server (via PropertiesDockerWiring)
+    - grader_submit: Grader submission server
+
+    Note: This handles only inproc mode. HTTP mode is handled separately.
+
+    Usage:
+        wiring = properties_docker_spec(...)
+        grader_state = GradeSubmitState()
+        inputs = GradeInputs(...)
+
+        async with GraderCompositor(wiring, grader_state, inputs) as comp:
+            # Access servers via Mounted[T] wrappers:
+            exec_tool_name = comp.runtime.server.exec_tool.name
+            submit_tool_name = comp.grader_submit.server.submit_result_tool.name
+    """
+
+    # Mount prefix constant (for test infrastructure only)
+    SUBMIT_PREFIX = "grader_submit"
+
+    # Mounted server attributes (populated in __aenter__)
+    runtime: Mounted[ContainerExecServer]
+    grader_submit: Mounted[GraderSubmitServer]
+
+    def __init__(self, wiring: PropertiesDockerWiring, grader_state: GradeSubmitState, inputs: GradeInputs):
+        """Create compositor with grader dependencies.
+
+        Args:
+            wiring: Docker exec server wiring
+            grader_state: Grader submit state container
+            inputs: Grading context (snapshot slug and critique)
+        """
+        self._wiring = wiring
+        self._grader_state = grader_state
+        self._inputs = inputs
+
+    async def __aenter__(self):
+        """Start compositor and mount servers."""
+        # Start base compositor first
+        await super().__aenter__()
+
+        # Mount runtime server (docker exec) via wiring
+        self.runtime = await self._wiring.attach(self)
+
+        # Mount grader submit server
+        self.grader_submit = await self.mount_inproc(
+            "grader_submit", GraderSubmitServer(self._grader_state, self._inputs), pinned=True
+        )
+
+        return self
+
+
+# =============================================================================
 # Bootstrap Helpers
 # =============================================================================
 
@@ -296,7 +370,9 @@ async def _run_grader_agent(
     grader_state: GradeSubmitState,
     inputs: GradeInputs,
     wiring: PropertiesDockerWiring,
-    prompt: str,
+    canonical_tps: list[TruePositiveIssue],
+    critique_typed: list[CritiqueInputIssue],
+    canonical_fps: list[KnownFalsePositive],
     client: OpenAIModelProto,
     transcript_id: UUID,
     snapshot_split: str,
@@ -305,26 +381,56 @@ async def _run_grader_agent(
     extra_handlers: tuple[BaseHandler, ...],
     http_mode: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
+    max_turns: int | None = None,
 ) -> None:
     """Run the grader agent.
 
     Args:
         http_mode: If True, grader_submit is exposed via HTTP (env vars in wiring).
             If False, grader_submit is mounted in compositor.
+        canonical_tps: True positive issues from specimen
+        critique_typed: Issues from the critique being graded
+        canonical_fps: Known false positives from specimen
     """
-    async with Compositor("compositor") as handle:
-        runtime_server = await wiring.attach(handle)
+    # Choose compositor based on http_mode
+    # HTTP mode: use base Compositor, grader_submit server is external
+    # Inproc mode: use GraderCompositor to mount grader_submit
+    comp_ctx = Compositor() if http_mode else GraderCompositor(wiring, grader_state, inputs)
 
-        servers: dict[str, FastMCP | None] = {wiring.server_name: runtime_server}
-        if not http_mode:
-            # Inproc mode: mount grader_submit in compositor
-            grader_submit_server = make_grader_submit_server(grader_state, inputs)
-            await handle.mount_inproc(GRADER_SUBMIT_SERVER_NAME, grader_submit_server)
-            servers[GRADER_SUBMIT_SERVER_NAME] = grader_submit_server
+    async with comp_ctx as handle:
+        # In HTTP mode, we need to attach wiring and build servers dict manually
+        # In inproc mode, GraderCompositor handles this
+        if http_mode:
+            runtime = await wiring.attach(handle)
+            servers: dict[str, FastMCP | None] = {runtime.prefix: runtime.server}
+        else:
+            # GraderCompositor has already attached servers
+            servers = {
+                handle.runtime.prefix: handle.runtime.server,
+                handle.grader_submit.prefix: handle.grader_submit.server,
+            }
 
+        # Build prompt now that we have access to servers
+        # Tool name differs based on mode:
+        # - HTTP mode: direct connection to grader server, use bare tool name from server instance
+        # - In-proc mode: via compositor, use Mounted.tool_name() helper (adds prefix)
+        if http_mode:
+            # Instantiate server to get tool name (doesn't need to be mounted)
+            temp_server = GraderSubmitServer(grader_state, inputs)
+            submit_tool_name = temp_server.submit_result_tool.name
+        else:
+            submit_tool_name = handle.grader_submit.tool_name(handle.grader_submit.server.submit_result_tool)
+
+        prompt = build_grade_from_json_prompt(
+            true_positive_issues=canonical_tps,
+            critique_issues=critique_typed,
+            known_fps=canonical_fps,
+            submit_tool_name=submit_tool_name,
+            wiring=wiring,
+        )
+
+        # Note: resources and compositor_meta are auto-mounted by base Compositor
         async with Client(handle) as mcp_client:
-            await mount_standard_inproc_servers(compositor=handle)
-
             # Build system prompt with MCP HTTP instructions if in http_mode
             if http_mode:
                 system = f"""You are a strict grader evaluating a code critique.
@@ -370,6 +476,10 @@ Grade the critique, then submit your result by invoking the grader_submit server
                 ]
             )
 
+            # Add turn limit handler if max_turns is specified
+            if max_turns is not None:
+                handlers_list.append(MaxTurnsHandler(max_turns=max_turns))
+
             agent = await Agent.create(
                 mcp_client=mcp_client,
                 client=client,
@@ -395,9 +505,11 @@ async def run_grader(
     hydrated_specimen: HydratedSnapshot,
     canonical_tps: list[TruePositiveIssue],
     canonical_fps: list[KnownFalsePositive],
+    docker_client: aiodocker.Docker,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
+    max_turns: int | None = None,
 ) -> tuple[GraderOutput, UUID]:
     """Run grader agent: evaluate critique against ground truth, persist to DB.
 
@@ -473,7 +585,7 @@ async def run_grader(
     async def _http_context():
         def server_factory(token: str) -> EnhancedFastMCP:
             auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
-            return make_grader_submit_server(grader_state, inputs, auth)
+            return GraderSubmitServer(grader_state, inputs, auth)
 
         # Get gateway IP for props-network (internal network blocks DNS)
         network_name = "props-network"
@@ -495,30 +607,21 @@ async def run_grader(
         network_mode = "props-network" if USE_MCP_HTTP else "none"
         wiring = properties_docker_spec(
             hydrated_specimen.content_root,
+            docker_client=docker_client,
             mount_properties=True,
             ephemeral=False,
             extra_env=extra_env,
             network_mode=network_mode,
         )
-        # Tool name differs based on mode:
-        # - HTTP mode: direct connection to grader server, use bare tool name
-        # - In-proc mode: via compositor, use server-prefixed name
-        submit_tool_name = (
-            "submit_result" if USE_MCP_HTTP else build_mcp_function(GRADER_SUBMIT_SERVER_NAME, "submit_result")
-        )
-
-        prompt = build_grade_from_json_prompt(
-            true_positive_issues=canonical_tps,
-            critique_issues=critique_typed,
-            known_fps=canonical_fps,
-            submit_tool_name=submit_tool_name,
-            wiring=wiring,
-        )
+        # Prompt building moved into _run_grader_agent (after compositor context entered)
+        # so we can access tool names from server instances
         await _run_grader_agent(
             grader_state=grader_state,
             inputs=inputs,
             wiring=wiring,
-            prompt=prompt,
+            canonical_tps=canonical_tps,
+            critique_typed=critique_typed,
+            canonical_fps=canonical_fps,
             client=client,
             transcript_id=transcript_id,
             snapshot_split=snapshot_split,
@@ -527,10 +630,11 @@ async def run_grader(
             extra_handlers=extra_handlers,
             http_mode=bool(extra_env),
             max_lines=max_lines,
+            max_turns=max_turns,
         )
 
     if grader_state.result is None:
-        raise ToolError("Grader did not submit result")
+        raise GraderDidNotSubmitError("Grader did not submit result")
 
     output = GraderOutput(grade=grader_state.result)
 
@@ -549,8 +653,10 @@ async def grade_critique_by_id(
     session: Session,
     critique_id: UUID,
     client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     prompt_optimization_run_id: UUID | None = None,
     verbose: bool = False,
+    max_turns: int | None = None,
 ) -> UUID:
     """Grade critique by ID, return grader_run_id.
 
@@ -611,7 +717,9 @@ async def grade_critique_by_id(
             hydrated_specimen=hydrated,
             canonical_tps=canonical_tps,
             canonical_fps=canonical_fps,
+            docker_client=docker_client,
             verbose=verbose,
+            max_turns=max_turns,
         )
 
         return grader_run_id

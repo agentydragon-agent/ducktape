@@ -62,7 +62,8 @@ def test_flat_model_signature_exposed():
     def demo(input: InModel) -> OutModel:
         return OutModel(ok=True)
 
-    sig = inspect.signature(demo)
+    # flat_model() now returns FunctionTool; wrapper is accessible via .fn
+    sig = inspect.signature(demo.fn)
     params = list(sig.parameters.values())
 
     # Compare whole parameter specs directly

@@ -7,6 +7,7 @@ import logging
 import os
 from pathlib import Path
 
+import aiodocker
 import docker  # type: ignore
 from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,10 +37,8 @@ def default_client_factory(model: str) -> OpenAIModelProto:
     return build_client(model, enable_debug_logging=True)
 
 
-# Factory to create an isolated app with fresh manager/session
-
-
 def create_app(*, require_static_assets: bool = True) -> FastAPI:
+    """Factory to create an isolated app with fresh manager/session."""
     app = FastAPI()
 
     # Initialize state variables to None (mypy infers types from usage)
@@ -78,13 +77,15 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     db_path = db_path.expanduser()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.persistence = SQLitePersistence(db_path)
-    # Construct a single Docker client and pass through to the registry/containers
+    # Construct Docker clients (sync and async) and pass through to the registry/containers
     docker_client = docker.from_env()
+    async_docker_client = aiodocker.Docker()
     app.state.registry = AgentRegistry(
         persistence=app.state.persistence,
         model=DEFAULT_MODEL,
         client_factory=default_client_factory,
         docker_client=docker_client,
+        async_docker_client=async_docker_client,
     )
 
     # (continued below)
@@ -109,6 +110,7 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             model=DEFAULT_MODEL,
             client_factory=default_client_factory,
             docker_client=docker_client,
+            async_docker_client=async_docker_client,
             mcp_config=MCPConfig(),
             initial_policy=None,
         )
@@ -150,6 +152,10 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
                 await container._ui_manager.flush()
         await app.state.registry.close_all()
 
+        # Close async Docker client
+        with contextlib.suppress(Exception):
+            await async_docker_client.close()
+
     @app.get("/", response_model=None)
     async def index() -> Response:
         # Serve built Svelte app
@@ -179,7 +185,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
         if app.state.global_compositor is None:
             return Response(content="Server not ready", status_code=503)
 
-        # Create middleware instance
         middleware = MCPRoutingMiddleware(
             app=mcp_sub_app,
             token_table=TOKEN_TABLE,

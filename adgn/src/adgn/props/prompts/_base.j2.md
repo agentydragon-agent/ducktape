@@ -69,7 +69,7 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 {% endfor %}
 {% endif %}
 
-{% from "_partials.j2" import constraints_read_only, supplemental_section_md, reporting_requirements %}
+{% from "prompts/_partials.j2" import constraints_read_only, supplemental_section_md, reporting_requirements %}
 
 ## Files in scope
 

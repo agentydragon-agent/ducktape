@@ -6,16 +6,11 @@ Tests for models defined in grader/models.py.
 from uuid import uuid4
 
 from hamcrest import assert_that, equal_to
-import pytest
 
 from adgn.props.grader.models import GraderInput, GraderOutput, GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
 
-
-@pytest.fixture
-def mock_snapshot_slug() -> SnapshotSlug:
-    """Shared test snapshot slug."""
-    return SnapshotSlug("ducktape/2025-11-26-00")
+# Note: mock_snapshot_slug fixture is provided in tests/props/conftest.py
 
 
 class TestGraderModels:

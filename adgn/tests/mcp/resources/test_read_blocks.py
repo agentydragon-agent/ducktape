@@ -1,12 +1,9 @@
 """Tests for block-level resource reading with truncation markers."""
 
-import pytest
-
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.server import ReadBlocksArgs
 
 
-@pytest.mark.asyncio
 async def test_read_blocks_single_text_block_full(compositor, typed_resources_client):
     """Test reading a single text block that fits within max_bytes."""
     # Setup: origin server with a small text resource
@@ -29,7 +26,6 @@ async def test_read_blocks_single_text_block_full(compositor, typed_resources_cl
     assert block.text == "Hello, World!"
 
 
-@pytest.mark.asyncio
 async def test_read_blocks_truncate_at_end(compositor, typed_resources_client):
     """Test truncating a text block that exceeds max_bytes."""
     # Setup: text block with 100 bytes
@@ -59,7 +55,6 @@ async def test_read_blocks_truncate_at_end(compositor, typed_resources_client):
     assert truncated.content.text == "a" * 50
 
 
-@pytest.mark.asyncio
 async def test_read_blocks_truncate_within_single_large_block(compositor, typed_resources_client):
     """Test truncating a large block - the truncated marker contains partial content."""
     # Setup: single large block (FastMCP resources are always single-block)

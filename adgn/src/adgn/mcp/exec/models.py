@@ -184,6 +184,27 @@ class ExecInput(OpenAIStrictModeBaseModel):
         return result
 
 
+def make_exec_input(
+    cmd: list[str],
+    *,
+    timeout_ms: int = 10_000,
+    cwd: str | None = None,
+    env: list[str] | None = None,
+    user: str | None = None,
+) -> ExecInput:
+    """Convenience helper for constructing ExecInput with sensible defaults.
+
+    Mirrors the pattern from tests/conftest.py:make_exec_input() and
+    bootstrap.docker_exec_call() but for production code. Use this to avoid
+    repeating the full 5-field constructor when most fields are None.
+
+    Example:
+        exec_input = make_exec_input(["echo", "hello"])
+        exec_input_with_timeout = make_exec_input(["sleep", "5"], timeout_ms=6_000)
+    """
+    return ExecInput(cmd=cmd, cwd=cwd, env=env, user=user, timeout_ms=timeout_ms)
+
+
 class BaseExecResult(BaseModel):
     """Standard MCP exec response - basic servers return this directly (output model).
 

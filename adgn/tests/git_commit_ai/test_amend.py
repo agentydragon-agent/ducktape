@@ -190,7 +190,7 @@ async def test_full_amend_flow_integration(monkeypatch, tmp_path: Path, patch_fa
     async def _fake_generate(*args, **kwargs) -> str:  # match production signature leniently
         return new_message
 
-    monkeypatch.setattr("adgn.git_commit_ai.minicodex_backend.generate_commit_message_minicodex", _fake_generate)
+    monkeypatch.setattr("adgn.git_commit_ai.agent_backend.generate_commit_message_agent", _fake_generate)
     monkeypatch.setattr("adgn.git_commit_ai.cli.Cache.get", lambda self, key: new_message)
 
     # Run the tool with empty argv (avoid pytest args leaking)

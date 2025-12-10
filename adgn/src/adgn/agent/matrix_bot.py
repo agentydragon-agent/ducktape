@@ -6,35 +6,87 @@ import os
 from pathlib import Path
 from urllib.parse import urlencode
 
+import aiodocker
 from fastmcp.client import Client
 from pydantic import TypeAdapter
 import typer
 
 from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.logging_config import configure_logging_info
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.server.bus import ServerBus
+from adgn.agent.server.bus import ServerBus, UiEndTurn
 from adgn.agent.server.mode_handler import ServerModeHandler
-from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.config_loader import build_mcp_config
-from adgn.mcp._shared.constants import MATRIX_CONTROL_SERVER_NAME
 from adgn.mcp._shared.container_session import ContainerOptions
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp._shared.types import NetworkMode
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.exec.models import BaseExecResult
-from adgn.mcp.matrix.control import make_matrix_control_server
+from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.mcp.exec.docker.server import ContainerExecServer
+from adgn.mcp.exec.models import BaseExecResult, make_exec_input
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
 
+
+class MatrixBotCompositor(Compositor):
+    """Compositor with runtime and matrix_control servers pre-mounted."""
+
+    runtime: Mounted[ContainerExecServer]
+    matrix_control: Mounted[EnhancedFastMCP]
+
+    def __init__(
+        self,
+        docker_client: aiodocker.Docker,
+        docker_image: str,
+        network_mode: NetworkMode,
+        environment: dict[str, str],
+        bus: ServerBus,
+    ):
+        super().__init__()
+        self._docker_client = docker_client
+        self._docker_image = docker_image
+        self._network_mode = network_mode
+        self._environment = environment
+        self._bus = bus
+
+    async def __aenter__(self):
+        await super().__aenter__()
+
+        # Mount runtime server (docker exec with ephemeral containers)
+        self.runtime = await self.mount_inproc(
+            "runtime",
+            ContainerExecServer(
+                ContainerOptions(
+                    image=self._docker_image,
+                    network_mode=self._network_mode,
+                    environment=self._environment,
+                    ephemeral=True,
+                ),
+                self._docker_client,
+            ),
+            pinned=True,
+        )
+
+        # Mount matrix control server (inlined from make_matrix_control_server)
+        matrix_control = EnhancedFastMCP(
+            "Matrix Control Server", instructions="Matrix control: yield-only control to signal end of turn."
+        )
+
+        @matrix_control.flat_model()
+        def do_yield() -> UiEndTurn:
+            """End the current turn. The runner will wake you on new DMs."""
+            self._bus.push_end_turn()
+            return UiEndTurn()
+
+        self.matrix_control = await self.mount_inproc("matrix_control", matrix_control, pinned=True)
+
+        return self
+
+
 app = typer.Typer(help="Matrix-driven Agent entrypoint (docker + yield-only control)", no_args_is_help=True)
-
-
-def _configure_logging_info() -> None:
-    configure_logging()
 
 
 @app.command()
@@ -55,7 +107,7 @@ def run(
     """Run Agent in headless Matrix mode using docker_exec + yield-only control."""
 
     async def _run() -> None:
-        _configure_logging_info()
+        configure_logging_info(set_stream_handler_level=False)
 
         _ = build_mcp_config(mcp_configs)
         ui_bus = ServerBus()
@@ -67,75 +119,78 @@ def run(
             "MATRIX_ROOM_ID": room,
             "MATRIX_USER_ID": user_id,
         }
-        docker_exec_tool = build_mcp_function("docker", "exec")
-        matrix_yield_tool = build_mcp_function(MATRIX_CONTROL_SERVER_NAME, "yield")
-        effective_system = (system or "").strip() or (
-            "You are a Matrix-driven assistant. Do not emit plain text.\n"
-            "I/O contract:\n"
-            f"- Use {docker_exec_tool} to call Matrix HTTP APIs (curl) or your CLI from inside the container.\n"
-            f"- Read new DMs, send replies, and when finished call {matrix_yield_tool}().\n"
-            "- Do not emit plain text; only use tools.\n"
-        )
 
         client = build_client(model)
 
-        # Build a Compositor and mount runtime + matrix control servers
+        # Build MatrixBotCompositor with runtime + matrix control servers
+        docker_client = aiodocker.Docker()
+        try:
+            async with MatrixBotCompositor(
+                docker_client=docker_client, docker_image=docker_image, network_mode=nm, environment=env, bus=ui_bus
+            ) as comp:
+                # Build tool names from mounted servers (after __aenter__)
+                docker_exec_tool = comp.runtime.tool_name(comp.runtime.server.exec_tool)
+                matrix_yield_tool = comp.matrix_control.tool_name(comp.matrix_control.server.do_yield)
 
-        async with Compositor() as comp:
-            runtime_server = make_container_exec_server(
-                ContainerOptions(image=docker_image, network_mode=nm, environment=env, ephemeral=True)
-            )
-            await comp.mount_inproc("docker", runtime_server)
-            matrix_control = make_matrix_control_server(name="Matrix Control", bus=ui_bus)
-            await comp.mount_inproc(MATRIX_CONTROL_SERVER_NAME, matrix_control)
-
-            # Client with notifications buffer so UI can reflect MCP updates
-            notif_buffer = NotificationsBuffer(compositor=comp)
-            async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
-                agent = await Agent.create(
-                    mcp_client=mcp_client,
-                    client=client,
-                    handlers=[
-                        ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
-                        DisplayEventsHandler(),
-                    ],
-                    tool_policy=RequireAnyTool(),
+                effective_system = (system or "").strip() or (
+                    "You are a Matrix-driven assistant. Do not emit plain text.\n"
+                    "I/O contract:\n"
+                    f"- Use {docker_exec_tool} to call Matrix HTTP APIs (curl) or your CLI from inside the container.\n"
+                    f"- Read new DMs, send replies, and when finished call {matrix_yield_tool}().\n"
+                    "- Do not emit plain text; only use tools.\n"
                 )
-                agent.insert_message(SystemMessage.text(effective_system))
 
-                async def _sync_once(since: str | None) -> tuple[str, bool]:
-                    qs = {"timeout": "30000"}
-                    if since:
-                        qs["since"] = since
-                    url = f"$MATRIX_BASE_URL/_matrix/client/v3/sync?{urlencode(qs)}"
-                    hdr = "Authorization: Bearer $MATRIX_ACCESS_TOKEN"
-                    cmd = ["sh", "-lc", f'curl -sS -H {json.dumps(hdr)} --fail --max-time 35 "{url}"']
-                    res_client = await mcp_client.session.call_tool(
-                        name=build_mcp_function("docker", "exec"), arguments={"cmd": cmd, "timeout_ms": 40_000}
+                # Client with notifications buffer so UI can reflect MCP updates
+                notif_buffer = NotificationsBuffer(compositor=comp)
+                async with Client(comp, message_handler=notif_buffer.handler) as mcp_client:
+                    agent = await Agent.create(
+                        mcp_client=mcp_client,
+                        client=client,
+                        handlers=[
+                            ServerModeHandler(bus=ui_bus, poll_notifications=notif_buffer.poll),
+                            DisplayEventsHandler(),
+                        ],
+                        tool_policy=RequireAnyTool(),
                     )
-                    res = fastmcp_to_mcp_result(res_client)
-                    ex = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
-                    stdout_stream = ex.stdout or ""
-                    assert isinstance(stdout_stream, str), "Matrix API response should not be truncated"
-                    stdout = stdout_stream
-                    try:
-                        data = json.loads(stdout)
-                    except json.JSONDecodeError:
-                        # Not JSON (or truncated), keep polling without advancing
-                        return since or "", False
-                    next_since = data.get("next_batch") or (since or "")
-                    rooms = (data.get("rooms") or {}).get("join") or {}
-                    events = (rooms.get(room) or {}).get("timeline", {}).get("events", [])
-                    return next_since, bool(events)
+                    agent.insert_message(SystemMessage.text(effective_system))
 
-                since_token = initial_since or None
-                while True:
-                    next_since, has_new = await _sync_once(since_token)
-                    since_token = next_since
-                    if not has_new:
-                        continue
-                    agent.insert_message(UserMessage.text("process matrix inbox"))
-                    await agent.run()
+                    async def _sync_once(since: str | None) -> tuple[str, bool]:
+                        """Poll Matrix sync API and return (next_since, has_new_events)."""
+                        qs = {"timeout": "30000"}
+                        if since:
+                            qs["since"] = since
+                        url = f"$MATRIX_BASE_URL/_matrix/client/v3/sync?{urlencode(qs)}"
+                        curl_cmd = (
+                            f'curl -sS -H "Authorization: Bearer $MATRIX_ACCESS_TOKEN" --fail --max-time 35 "{url}"'
+                        )
+
+                        # Call docker exec using helper with defaults
+                        exec_input = make_exec_input(["sh", "-lc", curl_cmd], timeout_ms=40_000)
+                        res_client = await mcp_client.session.call_tool(
+                            name=docker_exec_tool, arguments=exec_input.model_dump()
+                        )
+                        res = fastmcp_to_mcp_result(res_client)
+                        exec_result = TypeAdapter(BaseExecResult).validate_python(res.structuredContent or {})
+
+                        stdout = exec_result.stdout or ""
+                        assert isinstance(stdout, str), "Matrix API response should not be truncated"
+
+                        data = json.loads(stdout)
+                        next_since = data.get("next_batch") or (since or "")
+                        rooms = (data.get("rooms") or {}).get("join") or {}
+                        events = (rooms.get(room) or {}).get("timeline", {}).get("events", [])
+                        return next_since, bool(events)
+
+                    since_token = initial_since or None
+                    while True:
+                        next_since, has_new = await _sync_once(since_token)
+                        since_token = next_since
+                        if not has_new:
+                            continue
+                        agent.insert_message(UserMessage.text("process matrix inbox"))
+                        await agent.run()
+        finally:
+            await docker_client.close()
 
     asyncio.run(_run())
 

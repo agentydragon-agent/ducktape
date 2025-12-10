@@ -3,7 +3,6 @@
   pkgs,
   lib,
   enableGui,
-  unstablePkgs,
   solarizedLight,
   solarizedDark,
   terminalFont,
@@ -18,7 +17,7 @@
 
   kittyPkg = config.lib.nixGL.wrap pkgs.kitty;
   weztermPkg = config.lib.nixGL.wrap pkgs.wezterm;
-  ghosttyPkg = config.lib.nixGL.wrap unstablePkgs.ghostty;
+  ghosttyPkg = config.lib.nixGL.wrap pkgs.ghostty;
 
   mkKittyTheme = scheme: isLight: let
     p = scheme.palette;

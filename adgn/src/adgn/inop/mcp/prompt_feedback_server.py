@@ -29,14 +29,14 @@ logger = logging.getLogger(__name__)
 
 
 def make_prompt_feedback_server_with_state(
-    deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider, *, name: str = "prompt_feedback"
+    deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider
 ) -> tuple[FastMCP, PromptFeedbackState]:
     """FastMCP with closure state (tools-builder style). No lifespan/ContextVar.
 
     Returns (server, state). Attach via mcp.attach_inproc.
     """
     state = PromptFeedbackState()
-    mcp = FastMCP(name, instructions="Prompt evaluation (rollouts+grading+persistence)")
+    mcp = FastMCP("Prompt Evaluation MCP Server", instructions="Prompt evaluation (rollouts+grading+persistence)")
 
     @mcp.tool()
     async def propose_prompt(prompt: str) -> dict[str, str]:
@@ -60,6 +60,6 @@ async def attach_prompt_feedback(
     comp: Compositor, deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider, *, name: str = "prompt_feedback"
 ):
     """Attach prompt_feedback in-proc; return (server, state)."""
-    server, state = make_prompt_feedback_server_with_state(deps, feedback_provider, name=name)
+    server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
     await comp.mount_inproc(name, server)
     return server, state

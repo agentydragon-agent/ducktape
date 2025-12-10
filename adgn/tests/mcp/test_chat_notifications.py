@@ -4,7 +4,7 @@ from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler
 from mcp import types
 
-from adgn.mcp.chat.server import attach_chat_servers
+from adgn.mcp.chat.server import CHAT_HEAD_URI, attach_chat_servers
 
 
 class _Capture(MessageHandler):
@@ -26,7 +26,7 @@ async def test_chat_head_notifications_other_participant(compositor) -> None:
         out = await human_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "hello"})
         assert not out.is_error
         await asyncio.sleep(0.05)
-        assert any(uri.endswith("chat://head") for uri in cap_assist.updated), cap_assist.updated
+        assert CHAT_HEAD_URI in cap_assist.updated, cap_assist.updated
 
     # Connect directly to human server to capture its notifications
     cap_human = _Capture()
@@ -34,4 +34,4 @@ async def test_chat_head_notifications_other_participant(compositor) -> None:
         out2 = await assist_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "roger"})
         assert not out2.is_error
         await asyncio.sleep(0.05)
-        assert any(uri.endswith("chat://head") for uri in cap_human.updated), cap_human.updated
+        assert CHAT_HEAD_URI in cap_human.updated, cap_human.updated

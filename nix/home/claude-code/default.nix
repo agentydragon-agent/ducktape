@@ -2,7 +2,6 @@
   config,
   pkgs,
   lib,
-  unstablePkgs,
   ...
 }: let
   # Helper to generate Bash permission strings from command names
@@ -218,7 +217,7 @@
 in {
   programs.claude-code = {
     enable = true;
-    package = unstablePkgs.claude-code;
+    package = pkgs.claude-code;
 
     commands = commands;
 

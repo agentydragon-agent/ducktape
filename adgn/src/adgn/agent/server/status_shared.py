@@ -6,9 +6,9 @@ from enum import StrEnum
 from fastapi import FastAPI
 from pydantic import BaseModel, ConfigDict
 
-from adgn.mcp._shared.constants import RUNTIME_CONTAINER_INFO_URI
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.types import ContainerInfo
+from adgn.mcp.exec.docker.server import CONTAINER_INFO_URI
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
@@ -20,18 +20,6 @@ class RunPhase(StrEnum):
     WAITING_APPROVAL = "waiting_approval"
     SENDING_OUTPUT = "sending_output"
     ERROR = "error"
-
-
-def derive_run_phase(*, pending_approvals: int) -> RunPhase:
-    """Coarse run phase derivation used by HTTP and WS status.
-
-    - idle: no pending approvals (no activity)
-    - waiting_approval: pending approvals exist
-    - sampling: default (activity but no pending approvals)
-    """
-    if pending_approvals > 0:
-        return RunPhase.WAITING_APPROVAL
-    return RunPhase.IDLE
 
 
 def determine_run_phase(*, pending_approvals: int, mcp_has_inflight: bool) -> RunPhase:
@@ -120,9 +108,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     # Container id via runtime container.info (only when not ephemeral)
     container_id: str | None = None
     if c and present and (c.runtime_ephemeral is False) and c.compositor_client is not None:
-        info: ContainerInfo = await read_text_json_typed(
-            c.compositor_client.session, RUNTIME_CONTAINER_INFO_URI, ContainerInfo
-        )
+        info: ContainerInfo = await read_text_json_typed(c.compositor_client.session, CONTAINER_INFO_URI, ContainerInfo)
         container_id = info.container_id
     container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
 

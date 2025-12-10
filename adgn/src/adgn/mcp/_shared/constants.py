@@ -1,107 +1,35 @@
-# Shared constants for MCP mcp/_shared modules
+"""Shared constants for MCP _shared modules."""
 
 from pathlib import Path
-from signal import SIGKILL, SIGTERM
 from typing import Final
-from urllib.parse import urlunparse
 
+# ============================================================================
+# Container Filesystem Paths
+# ============================================================================
+WORKING_DIR: Final[Path] = Path("/workspace")
+
+# ============================================================================
+# Container Lifecycle & Process Control
+# ============================================================================
 SLEEP_FOREVER_CMD: Final[list[str]] = ["/bin/sh", "-lc", "sleep infinity"]
 
-# Container working directory constants
-WORKING_DIR: Final[Path] = Path("/workspace")
-PROPS_DIR: Final[Path] = Path("/props")
-
-# Canonical server/tool names for the agent runtime Docker MCP server
-RUNTIME_SERVER_NAME: Final[str] = "runtime"
-RUNTIME_EXEC_TOOL_NAME: Final[str] = "exec"
-RUNTIME_CONTAINER_INFO_URI: Final[str] = "resource://container.info"
-
-SIGNAL_EXIT_OFFSET: Final[int] = 128
-
-
-def signal_exit_code(sig: int) -> int:
-    return SIGNAL_EXIT_OFFSET + int(sig)
-
-
-EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
-EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
-
-# Common server names
-CRITIC_SUBMIT_SERVER_NAME: Final[str] = "critic_submit"
-MATRIX_CONTROL_SERVER_NAME: Final[str] = "matrix_control"
-UI_SERVER_NAME: Final[str] = "ui"
-APPROVAL_POLICY_SERVER_NAME: Final[str] = "approval_policy"
-POLICY_PROPOSER_SERVER_NAME: Final[str] = "policy_proposer"
-POLICY_ADMIN_SERVER_NAME: Final[str] = "policy_admin"
-POLICY_READER_SERVER_NAME: Final[str] = "policy_reader"
-APPROVAL_ADMIN_SERVER_NAME: Final[str] = "approval_admin"
-DOCKER_SERVER_NAME: Final[str] = "docker"
-PROMPT_EVAL_SERVER_NAME: Final[str] = "prompt_eval"
-EDITOR_SERVER_NAME: Final[str] = "editor"
-SUBMIT_COMMIT_MESSAGE_SERVER_NAME: Final[str] = "submit_commit_message"
-LINT_SUBMIT_SERVER_NAME: Final[str] = "lint_submit"
-GRADER_SUBMIT_SERVER_NAME: Final[str] = "grader_submit"
-RESOURCES_SERVER_NAME: Final[str] = "resources"
-SEATBELT_EXEC_SERVER_NAME: Final[str] = "seatbelt_exec"
-
-# Prompt evaluation server resource URIs
-PROMPT_OPTIMIZATION_RUN_ID_URI: Final[str] = "resource://prompt_eval/prompt_optimization_run_id"
-
-# Approval policy resource URI (neutral/logical; no host mount implications)
-APPROVAL_POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
-APPROVAL_POLICY_PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"
-
-# Pending tool call approvals resource (runtime state, not policy definitions)
-PENDING_CALLS_URI: Final[str] = "pending://calls"
-
-# MCP notification method names (match MCP spec)
-RESOURCES_UPDATED_METHOD: Final[str] = "notifications/resources/updated"
-RESOURCES_LIST_CHANGED_METHOD: Final[str] = "notifications/resources/list_changed"
-
-# Loopback/HTTP defaults (auth + embed)
-LOOPBACK_HOST: Final[str] = "127.0.0.1"
-DEFAULT_AUTH_ISSUER_URL: Final[str] = urlunparse(("http", LOOPBACK_HOST, "", "", "", ""))
-DEFAULT_RESOURCE_SERVER_URL: Final[str] = urlunparse(("http", LOOPBACK_HOST, "", "", "", ""))
-
-# Reserved JSON-RPC error codes for policy gateway denials
-POLICY_DENIED_ABORT_CODE: Final[int] = -32950
-POLICY_DENIED_CONTINUE_CODE: Final[int] = -32951
-
-# Reserved JSON-RPC error code for policy evaluator failures
-# Used when the approval policy evaluator itself errors or times out
-POLICY_EVALUATOR_ERROR_CODE: Final[int] = -32953
-
-# Canonical mapping for reserved-code misuse by backends
-# Backends must not emit reserved policy denial codes/messages; the middleware
-# remaps such attempts to this explicit error to prevent spoofing.
-POLICY_BACKEND_RESERVED_MISUSE_CODE: Final[int] = -32952
-POLICY_BACKEND_RESERVED_MISUSE_MSG: Final[str] = "policy_backend_reserved_misuse"
-
-# Reserved JSON-RPC error messages for policy gateway denials
-POLICY_DENIED_ABORT_MSG: Final[str] = "policy_denied"
-POLICY_DENIED_CONTINUE_MSG: Final[str] = "policy_denied_continue"
-
-# Reserved JSON-RPC error message for policy evaluator failures
-POLICY_EVALUATOR_ERROR_MSG: Final[str] = "policy_evaluator_error"
-
-# Compositor metadata server and resource URI templates (mounted under compositor)
-COMPOSITOR_META_SERVER_NAME: Final[str] = "compositor_meta"
-# Concrete resource for discovery
-COMPOSITOR_META_SERVERS_URI: Final[str] = "compositor://servers"
-# URI patterns with compositor:// scheme (for notifications and client use)
-COMPOSITOR_META_STATE_URI_PATTERN: Final[str] = "compositor://{server}/state"
-COMPOSITOR_META_INSTRUCTIONS_URI_PATTERN: Final[str] = "compositor://{server}/instructions"
-COMPOSITOR_META_CAPABILITIES_URI_PATTERN: Final[str] = "compositor://{server}/capabilities"
-
-# Compositor admin server name
+# ============================================================================
+# Server Mount Prefixes - Core Infrastructure
+# ============================================================================
+RESOURCES_MOUNT_PREFIX: Final[str] = "resources"
+RUNTIME_MOUNT_PREFIX: Final[str] = "runtime"
+COMPOSITOR_META_MOUNT_PREFIX: Final[str] = "compositor_meta"
+UI_MOUNT_PREFIX: Final[str] = "ui"
 COMPOSITOR_ADMIN_SERVER_NAME: Final[str] = "compositor_admin"
 
-# Subscriptions index (aggregated by resources server)
-RESOURCES_SUBSCRIPTIONS_INDEX_URI: Final[str] = "resources://subscriptions"
+# ============================================================================
+# Server Mount Prefixes - Approval Policy
+# ============================================================================
+POLICY_READER_MOUNT_PREFIX: Final[str] = "policy_reader"
+POLICY_PROPOSER_MOUNT_PREFIX: Final[str] = "policy_proposer"
+APPROVAL_ADMIN_MOUNT_PREFIX: Final[str] = "approval_admin"
 
-# Agents server resource URIs
-AGENTS_LIST_URI: Final[str] = "agents://list"
-AGENTS_PRESETS_URI: Final[str] = "agents://presets"
-
-# Policy Gateway stamping key placed on error.data to unambiguously mark origin
-POLICY_GATEWAY_STAMP_KEY: Final[str] = "adgn_policy_gateway"
+# ============================================================================
+# Server Mount Prefixes - Optional/Specialized
+# ============================================================================
+SEATBELT_EXEC_MOUNT_PREFIX: Final[str] = "seatbelt_exec"

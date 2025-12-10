@@ -12,6 +12,7 @@ from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.mode_handler import ServerModeHandler
 from adgn.agent.server.runtime import UiEventHandler
 from adgn.agent.types import AgentID
+from adgn.mcp.compositor.server import Compositor
 
 
 def build_handlers(
@@ -20,12 +21,18 @@ def build_handlers(
     manager: UiEventHandler,
     persistence: Persistence,
     agent_id: AgentID,
+    compositor: Compositor | None = None,
     ui_bus: ServerBus | None = None,
 ) -> tuple[list[BaseHandler], RunPersistenceHandler]:
     persist_handler = RunPersistenceHandler(persistence=persistence, agent_id=agent_id)
     handlers: list[BaseHandler] = [manager, persist_handler]
     if ui_bus is not None:
-        handlers.extend([ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications), DisplayEventsHandler()])
+        handlers.extend(
+            [
+                ServerModeHandler(bus=ui_bus, poll_notifications=poll_notifications),
+                DisplayEventsHandler(compositor=compositor),
+            ]
+        )
     else:
         # Production/non-UI path: flush MCP notifications via NotificationsHandler
         handlers.append(NotificationsHandler(poll_notifications))

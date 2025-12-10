@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp.testing.simple_servers import SendMessageInput
-from adgn.mcp.ui.server import EndTurnInput
 from tests.llm.support.openai_mock import make_mock
-from tests.support.steps import MakeCall
+from tests.support.steps import UiEndTurnCall, UiSendMessageCall
 
 pytestmark = pytest.mark.usefixtures()
 
@@ -26,10 +24,10 @@ def test_ui_create_chat_and_restore(e2e_page, run_server, responses_factory, mak
     # Program two turns: **r1**, end; then **r2**, end
     runner = make_step_runner(
         steps=[
-            MakeCall("ui", "send_message", SendMessageInput(mime="text/markdown", content="**r1**")),
-            MakeCall("ui", "end_turn", EndTurnInput()),
-            MakeCall("ui", "send_message", SendMessageInput(mime="text/markdown", content="**r2**")),
-            MakeCall("ui", "end_turn", EndTurnInput()),
+            UiSendMessageCall(content="**r1**"),
+            UiEndTurnCall(),
+            UiSendMessageCall(content="**r2**"),
+            UiEndTurnCall(),
         ]
     )
 

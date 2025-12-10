@@ -113,6 +113,7 @@ repos:
           - "plotext>=5.2.0"
           - "claude-code-sdk>=0.0.21,<0.1"
           - playwright
+          - typer-di
           # Type stubs
           - asyncpg-stubs
           - types-unidiff

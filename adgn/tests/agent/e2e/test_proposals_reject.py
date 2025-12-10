@@ -4,10 +4,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from adgn.mcp.approval_policy.engine import CreateProposalArgs
-from adgn.mcp.ui.server import EndTurnInput
+from adgn.mcp._shared.constants import POLICY_PROPOSER_MOUNT_PREFIX
+from adgn.mcp.approval_policy.engine import CREATE_PROPOSAL_TOOL_NAME, CreateProposalArgs
 from tests.llm.support.openai_mock import make_mock
-from tests.support.steps import MakeCall
+from tests.support.steps import MakeCall, UiEndTurnCall
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -26,8 +26,10 @@ async def test_policy_proposal_reject_updates_ui(
     # Mock the agent to create a proposal via tool call, then end turn
     runner = make_step_runner(
         steps=[
-            MakeCall("policy_proposer", "create_proposal", CreateProposalArgs(content=policy_allow_all)),
-            MakeCall("ui", "end_turn", EndTurnInput()),
+            MakeCall(
+                POLICY_PROPOSER_MOUNT_PREFIX, CREATE_PROPOSAL_TOOL_NAME, CreateProposalArgs(content=policy_allow_all)
+            ),
+            UiEndTurnCall(),
         ]
     )
     mock_client = make_mock(runner.handle_request_async)

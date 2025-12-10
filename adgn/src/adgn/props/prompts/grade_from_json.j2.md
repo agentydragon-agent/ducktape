@@ -1,4 +1,4 @@
-{% extends "_base.j2.md" %}
+{% extends "prompts/_base.j2.md" %}
 {# Schemas commented out - may be confusing the model when also provided via tool definitions #}
 {# {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %} #}
 {% set header_schema_names = [] %}

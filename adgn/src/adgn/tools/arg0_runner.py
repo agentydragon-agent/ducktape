@@ -16,19 +16,10 @@ import sys
 from adgn.util.patch import apply_patch_auto
 
 
-def _safe_root() -> Path:
-    return Path.cwd().resolve()
-
-
 def _safe_join(root: Path, rel: str) -> Path:
     p = (root / rel).resolve()
-    try:
-        # Python 3.11+: use is_relative_to for robust ancestor check
-        if not p.is_relative_to(root):
-            raise ValueError
-    except AttributeError:  # pragma: no cover - fallback for older Pythons
-        if str(p).startswith(str(root)) is False:
-            raise ValueError
+    if not p.is_relative_to(root):
+        raise ValueError
     return p
 
 
@@ -38,7 +29,7 @@ def _apply_patch_cli(argv: list[str]) -> int:
     if not patch_text:
         print("apply_patch: missing patch text (arg or stdin)", file=sys.stderr)
         return 2
-    root = _safe_root()
+    root = Path.cwd().resolve()
 
     def _open_fn(path: str) -> str:
         p = _safe_join(root, path)

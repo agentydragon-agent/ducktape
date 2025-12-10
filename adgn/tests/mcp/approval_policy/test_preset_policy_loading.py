@@ -9,12 +9,11 @@ from pathlib import Path
 
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
-from mcp.types import TextContent
 import pytest
 
 from adgn.agent.presets import create_agent_from_preset, discover_presets
-from adgn.mcp._shared.constants import APPROVAL_POLICY_RESOURCE_URI
-from adgn.mcp.approval_policy.engine import PolicyEngine
+from adgn.mcp._shared.resources import extract_single_text_content
+from adgn.mcp.approval_policy.engine import POLICY_RESOURCE_URI, PolicyEngine
 from tests.agent.testdata.approval_policy import fetch_policy
 
 
@@ -56,7 +55,6 @@ approval_policy: |
 class TestPresetPolicyLoading:
     """Tests that preset policies are correctly loaded into PolicyEngine."""
 
-    @pytest.mark.asyncio
     async def test_policy_engine_uses_provided_source(self, sqlite_persistence, docker_client, policy_allow_all):
         """PolicyEngine exposes the provided policy_source via resource."""
         engine = PolicyEngine(
@@ -68,15 +66,11 @@ class TestPresetPolicyLoading:
 
         async with Client(engine.reader) as sess:
             # Read the policy resource
-            contents = await sess.read_resource(str(APPROVAL_POLICY_RESOURCE_URI))
-            assert contents is not None
-            text_parts = [c for c in contents if isinstance(c, TextContent)]
-            assert len(text_parts) >= 1
+            result = await sess.read_resource(str(POLICY_RESOURCE_URI))
+            policy_text = extract_single_text_content(result.contents)
             # Should contain the allow_all policy
-            policy_text = text_parts[0].text
             assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
 
-    @pytest.mark.asyncio
     async def test_policy_engine_returns_custom_policy(self, sqlite_persistence, docker_client):
         """PolicyEngine correctly returns custom policy source."""
         custom_policy = fetch_policy("const")
@@ -89,13 +83,11 @@ class TestPresetPolicyLoading:
         )
 
         async with Client(engine.reader) as sess:
-            contents = await sess.read_resource(str(APPROVAL_POLICY_RESOURCE_URI))
-            text_parts = [c for c in contents if isinstance(c, TextContent)]
-            policy_text = text_parts[0].text
+            result = await sess.read_resource(str(POLICY_RESOURCE_URI))
+            policy_text = extract_single_text_content(result.contents)
             # const policy should be returned
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text
 
-    @pytest.mark.asyncio
     async def test_get_policy_returns_source_and_version(self, sqlite_persistence, docker_client, policy_allow_all):
         """PolicyEngine.get_policy returns (source, version)."""
         engine = PolicyEngine(
@@ -109,7 +101,6 @@ class TestPresetPolicyLoading:
         assert source == policy_allow_all
         assert version == 1  # Initial version
 
-    @pytest.mark.asyncio
     async def test_set_policy_increments_version(self, sqlite_persistence, docker_client, policy_allow_all):
         """PolicyEngine.set_policy increments version."""
         engine = PolicyEngine(
@@ -129,7 +120,6 @@ class TestPresetPolicyLoading:
         assert new_source == policy_allow_all
         assert new_version == 2
 
-    @pytest.mark.asyncio
     async def test_load_policy_sets_without_incrementing(self, sqlite_persistence, docker_client, policy_allow_all):
         """PolicyEngine.load_policy sets policy at specific version (hydration)."""
         engine = PolicyEngine(
@@ -150,7 +140,6 @@ class TestPresetPolicyLoading:
 class TestPresetPolicyResolution:
     """Tests for preset policy resolution logic."""
 
-    @pytest.mark.asyncio
     async def test_agent_metadata_records_preset(self, sqlite_persistence):
         """Creating agent from preset records preset name in metadata."""
         agent_id, _config, _system = await create_agent_from_preset(

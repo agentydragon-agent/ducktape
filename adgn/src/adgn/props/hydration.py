@@ -24,8 +24,9 @@ from urllib.request import urlopen
 from filelock import FileLock
 from platformdirs import user_cache_dir
 import pygit2
-import yaml
 
+from .db import get_session
+from .db.models import Snapshot as SnapshotORM
 from .ids import SnapshotSlug, get_snapshot_manifest_path
 from .models.snapshot import GitHubSource, GitSource, LocalSource, SnapshotDoc
 from .paths import FileType, classify_path
@@ -41,19 +42,15 @@ class HydratedSnapshot:
     This represents extracted/materialized source code in a temporary directory.
     It contains NO metadata (slug, manifest) and NO issue data (TPs, FPs).
 
-    For issue data, query the database:
+    For issue data and metadata, query the database:
         from adgn.props.db import get_session
         from adgn.props.db.models import Snapshot
 
         with get_session() as session:
             snapshot_orm = session.query(Snapshot).filter_by(slug=slug).one()
-            tps = snapshot_orm.true_positives
-            fps = snapshot_orm.false_positives
-
-    For manifest, use SnapshotRegistry:
-        registry = SnapshotRegistry.from_env()
-        record = registry.get_record(slug)
-        manifest = record.manifest
+            tps = snapshot_orm.true_positives  # ORM relationship
+            fps = snapshot_orm.false_positives  # ORM relationship
+            split = snapshot_orm.split  # Split.TRAIN/VALID/TEST
     """
 
     content_root: Path
@@ -309,7 +306,9 @@ class SnapshotHydrator:
     Used by runtime components (grader, critic, GEPA, CLI) to extract
     source code to temporary directories.
 
-    Issues must be loaded separately from database via ORM Snapshot model.
+    Source and bundle metadata are loaded from the database (Snapshot.source,
+    Snapshot.bundle columns). Issues must be loaded separately via ORM relationships
+    (Snapshot.true_positives, Snapshot.false_positives).
     """
 
     def __init__(self, base_path: Path):
@@ -319,28 +318,11 @@ class SnapshotHydrator:
             base_path: Root directory containing snapshots (specimens/)
         """
         self._base_path = base_path
-        self._manifests = self._load_all_manifests()
 
     @classmethod
     def from_env(cls) -> SnapshotHydrator:
         """Create hydrator from ADGN_PROPS_SPECIMENS_ROOT environment variable."""
         return cls(specimens_definitions_root())
-
-    def _load_all_manifests(self) -> dict[SnapshotSlug, SnapshotDoc]:
-        """Load all snapshot manifests from snapshots.yaml."""
-        config_path = self._base_path / "snapshots.yaml"
-        if not config_path.exists():
-            raise FileNotFoundError(f"Snapshots config not found: {config_path}")
-
-        with config_path.open() as f:
-            raw_config = yaml.safe_load(f) or {}
-
-        manifests = {}
-        for slug_str, raw_manifest in raw_config.items():
-            slug = SnapshotSlug(slug_str)
-            manifests[slug] = SnapshotDoc.model_validate(raw_manifest)
-
-        return manifests
 
     def _get_snapshot_path(self, slug: SnapshotSlug) -> Path:
         """Get absolute path to snapshot's _snapshot file.
@@ -373,16 +355,18 @@ class SnapshotHydrator:
                 files = hydrated.all_discovered_files
 
                 # Load issues from database separately
-                session = get_session()
-                snapshot = session.query(Snapshot).filter_by(slug=slug).one()
-                tps = snapshot.true_positives  # ORM relationship
-                fps = snapshot.false_positives
+                with get_session() as session:
+                    snapshot = session.query(SnapshotORM).filter_by(slug=slug).one()
+                    tps = snapshot.true_positives  # ORM relationship
+                    fps = snapshot.false_positives
         """
-        if slug not in self._manifests:
-            raise FileNotFoundError(f"Snapshot '{slug}' not found in registry")
+        # Query database for snapshot metadata (source, bundle, split)
+        with get_session() as session:
+            snapshot_orm = session.query(SnapshotORM).filter_by(slug=slug).one()
+            # Build SnapshotDoc from DB data for helper functions
+            manifest = SnapshotDoc(source=snapshot_orm.source, bundle=snapshot_orm.bundle, split=snapshot_orm.split)
 
         snapshot_path = self._get_snapshot_path(slug)
-        manifest = self._manifests[slug]
 
         # Extract source to temp directory
         hydrated_root = resolve_source_root(manifest, snapshot_path)

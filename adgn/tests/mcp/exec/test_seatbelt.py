@@ -7,7 +7,7 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.mcp.exec.models import Exited, TimedOut
-from adgn.mcp.exec.seatbelt import SandboxExecArgs, make_seatbelt_exec_server
+from adgn.mcp.exec.seatbelt import SandboxExecArgs, SeatbeltExecServer
 from adgn.mcp.testing.exec_stubs import SeatbeltExecServerStub
 from adgn.seatbelt.model import (
     DefaultBehavior,
@@ -28,7 +28,7 @@ pytestmark = [*REQUIRES_SANDBOX_EXEC, pytest.mark.shell]
 @pytest.fixture
 async def seatbelt_session():
     """Yield (server, Client session) for sandbox exec tests."""
-    server = make_seatbelt_exec_server(name="seatbelt_exec")
+    server = SeatbeltExecServer()
     async with Client(server) as sess:
         yield server, sess
 

@@ -28,6 +28,7 @@ from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 # Shared Fixtures
 # ---------------------------------------------------------------------------
 # Note: sqlite_persistence and docker_client fixtures come from tests/conftest.py
+# Note: mock_registry fixture comes from tests/mcp/conftest.py
 
 
 @pytest.fixture
@@ -68,15 +69,6 @@ def mock_container():
 
     container.make_control_server = _make_control_server
     return container
-
-
-@pytest.fixture
-def mock_registry(sqlite_persistence):
-    """Create mock infrastructure registry using real persistence."""
-    registry = MagicMock()
-    registry.list_agents.return_value = []
-    registry.persistence = sqlite_persistence
-    return registry
 
 
 @pytest.fixture
@@ -133,12 +125,13 @@ def make_token_router(user_app, agent_app_factory):
 
 @pytest.fixture
 def registry(sqlite_persistence):
-    """InfrastructureRegistry with real persistence and mock Docker client."""
+    """InfrastructureRegistry with real persistence and mock Docker clients."""
     return InfrastructureRegistry(
         persistence=sqlite_persistence,
         model="test-model",
         client_factory=lambda m: MagicMock(),
         docker_client=MagicMock(),
+        async_docker_client=MagicMock(),
         mcp_config=MCPConfig(mcpServers={}),
     )
 
@@ -312,19 +305,16 @@ class TestTokenRoutingASGI:
 class TestAgentsServer:
     """Tests for agents management server."""
 
-    @pytest.mark.asyncio
     async def test_make_agents_server_creates_server(self, mock_registry):
         """make_agents_server creates a FastMCP server."""
-        server = make_agents_server("test-agents", mock_registry)
+        server = make_agents_server(mock_registry)
 
         assert server is not None
-        assert server.name == "test-agents"
 
 
 class TestAgentControlServer:
     """Tests for agent control server via AgentContainer.make_control_server()."""
 
-    @pytest.mark.asyncio
     async def test_container_make_control_server_creates_server(self, mock_container):
         """container.make_control_server() creates a FastMCP server."""
         server = mock_container.make_control_server("test-control")
@@ -353,7 +343,6 @@ class TestInfrastructureRegistry:
         """is_external returns False for unknown agent."""
         assert registry.is_external("unknown-id") is False
 
-    @pytest.mark.asyncio
     async def test_shutdown_agent_raises_for_unknown(self, registry, mock_compositor):
         """shutdown_agent raises KeyError for unknown agent."""
         registry.global_compositor = mock_compositor
@@ -361,13 +350,11 @@ class TestInfrastructureRegistry:
         with pytest.raises(KeyError, match="Agent not running"):
             await registry.shutdown_agent("unknown-id")
 
-    @pytest.mark.asyncio
     async def test_shutdown_agent_raises_without_compositor(self, registry):
         """shutdown_agent raises RuntimeError without global compositor."""
         with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.shutdown_agent("unknown-id")
 
-    @pytest.mark.asyncio
     async def test_shutdown_agent_closes_container(self, registry, mock_container, mock_compositor):
         """shutdown_agent closes container and unmounts from compositor."""
         registry.global_compositor = mock_compositor
@@ -379,7 +366,6 @@ class TestInfrastructureRegistry:
         mock_compositor.unmount_server.assert_awaited_once_with("agent_test-agent-1")
         assert "test-agent-1" not in registry._agents
 
-    @pytest.mark.asyncio
     async def test_shutdown_agent_cleans_up_external_tracking(self, registry, mock_container, mock_compositor):
         """shutdown_agent removes agent from external tracking set."""
         registry.global_compositor = mock_compositor
@@ -392,7 +378,6 @@ class TestInfrastructureRegistry:
 
         assert registry.is_external("test-agent-1") is False
 
-    @pytest.mark.asyncio
     async def test_shutdown_all_shuts_down_all_agents(self, registry, mock_compositor):
         """shutdown_all shuts down all registered agents."""
         registry.global_compositor = mock_compositor
@@ -417,7 +402,6 @@ class TestInfrastructureRegistry:
         container2.close.assert_awaited_once()
         assert len(registry._agents) == 0
 
-    @pytest.mark.asyncio
     async def test_boot_agent_returns_existing_if_already_booted(self, registry, mock_container, mock_compositor):
         """boot_agent returns existing container if already booted."""
         registry.global_compositor = mock_compositor
@@ -427,20 +411,17 @@ class TestInfrastructureRegistry:
 
         assert result is mock_container
 
-    @pytest.mark.asyncio
     async def test_boot_agent_raises_for_unknown_agent(self, registry, mock_compositor):
         """boot_agent raises KeyError if agent not in DB (using real persistence)."""
         registry.global_compositor = mock_compositor
         with pytest.raises(KeyError, match="Agent not found"):
             await registry.boot_agent("nonexistent-agent")
 
-    @pytest.mark.asyncio
     async def test_boot_agent_raises_without_compositor(self, registry):
         """boot_agent raises RuntimeError without global compositor."""
         with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.boot_agent("nonexistent-agent")
 
-    @pytest.mark.asyncio
     async def test_create_external_agent_returns_existing_if_already_created(
         self, registry, mock_container, mock_compositor
     ):
@@ -452,13 +433,11 @@ class TestInfrastructureRegistry:
 
         assert result is mock_container
 
-    @pytest.mark.asyncio
     async def test_create_external_agent_raises_without_compositor(self, registry):
         """create_external_agent raises RuntimeError without global compositor."""
         with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
             await registry.create_external_agent("test-agent-1")
 
-    @pytest.mark.asyncio
     async def test_create_external_agent_marks_as_external(self, registry, mock_compositor):
         """create_external_agent marks agent as external."""
         registry.global_compositor = mock_compositor

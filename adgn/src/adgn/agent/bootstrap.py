@@ -14,15 +14,18 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
-from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.models import ExecInput
-from adgn.mcp.resources.server import ResourcesReadArgs
+from adgn.mcp.resources.server import ResourcesReadArgs, ResourcesServer
 from adgn.mcp.stubs.typed_stubs import _resolve_output_type
 from adgn.openai_utils.model import FunctionCallItem
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
+    from fastmcp.tools import FunctionTool
+
+    from adgn.mcp._shared.mounted import Mounted
+    from adgn.mcp.exec.docker.server import ContainerExecServer
 
 
 def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel] | None, type]]:
@@ -150,6 +153,34 @@ class TypedBootstrapBuilder:
             arguments=json.dumps(payload.model_dump()),
         )
 
+    def call_mounted(
+        self, mounted: Mounted[FastMCP], tool: FunctionTool, payload: BaseModel, *, call_id: str | None = None
+    ) -> FunctionCallItem:
+        """Create typed MCP tool call from Mounted server.
+
+        This is a convenience wrapper over call() that extracts the prefix and tool name
+        from the Mounted wrapper.
+
+        Args:
+            mounted: Mounted server with prefix + server instance
+            tool: FunctionTool from mounted.server.some_tool
+            payload: Pydantic model instance with call arguments
+            call_id: Optional explicit call_id (auto-generated if not provided)
+
+        Returns:
+            FunctionCallItem ready for bootstrap injection
+
+        Example:
+            builder = TypedBootstrapBuilder()
+            async with LintIssueCompositor(docker) as comp:
+                call = builder.call_mounted(
+                    comp.runtime,
+                    comp.runtime.server.exec_tool,
+                    ExecInput(command=["ls", "-la"])
+                )
+        """
+        return self.call(mounted.prefix, tool.name, payload, call_id=call_id)
+
     @classmethod
     def for_server(cls, server: FastMCP, *, call_id_prefix: str = "bootstrap") -> TypedBootstrapBuilder:
         """Create builder with introspected tool schemas from FastMCP server.
@@ -172,20 +203,97 @@ class TypedBootstrapBuilder:
 
 
 def read_resource_call(
-    builder: TypedBootstrapBuilder, server: str, uri: AnyUrl | str, *, max_bytes: int = 65536
+    builder: TypedBootstrapBuilder,
+    resources: Mounted[ResourcesServer],
+    server: str,
+    uri: AnyUrl | str,
+    *,
+    max_bytes: int = 65536,
 ) -> FunctionCallItem:
-    """Bootstrap helper for resources.read."""
+    """Bootstrap helper for resources.read.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        resources: Mounted resources server (comp.resources)
+        server: Server name to read resource from
+        uri: Resource URI to read
+        max_bytes: Maximum bytes to read (default: 65536)
+
+    Returns:
+        FunctionCallItem ready for bootstrap injection
+    """
     return builder.call(
-        "resources", "read", ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes)
+        resources.prefix, "read", ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes)
     )
 
 
 def docker_exec_call(
-    builder: TypedBootstrapBuilder, server: str, cmd: list[str], *, timeout_ms: int = 10_000
+    builder: TypedBootstrapBuilder, mount_prefix: str, exec_server: FastMCP, cmd: list[str], *, timeout_ms: int = 10_000
 ) -> FunctionCallItem:
-    """Bootstrap helper for docker exec."""
+    """Bootstrap helper for docker exec.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        mount_prefix: Server mount name (where the exec server is mounted)
+        exec_server: FastMCP server instance with exec tool
+        cmd: Command to execute
+        timeout_ms: Execution timeout in milliseconds
+
+    Raises:
+        RuntimeError: If exec server has no exec-compatible tools or has multiple
+    """
+    # Introspect server to find the exec tool (tool that accepts ExecInput)
+    models = introspect_server_models(exec_server)
+
+    exec_tools = [
+        name for name, (input_type, _) in models.items() if input_type is not None and issubclass(input_type, ExecInput)
+    ]
+
+    if not exec_tools:
+        raise RuntimeError("No exec tool found on server (expected tool accepting ExecInput)")
+    if len(exec_tools) > 1:
+        raise RuntimeError(f"Multiple exec tools found: {exec_tools} (expected exactly one)")
+
+    exec_tool_name = exec_tools[0]
+
     return builder.call(
-        server, RUNTIME_EXEC_TOOL_NAME, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
+        mount_prefix, exec_tool_name, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
+    )
+
+
+def docker_exec_call_mounted(
+    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int = 10_000
+) -> FunctionCallItem:
+    """Bootstrap helper for docker exec using Mounted server.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        runtime: Mounted runtime server (e.g., comp.runtime)
+        cmd: Command to execute
+        timeout_ms: Execution timeout in milliseconds
+
+    Raises:
+        RuntimeError: If exec server has no exec-compatible tools or has multiple
+
+    Example:
+        call = docker_exec_call_mounted(builder, comp.runtime, ["ls", "-la"])
+    """
+    # Introspect server to find the exec tool (tool that accepts ExecInput)
+    models = introspect_server_models(runtime.server)
+
+    exec_tools = [
+        name for name, (input_type, _) in models.items() if input_type is not None and issubclass(input_type, ExecInput)
+    ]
+
+    if not exec_tools:
+        raise RuntimeError("No exec tool found on server (expected tool accepting ExecInput)")
+    if len(exec_tools) > 1:
+        raise RuntimeError(f"Multiple exec tools found: {exec_tools} (expected exactly one)")
+
+    exec_tool_name = exec_tools[0]
+
+    return builder.call(
+        runtime.prefix, exec_tool_name, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
     )
 
 

@@ -23,6 +23,7 @@ from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.policies.loader import approve_all_policy_text
+from adgn.agent.policies.policy_types import PolicyRequest
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.recording_handler import RecordingHandler
 from adgn.agent.server.app import create_app
@@ -31,7 +32,7 @@ from adgn.agent.server.state import new_state
 from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.approval_policy.engine import PolicyEngine
-from adgn.mcp.editor_server import make_editor_server
+from adgn.mcp.editor_server import EditorServer
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
@@ -42,13 +43,7 @@ from tests.support.types import McpServerSpecs
 # --- Pytest fixtures (prefer fixtures over cross-importing test modules) ---
 
 # Note: docker_client and approval_policy_server fixtures are provided globally in tests/conftest.py
-
-
-@pytest.fixture
-async def compositor_client(compositor):
-    """Client connected to the compositor fixture."""
-    async with Client(compositor) as client:
-        yield client
+# Note: compositor_client fixture is provided in tests/mcp/conftest.py
 
 
 @pytest.fixture
@@ -116,6 +111,23 @@ def policy_context_checking() -> str:
 @pytest.fixture
 def policy_const() -> str:
     return str(fetch_policy("const"))
+
+
+# ---- PolicyRequest test helper ----
+
+
+def make_policy_request(server: str, tool: str, arguments: dict[str, Any] | None = None) -> PolicyRequest:
+    """Helper to create PolicyRequest instances for tests.
+
+    Args:
+        server: MCP server name
+        tool: Tool name
+        arguments: Tool arguments dict (will be JSON-encoded). Defaults to empty dict.
+
+    Returns:
+        PolicyRequest with arguments JSON-encoded as string.
+    """
+    return PolicyRequest(name=build_mcp_function(server, tool), arguments=json.dumps(arguments or {}))
 
 
 # reasoning_model fixture is provided globally in tests/support/responses.py
@@ -196,7 +208,7 @@ def typed_editor_factory(tmp_path: Path):
         target = tmp_path / "sample.py"
         target.write_text(initial_text, encoding="utf-8")
 
-        srv = make_editor_server(target)
+        srv = EditorServer(target)
         async with Client(srv) as session:
             stub = EditorServerStub.from_server(srv, session)
             yield stub, target

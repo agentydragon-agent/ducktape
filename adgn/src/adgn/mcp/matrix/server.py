@@ -8,7 +8,7 @@ Features (MVP):
 - Designed for unencrypted rooms first; E2EE can be added later with mautrix + a persisted
   state store. For now we rely on plaintext rooms.
 - Network credentials are supplied via MatrixConfig; callers construct this server
-  in-proc via make_matrix_server().
+  in-proc via MatrixServer().
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from typing import Any, cast
 from aiohttp import ClientSession
 from fastmcp.exceptions import ToolError
 from fastmcp.server import FastMCP
+from fastmcp.tools import FunctionTool
 from mautrix.api import HTTPAPI
 from mautrix.client import Client as MautrixClient
 from mautrix.client.state_store import FileStateStore, StateStore
@@ -62,10 +63,6 @@ class IncomingMessage(BaseModel):
 class DrainResult(BaseModel):
     messages: list[IncomingMessage]
     last_event_id: str | None = None
-
-
-class DrainInput(OpenAIStrictModeBaseModel):
-    """Input for drain_new_messages tool (empty - no parameters)."""
 
 
 class SendMessageInput(OpenAIStrictModeBaseModel):
@@ -235,60 +232,76 @@ class _MatrixClient:
         return {"ok": True, "event_id": str(event_id)}
 
 
-def make_matrix_server(name: str, bus: ServerBus, cfg: MatrixConfig) -> EnhancedFastMCP:
-    inbox = _Inbox()
-    # Background client managed via server lifespan; broadcast notifications on new msgs
-    client_holder: dict[str, _MatrixClient] = {}
+class MatrixServer(EnhancedFastMCP):
+    """Matrix MCP server with typed tool access.
 
-    # Lifespan wires the mautrix client and uses the provided server instance for notifications
-    @asynccontextmanager
-    async def _lifespan(server: FastMCP):
-        async def _broadcast(uri: str) -> None:
-            srv = cast(EnhancedFastMCP, server)
-            await srv.broadcast_resource_updated(uri)
+    Provides Matrix integration for receiving and sending messages with background sync,
+    inbox management, and turn-based interaction.
+    """
 
-        mc = _MatrixClient(cfg, inbox, _broadcast)
-        client_holder["client"] = mc
-        await mc.start()
-        try:
-            yield
-        finally:
+    # Tool references (assigned in __init__)
+    send_tool: FunctionTool
+    drain_new_messages_tool: FunctionTool
+    do_yield_tool: FunctionTool
+
+    def __init__(self, bus: ServerBus, cfg: MatrixConfig):
+        """Create a Matrix MCP server with background sync.
+
+        Args:
+            bus: ServerBus for turn management
+            cfg: Matrix configuration (homeserver, credentials, room)
+        """
+        inbox = _Inbox()
+        # Background client managed via server lifespan; broadcast notifications on new msgs
+        client_holder: dict[str, _MatrixClient] = {}
+
+        # Lifespan wires the mautrix client and uses the provided server instance for notifications
+        @asynccontextmanager
+        async def _lifespan(server: FastMCP):
+            async def _broadcast(uri: str) -> None:
+                srv = cast(EnhancedFastMCP, server)
+                await srv.broadcast_resource_updated(uri)
+
+            mc = _MatrixClient(cfg, inbox, _broadcast)
+            client_holder["client"] = mc
+            await mc.start()
             try:
-                await mc.stop()
-            except Exception as e:
-                logger.debug("matrix client stop failed: %s", e)
+                yield
+            finally:
+                try:
+                    await mc.stop()
+                except Exception as e:
+                    logger.debug("matrix client stop failed: %s", e)
 
-    mcp = EnhancedFastMCP(
-        name=name,
-        instructions=(
+        display = "Matrix MCP Server"
+        instructions = (
             "Matrix bridge: receive DMs via notifications; use the provided tools to\n"
             "read new messages, reply, and end your turn. Do not emit plain text;\n"
             "always communicate via tools."
-        ),
-        lifespan=_lifespan,
-    )
+        )
+        super().__init__(display, instructions=instructions, lifespan=_lifespan)
 
-    # Tools
-    @mcp.flat_model()
-    async def send_message(input: SendMessageInput) -> MessageSendResult:
-        """Send a plaintext message to the configured room."""
-        if (mc := client_holder.get("client")) is None:
-            # Surface as tool error; FastMCP converts to protocol-level error
-            raise ToolError("matrix client not running")
-        res = await mc.send_text(input.content)
-        return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
+        # Tools
+        async def send(input: SendMessageInput) -> MessageSendResult:
+            """Send a plaintext message to the configured room."""
+            if (mc := client_holder.get("client")) is None:
+                # Surface as tool error; FastMCP converts to protocol-level error
+                raise ToolError("matrix client not running")
+            res = await mc.send_text(input.content)
+            return MessageSendResult(ok=True, event_id=str(res.get("event_id")))
 
-    @mcp.flat_model()
-    def drain_new_messages(input: DrainInput) -> DrainResult:
-        """Return and clear queued inbound messages."""
-        return inbox.drain()
+        self.send_tool = self.flat_model()(send)
 
-    @mcp.flat_model()
-    def do_yield(input: YieldInput) -> UiEndTurn:
-        """End the current turn and record the last seen event id."""
-        inbox.ack(input.last_seen_event_id)
-        bus.push_end_turn()
-        return UiEndTurn()
+        def drain_new_messages() -> DrainResult:
+            """Return and clear queued inbound messages."""
+            return inbox.drain()
 
-    # Intentionally avoid setting dynamic attributes on the MCP wrapper
-    return mcp
+        self.drain_new_messages_tool = self.flat_model()(drain_new_messages)
+
+        def do_yield(input: YieldInput) -> UiEndTurn:
+            """End the current turn and record the last seen event id."""
+            inbox.ack(input.last_seen_event_id)
+            bus.push_end_turn()
+            return UiEndTurn()
+
+        self.do_yield_tool = self.flat_model()(do_yield)

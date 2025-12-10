@@ -319,7 +319,7 @@ class FlatModelMixin(FastMCP):
             | Callable[[InputModelT], OutputModelT]
             | Callable[[InputModelT, Context], OutputModelT]
         ],
-        Callable[[InputModelT], OutputModelT] | Callable[[], OutputModelT],
+        FunctionTool,
     ]:
         """Decorator for flat-model tools that flattens Pydantic model parameters.
 
@@ -346,7 +346,7 @@ class FlatModelMixin(FastMCP):
             fn: Callable[[], OutputModelT]
             | Callable[[InputModelT], OutputModelT]
             | Callable[[InputModelT, Context], OutputModelT],
-        ) -> Callable[[InputModelT], OutputModelT] | Callable[[], OutputModelT]:
+        ) -> FunctionTool:
             if not inspect.isfunction(fn):
                 raise TypeError("@flat_model requires a plain function (not a callable object)")
 
@@ -466,7 +466,8 @@ class FlatModelMixin(FastMCP):
             # Register the tool via add_tool() to trigger validation in mixins
             self.add_tool(tool)
 
-            # Return wrapper (with flattened signature) for proper introspection
-            return cast(Callable[[InputModelT], OutputModelT], wrapper)
+            # Return the FunctionTool directly for programmatic access (bootstrap helpers, etc.)
+            # The wrapper is already registered and accessible via the tool's fn attribute
+            return cast(FunctionTool, tool)
 
         return outer

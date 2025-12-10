@@ -192,8 +192,20 @@ handlers = [bootstrap, ...other handlers...]
     - When matching state URIs, compare with `COMPOSITOR_META_STATE_URI_FMT`/`COMPOSITOR_META_URI_PREFIX`
   - Use `COMPOSITOR_ADMIN_SERVER_NAME` instead of the literal `"compositor_admin"`.
 - Standard in‑proc mounts (pinned)
-  - Mount `resources`, `compositor_meta`, and `compositor_admin` pinned by default. Prefer the helper:
-    - `adgn.mcp.compositor.setup.mount_standard_inproc_servers(compositor, gateway_client=...)`
+  - Mount `resources` and `compositor_meta` pinned by default:
+    ```python
+    await compositor.mount_inproc(
+        "resources", make_resources_server(name="resources", compositor=compositor), pinned=True
+    )
+    compmeta_server = make_compositor_meta_server(compositor=compositor, name=COMPOSITOR_META_SERVER_NAME)
+    await compositor.mount_inproc(COMPOSITOR_META_SERVER_NAME, compmeta_server, pinned=True)
+    ```
+  - If using policy engine, also mount its servers:
+    ```python
+    await compositor.mount_inproc(POLICY_READER_SERVER_NAME, policy_engine.reader)
+    await compositor.mount_inproc(POLICY_PROPOSER_SERVER_NAME, policy_engine.policy_proposer)
+    await compositor.mount_inproc(APPROVAL_ADMIN_SERVER_NAME, policy_engine.admin)
+    ```
   - Pinned servers cannot be unmounted; pinning is supported only for in‑proc mounts, at mount time.
 - Notifications
   - Use the `MountEvent` enum for Compositor mount listeners; no stringly‑typed actions.
@@ -253,7 +265,6 @@ Approval Policy
 - LLM docs: `docs/llm/*`
 - Agent presets: see README.md "Agent Presets" and `examples/presets/*.yaml`
 
-@instructions/jsonnet_authoring.md
 @instructions/fastmcp_pydantic.md
 @instructions/fastmcp_exceptions.md
 

@@ -2,7 +2,17 @@
 
 Each snapshot is explicitly assigned to 'train', 'valid', or 'test' in snapshots.yaml.
 The split assignment is the single source of truth for snapshot classification.
-Query splits via SnapshotRegistry methods: get_split(slug), get_snapshots_by_split(split).
+
+Query splits via database ORM:
+    from adgn.props.db import get_session
+    from adgn.props.db.models import Snapshot
+
+    with get_session() as session:
+        snapshot = session.query(Snapshot).filter_by(slug=slug).one()
+        split = snapshot.split  # Split.TRAIN, Split.VALID, or Split.TEST
+
+        # Get all snapshots in a split
+        train_snapshots = session.query(Snapshot).filter_by(split=Split.TRAIN).all()
 """
 
 from __future__ import annotations

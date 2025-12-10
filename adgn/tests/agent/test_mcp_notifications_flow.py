@@ -19,6 +19,10 @@ from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesRe
 from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
 
+# Test MCP server/tool constants for this test
+NOTIFIER_MOUNT_PREFIX = "notifier"
+NOTIFY_POLICY_TOOL_NAME = "notify_policy"
+
 
 class NotifyPolicyInput(BaseModel):
     uri: str
@@ -118,7 +122,7 @@ async def test_notifications_within_turn_from_tool(
         if stage["n"] == 1:
             # First model output: ask to call notifier.notify_policy
             tool_call_result: ResponsesResult = responses_factory.make_mcp_tool_call(
-                "notifier", "notify_policy", NotifyPolicyInput(uri="notifier://policy.py")
+                NOTIFIER_MOUNT_PREFIX, NOTIFY_POLICY_TOOL_NAME, NotifyPolicyInput(uri="notifier://policy.py")
             )
             return tool_call_result
         # Second (and later) model output: nothing else to do

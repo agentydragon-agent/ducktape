@@ -4,50 +4,53 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from adgn.mcp._shared.mounted import Mounted
+
+import aiodocker
 import docker
 from docker.errors import ImageNotFound
-from fastmcp.server import FastMCP
 
-from adgn.mcp._shared.constants import DOCKER_SERVER_NAME, PROPS_DIR, WORKING_DIR
+from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.exec.docker.server import make_container_exec_server
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.props.db.config import DbConnectionConfig
 from adgn.props.prop_utils import props_definitions_root
 
 logger = logging.getLogger(__name__)
 
+# Container filesystem path where property definitions are mounted
+PROPS_DIR: Path = Path("/props")
+
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
+DOCKER_MOUNT_PREFIX = "docker"  # Mount prefix for properties Docker exec server
 
 
 @dataclass(slots=True)
 class PropertiesDockerWiring:
     """Wiring for a properties Docker exec server.
 
-    Exposes a factory to build a FastMCP (auth wiring is encapsulated). Callers should
-    attach via mcp.attach_inproc(wiring.server_name, wiring.server_factory()).
+    Exposes a factory to build a ContainerExecServer (auth wiring is encapsulated).
+    Callers should attach via wiring.attach(compositor).
     """
 
-    server_factory: Callable[[], FastMCP]
+    server_factory: Callable[[], ContainerExecServer]
     working_dir: Path
     definitions_container_dir: Path | None
     image_name: str
-
-    @property
-    def server_name(self) -> str:
-        return DOCKER_SERVER_NAME
 
     def container_path_for_prop_rel(self, rel: str) -> Path:
         if not self.definitions_container_dir:
             raise RuntimeError("Property definitions not mounted in container")
         return self.definitions_container_dir / rel
 
-    async def attach(self, comp: Compositor) -> FastMCP:
-        """Mount this wiring on a Compositor (in-proc, no auth)."""
+    async def attach(self, comp: Compositor) -> Mounted[ContainerExecServer]:
+        """Mount this wiring on a Compositor, returning Mounted[T] wrapper."""
         server = self.server_factory()
-        await comp.mount_inproc(self.server_name, server)
-        return server
+        return await comp.mount_inproc(DOCKER_MOUNT_PREFIX, server, pinned=True)
 
 
 def build_critic_build_hint() -> str:
@@ -67,37 +70,38 @@ def ensure_critic_image() -> None:
         raise ImageNotFound(f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}") from e
 
 
-def build_critic_volumes(
+def build_critic_binds(
     workspace_root: Path,
     *,
     mount_properties: bool,
     workspace_mode: str = "ro",
-    extra_volumes: dict[str, dict[str, str]] | None = None,
+    extra_binds: dict[str, dict[str, str]] | None = None,
 ) -> tuple[dict[str, dict[str, str]], Path | None]:
-    """Build standard volumes map for properties critic containers.
+    """Build standard bind mounts map for properties critic containers.
 
     - Mounts workspace_root at /workspace with the provided workspace_mode ("ro" or "rw")
     - Optionally mounts property definitions at /props (always read-only)
-    - Allows extra volumes to be merged in
-    Returns (volumes, definitions_container_dir|None)
+    - Allows extra bind mounts to be merged in
+    Returns (binds, definitions_container_dir|None)
     """
-    volumes: dict[str, dict[str, str]] = {
+    binds: dict[str, dict[str, str]] = {
         str(workspace_root.resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
     }
-    if extra_volumes:
-        volumes.update(extra_volumes)
+    if extra_binds:
+        binds.update(extra_binds)
     if not mount_properties:
-        return volumes, None
+        return binds, None
     defs_dir = props_definitions_root().resolve()
-    volumes[str(defs_dir)] = {"bind": str(PROPS_DIR), "mode": "ro"}
-    return volumes, PROPS_DIR
+    binds[str(defs_dir)] = {"bind": str(PROPS_DIR), "mode": "ro"}
+    return binds, PROPS_DIR
 
 
 def properties_docker_spec(
     workspace_root: Path,
+    docker_client: aiodocker.Docker,
     *,
     mount_properties: bool,
-    extra_volumes: dict[str, dict[str, str]] | None = None,
+    extra_binds: dict[str, dict[str, str]] | None = None,
     ephemeral: bool = True,
     workspace_mode: str = "ro",
     db_conn: DbConnectionConfig | None = None,
@@ -111,8 +115,9 @@ def properties_docker_spec(
 
     Args:
         workspace_root: Path to workspace directory to mount in container.
+        docker_client: Async Docker client (managed by caller).
         mount_properties: Whether to mount property definitions at /props.
-        extra_volumes: Additional volumes to mount (merged with standard volumes).
+        extra_binds: Additional bind mounts to mount (merged with standard bind mounts).
         ephemeral: Whether container should be removed after use.
         workspace_mode: Mount mode for workspace ("ro" or "rw").
         db_conn: Database connection config. Sets PG* env vars from its fields directly.
@@ -122,8 +127,8 @@ def properties_docker_spec(
     # Ensure image exists; let exceptions propagate with helpful message
     ensure_critic_image()
 
-    volumes, defs_container = build_critic_volumes(
-        workspace_root, mount_properties=mount_properties, workspace_mode=workspace_mode, extra_volumes=extra_volumes
+    binds, defs_container = build_critic_binds(
+        workspace_root, mount_properties=mount_properties, workspace_mode=workspace_mode, extra_binds=extra_binds
     )
 
     # Provide sane defaults for tool caches and tmp dirs inside the container
@@ -159,17 +164,17 @@ def properties_docker_spec(
     if extra_env:
         logger.info(f"Injecting extra environment variables: {list(extra_env.keys())}")
 
-    def _factory() -> FastMCP:
-        return make_container_exec_server(
+    def _factory() -> ContainerExecServer:
+        return ContainerExecServer(
             ContainerOptions(
                 image=PROPERTIES_DOCKER_IMAGE,
                 working_dir=WORKING_DIR,
-                volumes=volumes,
+                binds=binds,
                 environment=env,
-                describe=True,
                 ephemeral=ephemeral,
                 network_mode=network_mode or "none",
-            )
+            ),
+            docker_client,
         )
 
     return PropertiesDockerWiring(

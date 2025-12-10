@@ -9,10 +9,11 @@ from fastmcp.server import FastMCP
 from mcp import types
 import pytest
 
+from adgn.mcp._shared.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
 from adgn.mcp.compositor.clients import CompositorAdminClient
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
+from adgn.mcp.compositor.meta_server import CompositorMetaServer
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.resources.server import make_resources_server
+from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.testing.resources_stubs import ResourcesServerStub
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
@@ -40,19 +41,16 @@ def stdio_echo_spec() -> StdioMCPServer:
 
 
 # Note: `compositor` fixture is defined in top-level tests/conftest.py
+# Note: `mock_registry` fixture is defined in top-level tests/conftest.py
 
 
-@pytest.fixture
-async def compositor_client(compositor):
-    """Client connected to the compositor."""
-    async with Client(compositor) as client:
-        yield client
+# Note: compositor_client fixture is provided in tests/conftest.py
 
 
 @pytest.fixture
 async def resources_server(compositor):
     """Resources server for the compositor."""
-    return make_resources_server(compositor=compositor)
+    return ResourcesServer(compositor=compositor)
 
 
 @pytest.fixture
@@ -75,7 +73,9 @@ async def admin_env(make_compositor):
     Yields a tuple (admin_client, compositor).
     """
     async with make_compositor({}) as (client, comp):
-        await mount_standard_inproc_servers(compositor=comp)
+        await comp.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=comp), pinned=True)
+        compmeta_server = CompositorMetaServer(compositor=comp)
+        await comp.mount_inproc(COMPOSITOR_META_MOUNT_PREFIX, compmeta_server, pinned=True)
         admin = CompositorAdminClient(client)
         yield admin, comp
 

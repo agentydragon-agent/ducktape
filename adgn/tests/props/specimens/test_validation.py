@@ -9,26 +9,10 @@ from sqlalchemy.orm import selectinload
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
-from adgn.props.db.sync import (
-    get_specimens_base_path,
-    sync_critic_scopes_to_db,
-    sync_issues_to_db,
-    sync_snapshots_to_db,
-)
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.models.snapshot import LocalSource
 
-
-@pytest.fixture
-def synced_test_db(test_db):
-    """Test database with production specimens synced."""
-    specimens_dir = get_specimens_base_path()
-    with get_session() as session:
-        sync_snapshots_to_db(session, specimens_dir)
-        sync_issues_to_db(session, specimens_dir)
-        sync_critic_scopes_to_db(session, specimens_dir)
-        session.commit()
-    return test_db
+# Note: synced_test_db fixture is provided in tests/props/conftest.py
 
 
 async def test_specimen_issues_and_false_positives_load(
@@ -77,7 +61,6 @@ async def test_specimen_issues_and_false_positives_load(
         pytest.fail("\n\n".join(failures))
 
 
-@pytest.mark.asyncio
 async def test_specimen_references_are_valid(production_specimens_hydrator: SnapshotHydrator, synced_test_db) -> None:
     """Validate that all file references and line ranges in issues are valid.
 

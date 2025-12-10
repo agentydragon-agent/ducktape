@@ -3,7 +3,7 @@ from adgn.mcp._shared.naming import build_mcp_function
 
 TEST_CASES = [
     # Expect DENY_ABORT for UI send_message, but decide() returns ALLOW → preflight fails
-    (PolicyRequest(name=build_mcp_function("ui", "send_message"), arguments={}), ApprovalDecision.DENY_ABORT)
+    (PolicyRequest(name=build_mcp_function("ui", "send_message"), arguments="{}"), ApprovalDecision.DENY_ABORT)
 ]
 
 

@@ -4,10 +4,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from adgn.mcp.testing.simple_servers import EchoInput
-from adgn.mcp.ui.server import EndTurnInput
 from tests.llm.support.openai_mock import make_mock
-from tests.support.steps import MakeCall
+from tests.support.steps import EchoCall, UiEndTurnCall
 
 # Skip if Playwright is not installed
 playwright = pytest.importorskip("playwright.sync_api")
@@ -31,9 +29,7 @@ def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_fac
     Ideally, we'd use MCP tools to attach the echo server, but that's not yet available via UI.
     """
 
-    runner = make_step_runner(
-        steps=[MakeCall("echo", "echo", EchoInput(text="hello")), MakeCall("ui", "end_turn", EndTurnInput())]
-    )
+    runner = make_step_runner(steps=[EchoCall("hello"), UiEndTurnCall()])
 
     s = run_server(lambda model: make_mock(runner.handle_request_async))
 

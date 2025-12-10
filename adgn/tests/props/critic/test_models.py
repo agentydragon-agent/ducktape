@@ -4,17 +4,12 @@ Tests for models defined in critic/models.py.
 """
 
 from hamcrest import assert_that, equal_to
-import pytest
 
 from adgn.props.critic.models import CriticInput, CriticSubmitPayload, CriticSuccess
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 
-
-@pytest.fixture
-def mock_snapshot_slug() -> SnapshotSlug:
-    """Shared test snapshot slug."""
-    return SnapshotSlug("ducktape/2025-11-26-00")
+# Note: mock_snapshot_slug fixture is provided in tests/props/conftest.py
 
 
 class TestCriticModels:

@@ -35,6 +35,7 @@ async def test_iss014_anchor_windows(
     allowed_window: tuple[tuple[int, int], tuple[int, int]],
     entity: str,
     production_specimens_registry,
+    async_docker_client,
 ):
     """Runs the lint-issue agent for iss-014 on the wt specimen per occurrence and
     asserts the corrected anchors fall within allowed inclusive windows.
@@ -62,11 +63,15 @@ async def test_iss014_anchor_windows(
     occ = Occurrence.from_files_dict(files={path: [LineRange(start_line=s, end_line=e)]}, note=entity)
 
     payload = await lint_issue_run(
-        snapshot_slug=specimen, issue_core=issue_core, occurrence=occ, client=build_client("gpt-5")
+        snapshot_slug=specimen,
+        issue_core=issue_core,
+        occurrence=occ,
+        client=build_client("gpt-5"),
+        docker_client=async_docker_client,
     )
 
     # Extract corrected anchors from AnchorIncorrect findings
-    ca: dict[Path, list[LineRange]] = {}
+    ca: dict[str, list[LineRange]] = {}
     for finding_record in payload.findings:
         if finding_record.finding.kind == "ANCHOR_INCORRECT":
             file = finding_record.finding.correction.file
@@ -77,13 +82,13 @@ async def test_iss014_anchor_windows(
 
     # Effective ranges: if agent omitted corrections (None) or file entry is None, treat as unchanged
     s, e = initial_range
-    if ca is None or ca.get(path) is None:
+    if ca is None or ca.get(str(path)) is None:
         effective = [(s, e)]
     else:
         # Assert no unrelated non-null files were returned
         non_null_paths = {p for p, rs in ca.items() if rs is not None}
-        assert non_null_paths <= {path}, f"Unexpected paths with ranges in corrected_anchors: {non_null_paths}"
-        effective = [(r.start_line, r.end_line) for r in (ca.get(path) or []) if r.end_line is not None]
+        assert non_null_paths <= {str(path)}, f"Unexpected paths with ranges in corrected_anchors: {non_null_paths}"
+        effective = [(r.start_line, r.end_line) for r in (ca.get(str(path)) or []) if r.end_line is not None]
 
     assert len(effective) == 1, f"Expected exactly one effective range for {path}, got: {effective}"
     estart, eend = effective[0]

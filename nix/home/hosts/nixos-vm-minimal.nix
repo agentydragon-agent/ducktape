@@ -1,4 +1,8 @@
-# Minimal NixOS VM home-manager configuration for testing
+# Minimal NixOS VM home-manager configuration
+#
+# Used by terraform/nixos-dev-env/cloud-init.yaml.tpl for automated VM provisioning.
+# Downloaded directly from GitHub during cloud-init to bootstrap VMs without
+# requiring the full ducktape repo clone. Must remain standalone (no imports).
 {
   config,
   pkgs,

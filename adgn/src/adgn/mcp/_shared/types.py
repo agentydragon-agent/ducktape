@@ -40,7 +40,7 @@ class ContainerInfo(BaseModel):
 
     image: ContainerImageInfo | dict
     container_id: str | None = None
-    volumes: dict | list | None = None
+    binds: dict | list | None = None
     working_dir: str | None = None
     network_mode: str | None = None
     image_history: list[ContainerImageHistoryEntry] | None = None

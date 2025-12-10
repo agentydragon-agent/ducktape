@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+import aiodocker
 from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
@@ -18,6 +19,7 @@ class AgentRegistry:
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
+    async_docker_client: aiodocker.Docker
     _items: dict[str, AgentContainer] = field(default_factory=dict)
 
     def get(self, agent_id: str) -> AgentContainer | None:
@@ -38,6 +40,7 @@ class AgentRegistry:
             with_ui=with_ui,
             system=system,
             docker_client=self.docker_client,
+            async_docker_client=self.async_docker_client,
         )
         self._items[agent_id] = c
         return c

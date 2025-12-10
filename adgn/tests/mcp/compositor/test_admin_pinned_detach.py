@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastmcp.exceptions import ToolError
 import pytest
 
-from adgn.mcp._shared.constants import COMPOSITOR_META_SERVER_NAME
+from adgn.mcp._shared.constants import COMPOSITOR_META_MOUNT_PREFIX
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 
 
@@ -15,12 +15,12 @@ async def test_admin_cannot_detach_pinned_server(make_pg_client, approval_policy
 
         # Ensure compositor_meta is visible among mounts (via meta state resources)
         states_before = await meta.list_states()
-        assert COMPOSITOR_META_SERVER_NAME in states_before
+        assert COMPOSITOR_META_MOUNT_PREFIX in states_before
 
         # Attempt to detach the pinned meta server via the admin tool should error
         with pytest.raises(ToolError):
-            await admin.detach_server(name=COMPOSITOR_META_SERVER_NAME)
+            await admin.detach_server(name=COMPOSITOR_META_MOUNT_PREFIX)
 
         # Still present after failed detach
         states_after = await meta.list_states()
-        assert COMPOSITOR_META_SERVER_NAME in states_after
+        assert COMPOSITOR_META_MOUNT_PREFIX in states_after

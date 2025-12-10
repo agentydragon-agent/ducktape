@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.editor_server import DoneInput, EditorOutcome, is_python_path, make_editor_server
+from adgn.mcp.editor_server import DoneInput, EditorOutcome, EditorServer, is_python_path
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def editor_session(make_typed_mcp):
 
     @asynccontextmanager
     async def _open(p: Path):
-        server = make_editor_server(p)
+        server = EditorServer(p)
         async with make_typed_mcp(server, "editor") as pair:
             yield pair
 

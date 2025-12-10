@@ -10,14 +10,37 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
+from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
+from adgn.mcp._shared.mounted import Mounted
+from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.mcp.exec.models import BaseExecResult, Exited
+from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
+from adgn.mcp.ui.server import SendMessageInput
 from adgn.openai_utils.model import ResponsesRequest, ResponsesResult
+from adgn.props.critic.critic import CriticSubmitServer, UpsertIssueInput
+from adgn.props.grader.grader import GraderSubmitServer
+from adgn.props.grader.models import GradeSubmitInput
 from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
 
 T = TypeVar("T", bound=BaseModel)
+
+# Test MCP server/tool name constants (for test fixtures)
+DOCKER_TEST_MOUNT_PREFIX = "docker"  # Used in test fixtures
+EXEC_TEST_TOOL_NAME = "exec"  # Used in test fixtures
+EDITOR_TEST_MOUNT_PREFIX = "editor"  # Used in test fixtures
+FAIL_TEST_TOOL_NAME = "fail"  # Used in test fixtures
+
+
+class EmptyArgs(BaseModel):
+    """Empty arguments for zero-parameter MCP tools.
+
+    Use this instead of tool-specific empty input models for consistency across tests.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class Step(Protocol):
@@ -130,9 +153,6 @@ class DockerExecCall:
 
     Example:
         DockerExecCall(["echo", "hello"], timeout_ms=5000)
-
-    Instead of:
-        MakeCall("docker", "exec", make_exec_input(["echo", "hello"], timeout_ms=5000))
     """
 
     cmd: list[str]
@@ -152,4 +172,86 @@ class DockerExecCall:
                 user=self.user,
                 tool_name=self.tool_name,
             )
+        )
+
+
+@dataclass
+class UiEndTurnCall:
+    """End turn via UI.
+
+    Phase 3 TODO: Accept UiServer instance and use ui_server.end_turn_tool.name
+    instead of hardcoded tool name.
+    """
+
+    tool_name: str = "end_turn"  # Default for backward compat, should be from server instance
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(UI_MOUNT_PREFIX, self.tool_name, EmptyArgs())
+
+
+@dataclass
+class UiSendMessageCall:
+    """Send message via UI.
+
+    Phase 3 TODO: Accept UiServer instance and use ui_server.send_message_tool.name
+    instead of hardcoded tool name.
+    """
+
+    content: str
+    tool_name: str = "send_message"  # Default for backward compat, should be from server instance
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(UI_MOUNT_PREFIX, self.tool_name, SendMessageInput(content=self.content))
+
+
+@dataclass
+class EchoCall:
+    """Call echo test server."""
+
+    text: str
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text=self.text))
+
+
+@dataclass
+class CriticSubmitUpsertIssueCall:
+    """Submit issue via critic_submit."""
+
+    critic_submit: Mounted[CriticSubmitServer]
+    issue_id: str
+    description: str
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(
+            self.critic_submit.prefix,
+            self.critic_submit.tool_name(self.critic_submit.server.upsert_issue_tool),
+            UpsertIssueInput(issue_id=self.issue_id, description=self.description),
+        )
+
+
+@dataclass
+class GraderSubmitResultCall:
+    """Submit grading results via grader_submit."""
+
+    grader_submit: Mounted[GraderSubmitServer]
+    grade_input: GradeSubmitInput
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(
+            self.grader_submit.prefix,
+            self.grader_submit.tool_name(self.grader_submit.server.submit_result_tool),
+            self.grade_input,
+        )
+
+
+@dataclass
+class ApprovalPolicyAdminSetPolicyCall:
+    """Set policy via approval_policy_admin."""
+
+    source: str
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        return factory.make_mcp_tool_call(
+            APPROVAL_ADMIN_MOUNT_PREFIX, "set_policy", SetPolicyTextArgs(source=self.source)
         )

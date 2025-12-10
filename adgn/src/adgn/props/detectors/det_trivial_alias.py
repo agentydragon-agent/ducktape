@@ -3,12 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .base import BaseDetector
 from .models import Detection, LineRange
-from .registry import DetectorSpec, register
-from .utils import make_root_detector, read_snippet
-
-DET_NAME = "trivial_alias"
-PROP = "no-oneoff-vars-and-trivial-wrappers"
+from .utils import read_snippet
 
 
 class _UseCounter(ast.NodeVisitor):
@@ -34,48 +31,45 @@ def _count_uses_in_body(body: list[ast.stmt], start_index: int, name: str) -> tu
     return c.loads, c.stores
 
 
-def _find_in_file(path: Path) -> list[Detection]:
-    out: list[Detection] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-        node = ast.parse(text)
-    except Exception:
+class TrivialAliasDetector(BaseDetector):
+    DET_NAME = "trivial_alias"
+    PROP = "no-oneoff-vars-and-trivial-wrappers"
+
+    def find_detections(self, path: Path, tree: ast.AST, source: str) -> list[Detection]:
+        out: list[Detection] = []
+        for fn in ast.walk(tree):
+            if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                body = fn.body
+                for i, st in enumerate(body):
+                    if (
+                        isinstance(st, ast.Assign)
+                        and len(st.targets) == 1
+                        and isinstance(st.targets[0], ast.Name)
+                        and isinstance(st.value, ast.Name)
+                    ):
+                        lhs = st.targets[0].id
+                        rhs = st.value.id
+                        # Count uses of lhs and future stores to rhs after this assignment
+                        lhs_loads, _ = _count_uses_in_body(body, i, lhs)
+                        _, rhs_stores = _count_uses_in_body(body, i, rhs)
+                        if lhs_loads == 1 and rhs_stores == 0:
+                            sl = getattr(st, "lineno", 1)
+                            out.append(
+                                Detection(
+                                    property=self.PROP,
+                                    path=str(path),
+                                    ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
+                                    detector=self.DET_NAME,
+                                    confidence=0.85,
+                                    message=(
+                                        f"Trivial alias '{lhs} = {rhs}' used once; consider inlining '{rhs}' at use site."
+                                    ),
+                                    snippet=read_snippet(path, sl, sl, context=0),
+                                )
+                            )
         return out
 
-    for fn in ast.walk(node):
-        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
-            body = fn.body
-            for i, st in enumerate(body):
-                if (
-                    isinstance(st, ast.Assign)
-                    and len(st.targets) == 1
-                    and isinstance(st.targets[0], ast.Name)
-                    and isinstance(st.value, ast.Name)
-                ):
-                    lhs = st.targets[0].id
-                    rhs = st.value.id
-                    # Count uses of lhs and future stores to rhs after this assignment
-                    lhs_loads, _ = _count_uses_in_body(body, i, lhs)
-                    _, rhs_stores = _count_uses_in_body(body, i, rhs)
-                    if lhs_loads == 1 and rhs_stores == 0:
-                        sl = getattr(st, "lineno", 1)
-                        out.append(
-                            Detection(
-                                property=PROP,
-                                path=str(path),
-                                ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
-                                detector=DET_NAME,
-                                confidence=0.85,
-                                message=(
-                                    f"Trivial alias '{lhs} = {rhs}' used once; consider inlining '{rhs}' at use site."
-                                ),
-                                snippet=read_snippet(path, sl, sl, context=0),
-                            )
-                        )
-    return out
 
-
-find = make_root_detector(_find_in_file)
-
-
-register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))
+_detector = TrivialAliasDetector()
+find = _detector.get_finder()
+_detector.register_detector()

@@ -8,11 +8,10 @@ from adgn.agent.agent import Agent, AgentResult
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.exec.models import BaseExecResult, Exited
+from adgn.mcp.exec.models import BaseExecResult, Exited, make_exec_input
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
-from tests.conftest import make_exec_input
 
 # Use /bin/echo -n for portability and to avoid trailing newline
 ECHO_CMD = ["/bin/echo", "-n", "hello"]

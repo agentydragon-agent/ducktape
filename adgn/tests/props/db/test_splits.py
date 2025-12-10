@@ -5,29 +5,12 @@ from __future__ import annotations
 from collections import Counter
 
 from hamcrest import assert_that, greater_than_or_equal_to, is_in
-import pytest
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
-from adgn.props.db.sync import (
-    get_specimens_base_path,
-    sync_critic_scopes_to_db,
-    sync_issues_to_db,
-    sync_snapshots_to_db,
-)
 from adgn.props.splits import Split
 
-
-@pytest.fixture
-def synced_test_db(test_db):
-    """Test database with production specimens synced."""
-    specimens_dir = get_specimens_base_path()
-    with get_session() as session:
-        sync_snapshots_to_db(session, specimens_dir)
-        sync_issues_to_db(session, specimens_dir)
-        sync_critic_scopes_to_db(session, specimens_dir)
-        session.commit()
-    return test_db
+# Note: synced_test_db fixture is provided in tests/props/conftest.py
 
 
 def test_specimen_has_valid_split(synced_test_db):

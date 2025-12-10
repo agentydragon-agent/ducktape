@@ -6,7 +6,7 @@ from adgn.agent.loop_control import Abort, NoAction
 from adgn.agent.notifications.types import NotificationsBatch
 from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
 from adgn.agent.server.mode_handler import ServerModeHandler
-from adgn.mcp.ui.server import EndTurnInput, SendMessageInput, make_ui_server
+from adgn.mcp.ui.server import EndTurnInput, SendMessageInput, UiServer
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def bus():
 
 
 async def test_ui_send_message_and_end_turn_bus(bus, make_typed_mcp) -> None:
-    server = make_ui_server("ui", bus)
+    server = UiServer(bus)
 
     async with make_typed_mcp(server, "ui") as (client, _sess):
         # Send a markdown message directly via typed client

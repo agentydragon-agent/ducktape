@@ -34,34 +34,29 @@ def failing_policy() -> str:
 class TestPolicyValidation:
     """Tests for policy validation via MCP admin tools."""
 
-    @pytest.mark.asyncio
     async def test_set_policy_rejects_failing_tests(self, policy_engine, failing_policy):
         """Setting policy with failing tests raises an error."""
         async with Client(policy_engine.admin) as sess:
             result = await sess.call_tool("set_policy", {"source": failing_policy})
             assert result.is_error, "Expected error for failing tests policy"
 
-    @pytest.mark.asyncio
     async def test_set_policy_accepts_valid_policy(self, policy_engine, policy_allow_all):
         """Setting valid policy succeeds."""
         async with Client(policy_engine.admin) as sess:
             result = await sess.call_tool("set_policy", {"source": policy_allow_all})
             assert not result.is_error
 
-    @pytest.mark.asyncio
     async def test_create_proposal_validates_policy(self, policy_engine, failing_policy):
         """Creating proposal with failing tests returns error."""
-        async with Client(policy_engine.policy_proposer) as sess:
+        async with Client(policy_engine.proposer) as sess:
             result = await sess.call_tool("create_proposal", {"content": failing_policy})
             assert result.is_error, "Expected error for policy with failing tests"
 
-    @pytest.mark.asyncio
     async def test_self_check_directly(self, policy_engine, failing_policy):
         """PolicyEngine.self_check raises for invalid policy."""
         with pytest.raises(RuntimeError, match="policy eval failed"):
             policy_engine.self_check(failing_policy)
 
-    @pytest.mark.asyncio
     async def test_self_check_passes_valid(self, policy_engine, policy_allow_all):
         """PolicyEngine.self_check passes for valid policy."""
         policy_engine.self_check(policy_allow_all)

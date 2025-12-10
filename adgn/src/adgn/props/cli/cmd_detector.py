@@ -3,20 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import dataclass
-from pathlib import Path
 
+import aiodocker
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func
 import typer
+from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.resources import get_async_docker_client
+from adgn.props.cli.shared import filter_files
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.critic.prompts import list_critic_system_prompts
@@ -25,7 +27,7 @@ from adgn.props.db.models import CriticRun, Snapshot
 from adgn.props.db.prompts import load_and_upsert_detector_prompt
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
+from adgn.props.models.critic_scopes import AllFilesScope
 
 
 @dataclass
@@ -145,6 +147,7 @@ async def run_detector_on_specimen(
     snapshot_slug: SnapshotSlug,
     *,
     client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> tuple[str, str, bool]:
@@ -158,7 +161,9 @@ async def run_detector_on_specimen(
         await run_critic(
             input_data=CriticInput(snapshot_slug=snapshot_slug, files=AllFilesScope(), prompt_sha256=prompt_sha256),
             client=client,
+            docker_client=docker_client,
             content_root=hydrated.content_root,
+            prompt_optimization_run_id=None,
             mount_properties=False,
             verbose=verbose,
         )
@@ -169,6 +174,7 @@ async def run_missing_evaluations(
     missing_pairs: list[tuple[str, SnapshotSlug]],
     *,
     client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> int:
@@ -184,7 +190,9 @@ async def run_missing_evaluations(
     console.print(f"\n[yellow]Running {len(missing_pairs)} missing evaluations in parallel...[/yellow]")
 
     tasks = [
-        run_detector_on_specimen(detector, snapshot, client=client, verbose=verbose, hydrator=hydrator)
+        run_detector_on_specimen(
+            detector, snapshot, client=client, docker_client=docker_client, verbose=verbose, hydrator=hydrator
+        )
         for detector, snapshot in missing_pairs
     ]
     results = await asyncio.gather(*tasks)
@@ -199,7 +207,9 @@ async def run_missing_evaluations(
     return successes
 
 
-async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool) -> None:
+async def run_detector_coverage(
+    *, run_missing: bool, model: str, verbose: bool, docker_client: aiodocker.Docker
+) -> None:
     """Main entry point for detector-coverage command."""
     console = Console()
 
@@ -232,7 +242,9 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
         missing_pairs = collect_missing_pairs(coverage_data)
         if missing_pairs:
             client = build_client(model)
-            successes = await run_missing_evaluations(missing_pairs, client=client, verbose=verbose, hydrator=hydrator)
+            successes = await run_missing_evaluations(
+                missing_pairs, client=client, docker_client=docker_client, verbose=verbose, hydrator=hydrator
+            )
 
             if successes > 0:
                 # Re-fetch and display updated coverage
@@ -258,44 +270,6 @@ async def run_detector_coverage(*, run_missing: bool, model: str, verbose: bool)
 # ---------- CLI command wrappers ----------
 
 
-def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> CriticScopeSpec:
-    """Filter available files to requested subset, with validation.
-
-    Args:
-        all_files: All available files from snapshot
-        requested_files: Optional list of relative paths to filter to
-
-    Returns:
-        AllFilesScope if no filter requested, otherwise ExplicitFileScope with validated paths
-
-    Raises:
-        typer.Exit: If requested files are invalid or not found
-    """
-    # No filter → return AllFilesScope sentinel for downstream resolution
-    if requested_files is None:
-        return AllFilesScope()
-
-    # Validate requested files exist (work with Path internally)
-    available: set[Path] = set(all_files.keys())
-    requested_set: set[Path] = {Path(f) for f in requested_files}
-    invalid: set[Path] = requested_set - available
-
-    if invalid:
-        typer.echo("Error: The following files are not in the snapshot:", err=True)
-        for f in sorted(str(p) for p in invalid):
-            typer.echo(f"  - {f}", err=True)
-        typer.echo(f"\nAvailable files ({len(all_files)}):", err=True)
-        for f in sorted(str(p) for p in all_files)[:10]:
-            typer.echo(f"  - {f}", err=True)
-        if len(all_files) > 10:
-            typer.echo(f"  ... and {len(all_files) - 10} more", err=True)
-        raise typer.Exit(1)
-
-    # Convert validated Path set to ExplicitFileScope
-    validated: set[Path] = requested_set & available
-    return ExplicitFileScope(files=[str(p) for p in sorted(validated)])
-
-
 @async_run
 async def cmd_run_detector(
     filename: str = typer.Argument(..., help="Detector filename (e.g., 'dead_code.md')"),
@@ -303,6 +277,7 @@ async def cmd_run_detector(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run detector (always structured mode)."""
     init_db()
@@ -313,11 +288,13 @@ async def cmd_run_detector(
     # Execute critic (fetches system+user prompts internally via prompt_sha256)
     hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot) as hydrated:
-        files_spec = _filter_files(hydrated.all_discovered_files, files)
+        files_spec = filter_files(hydrated.all_discovered_files, files)
         critic_output, run_id, critique_id = await run_critic(
             input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
+            docker_client=docker_client,
             content_root=hydrated.content_root,
+            prompt_optimization_run_id=None,
             mount_properties=False,
             verbose=verbose,
         )
@@ -332,6 +309,7 @@ async def cmd_detector_coverage(
     run_missing: bool = typer.Option(False, "--run-missing", help="Run missing (detector, snapshot) pairs"),
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Check evaluation coverage for all (detector, snapshot) pairs.
 
@@ -339,4 +317,4 @@ async def cmd_detector_coverage(
     Use --run-missing to automatically evaluate all missing (detector, snapshot) pairs.
     """
     init_db()
-    await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose)
+    await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose, docker_client=docker_client)

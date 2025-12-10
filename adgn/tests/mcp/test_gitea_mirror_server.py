@@ -1,5 +1,3 @@
-from collections.abc import Iterator
-import json
 from typing import Any
 
 import pytest
@@ -30,28 +28,15 @@ def _clear_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GITEA_POLL_TIMEOUT_SECS", raising=False)
 
 
-def _iter(values: list[float]) -> Iterator[float]:
-    yield from values
-    while True:  # pragma: no cover - defensive fallback
-        yield values[-1]
+@pytest.fixture
+def gitea_mirror_server() -> server.GiteaMirrorServer:
+    """Create GiteaMirrorServer with test credentials."""
+    return server.GiteaMirrorServer(base_url="https://gitea.local", token="secret-token")
 
 
-def _extract_payload(result):
-    if isinstance(result, dict):
-        return result
-    if isinstance(result, tuple) and len(result) == 2:
-        blocks, payload = result
-        assert isinstance(blocks, list), f"Expected content blocks list, got {type(blocks)}"
-        assert payload is None or isinstance(payload, dict), f"Expected dict payload, got {type(payload)}"
-        if payload is not None:
-            return payload
-        assert blocks, "Expected at least one block"
-        assert blocks[0].type == "text", "Expected text content block"
-        return json.loads(blocks[0].text)
-    raise AssertionError(f"Unexpected tool response: {result!r}")
-
-
-async def test_trigger_mirror_sync_success(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
+async def test_trigger_mirror_sync_success(
+    monkeypatch: pytest.MonkeyPatch, make_typed_mcp, gitea_mirror_server
+) -> None:
     post_calls: list[tuple[str, dict, dict]] = []
 
     def fake_post(url: str, **kwargs: Any):
@@ -67,9 +52,7 @@ async def test_trigger_mirror_sync_success(monkeypatch: pytest.MonkeyPatch, make
     monkeypatch.setattr(server.requests, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
-    mirror_server = server.make_gitea_mirror_server(base_url="https://gitea.local", token="secret-token")
-
-    async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(gitea_mirror_server, "gitea_mirror") as (client, _):
         await client.trigger_mirror_sync(TriggerMirrorSyncArgs(url="https://example.com/org/repo.git"))
 
     assert [call[0] for call in post_calls] == [
@@ -80,7 +63,9 @@ async def test_trigger_mirror_sync_success(monkeypatch: pytest.MonkeyPatch, make
     assert migrate_headers["Authorization"] == "token secret-token"
 
 
-async def test_trigger_sync_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch, make_typed_mcp) -> None:
+async def test_trigger_sync_bubbles_mirror_error(
+    monkeypatch: pytest.MonkeyPatch, make_typed_mcp, gitea_mirror_server
+) -> None:
     def fake_post(url: str, **kwargs: Any):
         if url.endswith("/repos/migrate"):
             return _DummyResponse(500, text="boom")
@@ -94,9 +79,7 @@ async def test_trigger_sync_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(server.requests, "get", unexpected_get)
 
-    mirror_server = server.make_gitea_mirror_server(base_url="https://gitea.local", token="secret-token")
-
-    async with make_typed_mcp(mirror_server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(gitea_mirror_server, "gitea_mirror") as (client, _):
         # Error assertion path: expect tool error and capture message
         err_msg = await client.error("trigger_mirror_sync")(TriggerMirrorSyncArgs(url="https://example.com/org/repo"))
         assert "boom" in err_msg or "HTTP 500" in err_msg
@@ -105,4 +88,4 @@ async def test_trigger_sync_bubbles_mirror_error(monkeypatch: pytest.MonkeyPatch
 def test_make_mcp_requires_configuration() -> None:
     # Use a raw regex for the generic message match
     with pytest.raises(ValueError, match=r"."):
-        server.make_gitea_mirror_server()
+        server.GiteaMirrorServer()

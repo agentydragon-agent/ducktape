@@ -3,7 +3,6 @@
   pkgs,
   lib,
   config,
-  unstablePkgs,
   ...
 }: let
   codexSettings = {
@@ -73,7 +72,7 @@
 in {
   programs.codex = {
     enable = true;
-    package = unstablePkgs.codex;
+    package = pkgs.codex;
     # Avoid letting the upstream module overwrite ~/.codex/config.toml.
     # The activation script below handles merging our desired settings.
   };

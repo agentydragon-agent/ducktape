@@ -14,35 +14,38 @@ TODO: Enable compaction for critic runs to reduce transcript size.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 import logging
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import TYPE_CHECKING, Annotated
 from uuid import UUID, uuid4
 
+import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
-from rich.console import Group, RenderableType
-from rich.markdown import Markdown
-from rich.panel import Panel
-from rich.table import Table
+from pydantic import Field, StringConstraints
 import typer
+
+if TYPE_CHECKING:
+    from fastmcp.tools import FunctionTool
+
+    from adgn.mcp._shared.mounted import Mounted
+    from adgn.mcp.exec.docker.server import ContainerExecServer
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
-from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.constants import CRITIC_SUBMIT_SERVER_NAME
+from adgn.agent.turn_limit import MaxTurnsHandler
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
+from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from adgn.props.critic.models import (
     CriticInput,
     CriticScopeSpec,
@@ -77,19 +80,6 @@ class CriticSubmitState:
     error: str | None = None
     # In-progress incremental payload (used by upsert/add_* tools before submit)
     work: CriticSubmitPayload = field(default_factory=lambda: CriticSubmitPayload(issues=[], notes_md=None))
-
-
-class CriticFailure(BaseModel):
-    """Failed critic output (not used in current API but kept for potential future use)."""
-
-    tag: Literal["failure"] = "failure"
-    error: str = Field(description="Error message explaining why critique failed")
-
-    model_config = ConfigDict(frozen=True)
-
-
-# Discriminated union for critic output (not currently used but defined for completeness)
-CriticOutput = Annotated[CriticSuccess | CriticFailure, Field(discriminator="tag")]
 
 
 class ReportFailureInput(OpenAIStrictModeBaseModel):
@@ -307,55 +297,211 @@ def build_critic_submit_tools(mcp: EnhancedFastMCP, state: CriticSubmitState) ->
         raise ToolError(error.message)
 
 
-def _format_file_ranges(path: Path, ranges: list[LineRange] | None) -> str:
-    """Format a file path with its line ranges (e.g., 'file.py: 123, 145-150')."""
-    if ranges is None:
-        return f"{path}: (unspecified)"
-    return f"{path}: {', '.join(r.format() for r in ranges)}"
+class CriticSubmitServer(EnhancedFastMCP):
+    """Critic submit MCP server with typed tool access.
+
+    Provides incremental critique-building tools: upsert_issue, add_occurrence, submit, etc.
+    """
+
+    # Tool name constants (for test infrastructure only)
+    UPSERT_ISSUE_TOOL_NAME = "upsert_issue"
+    ADD_OCCURRENCE_TOOL_NAME = "add_occurrence"
+    SUBMIT_TOOL_NAME = "submit"
+
+    # Tool references (assigned in __init__)
+    upsert_issue_tool: FunctionTool
+    cancel_issue_tool: FunctionTool
+    add_occurrence_tool: FunctionTool
+    get_critique_tool: FunctionTool
+    add_occurrence_files_tool: FunctionTool
+    submit_tool: FunctionTool
+    report_failure_tool: FunctionTool
+
+    def __init__(self, state: CriticSubmitState):
+        """Create critic submit server with state container.
+
+        Args:
+            state: State container for submitted result.
+        """
+        super().__init__("Critic Submit Server", instructions=CRITIC_MCP_INSTRUCTIONS)
+
+        # Helper for parsing line ranges
+        def _parse_ranges(atoms: list[RangeAtom]) -> list[LineRange]:
+            def _parse_range_atom(a: RangeAtom) -> LineRange:
+                if isinstance(a, int):
+                    return LineRange(start_line=a, end_line=None)
+                if isinstance(a, list) and len(a) == 2 and all(isinstance(x, int) for x in a):
+                    return LineRange(start_line=a[0], end_line=a[1])
+                raise ValueError(f"Invalid range atom: {a!r}. Expected int or [start, end]")
+
+            return [_parse_range_atom(a) for a in atoms]
+
+        # Register tools - names derived from function names
+        async def upsert_issue(payload: UpsertIssueInput) -> str:
+            """Create or update an issue header (id + rationale)."""
+            result = _find_this_critique(state.work, payload.issue_id)
+            if result is not None:
+                idx, existing = result
+                state.work.issues[idx] = ReportedIssue(
+                    id=payload.issue_id, rationale=payload.description, occurrences=existing.occurrences
+                )
+            else:
+                state.work.issues.append(
+                    ReportedIssue(id=payload.issue_id, rationale=payload.description, occurrences=[])
+                )
+            return f"issue {payload.issue_id} noted. note: you need to use add_occurrence to mark the site of at least one occurrence"
+
+        async def cancel_issue(payload: CancelIssueInput) -> str:
+            """Remove an issue and all its occurrences by id."""
+            state.work.issues = [it for it in state.work.issues if it.id != payload.issue_id]
+            after_issues = len(state.work.issues)
+            after_occs = sum(len(i.occurrences) for i in state.work.issues)
+            return f"issue {payload.issue_id} canceled. {after_issues} issues ({after_occs} occurrences) noted."
+
+        async def add_occurrence(payload: AddOccurrenceInput) -> str:
+            """Add one occurrence for an issue."""
+            result = _find_this_critique(state.work, payload.issue_id)
+            if result is None:
+                raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
+            issue = result[1]
+            issue.occurrences.append(
+                Occurrence.from_files_dict(files={Path(payload.file): _parse_ranges(payload.ranges)})
+            )
+            total_occs = sum(len(i.occurrences) for i in state.work.issues)
+            return (
+                f"occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted. "
+                f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
+            )
+
+        async def get_critique() -> CriticSubmitPayload:
+            """Get current state of the critique (inspection only).
+
+            Use this to double-check what issues the server has collected so far.
+
+            This is a READ-ONLY inspection tool. It does NOT complete the review.
+            To finish the review, you MUST call submit().
+            """
+            return state.work
+
+        async def add_occurrence_files(payload: AddOccurrenceFilesInput) -> str:
+            """Add one occurrence spanning multiple files/ranges."""
+            result = _find_this_critique(state.work, payload.issue_id)
+            if result is None:
+                raise ToolError(f"Unknown issue '{payload.issue_id}'. Create the issue before adding occurrences.")
+            issue = result[1]
+            files_dict: dict[Path, list[LineRange] | None] = {
+                Path(fr.path): _parse_ranges(fr.ranges) for fr in payload.files
+            }
+            issue.occurrences.append(Occurrence.from_files_dict(files=files_dict))
+            total_occs = sum(len(i.occurrences) for i in state.work.issues)
+            return (
+                f"multi-file occurrence recorded for {payload.issue_id}. {total_occs} total occurrences noted. "
+                f"If this is the last occurrence and you have no more issues to report, call submit() to finalize your critique."
+            )
+
+        async def submit(payload: SubmitInput) -> SimpleOk:
+            """**REQUIRED FINAL STEP** - Submit your critique and end the review task.
+
+            This is the ONE AND ONLY gate to complete the critique task. You MUST call this function
+            to signal completion, whether you found issues or not. Until you call submit(), you will
+            continue being prompted to take actions.
+
+            Call this when you have finished your analysis, even if you found zero issues.
+
+            Args:
+                issues_count: Number of issues you created via upsert_issue (can be 0)
+                notes_md: Optional notes about your review
+
+            The issues_count must exactly match the number of issues you created via upsert_issue.
+            """
+            _ensure_not_submitted(state)
+            missing = [it.id for it in state.work.issues if not it.occurrences]
+            if missing:
+                raise ToolError(
+                    "Each issue must include at least one occurrence. Missing occurrences for: "
+                    + ", ".join(str(x) for x in missing)
+                )
+            actual_issues = len(state.work.issues)
+            if payload.issues_count != actual_issues:
+                raise ToolError(f"Submit count mismatch: reported {payload.issues_count} but found {actual_issues}.")
+            state.result = state.work
+            return SimpleOk()
+
+        async def report_failure(error: ReportFailureInput) -> str:
+            """Report that critique could not be completed."""
+            _ensure_not_submitted(state)
+            state.error = error.message
+            raise ToolError(error.message)
+
+        # Assign tool references
+        self.upsert_issue_tool = self.flat_model()(upsert_issue)
+        self.cancel_issue_tool = self.flat_model()(cancel_issue)
+        self.add_occurrence_tool = self.flat_model()(add_occurrence)
+        self.get_critique_tool = self.flat_model()(get_critique)
+        self.add_occurrence_files_tool = self.flat_model()(add_occurrence_files)
+        self.submit_tool = self.flat_model()(submit)
+        self.report_failure_tool = self.flat_model()(report_failure)
 
 
-def _format_occurrence(occ: Occurrence) -> str:
-    """Format a single occurrence (multiple files with optional note)."""
-    files = [_format_file_ranges(fo.path, fo.ranges) for fo in occ.files]
-    result = "; ".join(files)
-    if occ.note:
-        result += f" ({occ.note})"
-    return result
+# =============================================================================
+# Critic Compositor (Phase 2 pattern)
+# =============================================================================
 
 
-def _format_occurrences(issue: ReportedIssue) -> str:
-    """Format all occurrences for an issue as a newline-separated string."""
-    return "\n".join(_format_occurrence(occ) for occ in issue.occurrences)
+class CriticCompositor(Compositor):
+    """Compositor with critic servers pre-mounted.
 
+    Mounts:
+    - runtime: Docker exec server (via PropertiesDockerWiring)
+    - critic_submit: Critic submission server
 
-@render_to_rich.register
-def _render_critic_submit_payload(obj: CriticSubmitPayload):
-    bits: list[RenderableType] = []
-    # Candidate issues table (no properties column)
-    tbl = Table(title="Candidate Issues", show_lines=False, expand=True)
-    tbl.add_column("ID", style="cyan")
-    tbl.add_column("Rationale", style="green")
-    tbl.add_column("Occurrences", style="yellow")
+    Usage:
+        wiring = properties_docker_spec(...)
+        critic_state = CriticSubmitState()
 
-    if obj.issues:
-        for issue in obj.issues:
-            tbl.add_row(issue.id, issue.rationale, _format_occurrences(issue))
-    else:
-        tbl.add_row("(no candidate issues)", "", "")
+        async with CriticCompositor(wiring, critic_state) as comp:
+            # Access servers via Mounted[T] wrappers:
+            exec_tool_name = comp.runtime.server.exec_tool.name
+            submit_tool_name = comp.critic_submit.server.submit_tool.name
 
-    bits.append(tbl)
-    if obj.notes_md:
-        bits.append(Markdown(obj.notes_md))
+            # Build bootstrap calls:
+            builder = TypedBootstrapBuilder()
+            call = builder.call_mounted(comp.runtime, comp.runtime.server.exec_tool, ExecInput(...))
+    """
 
-    if len(bits) == 1:
-        body: RenderableType = bits[0]
-    else:
-        # simple group rendering for multiple blocks
-        body = Group(*bits)
+    # Mount prefix constant (for test infrastructure only)
+    SUBMIT_PREFIX = "critic_submit"
 
-    title = f"Critic result ({len(obj.issues)} issues)"
-    border = "red" if obj.issues else "green"
-    return Panel(body, title=title, border_style=border)
+    # Mounted server attributes (populated in __aenter__)
+    runtime: Mounted[ContainerExecServer]
+    critic_submit: Mounted[CriticSubmitServer]
+
+    def __init__(self, wiring, critic_state: CriticSubmitState):
+        """Create compositor with critic dependencies.
+
+        Args:
+            wiring: Docker exec server wiring (will be mounted as determined by wiring)
+            critic_state: Critic submit state container (shared with caller)
+        """
+        super().__init__()
+        # Store dependencies for mounting (can't mount yet - compositor not started)
+        self._wiring = wiring
+        self._critic_state = critic_state
+
+    async def __aenter__(self):
+        """Start compositor and mount servers."""
+        # Start base compositor first
+        await super().__aenter__()
+
+        # Mount runtime server (docker exec) via wiring - returns Mounted[T] directly
+        self.runtime = await self._wiring.attach(self)
+
+        # Mount critic submit server
+        self.critic_submit = await self.mount_inproc(
+            "critic_submit", CriticSubmitServer(self._critic_state), pinned=True
+        )
+
+        return self
 
 
 # =============================================================================
@@ -407,11 +553,13 @@ async def run_critic(
     input_data: CriticInput,
     client: OpenAIModelProto,
     content_root,
-    prompt_optimization_run_id: UUID | None = None,
+    prompt_optimization_run_id: UUID | None,
+    docker_client: aiodocker.Docker,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
+    max_turns: int | None = None,
 ) -> tuple[CriticSuccess, UUID, UUID]:
     """Execute critic agent to produce candidate issues and persist to DB.
 
@@ -432,10 +580,8 @@ async def run_critic(
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel - loads from DB)
     resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files)
 
-    # Build user prompt from resolved files (just the file list)
-    user_prompt = render_prompt_template(
-        "critic/prompts/critic_user_prompt.j2.md", files=sorted(resolved_files, key=str)
-    )
+    # Build user prompt from resolved files (just the file list as JSON)
+    user_prompt = json.dumps(sorted(str(p) for p in resolved_files), indent=2)
 
     # Generate unique IDs for this run
     run_id = uuid4()
@@ -470,24 +616,19 @@ async def run_critic(
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
     # Use ephemeral=False so critic can persist temporary analysis artifacts, checklists, and reasoning
-    wiring = properties_docker_spec(content_root, mount_properties=mount_properties, ephemeral=False)
+    wiring = properties_docker_spec(
+        content_root, docker_client=docker_client, mount_properties=mount_properties, ephemeral=False
+    )
 
-    # Use Compositor as async context manager to ensure cleanup
-    async with Compositor() as comp:
-        runtime_server = await wiring.attach(comp)
-
-        # Mount critic submit server
-        critic_server = EnhancedFastMCP(CRITIC_SUBMIT_SERVER_NAME, instructions=CRITIC_MCP_INSTRUCTIONS)
-        build_critic_submit_tools(critic_server, critic_state)
-        await comp.mount_inproc(CRITIC_SUBMIT_SERVER_NAME, critic_server)
-
+    # Use CriticCompositor to bundle server mounting
+    async with CriticCompositor(wiring, critic_state) as comp:
         # Set up handlers
-        builder = TypedBootstrapBuilder.for_server(runtime_server)
-        bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, builder)
+        builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
+        bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, comp.resources, comp.runtime, builder)
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         # Build servers dict for handlers
-        servers = {wiring.server_name: runtime_server, CRITIC_SUBMIT_SERVER_NAME: critic_server}
+        servers = {comp.runtime.prefix: comp.runtime.server, comp.critic_submit.prefix: comp.critic_submit.server}
 
         def _ready_state() -> bool:
             return (critic_state.result is not None) or (critic_state.error is not None)
@@ -506,6 +647,10 @@ async def run_critic(
             *extra_handlers,
         ]
 
+        # Add turn limit handler if max_turns is specified
+        if max_turns is not None:
+            handlers.append(MaxTurnsHandler(max_turns=max_turns))
+
         # Build combined dynamic instructions by rendering the template
         async def _build_critic_instructions() -> str:
             """Build critic system instructions by rendering critic_system.j2.md template.
@@ -522,8 +667,8 @@ async def run_critic(
             )
 
         # Run critic agent
+        # Note: resources and compositor_meta are auto-mounted by base Compositor
         async with Client(comp) as mcp_client:
-            await mount_standard_inproc_servers(compositor=comp)
             agent = await Agent.create(
                 mcp_client=mcp_client,
                 client=client,
@@ -539,9 +684,9 @@ async def run_critic(
 
     # Convert state to output
     if critic_state.error is not None:
-        raise RuntimeError(f"Critic failed: {critic_state.error}")
+        raise CriticExecutionError(f"Critic failed: {critic_state.error}")
     if critic_state.result is None:
-        raise RuntimeError("Critic did not submit")
+        raise CriticDidNotSubmitError("Critic did not submit")
 
     output = CriticSuccess(result=critic_state.result)
 

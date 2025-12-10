@@ -1,67 +1,51 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from pathlib import Path
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.props.models.true_positive import LineRange
-from adgn.props.paths import SnapshotRelativePath
 
 
 class Correction(BaseModel):
-    file: SnapshotRelativePath
+    file: str  # Use str instead of Path for OpenAI strict mode compatibility
     range: LineRange
 
     model_config = ConfigDict(extra="forbid")
 
 
-class AnchorIncorrect(BaseModel):
+class AnchorIncorrect(OpenAIStrictModeBaseModel):
     kind: Literal["ANCHOR_INCORRECT"] = "ANCHOR_INCORRECT"
     correction: Correction
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class FalsePositive(BaseModel):
+class FalsePositive(OpenAIStrictModeBaseModel):
     kind: Literal["FALSE_POSITIVE"] = "FALSE_POSITIVE"
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class TruePositive(BaseModel):
+class TruePositive(OpenAIStrictModeBaseModel):
     kind: Literal["TRUE_POSITIVE"] = "TRUE_POSITIVE"
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class OtherError(BaseModel):
+class OtherError(OpenAIStrictModeBaseModel):
     kind: Literal["OTHER_ERROR"] = "OTHER_ERROR"
     description: str
 
-    model_config = ConfigDict(extra="forbid")
-
 
 # Rationale-focused annotations
-class RationaleError(BaseModel):
+class RationaleError(OpenAIStrictModeBaseModel):
     kind: Literal["RATIONALE_ERROR"] = "RATIONALE_ERROR"
     error_description: str
 
-    model_config = ConfigDict(extra="forbid")
 
-
-class RationaleImprovement(BaseModel):
+class RationaleImprovement(OpenAIStrictModeBaseModel):
     kind: Literal["RATIONALE_IMPROVEMENT"] = "RATIONALE_IMPROVEMENT"
     suggested_improvement: str
 
-    model_config = ConfigDict(extra="forbid")
 
-
-IssueLintFinding = Annotated[
-    AnchorIncorrect | FalsePositive | TruePositive | OtherError | RationaleError | RationaleImprovement,
-    Field(discriminator="kind"),
-]
+IssueLintFinding = AnchorIncorrect | FalsePositive | TruePositive | OtherError | RationaleError | RationaleImprovement
 
 
 class IssueLintFindingRecord(BaseModel):
@@ -78,13 +62,13 @@ class LintSubmitPayload(BaseModel):
 
     message_md: str = Field(..., description="Concise Markdown report; do not restate pass/fail.")
     suggested_rationale: str | None = Field(
-        default=None,
+        ...,  # Required field (not default=None) for OpenAI strict mode
         description=(
             "If non-null, corrected Issue rationale text suggested by linter, based on the actual evidence "
             "(e.g., remove mentions of nonexistent callers and prescribe deleting dead code). Null means keep original."
         ),
     )
-    findings: list[IssueLintFindingRecord] = Field(description="Lint findings.")
+    findings: list[IssueLintFindingRecord] = Field(..., description="Lint findings.")
 
     @model_validator(mode="after")
     def _validate_tp_fp_one_of(self) -> LintSubmitPayload:
@@ -102,12 +86,12 @@ class LintSubmitPayload(BaseModel):
         return self
 
 
-def extract_corrections(findings: list[IssueLintFindingRecord]) -> defaultdict[Path, list[LineRange]]:
+def extract_corrections(findings: list[IssueLintFindingRecord]) -> defaultdict[str, list[LineRange]]:
     """Extract file corrections from AnchorIncorrect findings.
 
-    Returns a defaultdict mapping file paths to corrected line ranges.
+    Returns a defaultdict mapping file paths (as strings) to corrected line ranges.
     """
-    corrections: defaultdict[Path, list[LineRange]] = defaultdict(list)
+    corrections: defaultdict[str, list[LineRange]] = defaultdict(list)
     for fr in findings:
         if isinstance(f := fr.finding, AnchorIncorrect):
             corrections[f.correction.file].append(f.correction.range)

@@ -6,7 +6,9 @@ import os
 from pathlib import Path
 import platform
 import re
+from unittest.mock import MagicMock
 
+import aiodocker
 import docker
 from fastmcp.client import Client
 from fastmcp.mcp_config import MCPConfig
@@ -20,15 +22,21 @@ from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
+from adgn.mcp._shared.constants import (
+    APPROVAL_ADMIN_MOUNT_PREFIX,
+    COMPOSITOR_META_MOUNT_PREFIX,
+    POLICY_PROPOSER_MOUNT_PREFIX,
+    POLICY_READER_MOUNT_PREFIX,
+    RESOURCES_MOUNT_PREFIX,
+)
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
+from adgn.mcp.compositor.meta_server import CompositorMetaServer
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
-from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
-from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.exec.models import ExecInput
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.notifications.buffer import NotificationsBuffer
+from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp as _make_simple_mcp
 from tests.support.responses import _StepRunner
@@ -38,6 +46,23 @@ from tests.support.types import McpServerSpecs
 # Empty canonical issues snapshot for GraderRun fixtures.
 # Format matches GraderRun.canonical_issues_snapshot JSONB column.
 EMPTY_CANONICAL_ISSUES_SNAPSHOT: dict[str, list[str]] = {"true_positives": [], "false_positives": []}
+
+# Test server mount name used in fixtures
+TEST_BACKEND_SERVER_NAME = "backend"
+
+
+@pytest.fixture
+def mock_registry(sqlite_persistence):
+    """Create mock infrastructure registry using real persistence.
+
+    Used by mcp_bridge and mcp/agents tests. Mocks agent container tracking
+    while using real persistence for data storage.
+    """
+    registry = MagicMock()
+    registry.persistence = sqlite_persistence
+    registry.list_agents.return_value = []
+    registry.is_external.return_value = False
+    return registry
 
 
 @pytest.fixture
@@ -53,8 +78,15 @@ async def compositor():
     The compositor is entered as a context manager automatically, so tests can
     mount servers and use it immediately without explicit 'async with'.
     """
-    async with Compositor("comp") as comp:
+    async with Compositor() as comp:
         yield comp
+
+
+@pytest.fixture
+async def compositor_client(compositor):
+    """Client connected to the compositor."""
+    async with Client(compositor) as client:
+        yield client
 
 
 @pytest.fixture
@@ -139,6 +171,24 @@ def _per_test_agent_db(monkeypatch: pytest.MonkeyPatch, tmp_path):
 def docker_client():
     """Provide a Docker client for tests that need container operations."""
     return docker.from_env()
+
+
+@pytest.fixture
+async def async_docker_client():
+    """Provide an async Docker client for FastMCP container servers.
+
+    Creates an aiodocker.Docker() instance for tests that need to create
+    FastMCP container exec servers. Cleanup happens automatically via
+    pytest's fixture teardown.
+
+    Note: This is separate from docker_client which provides sync docker.DockerClient.
+    Use this for async contexts (FastMCP servers), use docker_client for sync operations.
+    """
+    client = aiodocker.Docker()
+    try:
+        yield client
+    finally:
+        await client.close()
 
 
 @pytest.fixture
@@ -262,7 +312,12 @@ async def _setup_mounted_compositor(comp: Compositor, servers: McpServerSpecs, p
     """
     await _mount_servers(comp, servers)
     comp.add_middleware(policy_engine.gateway)
-    await mount_standard_inproc_servers(compositor=comp, policy_engine=policy_engine)
+    await comp.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=comp), pinned=True)
+    compmeta_server = CompositorMetaServer(compositor=comp)
+    await comp.mount_inproc(COMPOSITOR_META_MOUNT_PREFIX, compmeta_server, pinned=True)
+    await comp.mount_inproc(POLICY_READER_MOUNT_PREFIX, policy_engine.reader)
+    await comp.mount_inproc(POLICY_PROPOSER_MOUNT_PREFIX, policy_engine.proposer)
+    await comp.mount_inproc(APPROVAL_ADMIN_MOUNT_PREFIX, policy_engine.admin)
 
 
 async def _create_test_policy_engine(sqlite_persistence, docker_client: docker.DockerClient) -> PolicyEngine:
@@ -297,7 +352,7 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
         if policy_engine is None:
             policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
 
-        async with Compositor("comp") as comp:
+        async with Compositor() as comp:
             await _setup_mounted_compositor(comp, servers, policy_engine)
             async with Client(comp) as sess:
                 yield sess
@@ -321,7 +376,7 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
         if policy_engine is None:
             policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
 
-        async with Compositor("comp") as comp:
+        async with Compositor() as comp:
             await _setup_mounted_compositor(comp, servers, policy_engine)
             async with Client(comp) as sess:
                 yield sess, policy_engine
@@ -338,7 +393,7 @@ async def pg_client(make_pg_client, make_simple_mcp):
 
     For tests that just need a simple compositor with a backend server.
     """
-    async with make_pg_client({"backend": make_simple_mcp}) as sess:
+    async with make_pg_client({TEST_BACKEND_SERVER_NAME: make_simple_mcp}) as sess:
         yield sess
 
 
@@ -353,7 +408,7 @@ def make_compositor():
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs):
-        async with Compositor("comp") as comp:
+        async with Compositor() as comp:
             await _mount_servers(comp, servers)
             async with Client(comp) as sess:
                 yield sess, comp
@@ -372,13 +427,13 @@ def _extract_pg_client(compositor_result):
 
 
 @pytest.fixture
-async def pg_compositor_box(make_pg_compositor):
+async def pg_compositor_box(make_pg_compositor, async_docker_client):
     """Async fixture with box Docker exec server and policy gateway.
 
     Mounts a per-session container exec server under name "box" with policy gateway.
     Yields (client, policy_engine).
     """
-    server = make_container_exec_server(make_container_opts("python:3.12-slim"), name="box")
+    server = ContainerExecServer(make_container_opts("python:3.12-slim"), async_docker_client)
     async with make_pg_compositor({"box": server}) as result:
         yield result
 
@@ -415,7 +470,7 @@ def make_buffered_client():
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs):
-        async with Compositor("comp") as comp:
+        async with Compositor() as comp:
             await _mount_servers(comp, servers)
             buf = NotificationsBuffer(compositor=comp)
             async with Client(comp, message_handler=buf.handler) as sess:
@@ -425,15 +480,9 @@ def make_buffered_client():
 
 
 @pytest.fixture
-def docker_exec_server_alpine():
+async def docker_exec_server_alpine(async_docker_client):
     opts = make_container_opts("alpine:3.19")
-    return make_container_exec_server(opts, tool_exec_name="docker_exec")
-
-
-@pytest.fixture
-def docker_inproc_spec_alpine():
-    opts = make_container_opts("alpine:3.19")
-    return make_container_exec_server(opts)
+    return ContainerExecServer(opts, async_docker_client)
 
 
 # --- Compatibility / opt-in fixtures used across suites ---
@@ -462,10 +511,10 @@ def live_openai(request):
 
 
 @pytest.fixture
-def docker_inproc_spec_py312() -> EnhancedFastMCP:
+def docker_inproc_spec_py312(async_docker_client) -> ContainerExecServer:
     """Alias expected by some tests: in-proc spec backed by Python 3.12 image."""
     opts = make_container_opts("python:3.12-alpine")
-    return make_container_exec_server(opts)
+    return ContainerExecServer(opts, async_docker_client)
 
 
 # --- Approval policy presets ------------------------------------------
@@ -561,11 +610,11 @@ def require_sandbox_exec():
 # --- Helper functions for container configuration ---
 
 
-def make_container_opts(image: str, *, working_dir: str = "/workspace", ephemeral: bool = True) -> ContainerOptions:
+def make_container_opts(
+    image: str, *, working_dir: Path = Path("/workspace"), ephemeral: bool = True
+) -> ContainerOptions:
     """Create standard ContainerOptions with proper Path type conversion."""
-    return ContainerOptions(
-        image=image, working_dir=Path(working_dir), volumes=None, describe=True, ephemeral=ephemeral
-    )
+    return ContainerOptions(image=image, working_dir=working_dir, binds=None, ephemeral=ephemeral)
 
 
 # --- Shared lightweight fixtures used across agent and MCP tests ---
@@ -578,24 +627,4 @@ def echo_spec(make_simple_mcp) -> McpServerSpecs:
 
 
 # --- Helpers for constructing MCP tool inputs ---
-
-
-def make_exec_input(
-    cmd: list[str],
-    *,
-    timeout_ms: int = 10_000,
-    cwd: Path | None = None,
-    env: list[str] | None = None,
-    user: str | None = None,
-) -> ExecInput:
-    """Convenience helper for constructing ExecInput with all required fields.
-
-    Mirrors the pattern from bootstrap.docker_exec_call() but returns an ExecInput
-    instead of a bootstrap call. Use this in tests to avoid repeating the full
-    5-field constructor.
-
-    Example:
-        exec_input = make_exec_input(["echo", "hello"])
-        exec_input_with_env = make_exec_input(["printenv"], env=["FOO=bar", "BAZ=qux"])
-    """
-    return ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)
+# (make_exec_input moved to adgn.mcp.exec.models for production use)

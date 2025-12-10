@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
 from pathlib import Path
 
 import pygit2
 import pytest
 
-from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, make_git_ro_server
+from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, GitRoServer
 
 
 def _ensure_identity(repo: pygit2.Repository) -> None:
@@ -63,18 +62,13 @@ def repo_git_ro(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
-    """Async context manager fixture yielding a TypedClient for git-ro server.
+async def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
+    """Async yield fixture providing a TypedClient for git-ro server.
 
     Usage:
-        async with typed_git_ro() as client:
-            result = await client.git_diff(...)
+        async def test_something(typed_git_ro):
+            result = await typed_git_ro.diff(...)
     """
-    server = make_git_ro_server(repo_git_ro)
-
-    @asynccontextmanager
-    async def _open():
-        async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _session):
-            yield client
-
-    return _open
+    server = GitRoServer(repo_git_ro)
+    async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _session):
+        yield client

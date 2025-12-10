@@ -1,9 +1,0 @@
-# vim: set filetype=gitignore :
-
-.aider*
-__pycache__
-*.sw[op]
-**/.claude/settings.local.json
-**/CLAUDE.local.md
-# Temporary one-off scripts (see CLAUDE.md @{#oneoff-scripts})
-oneoff__*

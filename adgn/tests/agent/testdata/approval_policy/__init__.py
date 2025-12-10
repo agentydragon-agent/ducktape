@@ -40,18 +40,18 @@ def make_policy(
         "from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision\n"
         "from adgn.agent.approvals import WellKnownTools\n"
         "from adgn.agent.policies.scaffold import run_with_tests\n"
-        "from adgn.mcp._shared.constants import UI_SERVER_NAME\n"
+        "from adgn.mcp._shared.constants import UI_MOUNT_PREFIX\n"
         "from adgn.mcp._shared.naming import build_mcp_function, tool_matches\n\n"
     )
     body = f"""
 # {doc}
 TEST_CASES = [
-    (PolicyRequest(name=build_mcp_function(UI_SERVER_NAME, WellKnownTools.SEND_MESSAGE), arguments={{}}), ApprovalDecision.ALLOW),
+    (PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE), arguments="{{}}"), ApprovalDecision.ALLOW),
 ]
 
 def decide(req: PolicyRequest) -> PolicyResponse:
     # Always allow UI send_message to satisfy baseline TEST_CASES
-    if tool_matches(req.name, server=UI_SERVER_NAME, tool=WellKnownTools.SEND_MESSAGE):
+    if tool_matches(req.name, server=UI_MOUNT_PREFIX, tool=WellKnownTools.SEND_MESSAGE):
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale='ui allow')
     if tool_matches(req.name, server='{server}', tool='{tool}'):
         return PolicyResponse(decision={decision_expr}, rationale='explicit')

@@ -13,6 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 import logging
 
+import aiodocker
 from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
@@ -49,6 +50,7 @@ class InfrastructureRegistry:
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
+    async_docker_client: aiodocker.Docker
     mcp_config: MCPConfig  # Base MCP config for new agents
     initial_policy: str | None = None
 
@@ -105,7 +107,7 @@ class InfrastructureRegistry:
         if container._compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
 
-        control_server = container.make_control_server(AGENT_CONTROL_SERVER_NAME)
+        control_server = container.make_control_server()
         await container._compositor.mount_inproc(AGENT_CONTROL_SERVER_NAME, control_server)
         logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
 
@@ -138,6 +140,7 @@ class InfrastructureRegistry:
             with_ui=True,
             system=system,
             docker_client=self.docker_client,
+            async_docker_client=self.async_docker_client,
             initial_policy=self.initial_policy,
         )
         if external:

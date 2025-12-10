@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import shlex
 from typing import TYPE_CHECKING, Any
 
@@ -23,6 +22,7 @@ from adgn.props.grader.models import GraderOutput
 
 from ..handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
 from ..tool_schemas import extract_tool_input_schemas, extract_tool_schemas
+from .json_utils import parse_json_or_none
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
@@ -242,7 +242,7 @@ class RichDisplayHandler(BaseHandler):
 
         if isinstance(event, ToolCall):
             # Parse args for display
-            parsed = _parse_json_or_none(event.args_json)
+            parsed = parse_json_or_none(event.args_json)
             args = parsed if parsed is not None else {"_raw": event.args_json or "{}"}
 
             # Try type-based rendering if we have schema registered
@@ -300,15 +300,6 @@ class RichDisplayHandler(BaseHandler):
 
         # Fallback
         return Text(str(event))
-
-
-def _parse_json_or_none(s: str | None) -> Any | None:
-    if not s:
-        return None
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return None
 
 
 class CompactDisplayHandler(BaseHandler):
@@ -594,7 +585,7 @@ class CompactDisplayHandler(BaseHandler):
 
         # ToolCall - compact format with inline metadata when possible
         if isinstance(event, ToolCall):
-            parsed = _parse_json_or_none(event.args_json)
+            parsed = parse_json_or_none(event.args_json)
             args = parsed if parsed is not None else {}
 
             # Try type-based rendering if we have schema registered

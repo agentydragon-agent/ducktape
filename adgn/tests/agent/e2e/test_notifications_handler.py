@@ -6,21 +6,25 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from adgn.agent.runtime.container import build_container
-from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.openai_utils.model import InputTextPart
 from tests.llm.support.openai_mock import make_mock
-from tests.support.steps import AssistantMessage, MakeCall
+from tests.support.steps import ApprovalPolicyAdminSetPolicyCall, AssistantMessage
 
 
 @pytest.mark.requires_docker
 async def test_notifications_handler_in_container_inserts_system_message(
-    docker_client, sqlite_persistence, monkeypatch: pytest.MonkeyPatch, policy_allow_all: str, make_step_runner
+    docker_client,
+    async_docker_client,
+    sqlite_persistence,
+    monkeypatch: pytest.MonkeyPatch,
+    policy_allow_all: str,
+    make_step_runner,
 ) -> None:
     # Capture OpenAI requests and mock agent responses
     runner = make_step_runner(
         steps=[
             # First turn: agent calls admin_set_policy to trigger notification
-            MakeCall("approval_policy_admin", "set_policy", SetPolicyTextArgs(source=policy_allow_all)),
+            ApprovalPolicyAdminSetPolicyCall(source=policy_allow_all),
             # Subsequent turns: just return done
             AssistantMessage("done"),
         ]
@@ -35,6 +39,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
         client_factory=lambda _model: client,
         with_ui=False,
         docker_client=docker_client,
+        async_docker_client=async_docker_client,
         initial_policy=policy_allow_all,
     )
 

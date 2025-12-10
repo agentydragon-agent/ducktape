@@ -22,6 +22,7 @@ import uvicorn
 from adgn.agent.agent import Agent
 from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.display import CompactDisplayHandler
+from adgn.agent.logging_config import configure_logging_info
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.server.app import create_app
@@ -97,13 +98,6 @@ def _print_enabled(servers: list[str]) -> None:
     print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
 
 
-def _configure_logging_info() -> None:
-    configure_logging()
-    for h in logging.getLogger().handlers:
-        if isinstance(h, logging.StreamHandler):
-            h.setLevel(logging.INFO)
-
-
 def _configure_logging_debug() -> None:
     """Configure logging with DEBUG level on console for UI commands to show OpenAI traffic."""
     configure_logging()
@@ -155,7 +149,7 @@ async def run(
     transcript: Path | None = TRANSCRIPT_OPT,
 ) -> None:
     """Start a simple stdin/stdout REPL."""
-    _configure_logging_info()
+    configure_logging_info()
     console = Console()
     console.print("[bold green]Agent ready.[/] Ctrl-D to exit.", highlight=False)
 

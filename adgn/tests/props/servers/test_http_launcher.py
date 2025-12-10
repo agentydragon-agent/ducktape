@@ -41,7 +41,6 @@ def http_client() -> httpx.AsyncClient:
 class TestLaunchMcpHttpServer:
     """Tests for launch_mcp_http_server context manager."""
 
-    @pytest.mark.asyncio
     async def test_server_starts_and_stops(self, server_handle: ServerHandle):
         """Server should start, be reachable, and stop cleanly."""
         assert isinstance(server_handle, ServerHandle)
@@ -59,7 +58,6 @@ class TestLaunchMcpHttpServer:
             # MCP servers may return various status codes, but should respond
             assert response.status_code in (200, 404, 405)
 
-    @pytest.mark.asyncio
     async def test_server_stops_after_context(self):
         """Server should stop after context manager exits."""
         async with launch_mcp_http_server(_create_test_server, container_host="host.docker.internal") as handle:
@@ -71,14 +69,12 @@ class TestLaunchMcpHttpServer:
             with pytest.raises(httpx.ConnectError):
                 await client.get(f"http://127.0.0.1:{port}/", timeout=1.0)
 
-    @pytest.mark.asyncio
     async def test_auth_rejects_missing_token(self, server_handle: ServerHandle):
         """Server should reject requests without auth header."""
         async with httpx.AsyncClient() as client:
             response = await client.get(f"http://127.0.0.1:{server_handle.port}/mcp", timeout=5.0)
             assert response.status_code in (401, 403)
 
-    @pytest.mark.asyncio
     async def test_auth_rejects_wrong_token(self, server_handle: ServerHandle):
         """Server should reject requests with wrong token."""
         async with httpx.AsyncClient() as client:
@@ -89,7 +85,6 @@ class TestLaunchMcpHttpServer:
             )
             assert response.status_code in (401, 403)
 
-    @pytest.mark.asyncio
     async def test_url_format(self, server_handle: ServerHandle):
         """URL should use host.docker.internal for Docker accessibility."""
         assert server_handle.url.startswith("http://host.docker.internal:")

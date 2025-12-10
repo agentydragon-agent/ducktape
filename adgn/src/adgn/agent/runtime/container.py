@@ -7,10 +7,12 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import Literal, cast
+from typing import cast
 
+import aiodocker
 from docker.client import DockerClient
 from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig, MCPServerTypes
 from pydantic import BaseModel, Field
 
@@ -26,31 +28,113 @@ from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import AgentSession, UiEventHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.types import AgentID
-from adgn.mcp._shared.constants import (
-    POLICY_PROPOSER_SERVER_NAME,
-    POLICY_READER_SERVER_NAME,
-    RUNTIME_EXEC_TOOL_NAME,
-    RUNTIME_SERVER_NAME,
-    SEATBELT_EXEC_SERVER_NAME,
-    UI_SERVER_NAME,
-)
+from adgn.mcp._shared.constants import SEATBELT_EXEC_MOUNT_PREFIX
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
-from adgn.mcp.chat.server import attach_persisted_chat_servers
+from adgn.mcp.chat.server import (
+    CHAT_ASSISTANT_SERVER_NAME,
+    CHAT_HUMAN_SERVER_NAME,
+    ChatAuthor,
+    ChatServer,
+    ChatStorePersisted,
+)
+from adgn.mcp.compositor.admin import convert_mcp_server_types_to_spec
 from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.compositor.setup import mount_standard_inproc_servers
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
-from adgn.mcp.loop.server import make_loop_server
+from adgn.mcp.loop.server import LoopServer
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.runtime.server import make_runtime_server
+from adgn.mcp.runtime.server import RuntimeServer
 from adgn.mcp.snapshots import SamplingSnapshot, ServerEntry
-from adgn.mcp.ui.server import make_ui_server
+from adgn.mcp.ui.server import UiServer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage
 
 from .handlers import build_handlers
+
+# ---- Agent Container Compositor ---------------------------------------------
+
+
+class AgentContainerCompositor(Compositor):
+    """Compositor for agent containers with all agent-specific servers pre-mounted.
+
+    Infrastructure servers (resources, compositor_meta) are auto-mounted by base Compositor.
+    This class adds 5 agent-specific servers:
+    - loop: Loop control (pinned)
+    - policy_reader: Policy reading (pinned)
+    - policy_proposer: Policy proposals (pinned)
+    - ui: UI server (conditional, pinned if present)
+    - runtime: Docker exec runtime (conditional, pinned if present)
+    """
+
+    from typing import TYPE_CHECKING
+
+    if TYPE_CHECKING:
+        from adgn.mcp._shared.mounted import Mounted
+
+    # Agent-specific servers (5 additional beyond base infrastructure)
+    loop: Mounted[LoopServer]
+    policy_reader: Mounted[EnhancedFastMCP]
+    policy_proposer: Mounted[EnhancedFastMCP]
+    ui: Mounted[UiServer] | None
+    runtime: Mounted[RuntimeServer] | None
+
+    def __init__(
+        self,
+        approval_engine: PolicyEngine,
+        ui_bus: ServerBus | None,
+        async_docker_client: aiodocker.Docker,
+        persistence: SQLitePersistence,
+        agent_id: AgentID,
+    ):
+        super().__init__()
+        self._approval_engine = approval_engine
+        self._ui_bus = ui_bus
+        self._async_docker_client = async_docker_client
+        self._persistence = persistence
+        self._agent_id = agent_id
+
+    async def __aenter__(self):
+        # Call base Compositor.__aenter__ (mounts resources + compositor_meta)
+        await super().__aenter__()
+
+        # Mount agent-specific servers (all pinned)
+
+        # Loop control (agent-only surface)
+        self.loop = await self.mount_inproc("loop", LoopServer(), pinned=True)
+
+        # Policy servers (from approval engine)
+        self.policy_reader = await self.mount_inproc("policy_reader", self._approval_engine.reader, pinned=True)
+
+        self.policy_proposer = await self.mount_inproc("policy_proposer", self._approval_engine.proposer, pinned=True)
+
+        # Conditionally mount UI and runtime (iff ui_bus is not None)
+        if self._ui_bus is not None:
+            # UI server
+            self.ui = await self.mount_inproc("ui", UiServer(self._ui_bus), pinned=True)
+
+            # Runtime exec server
+            runtime_image = resolve_runtime_image()
+            opts = ContainerOptions(image=runtime_image, binds=None, ephemeral=True)
+            self.runtime = await self.mount_inproc(
+                "runtime", RuntimeServer(opts, self._async_docker_client), pinned=True
+            )
+
+            # Attach persisted chat servers (separate from 7 core servers)
+            # Inline: ChatStorePersisted + two ChatServers for human/assistant
+            store = ChatStorePersisted(persistence=self._persistence, agent_id=self._agent_id)
+            human = ChatServer(author=ChatAuthor.USER, store=store)
+            assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
+            store.register_servers(human=human, assistant=assistant)
+            await self.mount_inproc(CHAT_HUMAN_SERVER_NAME, human)
+            await self.mount_inproc(CHAT_ASSISTANT_SERVER_NAME, assistant)
+        else:
+            self.ui = None
+            self.runtime = None
+
+        return self
+
 
 # ---- Typed actor messages/results -------------------------------------------
 
@@ -71,24 +155,6 @@ class SendPromptInput(BaseModel):
     """Input for the send_prompt tool."""
 
     prompt: str = Field(description="The prompt to send to start an agent run")
-
-
-class SendPromptOutput(BaseModel):
-    """Output for the send_prompt tool."""
-
-    status: Literal["started", "error"]
-    message: str
-
-
-class AbortInput(BaseModel):
-    """Input for the abort tool (empty - no parameters)."""
-
-
-class AbortOutput(BaseModel):
-    """Output for the abort tool."""
-
-    status: Literal["aborted", "error"]
-    message: str
 
 
 class _ActorMsg:
@@ -171,6 +237,7 @@ class AgentContainer:
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
     docker_client: DockerClient
+    async_docker_client: aiodocker.Docker
     with_ui: bool = True
     # Runtime exec server characteristics (wired during attach)
     # Default: runtime is not treated as ephemeral for status purposes
@@ -199,8 +266,8 @@ class AgentContainer:
     # Internal helpers/state
     _cm: UiEventHandler | None = field(default=None, init=False)
     _ui_bus: ServerBus | None = field(default=None, init=False)
-    # Compositor instance (when compositor path is used)
-    _compositor: Compositor | None = field(default=None, init=False)
+    # Compositor instance (AgentContainerCompositor with all agent-specific servers)
+    _compositor: AgentContainerCompositor | None = field(default=None, init=False)
     # Front-door MCP client (FastMCP Client connected to the compositor with policy middleware)
     _compositor_client: Client | None = field(default=None, init=False)
 
@@ -219,37 +286,38 @@ class AgentContainer:
         meta = CompositorMetaClient(self._compositor_client)
         return cast(dict[str, ServerEntry], await meta.list_states())
 
-    def make_control_server(self, name: str) -> EnhancedFastMCP:
+    def _get_session(self) -> AgentSession:
+        """Get the agent session, raising ToolError if not initialized."""
+        if self.session is None:
+            raise ToolError("Agent session not initialized")
+        return self.session
+
+    def make_control_server(self) -> EnhancedFastMCP:
         """Create an agent control MCP server for this container.
 
         Tools:
         - send_prompt(prompt) - Send a prompt to the agent
         - abort() - Abort the currently active agent
 
-        Args:
-            name: Server name
-
         Returns:
             EnhancedFastMCP server instance
         """
-        mcp = EnhancedFastMCP(name)
+        mcp = EnhancedFastMCP("Agent Control MCP Server")
         container = self  # capture self for closures
 
         @mcp.flat_model()
-        async def send_prompt(input: SendPromptInput) -> SendPromptOutput:
+        async def send_prompt(input: SendPromptInput) -> str:
             """Send a prompt to the agent."""
-            if container.session is None:
-                return SendPromptOutput(status="error", message="Agent session not initialized")
-            await container.session.run(input.prompt)
-            return SendPromptOutput(status="started", message="Prompt sent successfully")
+            session = container._get_session()
+            await session.run(input.prompt)
+            return "Prompt sent successfully"
 
         @mcp.flat_model()
-        async def abort(input: AbortInput) -> AbortOutput:
+        async def abort() -> str:
             """Abort the currently active agent."""
-            if container.session is None:
-                return AbortOutput(status="error", message="Agent session not initialized")
-            await container.session.cancel_active_run()
-            return AbortOutput(status="aborted", message="Agent aborted successfully")
+            session = container._get_session()
+            await session.cancel_active_run()
+            return "Agent aborted successfully"
 
         return mcp
 
@@ -269,7 +337,9 @@ class AgentContainer:
         preset_name: str | None = None
         if row and row.metadata is not None:
             preset_name = row.metadata.preset
-        presets = discover_presets(override_dir=os.getenv("ADGN_AGENT_PRESETS_DIR")) if preset_name else {}
+
+        # Always discover presets (cheap operation, loads metadata only)
+        presets = discover_presets(override_dir=os.getenv("ADGN_AGENT_PRESETS_DIR"))
         preset = presets.get(preset_name) if preset_name else None
         chosen = (
             self.initial_policy
@@ -284,12 +354,12 @@ class AgentContainer:
 
     async def _setup_mcp_infrastructure(
         self, approval_engine: PolicyEngine, mcp_config: MCPConfig
-    ) -> tuple[Compositor, Client, NotificationsBuffer]:
+    ) -> tuple[AgentContainerCompositor, Client, NotificationsBuffer]:
         """Phase 2: Set up MCP infrastructure.
 
-        Creates the compositor, mounts all MCP servers (external and internal),
-        sets up the notifications buffer, creates the MCP client, and installs
-        the policy gateway middleware from the engine.
+        Creates the AgentContainerCompositor with all agent-specific servers,
+        mounts external servers from config, sets up notifications buffer,
+        creates MCP client, and installs policy gateway middleware.
 
         Args:
             approval_engine: The PolicyEngine from phase 1 (owns gateway)
@@ -304,14 +374,24 @@ class AgentContainer:
         # Initialize AsyncExitStack and enter contexts through it
         await self._stack.__aenter__()
 
-        # In-proc Compositor (embedded) - enter as context manager via stack
-        self._compositor = await self._stack.enter_async_context(Compositor())
+        # Create AgentContainerCompositor with all agent-specific servers
+        # This will auto-mount: loop, policy_reader, policy_proposer, ui (if present), runtime (if present),
+        # plus infrastructure servers (resources, compositor_meta) from base Compositor
+        compositor = AgentContainerCompositor(
+            approval_engine=approval_engine,
+            ui_bus=self._ui_bus,
+            async_docker_client=self.async_docker_client,
+            persistence=self.persistence,
+            agent_id=self.agent_id,
+        )
+        self._compositor = await self._stack.enter_async_context(compositor)
         assert self._compositor is not None  # Type narrowing for mypy
 
-        # Now mount servers (compositor is in ACTIVE state)
+        # Mount external servers from config (compositor is in ACTIVE state)
         await self._compositor.mount_servers_from_config(mcp_config)
-        # Mount loop control server (agent-only surface)
-        await self._compositor.mount_inproc("loop", make_loop_server("loop"))
+
+        # Persist runtime ephemerality for status reporting (explicit)
+        self.runtime_ephemeral = False
 
         # Notifications buffer for MCP events
         notif_buffer = NotificationsBuffer(compositor=self._compositor)
@@ -322,14 +402,8 @@ class AgentContainer:
         self._compositor_client = mcp_client
         self._notif_buffer = notif_buffer
 
-        # Attach in-proc UI/approval/runtime servers
-        await self._attach_inproc_servers(self._ui_bus)
-
         # Install policy gateway middleware from engine
         self._compositor.add_middleware(approval_engine.gateway)
-
-        # Mount standard in-proc servers (resources, compositor_meta, compositor_admin)
-        await mount_standard_inproc_servers(compositor=self._compositor)
 
         return (self._compositor, mcp_client, notif_buffer)
 
@@ -371,6 +445,7 @@ class AgentContainer:
             manager=manager,
             persistence=self.persistence,
             agent_id=self.agent_id,
+            compositor=self._compositor,
             ui_bus=self._ui_bus if self.with_ui else None,
         )
         sess.set_persist_handler(persist_handler)
@@ -447,7 +522,12 @@ class AgentContainer:
                         if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
                             attach_args.append((name, spec))
                     if attach_args:
-                        await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args))
+                        await asyncio.gather(
+                            *(
+                                admin.attach_server(name=n, spec=convert_mcp_server_types_to_spec(s))
+                                for (n, s) in attach_args
+                            )
+                        )
                 # Incremental detach
                 if detach:
                     await asyncio.gather(*(admin.detach_server(name=n) for n in detach))
@@ -460,7 +540,12 @@ class AgentContainer:
                         if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
                             attach_args2.append((name, spec))
                     if attach_args2:
-                        await asyncio.gather(*(admin.attach_server(name=n, spec=s) for (n, s) in attach_args2))
+                        await asyncio.gather(
+                            *(
+                                admin.attach_server(name=n, spec=convert_mcp_server_types_to_spec(s))
+                                for (n, s) in attach_args2
+                            )
+                        )
                 return None
             case _SamplingSnapshotMsg():
                 if self._compositor is None:
@@ -473,7 +558,7 @@ class AgentContainer:
                 if self._compositor_client is None:
                     raise RuntimeError("mcp client not initialized")
                 admin = CompositorAdminClient(self._compositor_client)
-                await admin.attach_server(name=name, spec=spec)
+                await admin.attach_server(name=name, spec=convert_mcp_server_types_to_spec(spec))
                 return None
             case _DetachOneMsg(name=name):
                 if self._compositor_client is None:
@@ -535,41 +620,12 @@ class AgentContainer:
             agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, outcome=outcome, decided_at=datetime.now(UTC)
         )
 
-    async def _attach_inproc_servers(self, ui_bus: ServerBus | None) -> None:
-        engine = self.approval_engine
-        assert engine is not None
-        assert self._compositor is not None
-
-        # Mount policy servers: policy_reader + policy_proposer (agent compositor)
-        # admin server is mounted on user compositor later (Phase 5 of consolidation)
-        await self._compositor.mount_inproc(POLICY_READER_SERVER_NAME, engine.reader)
-        await self._compositor.mount_inproc(POLICY_PROPOSER_SERVER_NAME, engine.policy_proposer)
-
-        if self.with_ui and ui_bus is not None:
-            # UI server (in-proc)
-            ui_server = make_ui_server("UI", ui_bus)
-            await self._compositor.mount_inproc(UI_SERVER_NAME, ui_server)
-            # Chat servers (human/assistant) with persisted store bound to agent
-            await attach_persisted_chat_servers(self._compositor, persistence=self.persistence, agent_id=self.agent_id)
-
-            # Runtime exec server (no host mounts)
-            runtime_image = resolve_runtime_image()
-            opts = ContainerOptions(image=runtime_image, volumes=None, ephemeral=True)
-            runtime_server = make_runtime_server(opts)
-            # Ensure tool is exposed under expected name
-            tools = runtime_server._tool_manager._tools
-            assert RUNTIME_EXEC_TOOL_NAME in tools
-            await self._compositor.mount_inproc(RUNTIME_SERVER_NAME, runtime_server)
-        # Persist runtime ephemerality for status reporting (explicit)
-        self.runtime_ephemeral = False
-        # Notification hooks are managed by the compositor client notifications buffer
-
     # Seatbelt is no longer intercepted/rewritten; respect provided specs.
 
     async def _attach_wired_seatbelt(self) -> None:
         if self._compositor is None:
             raise RuntimeError("compositor not initialized")
-        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_SERVER_NAME)
+        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_MOUNT_PREFIX)
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True
@@ -623,6 +679,7 @@ async def build_container(
     with_ui: bool = True,
     system: str | None = None,
     docker_client: DockerClient,
+    async_docker_client: aiodocker.Docker,
     initial_policy: str | None = None,
 ) -> AgentContainer:
     c = AgentContainer(
@@ -632,6 +689,7 @@ async def build_container(
         client_factory=client_factory,
         with_ui=with_ui,
         docker_client=docker_client,
+        async_docker_client=async_docker_client,
         system_override=system,
         initial_policy=initial_policy,
     )

@@ -16,10 +16,13 @@ from unittest.mock import patch
 from hamcrest import assert_that, equal_to, has_length, has_properties, instance_of, not_none
 import pytest
 
+from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Snapshot
+from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
 from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import LocalSource
@@ -33,14 +36,7 @@ from adgn.props.prompt_optimize.prompt_optimizer import (
 )
 from adgn.props.runs_context import RunsContext
 from tests.support.responses import _StepRunner
-from tests.support.steps import (
-    AssertDockerExecThenFinish,
-    CheckThenCall,
-    DockerExecCall,
-    ExtractThenCall,
-    Finish,
-    MakeCall,
-)
+from tests.support.steps import AssertDockerExecThenFinish, CheckThenCall, DockerExecCall, ExtractThenCall, Finish
 
 logger = logging.getLogger(__name__)
 
@@ -113,22 +109,41 @@ def po_agent_steps():
 
 @pytest.fixture
 def critic_agent_steps():
-    """Declarative steps for Critic agent - reports issues."""
+    """Declarative steps for Critic agent - uses compositor/server constants."""
+    # Import here to get constants
+    from adgn.props.critic.critic import CriticCompositor, CriticSubmitServer
+
+    prefix = CriticCompositor.SUBMIT_PREFIX
+
     return [
-        MakeCall("critic_submit", "upsert_issue", UpsertIssueInput(issue_id="test-issue", description="Test issue")),
         CheckThenCall(
-            "critic_submit_upsert_issue",
-            "critic_submit",
-            "add_occurrence",
+            build_mcp_function(DOCKER_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
+            prefix,
+            CriticSubmitServer.UPSERT_ISSUE_TOOL_NAME,
+            UpsertIssueInput(issue_id="test-issue", description="Test issue"),
+        ),
+        CheckThenCall(
+            build_mcp_function(prefix, CriticSubmitServer.UPSERT_ISSUE_TOOL_NAME),
+            prefix,
+            CriticSubmitServer.ADD_OCCURRENCE_TOOL_NAME,
             AddOccurrenceInput(issue_id="test-issue", file="subtract.py", ranges=[[10, 15]]),
         ),
-        CheckThenCall("critic_submit_add_occurrence", "critic_submit", "submit", SubmitInput(issues_count=1)),
+        CheckThenCall(
+            build_mcp_function(prefix, CriticSubmitServer.ADD_OCCURRENCE_TOOL_NAME),
+            prefix,
+            CriticSubmitServer.SUBMIT_TOOL_NAME,
+            SubmitInput(issues_count=1),
+        ),
     ]
 
 
 @pytest.fixture
 def grader_agent_steps():
-    """Declarative steps for Grader agent - evaluates critic output."""
+    """Declarative steps for Grader agent - uses compositor/server constants."""
+    # Import here to get constants
+    from adgn.props.critic.critic import CriticCompositor, CriticSubmitServer
+    from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
+
     grade_input = {
         "canonical_tp_coverage": [
             {
@@ -146,7 +161,14 @@ def grader_agent_steps():
         "recall": 0.8,
         "summary": "Good coverage of canonical issues.",
     }
-    return [MakeCall("grader_submit", "submit_result", GradeSubmitInput.model_validate(grade_input))]
+    return [
+        CheckThenCall(
+            build_mcp_function(CriticCompositor.SUBMIT_PREFIX, CriticSubmitServer.SUBMIT_TOOL_NAME),
+            GraderCompositor.SUBMIT_PREFIX,
+            GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME,
+            GradeSubmitInput.model_validate(grade_input),
+        )
+    ]
 
 
 class WorkflowMock(OpenAIModelProto):
@@ -198,17 +220,15 @@ class WorkflowMock(OpenAIModelProto):
             json.dump(req.model_dump(mode="json"), f, indent=2)
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 async def test_full_workflow_po_agent_critic_grader(
     test_specimen,
     tmp_path,
     make_step_runner,
     po_agent_steps,
-    critic_agent_steps,
-    grader_agent_steps,
     test_specimens_hydrator,
     patch_prompt_optimizer_for_test_db,
+    async_docker_client,
 ):
     """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
 
@@ -224,7 +244,7 @@ async def test_full_workflow_po_agent_critic_grader(
     Set DUMP_REQUESTS env var to override dump directory (defaults to test tmp_path).
     Uses test-fixtures/test-trivial specimen from test fixtures registry.
     """
-    # Create step runners for each agent
+    # Create step runners for each agent (fixtures provide step sequences)
     po_runner = make_step_runner(steps=po_agent_steps)
     critic_runner = make_step_runner(steps=critic_agent_steps)
     grader_runner = make_step_runner(steps=grader_agent_steps)
@@ -242,6 +262,7 @@ async def test_full_workflow_po_agent_critic_grader(
             ctx=RunsContext.from_pkg_dir(),
             hydrator=test_specimens_hydrator,
             out_dir=tmp_path,
+            docker_client=async_docker_client,
             optimizer_model="gpt-5-nano",
             critic_model="gpt-5-nano",
             grader_model="gpt-5-nano",
@@ -296,7 +317,6 @@ def psql_connectivity_steps():
     ]
 
 
-@pytest.mark.asyncio
 @pytest.mark.timeout(10)
 @pytest.mark.requires_docker
 async def test_po_agent_psql_connectivity(
@@ -306,6 +326,7 @@ async def test_po_agent_psql_connectivity(
     psql_connectivity_steps,
     test_specimens_hydrator,
     patch_prompt_optimizer_for_test_db,
+    async_docker_client,
 ):
     """Test that psql works from the agent container using PG* env vars.
 
@@ -332,6 +353,7 @@ async def test_po_agent_psql_connectivity(
             ctx=RunsContext.from_pkg_dir(),
             hydrator=test_specimens_hydrator,
             out_dir=tmp_path,
+            docker_client=async_docker_client,
             optimizer_model="gpt-5-nano",
             critic_model="gpt-5-nano",
             grader_model="gpt-5-nano",

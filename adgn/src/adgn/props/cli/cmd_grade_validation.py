@@ -6,12 +6,15 @@ import asyncio
 import logging
 from uuid import UUID
 
+import aiodocker
 from sqlalchemy import select
 import typer
+from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.resources import get_async_docker_client, get_hydrator
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session, init_db
@@ -31,6 +34,8 @@ async def cmd_grade_validation(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     max_parallel: int = opt.OPT_MAX_PARALLEL,
     verbose: bool = opt.OPT_VERBOSE,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Grade validation set: ensure complete critic and grader coverage across all prompts.
 
@@ -45,8 +50,6 @@ async def cmd_grade_validation(
     This ensures we have complete evaluation coverage for validation set terminal metrics.
     """
     init_db()
-
-    hydrator = SnapshotHydrator.from_env()
     critic_client = build_client(critic_model)
     grader_client = build_client(grader_model)
 
@@ -187,7 +190,9 @@ async def cmd_grade_validation(
                         _critic_output, _critic_run_id, critique_id = await run_critic(
                             input_data=critic_input,
                             client=critic_client,
+                            docker_client=docker_client,
                             content_root=hydrated.content_root,
+                            prompt_optimization_run_id=None,
                             mount_properties=True,
                             verbose=verbose,
                         )
@@ -208,7 +213,9 @@ async def cmd_grade_validation(
             # Step 2: Run grader
             try:
                 with get_session() as session:
-                    grader_run_id = await grade_critique_by_id(session, critique_id, grader_client, verbose=verbose)
+                    grader_run_id = await grade_critique_by_id(
+                        session, critique_id, grader_client, docker_client, verbose=verbose
+                    )
                     if not verbose:
                         typer.echo(f"[{index}/{total}] ✓ Graded {str(critique_id)[:8]} → {str(grader_run_id)[:8]}")
             except Exception as e:

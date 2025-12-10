@@ -23,12 +23,14 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
-from adgn.mcp._shared.constants import EDITOR_SERVER_NAME
 from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.editor_server import make_editor_server
+from adgn.mcp.editor_server import EditorServer
 from adgn.openai_utils import client_factory
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningEffort, ReasoningSummary
+
+# Editor mount prefix
+EDITOR_MOUNT_PREFIX = "editor"
 
 
 async def _execute(
@@ -48,7 +50,7 @@ async def _execute(
 
     # Folded context: per-agent MCP lifetime + agent lifetime
     async with Compositor() as comp:
-        await comp.mount_inproc(EDITOR_SERVER_NAME, make_editor_server(target_path, name=EDITOR_SERVER_NAME))
+        await comp.mount_inproc(EDITOR_MOUNT_PREFIX, EditorServer(target_path))
 
         # Create a per-run transcript directory (aligned with Agent defaults)
         run_dir = Path.cwd() / "logs" / "agent" / "llm_edit"

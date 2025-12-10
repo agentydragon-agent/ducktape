@@ -4,6 +4,7 @@ from pydantic import BaseModel
 import pytest
 
 from tests.agent.test_matchers import assert_function_call_output_structured
+from tests.support.steps import EDITOR_TEST_MOUNT_PREFIX, FAIL_TEST_TOOL_NAME
 
 
 class FailInput(BaseModel):
@@ -24,7 +25,7 @@ async def test_tool_error_is_surfaced_in_sequence(
         agent, _client = await make_test_agent(
             mcp_client,
             [
-                responses_factory.make_mcp_tool_call("editor", "fail", FailInput(x=1)),
+                responses_factory.make_mcp_tool_call(EDITOR_TEST_MOUNT_PREFIX, FAIL_TEST_TOOL_NAME, FailInput(x=1)),
                 responses_factory.make_assistant_message("done"),
             ],
             handlers=[recording_handler],

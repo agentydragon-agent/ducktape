@@ -3,15 +3,20 @@ from __future__ import annotations
 from collections.abc import Callable
 import json
 import shlex
-from typing import Any
 
-from adgn.mcp._shared.constants import RUNTIME_EXEC_TOOL_NAME, RUNTIME_SERVER_NAME
-from adgn.mcp._shared.naming import build_mcp_function, tool_matches
+# Conditional import to avoid circular dependency when compositor is not available
+from typing import TYPE_CHECKING, Any, get_args, get_type_hints
+
+from fastmcp.tools.tool import FunctionTool
+
+from adgn.mcp._shared.naming import parse_tool_name
 from adgn.openai_utils.model import ReasoningItem
 
-from ..handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
+if TYPE_CHECKING:
+    from adgn.mcp.compositor.server import Compositor
 
-# Use shared server/tool name constants directly from constants module
+from ..handler import AssistantText, BaseHandler, ToolCall, ToolCallOutput, UserText
+from .json_utils import parse_json_or_none
 
 
 class DisplayEventsHandler(BaseHandler):
@@ -22,13 +27,63 @@ class DisplayEventsHandler(BaseHandler):
     """
 
     def __init__(
-        self, *, max_lines: int = 200, max_bytes: int = 8192, write: Callable[[str], None] = print, prefix: str = ""
+        self,
+        *,
+        compositor: Compositor | None = None,
+        max_lines: int = 200,
+        max_bytes: int = 8192,
+        write: Callable[[str], None] = print,
+        prefix: str = "",
     ) -> None:
+        self._compositor = compositor
         self._max_lines = max_lines
         self._max_bytes = max_bytes
         self._write = write
         self._prefix = prefix
         self._calls: dict[str, ToolCall] = {}
+
+    # Type introspection helper ----------------------------------------------
+
+    def _get_tool_input_type(self, call_name: str) -> type | None:
+        """Extract actual Pydantic input type from tool function.
+
+        Returns the input parameter type of the tool, or None if:
+        - No compositor available
+        - Server is external (not inproc)
+        - Tool is not a FunctionTool
+
+        Raises ValueError if tool name doesn't follow compositor format (server_tool).
+        Raises if tool isn't found or type hints are broken (these indicate bugs).
+        """
+        if self._compositor is None:
+            return None
+
+        prefix, tool_name = parse_tool_name(call_name)
+
+        server = self._compositor.get_inproc_server(prefix)
+        if server is None:
+            return None
+
+        # Use synchronous tool access via _tool_manager
+        tool = server._tool_manager.get_tool(tool_name)
+
+        if not isinstance(tool, FunctionTool):
+            return None
+
+        hints = get_type_hints(tool.fn)
+        params = list(hints.values())
+        if not params:
+            return None
+
+        input_type = params[0]
+
+        # Unwrap Annotated, Optional, etc.
+        if hasattr(input_type, "__origin__"):
+            args = get_args(input_type)
+            if args:
+                input_type = args[0]
+
+        return input_type if isinstance(input_type, type) else None
 
     # Observer hooks ---------------------------------------------------------
 
@@ -42,20 +97,56 @@ class DisplayEventsHandler(BaseHandler):
 
     def on_tool_call_event(self, evt: ToolCall) -> None:
         self._calls[evt.call_id] = evt
-        # For docker_exec: render a concise bash-like input line here and skip JSON args
-        if tool_matches(evt.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
-            call_args = _parse_json_or_none(evt.args_json) or {}
+
+        # Type-based dispatch
+        from adgn.mcp.exec.models import ExecInput
+
+        input_type = self._get_tool_input_type(evt.name)
+
+        if input_type is ExecInput:
+            # Specialized exec rendering
+            call_args = parse_json_or_none(evt.args_json) or {}
             if isinstance(call_args, dict) and (cmd := call_args.get("cmd")) is not None:
                 cmd_line = shlex.join([str(x) for x in cmd]) if isinstance(cmd, list) else str(cmd)
                 self._write_with_prefix(f"$ {cmd_line}")
             return
+
+        # Default rendering for other tools
         s = self._render_tool_call(evt)
         if s:
             self._write_with_prefix(s)
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        c = self._calls.get(evt.call_id)
-        s = self._render_tool_result(c, evt)
+        call = self._calls.get(evt.call_id)
+
+        if call:
+            # Type-based dispatch
+            from adgn.mcp.exec.models import ExecInput
+
+            input_type = self._get_tool_input_type(call.name)
+
+            if input_type is ExecInput:
+                # Extract result data
+                result = evt.result
+                structured = result.structuredContent
+                if structured is not None:
+                    data: Any = structured
+                elif result.content:
+                    try:
+                        data = [block.model_dump(by_alias=True) for block in result.content]
+                    except AttributeError:
+                        # Fallback: leave content blocks as-is if not Pydantic models
+                        data = result.content
+                else:
+                    data = {"isError": result.isError}
+
+                s = self._render_docker_exec(call.name, call, data)
+                if s:
+                    self._write_with_prefix(s)
+                return
+
+        # Default rendering
+        s = self._render_tool_result(call, evt)
         if s:
             self._write_with_prefix(s)
 
@@ -69,7 +160,7 @@ class DisplayEventsHandler(BaseHandler):
         if not tc.name:
             raise ValueError("ToolCall.name must be a non-empty namespaced tool name")
         name = tc.name
-        parsed: Any | None = _parse_json_or_none(tc.args_json)
+        parsed: Any | None = parse_json_or_none(tc.args_json)
         args = parsed if parsed is not None else ({"_raw": tc.args_json} if tc.args_json else {})
         header = f"▶ {name} input:"
         return f"{header}\n{self._pp_json(args)}"
@@ -88,11 +179,7 @@ class DisplayEventsHandler(BaseHandler):
         else:
             data = {"isError": result.isError}
 
-        if call and tool_matches(call.name, server=RUNTIME_SERVER_NAME, tool=RUNTIME_EXEC_TOOL_NAME):
-            return self._render_docker_exec(
-                call.name or build_mcp_function(RUNTIME_SERVER_NAME, RUNTIME_EXEC_TOOL_NAME), call, data
-            )
-
+        # Default rendering (specialized rendering is handled in on_tool_result_event)
         label = call.name if call is not None else "tool_output"
         return f"◀ {label}:\n{self._pp_json(data)}"
 
@@ -150,15 +237,6 @@ class DisplayEventsHandler(BaseHandler):
         except (TypeError, ValueError):
             text = str(obj)
         return self._truncate_text(text)
-
-
-def _parse_json_or_none(s: str | None) -> Any | None:
-    if not s:
-        return None
-    try:
-        return json.loads(s)
-    except json.JSONDecodeError:
-        return None
 
 
 def _coerce_str(x: object) -> str:

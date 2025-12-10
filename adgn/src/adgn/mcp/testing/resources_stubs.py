@@ -1,9 +1,9 @@
 """Typed stubs for resources MCP server."""
 
-from adgn.mcp._shared.constants import RESOURCES_SUBSCRIPTIONS_INDEX_URI
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.resources.server import (
+    SUBSCRIPTIONS_INDEX_URI,
     ListSubscribeArgs,
     ReadBlocksArgs,
     ReadBlocksResult,
@@ -37,6 +37,4 @@ class ResourcesServerStub(ServerStub):
 
     async def list_subscriptions(self) -> SubscriptionsIndex:
         """Read the subscriptions index resource and parse into a typed model."""
-        return await read_text_json_typed(
-            self._client._session.session, RESOURCES_SUBSCRIPTIONS_INDEX_URI, SubscriptionsIndex
-        )
+        return await read_text_json_typed(self._client._session, SUBSCRIPTIONS_INDEX_URI, SubscriptionsIndex)

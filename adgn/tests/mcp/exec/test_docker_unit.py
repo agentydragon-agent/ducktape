@@ -2,17 +2,17 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp.exec.docker.server import make_container_exec_server
-from adgn.mcp.exec.models import Exited, TimedOut
-from tests.conftest import make_container_opts, make_exec_input
+from adgn.mcp.exec.docker.server import ContainerExecServer
+from adgn.mcp.exec.models import Exited, TimedOut, make_exec_input
+from tests.conftest import make_container_opts
 
 
 @pytest.fixture
-def make_exec_server():
+def make_exec_server(async_docker_client):
     """Factory fixture for creating exec servers."""
 
     def _make(ephemeral: bool):
-        return make_container_exec_server(make_container_opts("alpine:3.19", ephemeral=ephemeral))
+        return ContainerExecServer(make_container_opts("alpine:3.19", ephemeral=ephemeral), async_docker_client)
 
     return _make
 

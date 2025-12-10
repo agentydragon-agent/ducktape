@@ -250,9 +250,6 @@ def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None
         return str(arguments)
 
 
-# Namespaced tool form: mcp_{server}_{tool}
-ToolMap = dict[str, Any]
-
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
 
 # Size limits (bytes)

@@ -25,6 +25,9 @@ from adgn.props.runs_context import RunsContext, format_timestamp_session
 
 logger = logging.getLogger(__name__)
 
+# MCP mount prefix for cluster submission server
+CLUSTER_SUBMIT_MOUNT_PREFIX = "cluster_submit"
+
 
 class ClusteredIssueID(BaseModel):
     """Unique identifier for an issue within a critique (critique_id, tp_id)."""
@@ -118,7 +121,7 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
             result = enriched_clusters
             return "ok"
 
-        await comp.mount_inproc("cluster_submit", srv)
+        await comp.mount_inproc(CLUSTER_SUBMIT_MOUNT_PREFIX, srv)
         system = "Cluster semantically equivalent issues. Reference issues by their tp_id."
         input_lines = "\n".join(json.dumps(i.model_dump(mode="json"), ensure_ascii=False) for i in snapshot_issues)
         user_prompt = "Cluster the following issues. Every tp_id must appear in >=1 cluster.\n\n" + input_lines

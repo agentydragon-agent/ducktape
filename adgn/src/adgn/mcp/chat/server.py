@@ -1,8 +1,10 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Final
 
 from aiosqlite import Row
+from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -13,6 +15,11 @@ from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 CHAT_HUMAN_SERVER_NAME = "chat.human"
 CHAT_ASSISTANT_SERVER_NAME = "chat.assistant"
 
+# Resource URIs
+CHAT_HEAD_URI: Final[str] = "chat://head"
+CHAT_LAST_READ_URI: Final[str] = "chat://last-read"
+CHAT_MESSAGE_URI_PATTERN: Final[str] = "chat://messages/{id}"
+
 
 class ChatAuthor(StrEnum):
     USER = "user"
@@ -20,8 +27,8 @@ class ChatAuthor(StrEnum):
 
 
 class ChatMessage(BaseModel):
-    id: str
-    ts: str
+    id: int
+    ts: datetime
     author: ChatAuthor
     mime: str = Field(default="text/markdown")
     content: str
@@ -30,8 +37,8 @@ class ChatMessage(BaseModel):
 def _row_to_message(row: Row) -> ChatMessage:
     # Accept Row objects (mapping interface with __getitem__ access)
     return ChatMessage(
-        id=str(row["id"]),
-        ts=str(row["ts"]),
+        id=int(row["id"]),
+        ts=datetime.fromisoformat(str(row["ts"])),
         author=ChatAuthor(str(row["author"])),
         mime=str(row["mime"]),
         content=str(row["content"]),
@@ -44,7 +51,7 @@ class PostInput(OpenAIStrictModeBaseModel):
 
 
 class PostResult(BaseModel):
-    id: str
+    id: int
 
 
 class ReadPendingInput(OpenAIStrictModeBaseModel):
@@ -53,7 +60,7 @@ class ReadPendingInput(OpenAIStrictModeBaseModel):
 
 class ReadPendingResult(BaseModel):
     messages: list[ChatMessage]
-    last_id: str | None
+    last_id: int | None
 
 
 @dataclass
@@ -65,78 +72,51 @@ class _ServerRefs:
 class ChatStore:
     """In-memory chat store shared by chat.human and chat.assistant servers.
 
-    - Monotonic integer sequence for ordering; exposed as string ids
-    - Per-server last-read high-water mark (get+advance via read_pending_messages)
+    - Monotonic integer sequence for ordering (message IDs)
+    - Per-author last-read high-water mark (get+advance via read_pending_messages)
     - Broadcasts head updates on the other participant's server when a message arrives
     """
 
     def __init__(self) -> None:
         self._seq: int = 0
         self._messages: list[tuple[int, ChatMessage]] = []
-        # Per-server last-read sequence (None when nothing read yet)
-        self._last_read: dict[str, int | None] = {CHAT_HUMAN_SERVER_NAME: None, CHAT_ASSISTANT_SERVER_NAME: None}
+        # Per-author last-read sequence (None when nothing read yet)
+        self._last_read: dict[ChatAuthor, int | None] = {ChatAuthor.USER: None, ChatAuthor.ASSISTANT: None}
         self._servers = _ServerRefs()
 
     def register_servers(self, *, human: EnhancedFastMCP | None, assistant: EnhancedFastMCP | None) -> None:
         self._servers = _ServerRefs(human=human, assistant=assistant)
 
-    @property
-    def last_id(self) -> str | None:
-        return str(self._seq) if self._seq > 0 else None
+    async def last_id_async(self) -> int | None:
+        return self._seq if self._seq > 0 else None
 
-    async def last_id_async(self) -> str | None:
-        return self.last_id
-
-    def get_last_read(self, server_name: str) -> str | None:
-        val = self._last_read.get(server_name)
-        return str(val) if isinstance(val, int) else None
-
-    async def get_last_read_async(self, server_name: str) -> str | None:
-        val = self._last_read.get(server_name)
-        return str(val) if isinstance(val, int) else None
-
-    def _now_iso(self) -> str:
-        return datetime.now(UTC).isoformat()
+    async def get_last_read(self, author: ChatAuthor) -> int | None:
+        return self._last_read[author]
 
     async def _notify_other_head(self, *, author: ChatAuthor) -> None:
-        head_uri = "chat://head"
         if author is ChatAuthor.USER and self._servers.assistant is not None:
-            await self._servers.assistant.broadcast_resource_updated(head_uri)
+            await self._servers.assistant.broadcast_resource_updated(CHAT_HEAD_URI)
         elif author is ChatAuthor.ASSISTANT and self._servers.human is not None:
-            await self._servers.human.broadcast_resource_updated(head_uri)
+            await self._servers.human.broadcast_resource_updated(CHAT_HEAD_URI)
 
-    async def _notify_last_read(self, *, server_name: str) -> None:
-        srv = self._servers.human if server_name == CHAT_HUMAN_SERVER_NAME else self._servers.assistant
+    async def _notify_last_read(self, *, author: ChatAuthor) -> None:
+        srv = self._servers.human if author is ChatAuthor.USER else self._servers.assistant
         if srv is not None:
-            await srv.broadcast_resource_updated("chat://last-read")
+            await srv.broadcast_resource_updated(CHAT_LAST_READ_URI)
 
-    async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
+    async def append(self, *, author: ChatAuthor, mime: str, content: str) -> int:
         self._seq += 1
         seq = self._seq
-        msg = ChatMessage(id=str(seq), ts=self._now_iso(), author=author, mime=mime, content=content)
+        msg = ChatMessage(id=seq, ts=datetime.now(UTC), author=author, mime=mime, content=content)
         self._messages.append((seq, msg))
 
         # Notify the other participant's head resource
         await self._notify_other_head(author=author)
         return msg.id
 
-    def get_message(self, msg_id: str) -> ChatMessage | None:
-        try:
-            seq = int(msg_id)
-        except (TypeError, ValueError):
-            return None
+    async def get_message_async(self, msg_id: int) -> ChatMessage | None:
         for s, m in self._messages:
-            if s == seq:
-                return m
-        return None
-
-    async def get_message_async(self, msg_id: str) -> ChatMessage | None:
-        try:
-            seq = int(msg_id)
-        except (TypeError, ValueError):
-            return None
-        for s, m in self._messages:
-            if s == seq:
+            if s == msg_id:
                 return m
         return None
 
@@ -156,17 +136,16 @@ class ChatStore:
         return out
 
     async def read_pending_and_advance(
-        self, *, server_name: str, server_author: ChatAuthor, limit: int | None
-    ) -> tuple[list[ChatMessage], str | None]:
-        other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
-        after_seq = self._last_read.get(server_name)
+        self, *, author: ChatAuthor, limit: int | None
+    ) -> tuple[list[ChatMessage], int | None]:
+        other = ChatAuthor.ASSISTANT if author is ChatAuthor.USER else ChatAuthor.USER
+        after_seq = self._last_read[author]
         msgs = self._read_since_seq(other_author=other, after_seq=after_seq, limit=limit)
         if msgs:
             # Advance last-read to last message seq and notify
-            last_seq = int(msgs[-1].id)
-            self._last_read[server_name] = last_seq
-            await self._notify_last_read(server_name=server_name)
-        return msgs, self.last_id
+            self._last_read[author] = msgs[-1].id
+            await self._notify_last_read(author=author)
+        return msgs, await self.last_id_async()
 
 
 class ChatStorePersisted(ChatStore):
@@ -180,27 +159,22 @@ class ChatStorePersisted(ChatStore):
         self._persistence = persistence
         self._agent = agent_id
 
-    async def last_id_async(self) -> str | None:
-        async with (
-            self._persistence._open_row() as db,
-            db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
-        ):
-            if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-                return str(val)
+    async def _fetch_optional_int(self, query: str, params: tuple) -> int | None:
+        """Execute query and return optional int from first row, first column."""
+        async with self._persistence._open_row() as db, db.execute(query, params) as cur:
+            if (row := await cur.fetchone()) and (val := row[0]) is not None:
+                return int(val)
             return None
 
-    async def get_last_read_async(self, server_name: str) -> str | None:
-        async with (
-            self._persistence._open_row() as db,
-            db.execute(
-                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
-            ) as cur,
-        ):
-            if (row := await cur.fetchone()) and (val := row["last_id"]) is not None:
-                return str(val)
-            return None
+    async def last_id_async(self) -> int | None:
+        return await self._fetch_optional_int("SELECT MAX(id) FROM chat_messages WHERE agent_id = ?", (self._agent,))
 
-    async def append(self, *, author: ChatAuthor, mime: str, content: str) -> str:
+    async def get_last_read(self, author: ChatAuthor) -> int | None:
+        return await self._fetch_optional_int(
+            "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, author.value)
+        )
+
+    async def append(self, *, author: ChatAuthor, mime: str, content: str) -> int:
         ts = datetime.now(UTC).isoformat()
         async with self._persistence._open() as db:
             cur = await db.execute(
@@ -208,21 +182,18 @@ class ChatStorePersisted(ChatStore):
                 (self._agent, ts, author.value, mime, content),
             )
             await db.commit()
-            new_id = str(cur.lastrowid)
+            new_id = cur.lastrowid
         # Notify other participant
         await self._notify_other_head(author=author)
-        return new_id
+        assert new_id is not None, "lastrowid should be set after INSERT"
+        return int(new_id)
 
-    async def get_message_async(self, msg_id: str) -> ChatMessage | None:
-        try:
-            seq = int(msg_id)
-        except (TypeError, ValueError):
-            return None
+    async def get_message_async(self, msg_id: int) -> ChatMessage | None:
         async with (
             self._persistence._open_row() as db,
             db.execute(
                 "SELECT id, ts, author, mime, content FROM chat_messages WHERE agent_id = ? AND id = ?",
-                (self._agent, seq),
+                (self._agent, msg_id),
             ) as cur,
         ):
             if not (row := await cur.fetchone()):
@@ -236,20 +207,16 @@ class ChatStorePersisted(ChatStore):
         raise NotImplementedError
 
     async def read_pending_and_advance(
-        self, *, server_name: str, server_author: ChatAuthor, limit: int | None
-    ) -> tuple[list[ChatMessage], str | None]:
-        other = ChatAuthor.ASSISTANT if server_author is ChatAuthor.USER else ChatAuthor.USER
+        self, *, author: ChatAuthor, limit: int | None
+    ) -> tuple[list[ChatMessage], int | None]:
+        other = ChatAuthor.ASSISTANT if author is ChatAuthor.USER else ChatAuthor.USER
         cap = limit if isinstance(limit, int) and limit > 0 else None
-        async with (
-            self._persistence._open_row() as db,
-            db.execute(
-                "SELECT last_id FROM chat_last_read WHERE agent_id = ? AND server_name = ?", (self._agent, server_name)
-            ) as cur,
-        ):
-            r = await cur.fetchone()
-            after_seq = r["last_id"] if r else None
+
+        # Get current read position
+        after_seq = await self.get_last_read(author)
 
         # Fetch messages after HWM
+        msgs: list[ChatMessage] = []
         async with self._persistence._open_row() as db:
             sql = (
                 "SELECT id, ts, author, mime, content FROM chat_messages "
@@ -259,66 +226,73 @@ class ChatStorePersisted(ChatStore):
             if cap is not None:
                 sql += " LIMIT ?"
                 params.append(cap)
-            msgs: list[ChatMessage] = []
             async with db.execute(sql, tuple(params)) as cur:
                 async for r in cur:
                     msgs.append(_row_to_message(r))
 
         if msgs:
-            last_seq = int(msgs[-1].id)
             async with self._persistence._open() as db:
                 await db.execute(
                     "INSERT INTO chat_last_read (agent_id, server_name, last_id) VALUES (?, ?, ?) "
                     "ON CONFLICT(agent_id, server_name) DO UPDATE SET last_id=excluded.last_id",
-                    (self._agent, server_name, last_seq),
+                    (self._agent, author.value, msgs[-1].id),
                 )
                 await db.commit()
-            await self._notify_last_read(server_name=server_name)
-        # last_id: query MAX(id)
-        async with (
-            self._persistence._open_row() as db,
-            db.execute("SELECT MAX(id) AS last_id FROM chat_messages WHERE agent_id = ?", (self._agent,)) as cur,
-        ):
-            r = await cur.fetchone()
-            global_last = r["last_id"] if r else None
-        return msgs, (str(global_last) if global_last is not None else None)
+            await self._notify_last_read(author=author)
+        return msgs, await self.last_id_async()
 
 
-def make_chat_server(*, name: str, author: ChatAuthor, store: ChatStore) -> EnhancedFastMCP:
-    """Build a chat server bound to a fixed author and a shared store."""
+class ChatServer(EnhancedFastMCP):
+    """Chat MCP server with typed tool access.
 
-    m = EnhancedFastMCP(name=name, instructions=None)
+    Provides bidirectional messaging between user and assistant with message tracking,
+    notifications, and read position management.
+    """
 
-    # Head sentinel: last_id only (small)
-    @m.resource("chat://head", name="chat.head", mime_type="application/json")
-    async def head() -> dict:
-        return {"last_id": await store.last_id_async()}
+    # Tool references (assigned in __init__)
+    post_tool: FunctionTool
+    read_pending_messages_tool: FunctionTool
 
-    # Last-read HWM (server-managed)
-    @m.resource("chat://last-read", name="chat.last_read", mime_type="application/json")
-    async def last_read() -> dict:
-        return {"last_id": await store.get_last_read_async(name)}
+    def __init__(self, *, author: ChatAuthor, store: ChatStore):
+        """Create a chat server bound to a fixed author and a shared store.
 
-    # Per-message resource for deep links/hydration
-    @m.resource("chat://messages/{id}", name="chat.message", mime_type="application/json")
-    async def message(id: str) -> ChatMessage:
-        got = await store.get_message_async(id)
-        if got is None:
-            raise KeyError(id)
-        return got
+        Args:
+            author: Which side of the conversation this server represents (also used for tracking read positions)
+            store: Shared store for messages and read positions
+        """
+        display = f"Chat MCP Server ({author.value})"
+        super().__init__(display, instructions=None)
 
-    # Tools: post and read_pending_messages (get+advance)
-    @m.flat_model()
-    async def post(input: PostInput) -> PostResult:
-        new_id = await store.append(author=author, mime=input.mime, content=input.content)
-        return PostResult(id=new_id)
+        # Head sentinel: last_id only (small)
+        @self.resource(CHAT_HEAD_URI, name="chat.head", mime_type="application/json")
+        async def head() -> int | None:
+            return await store.last_id_async()
 
-    @m.flat_model()
-    async def read_pending_messages(input: ReadPendingInput) -> ReadPendingResult:
-        msgs, last_id = await store.read_pending_and_advance(server_name=name, server_author=author, limit=input.limit)
-        return ReadPendingResult(messages=msgs, last_id=last_id)
+        # Last-read HWM (server-managed)
+        @self.resource(CHAT_LAST_READ_URI, name="chat.last_read", mime_type="application/json")
+        async def last_read() -> int | None:
+            return await store.get_last_read(author)
 
-    return m
+        # Per-message resource for deep links/hydration
+        @self.resource(CHAT_MESSAGE_URI_PATTERN, name="chat.message", mime_type="application/json")
+        async def message(id: int) -> ChatMessage:
+            got = await store.get_message_async(id)
+            if got is None:
+                raise KeyError(str(id))
+            return got
+
+        # Tools: post and read_pending_messages (get+advance)
+        async def post(input: PostInput) -> PostResult:
+            new_id = await store.append(author=author, mime=input.mime, content=input.content)
+            return PostResult(id=new_id)
+
+        self.post_tool = self.flat_model()(post)
+
+        async def read_pending_messages(input: ReadPendingInput) -> ReadPendingResult:
+            msgs, last_id = await store.read_pending_and_advance(author=author, limit=input.limit)
+            return ReadPendingResult(messages=msgs, last_id=last_id)
+
+        self.read_pending_messages_tool = self.flat_model()(read_pending_messages)
 
 
 async def attach_chat_servers(
@@ -329,8 +303,8 @@ async def attach_chat_servers(
     Returns (store, human_server, assistant_server).
     """
     store = ChatStore()
-    human = make_chat_server(name=human_name, author=ChatAuthor.USER, store=store)
-    assistant = make_chat_server(name=assistant_name, author=ChatAuthor.ASSISTANT, store=store)
+    human = ChatServer(author=ChatAuthor.USER, store=store)
+    assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
     # Register servers for cross-broadcasts
     store.register_servers(human=human, assistant=assistant)
     await comp.mount_inproc(human_name, human)
@@ -347,8 +321,8 @@ async def attach_persisted_chat_servers(
     assistant_name: str = CHAT_ASSISTANT_SERVER_NAME,
 ):
     store = ChatStorePersisted(persistence=persistence, agent_id=agent_id)
-    human = make_chat_server(name=human_name, author=ChatAuthor.USER, store=store)
-    assistant = make_chat_server(name=assistant_name, author=ChatAuthor.ASSISTANT, store=store)
+    human = ChatServer(author=ChatAuthor.USER, store=store)
+    assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
     store.register_servers(human=human, assistant=assistant)
     await comp.mount_inproc(human_name, human)
     await comp.mount_inproc(assistant_name, assistant)

@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Final
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
-from adgn.mcp._shared.constants import APPROVAL_POLICY_SERVER_NAME, POLICY_ADMIN_SERVER_NAME
+from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, POLICY_READER_MOUNT_PREFIX
 from adgn.mcp.approval_policy.engine import DecideProposalArgs, SetPolicyTextArgs
 from adgn.mcp.stubs.server_stubs import ServerStub
 
-READER_SERVER_NAME: Final[str] = APPROVAL_POLICY_SERVER_NAME
-ADMIN_SERVER_NAME: Final[str] = POLICY_ADMIN_SERVER_NAME
+READER_SERVER_NAME: Final[str] = POLICY_READER_MOUNT_PREFIX
+ADMIN_SERVER_NAME: Final[str] = APPROVAL_ADMIN_MOUNT_PREFIX
 
 
 class PolicyReaderStub(ServerStub):

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -22,16 +21,16 @@ class ApprovalDecision(StrEnum):
 class PolicyRequest(BaseModel):
     """Input to approval policy evaluation: tool name + JSON arguments.
 
-    Note: Uses BaseModel not OpenAIStrictModeBaseModel because the arguments field
-    is a free-form dict that varies by tool. This tool is for internal policy evaluation,
-    not exposed directly to OpenAI API.
+    Arguments are JSON-encoded as a string to enable OpenAI strict mode compatibility.
+    Policy programs should parse the JSON string when they need to inspect arguments.
 
-    TODO: Consider changing arguments to str (JSON-encoded) to enable OpenAI strict mode
-    compatibility if this tool ever needs to be exposed directly to LLMs.
+    TODO: This is annoying but required for OpenAI strict mode (additionalProperties must be false).
+    Consider adding a flag to disable strict mode validation on this specific tool, or providing
+    a helper method to parse arguments back to dict for policy programs that need it.
     """
 
     name: str
-    arguments: dict[str, Any]
+    arguments: str  # JSON-encoded tool arguments
     model_config = ConfigDict(extra="forbid")
 
 

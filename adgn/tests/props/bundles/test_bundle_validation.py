@@ -83,11 +83,12 @@ def snapshot_path(snapshot_slug, specimens_base_for_bundles):
 
 
 @pytest.fixture
-async def hydrated_specimen(snapshot_slug, specimens_base_for_bundles):
+async def hydrated_specimen(snapshot_slug, specimens_base_for_bundles, synced_test_db):
     """Fixture that yields a hydrated specimen checkout directory.
 
     Derives from snapshot slug using SnapshotHydrator.
     Yields: Path to checkout directory (content_root from HydratedSnapshot)
+    Depends on synced_test_db to ensure database has production specimens synced before hydration.
     """
     hydrator = SnapshotHydrator(specimens_base_for_bundles)
     async with hydrator.hydrate(snapshot_slug) as hydrated:
@@ -105,7 +106,6 @@ def test_bundle_exists(snapshot_manifest, snapshot_path) -> None:
     assert bundle_path.stat().st_size > 0, f"Bundle file is empty: {bundle_path}"
 
 
-@pytest.mark.asyncio
 async def test_bundle_excludes_libsonnet_files(snapshot_slug, hydrated_specimen) -> None:
     """Verify no .libsonnet files (specimen issues) are included in any commit.
 
@@ -127,7 +127,6 @@ async def test_bundle_excludes_libsonnet_files(snapshot_slug, hydrated_specimen)
     )
 
 
-@pytest.mark.asyncio
 async def test_bundle_excludes_specimen_metadata(snapshot_slug, hydrated_specimen) -> None:
     """Verify no specimen metadata files (libsonnet issues, snapshots.yaml) are included.
 
@@ -141,7 +140,6 @@ async def test_bundle_excludes_specimen_metadata(snapshot_slug, hydrated_specime
     )
 
 
-@pytest.mark.asyncio
 async def test_bundle_excludes_large_files(snapshot_slug, hydrated_specimen) -> None:
     """Verify no files larger than 2MB are included in any commit.
 
@@ -164,7 +162,6 @@ async def test_bundle_excludes_large_files(snapshot_slug, hydrated_specimen) -> 
         pytest.fail("".join(msg_parts))
 
 
-@pytest.mark.asyncio
 async def test_bundle_excludes_bundle_files(snapshot_slug, hydrated_specimen) -> None:
     """Verify no .bundle files are recursively included in any commit.
 
@@ -205,7 +202,6 @@ def test_bundle_size_reasonable(snapshot_manifest, snapshot_path) -> None:
     )
 
 
-@pytest.mark.asyncio
 async def test_specimen_respects_exclusion_patterns(snapshot_slug, snapshot_manifest, hydrated_specimen) -> None:
     """Verify no specimen includes files matching its exclusion patterns.
 

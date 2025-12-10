@@ -34,6 +34,11 @@
 
 ## Ansible migration items
 
+- [ ] Migrate tuxguitar to Nix when swt build issue is fixed
+  - Currently broken in nixpkgs: swt-4.34 fails to build (deprecated gdk-pixbuf APIs)
+  - Kept in Ansible apt packages for now
+  - Issue: https://github.com/NixOS/nixpkgs/issues/...
+
 - install cli packages
 - zsh as login shell
 - ~/Downloads ~/Pictures etc. should be empty or absent

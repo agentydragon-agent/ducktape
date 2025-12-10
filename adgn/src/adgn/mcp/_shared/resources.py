@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, Literal
 
-from fastmcp.client.client import ClientSession
+from fastmcp.client.client import Client
 from fastmcp.server.server import has_resource_prefix
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
@@ -28,11 +28,11 @@ def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_t
     return text
 
 
-async def read_text_json_typed[T](session: ClientSession, uri: AnyUrl | str, model: type[T] | Any) -> T:
+async def read_text_json_typed[T](client: Client[Any], uri: AnyUrl | str, model: type[T] | Any) -> T:
     """Read a text JSON resource and parse it as the given Pydantic model/type.
 
     Args:
-        session: MCP client session
+        client: FastMCP client instance
         uri: Resource URI (AnyUrl or string)
         model: Type (class, Union, Annotated, etc.) that TypeAdapter can handle
 
@@ -46,14 +46,9 @@ async def read_text_json_typed[T](session: ClientSession, uri: AnyUrl | str, mod
     """
     # Convert str to AnyUrl if needed
     uri_obj: AnyUrl = AnyUrl(uri) if isinstance(uri, str) else uri
-    result = await session.read_resource(uri_obj)
-    validated: T = TypeAdapter(model).validate_json(extract_single_text_content(result.contents))
+    contents = await client.read_resource(uri_obj)
+    validated: T = TypeAdapter(model).validate_json(extract_single_text_content(contents))
     return validated
-
-
-async def read_text_json(session: ClientSession, uri: AnyUrl | str) -> Any:
-    """Read a text JSON resource and parse it to a Python dict."""
-    return await read_text_json_typed(session, uri, dict[str, Any])
 
 
 def derive_origin_server(

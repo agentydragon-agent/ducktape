@@ -6,7 +6,7 @@ Incremental migration target: we will gradually move subcommands here.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass
 from importlib import resources
 import logging
@@ -16,10 +16,12 @@ import tempfile
 from typing import Annotated
 from uuid import UUID
 
+import aiodocker
 from rich.console import Console
 from rich.traceback import install as rich_traceback_install
 from sqlalchemy import select
 import typer
+from typer_di import Depends, TyperDI
 
 from adgn.cli_utils import async_run
 from adgn.llm.logging_config import VALID_LOG_LEVELS, configure_logging
@@ -36,7 +38,8 @@ from adgn.props.cli.cmd_grade_validation import cmd_grade_validation
 from adgn.props.cli.cmd_snapshot import snapshot_app
 from adgn.props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from adgn.props.cli.cmd_stats import cmd_stats
-from adgn.props.cli.shared import BuildOptions, build_cmd, run_check_minicodex_async, save_prompt_to_tmp
+from adgn.props.cli.resources import get_async_docker_client, get_hydrator
+from adgn.props.cli.shared import BuildOptions, build_cmd, filter_files
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
 from adgn.props.critic.models import CriticInput
@@ -50,12 +53,11 @@ from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
-from adgn.props.prompts.util import build_standard_context, enumerate_files_from_path, get_templates_env
+from adgn.props.prompts.util import build_standard_context, get_templates_env
 from adgn.props.runs_context import RunsContext
 
 # Reduce Rich traceback verbosity for CLI errors
@@ -63,7 +65,7 @@ rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=10
 
 logger = logging.getLogger(__name__)
 
-app = typer.Typer(help="adgn-properties — properties tooling", add_completion=False)
+app = TyperDI(help="adgn-properties — properties tooling", add_completion=False)
 
 # Subcommand groups
 app.add_typer(db_app, name="db")
@@ -104,43 +106,6 @@ class MetricsRow:
     dir: str
 
 
-@app.command("check")
-@async_run
-async def cmd_check(
-    workdir: Path = opt.ARG_WORKDIR,
-    scope: str = opt.ARG_SCOPE,
-    model: str = opt.OPT_MODEL,
-    dry_run: bool = opt.OPT_DRY_RUN,
-    final_only: bool = opt.OPT_FINAL_ONLY,
-    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
-    allow_general_findings: bool = opt.OPT_ALLOW_GENERAL,
-) -> None:
-    """Check a static path set against committed property definitions (docker RO mount)."""
-
-    # Determine preset based on mode
-    preset_name = "open" if allow_general_findings else "find"
-    prompt_raw = _load_preset_text(preset_name)
-
-    wiring = properties_docker_spec(workdir, mount_properties=True)
-    files = enumerate_files_from_path(workdir)
-    prompt_text = _render_prompt_with_context(prompt_raw, wiring=wiring, files=files, supplemental_text=scope)
-
-    # Dry-run: save prompt and exit
-    if dry_run:
-        save_prompt_to_tmp("codex_prompt_check", prompt_text)
-        return
-
-    rc = await run_check_minicodex_async(
-        workdir,
-        prompt_text,
-        model=model,
-        output_final_message=output_final_message,
-        final_only=final_only,
-        client=build_client(model),
-    )
-    raise typer.Exit(code=rc)
-
-
 def read_embedded_paths(paths: list[Path]) -> str:
     files_to_embed: list[Path] = []
     for q in paths:
@@ -151,44 +116,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
         "\n".join([f'<file path=":/{p}">', p.read_text(encoding="utf-8"), "</file>"])
         for p in sorted(files_to_embed, key=str)
     )
-
-
-def _filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> CriticScopeSpec:
-    """Filter available files to requested subset, with validation.
-
-    Args:
-        all_files: All available files from snapshot
-        requested_files: Optional list of relative paths to filter to
-
-    Returns:
-        AllFilesScope if no filter requested, otherwise ExplicitFileScope with validated paths
-
-    Raises:
-        typer.Exit: If requested files are invalid or not found
-    """
-    # No filter → return AllFilesScope sentinel for downstream resolution
-    if requested_files is None:
-        return AllFilesScope()
-
-    # Validate requested files exist (work with Path internally)
-    available: set[Path] = set(all_files.keys())
-    requested_set: set[Path] = {Path(f) for f in requested_files}
-    invalid: set[Path] = requested_set - available
-
-    if invalid:
-        typer.echo("Error: The following files are not in the snapshot:", err=True)
-        for f in sorted(str(p) for p in invalid):
-            typer.echo(f"  - {f}", err=True)
-        typer.echo(f"\nAvailable files ({len(all_files)}):", err=True)
-        for f in sorted(str(p) for p in all_files)[:10]:
-            typer.echo(f"  - {f}", err=True)
-        if len(all_files) > 10:
-            typer.echo(f"  ... and {len(all_files) - 10} more", err=True)
-        raise typer.Exit(1)
-
-    # Convert validated Path set to ExplicitFileScope
-    validated: set[Path] = requested_set & available
-    return ExplicitFileScope(files=[str(p) for p in sorted(validated)])
 
 
 async def _run_snapshot_minicodex_async(
@@ -202,13 +129,14 @@ async def _run_snapshot_minicodex_async(
     client: OpenAIModelProto,
     files: list[str] | None,
     hydrator: SnapshotHydrator,
+    docker_client: aiodocker.Docker,
 ) -> int:
     # Hydrate snapshot source code (issues loaded from DB elsewhere)
     async with hydrator.hydrate(snapshot) as hydrated:
         supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
         # Filter files if requested (returns CriticScopeSpec: sentinel or explicit set)
-        files_spec = _filter_files(hydrated.all_discovered_files, files)
+        files_spec = filter_files(hydrated.all_discovered_files, files)
 
         # Resolve files for prompt rendering
         resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
@@ -217,7 +145,7 @@ async def _run_snapshot_minicodex_async(
         preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
         prompt_raw = _load_preset_text(preset_name)
 
-        wiring = properties_docker_spec(hydrated.content_root, mount_properties=True)
+        wiring = properties_docker_spec(hydrated.content_root, docker_client, mount_properties=True)
         prompt = _render_prompt_with_context(
             prompt_raw, wiring=wiring, files=resolved_files, supplemental_text=supplemental_text
         )
@@ -238,6 +166,8 @@ async def _run_snapshot_minicodex_async(
             ),
             client=client,
             content_root=hydrated.content_root,
+            prompt_optimization_run_id=None,
+            docker_client=docker_client,
             mount_properties=True,
             verbose=True,
         )
@@ -260,9 +190,10 @@ async def cmd_snapshot_discover(
     final_only: bool = opt.OPT_FINAL_ONLY,
     output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     files: list[str] | None = opt.OPT_FILES_FILTER,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
-    hydrator = SnapshotHydrator.from_env()
     # Get all snapshots from database
     with get_session() as session:
         all_snapshots = session.query(Snapshot).all()
@@ -288,6 +219,7 @@ async def cmd_snapshot_discover(
         client=build_client("gpt-5"),
         files=files,
         hydrator=hydrator,
+        docker_client=docker_client,
     )
     raise typer.Exit(code=rc)
 
@@ -312,10 +244,11 @@ async def prompt_optimize(
     critic_model: str = opt.OPT_CRITIC_MODEL,
     grader_model: str = opt.OPT_GRADER_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     init_db()
-    hydrator = SnapshotHydrator.from_env()
     await run_prompt_optimizer(
         budget=budget,
         ctx=RunsContext.from_pkg_dir(),
@@ -323,6 +256,7 @@ async def prompt_optimize(
         optimizer_model=optimizer_model,
         critic_model=critic_model,
         grader_model=grader_model,
+        docker_client=docker_client,
         verbose=verbose,
     )
 
@@ -333,6 +267,7 @@ async def snapshot_grade(
     critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"),
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Grade a critique by database ID against canonical findings.
 
@@ -342,7 +277,9 @@ async def snapshot_grade(
 
     # Query database and grade critique in single session
     with get_session() as session:
-        grader_run_id = await grade_critique_by_id(session, UUID(critique_id), build_client(model), verbose=verbose)
+        grader_run_id = await grade_critique_by_id(
+            session, UUID(critique_id), build_client(model), docker_client, verbose=verbose
+        )
         db_grader_run = session.get(DBGraderRun, grader_run_id)
         if db_grader_run is None:
             raise RuntimeError(f"Grader run {grader_run_id} not found in database")
@@ -359,7 +296,10 @@ async def snapshot_grade(
 @app.command("grade-missing")
 @async_run
 async def cmd_grade_missing(
-    grader_model: str = opt.OPT_GRADER_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
+    grader_model: str = opt.OPT_GRADER_MODEL,
+    max_parallel: int = opt.OPT_MAX_PARALLEL,
+    verbose: bool = opt.OPT_VERBOSE,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Grade all critiques missing grader runs for the specified model.
 
@@ -401,7 +341,7 @@ async def cmd_grade_missing(
             try:
                 with get_session() as session:
                     grader_run_id = await grade_critique_by_id(
-                        session, critique_id, build_client(grader_model), verbose=verbose
+                        session, critique_id, build_client(grader_model), docker_client, verbose=verbose
                     )
                     if not verbose:
                         typer.echo(f"✓ Graded critique {critique_id} → grader_run {grader_run_id}")
@@ -429,11 +369,12 @@ def cmd_fix(
     output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
     skip_git_repo_check: bool = opt.OPT_SKIP_GIT_REPO_CHECK,
     full_auto: bool = opt.OPT_FULL_AUTO,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
 
     schemas_json = build_input_schemas_json([Occurrence, LineRange])
-    wiring = properties_docker_spec(workdir, mount_properties=True)
+    wiring = properties_docker_spec(workdir, docker_client, mount_properties=True)
     prompt = build_enforce_prompt(scope, wiring=wiring, schemas_json=schemas_json)
     cmd = build_cmd(
         model,
@@ -463,8 +404,9 @@ async def cmd_lint_issue(
     occurrence: int = typer.Argument(..., help="0-based occurrence index"),
     model: str = opt.OPT_MODEL,
     dry_run: bool = opt.OPT_DRY_RUN,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
-    hydrator = SnapshotHydrator.from_env()
     rc = await run_specimen_lint_issue_async(
         snapshot,
         tp_id,
@@ -472,6 +414,7 @@ async def cmd_lint_issue(
         dry_run=dry_run,
         occurrence_index=occurrence,
         client=build_client(model),
+        docker_client=docker_client,
         hydrator=hydrator,
     )
     raise typer.Exit(code=rc)
@@ -479,9 +422,13 @@ async def cmd_lint_issue(
 
 @app.command("eval-all")
 @async_run
-async def cmd_eval_all() -> None:
-    hydrator = SnapshotHydrator.from_env()
-    await run_all_evals(client=build_client("gpt-5"), hydrator=hydrator, ctx=RunsContext.from_pkg_dir())
+async def cmd_eval_all(
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
+) -> None:
+    await run_all_evals(
+        client=build_client("gpt-5"), docker_client=docker_client, hydrator=hydrator, ctx=RunsContext.from_pkg_dir()
+    )
 
 
 # Detector commands
@@ -570,7 +517,7 @@ async def cmd_run(
     preset: str | None = typer.Option(
         None, "--preset", help="Built-in prompt name; see 'adgn-properties list-presets'"
     ),
-    prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),  # noqa: B008
+    prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),
     prompt_text: str | None = typer.Option(
         None, "--prompt-text", help="Inline prompt text (discouraged for long prompts)"
     ),
@@ -580,6 +527,8 @@ async def cmd_run(
     model: str = opt.OPT_MODEL,
     dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
     max_lines: int = opt.OPT_MAX_LINES,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run structured critic on a snapshot with DB persistence.
 
@@ -603,13 +552,10 @@ async def cmd_run(
     else:
         prompt_raw = prompt_text or ""
 
-    # Create hydrator
-    hydrator = SnapshotHydrator.from_env()
-
     # Hydrate snapshot and run
     async with hydrator.hydrate(snapshot) as hydrated:
-        wiring = properties_docker_spec(hydrated.content_root, mount_properties=True, ephemeral=False)
-        files_spec = _filter_files(hydrated.all_discovered_files, files)
+        wiring = properties_docker_spec(hydrated.content_root, docker_client, mount_properties=True, ephemeral=False)
+        files_spec = filter_files(hydrated.all_discovered_files, files)
         resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
 
         prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, files=resolved_files)
@@ -629,6 +575,8 @@ async def cmd_run(
             ),
             client=build_client(model),
             content_root=hydrated.content_root,
+            prompt_optimization_run_id=None,
+            docker_client=docker_client,
             mount_properties=True,
             verbose=True,
             max_lines=max_lines,

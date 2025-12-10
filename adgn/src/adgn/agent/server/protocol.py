@@ -33,9 +33,6 @@ class ApprovalBrief(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-## Tests summary/error model shared in adgn.agent.models.policy_error
-
-
 class ProposalInfo(BaseModel):
     """Policy proposal information for UI (no policy content included)."""
 

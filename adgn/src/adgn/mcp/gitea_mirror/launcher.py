@@ -8,7 +8,7 @@ import argparse
 import os
 from pathlib import Path
 
-from .server import make_gitea_mirror_server
+from .server import GiteaMirrorServer
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,7 +38,7 @@ def main(argv: list[str] | None = None) -> int:
     if not token:
         parser.error("Gitea token is required via --token or --token-file")
 
-    server = make_gitea_mirror_server(base_url=args.base_url, token=token)
+    server = GiteaMirrorServer(base_url=args.base_url, token=token)
 
     server.run("stdio")
     return 0

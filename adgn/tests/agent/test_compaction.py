@@ -36,7 +36,6 @@ def mock_openai():
     return MockOpenAIClient()
 
 
-@pytest.mark.asyncio
 async def test_compact_transcript_basic(compositor_client, mock_openai):
     """Test basic transcript compaction."""
     await mock_openai.setup_summary_response("User asked about compaction. Assistant explained the concept.")
@@ -86,7 +85,6 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     mock_openai.responses_create.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_compact_transcript_insufficient_history(compositor_client, mock_openai):
     """Test that compaction doesn't happen when history is too short."""
     agent = await Agent.create(
@@ -110,7 +108,6 @@ async def test_compact_transcript_insufficient_history(compositor_client, mock_o
     mock_openai.responses_create.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_openai):
     """Test that CompactionHandler tracks tokens and returns Compact decision when threshold exceeded."""
     # Create compaction handler with low threshold
@@ -140,7 +137,6 @@ async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_
     assert isinstance(decision, NoAction)
 
 
-@pytest.mark.asyncio
 async def test_compaction_handler_integrated_with_agent(compositor_client, mock_openai):
     """Test that CompactionHandler works when integrated with agent loop."""
     await mock_openai.setup_summary_response("Summary of early conversation.")

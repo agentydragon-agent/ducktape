@@ -36,6 +36,7 @@ import tempfile
 from typing import Any, cast as type_cast
 from uuid import UUID
 
+import aiodocker
 import gepa
 from gepa.core.result import GEPAResult
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
@@ -161,6 +162,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         hydrator: SnapshotHydrator,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
+        docker_client: aiodocker.Docker,
         run_dir: Path,
         reflection_model: str | None = None,
         verbose: bool = False,
@@ -169,6 +171,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         self.hydrator = hydrator
         self.critic_client = critic_client
         self.grader_client = grader_client
+        self.docker_client = docker_client
         self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
@@ -368,7 +371,9 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             critic_output, critic_run_id, critique_id = await run_critic(
                 input_data=critic_input,
                 client=self.critic_client,
+                docker_client=self.docker_client,
                 content_root=hydrated.content_root,
+                prompt_optimization_run_id=None,
                 mount_properties=True,
                 verbose=self.verbose,
             )
@@ -387,7 +392,9 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         # Grade and fetch output in single session
         # CRITICAL: Extract grader_output inside session before object becomes detached
         with get_session() as session:
-            grader_run_id = await grade_critique_by_id(session, critique_id, self.grader_client, verbose=self.verbose)
+            grader_run_id = await grade_critique_by_id(
+                session, critique_id, self.grader_client, self.docker_client, verbose=self.verbose
+            )
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
             # Access output while still in session - grader_run.output is GraderOutput (PydanticColumn)
@@ -636,6 +643,7 @@ async def optimize_with_gepa(
     hydrator: SnapshotHydrator,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
+    docker_client: aiodocker.Docker,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
@@ -725,6 +733,7 @@ async def optimize_with_gepa(
         hydrator,
         critic_client,
         grader_client,
+        docker_client,
         Path(run_dir),
         reflection_model=reflection_model,
         verbose=verbose,

@@ -186,7 +186,7 @@ I.issueWithOccurrences(
 
 4. **Documentation**:
    - Update specimens/CLAUDE.md with line annotation examples
-   - Update jsonnet_authoring.md guidelines
+   - Update ~/code/specimens/docs/authoring-guide.md guidelines
    - Add usage examples to key documentation
 
 ## Alternatives Considered

@@ -14,6 +14,7 @@ from adgn.openai_utils.model import (
 )
 from tests.agent.ui.typed_asserts import assert_items_exclude_instance, assert_items_include_instances
 from tests.support.responses import ResponsesFactory
+from tests.support.steps import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
 
 
 @pytest.fixture
@@ -61,7 +62,7 @@ async def test_function_call_and_function_call_output_replay(
     agent, client = await make_test_agent(
         pg_client_echo,
         [
-            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
+            responses_factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
         ],
     )
@@ -105,7 +106,7 @@ async def test_no_synthesized_reasoning_items(
     agent, client = await make_test_agent(
         pg_client_echo,
         [
-            responses_factory.make_mcp_tool_call("echo", "echo", EchoInput(text="hi")),
+            responses_factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hi")),
             _make_reasoning_then_message("done", responses_factory),
         ],
     )

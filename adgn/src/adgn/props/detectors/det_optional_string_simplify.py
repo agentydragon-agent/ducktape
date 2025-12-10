@@ -3,12 +3,9 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from .base import BaseDetector
 from .models import Detection, LineRange
-from .registry import DetectorSpec, register
-from .utils import make_root_detector, read_snippet
-
-DET_NAME = "optional_string_simplify"
-PROP = "boolean-idioms"
+from .utils import read_snippet
 
 
 def _collect_optional_str(func: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
@@ -81,38 +78,36 @@ def _match_none_or_empty(test: ast.AST) -> str | None:
     return None
 
 
-def _find_in_file(path: Path) -> list[Detection]:
-    out: list[Detection] = []
-    try:
-        text = path.read_text(encoding="utf-8")
-        node = ast.parse(text)
-    except Exception:
-        return out
-    for fn in ast.walk(node):
-        if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
-            opt_strs = _collect_optional_str(fn)
-            for st in fn.body:
-                if isinstance(st, ast.If | ast.While):
-                    nm = _match_none_or_empty(st.test)
-                    if nm and nm in opt_strs:
-                        sl = getattr(st, "lineno", 1)
-                        out.append(
-                            Detection(
-                                property=PROP,
-                                path=str(path),
-                                ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
-                                detector=DET_NAME,
-                                confidence=0.8,
-                                message=(
-                                    f"Optional[str] check '{nm} is None or {nm} == \"\"' → prefer 'if not {nm}' (safe-only)"
-                                ),
-                                snippet=read_snippet(path, sl, sl, context=0),
+class OptionalStringSimplifyDetector(BaseDetector):
+    DET_NAME = "optional_string_simplify"
+    PROP = "boolean-idioms"
+
+    def find_detections(self, path: Path, tree: ast.AST, source: str) -> list[Detection]:
+        out: list[Detection] = []
+        for fn in ast.walk(tree):
+            if isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                opt_strs = _collect_optional_str(fn)
+                for st in fn.body:
+                    if isinstance(st, ast.If | ast.While):
+                        nm = _match_none_or_empty(st.test)
+                        if nm and nm in opt_strs:
+                            sl = getattr(st, "lineno", 1)
+                            out.append(
+                                Detection(
+                                    property=self.PROP,
+                                    path=str(path),
+                                    ranges=[LineRange(start_line=int(sl), end_line=int(sl))],
+                                    detector=self.DET_NAME,
+                                    confidence=0.8,
+                                    message=(
+                                        f"Optional[str] check '{nm} is None or {nm} == \"\"' → prefer 'if not {nm}' (safe-only)"
+                                    ),
+                                    snippet=read_snippet(path, sl, sl, context=0),
+                                )
                             )
-                        )
-    return out
+        return out
 
 
-find = make_root_detector(_find_in_file)
-
-
-register(DetectorSpec(name=DET_NAME, target_property=PROP, finder=find))
+_detector = OptionalStringSimplifyDetector()
+find = _detector.get_finder()
+_detector.register_detector()

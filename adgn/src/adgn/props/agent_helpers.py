@@ -1,4 +1,4 @@
-"""Helper functions for agents running inside the runtime container.
+"""Helpers for agents running inside the runtime container.
 
 This module provides simple access to:
 - Database ORM and query interface
@@ -10,8 +10,7 @@ Usage from within an agent (e.g., prompt optimizer):
     from adgn.props.db import get_session
     from adgn.props.db.models import Snapshot, GraderRun
 
-    # One-time setup (reads env vars, initializes connection pool)
-    setup_agent_database()
+    setup_agent_database()  # One-time setup (reads env, initializes connection)
 
     # Query the database
     with get_session() as session:
@@ -34,12 +33,8 @@ logger = logging.getLogger(__name__)
 def get_agent_database_config() -> DatabaseConfig:
     """Get database configuration for agent running in container.
 
-    Reads from standard PostgreSQL environment variables that are passed from host to container:
-        PGHOST: Database host (set to container name for Docker network access)
-        PGPORT: Database port
-        PGDATABASE: Database name
-        PGUSER: Agent username (read-only access)
-        PGPASSWORD: Agent password
+    Reads from standard PostgreSQL environment variables that are passed from host to container.
+    PGHOST is set to container name for Docker network access.
 
     Returns:
         DatabaseConfig with agent credentials (read-only access)
@@ -95,18 +90,8 @@ def get_agent_database_config() -> DatabaseConfig:
 def setup_agent_database() -> None:
     """Initialize database connection for agent with read-only access.
 
-    Call this once at agent startup to set up the connection pool.
+    Call once at agent startup to set up the connection pool.
     After calling this, use get_session() to query the database.
-
-    Example:
-        from adgn.props.agent_helpers import setup_agent_database
-        from adgn.props.db import get_session
-        from adgn.props.db.models import Snapshot
-
-        setup_agent_database()
-
-        with get_session() as session:
-            snapshots = session.query(Snapshot).all()
 
     Raises:
         ValueError: If required environment variables not set

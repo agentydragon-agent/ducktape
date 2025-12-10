@@ -5,8 +5,6 @@
   enableGui,
   enableKube,
   nix-colors,
-  oldPkgs,
-  unstablePkgs,
   solarizedLight,
   solarizedDark,
   terminalFont,
@@ -71,7 +69,9 @@ let
   zshInit = builtins.readFile ./shell/zsh-init.sh;
 in {
   imports = [
-    ./packages/google-drive-service.nix
+    # TODO: Re-enable google-drive-service once the git repo is accessible
+    # Disabled during 25.11 migration due to 504 error from https://git.k3s.agentydragon.com/agentydragon/google-drive
+    # ./packages/google-drive-service.nix
     ./codex
     ./modules/solarized.nix
     ./terminals
@@ -94,9 +94,8 @@ in {
   programs.home-manager.enable = true;
 
   # Google Drive service - disabled by default, enabled per-host
-  # NOTE: Requires git credentials for private repo git.k3s.agentydragon.com
-  # to be configured on the host (e.g., via git credential helper)
-  services.google-drive.enable = lib.mkDefault false;
+  # TODO: Re-enable when google-drive-service module is re-enabled (see imports above)
+  # services.google-drive.enable = lib.mkDefault false;
 
   nix.package = pkgs.nix;
 
@@ -277,7 +276,7 @@ in {
           numpy
         ]))
 
-      unstablePkgs.pyright
+      pkgs.pyright
 
       ansible
       ast-grep
@@ -405,6 +404,9 @@ in {
       nerd-fonts.proggy-clean-tt
       nerd-fonts.caskaydia-cove
 
+      # Additional fonts
+      roboto
+
       # GNOME Shell Extensions (migrated from Ansible role petermosmans.customize-gnome):
       # gnomeExtensions.desaturated-tray-icons  # ID 1102: Not currently used
       gnomeExtensions.panel-date-format # ID 1462: Panel Date Format ✓
@@ -417,11 +419,46 @@ in {
       # GUI applications (migrated from Ansible)
       discord
       element-desktop
-      syncthing-gtk
+
+      # Development & utilities
+      vscode
+      flameshot
+      wireshark
+      xclip # X11 clipboard utility
+
+      # Media players
+      mplayer
+      vlc
+      mpv
+
+      # Creative/CAD
+      freecad
+      openscad
+      xournalpp
+      geeqie # Image viewer
+
+      # Graphics/Audio editing
+      gimp
+      krita
+      audacity
+
+      # System utilities
+      scrcpy # Android screen mirroring
+      virt-viewer # SPICE/VNC viewer for virtual machines (Proxmox viewer)
+      transmission_4-gtk # BitTorrent client (v4, v3 removed in nixpkgs)
+
+      # GNOME utilities
+      gnome-tweaks
+      dconf-editor
     ]
     ++ [
-      # Get comby from older nixpkgs where it's not broken
-      oldPkgs.comby
+      # CLI utilities (no GUI needed)
+      yt-dlp # YouTube downloader
+
+      # TODO: comby is marked as broken in nixpkgs 25.11
+      # Previously we got it from oldPkgs (nixos-23.11) but removed during 25.11 migration
+      # Options: 1) build from source, 2) use unstable pin if fixed there, 3) find alternative
+      # pkgs.comby
     ];
 
   # Enable fontconfig for proper font management (only when GUI is enabled)

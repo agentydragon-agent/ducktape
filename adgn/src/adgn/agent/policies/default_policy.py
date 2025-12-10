@@ -4,16 +4,17 @@ from __future__ import annotations
 
 from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
 from adgn.agent.policies.scaffold import run
+from adgn.mcp._shared.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from adgn.mcp._shared.naming import build_mcp_function, server_matches
 
-UI_SEND = build_mcp_function("ui", "send_message")
-UI_END = build_mcp_function("ui", "end_turn")
+UI_SEND = build_mcp_function(UI_MOUNT_PREFIX, "send_message")
+UI_END = build_mcp_function(UI_MOUNT_PREFIX, "end_turn")
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
     if req.name in (UI_SEND, UI_END):
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="UI communication")
-    if server_matches(req.name, server="resources"):
+    if server_matches(req.name, server=RESOURCES_MOUNT_PREFIX):
         return PolicyResponse(decision=ApprovalDecision.ALLOW, rationale="resource operations allowed")
     return PolicyResponse(decision=ApprovalDecision.ASK, rationale="default: ask")
 

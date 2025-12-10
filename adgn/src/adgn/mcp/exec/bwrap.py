@@ -6,6 +6,7 @@ from shutil import which
 import sys
 
 from fastmcp.exceptions import ToolError
+from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.mcp.compositor.server import Compositor
@@ -66,31 +67,40 @@ class BwrapExecArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-def make_bwrap_exec_server(name: str = "bwrap", *, default_cwd: Path | None = None) -> EnhancedFastMCP:
-    """FastMCP server exposing a bubblewrap-sandboxed exec tool (Linux only).
+class BwrapExecServer(EnhancedFastMCP):
+    """Bubblewrap-sandboxed exec MCP server with typed tool access (Linux only)."""
 
-    - Tool name: exec(cmd, max_bytes, cwd?, timeout_ms, stdin_text?)
-    """
-    mcp = EnhancedFastMCP(name, instructions="Local command execution via bubblewrap (Linux)")
+    # Tool references (assigned in __init__)
+    exec_tool: FunctionTool
 
-    @mcp.flat_model()
-    async def exec(input: BwrapExecArgs) -> BaseExecResult:
-        """Execute a command inside a bubblewrap sandbox (Linux only)."""
-        if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
-            raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
-        cwd_val: Path | None = Path(input.cwd) if input.cwd else None
-        if cwd_val is None and default_cwd is not None:
-            cwd_val = default_cwd
+    def __init__(self, *, default_cwd: Path | None = None):
+        """Create a bubblewrap-sandboxed exec MCP server (Linux only).
 
-        timeout_s = max(0.001, input.timeout_ms / 1000.0)
-        outcome = await _run_in_bwrap(input.cmd, timeout_s, cwd_val, input.stdin_text)
-        return render_outcome_to_result(outcome, input.max_bytes)
+        Args:
+            default_cwd: Default working directory for commands when not specified
+        """
+        super().__init__("Bubblewrap Exec MCP Server", instructions="Local command execution via bubblewrap (Linux)")
 
-    return mcp
+        # Capture default_cwd in closure
+        default_cwd_val = default_cwd
+
+        async def exec(input: BwrapExecArgs) -> BaseExecResult:
+            """Execute a command inside a bubblewrap sandbox (Linux only)."""
+            if not input.cmd or not all(isinstance(x, str) for x in input.cmd):
+                raise ToolError("INVALID_CMD: cmd must be a non-empty list[str]")
+            cwd_val: Path | None = Path(input.cwd) if input.cwd else None
+            if cwd_val is None and default_cwd_val is not None:
+                cwd_val = default_cwd_val
+
+            timeout_s = max(0.001, input.timeout_ms / 1000.0)
+            outcome = await _run_in_bwrap(input.cmd, timeout_s, cwd_val, input.stdin_text)
+            return render_outcome_to_result(outcome, input.max_bytes)
+
+        self.exec_tool = self.flat_model()(exec)
 
 
 async def attach_bwrap_exec(mcp: Compositor, *, name: str = "bwrap", default_cwd: Path | None = None):
     """Attach a bubblewrap exec server in-proc (Linux only)."""
-    server = make_bwrap_exec_server(name=name, default_cwd=default_cwd)
+    server = BwrapExecServer(default_cwd=default_cwd)
     await mcp.mount_inproc(name, server)
     return server

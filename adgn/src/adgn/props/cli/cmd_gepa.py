@@ -6,12 +6,15 @@ from pathlib import Path
 import time
 from typing import Annotated
 
+import aiodocker
 from rich.console import Console
 import typer
+from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.resources import get_async_docker_client
 from adgn.props.db import init_db
 from adgn.props.db.config import get_production_config
 from adgn.props.gepa.gepa_adapter import optimize_with_gepa
@@ -37,6 +40,7 @@ async def cmd_gepa(
     minibatch_size: Annotated[int, typer.Option(help="Number of training examples per reflection iteration")] = 3,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
     seed: Annotated[int | None, typer.Option(help="Random seed for reproducibility (default: timestamp-based)")] = None,
+    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.
 
@@ -86,6 +90,7 @@ async def cmd_gepa(
         hydrator=hydrator,
         critic_client=build_client(critic_model),
         grader_client=build_client(grader_model),
+        docker_client=docker_client,
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
         max_parallelism=max_parallelism,

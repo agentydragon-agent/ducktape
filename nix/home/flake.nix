@@ -2,22 +2,23 @@
   description = "Home Manager configurations for agentydragon's machines";
 
   inputs = {
-    # Pinned to nixpkgs-unstable as of 2025-12-08
-    nixpkgs.url = "github:NixOS/nixpkgs/a672be65651c80d3f592a89b3945466584a22069";
+    # NixOS 25.11 stable release
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.11";
 
-    # Stable nixpkgs (23.11)
-    nixpkgs-stable.url = "github:NixOS/nixpkgs/nixos-23.11";
-
-    # Home Manager pinned to master as of 2025-12-08
+    # Home Manager tracking 25.11 release
     home-manager = {
-      url = "github:nix-community/home-manager/e5b1f87841810fc24772bf4389f9793702000c9b";
+      url = "github:nix-community/home-manager/release-25.11";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # Pinned to nix-colors main as of 2025-12-08
-    nix-colors.url = "github:Misterio77/nix-colors/b01f024090d2c4fc3152cd0cf12027a7b8453ba1";
+    # nix-colors for colorscheme support
+    nix-colors.url = "github:Misterio77/nix-colors";
 
     # nixGL for OpenGL support in non-NixOS systems
+    # NOTE: nixGL requires --impure flag when building because it detects NVIDIA driver versions
+    # at evaluation time using builtins.currentTime (not available in pure mode).
+    # Build with: nix build --impure .#homeConfigurations.HOSTNAME.activationPackage
+    # Or: home-manager switch --impure --flake .#HOSTNAME
     nixGL = {
       url = "github:guibou/nixGL/main";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -29,7 +30,6 @@
   outputs = {
     self,
     nixpkgs,
-    nixpkgs-stable,
     home-manager,
     nix-colors,
     claude-code-router,
@@ -48,13 +48,6 @@
         inherit system;
         config.allowUnfree = true;
       };
-
-      oldPkgs = import nixpkgs-stable {
-        inherit system;
-        config.allowUnfree = true;
-      };
-
-      unstablePkgs = pkgs; # Both use the same nixpkgs for now
 
       solarizedLight = nix-colors.colorSchemes.solarized-light;
       solarizedDark = nix-colors.colorSchemes.solarized-dark;
@@ -76,8 +69,6 @@
                 inherit
                   enableGui
                   enableKube
-                  oldPkgs
-                  unstablePkgs
                   nix-colors
                   solarizedLight
                   solarizedDark

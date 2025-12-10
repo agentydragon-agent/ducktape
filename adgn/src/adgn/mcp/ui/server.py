@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Literal
 
+from fastmcp.tools import FunctionTool
 from pydantic import ConfigDict, Field
 
 from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
-from adgn.mcp._shared.constants import UI_SERVER_NAME
+from adgn.mcp._shared.constants import UI_MOUNT_PREFIX
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -36,41 +37,56 @@ class SendMessageInput(OpenAIStrictModeBaseModel):
 
 
 class EndTurnInput(OpenAIStrictModeBaseModel):
-    """Empty input for end_turn (keeps single-arg typed pattern consistent)."""
+    """Empty input for end_turn tool."""
 
     model_config = ConfigDict(extra="forbid")
 
 
-def make_ui_server(name: str, bus: ServerBus) -> EnhancedFastMCP:
-    mcp = EnhancedFastMCP(
-        name,
-        instructions=(
-            "UI helper: send formatted messages and end your turn via tools.\n"
-            "Do not emit plain text in this UI; always use the UI tools."
-        ),
-    )
+class UiServer(EnhancedFastMCP):
+    """UI MCP server with typed tool access.
 
-    # Typed inputs (flat schema)
-    @mcp.flat_model()
-    def send_message(input: SendMessageInput) -> UiMessage:
-        """Send a formatted message to the UI (markdown recommended)."""
-        # Convert Literal string back to MimeType enum for the bus message
-        msg = UiMessage(mime=MimeType.MARKDOWN, content=input.content)
-        bus.push_message(msg)
-        return msg
+    Subclasses EnhancedFastMCP and adds typed tool attributes for accessing
+    tool names. This is the single source of truth - no string literals elsewhere.
+    """
 
-    @mcp.flat_model()
-    def end_turn(input: EndTurnInput) -> UiEndTurn:
-        """Tell the UI to end the current turn."""
-        bus.push_end_turn()
-        return UiEndTurn()
+    # Tool references (assigned in __init__ after tool registration)
+    send_message_tool: FunctionTool
+    end_turn_tool: FunctionTool
 
-    # Return the server; callers keep their own reference to the bus.
-    return mcp
+    def __init__(self, bus: ServerBus):
+        """Create a UI MCP server bound to a ServerBus.
+
+        Args:
+            bus: ServerBus for pushing UI messages and end-turn signals
+        """
+        super().__init__(
+            "UI Server",
+            instructions=(
+                "UI helper: send formatted messages and end your turn via tools.\n"
+                "Do not emit plain text in this UI; always use the UI tools."
+            ),
+        )
+
+        # Register tools using clean pattern: tool name derived from function name
+        def send_message(input: SendMessageInput) -> UiMessage:
+            """Send a formatted message to the UI (markdown recommended)."""
+            # Convert Literal string back to MimeType enum for the bus message
+            msg = UiMessage(mime=MimeType.MARKDOWN, content=input.content)
+            bus.push_message(msg)
+            return msg
+
+        self.send_message_tool = self.flat_model()(send_message)
+
+        def end_turn(input: EndTurnInput) -> UiEndTurn:
+            """Tell the UI to end the current turn."""
+            bus.push_end_turn()
+            return UiEndTurn()
+
+        self.end_turn_tool = self.flat_model()(end_turn)
 
 
-async def attach_ui(comp: Compositor, bus: ServerBus, *, name: str = UI_SERVER_NAME) -> EnhancedFastMCP:
+async def attach_ui(comp: Compositor, bus: ServerBus) -> UiServer:
     """Attach the UI MCP server in-proc to a Compositor (preferred path)."""
-    server = make_ui_server(name, bus)
-    await comp.mount_inproc(name, server)
+    server = UiServer(bus)
+    await comp.mount_inproc(UI_MOUNT_PREFIX, server)
     return server

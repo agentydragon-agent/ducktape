@@ -13,7 +13,7 @@
 
     src = pkgs.writeTextFile {
       name = "login_event_webhook_reporter.py";
-      text = builtins.readFile ../../dotfiles/local/bin/login_event_webhook_reporter.py;
+      text = builtins.readFile ./login_event_webhook_reporter.py;
       executable = true;
     };
 

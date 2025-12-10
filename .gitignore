@@ -55,6 +55,7 @@ ansible/collections/
 
 # NixOS build artifacts
 terraform/nixos-dev-env/nixos-cloud-image
+nix/**/result
 
 # Web and build artifacts
 **/.sass-cache/

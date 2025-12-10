@@ -38,6 +38,10 @@ def render_compositor_instructions(states: dict[str, ServerEntry]) -> str:
         return str(value)
 
     env.filters["model_dump_json"] = _f_model_dump_json
+
+    # Make the naming helper available to the template
+    env.globals["build_mcp_function"] = build_mcp_function
+
     template = env.from_string(template_text)
     # Pass raw states and example_tool for Jinja to consume
     out = template.render(states=states, example_tool=example_tool)

@@ -1,23 +1,44 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from fastmcp.server import FastMCP
 import pytest
 
+from adgn.mcp._shared.constants import WORKING_DIR
+from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.props.docker_env import PropertiesDockerWiring
 from adgn.props.prompts.util import build_standard_context, render_prompt_template
+
+if TYPE_CHECKING:
+    from adgn.mcp.exec.docker.server import ContainerExecServer
 
 
 @pytest.fixture
 def dummy_wiring() -> PropertiesDockerWiring:
     """Minimal wiring sufficient for env line; no MCP servers used in prompt-only compose."""
-    dummy_server = FastMCP("dummy")
+
+    def make_dummy_server() -> ContainerExecServer:
+        """Lazy import to avoid Docker client initialization in prompt-only tests."""
+        from adgn.mcp.exec.docker.server import ContainerExecServer
+
+        return ContainerExecServer(
+            ContainerOptions(
+                image="dummy:latest",
+                working_dir=WORKING_DIR,
+                binds={},
+                environment={},
+                ephemeral=True,
+                network_mode="none",
+            ),
+            docker_client=None,  # type: ignore[arg-type]  # Never actually used in these prompt tests
+        )
+
     return PropertiesDockerWiring(
-        server_factory=lambda: dummy_server,
+        server_factory=make_dummy_server,
         working_dir=Path("/"),
         definitions_container_dir=Path("/props"),
-        image_name="n/a",
+        image_name="dummy:latest",
     )
 
 

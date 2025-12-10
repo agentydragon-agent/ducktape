@@ -12,21 +12,23 @@ from typing import Annotated
 import docker
 import pygit2
 import typer
+from typer_di import Depends, TyperDI
 import yaml
 
 from adgn.cli_utils import async_run
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_build_bundle import cmd_build_bundle
+from adgn.props.cli.resources import get_docker_client, get_hydrator
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.db.sync import get_specimens_base_path
-from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_volumes, ensure_critic_image
+from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_binds, ensure_critic_image
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
 # Snapshot subcommand group
-snapshot_app = typer.Typer(help="Snapshot commands")
+snapshot_app = TyperDI(help="Snapshot commands")
 
 
 @async_run
@@ -82,6 +84,8 @@ async def _run_in_snapshot_container(
     workdir: Path,
     exec_command: list[str],
     *,
+    hydrator: SnapshotHydrator,
+    docker_client: docker.DockerClient,
     interactive: bool = False,
     tty_exec: bool = False,
     setup_script: str | None = None,
@@ -92,6 +96,8 @@ async def _run_in_snapshot_container(
         snapshot: Snapshot slug to hydrate
         workdir: Working directory in container
         exec_command: Command to execute in container (e.g., ["sed", "-n", "1,10p", "file"])
+        hydrator: SnapshotHydrator instance (injected)
+        docker_client: Docker client (injected)
         interactive: If True, pass -i flag to docker exec
         tty_exec: If True, pass -t flag to docker exec
         setup_script: Optional bash script to run before exec_command
@@ -101,15 +107,13 @@ async def _run_in_snapshot_container(
     """
     # Docker sanity
     try:
-        dclient = docker.from_env()
-        dclient.ping()
+        docker_client.ping()
     except Exception as e:
         typer.echo(f"ERROR: Docker daemon not reachable: {e}")
         raise typer.Exit(2) from e
     ensure_critic_image()
 
     # Hydrate snapshot source code (keep hydrated for entire container lifetime)
-    hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot) as hydrated:
         try:
             _ = next(hydrated.content_root.iterdir())
@@ -122,15 +126,15 @@ async def _run_in_snapshot_container(
         # their containers. This CLI command manually constructs what those servers build via
         # ContainerOptions/properties_docker_spec. Consider extracting a shared container factory
         # or making the MCP container session logic more reusable for interactive/non-MCP cases.
-        volumes, _defs = build_critic_volumes(hydrated.content_root, mount_properties=True, workspace_mode="rw")
-        container = dclient.containers.run(
+        binds, _defs = build_critic_binds(hydrated.content_root, mount_properties=True, workspace_mode="rw")
+        container = docker_client.containers.run(
             image=PROPERTIES_DOCKER_IMAGE,
             command=SLEEP_FOREVER_CMD,
             name=name,
             remove=True,
             detach=True,
             network_mode="none",
-            volumes=volumes,
+            volumes=binds,
             working_dir=str(workdir),
             tty=True,
             stdin_open=True,
@@ -163,14 +167,29 @@ async def snapshot_exec(
     interactive: bool = opt.OPT_INTERACTIVE,
     tty_exec: bool = opt.OPT_TTY_EXEC,
     cmd: list[str] = opt.ARG_CMD_LIST,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: docker.DockerClient = Depends(get_docker_client),
 ) -> None:
     """Execute a command in a container with hydrated snapshot mounted at /workspace (RW)."""
-    rc = await _run_in_snapshot_container(snapshot, workdir, cmd, interactive=interactive, tty_exec=tty_exec)
+    rc = await _run_in_snapshot_container(
+        snapshot,
+        workdir,
+        cmd,
+        hydrator=hydrator,
+        docker_client=docker_client,
+        interactive=interactive,
+        tty_exec=tty_exec,
+    )
     raise typer.Exit(rc)
 
 
 @async_run
-async def snapshot_shell(snapshot: SnapshotSlug = opt.ARG_SNAPSHOT, workdir: Path = opt.OPT_WORKDIR_CRITIC) -> None:
+async def snapshot_shell(
+    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
+    workdir: Path = opt.OPT_WORKDIR_CRITIC,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+    docker_client: docker.DockerClient = Depends(get_docker_client),
+) -> None:
     """Open an interactive bash shell in a container with hydrated snapshot mounted at /workspace (RW).
 
     Applies snapshot_shell_setup.sh for editor configuration.
@@ -181,7 +200,14 @@ async def snapshot_shell(snapshot: SnapshotSlug = opt.ARG_SNAPSHOT, workdir: Pat
 
     # Launch interactive bash with setup
     rc = await _run_in_snapshot_container(
-        snapshot, workdir, ["/bin/bash"], interactive=True, tty_exec=True, setup_script=setup_script
+        snapshot,
+        workdir,
+        ["/bin/bash"],
+        hydrator=hydrator,
+        docker_client=docker_client,
+        interactive=True,
+        tty_exec=True,
+        setup_script=setup_script,
     )
     raise typer.Exit(rc)
 
