@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Final
+from typing import cast
 
 from aiosqlite import Row
+from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
@@ -14,11 +17,6 @@ from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 # Server names (mounted in-proc with a shared store)
 CHAT_HUMAN_SERVER_NAME = "chat.human"
 CHAT_ASSISTANT_SERVER_NAME = "chat.assistant"
-
-# Resource URIs
-CHAT_HEAD_URI: Final[str] = "chat://head"
-CHAT_LAST_READ_URI: Final[str] = "chat://last-read"
-CHAT_MESSAGE_URI_PATTERN: Final[str] = "chat://messages/{id}"
 
 
 class ChatAuthor(StrEnum):
@@ -65,8 +63,8 @@ class ReadPendingResult(BaseModel):
 
 @dataclass
 class _ServerRefs:
-    human: EnhancedFastMCP | None = None
-    assistant: EnhancedFastMCP | None = None
+    human: ChatServer | None = None
+    assistant: ChatServer | None = None
 
 
 class ChatStore:
@@ -84,7 +82,7 @@ class ChatStore:
         self._last_read: dict[ChatAuthor, int | None] = {ChatAuthor.USER: None, ChatAuthor.ASSISTANT: None}
         self._servers = _ServerRefs()
 
-    def register_servers(self, *, human: EnhancedFastMCP | None, assistant: EnhancedFastMCP | None) -> None:
+    def register_servers(self, *, human: ChatServer | None, assistant: ChatServer | None) -> None:
         self._servers = _ServerRefs(human=human, assistant=assistant)
 
     async def last_id_async(self) -> int | None:
@@ -95,14 +93,14 @@ class ChatStore:
 
     async def _notify_other_head(self, *, author: ChatAuthor) -> None:
         if author is ChatAuthor.USER and self._servers.assistant is not None:
-            await self._servers.assistant.broadcast_resource_updated(CHAT_HEAD_URI)
+            await self._servers.assistant.broadcast_resource_updated(self._servers.assistant.head_resource.uri)
         elif author is ChatAuthor.ASSISTANT and self._servers.human is not None:
-            await self._servers.human.broadcast_resource_updated(CHAT_HEAD_URI)
+            await self._servers.human.broadcast_resource_updated(self._servers.human.head_resource.uri)
 
     async def _notify_last_read(self, *, author: ChatAuthor) -> None:
         srv = self._servers.human if author is ChatAuthor.USER else self._servers.assistant
         if srv is not None:
-            await srv.broadcast_resource_updated(CHAT_LAST_READ_URI)
+            await srv.broadcast_resource_updated(srv.last_read_resource.uri)
 
     async def append(self, *, author: ChatAuthor, mime: str, content: str) -> int:
         self._seq += 1
@@ -249,6 +247,11 @@ class ChatServer(EnhancedFastMCP):
     notifications, and read position management.
     """
 
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    head_resource: FunctionResource
+    last_read_resource: FunctionResource
+    message_resource: ResourceTemplate
+
     # Tool references (assigned in __init__)
     post_tool: FunctionTool
     read_pending_messages_tool: FunctionTool
@@ -264,22 +267,33 @@ class ChatServer(EnhancedFastMCP):
         super().__init__(display, instructions=None)
 
         # Head sentinel: last_id only (small)
-        @self.resource(CHAT_HEAD_URI, name="chat.head", mime_type="application/json")
         async def head() -> int | None:
             return await store.last_id_async()
 
+        self.head_resource = cast(
+            FunctionResource, self.resource("chat://head", name="chat.head", mime_type="application/json")(head)
+        )
+
         # Last-read HWM (server-managed)
-        @self.resource(CHAT_LAST_READ_URI, name="chat.last_read", mime_type="application/json")
         async def last_read() -> int | None:
             return await store.get_last_read(author)
 
+        self.last_read_resource = cast(
+            FunctionResource,
+            self.resource("chat://last-read", name="chat.last_read", mime_type="application/json")(last_read),
+        )
+
         # Per-message resource for deep links/hydration
-        @self.resource(CHAT_MESSAGE_URI_PATTERN, name="chat.message", mime_type="application/json")
         async def message(id: int) -> ChatMessage:
             got = await store.get_message_async(id)
             if got is None:
                 raise KeyError(str(id))
             return got
+
+        self.message_resource = cast(
+            ResourceTemplate,
+            self.resource("chat://messages/{id}", name="chat.message", mime_type="application/json")(message),
+        )
 
         # Tools: post and read_pending_messages (get+advance)
         async def post(input: PostInput) -> PostResult:

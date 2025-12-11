@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from adgn.agent.mcp_bridge.agents import make_agents_server
+from adgn.agent.mcp_bridge.agents import AgentsManagementServer
 from adgn.mcp.compositor.server import Compositor
 
 if TYPE_CHECKING:
@@ -45,7 +45,7 @@ async def create_global_compositor(registry: InfrastructureRegistry) -> Composit
     compositor = Compositor()
 
     # Create and mount agents management server
-    agents_server = make_agents_server(registry)
+    agents_server = AgentsManagementServer(registry)
     await compositor.mount_inproc(AGENTS_SERVER_NAME, agents_server)
     logger.info("Mounted agents management server on global compositor")
 

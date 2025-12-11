@@ -2,25 +2,16 @@ from __future__ import annotations
 
 from fastmcp.mcp_config import MCPConfig
 
-from adgn.mcp._shared.constants import (
-    APPROVAL_ADMIN_MOUNT_PREFIX,
-    POLICY_PROPOSER_MOUNT_PREFIX,
-    POLICY_READER_MOUNT_PREFIX,
-    RESOURCES_MOUNT_PREFIX,
-    RUNTIME_MOUNT_PREFIX,
-    UI_MOUNT_PREFIX,
-)
-
 # Names of servers that are auto-attached by the runtime container and should not be
 # persisted in the agent's MCPConfig. Centralize here for both persistence filtering and
 # runtime attach logic.
 DEFAULT_AUTO_SERVER_NAMES: tuple[str, ...] = (
-    UI_MOUNT_PREFIX,
-    POLICY_READER_MOUNT_PREFIX,
-    POLICY_PROPOSER_MOUNT_PREFIX,
-    APPROVAL_ADMIN_MOUNT_PREFIX,
-    RUNTIME_MOUNT_PREFIX,
-    RESOURCES_MOUNT_PREFIX,  # injected by manager; included for filtering completeness
+    "ui",
+    "policy_reader",
+    "policy_proposer",
+    "approval_admin",
+    "runtime",
+    "resources",  # injected by manager; included for filtering completeness
 )
 
 

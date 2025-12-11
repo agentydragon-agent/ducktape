@@ -23,7 +23,7 @@ from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.policies.loader import approve_all_policy_text
-from adgn.agent.policies.policy_types import PolicyRequest
+from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest
 from adgn.agent.policy_eval.container import ContainerPolicyEvaluator
 from adgn.agent.recording_handler import RecordingHandler
 from adgn.agent.server.app import create_app
@@ -71,7 +71,7 @@ def policy_ui_send_message_allow() -> str:
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
         tool="send_message",
-        default="ask",
+        default=ApprovalDecision.ASK,
         doc="Allow UI send_message; ask otherwise.",
     )
     return result
@@ -91,7 +91,7 @@ def policy_version_test() -> str:
         decision_expr="PolicyDecision.ALLOW",
         server="ui",
         tool="send_message",
-        default="ask",
+        default=ApprovalDecision.ASK,
         doc="Version bump check policy used in tests.",
     )
     return result

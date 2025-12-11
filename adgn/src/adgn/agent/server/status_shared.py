@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict
 
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp._shared.types import ContainerInfo
-from adgn.mcp.exec.docker.server import CONTAINER_INFO_URI
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 
 
@@ -107,8 +106,10 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
 
     # Container id via runtime container.info (only when not ephemeral)
     container_id: str | None = None
-    if c and present and (c.runtime_ephemeral is False) and c.compositor_client is not None:
-        info: ContainerInfo = await read_text_json_typed(c.compositor_client.session, CONTAINER_INFO_URI, ContainerInfo)
+    if c and present and (c.runtime_ephemeral is False) and c.runtime_server is not None:
+        info: ContainerInfo = await read_text_json_typed(
+            c.compositor_client.session, c.runtime_server.container_info_resource.uri, ContainerInfo
+        )
         container_id = info.container_id
     container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
 

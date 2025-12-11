@@ -31,39 +31,32 @@ Source = Annotated[GitSource | GitHubSource | LocalSource, Field(discriminator="
 
 
 class BundleFilter(BaseModel):
-    """Build-time metadata for bundle creation (optional).
+    """Historical metadata about snapshot capture (optional, for reference only).
 
-    Only needed when regenerating bundles from a source repository.
-    Contains the source commit SHA and gitignore-style filters.
+    Records the source commit and filters that were used when the snapshot was captured.
+    Not used for runtime operations - preserved for provenance and reproducibility.
 
-    Uses gitignore-style patterns:
+    Gitignore-style patterns:
     - Trailing slash means directory (e.g., "web/" excludes the web directory)
     - No wildcards needed for "everything under" (e.g., "adgn/" includes all of adgn/)
     """
 
-    source_commit: str  # Full commit SHA in the original source repository to filter from
+    source_commit: str  # Full commit SHA in the original source repository
     include: list[str] | None = None
     exclude: list[str] | None = None
 
 
 class SnapshotDoc(BaseModel):
-    """Snapshot document: source, bundle filters, and split assignment.
+    """Snapshot document: source, split assignment, and optional historical metadata.
 
     This is the schema for entries in snapshots.yaml.
 
     Issues are stored in the database (TruePositive/FalsePositive ORM tables).
     The *.libsonnet issue files are synced to the database once via `adgn-properties db sync`.
 
-    Bundle is optional - only required for snapshots that use git bundles.
+    Bundle is optional historical metadata - records the source commit and filters used
+    during capture for provenance. Not used for runtime hydration operations.
     Split is required - every snapshot must be assigned to train/valid/test.
-
-    TODO: Refactor bundle placement - move bundle into the Source discriminated union
-    instead of top-level optional field. Only GitSource needs bundle (not GitHubSource
-    or LocalSource). This would provide better type safety (can't specify bundle for
-    sources that don't support it) and clearer intent (bundle config co-located with
-    source type). Migration complexity: requires updating all git bundle specimen
-    manifests to nest bundle under source. Deferred until we have more specimen types
-    and clearer patterns.
     """
 
     source: Source

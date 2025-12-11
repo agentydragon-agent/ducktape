@@ -48,15 +48,21 @@ from sqlalchemy.dialects.postgresql import JSONB
 from adgn.agent.events import REFLECTION_EVENT_TYPES, EventType
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput, CriticSubmitPayload
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.datapoints import get_datapoints_for_split
-from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Event, GraderRun as DBGraderRun
+from adgn.props.db.models import (
+    CriticRun as DBCriticRun,
+    Critique,
+    DBCriticSubmitPayload,
+    DBGraderOutput,
+    Event,
+    GraderRun as DBGraderRun,
+)
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.grader.grader import grade_critique_by_id
-from adgn.props.grader.models import GraderOutput, GradeSubmitInput
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.splits import Split
 
@@ -101,14 +107,14 @@ class CriticTrajectory:
 
     transcript_id: UUID
     events: list[EventType]
-    critique_payload: CriticSubmitPayload
+    critique_payload: DBCriticSubmitPayload
 
 
 @dataclass
 class CriticOutput:
     """Output from a critic evaluation."""
 
-    grader_output: GradeSubmitInput | None
+    grader_output: DBGraderOutput | None
     critique_id: UUID
 
 
@@ -128,7 +134,7 @@ class ReflectionExample(BaseModel):
     current_text: str
     score: float
     trajectory: CriticTrajectory
-    grader_output: GradeSubmitInput
+    grader_output: DBGraderOutput
 
 
 # =============================================================================
@@ -288,17 +294,17 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         self.propose_new_texts = propose_new_texts
 
     @staticmethod
-    def _build_critic_output(grader_output: GraderOutput, critique_id: UUID) -> CriticOutput:
+    def _build_critic_output(grader_output: DBGraderOutput, critique_id: UUID) -> CriticOutput:
         """Build CriticOutput from grader output and critique ID.
 
         Args:
-            grader_output: GraderOutput Pydantic model (extracted inside session)
+            grader_output: DBGraderOutput (database persistence model)
             critique_id: Critique UUID
 
         Returns:
             CriticOutput with grader data
         """
-        return CriticOutput(grader_output=grader_output.grade, critique_id=critique_id)
+        return CriticOutput(grader_output=grader_output, critique_id=critique_id)
 
     def evaluate(
         self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool = False
@@ -397,29 +403,33 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             )
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
-            # Access output while still in session - grader_run.output is GraderOutput (PydanticColumn)
-            grader_output = grader_run.output
-            score = grader_output.recall
+            # Access recall directly from DB model
+            score = grader_run.output.recall
+
+            # Fetch critique payload (DB model) for trajectory
+            critique = session.get(Critique, critique_id)
+            assert critique is not None, f"Critique {critique_id} not found"
+            critique_payload_db = critique.payload
 
         trajectory = (
-            CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=critic_output.result)
+            CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=critique_payload_db)
             if capture_traces
             else None
         )
 
         return EvaluationResult(
-            output=self._build_critic_output(grader_output, critique_id), score=score, trajectory=trajectory
+            output=self._build_critic_output(grader_run.output, critique_id), score=score, trajectory=trajectory
         )
 
     def _reconstruct_from_cache(
-        self, transcript_id: UUID, critique_id: UUID, grader_output: GraderOutput, capture_traces: bool
+        self, transcript_id: UUID, critique_id: UUID, grader_output: DBGraderOutput, capture_traces: bool
     ) -> EvaluationResult:
         """Reconstruct an EvaluationResult from cached database runs.
 
         Args:
             transcript_id: Transcript UUID from critic run
             critique_id: Critique UUID from critic run
-            grader_output: GraderOutput Pydantic model (extracted inside session at call site)
+            grader_output: DBGraderOutput (database persistence model, extracted inside session at call site)
             capture_traces: Whether to fetch events for trajectory
 
         Returns:
@@ -429,18 +439,18 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             All data must be extracted inside the calling session to avoid
             DetachedInstanceError. See call site in _evaluate_async().
         """
-        # Fetch critique for issues
-        with get_session() as session:
-            critique = session.get(Critique, critique_id)
-            assert critique is not None, f"Critique {critique_id} not found"
-            critique_payload = CriticSubmitPayload.model_validate(critique.payload)
-
         # Fetch trajectory if requested
         trajectory: CriticTrajectory | None = None
         if capture_traces:
+            # Fetch critique payload (use DB model directly - no conversion needed)
+            with get_session() as session:
+                critique = session.get(Critique, critique_id)
+                assert critique is not None, f"Critique {critique_id} not found"
+                critique_payload_db = critique.payload
+
             filtered_events = _filter_reflection_events(transcript_id)
             trajectory = CriticTrajectory(
-                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload
+                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
             )
 
         return EvaluationResult(
@@ -501,6 +511,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                     transcript_id = critic_run.transcript_id
                     critique_id = critic_run.critique_id
                     assert critique_id is not None, "critique_id must be non-null (query ensures this)"
+                    # Access output directly from DB model (detach-safe: grader_run.output is eagerly loaded)
                     grader_output = grader_run.output
                     # Cache hit - reconstruct result
                     logger.info(

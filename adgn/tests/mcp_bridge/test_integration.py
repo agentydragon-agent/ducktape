@@ -20,7 +20,7 @@ from starlette.responses import PlainTextResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from adgn.agent.mcp_bridge.agents import make_agents_server
+from adgn.agent.mcp_bridge.agents import AgentsManagementServer
 from adgn.agent.mcp_bridge.auth import TokenRoutingASGI, TokensConfig
 from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 
@@ -305,9 +305,9 @@ class TestTokenRoutingASGI:
 class TestAgentsServer:
     """Tests for agents management server."""
 
-    async def test_make_agents_server_creates_server(self, mock_registry):
-        """make_agents_server creates a FastMCP server."""
-        server = make_agents_server(mock_registry)
+    async def test_agents_management_server_creates_server(self, mock_registry):
+        """AgentsManagementServer creates a FastMCP server."""
+        server = AgentsManagementServer(mock_registry)
 
         assert server is not None
 

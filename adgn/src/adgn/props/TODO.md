@@ -47,4 +47,4 @@ Observation (to investigate)
 ## Migration TODOs
 
 - Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc (lint_issue.py)
-- Migrate git tags from specimen-* to snapshot-* prefix (cli/cmd_build_bundle.py)
+- Migrate git tags from specimen-* to snapshot-* prefix (if still relevant for remote repos)

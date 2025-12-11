@@ -26,11 +26,9 @@ from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.exec.docker.server import CONTAINER_INFO_URI, ContainerExecServer
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.resources.server import ResourcesServer
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, UserMessage
 from adgn.props.db import get_session
@@ -45,7 +43,7 @@ from adgn.props.prop_utils import props_definitions_root
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import format_timestamp_session
 
-from .docker_env import PropertiesDockerWiring, properties_docker_spec
+from .docker_env import PropertiesDockerCompositor
 
 # ---------------------------------------------------------------------------
 # Lint submit MCP server + shared state (accessible to controller and server)
@@ -132,50 +130,52 @@ class LintSubmitServer(EnhancedFastMCP):
 # ---------------------------------------------------------------------------
 
 
-class LintIssueCompositor(Compositor):
+class LintIssueCompositor(PropertiesDockerCompositor):
     """Compositor with lint issue servers pre-mounted.
 
-    Mounts:
-    - runtime: Docker exec server (via PropertiesDockerWiring)
+    Inherits from PropertiesDockerCompositor, which provides:
+    - runtime: Docker exec server (mounted by parent class)
+
+    Adds:
     - lint_submit: Lint submission server
-
-    Usage:
-        wiring = properties_docker_spec(...)
-        submit_state = LintSubmitState()
-
-        async with LintIssueCompositor(wiring, submit_state) as comp:
-            # Access servers via Mounted[T] wrappers:
-            tool_name = comp.runtime.server.exec_tool.name
-            submit_name = comp.lint_submit.server.submit_result_tool.name
-
-            # Build bootstrap calls:
-            builder = TypedBootstrapBuilder()
-            call = builder.call_mounted(comp.runtime, comp.runtime.server.exec_tool, ExecInput(...))
     """
 
-    # Mounted server attributes (populated in __aenter__)
-    runtime: Mounted[ContainerExecServer]
+    # Mounted server attributes (runtime inherited, lint_submit added here)
     lint_submit: Mounted[LintSubmitServer]
 
-    def __init__(self, wiring: PropertiesDockerWiring, submit_state: LintSubmitState):
+    def __init__(self, workspace_root: Path, docker_client: aiodocker.Docker, submit_state: LintSubmitState):
         """Create compositor with lint issue dependencies.
 
+        Configuration is fixed for lint issue use case:
+        - Network isolated (network_mode="none")
+        - Read-only workspace (workspace_mode="ro")
+        - Property definitions mounted at /props
+        - No database connection
+        - No extra binds
+        - Persistent container (ephemeral=False)
+
         Args:
-            wiring: Docker exec server wiring (will be mounted as "docker")
-            submit_state: Lint submit state container (shared with caller)
+            workspace_root: Path to workspace directory to mount in container.
+            docker_client: Async Docker client (managed by caller).
+            submit_state: Lint submit state container (shared with caller).
         """
-        super().__init__()
-        # Store dependencies for mounting (can't mount yet - compositor not started)
-        self._wiring = wiring
+        super().__init__(
+            workspace_root,
+            docker_client,
+            mount_properties=True,
+            db_conn=None,
+            extra_binds=None,
+            workspace_mode="ro",
+            network_mode="none",
+            extra_env=None,
+            ephemeral=False,
+        )
         self._submit_state = submit_state
 
     async def __aenter__(self):
         """Start compositor and mount servers."""
-        # Start base compositor first
+        # Start parent compositor (mounts resources, compositor_meta, runtime)
         await super().__aenter__()
-
-        # Mount runtime server (docker exec) via wiring - returns Mounted[T] directly
-        self.runtime = await self._wiring.attach(self)
 
         # Mount lint submit server
         self.lint_submit = await self.mount_inproc("lint_submit", LintSubmitServer(self._submit_state), pinned=True)
@@ -200,9 +200,7 @@ BIG_THRESHOLD = 20480
 
 
 def make_linter_bootstrap_calls(
-    wiring: PropertiesDockerWiring,
-    resources: Mounted[ResourcesServer],
-    runtime: Mounted[ContainerExecServer],
+    compositor: PropertiesDockerCompositor,
     occ: Occurrence,
     content_root: Path,
     prop_host_paths: list[Path] | None = None,
@@ -213,9 +211,7 @@ def make_linter_bootstrap_calls(
     workspace structure, and source files to review.
 
     Args:
-        wiring: Docker container wiring configuration
-        resources: Mounted resources server (comp.resources)
-        runtime: Mounted runtime server (comp.runtime)
+        compositor: Properties compositor with Docker configuration
         occ: TruePositive occurrence with files to inspect
         content_root: Host path to specimen content
         prop_host_paths: Optional property definition files to read
@@ -227,16 +223,26 @@ def make_linter_bootstrap_calls(
     calls: list[FunctionCallItem] = []
 
     # Step 1: Container info
-    calls.append(read_resource_call(builder, resources, server=runtime.prefix, uri=CONTAINER_INFO_URI))
+    calls.append(
+        read_resource_call(
+            builder,
+            compositor.resources,
+            server=compositor.runtime.prefix,
+            uri=compositor.runtime.server.container_info_resource.uri,
+        )
+    )
 
     # Step 2: Directory listing
     files = [fo.path for fo in occ.files]
     dirs = sorted({str(Path(p).parent) for p in files})
     if dirs:
-        targets = [str(wiring.working_dir / d) for d in dirs]
-        calls.append(docker_exec_call_mounted(builder, runtime, cmd=["ls", "-la", *targets]))
+        calls.append(
+            docker_exec_call_mounted(
+                builder, compositor.runtime, cmd=["ls", "-la", *[compositor.working_dir / d for d in dirs]]
+            )
+        )
 
-    # Step 3: File content (for small files only)
+    # Step 3: Collect file content paths (for small files only)
     sizes: dict[str, int] = {}
     for p in files:
         hp = (content_root / p).resolve()
@@ -244,50 +250,49 @@ def make_linter_bootstrap_calls(
             raise SystemExit(f"Expected a regular file for occurrence path: {hp}")
         sizes[str(p)] = int(hp.stat().st_size)
 
+    paths_to_number: list[Path] = []
     big_detected = any(size >= BIG_THRESHOLD for size in sizes.values())
     if files and not big_detected:
         for q in files:
             if sizes[str(q)] > BIG_THRESHOLD:
                 continue
-            container_path = wiring.working_dir / q
-            calls.append(
-                docker_exec_call_mounted(
-                    builder, runtime, cmd=["nl", "-ba", "-w1", "-s", " ", str(container_path)], timeout_ms=10_000
-                )
-            )
+            paths_to_number.append(compositor.working_dir / q)
 
-    # Step 4: Property definition reads (if provided)
-    if wiring and prop_host_paths:
+    # Step 4: Collect property definition paths (if provided)
+    if compositor and prop_host_paths:
         defs_dir = props_definitions_root().resolve()
         for host_p in prop_host_paths:
             rel = Path(host_p).resolve().relative_to(defs_dir).as_posix()
-            cont_path = wiring.container_path_for_prop_rel(rel)
-            calls.append(
-                docker_exec_call_mounted(
-                    builder, runtime, cmd=["nl", "-ba", "-w1", "-s", " ", str(cont_path)], timeout_ms=10_000
-                )
-            )
+            paths_to_number.append(compositor.container_path_for_prop_rel(rel))
+
+    # Create numbered line calls for all collected paths
+    calls.extend(
+        docker_exec_call_mounted(
+            builder, compositor.runtime, cmd=["nl", "-ba", "-w1", "-s", " ", path], timeout_ms=10_000
+        )
+        for path in paths_to_number
+    )
 
     return calls
 
 
 def make_bootstrap_calls_for_inspection(
-    wiring: PropertiesDockerWiring,
-    resources: Mounted[ResourcesServer],
-    runtime: Mounted[ContainerExecServer],
-    builder: TypedBootstrapBuilder,
+    compositor: PropertiesDockerCompositor, builder: TypedBootstrapBuilder
 ) -> list[FunctionCallItem]:
     """Build bootstrap calls for basic property inspection: container.info + ls workspace.
 
     Args:
-        wiring: Docker container wiring configuration
-        resources: Mounted resources server (comp.resources)
-        runtime: Mounted runtime server (comp.runtime)
+        compositor: Properties Docker compositor (provides container config)
         builder: Bootstrap builder for generating typed tool calls
     """
     return [
-        read_resource_call(builder, resources, server=runtime.prefix, uri=CONTAINER_INFO_URI),
-        docker_exec_call_mounted(builder, runtime, cmd=["ls", "-la", str(wiring.working_dir)]),
+        read_resource_call(
+            builder,
+            compositor.resources,
+            server=compositor.runtime.prefix,
+            uri=compositor.runtime.server.container_info_resource.uri,
+        ),
+        docker_exec_call_mounted(builder, compositor.runtime, cmd=["ls", "-la", compositor.working_dir]),
     ]
 
 
@@ -296,20 +301,17 @@ def make_bootstrap_calls_for_inspection(
 # header-only (no id) by design for model context hygiene; remove legacy Issue.
 
 
-def _build_prompt(
-    issue: IssueCore,
-    *,
-    submit_tool_name: str,
-    docker_tool_name: str,
-    occurrence: Occurrence,
-    wiring: PropertiesDockerWiring,
-) -> str:
+def _build_prompt(issue: IssueCore, *, occurrence: Occurrence, compositor: LintIssueCompositor) -> str:
     # Do not include specimen slug or issue id. Include only issue fields.
     # The agent will read code from /workspace and property definitions from /props via MCP.
     issue_dict = issue.model_dump(exclude_none=True)
     issue_dict.pop("id", None)
     issue_dict["instances"] = [occurrence.model_dump(exclude_none=True)]
     issue_json = json.dumps(issue_dict, ensure_ascii=False)
+
+    # Compute tool names from compositor's mounted servers
+    submit_tool_name = compositor.lint_submit.tool_name(compositor.lint_submit.server.submit_result_tool)
+    docker_tool_name = compositor.runtime.tool_name(compositor.runtime.server.exec_tool)
 
     # Input schemas for the agent (always included)
     schemas_json = build_input_schemas_json(
@@ -321,7 +323,7 @@ def _build_prompt(
         issue_json=issue_json,
         docker_tool_name=docker_tool_name,
         submit_tool_name=submit_tool_name,
-        wiring=wiring,
+        compositor=compositor,
         schemas_json=schemas_json,
     )
     return prompt_md
@@ -334,7 +336,7 @@ def make_linter_handlers(
     runtime: Mounted[ContainerExecServer],
     occ: Occurrence,
     content_root: Path,
-    docker_wiring: PropertiesDockerWiring,
+    compositor: PropertiesDockerCompositor,
     prop_host_paths: list[Path] | None = None,
 ) -> list:
     """Build handlers for linter agent: bootstrap + abort.
@@ -345,7 +347,7 @@ def make_linter_handlers(
         runtime: Mounted runtime server (comp.runtime)
         occ: TruePositive occurrence with files to inspect
         content_root: Host path to specimen content
-        docker_wiring: Docker container wiring configuration
+        compositor: Properties Docker compositor configuration
         prop_host_paths: Optional property definition files to read
 
     Returns:
@@ -353,12 +355,7 @@ def make_linter_handlers(
     """
     # Build all bootstrap calls upfront (continuous sequence)
     bootstrap_calls = make_linter_bootstrap_calls(
-        wiring=docker_wiring,
-        resources=resources,
-        runtime=runtime,
-        occ=occ,
-        content_root=content_root,
-        prop_host_paths=prop_host_paths,
+        compositor=compositor, occ=occ, content_root=content_root, prop_host_paths=prop_host_paths
     )
 
     # Return two handlers: bootstrap for injection, abort condition
@@ -422,31 +419,16 @@ async def _lint_issue_run_with_hydrated_root(
     handlers: Sequence[BaseHandler],
 ) -> LintSubmitPayload:
     """Core lint logic with pre-hydrated snapshot root."""
-    wiring = properties_docker_spec(content_root, docker_client=docker_client, mount_properties=True)
-
     # Use LintIssueCompositor to bundle server mounting
-    async with LintIssueCompositor(wiring, submit_state) as comp:
-        # Access tool names from Mounted[T] wrappers (no constants!)
-        submit_tool_name = comp.lint_submit.tool_name(comp.lint_submit.server.submit_result_tool)
-        docker_tool_name = comp.runtime.tool_name(comp.runtime.server.exec_tool)
-
+    async with LintIssueCompositor(
+        workspace_root=content_root, docker_client=docker_client, submit_state=submit_state
+    ) as comp:
         props: list[Path] = []
-        prompt = _build_prompt(
-            issue_core,
-            submit_tool_name=submit_tool_name,
-            docker_tool_name=docker_tool_name,
-            occurrence=occurrence,
-            wiring=wiring,
-        )
+        prompt = _build_prompt(issue_core, occurrence=occurrence, compositor=comp)
 
         # Build bootstrap calls using Mounted[T] wrappers
         bootstrap_calls = make_linter_bootstrap_calls(
-            wiring=wiring,
-            resources=comp.resources,
-            runtime=comp.runtime,
-            occ=occurrence,
-            content_root=content_root,
-            prop_host_paths=props,
+            compositor=comp, occ=occurrence, content_root=content_root, prop_host_paths=props
         )
 
         # Build handlers: bootstrap injection + abort condition
@@ -517,16 +499,16 @@ async def run_specimen_lint_issue_async(
     # Hydrate source code for both dry-run and real execution
     async with hydrator.hydrate(snapshot_slug) as hydrated:
         if dry_run:
-            # Build a wiring for prompt rendering (no container launched in dry-run)
-            wiring = properties_docker_spec(hydrated.content_root, docker_client=docker_client, mount_properties=True)
-            # For dry-run, use expected tool names (no compositor running)
-            prompt = _build_prompt(
-                issue_core,  # render via IssueCore + single occurrence
-                submit_tool_name=build_mcp_function("lint_submit", "submit_result"),
-                docker_tool_name=build_mcp_function("docker", "exec"),
-                occurrence=occ,
-                wiring=wiring,
-            )
+            # Build compositor and enter it to get mounted servers with proper tool names
+            submit_state = LintSubmitState()
+            async with LintIssueCompositor(
+                workspace_root=hydrated.content_root, docker_client=docker_client, submit_state=submit_state
+            ) as comp:
+                prompt = _build_prompt(
+                    issue_core,  # render via IssueCore + single occurrence
+                    occurrence=occ,
+                    compositor=comp,
+                )
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
             tmpdir.mkdir(parents=True, exist_ok=True)
             ts = format_timestamp_session()

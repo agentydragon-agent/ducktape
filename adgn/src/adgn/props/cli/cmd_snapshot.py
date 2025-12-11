@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from datetime import datetime
 import json
 from pathlib import Path
+import shutil
 import time
 from typing import Annotated
 
@@ -18,17 +20,78 @@ import yaml
 from adgn.cli_utils import async_run
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.cmd_build_bundle import cmd_build_bundle
 from adgn.props.cli.resources import get_docker_client, get_hydrator
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_binds, ensure_critic_image
+from adgn.props.file_filters import apply_gitignore_patterns
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
 # Snapshot subcommand group
 snapshot_app = TyperDI(help="Snapshot commands")
+
+
+def copy_working_tree_files(
+    repo: pygit2.Repository, dest_dir: Path, include: Sequence[str] = (), exclude: Sequence[str] = ()
+) -> list[str]:
+    """Copy files from working tree to destination directory.
+
+    Includes:
+    - Tracked files (in git index)
+    - Untracked non-gitignored files
+
+    Args:
+        repo: pygit2 Repository
+        dest_dir: Destination directory (will be created if doesn't exist)
+        include: Gitignore-style include patterns
+        exclude: Gitignore-style exclude patterns
+
+    Returns:
+        List of copied file paths (relative to repo root)
+    """
+    repo_root = Path(repo.workdir)
+
+    # Get tracked files from index
+    tracked_files = [entry.path for entry in repo.index]
+
+    # Get untracked files (check status, exclude ignored)
+    # repo.status() returns dict[path, status_flags]
+    # GIT_STATUS_WT_NEW means untracked but not ignored
+    status_dict = repo.status(untracked_files="all", ignored=False)
+    untracked_files = [filepath for filepath, flags in status_dict.items() if flags & pygit2.GIT_STATUS_WT_NEW]
+
+    # Combine and apply filters
+    all_files = tracked_files + untracked_files
+    filtered_files = apply_gitignore_patterns(all_files, include=include, exclude=exclude)
+
+    # Copy files
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    copied = []
+
+    for rel_path in filtered_files:
+        src = repo_root / rel_path
+        dst = dest_dir / rel_path
+
+        if not src.exists():
+            typer.echo(f"WARNING: Skipping non-existent file: {rel_path}", err=True)
+            continue
+
+        # Create parent directories
+        dst.parent.mkdir(parents=True, exist_ok=True)
+
+        # Copy file (preserve metadata)
+        if src.is_symlink():
+            # Preserve symlinks as-is
+            link_target = src.readlink()
+            dst.symlink_to(link_target)
+        else:
+            shutil.copy2(src, dst)
+
+        copied.append(rel_path)
+
+    return copied
 
 
 @async_run
@@ -216,13 +279,13 @@ def snapshot_capture_ducktape(
     slug: Annotated[
         str | None, typer.Option(help="Snapshot slug (e.g., 'ducktape/2025-11-30-00'); auto-generated if not provided")
     ] = None,
-    include: Annotated[list[str] | None, typer.Option(help="Paths to include in bundle (repeatable)")] = None,
-    exclude: Annotated[list[str] | None, typer.Option(help="Paths to exclude from bundle (repeatable)")] = None,
+    include: Annotated[list[str] | None, typer.Option(help="Paths to include (repeatable)")] = None,
+    exclude: Annotated[list[str] | None, typer.Option(help="Paths to exclude (repeatable)")] = None,
 ) -> None:
-    """Capture current ducktape repo state as a new snapshot and add to bundle.
+    """Capture current ducktape repo state as a new snapshot (plain files).
 
-    Creates manifest.yaml with bundle metadata and regenerates the specimens.bundle
-    to include the new snapshot.
+    Copies files from working tree (tracked + untracked non-gitignored) to specimens repo.
+    Creates snapshot with issues/ and code/ subdirectories. Does NOT auto-commit.
     """
     # Set defaults for mutable list arguments (match recent ducktape snapshots)
     if include is None:
@@ -249,14 +312,21 @@ def snapshot_capture_ducktape(
 
     # Create snapshot directory
     snapshot_dir = get_specimens_base_path() / slug
+    if snapshot_dir.exists():
+        raise typer.BadParameter(f"Snapshot directory already exists: {snapshot_dir}")
     snapshot_dir.mkdir(parents=True, exist_ok=False)
+
+    # Create issues/ directory
     issues_dir = snapshot_dir / "issues"
     issues_dir.mkdir()
 
-    # Derive tag name from slug
-    tag_name = f"specimen-{slug.replace('/', '-')}"
+    # Create code/ directory and copy working tree files
+    code_dir = snapshot_dir / "code"
+    typer.echo(f"Copying working tree files to {code_dir}...")
+    copied_files = copy_working_tree_files(repo, code_dir, include=include, exclude=exclude)
+    typer.echo(f"✓ Copied {len(copied_files)} files")
 
-    # Add snapshot entry to snapshots.yaml (no manifest.yaml - that's deprecated)
+    # Add snapshot entry to snapshots.yaml
     snapshots_yaml_path = get_specimens_base_path() / "snapshots.yaml"
     with snapshots_yaml_path.open() as f:
         snapshots_data = yaml.safe_load(f)
@@ -264,12 +334,7 @@ def snapshot_capture_ducktape(
             raise ValueError(f"snapshots.yaml at {snapshots_yaml_path} is empty or contains only null")
 
     snapshots_data[slug] = {
-        "source": {
-            "vcs": "git",
-            "url": "file://../snapshots.bundle",
-            "ref": f"refs/tags/{tag_name}",
-            "commit": "<will be updated after bundle creation>",
-        },
+        "source": {"vcs": "local", "root": "code"},
         "split": "train",  # Default split, user can change manually
         "bundle": {"source_commit": source_commit, "include": list(include), "exclude": list(exclude)},
     }
@@ -277,40 +342,20 @@ def snapshot_capture_ducktape(
     with snapshots_yaml_path.open("w") as f:
         yaml.dump(snapshots_data, f, default_flow_style=False, sort_keys=False)
 
-    typer.echo(f"Added {slug} to snapshots.yaml")
-    typer.echo(f"  Slug: {slug}")
-    typer.echo(f"  Source commit: {source_commit}")
-    typer.echo(f"  Tag: {tag_name}")
-    typer.echo(f"  Include: {include}")
-    typer.echo(f"  Exclude: {exclude}")
-    typer.echo()
-    typer.echo("Rebuilding bundle with new snapshot...")
-
-    # Rebuild bundle with new snapshot and get tag->commit mapping
-    tag_to_commit = cmd_build_bundle(specimens_dir=get_specimens_base_path())
-
-    # Update snapshots.yaml with the actual bundle commit SHA
-    if tag_name in tag_to_commit:
-        bundle_commit_sha = str(tag_to_commit[tag_name])
-
-        with snapshots_yaml_path.open() as f:
-            snapshots_data = yaml.safe_load(f)
-
-        snapshots_data[slug]["source"]["commit"] = bundle_commit_sha
-
-        with snapshots_yaml_path.open("w") as f:
-            yaml.dump(snapshots_data, f, default_flow_style=False, sort_keys=False)
-
-        typer.echo(f"✓ Updated snapshots.yaml with bundle commit: {bundle_commit_sha[:12]}")
-
     typer.echo()
     typer.echo(f"✓ Snapshot captured: {slug}")
-    typer.echo(f"  Directory: {snapshot_dir}")
-    typer.echo(f"  snapshots.yaml: {snapshots_yaml_path}")
+    typer.echo(f"  Snapshot directory: {snapshot_dir}")
+    typer.echo(f"  Source commit: {source_commit}")
+    typer.echo(f"  Copied files: {len(copied_files)}")
+    typer.echo(f"  Include patterns: {include}")
+    typer.echo(f"  Exclude patterns: {exclude}")
     typer.echo()
     typer.echo("Next steps:")
-    typer.echo(f"  1. Add issues to {issues_dir}/")
-    typer.echo("  2. Commit changes")
+    typer.echo(f"  1. Review captured files in {code_dir}")
+    typer.echo(f"  2. Add issues to {issues_dir}/")
+    typer.echo("  3. Review and commit changes in specimens repo")
+    typer.echo()
+    typer.echo("Note: Changes are NOT auto-committed. Review before committing.")
 
 
 # Register commands

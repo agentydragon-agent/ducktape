@@ -12,7 +12,7 @@ import typer
 
 from adgn.cli_utils import async_run
 from adgn.props.critic.prompts import list_critic_system_prompts
-from adgn.props.db import get_session, init_db, recreate_database as recreate_db_schema
+from adgn.props.db import get_session, recreate_database
 from adgn.props.db.config import get_production_config
 from adgn.props.db.prompts import load_and_upsert_detector_prompt_with_session
 from adgn.props.db.sync import (
@@ -135,7 +135,7 @@ def recreate_database_and_sync() -> FullSyncResult:
         Combined results from all sync operations
     """
     # Recreate schema (tables, RLS, roles)
-    recreate_db_schema()
+    recreate_database()
 
     # Sync all data sources into fresh database
     return sync_all()
@@ -144,7 +144,6 @@ def recreate_database_and_sync() -> FullSyncResult:
 @async_run
 async def cmd_sync() -> None:
     """Sync snapshots, issues, critic scopes, detector prompts, and model metadata from source to DB."""
-    init_db()
     console = Console()
 
     # Sync all data sources
@@ -193,7 +192,6 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     ensure_databases_exist()
 
     # Connect and recreate (includes full sync)
-    init_db()
     console = Console()
     console.print("Recreating database schema...")
     result = recreate_database_and_sync()

@@ -25,8 +25,7 @@ from adgn.props.models.true_positive import (
 from adgn.props.rationale import Rationale
 
 if TYPE_CHECKING:
-    from adgn.props.critic.models import CriticSubmitPayload
-    from adgn.props.db.models import Snapshot
+    from adgn.props.db.models import DBCriticSubmitPayload, Snapshot
 
 
 # =============================================================================
@@ -69,13 +68,13 @@ class GradeValidationContext:
 
     @classmethod
     def from_specimen_and_critique(
-        cls, snapshot_orm: Snapshot, critique: CriticSubmitPayload, *, reviewed_files: set[Path] | None = None
+        cls, snapshot_orm: Snapshot, critique: DBCriticSubmitPayload, *, reviewed_files: set[Path] | None = None
     ) -> GradeValidationContext:
         """Build validation context from ORM Snapshot and critique.
 
         Args:
             snapshot_orm: ORM Snapshot from database (has TPs/FPs)
-            critique: Critic's submitted payload
+            critique: Critic's submitted payload (DB persistence model)
             reviewed_files: Optional set of files that were reviewed by the critic.
                 If provided, only include TPs/FPs that are catchable/relevant from those files.
                 If None, include all TPs/FPs.
@@ -121,27 +120,6 @@ class GraderInput(BaseModel):
     )
 
     model_config = ConfigDict(extra="forbid")
-
-
-class GraderOutput(BaseModel):
-    """Grader run output: metrics and detailed coverage."""
-
-    grade: GradeSubmitInput = Field(description="Full grading result with detailed coverage and metrics")
-
-    model_config = ConfigDict(extra="forbid")
-
-    @property
-    def recall(self) -> float:
-        """Binary recall (0-1) from the grading result."""
-        return self.grade.recall
-
-    @property
-    def coverage_recall(self) -> float | None:
-        """Fractional coverage-based recall, or None if no canonical TPs."""
-        if not self.grade.canonical_tp_coverage:
-            return None
-        total_credit = sum(entry.coverage.recall_credit for entry in self.grade.canonical_tp_coverage)
-        return total_credit / len(self.grade.canonical_tp_coverage)
 
 
 # =============================================================================

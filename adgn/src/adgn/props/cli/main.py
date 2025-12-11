@@ -47,7 +47,7 @@ from adgn.props.db import get_session, init_db
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import get_specimens_base_path
-from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
+from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
@@ -89,10 +89,12 @@ def _init_logging(
         ),
     ] = "WARNING",
 ) -> None:
-    """Global callback to configure logging for all subcommands."""
+    """Global callback to configure logging and initialize database for all subcommands."""
     configure_logging(log_output=log_output, log_level=log_level)
     # Reduce Rich traceback verbosity for CLI errors
     rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
+    # Initialize database once at CLI entry (uses production config from env vars)
+    init_db()
 
 
 @dataclass
@@ -145,9 +147,9 @@ async def _run_snapshot_minicodex_async(
         preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
         prompt_raw = _load_preset_text(preset_name)
 
-        wiring = properties_docker_spec(hydrated.content_root, docker_client, mount_properties=True)
+        compositor = PropertiesDockerCompositor(hydrated.content_root, docker_client, mount_properties=True)
         prompt = _render_prompt_with_context(
-            prompt_raw, wiring=wiring, files=resolved_files, supplemental_text=supplemental_text
+            prompt_raw, compositor=compositor, files=resolved_files, supplemental_text=supplemental_text
         )
 
         # Dry-run: save prompt and exit (before any agent/compositor setup)
@@ -231,7 +233,6 @@ async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None 
 
     The agent must submit a single payload of clusters: [{name: str, true_positives: [uid,...]}].
     """
-    init_db()
     root = await cluster_unknowns(model=model, out_dir=out_dir, ctx=RunsContext.from_pkg_dir())
     typer.echo(f"Clusters written to: {root}/<snapshot>/clusters.json")
 
@@ -248,7 +249,6 @@ async def prompt_optimize(
     docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
-    init_db()
     await run_prompt_optimizer(
         budget=budget,
         ctx=RunsContext.from_pkg_dir(),
@@ -273,8 +273,6 @@ async def snapshot_grade(
 
     Fetches critique from database, executes grader, and persists results.
     """
-    init_db()
-
     # Query database and grade critique in single session
     with get_session() as session:
         grader_run_id = await grade_critique_by_id(
@@ -306,8 +304,6 @@ async def cmd_grade_missing(
     Finds critiques without a grader run for the given model and grades them
     in parallel with semaphore-limited concurrency.
     """
-    init_db()
-
     # Find critique IDs missing grader runs for this model
     with get_session() as session:
         # More efficient than NOT IN: LEFT JOIN with NULL check
@@ -374,8 +370,8 @@ def cmd_fix(
     """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
 
     schemas_json = build_input_schemas_json([Occurrence, LineRange])
-    wiring = properties_docker_spec(workdir, docker_client, mount_properties=True)
-    prompt = build_enforce_prompt(scope, wiring=wiring, schemas_json=schemas_json)
+    compositor = PropertiesDockerCompositor(workdir, docker_client, mount_properties=True)
+    prompt = build_enforce_prompt(scope, compositor=compositor, schemas_json=schemas_json)
     cmd = build_cmd(
         model,
         workdir,
@@ -458,13 +454,13 @@ app.command("speak-with-dead")(cmd_speak_with_dead)
 
 
 def _render_prompt_with_context(
-    text: str, *, wiring: PropertiesDockerWiring, files: Iterable[Path], supplemental_text: str | None = None
+    text: str, *, compositor: PropertiesDockerCompositor, files: Iterable[Path], supplemental_text: str | None = None
 ) -> str:
     """Render a (potentially Jinja) prompt with standard props context; plain text passes through.
 
     Args:
         text: Template text (Jinja or plain)
-        wiring: Docker wiring config
+        compositor: Docker compositor with configuration
         files: File paths for scope
         supplemental_text: Optional additional context
 
@@ -473,7 +469,7 @@ def _render_prompt_with_context(
     """
     env = get_templates_env()
     tmpl = env.from_string(text)
-    context = build_standard_context(files=files, wiring=wiring, supplemental_text=supplemental_text)
+    context = build_standard_context(files=files, compositor=compositor, supplemental_text=supplemental_text)
     return str(tmpl.render(**context))
 
 
@@ -534,8 +530,6 @@ async def cmd_run(
 
     Default preset: max-recall-critic. Prints critique JSON on completion.
     """
-    init_db()
-
     # Validate prompt source
     sources = [x is not None for x in (preset, prompt_file, prompt_text)]
     if sum(sources) == 0:
@@ -554,11 +548,13 @@ async def cmd_run(
 
     # Hydrate snapshot and run
     async with hydrator.hydrate(snapshot) as hydrated:
-        wiring = properties_docker_spec(hydrated.content_root, docker_client, mount_properties=True, ephemeral=False)
+        compositor = PropertiesDockerCompositor(
+            hydrated.content_root, docker_client, mount_properties=True, ephemeral=False
+        )
         files_spec = filter_files(hydrated.all_discovered_files, files)
         resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
 
-        prompt = _render_prompt_with_context(prompt_raw, wiring=wiring, files=resolved_files)
+        prompt = _render_prompt_with_context(prompt_raw, compositor=compositor, files=resolved_files)
 
         if dry_run:
             tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"

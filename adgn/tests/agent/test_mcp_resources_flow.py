@@ -6,7 +6,6 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.mcp.exec.docker.server import CONTAINER_INFO_URI
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 from tests.llm.support.openai_mock import make_mock
@@ -18,13 +17,16 @@ async def test_model_reads_container_info_with_stubbed_openai(
     reasoning_model, docker_exec_server_alpine, make_pg_client, recording_handler, make_step_runner
 ) -> None:
     async with make_pg_client({"runtime": docker_exec_server_alpine}) as mcp_client:
+        # Get container info URI from server instance
+        container_info_uri = docker_exec_server_alpine.container_info_resource.uri
+
         # Prepare a deterministic two-step sequence: function_call then final text
         runner = make_step_runner(
             steps=[
                 MakeCall(
                     "resources",
                     "read",
-                    ResourcesReadArgs(server="docker", uri=CONTAINER_INFO_URI, start_offset=0, max_bytes=1024),
+                    ResourcesReadArgs(server="docker", uri=container_info_uri, start_offset=0, max_bytes=1024),
                 ),
                 AssistantMessage("ok"),
             ]

@@ -10,11 +10,12 @@ from enum import StrEnum
 from importlib import resources
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, cast
 import uuid
 
 from docker.client import DockerClient
 from fastmcp.client import Client
+from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server import FastMCP
 from fastmcp.server.context import ServerSession
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
@@ -67,14 +68,7 @@ POLICY_GATEWAY_STAMP_KEY: Final[str] = "adgn_policy_gateway"
 # ============================================================================
 # Tool and Resource Constants
 # ============================================================================
-# Tool name constants for policy engine servers
-CREATE_PROPOSAL_TOOL_NAME: Final[str] = "create_proposal"
-WITHDRAW_PROPOSAL_TOOL_NAME: Final[str] = "withdraw_proposal"
-
-# Resource URIs for approval policy servers
-POLICY_RESOURCE_URI: Final[str] = "resource://approval-policy/policy.py"
-PROPOSALS_INDEX_URI: Final[str] = "resource://approval-policy/proposals"
-PENDING_CALLS_URI: Final[str] = "pending://calls"
+# (No constants - use server.tool.name and server.resource.uri for SSOT)
 
 
 # ---- Enums for consolidated tools ----
@@ -374,15 +368,19 @@ class _PolicyGatewayMiddleware(Middleware):
 # ---- Helper to load instructions ----
 
 
-def _load_instructions() -> str:
-    """Load and render instructions with embedded shared constants via Jinja2."""
+def _load_instructions(policy_uri: str) -> str:
+    """Load and render instructions with embedded shared constants via Jinja2.
+
+    Args:
+        policy_uri: URI of the active policy resource (from server.active_policy_resource.uri)
+    """
     raw = resources.files(__package__).joinpath("instructions.j2.md").read_text(encoding="utf-8")
     tmpl = Template(raw)
     rendered = tmpl.render(
         RUNTIME_MOUNT_PREFIX=RUNTIME_MOUNT_PREFIX,
         RUNTIME_EXEC_TOOL_NAME=ContainerExecServer.EXEC_TOOL_NAME,
         TRUSTED_POLICY_PATH=None,
-        TRUSTED_POLICY_URL=POLICY_RESOURCE_URI,
+        TRUSTED_POLICY_URL=policy_uri,
     )
     return str(rendered)
 
@@ -393,6 +391,11 @@ def _load_instructions() -> str:
 class PolicyReaderServer(EnhancedFastMCP):
     """Policy reader server: resources + evaluate_policy tool."""
 
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    active_policy_resource: FunctionResource
+    proposal_item_resource: ResourceTemplate
+    pending_calls_resource: FunctionResource
+
     # Typed tool attribute for canonical pattern compliance
     evaluate_policy_tool: FunctionTool
 
@@ -402,21 +405,33 @@ class PolicyReaderServer(EnhancedFastMCP):
         Args:
             engine: PolicyEngine instance providing policy state and evaluation logic
         """
-        super().__init__(name="reader", instructions=_load_instructions())
+        # URI constant for active policy resource (SSOT is server.active_policy_resource.uri after registration)
+        policy_uri = "resource://approval-policy/policy.py"
 
-        # Register resources
-        @self.resource(POLICY_RESOURCE_URI, name="policy.py", mime_type="text/x-python")
+        # Initialize server with instructions rendered using the policy URI
+        super().__init__(name="reader", instructions=_load_instructions(policy_uri))
+
+        # Register resources and stash the results
         def active_policy() -> str:
             content, _version = engine.get_policy()
             return content
 
-        @self.resource(PROPOSALS_INDEX_URI + "/{id}", name="proposal", mime_type="text/x-python")
+        self.active_policy_resource = cast(
+            FunctionResource, self.resource(policy_uri, name="policy.py", mime_type="text/x-python")(active_policy)
+        )
+
         async def proposal_item(id: str) -> str:
             if (got := await engine.persistence.get_policy_proposal(engine.agent_id, id)) is None:
                 raise KeyError(id)
             return got.content
 
-        @self.resource(PENDING_CALLS_URI, name="pending_calls", mime_type="application/json")
+        self.proposal_item_resource = cast(
+            ResourceTemplate,
+            self.resource("resource://approval-policy/proposals/{id}", name="proposal", mime_type="text/x-python")(
+                proposal_item
+            ),
+        )
+
         def pending_calls() -> PendingCallsResponse:
             """List all pending tool call approval requests."""
             return PendingCallsResponse(
@@ -429,6 +444,11 @@ class PolicyReaderServer(EnhancedFastMCP):
                     for call_id, req in engine._hub.pending.items()
                 ]
             )
+
+        self.pending_calls_resource = cast(
+            FunctionResource,
+            self.resource("pending://calls", name="pending_calls", mime_type="application/json")(pending_calls),
+        )
 
         # Register tool with typed attribute
         async def evaluate_policy(input: PolicyRequest) -> PolicyResponse:
@@ -592,7 +612,7 @@ class PolicyEngine:
 
     def _on_hub_change(self) -> None:
         """Called when hub pending list changes - broadcast pending://calls."""
-        task = asyncio.create_task(self._broadcast_and_signal(PENDING_CALLS_URI))
+        task = asyncio.create_task(self._broadcast_resource_updated(self.reader.pending_calls_resource.uri))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
@@ -617,7 +637,9 @@ class PolicyEngine:
         """Set new policy source and broadcast update."""
         self._policy_source = source
         self._policy_version += 1
-        self._schedule_broadcast(POLICY_RESOURCE_URI)
+        task = asyncio.create_task(self._broadcast_resource_updated(self.reader.active_policy_resource.uri))
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
         return self._policy_version
 
     def load_policy(self, source: str, *, version: int) -> None:
@@ -667,22 +689,26 @@ class PolicyEngine:
 
     # ---- Notification helpers ----
 
-    def _schedule_broadcast(self, uri: str) -> None:
-        """Schedule async broadcast without blocking."""
-        task = asyncio.create_task(self._broadcast_and_signal(uri))
+    def _notify_proposal_change(self, proposal_id: str) -> None:
+        """Notify about a specific proposal change and the proposals index."""
+        # Notify specific proposal
+        uri = self.reader.proposal_item_resource.uri_template.format(id=proposal_id)
+        task = asyncio.create_task(self._broadcast_resource_updated(uri))
         self._bg_tasks.add(task)
         task.add_done_callback(self._bg_tasks.discard)
 
-    def _notify_proposal_change(self, proposal_id: str) -> None:
-        """Notify about a specific proposal change and the proposals index."""
-        self._schedule_broadcast(f"{PROPOSALS_INDEX_URI}/{proposal_id}")
-        self._schedule_broadcast(PROPOSALS_INDEX_URI)
+        # Notify list changed for proposals collection
+        list_task = asyncio.create_task(self._broadcast_list_changed())
+        self._bg_tasks.add(list_task)
+        list_task.add_done_callback(self._bg_tasks.discard)
 
-    async def _broadcast_and_signal(self, uri: str) -> None:
-        if uri == PROPOSALS_INDEX_URI:
-            await self.reader.broadcast_resource_list_changed()
-        else:
-            await self.reader.broadcast_resource_updated(uri)
+    async def _broadcast_resource_updated(self, uri: AnyUrl | str) -> None:
+        """Broadcast that a specific resource has been updated."""
+        await self.reader.broadcast_resource_updated(uri)
+
+    async def _broadcast_list_changed(self) -> None:
+        """Broadcast that a resource list has changed."""
+        await self.reader.broadcast_resource_list_changed()
 
 
 # ---- Compositor attach helpers ----

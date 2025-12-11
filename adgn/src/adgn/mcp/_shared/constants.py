@@ -20,7 +20,6 @@ RESOURCES_MOUNT_PREFIX: Final[str] = "resources"
 RUNTIME_MOUNT_PREFIX: Final[str] = "runtime"
 COMPOSITOR_META_MOUNT_PREFIX: Final[str] = "compositor_meta"
 UI_MOUNT_PREFIX: Final[str] = "ui"
-COMPOSITOR_ADMIN_SERVER_NAME: Final[str] = "compositor_admin"
 
 # ============================================================================
 # Server Mount Prefixes - Approval Policy

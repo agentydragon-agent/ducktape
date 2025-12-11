@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import aiodocker
 import pytest
 
 from adgn.inop.config import (
@@ -161,8 +162,6 @@ async def test_optimize_prompts_two_iterations_async(
     monkeypatch.setenv("DUCK_ALLOW_UNSANDBOXED", "1")
 
     # Create a fake docker client (won't be used since we're mocking create_runner)
-    import aiodocker
-
     fake_docker = aiodocker.Docker()
     try:
         out_dir = await adgn.inop.engine.optimizer.optimize_prompts(

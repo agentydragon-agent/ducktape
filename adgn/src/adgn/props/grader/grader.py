@@ -8,7 +8,6 @@ submit_result.
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 import logging
 import os
@@ -17,23 +16,19 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import aiodocker
-import docker
 from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 from fastmcp.tools import FunctionTool
-from pydantic import TypeAdapter
-
-if TYPE_CHECKING:
-    from adgn.mcp._shared.mounted import Mounted
-    from adgn.mcp.exec.docker.server import ContainerExecServer
-
 from rich.console import Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
 from sqlalchemy.orm import Session
+
+if TYPE_CHECKING:
+    from adgn.mcp._shared.mounted import Mounted
 
 from adgn.agent.agent import Agent
 from adgn.agent.handler import AbortIf, BaseHandler
@@ -41,62 +36,48 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
-from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
-from adgn.props.docker_env import PropertiesDockerWiring, properties_docker_spec
+from adgn.props.db.config import get_production_config
+from adgn.props.db.models import (
+    CanonicalIssuesSnapshot,
+    Critique,
+    DBCriticSubmitPayload,
+    GraderRun as DBGraderRun,
+    Snapshot,
+)
+from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.models import (
     CritiqueInputIssue,
     FalsePositiveID,
     GraderInput,
-    GraderOutput,
     GradeSubmitInput,
     GradeValidationContext,
     KnownFalsePositive,
     TruePositiveID,
     TruePositiveIssue,
 )
+from adgn.props.grader.persistence import fp_to_db, grade_submit_input_to_db, tp_to_db
+from adgn.props.http_compositor import PropertiesDockerCompositorHTTP
 from adgn.props.hydration import HydratedSnapshot, SnapshotHydrator
 from adgn.props.ids import InputIssueID, SnapshotSlug
-from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
+from adgn.props.models.true_positive import (
+    FileOccurrence,
+    LineRange,
+    Occurrence,
+    should_catch_occurrence,
+    should_show_fp_occurrence,
+)
 from adgn.props.prompts.builder import build_grade_from_json_prompt
 from adgn.props.prompts.util import MCP_HTTP_CONNECTION_INSTRUCTIONS
 from adgn.props.rationale import Rationale
-from adgn.props.servers.http_launcher import launch_mcp_http_server
 
 logger = logging.getLogger(__name__)
-
-
-def get_docker_network_gateway(network_name: str) -> str:
-    """Get the gateway IP for a Docker network.
-
-    Args:
-        network_name: Name of the Docker network
-
-    Returns:
-        Gateway IP address (e.g., "172.19.0.1")
-
-    Raises:
-        docker.errors.NotFound: If network does not exist
-        RuntimeError: If gateway cannot be determined from network config
-    """
-    client = docker.from_env()
-    network = client.networks.get(network_name)
-    ipam_config = network.attrs.get("IPAM", {}).get("Config", [])
-    if not ipam_config:
-        raise RuntimeError(f"No IPAM config found for network {network_name}")
-    gateway = ipam_config[0].get("Gateway")
-    if isinstance(gateway, str):
-        return gateway
-    raise RuntimeError(f"No gateway found for network {network_name}")
-
 
 # Toggle for MCP HTTP transport (Phase 1: parallel with compositor)
 # Set via environment variable: ADGN_USE_MCP_HTTP=1
@@ -150,7 +131,7 @@ class GradeInputs:
     """Grading context: snapshot slug and critique."""
 
     snapshot_slug: SnapshotSlug
-    critique: CriticSubmitPayload
+    critique: DBCriticSubmitPayload  # DB persistence model (not MCP I/O model)
     reviewed_files: set[Path] | None = None  # Files reviewed by critic (for scope filtering)
 
 
@@ -264,57 +245,50 @@ def _render_grade_submit_input(obj: GradeSubmitInput):
     )
 
 
-# =============================================================================
-# Grader Compositor (Phase 2 pattern)
-# =============================================================================
-
-
-class GraderCompositor(Compositor):
+class GraderCompositor(PropertiesDockerCompositor):
     """Compositor with grader servers pre-mounted (inproc mode only).
 
-    Mounts:
-    - runtime: Docker exec server (via PropertiesDockerWiring)
+    Inherits from PropertiesDockerCompositor, which provides:
+    - runtime: Docker exec server (mounted by parent class)
+
+    Adds:
     - grader_submit: Grader submission server
 
     Note: This handles only inproc mode. HTTP mode is handled separately.
-
-    Usage:
-        wiring = properties_docker_spec(...)
-        grader_state = GradeSubmitState()
-        inputs = GradeInputs(...)
-
-        async with GraderCompositor(wiring, grader_state, inputs) as comp:
-            # Access servers via Mounted[T] wrappers:
-            exec_tool_name = comp.runtime.server.exec_tool.name
-            submit_tool_name = comp.grader_submit.server.submit_result_tool.name
     """
 
     # Mount prefix constant (for test infrastructure only)
     SUBMIT_PREFIX = "grader_submit"
 
-    # Mounted server attributes (populated in __aenter__)
-    runtime: Mounted[ContainerExecServer]
+    # Mounted server attributes (runtime inherited, grader_submit added here)
     grader_submit: Mounted[GraderSubmitServer]
 
-    def __init__(self, wiring: PropertiesDockerWiring, grader_state: GradeSubmitState, inputs: GradeInputs):
+    def __init__(
+        self,
+        workspace_root: Path,
+        docker_client: aiodocker.Docker,
+        grader_state: GradeSubmitState,
+        inputs: GradeInputs,
+        **kwargs,
+    ):
         """Create compositor with grader dependencies.
 
         Args:
-            wiring: Docker exec server wiring
-            grader_state: Grader submit state container
-            inputs: Grading context (snapshot slug and critique)
+            workspace_root: Path to workspace directory to mount in container.
+            docker_client: Async Docker client (managed by caller).
+            grader_state: Grader submit state container.
+            inputs: Grading context (snapshot slug and critique).
+            **kwargs: Additional arguments passed to PropertiesDockerCompositor
+                (mount_properties, db_conn, extra_binds, workspace_mode, network_mode, extra_env, ephemeral)
         """
-        self._wiring = wiring
+        super().__init__(workspace_root, docker_client, **kwargs)
         self._grader_state = grader_state
         self._inputs = inputs
 
     async def __aenter__(self):
         """Start compositor and mount servers."""
-        # Start base compositor first
+        # Start parent compositor (mounts resources, compositor_meta, runtime)
         await super().__aenter__()
-
-        # Mount runtime server (docker exec) via wiring
-        self.runtime = await self._wiring.attach(self)
 
         # Mount grader submit server
         self.grader_submit = await self.mount_inproc(
@@ -330,7 +304,7 @@ class GraderCompositor(Compositor):
 
 # Bootstrap function disabled - example code is embedded in system prompt instead
 # def make_grader_http_bootstrap_calls(
-#     wiring: PropertiesDockerWiring, builder: TypedBootstrapBuilder
+#     compositor, builder: TypedBootstrapBuilder
 # ) -> list[FunctionCallItem]:
 #     """Build bootstrap calls for grader in HTTP mode: inspect MCP server with auth.
 #
@@ -369,7 +343,8 @@ async def _run_grader_agent(
     *,
     grader_state: GradeSubmitState,
     inputs: GradeInputs,
-    wiring: PropertiesDockerWiring,
+    workspace_root: Path,
+    docker_client: aiodocker.Docker,
     canonical_tps: list[TruePositiveIssue],
     critique_typed: list[CritiqueInputIssue],
     canonical_fps: list[KnownFalsePositive],
@@ -386,25 +361,52 @@ async def _run_grader_agent(
     """Run the grader agent.
 
     Args:
-        http_mode: If True, grader_submit is exposed via HTTP (env vars in wiring).
+        http_mode: If True, grader_submit is exposed via HTTP (managed by PropertiesDockerCompositorHTTP).
             If False, grader_submit is mounted in compositor.
         canonical_tps: True positive issues from specimen
         critique_typed: Issues from the critique being graded
         canonical_fps: Known false positives from specimen
     """
     # Choose compositor based on http_mode
-    # HTTP mode: use base Compositor, grader_submit server is external
-    # Inproc mode: use GraderCompositor to mount grader_submit
-    comp_ctx = Compositor() if http_mode else GraderCompositor(wiring, grader_state, inputs)
+    # HTTP mode: use PropertiesDockerCompositorHTTP (manages both HTTP server and container)
+    #            Network: PROPS_NETWORK_NAME, workspace: rw, ephemeral: False, db_conn: required
+    # Inproc mode: use GraderCompositor (runtime + grader_submit mounted in-proc)
+    #              Network: "none" (isolated, no network access needed)
+    comp_ctx: PropertiesDockerCompositor
+    if http_mode:
+        # Server factory for HTTP compositor
+        def server_factory(token: str) -> EnhancedFastMCP:
+            auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
+            return GraderSubmitServer(grader_state, inputs, auth)
+
+        db_config = get_production_config()
+        comp_ctx = PropertiesDockerCompositorHTTP(
+            workspace_root,
+            docker_client,
+            server_factory=server_factory,
+            db_conn=db_config.agent_for_container,
+            mount_properties=False,
+        )
+    else:
+        comp_ctx = GraderCompositor(
+            workspace_root=workspace_root,
+            docker_client=docker_client,
+            grader_state=grader_state,
+            inputs=inputs,
+            mount_properties=False,
+            ephemeral=False,
+            # network_mode defaults to "none" (isolated)
+        )
 
     async with comp_ctx as handle:
-        # In HTTP mode, we need to attach wiring and build servers dict manually
-        # In inproc mode, GraderCompositor handles this
+        # Build servers dict for agent
+        # HTTP mode: only runtime (grader_submit is external)
+        # Inproc mode: runtime + grader_submit
         if http_mode:
-            runtime = await wiring.attach(handle)
-            servers: dict[str, FastMCP | None] = {runtime.prefix: runtime.server}
+            servers: dict[str, FastMCP | None] = {handle.runtime.prefix: handle.runtime.server}
         else:
-            # GraderCompositor has already attached servers
+            # Type narrowing: handle is GraderCompositor in else branch
+            assert isinstance(handle, GraderCompositor)
             servers = {
                 handle.runtime.prefix: handle.runtime.server,
                 handle.grader_submit.prefix: handle.grader_submit.server,
@@ -419,6 +421,8 @@ async def _run_grader_agent(
             temp_server = GraderSubmitServer(grader_state, inputs)
             submit_tool_name = temp_server.submit_result_tool.name
         else:
+            # Type narrowing: handle is GraderCompositor in else branch
+            assert isinstance(handle, GraderCompositor)
             submit_tool_name = handle.grader_submit.tool_name(handle.grader_submit.server.submit_result_tool)
 
         prompt = build_grade_from_json_prompt(
@@ -426,7 +430,7 @@ async def _run_grader_agent(
             critique_issues=critique_typed,
             known_fps=canonical_fps,
             submit_tool_name=submit_tool_name,
-            wiring=wiring,
+            compositor=handle,
         )
 
         # Note: resources and compositor_meta are auto-mounted by base Compositor
@@ -466,9 +470,11 @@ Grade the critique, then submit your result by invoking the grader_submit server
                     AbortIf(should_abort=lambda: grader_state.result is not None),
                     *build_props_handlers(
                         transcript_id=transcript_id,
-                        verbose_prefix=f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
-                        if verbose
-                        else None,
+                        verbose_prefix=(
+                            f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                            if verbose
+                            else None
+                        ),
                         servers=servers,
                         max_lines=max_lines,
                     ),
@@ -510,7 +516,7 @@ async def run_grader(
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
     max_turns: int | None = None,
-) -> tuple[GraderOutput, UUID]:
+) -> UUID:
     """Run grader agent: evaluate critique against ground truth, persist to DB.
 
     Args:
@@ -523,7 +529,7 @@ async def run_grader(
         verbose: Enable verbose output
 
     Returns:
-        Tuple of (GraderOutput, grader_run_id)
+        Grader run ID
     """
     # Generate unique IDs for this run
     run_id = uuid4()
@@ -535,10 +541,11 @@ async def run_grader(
         snapshot = session.query(Snapshot).filter_by(slug=input_data.snapshot_slug).one()
         snapshot_split = snapshot.split
 
-        # Serialize canonical issues for snapshot tracking
-        tp_data = TypeAdapter(list[TruePositiveIssue]).dump_python(canonical_tps, mode="json")
-        fp_data = TypeAdapter(list[KnownFalsePositive]).dump_python(canonical_fps, mode="json")
-        canonical_snapshot = {"true_positives": tp_data, "false_positives": fp_data}
+        # Build canonical issues snapshot for tracking (convert MCP models to DB models)
+        canonical_snapshot = CanonicalIssuesSnapshot(
+            true_positives=[tp_to_db(tp) for tp in canonical_tps],
+            false_positives=[fp_to_db(fp) for fp in canonical_fps],
+        )
 
         session.add(
             DBGraderRun(
@@ -557,9 +564,9 @@ async def run_grader(
             f"Created initial grader run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
         )
 
-        # Fetch critique from database
+        # Fetch critique from database (use DB model directly)
         critique_orm = _get_required_critique(session, input_data.critique_id)
-        critique = CriticSubmitPayload.model_validate(critique_orm.payload)
+        critique_payload_db = critique_orm.payload
 
         # Extract reviewed files from critic run while still in session (for scope filtering)
         # TODO: Clean up path propagation - reviewed_files is extracted here, passed through
@@ -570,83 +577,70 @@ async def run_grader(
         if critique_orm.critic_run:
             reviewed_files = {Path(f) for f in critique_orm.critic_run.files}
 
-    # Convert critique issues to CritiqueInputIssue
+    # Convert critique issues to CritiqueInputIssue (access DB model fields directly)
     critique_typed = [
-        CritiqueInputIssue(id=InputIssueID(issue.id), rationale=issue.rationale, occurrences=issue.occurrences)
-        for issue in critique.issues
+        CritiqueInputIssue(
+            id=InputIssueID(issue.id),
+            rationale=Rationale(issue.rationale),
+            occurrences=[
+                Occurrence(
+                    files=[
+                        FileOccurrence(
+                            path=Path(fo.path),
+                            ranges=[LineRange(start_line=r.start_line, end_line=r.end_line) for r in fo.ranges]
+                            if fo.ranges
+                            else None,
+                        )
+                        for fo in occ.files
+                    ],
+                    note=occ.note,
+                )
+                for occ in issue.occurrences
+            ],
+        )
+        for issue in critique_payload_db.issues
     ]
 
     # Build grader inputs and state
     grader_state = GradeSubmitState()
-    inputs = GradeInputs(snapshot_slug=input_data.snapshot_slug, critique=critique, reviewed_files=reviewed_files)
+    inputs = GradeInputs(
+        snapshot_slug=input_data.snapshot_slug, critique=critique_payload_db, reviewed_files=reviewed_files
+    )
 
     # Run agent with either HTTP or in-proc server based on toggle
-    @asynccontextmanager
-    async def _http_context():
-        def server_factory(token: str) -> EnhancedFastMCP:
-            auth = StaticTokenVerifier(tokens={token: {"client_id": "grader-agent", "scopes": []}})
-            return GraderSubmitServer(grader_state, inputs, auth)
-
-        # Get gateway IP for props-network (internal network blocks DNS)
-        network_name = "props-network"
-        gateway_ip = get_docker_network_gateway(network_name)
-        logger.info(f"Using gateway IP {gateway_ip} for Docker network {network_name}")
-
-        async with launch_mcp_http_server(server_factory, container_host=gateway_ip) as handle:
-            logger.info(f"Grader HTTP server started at {handle.url}")
-            yield {"MCP_SERVER_URL": handle.url, "MCP_SERVER_TOKEN": handle.token}
-
-    ctx = _http_context() if USE_MCP_HTTP else nullcontext()
-    async with ctx as extra_env:
-        logger.info(f"HTTP mode enabled: {USE_MCP_HTTP}, extra_env: {extra_env is not None}")
-        if extra_env:
-            logger.info(
-                f"MCP environment variables: URL={extra_env.get('MCP_SERVER_URL')}, TOKEN_LEN={len(extra_env.get('MCP_SERVER_TOKEN', ''))}"
-            )
-        # When HTTP mode is enabled, use props-network (allows host.docker.internal but blocks internet)
-        network_mode = "props-network" if USE_MCP_HTTP else "none"
-        wiring = properties_docker_spec(
-            hydrated_specimen.content_root,
-            docker_client=docker_client,
-            mount_properties=True,
-            ephemeral=False,
-            extra_env=extra_env,
-            network_mode=network_mode,
-        )
-        # Prompt building moved into _run_grader_agent (after compositor context entered)
-        # so we can access tool names from server instances
-        await _run_grader_agent(
-            grader_state=grader_state,
-            inputs=inputs,
-            wiring=wiring,
-            canonical_tps=canonical_tps,
-            critique_typed=critique_typed,
-            canonical_fps=canonical_fps,
-            client=client,
-            transcript_id=transcript_id,
-            snapshot_split=snapshot_split,
-            input_data=input_data,
-            verbose=verbose,
-            extra_handlers=extra_handlers,
-            http_mode=bool(extra_env),
-            max_lines=max_lines,
-            max_turns=max_turns,
-        )
+    logger.info(f"HTTP mode enabled: {USE_MCP_HTTP}")
+    await _run_grader_agent(
+        grader_state=grader_state,
+        inputs=inputs,
+        workspace_root=hydrated_specimen.content_root,
+        docker_client=docker_client,
+        canonical_tps=canonical_tps,
+        critique_typed=critique_typed,
+        canonical_fps=canonical_fps,
+        client=client,
+        transcript_id=transcript_id,
+        snapshot_split=snapshot_split,
+        input_data=input_data,
+        verbose=verbose,
+        extra_handlers=extra_handlers,
+        http_mode=USE_MCP_HTTP,
+        max_lines=max_lines,
+        max_turns=max_turns,
+    )
 
     if grader_state.result is None:
         raise GraderDidNotSubmitError("Grader did not submit result")
-
-    output = GraderOutput(grade=grader_state.result)
 
     # Phase 2: Update run with output
     with get_session() as session:
         found_run = session.get(DBGraderRun, run_id)
         assert found_run is not None, f"Grader run {run_id} not found in database"
-        found_run.output = output
+        # Convert MCP model to DB model for storage
+        found_run.output = grade_submit_input_to_db(grader_state.result)
         session.commit()
         logger.info(f"Updated grader run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
 
-    return (output, run_id)
+    return run_id
 
 
 async def grade_critique_by_id(
@@ -711,7 +705,7 @@ async def grade_critique_by_id(
     hydrator = SnapshotHydrator.from_env()
     async with hydrator.hydrate(snapshot_slug) as hydrated:
         # Execute grader run with explicit canonical issues
-        _grader_output, grader_run_id = await run_grader(
+        return await run_grader(
             input_data=grader_input,
             client=client,
             hydrated_specimen=hydrated,
@@ -721,5 +715,3 @@ async def grade_critique_by_id(
             verbose=verbose,
             max_turns=max_turns,
         )
-
-        return grader_run_id

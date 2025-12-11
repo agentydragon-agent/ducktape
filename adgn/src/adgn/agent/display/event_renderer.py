@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 from fastmcp.tools.tool import FunctionTool
 
 from adgn.mcp._shared.naming import parse_tool_name
+from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils.model import ReasoningItem
 
 if TYPE_CHECKING:
@@ -99,8 +100,6 @@ class DisplayEventsHandler(BaseHandler):
         self._calls[evt.call_id] = evt
 
         # Type-based dispatch
-        from adgn.mcp.exec.models import ExecInput
-
         input_type = self._get_tool_input_type(evt.name)
 
         if input_type is ExecInput:
@@ -121,8 +120,6 @@ class DisplayEventsHandler(BaseHandler):
 
         if call:
             # Type-based dispatch
-            from adgn.mcp.exec.models import ExecInput
-
             input_type = self._get_tool_input_type(call.name)
 
             if input_type is ExecInput:

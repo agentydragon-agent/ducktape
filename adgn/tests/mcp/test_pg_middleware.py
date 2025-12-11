@@ -15,7 +15,6 @@ from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp.approval_policy.engine import (
-    PENDING_CALLS_URI,
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_DENIED_ABORT_CODE,
     POLICY_DENIED_ABORT_MSG,
@@ -118,7 +117,7 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
     engine = await make_decision_engine(ApprovalDecision.ASK)
     call_ids: list[str] = []
 
-    async with make_pg_compositor({"backend": make_simple_mcp}, policy_engine=engine) as (sess, policy_engine):
+    async with make_pg_compositor({"backend": make_simple_mcp}, policy_engine=engine) as comp, Client(comp) as sess:
         # Start tool call in background - it will block waiting for approval
         call_task = asyncio.create_task(sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"}))
 
@@ -126,16 +125,16 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
         await asyncio.sleep(0.2)
 
         # Read pending calls from the reader server
-        async with Client(policy_engine.reader) as reader:
+        async with Client(comp.approval_engine.reader) as reader:
             pending_data: PendingCallsResponse = await read_text_json_typed(
-                reader, PENDING_CALLS_URI, PendingCallsResponse
+                reader, comp.approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
             )
             assert len(pending_data.pending) > 0, "Expected at least one pending call"
             call_id = pending_data.pending[0].call_id
             call_ids.append(call_id)
 
         # Approve via admin server
-        async with Client(policy_engine.admin) as admin:
+        async with Client(comp.approval_engine.admin) as admin:
             await admin.call_tool("decide_call", arguments={"call_id": call_id, "decision": CallDecision.APPROVE})
 
         # Wait for the tool call to complete

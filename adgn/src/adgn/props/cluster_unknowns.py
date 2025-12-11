@@ -16,10 +16,8 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
-from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun
-from adgn.props.ids import BaseIssueID
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 
@@ -33,7 +31,7 @@ class ClusteredIssueID(BaseModel):
     """Unique identifier for an issue within a critique (critique_id, tp_id)."""
 
     critique_id: UUID
-    tp_id: BaseIssueID
+    tp_id: str  # Issue ID string (from DB model)
 
     model_config = ConfigDict(frozen=True)
 
@@ -63,28 +61,23 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
 
     Returns empty list if critic result is not success or if no novel issues found.
     """
-    # Skip grader runs where output or output.grade is None (incomplete/failed runs)
-    if db_run.output is None or db_run.output.grade is None:
+    # Skip grader runs where output is None (incomplete/failed runs)
+    if db_run.output is None:
         return []
 
-    # db_run.output is now typed as GraderOutput (PydanticColumn)
-    critique_payload = CriticSubmitPayload.model_validate(critique.payload)
-
+    # Use DB models directly (no conversion needed)
+    critique_payload_db = critique.payload
     critique_id = db_run.critique_id
 
-    # Extract unknown issues
+    # Extract unknown issues (access nested fields directly from DB models)
     return [
         UnknownIssue(
             tp_id=ClusteredIssueID(critique_id=critique_id, tp_id=entry.input_id),
-            rationale=matching_issue.rationale,
+            rationale=Rationale(matching_issue.rationale),
             files={Path(fo.path) for occ in matching_issue.occurrences for fo in occ.files},
         )
-        for entry in db_run.output.grade.novel_critique_issues
-        if (
-            matching_issue := next(
-                (issue for issue in critique_payload.issues if issue.id == str(entry.input_id)), None
-            )
-        )
+        for entry in db_run.output.novel_critique_issues
+        if (matching_issue := next((issue for issue in critique_payload_db.issues if issue.id == entry.input_id), None))
         is not None
     ]
 

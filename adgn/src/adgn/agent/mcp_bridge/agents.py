@@ -11,8 +11,10 @@ Provides tools and resources for managing agents:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Final, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
+from fastmcp.resources import FunctionResource
+from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
@@ -22,10 +24,6 @@ if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
 
 logger = logging.getLogger(__name__)
-
-# Resource URIs for agents server
-LIST_URI: Final[str] = "agents://list"
-PRESETS_URI: Final[str] = "agents://presets"
 
 
 # ---- Resource models ---------------------------------------------------------
@@ -90,77 +88,99 @@ class BootAgentOutput(BaseModel):
     status: Literal["booted"]
 
 
-# ---- Server factory ----------------------------------------------------------
+# ---- Server class ----------------------------------------------------------
 
 
-def make_agents_server(registry: InfrastructureRegistry) -> EnhancedFastMCP:
-    """Create the agents management MCP server.
+class AgentsManagementServer(EnhancedFastMCP):
+    """Agents management MCP server with typed resource/tool access.
 
-    Resources:
-    - agents://list - List all agents with state
-    - agents://presets - List available presets
-
-    Tools:
-    - create_agent(preset) - Create new agent from preset
-    - delete_agent(agent_id) - Delete an agent
-    - boot_agent(agent_id) - Boot existing agent from DB
+    Provides tools and resources for managing agents:
+    - list resource: all agents with state
+    - presets resource: available presets
+    - create_agent tool: create new agent from preset
+    - delete_agent tool: delete an agent
+    - boot_agent tool: boot existing agent from DB
     """
-    mcp = EnhancedFastMCP("Agents Management MCP Server")
 
-    @mcp.resource(LIST_URI)
-    async def list_agents() -> list[AgentInfo]:
-        """List all agents with their state.
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    list_resource: FunctionResource
+    presets_resource: FunctionResource
 
-        Returns agents from both:
-        - Running containers in registry
-        - Persisted agents in DB (not yet booted)
+    # Tool references (assigned in __init__)
+    create_agent_tool: FunctionTool
+    delete_agent_tool: FunctionTool
+    boot_agent_tool: FunctionTool
+
+    def __init__(self, registry: InfrastructureRegistry):
+        """Create agents management server bound to an infrastructure registry.
+
+        Args:
+            registry: Infrastructure registry for managing agent lifecycle
         """
-        agents: list[AgentInfo] = []
+        super().__init__("Agents Management MCP Server")
+        self._registry = registry
 
-        # Get running agents from registry
-        for container in registry.list_agents():
-            agent_id = container.agent_id
-            # Get preset from persistence
-            row = await registry.persistence.get_agent(agent_id)
-            preset = row.metadata.preset if (row and row.metadata) else None
-            agents.append(AgentInfo(id=agent_id, preset=preset, external=registry.is_external(agent_id), booted=True))
+        # Register resources and stash the results
+        async def list_agents() -> list[AgentInfo]:
+            """List all agents with their state.
 
-        # Get persisted agents that aren't running
-        running_ids = {c.agent_id for c in registry.list_agents()}
-        persisted = await registry.persistence.list_agents()
-        for row in persisted:
-            if row.id not in running_ids:
-                preset = row.metadata.preset if row.metadata else None
-                agents.append(AgentInfo(id=row.id, preset=preset, external=False, booted=False))
+            Returns agents from both:
+            - Running containers in registry
+            - Persisted agents in DB (not yet booted)
+            """
+            agents: list[AgentInfo] = []
 
-        return agents
+            # Get running agents from registry
+            for container in self._registry.list_agents():
+                agent_id = container.agent_id
+                # Get preset from persistence
+                row = await self._registry.persistence.get_agent(agent_id)
+                preset = row.metadata.preset if (row and row.metadata) else None
+                agents.append(
+                    AgentInfo(id=agent_id, preset=preset, external=self._registry.is_external(agent_id), booted=True)
+                )
 
-    @mcp.resource(PRESETS_URI)
-    async def list_presets() -> list[PresetInfo]:
-        """List available agent presets."""
-        presets = discover_presets()
-        return [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
+            # Get persisted agents that aren't running
+            running_ids = {c.agent_id for c in self._registry.list_agents()}
+            persisted = await self._registry.persistence.list_agents()
+            for row in persisted:
+                if row.id not in running_ids:
+                    preset = row.metadata.preset if row.metadata else None
+                    agents.append(AgentInfo(id=row.id, preset=preset, external=False, booted=False))
 
-    @mcp.flat_model()
-    async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
-        """Create a new agent from a preset and boot it."""
-        container = await registry.create_agent(preset=input.preset)
-        await mcp.broadcast_resource_updated(LIST_URI)
-        return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
+            return agents
 
-    @mcp.flat_model()
-    async def delete_agent(input: DeleteAgentInput) -> DeleteAgentOutput:
-        """Delete an agent."""
-        await registry.shutdown_agent(input.agent_id)
-        await registry.persistence.delete_agent(input.agent_id)
-        await mcp.broadcast_resource_updated(LIST_URI)
-        return DeleteAgentOutput(id=input.agent_id, status="deleted")
+        self.list_resource = cast(FunctionResource, self.resource("agents://list")(list_agents))
 
-    @mcp.flat_model()
-    async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
-        """Boot an existing agent from the database."""
-        container = await registry.boot_agent(input.agent_id)
-        await mcp.broadcast_resource_updated(LIST_URI)
-        return BootAgentOutput(id=container.agent_id, status="booted")
+        async def list_presets() -> list[PresetInfo]:
+            """List available agent presets."""
+            presets = discover_presets()
+            return [PresetInfo(name=p.name, description=p.description) for p in presets.values()]
 
-    return mcp
+        self.presets_resource = cast(FunctionResource, self.resource("agents://presets")(list_presets))
+
+        # Register tools - names derived from function names
+        async def create_agent(input: CreateAgentInput) -> CreateAgentOutput:
+            """Create a new agent from a preset and boot it."""
+            container = await self._registry.create_agent(preset=input.preset)
+            await self.broadcast_resource_updated(self.list_resource.uri)
+            return CreateAgentOutput(id=container.agent_id, status="created", preset=input.preset or "default")
+
+        self.create_agent_tool = self.flat_model()(create_agent)
+
+        async def delete_agent(input: DeleteAgentInput) -> DeleteAgentOutput:
+            """Delete an agent."""
+            await self._registry.shutdown_agent(input.agent_id)
+            await self._registry.persistence.delete_agent(input.agent_id)
+            await self.broadcast_resource_updated(self.list_resource.uri)
+            return DeleteAgentOutput(id=input.agent_id, status="deleted")
+
+        self.delete_agent_tool = self.flat_model()(delete_agent)
+
+        async def boot_agent(input: BootAgentInput) -> BootAgentOutput:
+            """Boot an existing agent from the database."""
+            container = await self._registry.boot_agent(input.agent_id)
+            await self.broadcast_resource_updated(self.list_resource.uri)
+            return BootAgentOutput(id=container.agent_id, status="booted")
+
+        self.boot_agent_tool = self.flat_model()(boot_agent)

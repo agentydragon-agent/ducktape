@@ -9,11 +9,7 @@ from fastmcp.server import FastMCP
 from mcp import types
 import pytest
 
-from adgn.mcp._shared.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
-from adgn.mcp.compositor.clients import CompositorAdminClient
-from adgn.mcp.compositor.meta_server import CompositorMetaServer
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.testing.resources_stubs import ResourcesServerStub
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
@@ -50,6 +46,8 @@ def stdio_echo_spec() -> StdioMCPServer:
 @pytest.fixture
 async def resources_server(compositor):
     """Resources server for the compositor."""
+    from adgn.mcp.resources.server import ResourcesServer
+
     return ResourcesServer(compositor=compositor)
 
 
@@ -64,20 +62,6 @@ async def resources_client(resources_server):
 async def typed_resources_client(resources_server, resources_client):
     """Typed stub for the resources server."""
     return ResourcesServerStub.from_server(resources_server, resources_client)
-
-
-@pytest.fixture
-async def admin_env(make_compositor):
-    """Compositor with standard admin/meta servers and an admin client.
-
-    Yields a tuple (admin_client, compositor).
-    """
-    async with make_compositor({}) as (client, comp):
-        await comp.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=comp), pinned=True)
-        compmeta_server = CompositorMetaServer(compositor=comp)
-        await comp.mount_inproc(COMPOSITOR_META_MOUNT_PREFIX, compmeta_server, pinned=True)
-        admin = CompositorAdminClient(client)
-        yield admin, comp
 
 
 @pytest.fixture

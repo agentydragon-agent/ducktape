@@ -1,6 +1,7 @@
-"""Tests for the ephemeral MCP HTTP server launcher.
+"""Tests for HTTP compositor components.
 
-Tests lifecycle management, port allocation, and basic connectivity.
+Tests the ephemeral MCP HTTP server launcher: lifecycle management,
+port allocation, and basic connectivity.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ import pytest
 
 from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
 from adgn.mcp.testing.simple_servers import build_simple_tools
-from adgn.props.servers.http_launcher import ServerHandle, launch_mcp_http_server
+from adgn.props.http_compositor import ServerHandle, launch_mcp_http_server
 
 
 def _create_test_server(token: str) -> FlatModelMixin:

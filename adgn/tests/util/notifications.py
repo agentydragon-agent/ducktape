@@ -7,7 +7,6 @@ from typing import Any
 from fastmcp.client.messages import MessageHandler
 from mcp import types
 
-from adgn.mcp.chat.server import CHAT_HEAD_URI
 from adgn.openai_utils.model import InputTextPart, UserMessage
 
 
@@ -20,9 +19,9 @@ class CaptureUpdates(MessageHandler):
         self.updated.append(str(message.params.uri))
 
 
-async def subscribe_head(session) -> None:
+async def subscribe_head(session, chat_server) -> None:
     """Subscribe to chat head updates for the connected server."""
-    await session.subscribe_resource(CHAT_HEAD_URI)
+    await session.subscribe_resource(chat_server.head_resource.uri)
 
 
 def _iter_text_parts(message: UserMessage) -> Iterable[str]:

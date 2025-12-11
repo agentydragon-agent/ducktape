@@ -1,17 +1,12 @@
 from __future__ import annotations
 
-from typing import Final
+from typing import cast
+
+from fastmcp.resources import FunctionResource, ResourceTemplate
 
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.snapshots import ServerEntry
-
-# Resource URIs for compositor meta server
-SERVERS_URI: Final[str] = "compositor://servers"
-STATE_URI_PATTERN: Final[str] = "compositor://{server}/state"
-# Note: INSTRUCTIONS and CAPABILITIES patterns are defined but not currently used
-INSTRUCTIONS_URI_PATTERN: Final[str] = "compositor://{server}/instructions"
-CAPABILITIES_URI_PATTERN: Final[str] = "compositor://{server}/capabilities"
 
 
 class CompositorMetaServer(EnhancedFastMCP):
@@ -21,6 +16,10 @@ class CompositorMetaServer(EnhancedFastMCP):
     This removes the need for synthetic mcp-server:// URIs and avoids special-casing
     in the resources aggregator.
     """
+
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    servers_list_resource: FunctionResource
+    server_state_resource: ResourceTemplate
 
     def __init__(self, *, compositor: Compositor):
         """Create compositor metadata server.
@@ -48,29 +47,37 @@ class CompositorMetaServer(EnhancedFastMCP):
 
         self._compositor = compositor
 
-        # Register resources
-        @self.resource(
-            SERVERS_URI,
-            name="compositor.servers",
-            mime_type="application/json",
-            description="List of all mounted servers",
-        )
+        # Register resources and stash the results
         async def servers_list() -> list[str]:
             """Return list of all mounted server names for discovery."""
             entries = await self._compositor.server_entries()
             return list(entries.keys())
 
-        @self.resource(
-            STATE_URI_PATTERN,
-            name="compositor.state",
-            mime_type="application/json",
-            description="Per-server state snapshot (initializing|running|failed)",
+        self.servers_list_resource = cast(
+            FunctionResource,
+            self.resource(
+                "compositor://servers",
+                name="compositor.servers",
+                mime_type="application/json",
+                description="List of all mounted servers",
+            )(servers_list),
         )
+
         async def server_state(server: str) -> ServerEntry:
             entries = await self._compositor.server_entries()
             if (entry := entries.get(server)) is None:
                 raise KeyError(server)
             return entry
+
+        self.server_state_resource = cast(
+            ResourceTemplate,
+            self.resource(
+                "compositor://{server}/state",
+                name="compositor.state",
+                mime_type="application/json",
+                description="Per-server state snapshot (initializing|running|failed)",
+            )(server_state),
+        )
 
         # Instructions and capabilities are embedded in the per-server state (InitializeResult)
         # via server_state above; no separate resources are exposed to avoid duplication.
@@ -81,7 +88,7 @@ class CompositorMetaServer(EnhancedFastMCP):
             await self.broadcast_resource_list_changed()
             # For new state availability or mount, update the per-server state resource
             if action in (MountEvent.MOUNTED, MountEvent.STATE):
-                await self.broadcast_resource_updated(STATE_URI_PATTERN.format(server=name))
+                await self.broadcast_resource_updated(self.server_state_resource.uri_template.format(server=name))
 
         self._compositor.add_mount_listener(_on_mount_change)
 

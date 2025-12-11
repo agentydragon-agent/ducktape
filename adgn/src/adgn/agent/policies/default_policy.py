@@ -7,6 +7,8 @@ from adgn.agent.policies.scaffold import run
 from adgn.mcp._shared.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from adgn.mcp._shared.naming import build_mcp_function, server_matches
 
+# NOTE: Standalone policy program - these constants are acceptable here as it runs
+# in isolation without compositor access. Alternative would be env vars.
 UI_SEND = build_mcp_function(UI_MOUNT_PREFIX, "send_message")
 UI_END = build_mcp_function(UI_MOUNT_PREFIX, "end_turn")
 

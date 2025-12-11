@@ -7,8 +7,10 @@ without requiring the agent to explicitly request it.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from contextlib import suppress
 import json
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
@@ -206,7 +208,7 @@ def read_resource_call(
     builder: TypedBootstrapBuilder,
     resources: Mounted[ResourcesServer],
     server: str,
-    uri: AnyUrl | str,
+    uri: str | AnyUrl,
     *,
     max_bytes: int = 65536,
 ) -> FunctionCallItem:
@@ -262,21 +264,25 @@ def docker_exec_call(
 
 
 def docker_exec_call_mounted(
-    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], cmd: list[str], *, timeout_ms: int = 10_000
+    builder: TypedBootstrapBuilder,
+    runtime: Mounted[ContainerExecServer],
+    cmd: Sequence[str | Path],
+    *,
+    timeout_ms: int = 10_000,
 ) -> FunctionCallItem:
     """Bootstrap helper for docker exec using Mounted server.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
         runtime: Mounted runtime server (e.g., comp.runtime)
-        cmd: Command to execute
+        cmd: Command to execute (accepts str or Path elements)
         timeout_ms: Execution timeout in milliseconds
 
     Raises:
         RuntimeError: If exec server has no exec-compatible tools or has multiple
 
     Example:
-        call = docker_exec_call_mounted(builder, comp.runtime, ["ls", "-la"])
+        call = docker_exec_call_mounted(builder, comp.runtime, ["ls", "-la", Path("/workspace")])
     """
     # Introspect server to find the exec tool (tool that accepts ExecInput)
     models = introspect_server_models(runtime.server)
@@ -292,8 +298,11 @@ def docker_exec_call_mounted(
 
     exec_tool_name = exec_tools[0]
 
+    # Convert Path elements to str for ExecInput
+    cmd_str = [str(item) for item in cmd]
+
     return builder.call(
-        runtime.prefix, exec_tool_name, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
+        runtime.prefix, exec_tool_name, ExecInput(cmd=cmd_str, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
     )
 
 

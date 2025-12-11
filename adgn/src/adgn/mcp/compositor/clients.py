@@ -5,37 +5,8 @@ from typing import cast
 from fastmcp.client import Client
 from fastmcp.client.transports import FastMCPTransport
 
-from adgn.mcp._shared.client_helpers import call_simple_ok
-from adgn.mcp._shared.constants import COMPOSITOR_ADMIN_SERVER_NAME
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.compositor.admin import AttachServerArgs, DetachServerArgs, ServerSpec
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.snapshots import ServerEntry
-
-
-class CompositorAdminClient:
-    """Typed client for the compositor_admin server tools.
-
-    Expects a Client connected to the Compositor front door. Calls use fully
-    namespaced tool names ({server}_{tool}).
-    """
-
-    def __init__(self, client: Client) -> None:
-        self._client = client
-        self._attach_name = build_mcp_function(COMPOSITOR_ADMIN_SERVER_NAME, "attach_server")
-        self._detach_name = build_mcp_function(COMPOSITOR_ADMIN_SERVER_NAME, "detach_server")
-
-    @property
-    def client(self) -> Client:
-        return self._client
-
-    async def attach_server(self, *, name: str, spec: ServerSpec) -> None:
-        args = AttachServerArgs(name=name, spec=spec)
-        await call_simple_ok(self._client, name=self._attach_name, arguments=args.model_dump())
-
-    async def detach_server(self, *, name: str) -> None:
-        args = DetachServerArgs(name=name)
-        await call_simple_ok(self._client, name=self._detach_name, arguments=args.model_dump())
 
 
 class CompositorMetaClient:

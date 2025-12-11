@@ -6,8 +6,6 @@ from fastmcp.tools import FunctionTool
 from pydantic import ConfigDict, Field
 
 from adgn.agent.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
-from adgn.mcp._shared.constants import UI_MOUNT_PREFIX
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -83,10 +81,3 @@ class UiServer(EnhancedFastMCP):
             return UiEndTurn()
 
         self.end_turn_tool = self.flat_model()(end_turn)
-
-
-async def attach_ui(comp: Compositor, bus: ServerBus) -> UiServer:
-    """Attach the UI MCP server in-proc to a Compositor (preferred path)."""
-    server = UiServer(bus)
-    await comp.mount_inproc(UI_MOUNT_PREFIX, server)
-    return server

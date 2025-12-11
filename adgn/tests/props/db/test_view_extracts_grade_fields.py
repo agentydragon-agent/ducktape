@@ -12,7 +12,6 @@ from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot, TruePositive
 from adgn.props.grader.models import (
     CanonicalTPCoverage,
-    GraderOutput,
     GradeSubmitInput,
     InputIssueID,
     IssueCoverageEntry,
@@ -20,6 +19,7 @@ from adgn.props.grader.models import (
     TPCoverageEntry,
     TruePositiveID,
 )
+from adgn.props.grader.persistence import grade_submit_input_to_db
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import TruePositiveOccurrence
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
@@ -57,7 +57,8 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         summary="Test grading",
     )
 
-    grader_output = GraderOutput(grade=grade)
+    # Convert to DB format
+    grader_output_db = grade_submit_input_to_db(grade)
 
     with get_session() as session:
         # Insert snapshot
@@ -118,7 +119,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             critique_id=critique_id,
             model="test-grader-model",
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=grader_output,
+            output=grader_output_db,
         )
         session.add(grader_run)
         session.commit()

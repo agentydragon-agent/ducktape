@@ -19,7 +19,7 @@ from adgn.props.db.models import (
     Snapshot,
     TruePositive,
 )
-from adgn.props.db.session import check_connection, get_session, init_db, recreate_database
+from adgn.props.db.session import check_connection, dispose_db, get_session, init_db, recreate_database
 from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_db
 
 __all__ = [
@@ -34,6 +34,7 @@ __all__ = [
     "SyncStats",
     "TruePositive",
     "check_connection",
+    "dispose_db",
     "get_session",
     "init_db",
     "recreate_database",

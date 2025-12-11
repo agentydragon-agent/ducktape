@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from adgn.mcp._shared.constants import POLICY_PROPOSER_MOUNT_PREFIX
-from adgn.mcp.approval_policy.engine import CREATE_PROPOSAL_TOOL_NAME, CreateProposalArgs
+from adgn.mcp.approval_policy.engine import CreateProposalArgs
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import MakeCall, UiEndTurnCall
 
@@ -24,11 +24,10 @@ async def test_policy_proposal_reject_updates_ui(
     """E2E: a policy proposal appears; rejecting it removes it from Open Proposals without reload."""
 
     # Mock the agent to create a proposal via tool call, then end turn
+    # Tool name is stable: derived from function name "create_proposal"
     runner = make_step_runner(
         steps=[
-            MakeCall(
-                POLICY_PROPOSER_MOUNT_PREFIX, CREATE_PROPOSAL_TOOL_NAME, CreateProposalArgs(content=policy_allow_all)
-            ),
+            MakeCall(POLICY_PROPOSER_MOUNT_PREFIX, "create_proposal", CreateProposalArgs(content=policy_allow_all)),
             UiEndTurnCall(),
         ]
     )

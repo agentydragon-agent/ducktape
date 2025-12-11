@@ -1,6 +1,6 @@
 # MCP Server Sanitization
 
-**Status:** Phase 2.7 Complete ✅ | Phase 2.8-2.10 Planned (Eliminate Wiring, Constants, URI literals) | Phase 3-4 Future
+**Status:** Phase 2.10 Complete ✅ | Phase 2.9, 3-4 Future
 **Updated:** 2025-12-10
 
 ## Summary
@@ -11,13 +11,13 @@
 - ✅ Phase 1: All 21 MCP servers migrated to `EnhancedFastMCP` with typed tool attributes
 - ✅ Phase 2.1-2.6: Six compositor recipes implemented (Lint, Critic, Grader, GitCommit, Matrix, AgentContainer)
 - ✅ Phase 2.7: `PropertiesDockerWiring` returns `Mounted[T]`; OpenAI strict mode fix for lint models
+- ✅ Phase 2.8: `PropertiesDockerWiring` eliminated; replaced with `PropertiesDockerCompositor` intermediate class
 - ✅ API improvement: `Compositor.mount_inproc()` now returns `Mounted[T]`
 - ✅ Infrastructure servers: Base `Compositor` auto-mounts `resources` and `compositor_meta`
 
 **Remaining:**
-- Phase 2.8: Replace `PropertiesDockerWiring` with compositor-based pattern
 - Phase 2.9: Eliminate mount prefix/tool name constants from `constants.py`
-- Phase 2.10: Resource URIs as server instance attributes (SSOT on servers)
+- Phase 2.10: Resource URIs as server instance attributes (SSOT on servers) - **Partially complete** (ContainerExecServer done, other servers remain)
 - Phase 3: Test fixture migration
 - Phase 4: Final cleanup & validation
 
@@ -183,43 +183,259 @@ class MyCompositor(Compositor):
 
 ## Remaining Work
 
-### Phase 2.8: Eliminate `PropertiesDockerWiring` (Future)
+### Phase 2.8: Eliminate `PropertiesDockerWiring` ✅ Complete
 
-**Goal:** Replace the `PropertiesDockerWiring` helper with a compositor layer/module/subclass that directly mounts the Docker server.
+**Status:** ✅ Complete - Implementation matches plan
 
-**Current pattern:**
+**Goal:** Replace the `PropertiesDockerWiring` helper with a compositor-based pattern that directly handles Docker server mounting.
+
+#### What PropertiesDockerWiring Currently Does
+
+`PropertiesDockerWiring` is a dataclass that encapsulates:
+1. **Docker configuration**: Image, binds, environment, working_dir, network mode
+2. **Server factory**: `Callable[[], ContainerExecServer]` that creates the Docker exec server
+3. **Mounting logic**: `attach(compositor)` method that mounts the server and returns `Mounted[T]`
+
+**Current usage pattern:**
 ```python
-# Separate wiring object manages Docker server
-wiring = PropertiesDockerWiring(...)
-runtime = await wiring.attach(compositor)
-```
+# Setup: Create wiring object with Docker config
+wiring = properties_docker_spec(
+    workspace_root=Path("/workspace"),
+    docker_client=docker_client,
+    mount_properties=True,
+    db_conn=DbConnectionConfig(...),
+)
 
-**Target pattern:**
-```python
-# Compositor subclass handles Docker mounting directly
-class PropsCompositor(Compositor):
+# Compositor: Pass wiring to constructor, attach in __aenter__
+class CriticCompositor(Compositor):
     runtime: Mounted[ContainerExecServer]
+    critic_submit: Mounted[CriticSubmitServer]
+
+    def __init__(self, wiring: PropertiesDockerWiring, critic_state: CriticSubmitState):
+        super().__init__()
+        self._wiring = wiring
+        self._critic_state = critic_state
 
     async def __aenter__(self):
         await super().__aenter__()
-        self.runtime = await self.mount_inproc("runtime", ContainerExecServer(...), pinned=True)
+        # Mount Docker server via wiring
+        self.runtime = await self._wiring.attach(self)
+        # Mount additional task-specific servers
+        self.critic_submit = await self.mount_inproc("critic_submit", CriticSubmitServer(self._critic_state), pinned=True)
         return self
 ```
 
-**Rationale:**
-- Eliminates intermediate "wiring" concept
-- More consistent with compositor pattern used elsewhere
-- Direct compositor control over server lifecycle
-- Simplifies type flow (no need to pass wiring around)
+#### What Will Become of It
+
+The wiring concept will be **eliminated** in favor of an **intermediate compositor class** that centralizes Docker runtime mounting.
+
+**Compositor hierarchy:**
+1. **Base Compositor** - Auto-mounts `resources`, `compositor_meta`
+2. **PropertiesDockerCompositor** (new intermediate class) - Mounts Docker runtime
+3. **App-specific compositors** (Critic, Grader, Lint) - Mount task-specific servers
+
+**Target pattern:**
+```python
+# New intermediate class (replaces PropertiesDockerWiring)
+class PropertiesDockerCompositor(Compositor):
+    """Base compositor for properties tasks - handles Docker runtime mounting."""
+
+    runtime: Mounted[ContainerExecServer]
+
+    def __init__(
+        self,
+        workspace_root: Path,
+        docker_client: aiodocker.Docker,
+        *,
+        mount_properties: bool = True,
+        db_conn: DbConnectionConfig | None = None,
+    ):
+        super().__init__()
+        self._workspace_root = workspace_root
+        self._docker_client = docker_client
+        self._mount_properties = mount_properties
+        self._db_conn = db_conn
+
+    async def __aenter__(self):
+        await super().__aenter__()  # Mounts resources, compositor_meta
+
+        # Mount Docker runtime (shared by all properties compositors)
+        docker_server = self._create_docker_server()
+        self.runtime = await self.mount_inproc("runtime", docker_server, pinned=True)
+
+        return self
+
+    def _create_docker_server(self) -> ContainerExecServer:
+        """Create ContainerExecServer with standard properties configuration."""
+        binds = self._build_binds()
+        env = self._build_container_env()
+
+        return ContainerExecServer(
+            ContainerOptions(
+                image=PROPERTIES_DOCKER_IMAGE,
+                working_dir=WORKING_DIR,
+                binds=binds,
+                environment=env,
+                ephemeral=True,
+                network_mode="none",
+            ),
+            self._docker_client,
+        )
+
+    def _build_binds(self) -> list[str]:
+        """Build Docker volume binds."""
+        binds = [f"{self._workspace_root}:/workspace:ro"]
+        if self._mount_properties:
+            props_root = get_properties_root()
+            binds.append(f"{props_root}:/props:ro")
+        return binds
+
+    def _build_container_env(self) -> dict[str, str]:
+        """Build container environment variables."""
+        env = {
+            "XDG_CACHE_HOME": "/tmp",
+            "RUFF_CACHE_DIR": "/tmp/.ruff_cache",
+            # ... standard tool cache vars
+        }
+        if self._db_conn:
+            env.update({
+                "PGHOST": self._db_conn.host,
+                "PGPORT": str(self._db_conn.port),
+                # ... other PG vars
+            })
+        return env
+
+
+# App-specific compositor: just add task-specific servers
+class CriticCompositor(PropertiesDockerCompositor):
+    """Critic compositor - adds critic_submit server to Docker runtime."""
+
+    critic_submit: Mounted[CriticSubmitServer]
+
+    def __init__(
+        self,
+        workspace_root: Path,
+        docker_client: aiodocker.Docker,
+        critic_state: CriticSubmitState,
+        *,
+        mount_properties: bool = True,
+        db_conn: DbConnectionConfig | None = None,
+    ):
+        super().__init__(workspace_root, docker_client, mount_properties=mount_properties, db_conn=db_conn)
+        self._critic_state = critic_state
+
+    async def __aenter__(self):
+        await super().__aenter__()  # Mounts resources, compositor_meta, runtime
+
+        # Mount task-specific server
+        self.critic_submit = await self.mount_inproc(
+            "critic_submit",
+            CriticSubmitServer(self._critic_state),
+            pinned=True
+        )
+
+        return self
+```
+
+#### How to Compose Multiple Servers
+
+**Inheritance hierarchy pattern:**
+
+1. **Compositor** (base) → Auto-mounts `resources`, `compositor_meta`
+2. **PropertiesDockerCompositor** (intermediate) → Mounts `runtime` (Docker server)
+3. **Task-specific compositors** (Critic, Grader, Lint) → Mount task-specific servers only
+
+**All three properties compositors inherit from PropertiesDockerCompositor:**
+
+**Critic compositor** (inherits runtime, adds critic_submit):
+```python
+class CriticCompositor(PropertiesDockerCompositor):
+    critic_submit: Mounted[CriticSubmitServer]
+
+    def __init__(self, workspace_root, docker_client, critic_state, **kwargs):
+        super().__init__(workspace_root, docker_client, **kwargs)
+        self._critic_state = critic_state
+
+    async def __aenter__(self):
+        await super().__aenter__()  # Gets: resources, compositor_meta, runtime
+        self.critic_submit = await self.mount_inproc("critic_submit", CriticSubmitServer(self._critic_state), pinned=True)
+        return self
+```
+
+**Grader compositor** (inherits runtime, adds grader_submit):
+```python
+class GraderCompositor(PropertiesDockerCompositor):
+    grader_submit: Mounted[GraderSubmitServer]
+
+    def __init__(self, workspace_root, docker_client, grader_state, **kwargs):
+        super().__init__(workspace_root, docker_client, **kwargs)
+        self._grader_state = grader_state
+
+    async def __aenter__(self):
+        await super().__aenter__()  # Gets: resources, compositor_meta, runtime
+        self.grader_submit = await self.mount_inproc("grader_submit", GraderSubmitServer(self._grader_state), pinned=True)
+        return self
+```
+
+**Lint compositor** (inherits runtime, adds lint_submit):
+```python
+class LintIssueCompositor(PropertiesDockerCompositor):
+    lint_submit: Mounted[LintSubmitServer]
+
+    def __init__(self, workspace_root, docker_client, lint_state, **kwargs):
+        super().__init__(workspace_root, docker_client, **kwargs)
+        self._lint_state = lint_state
+
+    async def __aenter__(self):
+        await super().__aenter__()  # Gets: resources, compositor_meta, runtime
+        self.lint_submit = await self.mount_inproc("lint_submit", LintSubmitServer(self._lint_state), pinned=True)
+        return self
+```
+
+**Key benefits:**
+- **Docker logic centralized**: All three compositors share the same Docker setup via inheritance
+- **No duplication**: `_create_docker_server()`, `_build_binds()`, `_build_container_env()` live in one place
+- **Clear hierarchy**: Compositor → PropertiesDockerCompositor → (Critic|Grader|Lint)
+- **Type safety**: All servers are pinned, inproc, with typed `Mounted[T]` attributes
+- **Consistent prefixes**: `runtime` for Docker, `<task>_submit` for task-specific servers
+
+#### Rationale
+
+- **Eliminates wiring object**: Docker mounting logic moves into compositor hierarchy
+- **Centralized Docker setup**: All three compositors share the same base class
+- **Proper inheritance**: Clear three-level hierarchy (Compositor → PropertiesDockerCompositor → Task-specific)
+- **No duplication**: Docker config, binds, env building lives in one place
+- **Type safety preserved**: All mounts remain strongly typed via `Mounted[T]`
+- **Follows compositor pattern**: Consistent with agent/matrix/commit compositors
+- **Clear responsibilities**: Base compositor handles Docker, subclasses handle task-specific concerns
+
+#### Definition of Done (DoD)
+
+**Phase 2.8 complete when:**
+1. ✅ `PropertiesDockerCompositor` class created (new intermediate compositor)
+2. ✅ `PropertiesDockerWiring` class deleted
+3. ✅ `properties_docker_spec()` function deleted (no longer needed)
+4. ✅ All compositors (Critic, Grader, Lint) inherit from `PropertiesDockerCompositor`
+5. ✅ All compositors only mount task-specific servers (runtime inherited)
+6. ✅ Docker server creation logic (`_create_docker_server`, `_build_binds`, `_build_container_env`) lives only in `PropertiesDockerCompositor`
+7. ✅ All tests updated to use new compositor API
+8. ✅ No references to `wiring.attach()` in codebase
+9. ✅ Mypy passes on all modified files
+10. ✅ All props tests pass
 
 **Affected files:**
-- `src/adgn/props/docker_env.py` - Replace with compositor factory/subclass
-- `src/adgn/props/lint_issue.py` - Use new compositor base
-- `src/adgn/props/critic/critic.py` - Use new compositor base
-- `src/adgn/props/grader/grader.py` - Use new compositor base
-- Bootstrap helpers - May need adjustment
+- `src/adgn/props/docker_env.py` - Add PropertiesDockerCompositor, delete PropertiesDockerWiring
+- `src/adgn/props/critic/critic.py` - CriticCompositor inherits from PropertiesDockerCompositor
+- `src/adgn/props/grader/grader.py` - GraderCompositor inherits from PropertiesDockerCompositor
+- `src/adgn/props/lint_issue.py` - LintIssueCompositor inherits from PropertiesDockerCompositor
+- `src/adgn/props/prompt_optimize/prompt_optimizer.py` - Update callers (pass Docker config directly)
+- `src/adgn/props/cli/shared.py` - Update CLI wiring to create compositors directly
+- All test files using these compositors
 
-### Phase 2.9: Eliminate Mount Prefix/Tool Name Constants (Future)
+### Phase 2.9: Eliminate Mount Prefix/Tool Name Constants (In Progress)
+
+**Status:** 🔄 Partially Started - Limited progress, needs refactoring strategy
+**Updated:** 2025-12-10
 
 **Goal:** Remove server mount prefixes and tool name constants from `constants.py`, accessing them only through typed server/mount attributes.
 
@@ -274,12 +490,61 @@ SEATBELT_EXEC_MOUNT_PREFIX = "seatbelt_exec"
 **Move to server modules:**
 - URI format strings (e.g., `COMPOSITOR_META_STATE_URI_FMT`) → move to `compositor/meta.py` or respective server module
 
+**Progress so far:**
+- ✅ `auto_attach.py` - Inlined DEFAULT_AUTO_SERVER_NAMES tuple (literals acceptable for filtering)
+- ✅ `agent/runtime/container.py` - Removed SEATBELT_EXEC_MOUNT_PREFIX (uses default from helper)
+- ✅ `approval_policy/clients.py` - Removed unused local aliases
+
+**Files requiring refactoring (initialization order reorganization):**
+- `agent/server/reducer.py` - UI tool name checks
+  - **Analysis:** `reduce_ui_state()` called from `AgentSession._apply_ui_event()` and `history.py`
+  - `AgentSession` has `approval_engine` but not compositor
+  - **Proposed refactor:** Reorganize initialization order to mount UI server first, then pass UI tool names to reducer callers
+  - **Pattern:** `reduce_ui_state(state, evt, ui_send_tool_name, ui_end_tool_name)` or store on AgentSession
+  - **Feasibility:** MEDIUM - requires initialization order change but no major architectural refactoring
+- `agent/policies/default_policy.py` - Standalone policy program
+  - **Analysis:** Executes in Docker isolation, no compositor available
+  - **Recommendation:** Constants acceptable here (document rationale)
+- `mcp/compositor/clients.py` - CompositorAdminClient
+  - **Analysis:** Created in `AgentContainer` (container.py:515, 567, 573) which HAS `self._compositor`
+  - **Feasibility:** HIGH - can easily receive admin server instance
+  - **Proposed refactor:** `CompositorAdminClient(client, admin_server: Mounted[AdminServer])`
+  - Call site: `CompositorAdminClient(self._compositor_client, self._compositor.compositor_admin)`
+- `approval_policy/engine.py` - Template rendering, test tool names
+  - **Analysis:** Two uses:
+    1. `_load_instructions()` - renders template with `RUNTIME_MOUNT_PREFIX` (called during init, before mounts)
+    2. `self_check()` - constructs test tool name for validation
+  - **Recommendation:** Keep constants (PolicyEngine created before servers mounted, test data usage)
+- Tests - Many test files reference constants
+
+**Files with compositor access (can be updated immediately):**
+- `mcp/compositor/server.py` - Docstrings and auto-mount logic
+- `mcp/ui/server.py` - attach_ui helper
+- `mcp/runtime/server.py` - attach_runtime helper
+
 **Affected areas:**
 - All compositors that reference these constants
 - Bootstrap helpers that build tool names
-- Test fixtures that mock mounts
+- Test fixtures that mock mounts (~20-30 files)
 
-### Phase 2.10: Resources as Typed Server Attributes (Future)
+#### Definition of Done (DoD)
+
+**Phase 2.9 complete when:**
+1. ✅ All `*_MOUNT_PREFIX` constants deleted from `constants.py`
+2. ✅ All `*_SERVER_NAME` constants deleted from `constants.py`
+3. ✅ `COMPOSITOR_ADMIN_SERVER_NAME` moved to `compositor/admin.py` or eliminated
+4. ✅ All mount prefix access via `compositor.server_mount.prefix` (from `Mounted[T]`)
+5. ✅ All tool name access via `compositor.server_mount.server.tool.name`
+6. ✅ Bootstrap helpers use `Mounted[T]` attributes (no string constants)
+7. ✅ Only filesystem/process constants remain in `constants.py`:
+   - `WORKING_DIR = Path("/workspace")`
+   - `SLEEP_FOREVER_CMD = ["/bin/sh", "-lc", "sleep infinity"]`
+8. ✅ Mypy passes on all modified files
+9. ✅ All tests pass (agent + mcp + props)
+
+### Phase 2.10: Resources as Typed Server Attributes (In Progress)
+
+**Status:** 🔄 In Progress - ContainerExecServer complete, other servers remain
 
 **Goal:** Make resources typed instance attributes on servers, parallel to how `FunctionTool` works for tools.
 
@@ -298,59 +563,90 @@ content = await client.read_resource(CONTAINER_INFO_URI)
 ```python
 # Server class defines resource attributes using @resource decorator
 # (parallel to @tool decorator returning FunctionTool)
+from typing import cast
+from fastmcp.resources import FunctionResource, FunctionResourceTemplate
+
 class ContainerExecServer(EnhancedFastMCP):
-    # Typed resource attributes
-    container_info: Resource  # Analogous to FunctionTool
+    # Typed resource attributes (use _resource suffix to distinguish from function)
+    container_info_resource: FunctionResource  # Static URI (analogous to FunctionTool)
 
     def __init__(self, ...):
         super().__init__(...)
 
-        # @resource decorator returns Resource object (like @tool returns FunctionTool)
-        @self.resource("resource://runtime/container/info")
-        def container_info() -> str:
+        # @resource decorator returns FunctionResource for static URIs
+        # Need cast because decorator signature is Resource | ResourceTemplate
+        async def container_info_json(ctx: Context) -> dict[str, Any]:
             """Docker container information"""
-            return json.dumps(self._get_container_info())
+            return self._get_container_info()
 
-        self.container_info = container_info
+        container_info_json.__annotations__["ctx"] = Context
+        self.container_info_resource = cast(
+            FunctionResource,
+            self.resource(
+                "resource://runtime/container/info",
+                mime_type="application/json",
+                name="container.info",
+                title="Container session metadata",
+                description="Docker container details for this session",
+            )(container_info_json),
+        )
 
 class CompositorMetaServer(EnhancedFastMCP):
-    # ResourceTemplate for parameterized URIs (contains {param} placeholders)
-    server_state: ResourceTemplate
+    # Typed resource attributes
+    servers_list_resource: FunctionResource  # Static URI
+    server_state_resource: FunctionResourceTemplate  # Parameterized URI (contains {param} placeholders)
 
     def __init__(self, ...):
         super().__init__(...)
 
-        # Parameterized resource URI → returns ResourceTemplate
-        @self.resource("resource://compositor-meta/servers/{server}/state")
-        def server_state(server: str) -> str:
+        # Static resource
+        async def servers_list() -> list[str]:
+            """List all servers"""
+            return list(self._compositor.servers.keys())
+
+        self.servers_list_resource = cast(
+            FunctionResource,
+            self.resource("compositor://servers")(servers_list),
+        )
+
+        # Parameterized resource URI → returns FunctionResourceTemplate
+        async def server_state(server: str) -> str:
             """Server state for a given server"""
             return json.dumps(self._get_server_state(server))
 
-        self.server_state = server_state
+        self.server_state_resource = cast(
+            FunctionResourceTemplate,
+            self.resource("compositor://{server}/state")(server_state),
+        )
 
 # Usage - access via typed attribute
-uri = runtime_server.container_info.uri  # str: "resource://runtime/container/info"
-name = runtime_server.container_info.name  # str: "container_info"
 
-# For parameterized resources (ResourceTemplate)
-uri_template = meta_server.server_state.uri_template  # str: "resource://compositor-meta/servers/{server}/state"
+# Static resources: use .uri
+uri = runtime_server.container_info_resource.uri  # str: "resource://runtime/container/info"
+name = runtime_server.container_info_resource.name  # str: "container.info"
+
+# Parameterized resources: use .uri_template
+uri_template = meta_server.server_state_resource.uri_template  # str: "compositor://{server}/state"
 # Can match specific URIs
-params = meta_server.server_state.matches("resource://compositor-meta/servers/foo/state")
+params = meta_server.server_state_resource.matches("compositor://foo/state")
 # params = {"server": "foo"}
 
 # From compositor (via Mounted[T])
-uri = compositor.runtime.server.container_info.uri
-uri_template = compositor.compositor_meta.server.server_state.uri_template
+uri = compositor.runtime.server.container_info_resource.uri
+uri_template = compositor.compositor_meta.server.server_state_resource.uri_template
 ```
 
 **Rationale:**
-- **Parallel to tools**: `@self.resource()` decorator returns `Resource | ResourceTemplate` (like `@self.tool()` returns `FunctionTool`)
-- **Type safety**: `Resource` / `ResourceTemplate` types, not raw strings
-- **Single source of truth**: URI lives with server instance, not in constants
-- **Discoverability**: IDE autocomplete shows available resources
-- **No string literals**: Access via `server.my_resource.uri`
+- **Parallel to tools**: `@self.resource()` decorator returns `FunctionResource` or `FunctionResourceTemplate` (like `@self.tool()` returns `FunctionTool`)
+- **Type safety**: Precise types (`FunctionResource` for static, `FunctionResourceTemplate` for parameterized), not raw strings
+- **Single source of truth**: URI/template lives with server instance, not in constants
+- **Discoverability**: IDE autocomplete shows available resources and their types
+- **No string literals**: Access via `server.my_resource_resource.uri` or `.uri_template`
 - **Consistent pattern**: Same decorator approach for both tools and resources
 - **FastMCP native**: Uses built-in FastMCP resource API (no custom infrastructure needed)
+- **Cast needed**: Decorator signature is `Resource | ResourceTemplate`, cast to specific subclass based on whether URI is parameterized
+  - Static URI (`"resource://foo"`) → cast to `FunctionResource` → access via `.uri`
+  - Parameterized URI (`"resource://foo/{id}"`) → cast to `FunctionResourceTemplate` → access via `.uri_template`
 
 **Example URIs to migrate:**
 ```python
@@ -370,11 +666,24 @@ POLICY_RESOURCE_URI = "resource://approval-policy/policy.py"
 UI_STATUS_URI = "resource://ui/status"
 ```
 
-**Affected areas:**
-- Server implementations (add URI properties/methods)
-- Code that reads resources (use server instance URIs)
-- Bootstrap helpers that build resource calls
-- Resource subscription logic
+**Implementation notes:**
+- Use `_resource` suffix for resource attributes to distinguish from function names
+- Type as `FunctionResource` (the actual return type from decorator)
+- Use `cast(FunctionResource, ...)` because decorator signature is `Resource | ResourceTemplate`
+- Access via `server.container_info_resource.uri` pattern
+
+**Example implementation (ContainerExecServer):**
+- Added `container_info_resource: FunctionResource` instance attribute
+- Stashed result of `@self.resource()` decorator with cast
+- Removed `CONTAINER_INFO_URI` class constant (no longer needed)
+- Added `AgentContainer.runtime_server` property to expose server instance
+- Updated `status_shared.py` to access via `c.runtime_server.container_info_resource.uri`
+
+**Files modified:**
+- `src/adgn/mcp/exec/docker/server.py` - Added resource attribute pattern
+- `src/adgn/agent/runtime/container.py` - Added `runtime_server` property
+- `src/adgn/agent/server/status_shared.py` - Updated to use server instance URI
+- `src/adgn/props/lint_issue.py` - Already using `compositor.runtime.server.container_info_resource.uri`
 
 ### Phase 3: Test Fixture Migration (3-5h)
 - Update test fixtures to use compositor subclasses where beneficial

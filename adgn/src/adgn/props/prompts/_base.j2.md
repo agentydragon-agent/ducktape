@@ -53,9 +53,9 @@ Identify occurrences by exact 1-based line ranges that manifest (or do not manif
 
 ## Environment
 
-- Workspace: mounted read-only at {{ wiring.working_dir }} (analysis only)
+- Workspace: mounted read-only at {{ working_dir }} (analysis only)
 - Scratch/caches/logs: write under /tmp (do not modify files under the workspace)
-- Property definitions: {% if wiring.definitions_container_dir %}mounted read-only at {{ wiring.definitions_container_dir }}{% else %}not mounted{% endif %}
+- Property definitions: {% if definitions_container_dir %}mounted read-only at {{ definitions_container_dir }}{% else %}not mounted{% endif %}
 
 {% if header_schema_names %}
 

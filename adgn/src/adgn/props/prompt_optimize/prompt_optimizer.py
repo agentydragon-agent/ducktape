@@ -22,16 +22,17 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, Literal
+from typing import TYPE_CHECKING, Literal, cast
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
-    from adgn.mcp._shared.mounted import Mounted
     from adgn.mcp.resources.server import ResourcesServer
 
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
+from fastmcp.resources import FunctionResource
+from fastmcp.tools import FunctionTool
 from pydantic import Field, model_validator
 
 from adgn.agent.agent import Agent
@@ -40,7 +41,7 @@ from adgn.agent.handler import SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsExceededError
 from adgn.mcp._shared.constants import WORKING_DIR
-from adgn.mcp.compositor.server import Compositor
+from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
@@ -57,7 +58,7 @@ from adgn.props.db.config import get_production_config
 from adgn.props.db.models import GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.sync import get_specimens_base_path, sync_issues_to_db, sync_snapshots_to_db
-from adgn.props.docker_env import properties_docker_spec
+from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
@@ -71,9 +72,6 @@ from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
-# Server name and resource URI for this server
-PROMPT_EVAL_SERVER_NAME: Final[str] = "prompt_eval"
-OPTIMIZATION_RUN_ID_URI: Final[str] = "resource://prompt_eval/prompt_optimization_run_id"
 
 # Common error message advice
 _AGENT_STUCK_ADVICE = "Agent likely stuck in a loop, ran out of tokens, or not following instructions."
@@ -102,7 +100,10 @@ def _trace_query_advice(*, snapshot_slug: str | None = None, critique_id: str | 
 
 
 def make_po_bootstrap_calls(
-    builder: TypedBootstrapBuilder, resources: Mounted[ResourcesServer], runtime: Mounted[ContainerExecServer]
+    builder: TypedBootstrapBuilder,
+    resources: Mounted[ResourcesServer],
+    runtime: Mounted[ContainerExecServer],
+    prompt_eval: Mounted[PromptEvalServer],
 ) -> list[FunctionCallItem]:
     """Build bootstrap calls for prompt optimizer: reads PO run ID and critic template.
 
@@ -110,10 +111,15 @@ def make_po_bootstrap_calls(
         builder: Bootstrap builder for generating typed tool calls
         resources: Mounted resources server (comp.resources)
         runtime: Mounted runtime server (comp.runtime)
+        prompt_eval: Mounted prompt eval server
     """
     return [
         read_resource_call(
-            builder, resources, server=PROMPT_EVAL_SERVER_NAME, uri=OPTIMIZATION_RUN_ID_URI, max_bytes=256
+            builder,
+            resources,
+            server=prompt_eval.prefix,
+            uri=prompt_eval.server.optimization_run_id_resource.uri,
+            max_bytes=256,
         ),
         # Read critic template structure from container to show prompt optimizer how its prompts will be used
         docker_exec_call_mounted(
@@ -230,31 +236,19 @@ class RunGraderInput(OpenAIStrictModeBaseModel):
 class RunGraderOutput(OpenAIStrictModeBaseModel):
     """Output for run_grader tool - DB ID and measured recall."""
 
-    grader_run_id: UUID = Field(description="grader_runs.id - Query grader_runs table for full output.grade.")
+    grader_run_id: UUID = Field(description="grader_runs.id - Query grader_runs table for full output.")
     recall: float = Field(description="Measured recall for this critique (0.0-1.0)")
     # cumulative_cost_usd: float = Field(
     #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
     # )
 
 
-async def build_server(
-    *,
-    critic_client: OpenAIModelProto,
-    grader_client: OpenAIModelProto,
-    docker_client: aiodocker.Docker,
-    hydrator: SnapshotHydrator,
-    name: str = "prompt_eval",
-    prompt_optimization_run_id: UUID,
-    workspace_root: Path,
-    budget_limit: float,
-    verbose: bool = False,
-) -> EnhancedFastMCP:
-    """Build prompt_eval server with minimal critic/grader execution tools.
+class PromptEvalServer(EnhancedFastMCP):
+    """Prompt eval MCP server with typed resource/tool access.
 
     Provides MCP tools for triggering critic and grader runs:
     - upsert_prompt(file_path) -> prompt_sha256
-    - run_critic_all_files(snapshot_slug, prompt_sha256) -> critic_run_id, critique_id
-    - run_critic_specific_files(snapshot_slug, paths, prompt_sha256) -> critic_run_id, critique_id
+    - run_critic(snapshot_slug, scope_kind, scope_paths, prompt_sha256) -> critic_run_id, critique_id
     - run_grader(critique_id) -> grader_run_id
 
     Tools return only DB IDs. Agent queries database for results, metrics, costs.
@@ -305,285 +299,299 @@ async def build_server(
     - Least invasive, doesn't modify agent internals
     - Can evolve to Option 1 if warnings aren't effective
     - Option 3 as last resort if warnings fail
-
-    Args:
-        critic_client: OpenAI client for running critic evaluations
-        grader_client: OpenAI client for running grader evaluations
-        hydrator: Snapshot hydrator for source code extraction
-        name: MCP server name
-        prompt_optimization_run_id: Optional ID of the optimization run for tracking prompts
-        workspace_root: Working directory for reading prompt files
-        verbose: Verbose output flag
-
-    Returns:
-        MCP server with upsert_prompt, run_critic and run_grader tools
     """
-    # Ensure snapshots and issues tables are synced on server startup
-    base_path = get_specimens_base_path()
-    with get_session() as session:
-        sync_snapshots_to_db(session, base_path)
-        sync_issues_to_db(session, base_path)
 
-    mcp = EnhancedFastMCP(
-        name,
-        instructions=(
-            "Prompt optimization tools: save prompts to database (upsert_prompt), "
-            "run critic agents on training examples (run_critic), "
-            "grade critiques against ground truth (run_grader). "
-            "Query the database for results, costs, and metrics."
-        ),
-    )
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    optimization_run_id_resource: FunctionResource
 
-    @mcp.resource(OPTIMIZATION_RUN_ID_URI)
-    async def get_prompt_optimization_run_id() -> str:
-        """Get the prompt optimization run ID for this session.
+    # Tool references (assigned in __init__)
+    upsert_prompt_tool: FunctionTool
+    run_critic_tool: FunctionTool
+    run_grader_tool: FunctionTool
 
-        Use this UUID to query costs via sql_po_run_costs (replace <po_run_id> placeholder).
+    def __init__(
+        self,
+        *,
+        critic_client: OpenAIModelProto,
+        grader_client: OpenAIModelProto,
+        docker_client: aiodocker.Docker,
+        hydrator: SnapshotHydrator,
+        name: str = "prompt_eval",
+        prompt_optimization_run_id: UUID,
+        workspace_root: Path,
+        budget_limit: float,
+        verbose: bool = False,
+    ):
+        """Create prompt eval server bound to clients and configuration.
+
+        Args:
+            critic_client: OpenAI client for running critic evaluations
+            grader_client: OpenAI client for running grader evaluations
+            docker_client: Async Docker client for container operations
+            hydrator: Snapshot hydrator for source code extraction
+            name: MCP server name
+            prompt_optimization_run_id: ID of the optimization run for tracking prompts
+            workspace_root: Working directory for reading prompt files
+            budget_limit: Dollar budget limit for optimization (currently not enforced)
+            verbose: Verbose output flag
         """
-        return str(prompt_optimization_run_id)
-
-    def query_cumulative_cost() -> float:
-        """Query cumulative cost for this optimization session.
-
-        Returns:
-            Total cumulative cost in USD for all critic/grader runs so far.
-        """
+        # Ensure snapshots and issues tables are synced on server startup
+        base_path = get_specimens_base_path()
         with get_session() as session:
-            query = qb.po_run_costs(prompt_optimization_run_id)
-            result = session.execute(query).fetchall()
-            total: float = sum(row.cost_usd for row in result if row.cost_usd is not None)
-            return total
+            sync_snapshots_to_db(session, base_path)
+            sync_issues_to_db(session, base_path)
 
-    @mcp.flat_model()
-    async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
-        """Save a prompt into the Postgres database. When you want to test or eval a prompt, first make sure it's in the db.
+        super().__init__(
+            name,
+            instructions=(
+                "Prompt optimization tools: save prompts to database (upsert_prompt), "
+                "run critic agents on training examples (run_critic), "
+                "grade critiques against ground truth (run_grader). "
+                "Query the database for results, costs, and metrics."
+            ),
+        )
 
-        Workflow:
-        1. Write prompt to file using docker_exec (e.g., cat > /workspace/prompt-v1.txt << 'EOF')
-        2. Call this tool with the container file path (e.g., /workspace/prompt-v1.txt)
-        3. Tool reads from mapped host path, hashes the content, and stores in database
-        4. Use returned SHA256 in run_critic calls
+        # Store parameters for use in tools
+        self._critic_client = critic_client
+        self._grader_client = grader_client
+        self._docker_client = docker_client
+        self._hydrator = hydrator
+        self._prompt_optimization_run_id = prompt_optimization_run_id
+        self._workspace_root = workspace_root
+        self._budget_limit = budget_limit
+        self._verbose = verbose
 
-        Returns SHA256 hash for use in run_critic tool.
-        """
-        # Map container path to host path
-        # Container paths like /workspace/prompt-v1.txt map to workspace_root/prompt-v1.txt
-        container_path = Path(payload.file_path)
-        working_dir_str = str(WORKING_DIR) + "/"
-        if not str(container_path).startswith(working_dir_str):
-            raise ValueError(f"File path must be in {WORKING_DIR}/ directory, got: {payload.file_path}")
+        # Register resource and stash the result
+        async def get_prompt_optimization_run_id() -> str:
+            """Get the prompt optimization run ID for this session.
 
-        relative_path = str(container_path).removeprefix(working_dir_str)
-        host_path = workspace_root / relative_path
+            Use this UUID to query costs via sql_po_run_costs (replace <po_run_id> placeholder).
+            """
+            return str(prompt_optimization_run_id)
 
-        if not host_path.exists():
-            raise FileNotFoundError(f"Prompt file not found: {host_path}")
+        self.optimization_run_id_resource = cast(
+            FunctionResource,
+            self.resource("resource://prompt_eval/prompt_optimization_run_id")(get_prompt_optimization_run_id),
+        )
 
-        # Read prompt text from host filesystem
-        prompt_text = host_path.read_text(encoding="utf-8")
+        # Register tools - names derived from function names
+        async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
+            """Save a prompt into the Postgres database. When you want to test or eval a prompt, first make sure it's in the db.
 
-        # Hash and upsert to database (with optional run ID for tracking)
-        prompt_sha256 = hash_and_upsert_prompt(prompt_text, prompt_optimization_run_id)
+            Workflow:
+            1. Write prompt to file using docker_exec (e.g., cat > /workspace/prompt-v1.txt << 'EOF')
+            2. Call this tool with the container file path (e.g., /workspace/prompt-v1.txt)
+            3. Tool reads from mapped host path, hashes the content, and stores in database
+            4. Use returned SHA256 in run_critic calls
 
-        return UpsertPromptOutput(prompt_sha256=prompt_sha256)
+            Returns SHA256 hash for use in run_critic tool.
+            """
+            # Map container path to host path
+            # Container paths like /workspace/prompt-v1.txt map to workspace_root/prompt-v1.txt
+            container_path = Path(payload.file_path)
+            working_dir_str = str(WORKING_DIR) + "/"
+            if not str(container_path).startswith(working_dir_str):
+                raise ValueError(f"File path must be in {WORKING_DIR}/ directory, got: {payload.file_path}")
 
-    @mcp.flat_model()
-    async def run_critic(payload: RunCriticToolInput) -> RunCriticOutput:
-        """Runs a critic agent on a snapshot to find code quality issues.
+            relative_path = str(container_path).removeprefix(working_dir_str)
+            host_path = workspace_root / relative_path
 
-        Scope modes:
-        - scope_kind="all": Review ALL files with ground truth issues (full snapshot review)
-          - REQUIRED for validation split
-          - More realistic evaluation (comprehensive codebase review)
-        - scope_kind="specific": Review only specified files (TRAIN split only)
-          - Files MUST EXACTLY MATCH a pre-defined scope from critic_scopes table
-          - Arbitrary file selections will be rejected
-          - Faster iteration for debugging specific failure patterns
+            if not host_path.exists():
+                raise FileNotFoundError(f"Prompt file not found: {host_path}")
 
-        IMPORTANT: When using scope_kind="specific", the scope_paths must match a known scope exactly.
-        Query available scopes with:
-          SELECT snapshot_slug, files FROM critic_scopes cs
-          JOIN snapshots s ON cs.snapshot_slug = s.slug
-          WHERE s.split = 'train' ORDER BY snapshot_slug;
+            # Read prompt text from host filesystem
+            prompt_text = host_path.read_text(encoding="utf-8")
 
-        The critic uses your specified prompt (via prompt_sha256) to analyze code and report issues.
-        Returns database IDs - query the database for results, costs, and execution traces.
+            # Hash and upsert to database (with optional run ID for tracking)
+            prompt_sha256 = hash_and_upsert_prompt(prompt_text, prompt_optimization_run_id)
 
-        Parameters:
-        - snapshot_slug: Which snapshot to review (e.g., "ducktape/2025-11-20-00")
-        - scope_kind: "all" or "specific"
-        - scope_paths: List of file paths (required when scope_kind="specific", must be None when "all").
-          Must exactly match a scope from critic_scopes table (order-independent).
-        - prompt_sha256: Which prompt to use (from upsert_prompt)
+            return UpsertPromptOutput(prompt_sha256=prompt_sha256)
 
-        Returns:
-        - critic_run_id: Query critic_runs table for full output (issues, costs, model)
-        - critique_id: Use with run_grader to evaluate against ground truth
+        self.upsert_prompt_tool = self.flat_model()(upsert_prompt)
 
-        Train/Valid Split Access (Anti-Cheating Design):
-        - TRAIN: Full access granted. Run on any scope. Query all details: critic_runs, critiques,
-          true_positives, false_positives tables. Use for debugging/iteration.
+        async def run_critic(payload: RunCriticToolInput) -> RunCriticOutput:
+            """Runs a critic agent on a snapshot to find code quality issues.
 
-        - VALID: Restricted access to prevent overfitting:
-          - Must use scope_kind="all" (full snapshot only)
-          - Individual run details HIDDEN by database Row-Level Security (RLS)
-          - Query validation results ONLY via valid_full_snapshot_grader_metrics view (aggregate metrics)
+            Scope modes:
+            - scope_kind="all": Review ALL files with ground truth issues (full snapshot review)
+              - REQUIRED for validation split
+              - More realistic evaluation (comprehensive codebase review)
+            - scope_kind="specific": Review only specified files (TRAIN split only)
+              - Files MUST EXACTLY MATCH a pre-defined scope from critic_scopes table
+              - Arbitrary file selections will be rejected
+              - Faster iteration for debugging specific failure patterns
 
-        This ensures validation recall is a trustworthy proxy for test performance.
-        """
-        critic_input = payload.to_critic_input()
+            IMPORTANT: When using scope_kind="specific", the scope_paths must match a known scope exactly.
+            Query available scopes with:
+              SELECT snapshot_slug, files FROM critic_scopes cs
+              JOIN snapshots s ON cs.snapshot_slug = s.slug
+              WHERE s.split = 'train' ORDER BY snapshot_slug;
 
-        # Check snapshot exists and enforce validation restrictions
-        # Extract known_scopes while session is open (avoid lazy loading after session closes)
-        known_scopes: list[frozenset[str]] = []
-        with get_session() as session:
-            db_snapshot = session.query(Snapshot).filter_by(slug=critic_input.snapshot_slug).first()
-            if db_snapshot is None:
-                raise ValueError(f"Snapshot '{critic_input.snapshot_slug}' not found in database")
+            The critic uses your specified prompt (via prompt_sha256) to analyze code and report issues.
+            Returns database IDs - query the database for results, costs, and execution traces.
 
-            # Validation split: must use scope_kind="all" (full snapshot)
-            if db_snapshot.split == "valid" and payload.scope_kind == "specific":
-                raise ValueError(
-                    f"Validation split snapshot '{critic_input.snapshot_slug}' must use scope_kind='all' "
-                    f"(full snapshot evaluation only). Cannot run on subset of files."
-                )
+            Train/Valid Split Access (Anti-Cheating Design):
+            - TRAIN: Full access granted. Run on any scope. Query all details: critic_runs, critiques,
+              true_positives, false_positives tables. Use for debugging/iteration.
 
-            # Extract known scopes from db_snapshot while session is still open
-            if payload.scope_kind == "specific":
-                for scope in db_snapshot.critic_scopes:
-                    known_scopes.append(frozenset(scope.files))
+            - VALID: Restricted access to prevent overfitting:
+              - Must use scope_kind="all" (full snapshot only)
+              - Individual run details HIDDEN by database Row-Level Security (RLS)
+              - Query validation results ONLY via valid_full_snapshot_grader_metrics view (aggregate metrics)
 
-        # Resolve files for prompt rendering
-        resolved_files = await resolve_critic_scope(snapshot_slug=critic_input.snapshot_slug, files=critic_input.files)
+            This ensures validation recall is a trustworthy proxy for test performance.
+            """
+            critic_input = payload.to_critic_input()
 
-        # Load and hydrate specimen for content_root
-        async with hydrator.hydrate(critic_input.snapshot_slug) as hydrated:
-            # Validate explicit files match a known scope (only for scope_kind="specific")
-            if payload.scope_kind == "specific":
-                # Validate that file list matches a known scope (order-independent)
-                requested_files_set = frozenset(str(f) for f in resolved_files)
+            # Check snapshot exists and enforce validation restrictions
+            # Extract known_scopes while session is open (avoid lazy loading after session closes)
+            known_scopes: list[frozenset[str]] = []
+            with get_session() as session:
+                db_snapshot = session.query(Snapshot).filter_by(slug=critic_input.snapshot_slug).first()
+                if db_snapshot is None:
+                    raise ValueError(f"Snapshot '{critic_input.snapshot_slug}' not found in database")
 
-                if requested_files_set not in known_scopes:
+                # Validation split: must use scope_kind="all" (full snapshot)
+                if db_snapshot.split == "valid" and payload.scope_kind == "specific":
                     raise ValueError(
-                        f"Files do not match any known scope for '{critic_input.snapshot_slug}'. "
-                        f"Requested: {sorted(requested_files_set)}. "
-                        f"Query available scopes: SELECT snapshot_slug, files FROM critic_scopes cs "
-                        f"JOIN snapshots s ON cs.snapshot_slug = s.slug WHERE s.split = 'train';"
+                        f"Validation split snapshot '{critic_input.snapshot_slug}' must use scope_kind='all' "
+                        f"(full snapshot evaluation only). Cannot run on subset of files."
                     )
 
-            # Execute critic run
-            try:
-                _critic_success, critic_run_id, critique_id = await execute_critic_run(
-                    input_data=critic_input,
-                    client=critic_client,
-                    docker_client=docker_client,
-                    content_root=hydrated.content_root,
-                    prompt_optimization_run_id=prompt_optimization_run_id,
-                    mount_properties=False,
-                    extra_handlers=(),
-                    verbose=verbose,
-                    max_turns=payload.max_turns,
-                )
-            except CriticExecutionError as e:
-                raise ToolError(
-                    f"Critic agent failed during execution: {e}\n\n"
-                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
-                ) from e
-            except CriticDidNotSubmitError as e:
-                raise ToolError(
-                    f"Critic agent did not call submit(): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
-                ) from e
-            except MaxTurnsExceededError as e:
-                raise ToolError(
-                    f"Critic agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
-                ) from e
+                # Extract known scopes from db_snapshot while session is still open
+                if payload.scope_kind == "specific":
+                    for scope in db_snapshot.critic_scopes:
+                        known_scopes.append(frozenset(scope.files))
 
-            if critique_id is None:
-                raise ToolError(
-                    f"Critic run completed but no critique was created. Query critic_runs with id={critic_run_id}."
-                )
+            # Resolve files for prompt rendering
+            resolved_files = await resolve_critic_scope(
+                snapshot_slug=critic_input.snapshot_slug, files=critic_input.files
+            )
 
-            return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
+            # Load and hydrate specimen for content_root
+            async with self._hydrator.hydrate(critic_input.snapshot_slug) as hydrated:
+                # Validate explicit files match a known scope (only for scope_kind="specific")
+                if payload.scope_kind == "specific":
+                    # Validate that file list matches a known scope (order-independent)
+                    requested_files_set = frozenset(str(f) for f in resolved_files)
 
-    @mcp.flat_model()
-    async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
-        """Given a critique produced by a critic, runs a grader agent to grade the critique against ground truth labels.
+                    if requested_files_set not in known_scopes:
+                        raise ValueError(
+                            f"Files do not match any known scope for '{critic_input.snapshot_slug}'. "
+                            f"Requested: {sorted(requested_files_set)}. "
+                            f"Query available scopes: SELECT snapshot_slug, files FROM critic_scopes cs "
+                            f"JOIN snapshots s ON cs.snapshot_slug = s.slug WHERE s.split = 'train';"
+                        )
 
-        Compares what the critic reported against what should have been found (ground truth).
-        Computes recall and detailed coverage information.
+                # Execute critic run
+                try:
+                    _critic_success, critic_run_id, critique_id = await execute_critic_run(
+                        input_data=critic_input,
+                        client=self._critic_client,
+                        docker_client=self._docker_client,
+                        content_root=hydrated.content_root,
+                        prompt_optimization_run_id=self._prompt_optimization_run_id,
+                        mount_properties=False,
+                        extra_handlers=(),
+                        verbose=self._verbose,
+                        max_turns=payload.max_turns,
+                    )
+                except CriticExecutionError as e:
+                    raise ToolError(
+                        f"Critic agent failed during execution: {e}\n\n"
+                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                    ) from e
+                except CriticDidNotSubmitError as e:
+                    raise ToolError(
+                        f"Critic agent did not call submit(): {e}\n\n"
+                        f"{_AGENT_STUCK_ADVICE}\n"
+                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                    ) from e
+                except MaxTurnsExceededError as e:
+                    raise ToolError(
+                        f"Critic agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
+                        f"{_AGENT_STUCK_ADVICE}\n"
+                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                    ) from e
 
-        Parameters:
-        - critique_id: The critique to grade (from run_critic's return value)
+                if critique_id is None:
+                    raise ToolError(
+                        f"Critic run completed but no critique was created. Query critic_runs with id={critic_run_id}."
+                    )
 
-        Returns:
-        - grader_run_id: Query grader_runs table for results
+                return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
 
-        Key fields in grader_runs.output JSONB (train split only):
-        - grade.recall: Fraction of ground-truth issues found (PRIMARY METRIC - optimize for this!)
-        - grade.reported_issue_ratios: Breakdown of what was reported (tp/fp/unlabeled ratios)
-        - grade.canonical_tp_coverage: Detailed per-issue coverage information
-        - grade.summary: High-level observations from the grader
+        self.run_critic_tool = self.flat_model()(run_critic)
 
-        Train/Valid Split Access (Anti-Cheating Design):
-        We EXPLICITLY let you read everything in train split, but HIDE validation details so you can
-        trust that validation metrics aren't gamed.
+        async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
+            """Given a critique produced by a critic, runs a grader agent to grade the critique against ground truth labels.
 
-        - TRAIN: Full access granted. Read all ground truth (true_positives, false_positives tables).
-          Query individual grader run details, execution traces, per-issue coverage breakdowns.
-          Example: SELECT output->'grade'->>'recall' FROM grader_runs WHERE id = '<grader_run_id>';
-          Use this for debugging why prompts succeed or fail on specific issues.
+            Compares what the critic reported against what should have been found (ground truth).
+            Computes recall and detailed coverage information.
 
-        - VALID: Restricted to prevent overfitting. Ground truth HIDDEN by RLS (true_positives/
-          false_positives queries return 0 rows). Individual grader_runs/critiques HIDDEN by RLS.
-          ONLY aggregate metrics visible via valid_full_snapshot_grader_metrics view.
-          Example: SELECT snapshot_slug, recall FROM valid_full_snapshot_grader_metrics;
+            Key fields in grader_runs.output JSONB (train split only):
+            - grade.recall: Fraction of ground-truth issues found (PRIMARY METRIC - optimize for this!)
+            - grade.reported_issue_ratios: Breakdown of what was reported (tp/fp/unlabeled ratios)
+            - grade.canonical_tp_coverage: Detailed per-issue coverage information
+            - grade.summary: High-level observations from the grader
 
-        This ensures validation recall is a trustworthy proxy for test performance. You cannot inspect
-        validation details to reverse-engineer answers.
+            Train/Valid Split Access (Anti-Cheating Design):
+            We EXPLICITLY let you read everything in train split, but HIDE validation details so you can
+            trust that validation metrics aren't gamed.
 
-        Use validation aggregates to measure generalization performance across all validation specimens.
-        """
-        # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
-        with get_session() as session:
-            try:
-                grader_run_id = await grade_critique_by_id(
-                    session=session,
-                    critique_id=payload.critique_id,
-                    client=grader_client,
-                    docker_client=docker_client,
-                    prompt_optimization_run_id=prompt_optimization_run_id,
-                    verbose=verbose,
-                    max_turns=payload.max_turns,
-                )
-            except GraderDidNotSubmitError as e:
-                raise ToolError(
-                    f"Grader agent did not call submit(): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
-                ) from e
-            except MaxTurnsExceededError as e:
-                raise ToolError(
-                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
-                ) from e
+            - TRAIN: Full access granted. Read all ground truth (true_positives, false_positives tables).
+              Query individual grader run details, execution traces, per-issue coverage breakdowns.
+              Example: SELECT output->'grade'->>'recall' FROM grader_runs WHERE id = '<grader_run_id>';
+              Use this for debugging why prompts succeed or fail on specific issues.
 
-            # Query recall from the grader run output
-            grader_run = session.get(DBGraderRun, grader_run_id)
-            if not grader_run:
-                raise ToolError(f"Grader run {grader_run_id} not found in database")
-            if not grader_run.output:
-                raise ToolError(f"Grader run {grader_run_id} has no output")
+            - VALID: Restricted to prevent overfitting. Ground truth HIDDEN by RLS (true_positives/
+              false_positives queries return 0 rows). Individual grader_runs/critiques HIDDEN by RLS.
+              ONLY aggregate metrics visible via valid_full_snapshot_grader_metrics view.
+              Example: SELECT snapshot_slug, recall FROM valid_full_snapshot_grader_metrics;
 
-            recall = grader_run.output.recall
+            This ensures validation recall is a trustworthy proxy for test performance. You cannot inspect
+            validation details to reverse-engineer answers.
 
-        return RunGraderOutput(grader_run_id=grader_run_id, recall=recall)
+            Use validation aggregates to measure generalization performance across all validation specimens.
+            """
+            # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
+            with get_session() as session:
+                try:
+                    grader_run_id = await grade_critique_by_id(
+                        session=session,
+                        critique_id=payload.critique_id,
+                        client=self._grader_client,
+                        docker_client=self._docker_client,
+                        prompt_optimization_run_id=self._prompt_optimization_run_id,
+                        verbose=self._verbose,
+                        max_turns=payload.max_turns,
+                    )
+                except GraderDidNotSubmitError as e:
+                    raise ToolError(
+                        f"Grader agent did not call submit(): {e}\n\n"
+                        f"{_AGENT_STUCK_ADVICE}\n"
+                        f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
+                    ) from e
+                except MaxTurnsExceededError as e:
+                    raise ToolError(
+                        f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
+                        f"{_AGENT_STUCK_ADVICE}\n"
+                        f"{_trace_query_advice(critique_id=str(payload.critique_id))}"
+                    ) from e
 
-    return mcp
+                # Query recall from the grader run output
+                grader_run = session.get(DBGraderRun, grader_run_id)
+                if not grader_run:
+                    raise ToolError(f"Grader run {grader_run_id} not found in database")
+                if not grader_run.output:
+                    raise ToolError(f"Grader run {grader_run_id} has no output")
+
+                # Access recall directly from DB model
+                recall = grader_run.output.recall
+
+            return RunGraderOutput(grader_run_id=grader_run_id, recall=recall)
+
+        self.run_grader_tool = self.flat_model()(run_grader)
 
 
 # ============================================================================
@@ -686,21 +694,6 @@ async def run_prompt_optimizer(
         agent_conn = config.agent_for_container  # Container-to-container access
         logger.info(f"Agent database: host={agent_conn.host}, db={agent_conn.database}, user={agent_conn.user}")
 
-        # Create Docker wiring (no /repo mount - would leak test specimen definitions!)
-        # workspace_root will be mounted as /workspace (rw mode for agent to write prompts)
-        wiring = properties_docker_spec(
-            workspace_root=session_dir,
-            docker_client=docker_client,
-            mount_properties=False,  # No property definitions mounted
-            extra_binds=extra_binds,
-            ephemeral=False,  # Use persistent container to maintain environment
-            workspace_mode="rw",  # Agent needs to write prompt iterations
-            db_conn=agent_conn,  # Agent-restricted database access (critical for PO agent)
-            network_mode="props_default",  # Join postgres network for database access
-        )
-
-        # Create PromptOptimizationRun record for tracking
-
         # Generate transcript ID for database event tracking
         transcript_id = uuid4()
         logger.info(f"Prompt optimizer transcript_id: {transcript_id}")
@@ -723,9 +716,19 @@ async def run_prompt_optimizer(
 
         logger.info(f"Created PromptOptimizationRun: {prompt_optimization_run_id}")
 
-        # Use Compositor as async context manager to ensure cleanup
-        async with Compositor() as comp:
-            runtime = await wiring.attach(comp)  # Attaches runtime MCP server (returns Mounted[T])
+        # Create compositor with Docker runtime (no /repo mount - would leak test specimen definitions!)
+        # workspace_root (session_dir) will be mounted as /workspace (rw mode for agent to write prompts)
+        async with PropertiesDockerCompositor(
+            workspace_root=session_dir,
+            docker_client=docker_client,
+            mount_properties=False,  # No property definitions mounted
+            extra_binds=extra_binds,
+            ephemeral=False,  # Use persistent container to maintain environment
+            workspace_mode="rw",  # Agent needs to write prompt iterations
+            db_conn=agent_conn,  # Agent-restricted database access (critical for PO agent)
+            network_mode=PROPS_NETWORK_NAME,  # Join postgres network for database access
+        ) as comp:
+            runtime = comp.runtime  # Runtime server already mounted by PropertiesDockerCompositor
 
             # TODO: Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it here
             # The prompt eval server (and grader/critic tools) should be able to auto-detect when they're
@@ -734,19 +737,21 @@ async def run_prompt_optimizer(
             # This would eliminate the need to manually set prompt_optimization_run_id in RunCriticInput
             # and RunGraderInput.
 
-            # Create and mount prompt_eval server, keeping reference for introspection
-            prompt_eval_server = await build_server(
-                critic_client=build_client(critic_model),
-                grader_client=build_client(grader_model),
-                docker_client=docker_client,
-                hydrator=hydrator,
-                name=PROMPT_EVAL_SERVER_NAME,
-                prompt_optimization_run_id=prompt_optimization_run_id,
-                workspace_root=session_dir,
-                budget_limit=budget,
-                verbose=verbose,
+            # Create and mount prompt_eval server
+            prompt_eval = await comp.mount_inproc(
+                "prompt_eval",
+                PromptEvalServer(
+                    critic_client=build_client(critic_model),
+                    grader_client=build_client(grader_model),
+                    docker_client=docker_client,
+                    hydrator=hydrator,
+                    name="Prompt Evaluation MCP Server",
+                    prompt_optimization_run_id=prompt_optimization_run_id,
+                    workspace_root=session_dir,
+                    budget_limit=budget,
+                    verbose=verbose,
+                ),
             )
-            await comp.mount_inproc(PROMPT_EVAL_SERVER_NAME, prompt_eval_server)
 
             # Collect servers for tool schema extraction
             servers = {runtime.prefix: runtime.server}
@@ -765,8 +770,10 @@ Prioritize recall first, then precision.
 """
 
             # Use the prompt_eval server reference for introspection
-            builder = TypedBootstrapBuilder.for_server(prompt_eval_server)
-            bootstrap_calls = make_po_bootstrap_calls(builder, resources=comp.resources, runtime=runtime)
+            builder = TypedBootstrapBuilder.for_server(prompt_eval.server)
+            bootstrap_calls = make_po_bootstrap_calls(
+                builder, resources=comp.resources, runtime=runtime, prompt_eval=prompt_eval
+            )
             bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
             handlers: list = [

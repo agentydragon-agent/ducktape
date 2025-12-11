@@ -22,10 +22,12 @@ from adgn.agent.server.protocol import (
     UiMessagePayload,
     UserText as UiUserText,
 )
-from adgn.agent.server.reducer import reduce_ui_state
+from adgn.agent.server.reducer import Reducer
 from adgn.agent.server.state import UiState, new_state
 from adgn.agent.types import AgentID
+from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.approval_policy.engine import PolicyEngine
+from adgn.mcp.ui.server import UiServer
 from adgn.openai_utils.model import UserMessage as OAIUserMessage
 
 logger = logging.getLogger(__name__)
@@ -99,6 +101,7 @@ class AgentSession:
         agent_id: AgentID,
         approval_engine: PolicyEngine,
         ui_bus: ServerBus | None = None,
+        ui_mount: Mounted[UiServer] | None = None,
     ) -> None:
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
@@ -106,6 +109,8 @@ class AgentSession:
         self._manager = manager
         self._persistence: Persistence = persistence
         self.ui_bus: ServerBus | None = ui_bus
+        self._ui_mount: Mounted[UiServer] | None = ui_mount
+        self._reducer: Reducer = Reducer(ui_mount)
         self.ui_state: UiState = new_state()
         self.approval_engine: PolicyEngine = approval_engine
         self._persist_handler: RunPersistenceHandler | None = None
@@ -121,8 +126,7 @@ class AgentSession:
         self._persist_handler = handler
 
     async def _apply_ui_event(self, evt: ServerMessage) -> None:
-        self.ui_state = reduce_ui_state(self.ui_state, evt)
-        # UI state updates now fetched via HTTP GET /api/agents/{id}/snapshot
+        self.ui_state = self._reducer.reduce(self.ui_state, evt)
 
     async def run(self, prompt: str) -> None:
         async with self._lock:

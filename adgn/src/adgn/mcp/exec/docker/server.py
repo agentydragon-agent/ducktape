@@ -8,9 +8,10 @@ FastMCP server: per-session Docker container exec.
 
 from __future__ import annotations
 
-from typing import Any, Final
+from typing import Any, cast
 
 import aiodocker
+from fastmcp.resources import FunctionResource
 from fastmcp.server.context import Context
 from fastmcp.tools import FunctionTool
 
@@ -26,9 +27,6 @@ from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInf
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, async_timer
 
-# Resource URI for container info
-CONTAINER_INFO_URI: Final[str] = "resource://container.info"
-
 
 class ContainerExecServer(EnhancedFastMCP):
     """Docker container exec MCP server with typed tool access.
@@ -39,6 +37,9 @@ class ContainerExecServer(EnhancedFastMCP):
 
     # Tool name constant (for test infrastructure only)
     EXEC_TOOL_NAME = "exec"
+
+    # Resource attribute (stashed result of @resource decorator - single source of truth for URI access)
+    container_info_resource: FunctionResource
 
     # Tool reference (assigned in __init__ after tool registration)
     exec_tool: FunctionTool
@@ -55,18 +56,21 @@ class ContainerExecServer(EnhancedFastMCP):
             lifespan uses the client but does not close it - caller remains responsible
             for cleanup (typically via atexit or app shutdown hooks).
         """
+        # Define container.info resource URI (before super().__init__ so it can be used in instructions)
+        container_info_uri = "resource://container.info"
+
         super().__init__(
             "Docker Exec MCP Server",
             instructions=(
                 f"Provides access to a Docker container.\n\n"
-                f"Image history is available by reading the resource {CONTAINER_INFO_URI}.\n\n"
+                f"Image history is available by reading the resource {container_info_uri}.\n\n"
                 f"/tmp is writable and can be used as a scratchpad for notes, intermediate results, "
                 f"or organizing your thoughts."
             ),
             lifespan=make_container_lifespan(opts, docker_client),
         )
 
-        # Register container.info resource
+        # Register container.info resource and stash the result
         async def container_info_json(ctx: Context) -> dict[str, Any]:
             s = session_state_from_ctx(ctx)
             img_info = await s.docker_client.images.inspect(s.image)
@@ -93,13 +97,16 @@ class ContainerExecServer(EnhancedFastMCP):
         # Ensure the context annotation is preserved after future-annotations rewriting so
         # FastMCP treats this as a static resource rather than a template.
         container_info_json.__annotations__["ctx"] = Context
-        self.resource(
-            CONTAINER_INFO_URI,
-            mime_type="application/json",
-            name="container.info",
-            title="Container session metadata",
-            description="Docker container details for this session",
-        )(container_info_json)
+        self.container_info_resource = cast(
+            FunctionResource,
+            self.resource(
+                container_info_uri,
+                mime_type="application/json",
+                name="container.info",
+                title="Container session metadata",
+                description="Docker container details for this session",
+            )(container_info_json),
+        )
 
         # Register exec tool - name derived from function name
         async def exec(input: ExecInput, context: Context) -> BaseExecResult:

@@ -4,7 +4,7 @@ from hamcrest import assert_that, equal_to, has_properties
 
 from adgn.agent.server.bus import MimeType
 from adgn.agent.server.protocol import UiMessageEvt, UiMessagePayload, UserText
-from adgn.agent.server.reducer import reduce_ui_state
+from adgn.agent.server.reducer import Reducer
 from adgn.agent.server.state import ExecContent, JsonContent, ToolItem
 from tests.agent.ui.typed_asserts import (
     assert_typed_items_have_one,
@@ -17,16 +17,18 @@ from tests.agent.ui.typed_asserts import (
 
 
 def test_user_text_appends_user_message(fresh_ui_state):
-    result = reduce_ui_state(fresh_ui_state, UserText(text="hello"))
+    reducer = Reducer(ui_mount=None)
+    result = reducer.reduce(fresh_ui_state, UserText(text="hello"))
 
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_user_message("hello"))
 
 
 def test_tool_call_exec_starts_exec_content_with_cmd(fresh_ui_state, make_tool_call):
+    reducer = Reducer(ui_mount=None)
     tool_call = make_tool_call("seatbelt", "sandbox_exec", args={"argv": ["echo", "hi there"]})
 
-    result = reduce_ui_state(fresh_ui_state, tool_call)
+    result = reducer.reduce(fresh_ui_state, tool_call)
 
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_tool_item(tool="seatbelt_sandbox_exec", call_id=tool_call.call_id))
@@ -38,10 +40,11 @@ def test_tool_call_exec_starts_exec_content_with_cmd(fresh_ui_state, make_tool_c
 
 
 def test_tool_call_json_starts_json_content_with_args(fresh_ui_state, make_tool_call):
+    reducer = Reducer(ui_mount=None)
     args = {"foo": 1, "bar": "baz"}
     tool_call = make_tool_call("demo", "inspect", args=args)
 
-    result = reduce_ui_state(fresh_ui_state, tool_call)
+    result = reducer.reduce(fresh_ui_state, tool_call)
 
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_tool_item(call_id=tool_call.call_id))
@@ -51,11 +54,12 @@ def test_tool_call_json_starts_json_content_with_args(fresh_ui_state, make_tool_
 
 
 def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, make_function_output):
+    reducer = Reducer(ui_mount=None)
     tool_call = make_tool_call("seatbelt", "sandbox_exec", args={"argv": ["ls"]})
-    s1 = reduce_ui_state(fresh_ui_state, tool_call)
+    s1 = reducer.reduce(fresh_ui_state, tool_call)
 
     output = make_function_output(tool_call.call_id, {"stdout": "ok", "stderr": "", "exit_code": 0})
-    result = reduce_ui_state(s1, output)
+    result = reducer.reduce(s1, output)
 
     item = result.items[0]
     assert isinstance(item, ToolItem)
@@ -64,12 +68,13 @@ def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, mak
 
 
 def test_function_output_updates_json_output_when_not_exec(fresh_ui_state, make_tool_call, make_function_output):
+    reducer = Reducer(ui_mount=None)
     tool_call = make_tool_call("kv", "get", args={"key": "k"})
-    s1 = reduce_ui_state(fresh_ui_state, tool_call)
+    s1 = reducer.reduce(fresh_ui_state, tool_call)
     payload = {"value": {"a": 1}}
 
     output = make_function_output(tool_call.call_id, payload)
-    result = reduce_ui_state(s1, output)
+    result = reducer.reduce(s1, output)
 
     item = result.items[0]
     assert isinstance(item, ToolItem)
@@ -80,9 +85,10 @@ def test_function_output_updates_json_output_when_not_exec(fresh_ui_state, make_
 
 
 def test_ui_message_becomes_assistant_markdown(fresh_ui_state):
+    reducer = Reducer(ui_mount=None)
     evt = UiMessageEvt(message=UiMessagePayload(mime=MimeType.MARKDOWN, content="**hi**"))
 
-    result = reduce_ui_state(fresh_ui_state, evt)
+    result = reducer.reduce(fresh_ui_state, evt)
 
     assert_that(result.seq, equal_to(1))
     assert_typed_items_have_one(result.items, is_assistant_markdown("**hi**"))

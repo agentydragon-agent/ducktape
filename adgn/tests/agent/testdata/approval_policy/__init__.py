@@ -8,6 +8,7 @@ from __future__ import annotations
 from importlib.resources import files
 from typing import cast
 
+from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.naming import build_mcp_function
 
 
@@ -21,20 +22,20 @@ def make_policy(
     decision_expr: str,
     server: str,
     tool: str,
-    default: str = "ask",
+    default: ApprovalDecision = ApprovalDecision.ASK,
     doc: str | None = None,
 ) -> str:
     """
     Build a minimal ApprovalPolicy source that returns `decision_expr` for a given
-    server/tool, and `default` ('ask' or 'allow') otherwise. UI send_message is
-    always allowed via TEST_CASES to satisfy baseline constraints.
+    server/tool, and `default` otherwise. UI send_message is always allowed via
+    TEST_CASES to satisfy baseline constraints.
 
     decision_expr examples: 'PolicyDecision.DENY_CONTINUE', 'PolicyDecision.ASK'
     """
-    if default not in {"ask", "allow"}:
-        raise ValueError("default must be 'ask' or 'allow'")
-    default_expr = "PolicyDecision.ASK" if default == "ask" else "PolicyDecision.ALLOW"
-    doc = doc or f"policy for {server}.{tool} returns explicit decision; default {default}"
+    if default not in {ApprovalDecision.ASK, ApprovalDecision.ALLOW}:
+        raise ValueError(f"default must be ASK or ALLOW, got {default}")
+    default_expr = "PolicyDecision.ASK" if default == ApprovalDecision.ASK else "PolicyDecision.ALLOW"
+    doc = doc or f"policy for {server}.{tool} returns explicit decision; default {default.value}"
     build_mcp_function(server, tool)
     header = (
         "from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision\n"

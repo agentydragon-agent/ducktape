@@ -9,7 +9,7 @@ from compact_json import Formatter  # type: ignore[import-untyped]
 from jinja2 import Environment, PackageLoader
 
 from adgn.props.critic.models import ReportedIssue
-from adgn.props.docker_env import PropertiesDockerWiring
+from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
@@ -118,7 +118,7 @@ def build_scope_text(files: Iterable[Path]) -> str:
 def build_standard_context(
     *,
     files: Iterable[Path],
-    wiring: PropertiesDockerWiring,
+    compositor: PropertiesDockerCompositor,
     supplemental_text: str | None = None,
     include_schemas: bool = True,
 ) -> dict[str, object]:
@@ -126,7 +126,7 @@ def build_standard_context(
 
     Args:
         files: Iterable of Path objects (file list for scope)
-        wiring: PropertiesDockerWiring with image/volumes/network config
+        compositor: PropertiesDockerCompositor with Docker configuration
         supplemental_text: Optional additional context (e.g., specimen notes)
         include_schemas: Whether to include schemas_json (default: True)
 
@@ -135,7 +135,8 @@ def build_standard_context(
     """
     context: dict[str, object] = {
         "files": sorted(files, key=str),
-        "wiring": wiring,
+        "working_dir": compositor.working_dir,
+        "definitions_container_dir": compositor.definitions_container_dir,
         "supplemental_text": supplemental_text,
         "read_only": True,
         "include_reporting": False,

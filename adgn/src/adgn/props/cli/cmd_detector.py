@@ -22,7 +22,7 @@ from adgn.props.cli.shared import filter_files
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.critic.prompts import list_critic_system_prompts
-from adgn.props.db import get_session, init_db
+from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Snapshot
 from adgn.props.db.prompts import load_and_upsert_detector_prompt
 from adgn.props.hydration import SnapshotHydrator
@@ -280,8 +280,6 @@ async def cmd_run_detector(
     docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run detector (always structured mode)."""
-    init_db()
-
     # Load current file content and upsert to DB (auto-sync)
     prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
@@ -316,5 +314,4 @@ async def cmd_detector_coverage(
     Shows which detector prompts have been evaluated against which snapshots.
     Use --run-missing to automatically evaluate all missing (detector, snapshot) pairs.
     """
-    init_db()
     await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose, docker_client=docker_client)

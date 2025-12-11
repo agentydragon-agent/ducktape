@@ -21,31 +21,24 @@ from adgn.agent.persist import AgentMetadata
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.policies.loader import approve_all_policy_text
 from adgn.agent.policies.policy_types import ApprovalDecision
+from adgn.agent.runtime.container import AgentContainerCompositor
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
-from adgn.mcp._shared.constants import (
-    APPROVAL_ADMIN_MOUNT_PREFIX,
-    COMPOSITOR_META_MOUNT_PREFIX,
-    POLICY_PROPOSER_MOUNT_PREFIX,
-    POLICY_READER_MOUNT_PREFIX,
-    RESOURCES_MOUNT_PREFIX,
-)
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
-from adgn.mcp.compositor.meta_server import CompositorMetaServer
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.notifications.buffer import NotificationsBuffer
-from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp as _make_simple_mcp
+from adgn.props.db.models import CanonicalIssuesSnapshot
 from tests.support.responses import _StepRunner
 from tests.support.steps import Step
 from tests.support.types import McpServerSpecs
 
 # Empty canonical issues snapshot for GraderRun fixtures.
-# Format matches GraderRun.canonical_issues_snapshot JSONB column.
-EMPTY_CANONICAL_ISSUES_SNAPSHOT: dict[str, list[str]] = {"true_positives": [], "false_positives": []}
+# Format matches GraderRun.canonical_issues_snapshot Pydantic model.
+EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
 
 # Test server mount name used in fixtures
 TEST_BACKEND_SERVER_NAME = "backend"
@@ -302,24 +295,6 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
         await comp.mount_inproc(name, srv)
 
 
-async def _setup_mounted_compositor(comp: Compositor, servers: McpServerSpecs, policy_engine: PolicyEngine) -> None:
-    """Mount servers and setup policy middleware on an existing compositor.
-
-    Args:
-        comp: Compositor instance to configure
-        servers: Dict of server name -> FastMCP instance to mount
-        policy_engine: Policy engine to install middleware from
-    """
-    await _mount_servers(comp, servers)
-    comp.add_middleware(policy_engine.gateway)
-    await comp.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=comp), pinned=True)
-    compmeta_server = CompositorMetaServer(compositor=comp)
-    await comp.mount_inproc(COMPOSITOR_META_MOUNT_PREFIX, compmeta_server, pinned=True)
-    await comp.mount_inproc(POLICY_READER_MOUNT_PREFIX, policy_engine.reader)
-    await comp.mount_inproc(POLICY_PROPOSER_MOUNT_PREFIX, policy_engine.proposer)
-    await comp.mount_inproc(APPROVAL_ADMIN_MOUNT_PREFIX, policy_engine.admin)
-
-
 async def _create_test_policy_engine(sqlite_persistence, docker_client: docker.DockerClient) -> PolicyEngine:
     """Create a test policy engine with approve-all policy.
 
@@ -337,8 +312,8 @@ async def _create_test_policy_engine(sqlite_persistence, docker_client: docker.D
 
 
 @pytest.fixture
-def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
-    """Async helper to open a Compositor with policy gateway, yielding just the client.
+def make_pg_client(sqlite_persistence, docker_client, async_docker_client, test_agent_id):
+    """Async helper to open an AgentContainerCompositor with policy gateway, yielding just the client.
 
     Usage:
         async with make_pg_client(servers) as client:
@@ -352,8 +327,15 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
         if policy_engine is None:
             policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
 
-        async with Compositor() as comp:
-            await _setup_mounted_compositor(comp, servers, policy_engine)
+        comp = AgentContainerCompositor(
+            approval_engine=policy_engine,
+            ui_bus=None,  # Tests don't need UI by default
+            async_docker_client=async_docker_client,
+            persistence=sqlite_persistence,
+            agent_id=test_agent_id,
+        )
+        async with comp:
+            await _mount_servers(comp, servers)
             async with Client(comp) as sess:
                 yield sess
 
@@ -361,11 +343,14 @@ def make_pg_client(sqlite_persistence, docker_client, test_agent_id):
 
 
 @pytest.fixture
-def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
-    """Async helper with full access to client and policy engine.
+def make_pg_compositor(sqlite_persistence, docker_client, async_docker_client, test_agent_id):
+    """Async helper factory yielding typed AgentContainerCompositor.
 
     Usage:
-        async with make_pg_compositor(servers, policy_engine=engine) as (sess, engine):
+        async with make_pg_compositor(servers) as comp:
+            # comp is the typed AgentContainerCompositor instance
+            # Access policy engine via comp.approval_engine
+            # Create client with: async with Client(comp) as sess: ...
             ...
 
     For tests that only need the client, prefer make_pg_client instead.
@@ -376,10 +361,16 @@ def make_pg_compositor(sqlite_persistence, docker_client, test_agent_id):
         if policy_engine is None:
             policy_engine = await _create_test_policy_engine(sqlite_persistence, docker_client)
 
-        async with Compositor() as comp:
-            await _setup_mounted_compositor(comp, servers, policy_engine)
-            async with Client(comp) as sess:
-                yield sess, policy_engine
+        comp = AgentContainerCompositor(
+            approval_engine=policy_engine,
+            ui_bus=None,  # Tests don't need UI by default
+            async_docker_client=async_docker_client,
+            persistence=sqlite_persistence,
+            agent_id=test_agent_id,
+        )
+        async with comp:
+            await _mount_servers(comp, servers)
+            yield comp
 
     return _open
 
@@ -416,14 +407,7 @@ def make_compositor():
     return _open
 
 
-def _extract_pg_client(compositor_result):
-    """Extract just the client from a pg_compositor result tuple.
-
-    pg_compositor fixtures yield (client, policy_engine).
-    This helper extracts just the client for convenience fixtures.
-    """
-    client, _policy_engine = compositor_result
-    return client
+# Removed: _extract_pg_client helper (no longer needed with simpler fixture structure)
 
 
 @pytest.fixture
@@ -431,33 +415,35 @@ async def pg_compositor_box(make_pg_compositor, async_docker_client):
     """Async fixture with box Docker exec server and policy gateway.
 
     Mounts a per-session container exec server under name "box" with policy gateway.
-    Yields (client, policy_engine).
+    Yields AgentContainerCompositor.
     """
     server = ContainerExecServer(make_container_opts("python:3.12-slim"), async_docker_client)
-    async with make_pg_compositor({"box": server}) as result:
-        yield result
+    async with make_pg_compositor({"box": server}) as comp:
+        yield comp
 
 
 @pytest.fixture
 async def pg_client_box(pg_compositor_box):
-    """MCP client for box Docker exec server (convenience extractor)."""
-    return _extract_pg_client(pg_compositor_box)
+    """MCP client for box Docker exec server."""
+    async with Client(pg_compositor_box) as sess:
+        yield sess
 
 
 @pytest.fixture
 async def pg_compositor_echo(echo_spec, make_pg_compositor):
     """Async fixture with echo server and policy gateway.
 
-    Yields (client, policy_engine).
+    Yields AgentContainerCompositor.
     """
-    async with make_pg_compositor(echo_spec) as result:
-        yield result
+    async with make_pg_compositor(echo_spec) as comp:
+        yield comp
 
 
 @pytest.fixture
 async def pg_client_echo(pg_compositor_echo):
-    """MCP client for echo server (convenience extractor)."""
-    return _extract_pg_client(pg_compositor_echo)
+    """MCP client for echo server."""
+    async with Client(pg_compositor_echo) as sess:
+        yield sess
 
 
 @pytest.fixture

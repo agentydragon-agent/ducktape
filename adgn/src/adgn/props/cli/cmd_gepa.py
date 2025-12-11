@@ -15,8 +15,6 @@ from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_async_docker_client
-from adgn.props.db import init_db
-from adgn.props.db.config import get_production_config
 from adgn.props.gepa.gepa_adapter import optimize_with_gepa
 from adgn.props.hydration import SnapshotHydrator
 
@@ -74,11 +72,6 @@ async def cmd_gepa(
     console.print(f"  Warm start: {'enabled' if warm_start else 'disabled'}")
     console.print(f"  Output directory: {output_dir}")
     console.print(f"  Initial prompt length: {len(initial_prompt)} chars\n")
-
-    # Initialize database
-    config = get_production_config()
-    console.print(f"[dim]Database: {config.admin.host}:{config.admin.port}/{config.admin.database}[/dim]")
-    init_db(config=config)
 
     # Create hydrator
     hydrator = SnapshotHydrator.from_env()

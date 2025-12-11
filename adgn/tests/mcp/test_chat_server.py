@@ -7,17 +7,7 @@ from hamcrest.core.matcher import Matcher
 import pytest
 
 from adgn.mcp._shared.resources import extract_single_text_content
-from adgn.mcp.chat.server import (
-    CHAT_HEAD_URI,
-    CHAT_LAST_READ_URI,
-    ChatAuthor,
-    ChatMessage,
-    ChatServer,
-    ChatStore,
-    PostInput,
-    PostResult,
-    ReadPendingInput,
-)
+from adgn.mcp.chat.server import ChatAuthor, ChatMessage, ChatServer, ChatStore, PostInput, PostResult, ReadPendingInput
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.chat_stubs import ChatServerStub
 from tests.mcp.conftest import ResourceUpdatedCapture
@@ -111,7 +101,7 @@ async def test_chat_head_notifications_other_participant(chat_servers) -> None:
         h_post = TypedClient.from_server(human, human_sess).stub("post", PostResult)
         await h_post(PostInput(mime="text/markdown", content="hello"))
         await asyncio.sleep(0.05)
-        assert CHAT_HEAD_URI in cap_assist.updated, cap_assist.updated
+        assert assistant.head_resource.uri in cap_assist.updated, cap_assist.updated
 
     # Human notifications on assistant posts
     cap_human = ResourceUpdatedCapture()
@@ -119,7 +109,7 @@ async def test_chat_head_notifications_other_participant(chat_servers) -> None:
         a_post = TypedClient.from_server(assistant, assist_sess).stub("post", PostResult)
         await a_post(PostInput(mime="text/markdown", content="roger"))
         await asyncio.sleep(0.05)
-        assert CHAT_HEAD_URI in cap_human.updated, cap_human.updated
+        assert human.head_resource.uri in cap_human.updated, cap_human.updated
 
 
 async def test_chat_last_read_updates_with_read_pending(chat_servers) -> None:
@@ -137,7 +127,7 @@ async def test_chat_last_read_updates_with_read_pending(chat_servers) -> None:
         cap_assist.updated.clear()
         await a.read_pending_messages(ReadPendingInput(limit=100))
         await asyncio.sleep(0.05)
-        assert CHAT_LAST_READ_URI in cap_assist.updated, cap_assist.updated
+        assert assistant.last_read_resource.uri in cap_assist.updated, cap_assist.updated
 
         # Reading again without new messages should not advance HWM or emit another last-read update
         cap_assist.updated.clear()
@@ -155,7 +145,7 @@ async def test_chat_resources_return_ints_directly(human_session, assistant_sess
     a = ChatServerStub.from_server(assistant, assistant_sess)
 
     # Initially, head should be None (no messages)
-    head_contents = await human_sess.read_resource(CHAT_HEAD_URI)
+    head_contents = await human_sess.read_resource(human.head_resource.uri)
     head_text = extract_single_text_content(head_contents)
     assert head_text == "null"
 
@@ -164,17 +154,17 @@ async def test_chat_resources_return_ints_directly(human_session, assistant_sess
     msg_id = result.id
 
     # Now head should return the message ID as an integer
-    head_contents = await human_sess.read_resource(CHAT_HEAD_URI)
+    head_contents = await human_sess.read_resource(human.head_resource.uri)
     head_text = extract_single_text_content(head_contents)
     assert head_text == str(msg_id)
 
     # Last-read should initially be None
-    last_read_contents = await assistant_sess.read_resource(CHAT_LAST_READ_URI)
+    last_read_contents = await assistant_sess.read_resource(assistant.last_read_resource.uri)
     last_read_text = extract_single_text_content(last_read_contents)
     assert last_read_text == "null"
 
     # After reading, last-read should be the message ID
     await a.read_pending_messages(ReadPendingInput(limit=100))
-    last_read_contents = await assistant_sess.read_resource(CHAT_LAST_READ_URI)
+    last_read_contents = await assistant_sess.read_resource(assistant.last_read_resource.uri)
     last_read_text = extract_single_text_content(last_read_contents)
     assert last_read_text == str(msg_id)

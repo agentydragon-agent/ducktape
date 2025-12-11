@@ -66,3 +66,91 @@ Examples
 ## Docker Build
 - Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.
 - Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
+
+## Architecture: MCP I/O Models vs DB Persistence Models
+
+### Problem
+Database persistence models should NOT use MCP I/O protocol types directly. Using MCP types (like `CriticSubmitPayload`, `ReportedIssue`, `GraderOutput`) in database schemas couples database migrations to protocol changes.
+
+### Solution: Two Parallel Model Hierarchies
+
+**MCP I/O Models** (in `critic/models.py`, `grader/models.py`):
+- Purpose: Define the API contract for MCP tool inputs/outputs
+- Characteristics:
+  - Use NewType wrappers for type safety (`TruePositiveID`, `InputIssueID`)
+  - Use rich types (`Path`, `set`, frozen models)
+  - Include validation logic
+  - May change as protocol evolves
+- Examples: `CriticSubmitPayload`, `ReportedIssue`, `Occurrence`, `GraderOutput`
+
+**DB Persistence Models** (in `db/snapshots.py`):
+- Purpose: Define the database storage format
+- Characteristics:
+  - Use primitives: `str` instead of NewType, `list` instead of `set`
+  - All `Path` objects stored as strings
+  - All sets stored as lists
+  - No complex validation (data already validated before storage)
+  - Frozen models (`frozen=True`)
+  - Stable schema independent of protocol changes
+- Examples: `DBCriticSubmitPayload`, `DBReportedIssue`, `DBOccurrence`, `DBGraderOutput`
+
+**Conversion Functions** (in `critic/persistence.py`, `grader/persistence.py`):
+- Purpose: Bridge between MCP and DB models
+- Live in the application layer (critic/grader), not the database layer
+- Conversion patterns:
+  - **TO DB (when writing)**: `critic_submit_payload_to_db()`, `grader_output_to_db()`
+  - **FROM DB (when reading)**: Usually NOT needed - use DB model directly
+  - Only convert DB → MCP when you need MCP-specific behavior
+
+### Usage Patterns
+
+**When writing to database:**
+```python
+# Convert MCP model to DB model before saving
+from adgn.props.critic.persistence import critic_submit_payload_to_db
+
+critique = Critique(
+    snapshot_slug=slug,
+    payload=critic_submit_payload_to_db(mcp_payload)  # Convert here
+)
+session.add(critique)
+```
+
+**When reading from database:**
+```python
+# Use DB model directly (inline field access)
+critique = session.get(Critique, critique_id)
+for issue in critique.payload.issues:  # Access DB model fields directly
+    issue_id = InputIssueID(issue.id)  # Wrap string in NewType if needed
+    rationale = Rationale(issue.rationale)
+    # ... work with fields
+```
+
+**Exception - when MCP structure is actually needed:**
+```python
+# Only convert to MCP when you need MCP-specific behavior
+# (e.g., for GEPA reflection that expects specific types)
+from adgn.props.critic.persistence import critic_submit_payload_from_db
+
+critique_mcp = critic_submit_payload_from_db(critique_payload_db)
+# Use critique_mcp for MCP-specific operations
+```
+
+### Key Benefits
+1. **Database independence**: Schema changes don't require protocol changes
+2. **Type safety**: Full Pydantic validation on both sides
+3. **Performance**: No unnecessary conversions when reading
+4. **Clarity**: Explicit conversion at boundaries
+
+### Layer Isolation Test
+The test `tests/props/db/test_layer_isolation.py` enforces that the database layer (`db/`) does not import from MCP I/O layers (`critic.models`, `grader.models`). This prevents accidental coupling.
+
+### Migration Guide
+When you encounter code using MCP models in database operations:
+1. Check if a `DB*` model exists in `db/snapshots.py` (e.g., `DBCriticSubmitPayload`)
+2. If not, create the DB model hierarchy (all primitives, no NewTypes)
+3. Create conversion functions in the appropriate persistence module
+4. Update database ORM models to use DB types
+5. Update code to convert TO DB when writing
+6. Update code to use DB model directly when reading (inline access)
+7. Only add DB → MCP conversion if truly needed for business logic

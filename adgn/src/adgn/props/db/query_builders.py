@@ -210,7 +210,7 @@ def recent_grader_results(limit: int = 10) -> Select:
 
     Returns:
         Query selecting grader run details with recall and coverage counts.
-        Schema matches GraderOutput Pydantic model:
+        Schema matches DBGraderOutput (flat structure):
         - recall: direct field from GradeSubmitInput
         - canonical_tp_count: array length of canonical_tp_coverage
         - canonical_fp_count: array length of canonical_fp_coverage
@@ -220,21 +220,19 @@ def recent_grader_results(limit: int = 10) -> Select:
         select(
             GraderRun.snapshot_slug,
             GraderRun.transcript_id,
-            GraderRun.output["grade"]["recall"].astext.label("recall"),
+            GraderRun.output["recall"].astext.label("recall"),
             # Count canonical TPs/FPs from array lengths
-            func.jsonb_array_length(GraderRun.output["grade"]["canonical_tp_coverage"]).label("canonical_tp_count"),
-            func.jsonb_array_length(GraderRun.output["grade"]["canonical_fp_coverage"]).label("canonical_fp_count"),
+            func.jsonb_array_length(GraderRun.output["canonical_tp_coverage"]).label("canonical_tp_count"),
+            func.jsonb_array_length(GraderRun.output["canonical_fp_coverage"]).label("canonical_fp_count"),
             # Reported issue ratios (can be null for empty critiques)
-            GraderRun.output["grade"]["reported_issue_ratios"]["tp"].astext.label("reported_tp_ratio"),
-            GraderRun.output["grade"]["reported_issue_ratios"]["fp"].astext.label("reported_fp_ratio"),
+            GraderRun.output["reported_issue_ratios"]["tp"].astext.label("reported_tp_ratio"),
+            GraderRun.output["reported_issue_ratios"]["fp"].astext.label("reported_fp_ratio"),
             GraderRun.model,
             GraderRun.created_at,
         )
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
-        # Filter out JSONB null values (different from SQL NULL)
-        .where(GraderRun.output["grade"].isnot(None))
         .order_by(GraderRun.created_at.desc())
         .limit(limit)
     )
@@ -330,7 +328,7 @@ def valid_full_snapshot_grader_metrics_select() -> Select:
             CriticRun.model.label("critic_model"),
             GraderRun.id.label("grader_run_id"),
             GraderRun.model.label("grader_model"),
-            (GraderRun.output["grade"]["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("recall"),
+            (GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("recall"),
             GraderRun.created_at,
         )
         .select_from(GraderRun)
@@ -347,8 +345,6 @@ def valid_full_snapshot_grader_metrics_select() -> Select:
         )
         .where(Snapshot.split == "valid")
         .where(GraderRun.output.isnot(None))
-        # Filter out JSONB null values (different from SQL NULL)
-        .where(GraderRun.output["grade"].isnot(None))
     )
 
 
@@ -419,7 +415,7 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         select(
             GraderRun.id.label("grader_run_id"),
             GraderRun.snapshot_slug,
-            GraderRun.output["grade"]["recall"].astext.label("recall"),
+            GraderRun.output["recall"].astext.label("recall"),
             Critique.id.label("critique_id"),
             CriticRun.id.label("critic_run_id"),
             CriticRun.prompt_sha256,
@@ -430,8 +426,6 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
         .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .where(GraderRun.output.isnot(None))
-        # Filter out JSONB null values (different from SQL NULL)
-        .where(GraderRun.output["grade"].isnot(None))
         .limit(limit)
     )
 
@@ -695,7 +689,7 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
             CriticScopeDB.files_hash,
             CriticScopeDB.files,
             func.count().label("run_count"),
-            func.avg(GraderRun.output["grade"]["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("avg_recall"),
+            func.avg(GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("avg_recall"),
         )
         .select_from(GraderRun)
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
@@ -709,8 +703,6 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
         )
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
-        # Filter out JSONB null values (different from SQL NULL)
-        .where(GraderRun.output["grade"].isnot(None))
         .group_by(GraderRun.snapshot_slug, CriticScopeDB.files_hash, CriticScopeDB.files)
         .order_by(func.count().desc())
         .limit(limit)

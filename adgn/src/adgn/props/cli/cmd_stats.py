@@ -15,10 +15,10 @@ from rich.table import Table
 from sqlalchemy import select
 from sqlalchemy.orm import joinedload
 
-from adgn.props.db import get_session, init_db
+from adgn.props.db import get_session
 from adgn.props.db.datapoints import count_available_examples_for_split
 from adgn.props.db.models import CriticRun, CriticScopeDB, GraderRun, Prompt
-from adgn.props.db.staleness import check_staleness
+from adgn.props.grader.staleness import check_staleness
 from adgn.props.splits import Split
 
 # Display constants
@@ -297,8 +297,6 @@ def _display_split_analysis(
 
 def cmd_stats() -> None:
     """Display prompt statistics: count, runs per split, recall metrics."""
-    init_db()
-
     console = Console()
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
     tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
@@ -366,8 +364,8 @@ def cmd_stats() -> None:
 
                 stats.splits[split].completed += 1
 
-                # Extract recall from grader output (grade.recall is in [0,1])
-                recall_pct = grader_run.output.grade.recall * 100.0
+                # Extract recall from grader output (recall is in [0,1])
+                recall_pct = grader_run.output.recall * 100.0
                 stats.splits[split].recalls.append(recall_pct)
 
             prompt_stats_list.append(stats)
@@ -402,13 +400,13 @@ def cmd_stats() -> None:
             for grader_run, critic_run in graders:
                 if grader_run.output is None:
                     continue
-                recall_pct = grader_run.output.grade.recall * 100.0
+                recall_pct = grader_run.output.recall * 100.0
                 sample_key = (critic_run.snapshot_slug, critic_run.files_hash)
                 sample_results_by_split[split][sample_key][critic_run.prompt_sha256] = recall_pct
 
                 # Collect TP count for this sample (only need to record once per sample)
                 if sample_key not in tp_counts_per_sample[split]:
-                    tp_count = len(grader_run.output.grade.canonical_tp_coverage)
+                    tp_count = len(grader_run.output.canonical_tp_coverage)
                     tp_counts_per_sample[split][sample_key] = tp_count
 
         # For each split and sample, find which prompt(s) achieved max recall

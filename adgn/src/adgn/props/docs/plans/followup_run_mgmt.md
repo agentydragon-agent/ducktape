@@ -55,9 +55,9 @@ All places that construct paths in the props codebase, classified by action need
     - Specimen manifest and source path resolution
     - Action: ✅ Keep as-is (specimen registry, not runs management)
 
-5. **bundles/build_bundle.py** (multiple lines)
+5. **~~bundles/build_bundle.py~~** (DELETED in bundle→plain files migration)
     - Bundle creation paths
-    - Action: ✅ Keep as-is (build tooling, not runs management)
+    - Action: ~~Keep as-is~~ → Removed (migrated to plain files workflow)
 
 6. **cli_app/main.py lines 229, 670**
     - `Path(tempfile.gettempdir()) / "adgn_codex_prompts"`

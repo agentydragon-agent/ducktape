@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from adgn.agent.server.history import fold_events_to_ui_state
+from adgn.agent.server.reducer import fold_events_to_ui_state
 from tests.agent.ui.typed_asserts import assert_typed_items_have, is_assistant_markdown, is_user_message
 
 

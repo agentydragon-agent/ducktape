@@ -19,7 +19,7 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage
 from adgn.props.cli.common_options import OPT_MAX_LINES
-from adgn.props.db import get_session, init_db
+from adgn.props.db import get_session
 from adgn.props.db.models import Event
 
 
@@ -35,7 +35,6 @@ def _find_transcript_by_prefix(prefix: str) -> UUID:
     Raises:
         typer.BadParameter: If no match or multiple matches found
     """
-    init_db()
     with get_session() as session:
         # Query events to find transcripts whose ID starts with the prefix
         # We'll use the transcript_id from Event table since there's no separate Transcript table
@@ -88,8 +87,6 @@ async def cmd_speak_with_dead(
     # Find transcript by prefix
     transcript_id = _find_transcript_by_prefix(transcript_prefix)
     console.print(f"[dim]Found transcript: {transcript_id}[/dim]\n")
-
-    init_db()
 
     # Load events from DB
     with get_session() as session:

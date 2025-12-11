@@ -46,6 +46,20 @@ _engine = None
 _SessionLocal = None
 
 
+def dispose_db() -> None:
+    """Dispose of the current database connection.
+
+    This is needed when switching databases (e.g., between test databases).
+    After calling this, init_db() can be called again.
+    """
+    global _engine, _SessionLocal  # noqa: PLW0603
+
+    if _engine is not None:
+        _engine.dispose()
+        _engine = None
+        _SessionLocal = None
+
+
 def init_db(config: DatabaseConfig | None = None) -> None:
     """Connect to database and verify connection (fail fast).
 
@@ -55,8 +69,17 @@ def init_db(config: DatabaseConfig | None = None) -> None:
     Raises:
         ValueError: If config is None and required env vars not set (run from devenv shell)
         sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
+        RuntimeError: If database already initialized (should only be called once)
     """
     global _engine, _SessionLocal  # noqa: PLW0603
+
+    # Enforce single initialization - if already initialized, this is a bug
+    if _engine is not None:
+        raise RuntimeError(
+            "Database already initialized. init_db() should only be called once. "
+            "If you need to switch databases (e.g., in tests), you must explicitly "
+            "reinitialize by disposing the engine first or restructuring the code."
+        )
 
     if config is None:
         config = get_production_config()

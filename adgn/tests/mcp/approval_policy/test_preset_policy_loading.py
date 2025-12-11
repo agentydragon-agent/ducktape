@@ -13,7 +13,7 @@ import pytest
 
 from adgn.agent.presets import create_agent_from_preset, discover_presets
 from adgn.mcp._shared.resources import extract_single_text_content
-from adgn.mcp.approval_policy.engine import POLICY_RESOURCE_URI, PolicyEngine
+from adgn.mcp.approval_policy.engine import PolicyEngine
 from tests.agent.testdata.approval_policy import fetch_policy
 
 
@@ -66,7 +66,7 @@ class TestPresetPolicyLoading:
 
         async with Client(engine.reader) as sess:
             # Read the policy resource
-            result = await sess.read_resource(str(POLICY_RESOURCE_URI))
+            result = await sess.read_resource(engine.reader.active_policy_resource.uri)
             policy_text = extract_single_text_content(result.contents)
             # Should contain the allow_all policy
             assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
@@ -83,7 +83,7 @@ class TestPresetPolicyLoading:
         )
 
         async with Client(engine.reader) as sess:
-            result = await sess.read_resource(str(POLICY_RESOURCE_URI))
+            result = await sess.read_resource(engine.reader.active_policy_resource.uri)
             policy_text = extract_single_text_content(result.contents)
             # const policy should be returned
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text

@@ -14,7 +14,6 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart, UserMessage
-from adgn.props.docker_env import properties_docker_spec
 from adgn.props.lint_issue import LintIssueCompositor, LintSubmitState, make_linter_handlers
 from adgn.props.models.true_positive import Occurrence
 from tests.llm.support.openai_mock import make_mock
@@ -59,12 +58,13 @@ async def test_lint_issue_bootstrap_small_files(
     runner = make_step_runner(steps=lint_bootstrap_steps)
     client = make_mock(runner.handle_request_async)
 
-    # Create wiring and state using production pattern
-    wiring = properties_docker_spec(content_root, docker_client=async_docker_client, mount_properties=False)
+    # Create state using production pattern
     state = LintSubmitState()
 
     # Use LintIssueCompositor like production code does (no policy middleware needed)
-    async with LintIssueCompositor(wiring, state) as comp:
+    async with LintIssueCompositor(
+        workspace_root=content_root, docker_client=async_docker_client, submit_state=state
+    ) as comp:
         # Build handlers using compositor's mounted servers
         handlers = make_linter_handlers(
             state=state,
@@ -72,7 +72,7 @@ async def test_lint_issue_bootstrap_small_files(
             runtime=comp.runtime,
             occ=occ,
             content_root=content_root,
-            docker_wiring=wiring,
+            compositor=comp,
         )
 
         # Create agent with Client connected to compositor

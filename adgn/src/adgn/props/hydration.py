@@ -182,17 +182,6 @@ def _create_archive_from_git(url: str, ref: str, out_archive: Path) -> bool:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
 
-def resolve_bundle_url(snapshot_path: Path, source_url: str) -> str:
-    """Resolve bundle URL, handling relative file:// paths."""
-    url = source_url
-    if url.startswith("file://"):
-        file_path = url.removeprefix("file://")
-        if not file_path.startswith("/"):
-            resolved_path = (snapshot_path.parent / file_path).resolve()
-            url = f"file://{resolved_path}"
-    return url
-
-
 def ensure_archive_for_snapshot(manifest: SnapshotDoc, snapshot_path: Path) -> Path:
     """Ensure a cached archive exists for the snapshot.
 
@@ -264,10 +253,8 @@ def ensure_archive_for_snapshot(manifest: SnapshotDoc, snapshot_path: Path) -> P
                     _repack_tar_with_mtime(out, mtime=0)
                     return out
 
-            # Resolve relative file:// URLs relative to the snapshot directory
-            url = resolve_bundle_url(snapshot_path, manifest.source.url)
-
-            if _create_archive_from_git(url, git_ref, out) and out.exists():
+            # Use URL directly (no file:// rewriting - all GitSource URLs should be absolute)
+            if _create_archive_from_git(manifest.source.url, git_ref, out) and out.exists():
                 return out
         elif isinstance(manifest.source, LocalSource):
             src = (snapshot_path.parent / manifest.source.root).resolve()
@@ -282,7 +269,7 @@ def resolve_source_root(manifest: SnapshotDoc, snapshot_path: Path) -> Path:
 
     Args:
         manifest: Snapshot manifest (source type determines extraction method)
-        snapshot_path: Path to snapshot's _snapshot file (for relative URL resolution)
+        snapshot_path: Synthetic reference path (parent is snapshot directory, used for resolving LocalSource.root)
 
     Returns:
         Path to extracted source code root (temporary directory)
@@ -306,9 +293,9 @@ class SnapshotHydrator:
     Used by runtime components (grader, critic, GEPA, CLI) to extract
     source code to temporary directories.
 
-    Source and bundle metadata are loaded from the database (Snapshot.source,
-    Snapshot.bundle columns). Issues must be loaded separately via ORM relationships
-    (Snapshot.true_positives, Snapshot.false_positives).
+    Source metadata is loaded from the database (Snapshot.source column).
+    Issues must be loaded separately via ORM relationships (Snapshot.true_positives,
+    Snapshot.false_positives).
     """
 
     def __init__(self, base_path: Path):
@@ -325,10 +312,10 @@ class SnapshotHydrator:
         return cls(specimens_definitions_root())
 
     def _get_snapshot_path(self, slug: SnapshotSlug) -> Path:
-        """Get absolute path to snapshot's _snapshot file.
+        """Get synthetic reference path for this snapshot.
 
         Returns:
-            Resolved absolute path inside snapshot directory (for URL resolution)
+            Synthetic path (doesn't exist on disk) whose parent is the snapshot directory
         """
         return get_snapshot_manifest_path(self._base_path, slug)
 

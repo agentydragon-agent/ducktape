@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 
 from fastmcp import FastMCP
 
+from adgn.mcp._shared.naming import build_mcp_function
+
 if TYPE_CHECKING:
     from fastmcp.tools import FunctionTool
 
@@ -49,6 +51,4 @@ class Mounted(Generic[T]):
         Example:
             submit_tool_name = comp.lint_submit.tool_name(comp.lint_submit.server.submit_result_tool)
         """
-        from adgn.mcp._shared.naming import build_mcp_function
-
         return build_mcp_function(self.prefix, tool.name)

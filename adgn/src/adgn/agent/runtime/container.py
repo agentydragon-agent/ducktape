@@ -7,13 +7,13 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import logging
 import os
-from typing import cast
+from typing import TYPE_CHECKING, cast
 
 import aiodocker
 from docker.client import DockerClient
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, Field
 
 from adgn.agent.agent import Agent
@@ -28,7 +28,6 @@ from adgn.agent.server.bus import ServerBus
 from adgn.agent.server.runtime import AgentSession, UiEventHandler
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.types import AgentID
-from adgn.mcp._shared.constants import SEATBELT_EXEC_MOUNT_PREFIX
 from adgn.mcp._shared.container_session import ContainerOptions
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.chat.server import (
@@ -38,11 +37,9 @@ from adgn.mcp.chat.server import (
     ChatServer,
     ChatStorePersisted,
 )
-from adgn.mcp.compositor.admin import convert_mcp_server_types_to_spec
-from adgn.mcp.compositor.clients import CompositorAdminClient, CompositorMetaClient
+from adgn.mcp.compositor.clients import CompositorMetaClient
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.exec.seatbelt import attach_seatbelt_exec
 from adgn.mcp.loop.server import LoopServer
 from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.runtime.server import RuntimeServer
@@ -53,6 +50,10 @@ from adgn.openai_utils.model import OpenAIModelProto, SystemMessage
 
 from .handlers import build_handlers
 
+if TYPE_CHECKING:
+    from adgn.mcp._shared.mounted import Mounted
+    from adgn.mcp.approval_policy.engine import PolicyProposerServer, PolicyReaderServer
+
 # ---- Agent Container Compositor ---------------------------------------------
 
 
@@ -60,23 +61,19 @@ class AgentContainerCompositor(Compositor):
     """Compositor for agent containers with all agent-specific servers pre-mounted.
 
     Infrastructure servers (resources, compositor_meta) are auto-mounted by base Compositor.
-    This class adds 5 agent-specific servers:
+    This class adds 6 agent-specific servers:
     - loop: Loop control (pinned)
     - policy_reader: Policy reading (pinned)
     - policy_proposer: Policy proposals (pinned)
+    - compositor_admin: Compositor admin tools (pinned)
     - ui: UI server (conditional, pinned if present)
     - runtime: Docker exec runtime (conditional, pinned if present)
     """
 
-    from typing import TYPE_CHECKING
-
-    if TYPE_CHECKING:
-        from adgn.mcp._shared.mounted import Mounted
-
     # Agent-specific servers (5 additional beyond base infrastructure)
     loop: Mounted[LoopServer]
-    policy_reader: Mounted[EnhancedFastMCP]
-    policy_proposer: Mounted[EnhancedFastMCP]
+    policy_reader: Mounted[PolicyReaderServer]
+    policy_proposer: Mounted[PolicyProposerServer]
     ui: Mounted[UiServer] | None
     runtime: Mounted[RuntimeServer] | None
 
@@ -168,41 +165,12 @@ class _StartMsg(_ActorMsg):
     mcp_config: MCPConfig
 
 
-@dataclass
-class _ReconfigureMsg(_ActorMsg):
-    """Apply live changes to the mounted servers.
-
-    - mcp_config: when provided, full replacement of mounts.
-    - attach: map of arbitrary names to MCPConfig fragments; each config's servers are merged in.
-    - detach: list of server names to unmount.
-    """
-
-    mcp_config: MCPConfig | None
-    attach: dict[str, MCPConfig]
-    detach: list[str]
-
-
 class _SamplingSnapshotMsg(_ActorMsg):
     """Request a one-shot sampling snapshot for UI/model consumption."""
 
 
 class _CloseMsg(_ActorMsg):
     """Request container shutdown; drains, closes agent and mcp manager."""
-
-
-@dataclass
-class _AttachOneMsg(_ActorMsg):
-    """Attach a single MCP server by name with a typed fastmcp spec."""
-
-    name: str
-    spec: MCPServerTypes
-
-
-@dataclass
-class _DetachOneMsg(_ActorMsg):
-    """Detach a single MCP server by name."""
-
-    name: str
 
 
 logger = logging.getLogger(__name__)
@@ -275,6 +243,14 @@ class AgentContainer:
     def compositor_client(self) -> Client | None:
         """Front-door MCP client connected to the compositor (if started)."""
         return self._compositor_client
+
+    @property
+    def runtime_server(self):
+        """Get the runtime server instance (if compositor is started and runtime is mounted)."""
+
+        if self._compositor is None or self._compositor.runtime is None:
+            return None
+        return self._compositor.runtime.server
 
     async def list_mcp_entries(self) -> dict[str, ServerEntry]:
         """Return full per-server entries via compositor_meta resources.
@@ -434,6 +410,7 @@ class AgentContainer:
             agent_id=self.agent_id,
             approval_engine=approval_engine,
             ui_bus=self._ui_bus if self.with_ui else None,
+            ui_mount=self._compositor.ui if self.with_ui and self._compositor else None,
         )
 
         # LLM client
@@ -498,74 +475,12 @@ class AgentContainer:
                 )
 
                 return None
-            case _ReconfigureMsg(mcp_config=mcp_cfg, attach=attach, detach=detach):
-                # Inline former _op_reconfigure
-                comp2 = self._compositor
-                if comp2 is None:
-                    return None
-                if self._compositor_client is None:
-                    raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._compositor_client)
-                # Compute current specs for diffs
-                current_specs = await comp2.mount_specs()
-                # Full replace
-                if mcp_cfg is not None:
-                    desired = mcp_cfg.mcpServers or {}
-                    # Detach missing (parallel)
-                    miss = list(set(current_specs.keys()) - set(desired.keys()))
-                    if miss:
-                        await asyncio.gather(*(admin.detach_server(name=n) for n in miss))
-                    # Attach new or changed (parallel)
-                    attach_args: list[tuple[str, MCPServerTypes]] = []
-                    for name, spec in desired.items():
-                        prev = current_specs.get(name)
-                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
-                            attach_args.append((name, spec))
-                    if attach_args:
-                        await asyncio.gather(
-                            *(
-                                admin.attach_server(name=n, spec=convert_mcp_server_types_to_spec(s))
-                                for (n, s) in attach_args
-                            )
-                        )
-                # Incremental detach
-                if detach:
-                    await asyncio.gather(*(admin.detach_server(name=n) for n in detach))
-                # Incremental attach
-                for _, cfg in (attach or {}).items():
-                    latest_specs = await comp2.mount_specs()
-                    attach_args2: list[tuple[str, MCPServerTypes]] = []
-                    for name, spec in (cfg.mcpServers or {}).items():
-                        prev = latest_specs.get(name)
-                        if prev is None or prev.model_dump(mode="json") != spec.model_dump(mode="json"):
-                            attach_args2.append((name, spec))
-                    if attach_args2:
-                        await asyncio.gather(
-                            *(
-                                admin.attach_server(name=n, spec=convert_mcp_server_types_to_spec(s))
-                                for (n, s) in attach_args2
-                            )
-                        )
-                return None
             case _SamplingSnapshotMsg():
                 if self._compositor is None:
                     return None
                 return await self._compositor.sampling_snapshot()
             case _CloseMsg():
                 return await self._op_close()
-            case _AttachOneMsg(name=name, spec=spec):
-                # Route via compositor_admin tools (policy-gated)
-                if self._compositor_client is None:
-                    raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._compositor_client)
-                await admin.attach_server(name=name, spec=convert_mcp_server_types_to_spec(spec))
-                return None
-            case _DetachOneMsg(name=name):
-                if self._compositor_client is None:
-                    raise RuntimeError("mcp client not initialized")
-                admin = CompositorAdminClient(self._compositor_client)
-                await admin.detach_server(name=name)
-                return None
             case _:
                 raise TypeError(f"unsupported actor message: {type(msg).__name__}")
 
@@ -591,25 +506,6 @@ class AgentContainer:
         assert isinstance(result, CloseResult)
         return result
 
-    async def reconfigure_mcp(
-        self,
-        *,
-        mcp_config: MCPConfig | None = None,
-        attach: dict[str, MCPConfig] | None = None,
-        detach: list[str] | None = None,
-    ) -> None:
-        attach_payload = attach if attach is not None else {}
-        detach_payload = detach if detach is not None else []
-        await self._post_msg(_ReconfigureMsg(mcp_config=mcp_config, attach=attach_payload, detach=detach_payload))
-
-    async def attach_mcp(self, name: str, spec: MCPServerTypes) -> None:
-        """Attach a single server live via the actor."""
-        await self._post_msg(_AttachOneMsg(name=name, spec=spec))
-
-    async def detach_mcp(self, name: str) -> None:
-        """Detach a single server live via the actor."""
-        await self._post_msg(_DetachOneMsg(name=name))
-
     async def sampling_snapshot(self) -> SamplingSnapshot | None:
         """Return a structured snapshot of servers/tools via the actor."""
         res = await self._post_msg(_SamplingSnapshotMsg())
@@ -619,13 +515,6 @@ class AgentContainer:
         await self.persistence.record_approval(
             agent_id=self.agent_id, call_id=call_id, tool_key=tool_key, outcome=outcome, decided_at=datetime.now(UTC)
         )
-
-    # Seatbelt is no longer intercepted/rewritten; respect provided specs.
-
-    async def _attach_wired_seatbelt(self) -> None:
-        if self._compositor is None:
-            raise RuntimeError("compositor not initialized")
-        await attach_seatbelt_exec(self._compositor, name=SEATBELT_EXEC_MOUNT_PREFIX)
 
     async def _op_close(self) -> CloseResult:
         drained_ok = True

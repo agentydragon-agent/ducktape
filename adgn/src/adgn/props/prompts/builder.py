@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic import TypeAdapter
 
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
-from adgn.props.docker_env import PropertiesDockerWiring
+from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.models import (
     CanonicalFPCoverage,
     CanonicalTPCoverage,
@@ -22,7 +22,7 @@ from .util import render_prompt_template
 def build_enforce_prompt(
     scope_text: str,
     *,
-    wiring: PropertiesDockerWiring,
+    compositor: PropertiesDockerCompositor,
     schemas_json: dict[str, dict],
     supplemental_text: str | None = None,
 ) -> str:
@@ -30,7 +30,8 @@ def build_enforce_prompt(
         "prompts/enforce.j2.md",
         scope_text=scope_text,
         supplemental_text=supplemental_text,
-        wiring=wiring,
+        working_dir=compositor.working_dir,
+        definitions_container_dir=compositor.definitions_container_dir,
         schemas_json=schemas_json,
     )
 
@@ -41,7 +42,7 @@ def build_grade_from_json_prompt(
     critique_issues: list[CritiqueInputIssue],
     known_fps: list[KnownFalsePositive],
     submit_tool_name: str,
-    wiring: PropertiesDockerWiring,
+    compositor: PropertiesDockerCompositor,
 ) -> str:
     """Compose grader prompt that consumes structured JSON and requires submit via grader_submit."""
     schemas_json = build_input_schemas_json(
@@ -72,6 +73,7 @@ def build_grade_from_json_prompt(
         critique_issues_json=critique_json,
         known_fps_json=known_fps_json,
         submit_tool_name=submit_tool_name,
-        wiring=wiring,
+        working_dir=compositor.working_dir,
+        definitions_container_dir=compositor.definitions_container_dir,
         schemas_json=schemas_json,
     )

@@ -9,6 +9,7 @@ import pytest
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Prompt, Snapshot
+from adgn.props.db.snapshots import DBGraderOutput
 from adgn.props.files_hash import hash_file_set
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
@@ -19,7 +20,7 @@ from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 from tests.props.conftest import make_grader_output
 
 
-def _make_grader_output_for_recall(recall: float) -> dict:
+def _make_grader_output_for_recall(recall: float) -> DBGraderOutput:
     """Thin wrapper for warm-start tests that only care about recall."""
     return make_grader_output(
         tp_count=0, fp_count=0, recall=recall, tp_ratio=0.0, fp_ratio=0.0, summary="Test grader output"

@@ -14,6 +14,7 @@ from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import init_db, recreate_database
 from adgn.props.db.config import get_production_config
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.snapshots import DBGraderOutput
 from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.models import (
     CanonicalFPCoverage,
@@ -21,12 +22,12 @@ from adgn.props.grader.models import (
     FalsePositiveID,
     FPCoverageEntry,
     GraderInput,
-    GraderOutput,
     GradeSubmitInput,
     ReportedIssueRatios,
     TPCoverageEntry,
     TruePositiveID,
 )
+from adgn.props.grader.persistence import grade_submit_input_to_db
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.rationale import Rationale
@@ -41,11 +42,11 @@ TEST_FILES_HASH = hash_file_set(TEST_FILES)
 
 def make_grader_output(
     tp_count: int, fp_count: int, recall: float, tp_ratio: float, fp_ratio: float, summary: str
-) -> dict:
-    """Build GraderOutput using Pydantic models, return as dict for DB storage.
+) -> DBGraderOutput:
+    """Build GradeSubmitInput and convert to DB format for test storage.
 
     Uses actual Pydantic models to ensure test data matches the real schema.
-    The dict output is JSON-serializable for DB JSONB columns.
+    PydanticColumn accepts the model directly and handles serialization.
 
     Args:
         tp_count: Number of canonical TPs to create
@@ -80,7 +81,8 @@ def make_grader_output(
         recall=recall,
         summary=summary,
     )
-    return GraderOutput(grade=grade).model_dump(mode="json")
+    # Convert to DB format (flat structure)
+    return grade_submit_input_to_db(grade)
 
 
 @pytest.fixture
@@ -319,6 +321,11 @@ def test_db(request):
 
     # Build config for the new test database
     test_config = base_config.with_database(db_name)
+
+    # Dispose any existing connection (needed for per-test isolation in parallel tests)
+    from adgn.props.db import dispose_db
+
+    dispose_db()
 
     # Initialize schema in the new database
     init_db(test_config)

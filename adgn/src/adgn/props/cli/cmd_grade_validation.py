@@ -17,7 +17,7 @@ from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_async_docker_client, get_hydrator
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
-from adgn.props.db import get_session, init_db
+from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Prompt, Snapshot
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
@@ -49,7 +49,6 @@ async def cmd_grade_validation(
 
     This ensures we have complete evaluation coverage for validation set terminal metrics.
     """
-    init_db()
     critic_client = build_client(critic_model)
     grader_client = build_client(grader_model)
 

@@ -30,7 +30,6 @@ if TYPE_CHECKING:
     from fastmcp.tools import FunctionTool
 
     from adgn.mcp._shared.mounted import Mounted
-    from adgn.mcp.exec.docker.server import ContainerExecServer
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
@@ -38,7 +37,6 @@ from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsHandler
 from adgn.mcp._shared.types import SimpleOk
-from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -56,7 +54,7 @@ from adgn.props.critic.models import (
 )
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt, Snapshot
-from adgn.props.docker_env import properties_docker_spec
+from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
@@ -448,18 +446,24 @@ class CriticSubmitServer(EnhancedFastMCP):
 # =============================================================================
 
 
-class CriticCompositor(Compositor):
+class CriticCompositor(PropertiesDockerCompositor):
     """Compositor with critic servers pre-mounted.
 
-    Mounts:
-    - runtime: Docker exec server (via PropertiesDockerWiring)
+    Inherits from PropertiesDockerCompositor, which provides:
+    - runtime: Docker exec server (mounted by parent class)
+
+    Adds:
     - critic_submit: Critic submission server
 
     Usage:
-        wiring = properties_docker_spec(...)
         critic_state = CriticSubmitState()
 
-        async with CriticCompositor(wiring, critic_state) as comp:
+        async with CriticCompositor(
+            workspace_root=Path("/workspace"),
+            docker_client=docker_client,
+            critic_state=critic_state,
+            db_conn=DbConnectionConfig(...),
+        ) as comp:
             # Access servers via Mounted[T] wrappers:
             exec_tool_name = comp.runtime.server.exec_tool.name
             submit_tool_name = comp.critic_submit.server.submit_tool.name
@@ -472,29 +476,28 @@ class CriticCompositor(Compositor):
     # Mount prefix constant (for test infrastructure only)
     SUBMIT_PREFIX = "critic_submit"
 
-    # Mounted server attributes (populated in __aenter__)
-    runtime: Mounted[ContainerExecServer]
+    # Mounted server attributes (runtime inherited, critic_submit added here)
     critic_submit: Mounted[CriticSubmitServer]
 
-    def __init__(self, wiring, critic_state: CriticSubmitState):
+    def __init__(
+        self, workspace_root: Path, docker_client: aiodocker.Docker, critic_state: CriticSubmitState, **kwargs
+    ):
         """Create compositor with critic dependencies.
 
         Args:
-            wiring: Docker exec server wiring (will be mounted as determined by wiring)
-            critic_state: Critic submit state container (shared with caller)
+            workspace_root: Path to workspace directory to mount in container.
+            docker_client: Async Docker client (managed by caller).
+            critic_state: Critic submit state container (shared with caller).
+            **kwargs: Additional arguments passed to PropertiesDockerCompositor
+                (mount_properties, db_conn, extra_binds, workspace_mode, network_mode, extra_env, ephemeral)
         """
-        super().__init__()
-        # Store dependencies for mounting (can't mount yet - compositor not started)
-        self._wiring = wiring
+        super().__init__(workspace_root, docker_client, **kwargs)
         self._critic_state = critic_state
 
     async def __aenter__(self):
         """Start compositor and mount servers."""
-        # Start base compositor first
+        # Start parent compositor (mounts resources, compositor_meta, runtime)
         await super().__aenter__()
-
-        # Mount runtime server (docker exec) via wiring - returns Mounted[T] directly
-        self.runtime = await self._wiring.attach(self)
 
         # Mount critic submit server
         self.critic_submit = await self.mount_inproc(
@@ -616,15 +619,18 @@ async def run_critic(
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
     # Use ephemeral=False so critic can persist temporary analysis artifacts, checklists, and reasoning
-    wiring = properties_docker_spec(
-        content_root, docker_client=docker_client, mount_properties=mount_properties, ephemeral=False
-    )
 
     # Use CriticCompositor to bundle server mounting
-    async with CriticCompositor(wiring, critic_state) as comp:
+    async with CriticCompositor(
+        workspace_root=content_root,
+        docker_client=docker_client,
+        critic_state=critic_state,
+        mount_properties=mount_properties,
+        ephemeral=False,
+    ) as comp:
         # Set up handlers
         builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-        bootstrap_calls = make_bootstrap_calls_for_inspection(wiring, comp.resources, comp.runtime, builder)
+        bootstrap_calls = make_bootstrap_calls_for_inspection(comp, builder)
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         # Build servers dict for handlers
@@ -695,7 +701,12 @@ async def run_critic(
         # Create critique if successful
         critique_id = None
         if isinstance(output, CriticSuccess):
-            critique = Critique(snapshot_slug=input_data.snapshot_slug, payload=output.result.model_dump(mode="json"))
+            # Convert MCP model to DB model
+            from adgn.props.critic.persistence import critic_submit_payload_to_db
+
+            critique = Critique(
+                snapshot_slug=input_data.snapshot_slug, payload=critic_submit_payload_to_db(output.result)
+            )
             session.add(critique)
             session.flush()
             critique_id = critique.id

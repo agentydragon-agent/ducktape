@@ -19,8 +19,7 @@ from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
-from adgn.props.critic.models import CriticSubmitPayload
-from adgn.props.grader.models import GraderOutput
+from adgn.props.db.snapshots import DBCriticSubmitPayload, DBGraderOutput, DBKnownFalsePositive, DBTruePositiveIssue
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
@@ -127,6 +126,23 @@ class SplitColumn(TypeDecorator[Split]):
         if value is None:
             return None
         return Split(value)
+
+
+class CanonicalIssuesSnapshot(BaseModel):
+    """Snapshot of canonical true positives and false positives at grading time.
+
+    Persisted in GraderRun.canonical_issues_snapshot to track which issues
+    were used when grading a critique. This enables detecting stale grader runs
+    after editing issue files.
+
+    The serialized form is stored as JSONB in the database via PydanticColumn.
+
+    Uses database-specific models (DBTruePositiveIssue, DBKnownFalsePositive)
+    to decouple database persistence from MCP I/O protocol changes.
+    """
+
+    true_positives: list[DBTruePositiveIssue]
+    false_positives: list[DBKnownFalsePositive]
 
 
 class Base(DeclarativeBase):
@@ -405,7 +421,7 @@ class Critique(Base):
     May come from a critic run (via critic_runs.critique_id FK)
     or be manually created/imported.
 
-    Payload is always CriticSubmitPayload (from adgn.props.critic).
+    Payload uses DBCriticSubmitPayload (DB persistence model).
     """
 
     __tablename__ = "critiques"
@@ -417,7 +433,11 @@ class Critique(Base):
     # TODO: Add critic_scope_id FK to critic_scopes table to track which scope was used
     # for targeted reviews (not full-snapshot). This enables per-scope evaluation metrics
     # and better attribution of critique results to specific training examples.
-    payload: Mapped[CriticSubmitPayload] = mapped_column(PydanticColumn(CriticSubmitPayload), nullable=False)
+    payload: Mapped[DBCriticSubmitPayload] = mapped_column(
+        PydanticColumn(DBCriticSubmitPayload),
+        nullable=False,
+        comment="Critique payload (DB model). Conversion to/from MCP model happens in critic layer.",
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -496,12 +516,14 @@ class GraderRun(Base):
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
-    canonical_issues_snapshot: Mapped[dict[str, Any]] = mapped_column(
-        JSONB,
+    canonical_issues_snapshot: Mapped[CanonicalIssuesSnapshot] = mapped_column(
+        PydanticColumn(CanonicalIssuesSnapshot),
         nullable=False,
-        comment="Snapshot of canonical TPs+FPs used at grading time. Keys: 'true_positives', 'false_positives'",
+        comment="Snapshot of canonical TPs+FPs used at grading time",
     )
-    output: Mapped[GraderOutput] = mapped_column(PydanticColumn(GraderOutput), nullable=False)
+    output: Mapped[DBGraderOutput] = mapped_column(
+        PydanticColumn(DBGraderOutput), nullable=False, comment="Grader output (DB model, flat structure)."
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()

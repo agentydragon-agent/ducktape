@@ -114,23 +114,26 @@ def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
 
 
 def get_snapshot_manifest_path(base_path: Path, slug: SnapshotSlug) -> Path:
-    """Get synthetic manifest path for bundle URL resolution.
+    """Get synthetic reference path for resolving relative paths within a snapshot.
 
-    Returns a synthetic file path inside the snapshot directory used for
-    resolving relative bundle URLs. The actual file doesn't need to exist;
-    it's just a reference point for URL resolution.
+    Returns a synthetic path (doesn't actually exist on disk) used as a reference
+    point for resolving relative paths like LocalSource.root. The parent of this
+    path is the snapshot directory.
 
     Args:
         base_path: Specimens base directory
         slug: Snapshot slug like "ducktape/2025-11-26-00"
 
     Returns:
-        Path to synthetic _snapshot file used for bundle URL resolution
+        Synthetic path {snapshot_dir}/_snapshot (parent is snapshot directory)
 
     Example:
         >>> base = Path("/path/to/specimens")
-        >>> get_snapshot_manifest_path(base, SnapshotSlug("ducktape/2025-11-26-00"))
+        >>> path = get_snapshot_manifest_path(base, SnapshotSlug("ducktape/2025-11-26-00"))
+        >>> path
         PosixPath('/path/to/specimens/ducktape/2025-11-26-00/_snapshot')
+        >>> path.parent  # This is the snapshot directory
+        PosixPath('/path/to/specimens/ducktape/2025-11-26-00')
     """
     repo, version = split_snapshot_slug(slug)
     return (base_path / repo / version / "_snapshot").resolve()
