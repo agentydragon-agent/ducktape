@@ -3,7 +3,7 @@
 # - Minimal Python image with CLI tools used by runbooks
 # - Exposes adgn-detectors-custom via PYTHONPATH shim over src/
 
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
