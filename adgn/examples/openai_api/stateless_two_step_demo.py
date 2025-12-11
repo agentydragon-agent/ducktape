@@ -32,7 +32,9 @@ def run_text_demo() -> None:
 
     context: list[Any] = [{"role": "user", "content": "Answer 'done1'."}]
 
-    r1 = client.responses.create(model=MODEL, input=context, reasoning={"effort": "high"})
+    r1 = client.responses.create(
+        model=MODEL, input=context, reasoning={"effort": "high"}
+    )
     print("Response 1 id:", r1.id)
     for it in r1.output:
         print(it)
@@ -43,10 +45,14 @@ def run_text_demo() -> None:
     assert "message" in types, "No final message emitted"
 
     # Build stateless request2: reproduce prefix + prompt2
-    context.append({"role": "user", "content": "Continue in context; answer: second-step."})
+    context.append(
+        {"role": "user", "content": "Continue in context; answer: second-step."}
+    )
 
     print("Request 2 (stateless full-input)")
-    r2 = client.responses.create(model=MODEL, input=context, reasoning={"effort": "high"})
+    r2 = client.responses.create(
+        model=MODEL, input=context, reasoning={"effort": "high"}
+    )
     print("Response 2 id:", r2.id)
     for it in r2.output:
         print(it)
@@ -59,7 +65,11 @@ TOOLS = [
         "name": "echo",
         "type": "function",
         "description": "Return the provided text",
-        "parameters": {"type": "object", "properties": {"text": {"type": "string"}}, "required": ["text"]},
+        "parameters": {
+            "type": "object",
+            "properties": {"text": {"type": "string"}},
+            "required": ["text"],
+        },
     }
 ]
 
@@ -68,7 +78,11 @@ def run_tools_demo() -> None:
     print("TOOLS DEMO: Request 1 (reasoning + function_call)")
     context: list[Any] = [{"role": "user", "content": 'Call echo(text="first")'}]
     r1 = client.responses.create(
-        model=MODEL, input=context, tools=TOOLS, tool_choice="required", reasoning={"effort": "high"}
+        model=MODEL,
+        input=context,
+        tools=TOOLS,
+        tool_choice="required",
+        reasoning={"effort": "high"},
     )
     print("Response 1 id:", r1.id)
 
@@ -89,13 +103,21 @@ def run_tools_demo() -> None:
                 "output": json.dumps({"ok": True, "echo": args.get("text")}),
             }
         )
-    assert any(it.type == "function_call" for it in r1.output), "Response 1 did not emit a function_call."
+    assert any(it.type == "function_call" for it in r1.output), (
+        "Response 1 did not emit a function_call."
+    )
 
-    context.append({"role": "user", "content": "Using prior context: answer 'second-step'."})
+    context.append(
+        {"role": "user", "content": "Using prior context: answer 'second-step'."}
+    )
 
     print("Request 2 (stateless: prefix + tool outputs + prompt2)")
     r2 = client.responses.create(
-        model=MODEL, input=context, tools=TOOLS, tool_choice="required", reasoning={"effort": "high"}
+        model=MODEL,
+        input=context,
+        tools=TOOLS,
+        tool_choice="required",
+        reasoning={"effort": "high"},
     )
     out2 = r2.output or []
     print("Response 2 id:", r2.id)

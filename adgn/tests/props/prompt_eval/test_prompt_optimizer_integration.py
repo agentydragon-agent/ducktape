@@ -96,13 +96,14 @@ def po_agent_steps():
                     scope_kind="all",
                     scope_paths=None,
                     prompt_sha256=out.prompt_sha256,
+                    max_turns=10,
                 ),
             ),
         ),
         ExtractThenCall(
             "prompt_eval_run_critic",
             RunCriticOutput,
-            lambda out: ("prompt_eval", "run_grader", RunGraderInput(critique_id=out.critique_id)),
+            lambda out: ("prompt_eval", "run_grader", RunGraderInput(critique_id=out.critique_id, max_turns=10)),
         ),
         Finish("prompt_eval_run_grader", message="Done"),
     ]

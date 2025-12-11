@@ -23,7 +23,7 @@ def props_definitions_root() -> Path:
 
 
 def specimens_definitions_root() -> Path:
-    """Directory with specimen definitions (issues/*.libsonnet, snapshots.yaml, etc.).
+    """Directory with specimen definitions ({repo}/{version}/issues/*.libsonnet, snapshots.yaml, lib.libsonnet).
 
     Requires ADGN_PROPS_SPECIMENS_ROOT environment variable to be set.
 

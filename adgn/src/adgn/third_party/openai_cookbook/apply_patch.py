@@ -29,7 +29,9 @@ class Commit(BaseModel):
     changes: dict[str, FileChange] = Field(default_factory=dict)
 
 
-def assemble_changes(orig: dict[str, Optional[str]], dest: dict[str, Optional[str]]) -> Commit:
+def assemble_changes(
+    orig: dict[str, Optional[str]], dest: dict[str, Optional[str]]
+) -> Commit:
     commit = Commit()
     for path in sorted(set(orig.keys()).union(dest.keys())):
         old_content = orig.get(path)
@@ -37,12 +39,18 @@ def assemble_changes(orig: dict[str, Optional[str]], dest: dict[str, Optional[st
         if old_content != new_content:
             if old_content is not None and new_content is not None:
                 commit.changes[path] = FileChange(
-                    type=ActionType.UPDATE, old_content=old_content, new_content=new_content
+                    type=ActionType.UPDATE,
+                    old_content=old_content,
+                    new_content=new_content,
                 )
             elif new_content:
-                commit.changes[path] = FileChange(type=ActionType.ADD, new_content=new_content)
+                commit.changes[path] = FileChange(
+                    type=ActionType.ADD, new_content=new_content
+                )
             elif old_content:
-                commit.changes[path] = FileChange(type=ActionType.DELETE, old_content=old_content)
+                commit.changes[path] = FileChange(
+                    type=ActionType.DELETE, old_content=old_content
+                )
             else:
                 assert False
     return commit
@@ -144,7 +152,13 @@ class Parser(BaseModel):
         lines = text.split("\n")
         index = 0
         while not self.is_done(
-            ("*** End Patch", "*** Update File:", "*** Delete File:", "*** Add File:", "*** End of File")
+            (
+                "*** End Patch",
+                "*** Update File:",
+                "*** Delete File:",
+                "*** Add File:",
+                "*** End of File",
+            )
         ):
             def_str = self.read_str("@@ ")
             section_str = ""
@@ -164,7 +178,9 @@ class Parser(BaseModel):
                             index = i + 1
                             found = True
                             break
-                if not found and not [s for s in lines[:index] if s.strip() == def_str.strip()]:
+                if not found and not [
+                    s for s in lines[:index] if s.strip() == def_str.strip()
+                ]:
                     # def str is a skip ahead operator
                     for i, s in enumerate(lines[index:], index):
                         if s.strip() == def_str.strip():
@@ -173,7 +189,9 @@ class Parser(BaseModel):
                             self.fuzz += 1
                             found = True
                             break
-            next_chunk_context, chunks, end_patch_index, eof = peek_next_section(self.lines, self.index)
+            next_chunk_context, chunks, end_patch_index, eof = peek_next_section(
+                self.lines, self.index
+            )
             next_chunk_text = "\n".join(next_chunk_context)
             new_index, fuzz = find_context(lines, next_chunk_context, index, eof)
             if new_index == -1:
@@ -192,7 +210,9 @@ class Parser(BaseModel):
 
     def parse_add_file(self) -> PatchAction:
         lines = []
-        while not self.is_done(("*** End Patch", "*** Update File:", "*** Delete File:", "*** Add File:")):
+        while not self.is_done(
+            ("*** End Patch", "*** Update File:", "*** Delete File:", "*** Add File:")
+        ):
             s = self.read_str()
             if not s.startswith("+"):
                 raise DiffError(f"Invalid Add File Line: {s}")
@@ -201,7 +221,9 @@ class Parser(BaseModel):
         return PatchAction(type=ActionType.ADD, new_file="\n".join(lines))
 
 
-def find_context_core(lines: list[str], context: list[str], start: int) -> tuple[int, int]:
+def find_context_core(
+    lines: list[str], context: list[str], start: int
+) -> tuple[int, int]:
     if not context:
         print("context is empty")
         return start, 0
@@ -212,16 +234,22 @@ def find_context_core(lines: list[str], context: list[str], start: int) -> tuple
             return i, 0
     # RStrip is ok
     for i in range(start, len(lines)):
-        if [s.rstrip() for s in lines[i : i + len(context)]] == [s.rstrip() for s in context]:
+        if [s.rstrip() for s in lines[i : i + len(context)]] == [
+            s.rstrip() for s in context
+        ]:
             return i, 1
     # Fine, Strip is ok too.
     for i in range(start, len(lines)):
-        if [s.strip() for s in lines[i : i + len(context)]] == [s.strip() for s in context]:
+        if [s.strip() for s in lines[i : i + len(context)]] == [
+            s.strip() for s in context
+        ]:
             return i, 100
     return -1, 0
 
 
-def find_context(lines: list[str], context: list[str], start: int, eof: bool) -> tuple[int, int]:
+def find_context(
+    lines: list[str], context: list[str], start: int, eof: bool
+) -> tuple[int, int]:
     if eof:
         new_index, fuzz = find_context_core(lines, context, len(lines) - len(context))
         if new_index != -1:
@@ -231,7 +259,9 @@ def find_context(lines: list[str], context: list[str], start: int, eof: bool) ->
     return find_context_core(lines, context, start)
 
 
-def peek_next_section(lines: list[str], index: int) -> tuple[list[str], list[Chunk], int, bool]:
+def peek_next_section(
+    lines: list[str], index: int
+) -> tuple[list[str], list[Chunk], int, bool]:
     old: list[str] = []
     del_lines: list[str] = []
     ins_lines: list[str] = []
@@ -241,7 +271,14 @@ def peek_next_section(lines: list[str], index: int) -> tuple[list[str], list[Chu
     while index < len(lines):
         s = lines[index]
         if s.startswith(
-            ("@@", "*** End Patch", "*** Update File:", "*** Delete File:", "*** Add File:", "*** End of File")
+            (
+                "@@",
+                "*** End Patch",
+                "*** Update File:",
+                "*** Delete File:",
+                "*** Add File:",
+                "*** End of File",
+            )
         ):
             break
         if s == "***":
@@ -263,7 +300,13 @@ def peek_next_section(lines: list[str], index: int) -> tuple[list[str], list[Chu
         s = s[1:]
         if mode == "keep" and last_mode != mode:
             if ins_lines or del_lines:
-                chunks.append(Chunk(orig_index=len(old) - len(del_lines), del_lines=del_lines, ins_lines=ins_lines))
+                chunks.append(
+                    Chunk(
+                        orig_index=len(old) - len(del_lines),
+                        del_lines=del_lines,
+                        ins_lines=ins_lines,
+                    )
+                )
             del_lines = []
             ins_lines = []
         if mode == "delete":
@@ -274,7 +317,13 @@ def peek_next_section(lines: list[str], index: int) -> tuple[list[str], list[Chu
         elif mode == "keep":
             old.append(s)
     if ins_lines or del_lines:
-        chunks.append(Chunk(orig_index=len(old) - len(del_lines), del_lines=del_lines, ins_lines=ins_lines))
+        chunks.append(
+            Chunk(
+                orig_index=len(old) - len(del_lines),
+                del_lines=del_lines,
+                ins_lines=ins_lines,
+            )
+        )
         del_lines = []
         ins_lines = []
     if index < len(lines) and lines[index] == "*** End of File":
@@ -287,7 +336,11 @@ def peek_next_section(lines: list[str], index: int) -> tuple[list[str], list[Chu
 
 def text_to_patch(text: str, orig: dict[str, str]) -> tuple[Patch, int]:
     lines = text.strip().split("\n")
-    if len(lines) < 2 or not lines[0].startswith("*** Begin Patch") or lines[-1] != "*** End Patch":
+    if (
+        len(lines) < 2
+        or not lines[0].startswith("*** Begin Patch")
+        or lines[-1] != "*** End Patch"
+    ):
         raise DiffError("Invalid patch text")
 
     parser = Parser(current_files=orig, lines=lines, index=1)
@@ -315,12 +368,16 @@ def _get_updated_file(text: str, action: PatchAction, path: str) -> str:
     for chunk in action.chunks:
         # Process the unchanged lines before the chunk
         if chunk.orig_index > len(orig_lines):
-            print(f"_get_updated_file: {path}: chunk.orig_index {chunk.orig_index} > len(lines) {len(orig_lines)}")
+            print(
+                f"_get_updated_file: {path}: chunk.orig_index {chunk.orig_index} > len(lines) {len(orig_lines)}"
+            )
             raise DiffError(
                 f"_get_updated_file: {path}: chunk.orig_index {chunk.orig_index} > len(lines) {len(orig_lines)}"
             )
         if orig_index > chunk.orig_index:
-            raise DiffError(f"_get_updated_file: {path}: orig_index {orig_index} > chunk.orig_index {chunk.orig_index}")
+            raise DiffError(
+                f"_get_updated_file: {path}: orig_index {orig_index} > chunk.orig_index {chunk.orig_index}"
+            )
         assert orig_index <= chunk.orig_index
         dest_lines.extend(orig_lines[orig_index : chunk.orig_index])
         delta = chunk.orig_index - orig_index
@@ -346,13 +403,20 @@ def patch_to_commit(patch: Patch, orig: dict[str, str]) -> Commit:
     commit = Commit()
     for path, action in patch.actions.items():
         if action.type == ActionType.DELETE:
-            commit.changes[path] = FileChange(type=ActionType.DELETE, old_content=orig[path])
+            commit.changes[path] = FileChange(
+                type=ActionType.DELETE, old_content=orig[path]
+            )
         elif action.type == ActionType.ADD:
-            commit.changes[path] = FileChange(type=ActionType.ADD, new_content=action.new_file)
+            commit.changes[path] = FileChange(
+                type=ActionType.ADD, new_content=action.new_file
+            )
         elif action.type == ActionType.UPDATE:
             new_content = _get_updated_file(text=orig[path], action=action, path=path)
             commit.changes[path] = FileChange(
-                type=ActionType.UPDATE, old_content=orig[path], new_content=new_content, move_path=action.move_path
+                type=ActionType.UPDATE,
+                old_content=orig[path],
+                new_content=new_content,
+                move_path=action.move_path,
             )
     return commit
 
@@ -387,7 +451,9 @@ def apply_commit(commit: Commit, write_fn: Callable, remove_fn: Callable) -> Non
                 write_fn(path, change.new_content)
 
 
-def process_patch(text: str, open_fn: Callable, write_fn: Callable, remove_fn: Callable) -> str:
+def process_patch(
+    text: str, open_fn: Callable, write_fn: Callable, remove_fn: Callable
+) -> str:
     assert text.startswith("*** Begin Patch")
     paths = identify_files_needed(text)
     orig = load_files(paths, open_fn)

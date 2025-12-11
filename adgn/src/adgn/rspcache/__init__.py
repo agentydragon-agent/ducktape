@@ -75,7 +75,7 @@ class StreamingContext:
                     continue
                 for frame in parsed:
                     frame_payload = _response_stream_event_adapter.validate_python(frame)
-                    self.response_id, usage_update, latest = await _update_response_state(
+                    (self.response_id, usage_update, latest) = await _update_response_state(
                         frame=frame_payload, db=self.db, cache_key=self.key, response_id=self.response_id
                     )
                     if usage_update is not None:

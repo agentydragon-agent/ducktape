@@ -54,7 +54,8 @@ def test_validate_critic_scopes_coverage_catches_missing(tmp_path: Path):
     """Test that validation catches missing expect_caught_from sets."""
     # Create minimal test structure
     test_snapshot_dir = tmp_path / "test-project" / "2025-01-01-00"
-    test_snapshot_dir.mkdir(parents=True)
+    test_issues_dir = test_snapshot_dir / "issues"
+    test_issues_dir.mkdir(parents=True)
 
     # Create snapshots.yaml
     (tmp_path / "snapshots.yaml").write_text("""
@@ -72,8 +73,8 @@ test-project/2025-01-01-00:
   - files: ["src/file1.py"]
 """)
 
-    # Create issue with TWO expect_caught_from sets
-    (test_snapshot_dir / "test-issue.libsonnet").write_text("""
+    # Create issue with TWO expect_caught_from sets (in issues subdirectory)
+    (test_issues_dir / "test-issue.libsonnet").write_text("""
 local I = import 'lib.libsonnet';
 I.issue(
   rationale='Test issue with multiple trigger sets',
@@ -82,14 +83,25 @@ I.issue(
 )
 """)
 
-    # Create lib.libsonnet
+    # Create lib.libsonnet (minimal version with should_flag and range normalization)
     (tmp_path / "lib.libsonnet").write_text("""
+local toRange(x) =
+  if std.type(x) == 'number' then { start_line: x, end_line: null }
+  else if std.type(x) == 'array' && std.length(x) == 2 then { start_line: x[0], end_line: x[1] }
+  else x;
+
+local normFiles(files) = {
+  [file]: [toRange(r) for r in files[file]]
+  for file in std.objectFields(files)
+};
+
 {
   issue(rationale, filesToRanges, expect_caught_from=null): {
     rationale: rationale,
+    should_flag: true,
     occurrences: [
       {
-        files: filesToRanges,
+        files: normFiles(filesToRanges),
         expect_caught_from: if expect_caught_from != null then expect_caught_from else [std.objectFields(filesToRanges)],
       }
     ],

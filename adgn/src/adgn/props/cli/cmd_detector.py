@@ -10,14 +10,12 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func
 import typer
-from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.resources import get_async_docker_client
 from adgn.props.cli.shared import filter_files
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
@@ -277,29 +275,32 @@ async def cmd_run_detector(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
-    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Run detector (always structured mode)."""
-    # Load current file content and upsert to DB (auto-sync)
-    prompt_sha256 = load_and_upsert_detector_prompt(filename)
+    docker_client = aiodocker.Docker()
+    try:
+        # Load current file content and upsert to DB (auto-sync)
+        prompt_sha256 = load_and_upsert_detector_prompt(filename)
 
-    # Execute critic (fetches system+user prompts internally via prompt_sha256)
-    hydrator = SnapshotHydrator.from_env()
-    async with hydrator.hydrate(snapshot) as hydrated:
-        files_spec = filter_files(hydrated.all_discovered_files, files)
-        critic_output, run_id, critique_id = await run_critic(
-            input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=prompt_sha256),
-            client=build_client(model),
-            docker_client=docker_client,
-            content_root=hydrated.content_root,
-            prompt_optimization_run_id=None,
-            mount_properties=False,
-            verbose=verbose,
-        )
+        # Execute critic (fetches system+user prompts internally via prompt_sha256)
+        hydrator = SnapshotHydrator.from_env()
+        async with hydrator.hydrate(snapshot) as hydrated:
+            files_spec = filter_files(hydrated.all_discovered_files, files)
+            critic_output, run_id, critique_id = await run_critic(
+                input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=prompt_sha256),
+                client=build_client(model),
+                docker_client=docker_client,
+                content_root=hydrated.content_root,
+                prompt_optimization_run_id=None,
+                mount_properties=False,
+                verbose=verbose,
+            )
 
-    # Output structured critique
-    Console().print(render_to_rich(critic_output.result))
-    typer.echo(f"\nRun: {run_id} | Critique: {critique_id}")
+        # Output structured critique
+        Console().print(render_to_rich(critic_output.result))
+        typer.echo(f"\nRun: {run_id} | Critique: {critique_id}")
+    finally:
+        await docker_client.close()
 
 
 @async_run
@@ -307,11 +308,14 @@ async def cmd_detector_coverage(
     run_missing: bool = typer.Option(False, "--run-missing", help="Run missing (detector, snapshot) pairs"),
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
-    docker_client: aiodocker.Docker = Depends(get_async_docker_client),
 ) -> None:
     """Check evaluation coverage for all (detector, snapshot) pairs.
 
     Shows which detector prompts have been evaluated against which snapshots.
     Use --run-missing to automatically evaluate all missing (detector, snapshot) pairs.
     """
-    await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose, docker_client=docker_client)
+    docker_client = aiodocker.Docker()
+    try:
+        await run_detector_coverage(run_missing=run_missing, model=model, verbose=verbose, docker_client=docker_client)
+    finally:
+        await docker_client.close()

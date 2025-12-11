@@ -170,7 +170,7 @@ def sync_snapshots_to_db(session: Session, base_path: Path) -> SyncStats:
 def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
     """Sync issues and false positives from filesystem to database.
 
-    For each snapshot, loads issues from specimens/{slug}/*.libsonnet
+    For each snapshot, loads issues from specimens/{slug}/issues/*.libsonnet
     and upserts to issues and false_positives tables.
 
     Args:

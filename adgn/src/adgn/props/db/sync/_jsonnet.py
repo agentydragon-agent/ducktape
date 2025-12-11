@@ -29,19 +29,15 @@ from adgn.props.models.true_positive import SnapshotIssuesLoadError
 
 logger = logging.getLogger(__name__)
 
-# Jsonnet library directory (for lib.libsonnet resolution)
-# Path: db/sync/_jsonnet.py → db/sync/ → db/ → props/ → specimens/
-JSONNET_LIBDIR = Path(__file__).resolve().parent.parent.parent / "specimens"
 
-
-def evaluate_snapshot_issues(snapshot_dir: Path) -> tuple[dict[str, dict], dict[str, dict]]:
+def evaluate_snapshot_issues(snapshot_dir: Path, specimens_base: Path) -> tuple[dict[str, dict], dict[str, dict]]:
     """Evaluate all Jsonnet issue files in a snapshot directory.
 
     ⚠️ SYNC PATH ONLY - use IssueData.from_db() everywhere else.
 
     This is the ONLY function in the codebase that evaluates jsonnet files.
-    It reads all *.libsonnet files from the snapshot directory and returns
-    raw dicts for true positives and false positives.
+    It reads all *.libsonnet files from the snapshot's issues/ subdirectory and
+    returns raw dicts for true positives and false positives.
 
     The caller is responsible for:
     - Validating the raw dicts into Pydantic models
@@ -49,7 +45,8 @@ def evaluate_snapshot_issues(snapshot_dir: Path) -> tuple[dict[str, dict], dict[
     - Never calling this function again after sync
 
     Args:
-        snapshot_dir: Snapshot directory containing *.libsonnet files
+        snapshot_dir: Snapshot directory containing an issues/ subdirectory with *.libsonnet files
+        specimens_base: Base specimens directory (for lib.libsonnet resolution via jpathdir)
 
     Returns:
         Tuple of (true_positives, false_positives) dicts.
@@ -61,10 +58,14 @@ def evaluate_snapshot_issues(snapshot_dir: Path) -> tuple[dict[str, dict], dict[
     if not snapshot_dir.is_dir():
         raise SnapshotIssuesLoadError([f"Snapshot directory not found: {snapshot_dir}"])
 
-    # Discover all libsonnet files in the directory
-    issue_files = sorted(snapshot_dir.glob("*.libsonnet"))
+    # Discover all libsonnet files in the issues subdirectory
+    issues_subdir = snapshot_dir / "issues"
+    if not issues_subdir.is_dir():
+        raise SnapshotIssuesLoadError([f"Issues subdirectory not found: {issues_subdir}"])
+
+    issue_files = sorted(issues_subdir.glob("*.libsonnet"))
     if not issue_files:
-        raise SnapshotIssuesLoadError([f"No issue files found in: {snapshot_dir}"])
+        raise SnapshotIssuesLoadError([f"No issue files found in: {issues_subdir}"])
 
     # Build Jsonnet snippet to batch-load all files and separate TPs/FPs
     imports = []
@@ -86,7 +87,7 @@ def evaluate_snapshot_issues(snapshot_dir: Path) -> tuple[dict[str, dict], dict[
     # Uses jpathdir for lib.libsonnet resolution; nested imports work via default resolution
     eval_snippet = cast(Callable[..., Any], _jsonnet.evaluate_snippet)
     try:
-        raw_obj = eval_snippet("<batch:separated>", snippet, jpathdir=[str(JSONNET_LIBDIR)])
+        raw_obj = eval_snippet("<batch:separated>", snippet, jpathdir=[str(specimens_base)])
     except Exception as e:
         raise SnapshotIssuesLoadError([f"Jsonnet evaluation failed: {e}"]) from e
 

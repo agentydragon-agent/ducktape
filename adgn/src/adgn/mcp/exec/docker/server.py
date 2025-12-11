@@ -122,9 +122,9 @@ class ContainerExecServer(EnhancedFastMCP):
                 cmd = input.cmd
 
                 if s.ephemeral or opts.ephemeral:
-                    stdout_buf, stderr_buf, exit_code, timed_out = await run_ephemeral_container(s, cmd, input)
+                    (stdout_buf, stderr_buf, exit_code, timed_out) = await run_ephemeral_container(s, cmd, input)
                 else:
-                    stdout_buf, stderr_buf, exit_code, timed_out = await run_session_container(s, cmd, input, opts)
+                    (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(s, cmd, input, opts)
 
                 duration_ms = get_duration_ms()
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)

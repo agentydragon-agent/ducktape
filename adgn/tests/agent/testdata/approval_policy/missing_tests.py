@@ -1,4 +1,8 @@
-from adgn.agent.policies.policy_types import ApprovalDecision, PolicyRequest, PolicyResponse
+from adgn.agent.policies.policy_types import (
+    ApprovalDecision,
+    PolicyRequest,
+    PolicyResponse,
+)
 
 
 def decide(req: PolicyRequest) -> PolicyResponse:
@@ -7,4 +11,5 @@ def decide(req: PolicyRequest) -> PolicyResponse:
 
 if __name__ == "__main__":
     from adgn.agent.policies.scaffold import run
+
     raise SystemExit(run(decide))

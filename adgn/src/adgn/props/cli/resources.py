@@ -28,7 +28,6 @@ from __future__ import annotations
 
 import atexit
 
-import aiodocker
 import docker
 
 from ..hydration import SnapshotHydrator
@@ -62,19 +61,21 @@ def get_docker_client() -> docker.DockerClient:
     return client
 
 
-def get_async_docker_client() -> aiodocker.Docker:
-    """Get async Docker client for FastMCP servers (connects once per CLI invocation).
-
-    Expensive operation:
-    - Connects to Docker daemon (async client for aiodocker)
-    - Used by FastMCP container exec servers
-
-    typer-di calls this function only once per CLI invocation.
-    Cleanup: caller should close via `await client.close()` or register with atexit.
-
-    Note: This is separate from get_docker_client() which provides sync docker.DockerClient.
-    Use this for async contexts (FastMCP servers), use get_docker_client() for sync operations.
-    """
-    # Note: aiodocker cleanup must be done in async context, so we can't use atexit here
-    # Callers are responsible for cleanup (typically in CLI command's finally block)
-    return aiodocker.Docker()
+# NOTE: No get_async_docker_client() dependency function here.
+#
+# aiodocker.Docker() requires a running event loop (it creates aiohttp.UnixConnector
+# internally which calls asyncio.get_running_loop()). typer-di does not support
+# async dependencies - it calls dependency functions synchronously before the
+# async command starts.
+#
+# Therefore, async commands that need aiodocker.Docker should create it directly:
+#
+#   async def my_command(...):
+#       docker_client = aiodocker.Docker()
+#       try:
+#           # use docker_client
+#           ...
+#       finally:
+#           await docker_client.close()
+#
+# This ensures the Docker client is created inside the running event loop.

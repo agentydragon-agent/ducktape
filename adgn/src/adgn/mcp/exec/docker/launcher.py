@@ -10,10 +10,9 @@ from typing import Annotated
 
 import aiodocker
 import typer
-from typer_di import Depends, TyperDI
+from typer_di import TyperDI
 
 from adgn.cli_utils import async_run
-from adgn.props.cli.resources import get_async_docker_client
 
 from ..._shared.container_session import ContainerOptions
 from ..._shared.types import NetworkMode
@@ -95,22 +94,22 @@ async def main(
     ephemeral: Annotated[
         bool, typer.Option(help="Run each command in a fresh ephemeral container with host-enforced timeouts")
     ] = False,
-    docker_client: aiodocker.Docker = Depends(get_async_docker_client),  # noqa: B008
 ) -> None:
     """Run docker_exec MCP server over stdio transport."""
-    binds_dict = _parse_binds(binds)
-    labels_dict = _parse_labels(label)
-
-    opts = ContainerOptions(
-        image=image,
-        working_dir=Path(working_dir),
-        binds=binds_dict,
-        network_mode=network_mode,
-        labels=labels_dict,
-        ephemeral=ephemeral,
-    )
-
+    docker_client = aiodocker.Docker()
     try:
+        binds_dict = _parse_binds(binds)
+        labels_dict = _parse_labels(label)
+
+        opts = ContainerOptions(
+            image=image,
+            working_dir=Path(working_dir),
+            binds=binds_dict,
+            network_mode=network_mode,
+            labels=labels_dict,
+            ephemeral=ephemeral,
+        )
+
         server = ContainerExecServer(opts, docker_client)
         await server.run_stdio_async()
     finally:

@@ -81,7 +81,7 @@ class FilesystemLoader:
         return snapshots
 
     def load_issues_for_snapshot(self, slug: SnapshotSlug) -> tuple[list[TruePositive], list[FalsePositive]]:
-        """Evaluate specimens/{slug}/*.libsonnet → Issue/FP objects.
+        """Evaluate specimens/{slug}/issues/*.libsonnet → Issue/FP objects.
 
         Uses batch evaluation from _jsonnet.evaluate_snapshot_issues() which handles
         TP/FP splitting based on occurrence structure.
@@ -104,7 +104,7 @@ class FilesystemLoader:
             raise FileNotFoundError(f"Snapshot directory not found: {snapshot_dir}")
 
         # Batch-evaluate all issues (returns dicts with IDs already injected)
-        raw_tps, raw_fps = evaluate_snapshot_issues(snapshot_dir)
+        raw_tps, raw_fps = evaluate_snapshot_issues(snapshot_dir, self.specimens_dir)
 
         # Convert to Pydantic models with proper instantiation
         return (

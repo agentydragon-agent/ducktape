@@ -282,7 +282,8 @@ def resolve_source_root(manifest: SnapshotDoc, snapshot_path: Path) -> Path:
         src = (snapshot_path.parent / manifest.source.root).resolve()
         tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-local-"))
         dest = tmpdir / src.name
-        shutil.copytree(src, dest)
+        # Ignore broken symlinks (e.g., test fixtures pointing to lib.libsonnet in separate specimens repo)
+        shutil.copytree(src, dest, ignore_dangling_symlinks=True)
         return dest
     raise SystemExit(f"Unsupported source type: {type(manifest.source)}")
 

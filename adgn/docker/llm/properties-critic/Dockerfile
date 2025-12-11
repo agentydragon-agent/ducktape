@@ -37,21 +37,18 @@ WORKDIR /opt/adgn
 RUN curl -sSL https://github.com/semgrep/semgrep/releases/latest/download/semgrep-$(uname -s)-$(uname -m) -o /usr/local/bin/semgrep \
  && chmod +x /usr/local/bin/semgrep
 
-# Copy repo sources to make adgn.* importable without installing the whole package.
-COPY src /opt/adgn/src
-COPY pyproject.toml /opt/adgn/
+# Install adgn package with all dependencies
+COPY pyproject.toml uv.lock ./
+COPY src ./src
 
-ENV PYTHONPATH="/opt/adgn/src"
-
-# Python tools used by runbooks (install as wheels)
-# MCP SDK is included for HTTP server connectivity (Phase 1: MCP over Docker network)
-# Note: semgrep installed above as binary, not via pip
+# Install the adgn package (pulls all dependencies from pyproject.toml)
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
     python -m pip install --upgrade pip \
- && PIP_NO_CACHE_DIR=0 python -m pip install \
-        pydantic \
-        ruff==0.13.3 \
-        mypy==1.18.2 \
+ && PIP_NO_CACHE_DIR=0 python -m pip install .[dev]
+
+# Install additional analysis tools used by critic runbooks
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    PIP_NO_CACHE_DIR=0 python -m pip install \
         vulture==2.14 \
         bandit \
         safety \
@@ -62,7 +59,6 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         lizard \
         import-linter \
         pyan3 \
-        pytest \
         coverage \
         codespell \
         pyupgrade \
@@ -70,8 +66,7 @@ RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
         flynt \
         pydocstyle \
         interrogate \
-        diff-cover \
-        mcp>=1.0.0
+        diff-cover
 
 # Node-based tools
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \

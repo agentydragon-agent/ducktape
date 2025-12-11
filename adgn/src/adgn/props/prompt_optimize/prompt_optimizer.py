@@ -128,7 +128,7 @@ def make_po_bootstrap_calls(
             cmd=[
                 "python",
                 "-c",
-                "import adgn.props.critic; import pathlib; p = pathlib.Path(adgn.props.critic.__file__).parent / 'prompts' / 'critic_system.j2.md'; print(p.read_text())",
+                "from importlib import resources; print(resources.files('adgn.props.critic').joinpath('prompts/critic_system.j2.md').read_text())",
             ],
         ),
     ]
@@ -168,10 +168,7 @@ class RunCriticToolInput(OpenAIStrictModeBaseModel):
     )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt (from upsert_prompt)")
     max_turns: int = Field(
-        default=50,
-        ge=1,
-        lt=1000,
-        description="Maximum number of sampling turns allowed for this critic run (1-999, default 50)",
+        ge=1, lt=1000, description="Maximum number of sampling turns allowed for this critic run (1-999)"
     )
 
     @model_validator(mode="after")
@@ -226,10 +223,7 @@ class RunGraderInput(OpenAIStrictModeBaseModel):
 
     critique_id: UUID = Field(description="critiques.id - The critique to grade (from run_critic output)")
     max_turns: int = Field(
-        default=30,
-        ge=1,
-        lt=1000,
-        description="Maximum number of sampling turns allowed for this grader run (1-999, default 30)",
+        ge=1, lt=1000, description="Maximum number of sampling turns allowed for this grader run (1-999)"
     )
 
 
@@ -379,10 +373,15 @@ class PromptEvalServer(EnhancedFastMCP):
             """Save a prompt into the Postgres database. When you want to test or eval a prompt, first make sure it's in the db.
 
             Workflow:
-            1. Write prompt to file using docker_exec (e.g., cat > /workspace/prompt-v1.txt << 'EOF')
-            2. Call this tool with the container file path (e.g., /workspace/prompt-v1.txt)
-            3. Tool reads from mapped host path, hashes the content, and stores in database
-            4. Use returned SHA256 in run_critic calls
+            1. Write prompt to file using docker_exec with shell heredoc:
+               bash -c "cat > /workspace/prompt-v1.md << 'EOF'
+               <your prompt text here>
+               EOF"
+            2. Call this tool with the container file path: /workspace/prompt-v1.md
+            3. Tool reads from mapped host path, hashes content, stores in database
+            4. Use returned SHA256 hash in run_critic calls
+
+            IMPORTANT: Use bash -c with heredoc for multi-line content. Do not use printf or echo with redirection.
 
             Returns SHA256 hash for use in run_critic tool.
             """
@@ -391,13 +390,20 @@ class PromptEvalServer(EnhancedFastMCP):
             container_path = Path(payload.file_path)
             working_dir_str = str(WORKING_DIR) + "/"
             if not str(container_path).startswith(working_dir_str):
-                raise ValueError(f"File path must be in {WORKING_DIR}/ directory, got: {payload.file_path}")
+                raise ToolError(f"File path must be in {WORKING_DIR}/ directory, got: {payload.file_path}")
 
             relative_path = str(container_path).removeprefix(working_dir_str)
             host_path = workspace_root / relative_path
 
             if not host_path.exists():
-                raise FileNotFoundError(f"Prompt file not found: {host_path}")
+                raise ToolError(
+                    f"Prompt file not found at {payload.file_path}. "
+                    f"First write the file using docker_exec with bash heredoc:\n"
+                    f"bash -c \"cat > {payload.file_path} << 'EOF'\n"
+                    f"<your prompt text>\n"
+                    f'EOF"\n'
+                    f"Then call upsert_prompt with file_path={payload.file_path}"
+                )
 
             # Read prompt text from host filesystem
             prompt_text = host_path.read_text(encoding="utf-8")
@@ -485,7 +491,7 @@ class PromptEvalServer(EnhancedFastMCP):
 
                 # Execute critic run
                 try:
-                    _critic_success, critic_run_id, critique_id = await execute_critic_run(
+                    (_critic_success, critic_run_id, critique_id) = await execute_critic_run(
                         input_data=critic_input,
                         client=self._critic_client,
                         docker_client=self._docker_client,

@@ -141,6 +141,10 @@ include = ["adgn*"]
   "prompts/*.j2.md",
   "prompts/**/*.j2.md",
 ]
+"adgn.props.critic" = [
+  "prompts/*.md",
+  "prompts/*.j2.md",
+]
 "adgn.agent.server" = [
   "static/*",
   "static/**/*",
