@@ -466,7 +466,7 @@ class CriticRun(Base):
     output: Mapped[DBCriticOutput | None] = mapped_column(
         PydanticColumn(DBCriticOutput),
         nullable=True,
-        comment="Critic output (discriminated union: success or max_turns_exceeded). NULL only during initial creation, always set after run completes.",
+        comment="Critic output (discriminated union: success, max_turns_exceeded, or context_length_exceeded). NULL only during initial creation, always set after run completes.",
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

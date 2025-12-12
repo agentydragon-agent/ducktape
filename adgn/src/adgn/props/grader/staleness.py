@@ -10,34 +10,74 @@ import canonicaljson
 from sqlalchemy import select
 
 from adgn.props.db import get_session
-from adgn.props.db.models import CanonicalIssuesSnapshot, CriticRun, GraderRun, Snapshot as DBSnapshot
-from adgn.props.db.snapshots import DBTruePositiveIssue
-from adgn.props.grader.models import FalsePositiveID, KnownFalsePositive, Rationale, TruePositiveID, TruePositiveIssue
-from adgn.props.grader.persistence import fp_to_db, tp_to_db
+from adgn.props.db.models import (
+    CanonicalIssuesSnapshot,
+    CriticRun,
+    FalsePositive,
+    GraderRun,
+    Snapshot as DBSnapshot,
+    TruePositive,
+)
+from adgn.props.db.snapshots import (
+    DBFalsePositiveOccurrence,
+    DBKnownFalsePositive,
+    DBLineRange,
+    DBTruePositiveIssue,
+    DBTruePositiveOccurrence,
+)
 from adgn.props.ids import SnapshotSlug
 
 
-def filter_catchable_tps(tps: list[TruePositiveIssue], targeted_files: set[Path]) -> list[TruePositiveIssue]:
-    """Filter TPs to only those catchable from targeted_files."""
-    catchable = []
-    for tp in tps:
-        is_catchable = False
-        for occurrence in tp.occurrences:
-            for trigger_set in occurrence.expect_caught_from:
-                if trigger_set <= targeted_files:
-                    is_catchable = True
-                    break
-            if is_catchable:
-                break
-        if is_catchable:
-            catchable.append(tp)
-    return catchable
+def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
+    """Convert ORM TruePositive to DB persistence model."""
+    return DBTruePositiveIssue(
+        id=orm_tp.tp_id,
+        rationale=orm_tp.rationale,
+        occurrences=[
+            DBTruePositiveOccurrence(
+                files={
+                    str(path): (
+                        [DBLineRange(start_line=lr.start_line, end_line=lr.end_line) for lr in ranges]
+                        if ranges
+                        else None
+                    )
+                    for path, ranges in occ.files.items()
+                },
+                note=occ.note,
+                expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from],
+            )
+            for occ in orm_tp.occurrences
+        ],
+    )
+
+
+def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
+    """Convert ORM FalsePositive to DB persistence model."""
+    return DBKnownFalsePositive(
+        id=orm_fp.fp_id,
+        rationale=orm_fp.rationale,
+        occurrences=[
+            DBFalsePositiveOccurrence(
+                files={
+                    str(path): (
+                        [DBLineRange(start_line=lr.start_line, end_line=lr.end_line) for lr in ranges]
+                        if ranges
+                        else None
+                    )
+                    for path, ranges in occ.files.items()
+                },
+                note=occ.note,
+                relevant_files=[str(p) for p in occ.relevant_files],
+            )
+            for occ in orm_fp.occurrences
+        ],
+    )
 
 
 def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[Path]) -> list[DBTruePositiveIssue]:
-    """Filter DB TPs to only those catchable from targeted_files.
+    """Filter DB persistence TPs to only those catchable from targeted_files.
 
-    Works directly on DB models without converting to MCP models.
+    Works on DB persistence models (for filtering stored snapshots in staleness check).
     """
     targeted_files_str = {str(p) for p in targeted_files}
 
@@ -51,30 +91,36 @@ def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[
     return [tp for tp in tps if is_catchable(tp)]
 
 
+def filter_relevant_db_fps(
+    fps: list[Any], targeted_files: set[Path]
+) -> list[Any]:  # Any because DBKnownFalsePositive not in snapshots.py imports
+    """Filter DB persistence FPs to only those relevant to targeted_files.
+
+    Works on DB persistence models (for filtering stored snapshots in staleness check).
+    """
+    targeted_files_str = {str(p) for p in targeted_files}
+
+    def is_relevant(fp: Any) -> bool:
+        return any(bool(set(occ.relevant_files) & targeted_files_str) for occ in fp.occurrences)
+
+    return [fp for fp in fps if is_relevant(fp)]
+
+
 def load_current_canonical_issues_from_db(snapshot_slug: SnapshotSlug, targeted_files: set[Path]) -> dict[str, Any]:
     """Load current canonical TPs+FPs from database, filtered to targeted_files."""
-
-    def _tp_from_orm(orm_tp) -> TruePositiveIssue:
-        return TruePositiveIssue(
-            id=TruePositiveID(orm_tp.tp_id), rationale=Rationale(orm_tp.rationale), occurrences=orm_tp.occurrences
-        )
-
-    def _fp_from_orm(orm_fp) -> KnownFalsePositive:
-        return KnownFalsePositive(
-            id=FalsePositiveID(orm_fp.fp_id), rationale=Rationale(orm_fp.rationale), occurrences=orm_fp.occurrences
-        )
-
     with get_session() as session:
         snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
-        canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
-        canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
-        catchable_tps = filter_catchable_tps(canonical_tps, targeted_files)
 
-        # Convert MCP models to DB models and create snapshot
-        current_snapshot = CanonicalIssuesSnapshot(
-            true_positives=[tp_to_db(tp) for tp in catchable_tps],
-            false_positives=[fp_to_db(fp) for fp in canonical_fps],
-        )
+        # Convert ORM models to DB persistence models first
+        all_db_tps = [_orm_tp_to_db(tp) for tp in snapshot.true_positives]
+        all_db_fps = [_orm_fp_to_db(fp) for fp in snapshot.false_positives]
+
+        # Filter DB persistence models (single implementation shared with staleness check)
+        catchable_db_tps = filter_catchable_db_tps(all_db_tps, targeted_files)
+        relevant_db_fps = filter_relevant_db_fps(all_db_fps, targeted_files)
+
+        # Create snapshot from filtered DB persistence models
+        current_snapshot = CanonicalIssuesSnapshot(true_positives=catchable_db_tps, false_positives=relevant_db_fps)
         return current_snapshot.model_dump(mode="json")
 
 
@@ -110,12 +156,13 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
 
             targeted_files = {Path(f) for f in critic_files}
 
-            # Filter stored snapshot to only catchable TPs (same filtering applied at grading time)
+            # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
             catchable_stored_tps = filter_catchable_db_tps(stored_snapshot.true_positives, targeted_files)
+            relevant_stored_fps = filter_relevant_db_fps(stored_snapshot.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize
             filtered_stored = CanonicalIssuesSnapshot(
-                true_positives=catchable_stored_tps, false_positives=stored_snapshot.false_positives
+                true_positives=catchable_stored_tps, false_positives=relevant_stored_fps
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 

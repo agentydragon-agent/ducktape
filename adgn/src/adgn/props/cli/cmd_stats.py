@@ -18,6 +18,7 @@ from sqlalchemy.orm import joinedload
 from adgn.props.db import get_session
 from adgn.props.db.datapoints import count_available_examples_for_split
 from adgn.props.db.models import CriticRun, Event, Example, GraderRun, Prompt, Snapshot
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.display import SHORT_SHA_LENGTH, short_sha
 from adgn.props.grader.staleness import check_staleness
 from adgn.props.splits import Split
@@ -375,12 +376,13 @@ def cmd_stats() -> None:
             for grader_run, snapshot_slug, files_hash in grader_results:
                 split = grader_run.snapshot_obj.split
 
-                # Skip grader runs with no output (incomplete/failed)
-                if grader_run.output is None:
-                    continue
+                # Failed critic runs (no output or non-success) count as 0% recall
+                if grader_run.output is None or not isinstance(grader_run.output, DBGraderSuccess):
+                    recall_pct = 0.0
+                else:
+                    # Extract recall from grader output (recall is in [0,1])
+                    recall_pct = grader_run.output.recall * 100.0
 
-                # Extract recall from grader output (recall is in [0,1])
-                recall_pct = grader_run.output.recall * 100.0
                 example_key = (snapshot_slug, files_hash)
 
                 # Keep the most recent recall for each unique example
@@ -443,16 +445,20 @@ def cmd_stats() -> None:
 
             # Group by training example (snapshot + files combination)
             for grader_run, critic_run in graders:
-                if grader_run.output is None:
-                    continue
-                recall_pct = grader_run.output.recall * 100.0
                 sample_key = (critic_run.snapshot_slug, critic_run.files_hash)
-                sample_results_by_split[split][sample_key][critic_run.prompt_sha256] = recall_pct
 
-                # Collect TP count for this sample (only need to record once per sample)
-                if sample_key not in tp_counts_per_sample[split]:
-                    tp_count = len(grader_run.output.canonical_tp_coverage)
-                    tp_counts_per_sample[split][sample_key] = tp_count
+                # Failed critic runs (no output or non-success) count as 0% recall
+                if grader_run.output is None or not isinstance(grader_run.output, DBGraderSuccess):
+                    recall_pct = 0.0
+                    # Skip TP count collection for failed runs
+                else:
+                    recall_pct = grader_run.output.recall * 100.0
+                    # Collect TP count for this sample (only need to record once per sample)
+                    if sample_key not in tp_counts_per_sample[split]:
+                        tp_count = len(grader_run.output.canonical_tp_coverage)
+                        tp_counts_per_sample[split][sample_key] = tp_count
+
+                sample_results_by_split[split][sample_key][critic_run.prompt_sha256] = recall_pct
 
         # For each split and sample, find which prompt(s) achieved max recall
         prompt_best_counts: Counter[str] = Counter()

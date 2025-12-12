@@ -688,30 +688,36 @@ async def grade_critique_by_id(
     # Load snapshot and issues from database (no jsonnet!)
     snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
-    # Convert ORM → Pydantic wrappers for grader prompt
-    canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
-    canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
-
-    # Filter TPs/FPs by critic scope
+    # Filter TPs/FPs by critic scope at ORM level (before conversion)
     if critique.critic_run:
         reviewed_files = {Path(f) for f in critique.critic_run.files}
 
-        # Only include TPs where at least one occurrence is catchable from reviewed files
-        original_tp_count = len(canonical_tps)
-        canonical_tps = [
-            tp for tp in canonical_tps if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+        # Filter ORM models - ORM occurrences are domain models, so we can use domain model helpers directly
+        original_tp_count = len(snapshot.true_positives)
+        filtered_orm_tps = [
+            tp
+            for tp in snapshot.true_positives
+            if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+        ]
+        filtered_orm_fps = [
+            fp
+            for fp in snapshot.false_positives
+            if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
         ]
 
         # Raise error if no TPs are catchable from reviewed files
-        if original_tp_count > 0 and len(canonical_tps) == 0:
+        if original_tp_count > 0 and len(filtered_orm_tps) == 0:
             raise ValueError(
                 f"Cannot grade: 0/{original_tp_count} TPs catchable from reviewed files {sorted(str(f) for f in reviewed_files)}"
             )
 
-        # Only include FPs where at least one occurrence is relevant to reviewed files
-        canonical_fps = [
-            fp for fp in canonical_fps if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
-        ]
+        # Convert only filtered ORM models to MCP models
+        canonical_tps = [_tp_from_orm(tp) for tp in filtered_orm_tps]
+        canonical_fps = [_fp_from_orm(fp) for fp in filtered_orm_fps]
+    else:
+        # No filtering - convert all ORM models to MCP models
+        canonical_tps = [_tp_from_orm(tp) for tp in snapshot.true_positives]
+        canonical_fps = [_fp_from_orm(fp) for fp in snapshot.false_positives]
 
     # Create grader input
     grader_input = GraderInput(
