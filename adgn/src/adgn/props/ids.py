@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any, NewType, TypeAlias
 
-from pydantic import BeforeValidator, PlainSerializer, constr
+from pydantic import BeforeValidator, PlainSerializer, StringConstraints
 
 # Shared identity serializer for all string-based Annotated types
 # Preserves string value unchanged during serialization
@@ -41,7 +41,8 @@ def _reject_colon(v: Any) -> Any:
 # No colons (reserved for namespace separator)
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility with complex Annotated types
 BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitation with complex Annotated
-    constr(pattern=r"^[a-z0-9_-]+$", min_length=5, max_length=40),
+    str,
+    StringConstraints(pattern=r"^[a-z0-9_-]+$", min_length=5, max_length=40),
     BeforeValidator(_reject_colon),
     _STR_IDENTITY_SERIALIZER,
 ]
@@ -59,7 +60,8 @@ BaseIssueID: TypeAlias = Annotated[  # type: ignore[valid-type]  # mypy limitati
 #
 # ruff: noqa: UP040 - TypeAlias required for mypy compatibility
 _SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
-    constr(
+    str,
+    StringConstraints(
         pattern=r"^[a-z0-9_-]+/[a-z0-9_-]+$",
         min_length=3,  # Minimum: "a/b"
         max_length=100,  # Reasonable upper bound

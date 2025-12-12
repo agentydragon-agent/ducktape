@@ -22,7 +22,7 @@ from __future__ import annotations
 from contextlib import AsyncExitStack
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal, cast
+from typing import TYPE_CHECKING, cast
 from uuid import UUID, uuid4
 
 if TYPE_CHECKING:
@@ -33,7 +33,7 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
 from fastmcp.tools import FunctionTool
-from pydantic import Field, model_validator
+from pydantic import Field
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted, read_resource_call
@@ -44,26 +44,25 @@ from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
-from adgn.props.critic.critic import resolve_critic_scope, run_critic as execute_critic_run
+from adgn.props.critic.critic import run_critic as execute_critic_run
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session, query_builders as qb
-from adgn.props.db.config import get_production_config
-from adgn.props.db.models import GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
+from adgn.props.db.config import DbConnectionConfig, get_production_config
+from adgn.props.db.models import Example, GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.sync import get_specimens_base_path, sync_issues_to_db, sync_snapshots_to_db
+from adgn.props.display import short_uuid
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
+from adgn.props.models.critic_scopes import ExplicitFileScope
 from adgn.props.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.prop_utils import specimens_definitions_root
@@ -74,7 +73,13 @@ logger = logging.getLogger(__name__)
 
 
 # Common error message advice
-_AGENT_STUCK_ADVICE = "Agent likely stuck in a loop, ran out of tokens, or not following instructions."
+_AGENT_STUCK_ADVICE = (
+    "Agent exceeded turn limit. This could mean:\n"
+    "  1. Agent needed more turns to complete the task (reading files, analyzing code, etc.)\n"
+    "  2. Agent stuck in a loop or not following instructions\n"
+    "  3. Agent ran out of tokens\n"
+    "Check the transcript in the database to determine if the agent was making productive progress or stuck."
+)
 
 
 def _trace_query_advice(*, snapshot_slug: str | None = None, critique_id: str | None = None) -> str:
@@ -135,62 +140,129 @@ def make_po_bootstrap_calls(
 
 
 # ============================================================================
+# MCP Compositor for Prompt Optimization
+# ============================================================================
+
+
+class PromptOptimizerCompositor(PropertiesDockerCompositor):
+    """Compositor with prompt optimizer servers pre-mounted.
+
+    Inherits from PropertiesDockerCompositor, which provides:
+    - runtime: Docker exec server (mounted by parent class)
+
+    Adds:
+    - prompt_eval: Prompt evaluation server (critic/grader orchestration)
+
+    Fixed configuration (NOT overridable):
+    - workspace_mode: "rw" (agent needs write access for prompt files)
+    - ephemeral: False (persistent container for optimization session)
+    - mount_properties: False (properties not needed in container)
+
+    Usage:
+        async with PromptOptimizerCompositor(
+            workspace_root=Path("/workspace"),
+            docker_client=docker_client,
+            critic_client=build_client(critic_model),
+            grader_client=build_client(grader_model),
+            hydrator=test_specimens_hydrator,
+            prompt_optimization_run_id=uuid4(),
+            budget_limit=1.0,
+        ) as comp:
+            # Access servers via Mounted[T] wrappers:
+            upsert_tool_name = comp.prompt_eval.server.upsert_prompt_tool.name
+            critic_tool_name = comp.prompt_eval.server.run_critic_on_example_tool.name
+            grader_tool_name = comp.prompt_eval.server.run_grader_tool.name
+    """
+
+    # Mount prefix constant (SSOT for test infrastructure)
+    PROMPT_EVAL_PREFIX = "prompt_eval"
+
+    # Mounted server attributes (runtime inherited, prompt_eval added here)
+    prompt_eval: Mounted[PromptEvalServer]
+
+    def __init__(
+        self,
+        workspace_root: Path,
+        docker_client: aiodocker.Docker,
+        *,
+        critic_client: OpenAIModelProto,
+        grader_client: OpenAIModelProto,
+        hydrator: SnapshotHydrator,
+        prompt_optimization_run_id: UUID,
+        budget_limit: float,
+        verbose: bool = False,
+        db_conn: DbConnectionConfig | None = None,
+        network_mode: str = PROPS_NETWORK_NAME,
+    ):
+        """Create compositor with prompt optimization dependencies.
+
+        Args:
+            workspace_root: Path to workspace directory to mount in container.
+            docker_client: Async Docker client (managed by caller).
+            critic_client: OpenAI client for running critic evaluations
+            grader_client: OpenAI client for running grader evaluations
+            hydrator: Snapshot hydrator for source code extraction
+            prompt_optimization_run_id: ID of the optimization run for tracking prompts
+            budget_limit: Dollar budget limit for optimization
+            verbose: Verbose output flag
+            db_conn: Optional database connection config for container (required for PO agent)
+            network_mode: Docker network mode (default: PROPS_NETWORK_NAME for database access)
+
+        Note:
+            workspace_mode, ephemeral, mount_properties, extra_binds, and extra_env are fixed and NOT overridable.
+        """
+        # Always pass fixed parameters to parent
+        super().__init__(
+            workspace_root,
+            docker_client,
+            workspace_mode="rw",
+            ephemeral=False,
+            mount_properties=False,
+            db_conn=db_conn,
+            network_mode=network_mode,
+        )
+
+        # Store PromptEvalServer parameters
+        self._critic_client = critic_client
+        self._grader_client = grader_client
+        self._docker_client = docker_client
+        self._hydrator = hydrator
+        self._prompt_optimization_run_id = prompt_optimization_run_id
+        self._workspace_root = workspace_root
+        self._budget_limit = budget_limit
+        self._verbose = verbose
+
+    async def __aenter__(self):
+        """Start compositor and mount servers."""
+        # Start parent compositor (mounts resources, compositor_meta, runtime)
+        await super().__aenter__()
+
+        # Mount prompt eval server with individual parameters
+        self.prompt_eval = await self.mount_inproc(
+            "prompt_eval",
+            PromptEvalServer(
+                critic_client=self._critic_client,
+                grader_client=self._grader_client,
+                docker_client=self._docker_client,
+                hydrator=self._hydrator,
+                name="prompt_eval",
+                prompt_optimization_run_id=self._prompt_optimization_run_id,
+                workspace_root=self._workspace_root,
+                budget_limit=self._budget_limit,
+                verbose=self._verbose,
+            ),
+            pinned=True,
+        )
+
+        return self
+
+
+# ============================================================================
 # MCP Server for Prompt Evaluation
 # ============================================================================
 
 
 # --- MCP Tool Input Types ---
-
-
-class RunCriticToolInput(OpenAIStrictModeBaseModel):
-    """MCP tool input for run_critic.
-
-    scope_kind determines which files to review:
-    - "all": Review all files that have ground truth issues (scope_paths must be None)
-    - "specific": Review only the paths listed in scope_paths (scope_paths required).
-      MUST exactly match a pre-defined scope from critic_scopes table.
-
-    Query available scopes:
-      SELECT snapshot_slug, files FROM critic_scopes cs
-      JOIN snapshots s ON cs.snapshot_slug = s.slug
-      WHERE s.split = 'train' ORDER BY snapshot_slug;
-
-    OpenAI strict mode compatible: Flattened discriminated union into optional fields.
-    """
-
-    snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    scope_kind: Literal["all", "specific"] = Field(description="Which files to review: 'all' or 'specific'")
-    scope_paths: list[str] | None = Field(
-        description=(
-            "File paths to review (required when scope_kind='specific', must be None when 'all'). "
-            "MUST exactly match a scope from critic_scopes table (order-independent)."
-        )
-    )
-    prompt_sha256: str = Field(description="SHA256 hash of the system prompt (from upsert_prompt)")
-    max_turns: int = Field(
-        ge=1, lt=1000, description="Maximum number of sampling turns allowed for this critic run (1-999)"
-    )
-
-    @model_validator(mode="after")
-    def validate_scope_paths_consistency(self) -> RunCriticToolInput:
-        """Ensure scope_paths is set correctly based on scope_kind."""
-        if self.scope_kind == "all" and self.scope_paths is not None:
-            raise ValueError("scope_paths must be None when scope_kind='all'")
-        if self.scope_kind == "specific" and not self.scope_paths:
-            raise ValueError("scope_paths is required when scope_kind='specific'")
-        return self
-
-    def to_critic_input(self) -> CriticInput:
-        """Convert to internal CriticInput format."""
-        scope: CriticScopeSpec
-        if self.scope_kind == "all":
-            scope = AllFilesScope()
-        elif self.scope_kind == "specific":
-            assert self.scope_paths is not None  # Validated by model_validator
-            scope = ExplicitFileScope(files=self.scope_paths)
-        else:
-            raise ValueError(f"Invalid scope_kind: {self.scope_kind}")
-        return CriticInput(snapshot_slug=self.snapshot_slug, files=scope, prompt_sha256=self.prompt_sha256)
 
 
 class UpsertPromptInput(OpenAIStrictModeBaseModel):
@@ -203,6 +275,26 @@ class UpsertPromptOutput(OpenAIStrictModeBaseModel):
     """Output for upsert_prompt tool."""
 
     prompt_sha256: str = Field(description="SHA256 hash of prompt content (use this in run_critic)")
+
+
+class RunCriticOnExampleInput(OpenAIStrictModeBaseModel):
+    """Run critic on a specific example from database.
+
+    Examples are pre-defined file sets from the examples table representing
+    training datapoints. Each example has a composite key (snapshot_slug, files_hash).
+
+    Query available examples:
+      SELECT snapshot_slug, files_hash, files, array_length(files, 1) as file_count
+      FROM examples e
+      JOIN snapshots s ON e.snapshot_slug = s.slug
+      WHERE s.split = 'train'
+      ORDER BY snapshot_slug, files_hash;
+    """
+
+    snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
+    files_hash: str = Field(description="SHA256 hash identifying the file set (from examples table)")
+    prompt_sha256: str = Field(description="SHA256 hash of the system prompt (from upsert_prompt)")
+    max_turns: int = Field(ge=1, lt=300, description="Maximum sampling turns. Recommended: 100")
 
 
 class RunCriticOutput(OpenAIStrictModeBaseModel):
@@ -240,9 +332,14 @@ class RunGraderOutput(OpenAIStrictModeBaseModel):
 class PromptEvalServer(EnhancedFastMCP):
     """Prompt eval MCP server with typed resource/tool access.
 
+    Tool name constants (SSOT for tests):
+    - UPSERT_PROMPT_TOOL = "upsert_prompt"
+    - RUN_CRITIC_ON_EXAMPLE_TOOL = "run_critic_on_example"
+    - RUN_GRADER_TOOL = "run_grader"
+
     Provides MCP tools for triggering critic and grader runs:
     - upsert_prompt(file_path) -> prompt_sha256
-    - run_critic(snapshot_slug, scope_kind, scope_paths, prompt_sha256) -> critic_run_id, critique_id
+    - run_critic_on_example(snapshot_slug, files_hash, prompt_sha256) -> critic_run_id, critique_id
     - run_grader(critique_id) -> grader_run_id
 
     Tools return only DB IDs. Agent queries database for results, metrics, costs.
@@ -295,12 +392,17 @@ class PromptEvalServer(EnhancedFastMCP):
     - Option 3 as last resort if warnings fail
     """
 
+    # Tool name constants (SSOT for tests)
+    UPSERT_PROMPT_TOOL = "upsert_prompt"
+    RUN_CRITIC_ON_EXAMPLE_TOOL = "run_critic_on_example"
+    RUN_GRADER_TOOL = "run_grader"
+
     # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
     optimization_run_id_resource: FunctionResource
 
     # Tool references (assigned in __init__)
     upsert_prompt_tool: FunctionTool
-    run_critic_tool: FunctionTool
+    run_critic_on_example_tool: FunctionTool
     run_grader_tool: FunctionTool
 
     def __init__(
@@ -329,12 +431,6 @@ class PromptEvalServer(EnhancedFastMCP):
             budget_limit: Dollar budget limit for optimization (currently not enforced)
             verbose: Verbose output flag
         """
-        # Ensure snapshots and issues tables are synced on server startup
-        base_path = get_specimens_base_path()
-        with get_session() as session:
-            sync_snapshots_to_db(session, base_path)
-            sync_issues_to_db(session, base_path)
-
         super().__init__(
             name,
             instructions=(
@@ -359,7 +455,7 @@ class PromptEvalServer(EnhancedFastMCP):
         async def get_prompt_optimization_run_id() -> str:
             """Get the prompt optimization run ID for this session.
 
-            Use this UUID to query costs via sql_po_run_costs (replace <po_run_id> placeholder).
+            Use this UUID to query costs via qb.po_run_costs(po_run_id) from db.query_builders.
             """
             return str(prompt_optimization_run_id)
 
@@ -415,80 +511,51 @@ class PromptEvalServer(EnhancedFastMCP):
 
         self.upsert_prompt_tool = self.flat_model()(upsert_prompt)
 
-        async def run_critic(payload: RunCriticToolInput) -> RunCriticOutput:
-            """Runs a critic agent on a snapshot to find code quality issues.
+        async def run_critic_on_example(payload: RunCriticOnExampleInput) -> RunCriticOutput:
+            """Run critic on a pre-defined example from the examples table.
 
-            Scope modes:
-            - scope_kind="all": Review ALL files with ground truth issues (full snapshot review)
-              - REQUIRED for validation split
-              - More realistic evaluation (comprehensive codebase review)
-            - scope_kind="specific": Review only specified files (TRAIN split only)
-              - Files MUST EXACTLY MATCH a pre-defined scope from critic_scopes table
-              - Arbitrary file selections will be rejected
-              - Faster iteration for debugging specific failure patterns
+            Examples are auto-generated training datapoints with validated file sets.
+            Use (snapshot_slug, files_hash) composite key to reference a specific example.
 
-            IMPORTANT: When using scope_kind="specific", the scope_paths must match a known scope exactly.
-            Query available scopes with:
-              SELECT snapshot_slug, files FROM critic_scopes cs
-              JOIN snapshots s ON cs.snapshot_slug = s.slug
-              WHERE s.split = 'train' ORDER BY snapshot_slug;
+            This ensures the critic only runs on meaningful training examples with
+            known ground truth coverage.
 
-            The critic uses your specified prompt (via prompt_sha256) to analyze code and report issues.
-            Returns database IDs - query the database for results, costs, and execution traces.
-
-            Train/Valid Split Access (Anti-Cheating Design):
-            - TRAIN: Full access granted. Run on any scope. Query all details: critic_runs, critiques,
-              true_positives, false_positives tables. Use for debugging/iteration.
-
-            - VALID: Restricted access to prevent overfitting:
-              - Must use scope_kind="all" (full snapshot only)
-              - Individual run details HIDDEN by database Row-Level Security (RLS)
-              - Query validation results ONLY via valid_full_snapshot_grader_metrics view (aggregate metrics)
-
-            This ensures validation recall is a trustworthy proxy for test performance.
+            Query examples:
+              SELECT snapshot_slug, files_hash, files, array_length(files, 1) as file_count
+              FROM examples e
+              JOIN snapshots s ON e.snapshot_slug = s.slug
+              WHERE s.split = 'train'
+              ORDER BY snapshot_slug, files_hash;
             """
-            critic_input = payload.to_critic_input()
-
-            # Check snapshot exists and enforce validation restrictions
-            # Extract known_scopes while session is open (avoid lazy loading after session closes)
-            known_scopes: list[frozenset[str]] = []
+            # Load and validate example from database
             with get_session() as session:
-                db_snapshot = session.query(Snapshot).filter_by(slug=critic_input.snapshot_slug).first()
-                if db_snapshot is None:
-                    raise ValueError(f"Snapshot '{critic_input.snapshot_slug}' not found in database")
+                example = (
+                    session.query(Example)
+                    .filter_by(snapshot_slug=payload.snapshot_slug, files_hash=payload.files_hash)
+                    .one_or_none()
+                )
 
-                # Validation split: must use scope_kind="all" (full snapshot)
-                if db_snapshot.split == "valid" and payload.scope_kind == "specific":
-                    raise ValueError(
-                        f"Validation split snapshot '{critic_input.snapshot_slug}' must use scope_kind='all' "
-                        f"(full snapshot evaluation only). Cannot run on subset of files."
+                if not example:
+                    raise ToolError(
+                        f"Example not found: snapshot={payload.snapshot_slug}, "
+                        f"files_hash={payload.files_hash[:16]}... "
+                        f"Query the examples table to find valid examples."
                     )
 
-                # Extract known scopes from db_snapshot while session is still open
-                if payload.scope_kind == "specific":
-                    for scope in db_snapshot.critic_scopes:
-                        known_scopes.append(frozenset(scope.files))
+                # Load snapshot
+                db_snapshot = session.query(Snapshot).filter_by(slug=payload.snapshot_slug).one_or_none()
+                if not db_snapshot:
+                    raise ToolError(f"Snapshot {payload.snapshot_slug} not found")
 
-            # Resolve files for prompt rendering
-            resolved_files = await resolve_critic_scope(
-                snapshot_slug=critic_input.snapshot_slug, files=critic_input.files
-            )
+                # Build CriticInput from example files
+                critic_input = CriticInput(
+                    snapshot_slug=payload.snapshot_slug,
+                    files=ExplicitFileScope(files=example.files),
+                    prompt_sha256=payload.prompt_sha256,
+                )
 
-            # Load and hydrate specimen for content_root
-            async with self._hydrator.hydrate(critic_input.snapshot_slug) as hydrated:
-                # Validate explicit files match a known scope (only for scope_kind="specific")
-                if payload.scope_kind == "specific":
-                    # Validate that file list matches a known scope (order-independent)
-                    requested_files_set = frozenset(str(f) for f in resolved_files)
-
-                    if requested_files_set not in known_scopes:
-                        raise ValueError(
-                            f"Files do not match any known scope for '{critic_input.snapshot_slug}'. "
-                            f"Requested: {sorted(requested_files_set)}. "
-                            f"Query available scopes: SELECT snapshot_slug, files FROM critic_scopes cs "
-                            f"JOIN snapshots s ON cs.snapshot_slug = s.slug WHERE s.split = 'train';"
-                        )
-
+            # Hydrate snapshot to get content_root
+            async with self._hydrator.hydrate(payload.snapshot_slug) as hydrated:
                 # Execute critic run
                 try:
                     (_critic_success, critic_run_id, critique_id) = await execute_critic_run(
@@ -505,19 +572,19 @@ class PromptEvalServer(EnhancedFastMCP):
                 except CriticExecutionError as e:
                     raise ToolError(
                         f"Critic agent failed during execution: {e}\n\n"
-                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                        f"{_trace_query_advice(snapshot_slug=payload.snapshot_slug)}"
                     ) from e
                 except CriticDidNotSubmitError as e:
                     raise ToolError(
                         f"Critic agent did not call submit(): {e}\n\n"
                         f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                        f"{_trace_query_advice(snapshot_slug=payload.snapshot_slug)}"
                     ) from e
                 except MaxTurnsExceededError as e:
                     raise ToolError(
                         f"Critic agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
                         f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{_trace_query_advice(snapshot_slug=critic_input.snapshot_slug)}"
+                        f"{_trace_query_advice(snapshot_slug=payload.snapshot_slug)}"
                     ) from e
 
                 if critique_id is None:
@@ -527,7 +594,7 @@ class PromptEvalServer(EnhancedFastMCP):
 
                 return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
 
-        self.run_critic_tool = self.flat_model()(run_critic)
+        self.run_critic_on_example_tool = self.flat_model()(run_critic_on_example)
 
         async def run_grader(payload: RunGraderInput) -> RunGraderOutput:
             """Given a critique produced by a critic, runs a grader agent to grade the critique against ground truth labels.
@@ -609,9 +676,9 @@ async def run_prompt_optimizer(
     budget: float,
     ctx: RunsContext,
     hydrator: SnapshotHydrator,
-    optimizer_model: str,
-    critic_model: str,
-    grader_model: str,
+    optimizer_client: OpenAIModelProto,
+    critic_client: OpenAIModelProto,
+    grader_client: OpenAIModelProto,
     docker_client: aiodocker.Docker,
     out_dir: Path | None = None,
     verbose: bool = False,
@@ -623,11 +690,13 @@ async def run_prompt_optimizer(
         budget: Dollar budget for optimization
         ctx: Runs context for path derivation
         hydrator: Snapshot hydrator for source code extraction
+        optimizer_client: OpenAI client for prompt optimizer agent
+        critic_client: OpenAI client for running critic evaluations
+        grader_client: OpenAI client for running grader evaluations
+        docker_client: Async Docker client for container operations
         out_dir: Optional output directory
-        optimizer_model: Model to use for prompt optimizer agent
-        critic_model: Model to use for critic evaluations
-        grader_model: Model to use for grader evaluations
         verbose: Verbose output flag
+        max_lines: Maximum lines for formatting tool responses
 
     Hydrates train snapshots and mounts them with definitions via Docker.
     The agent can query train data and valid aggregates via database (agent_user with RLS).
@@ -709,9 +778,9 @@ async def run_prompt_optimizer(
                 transcript_id=transcript_id,
                 budget_limit=budget,
                 config={
-                    "optimizer_model": optimizer_model,
-                    "critic_model": critic_model,
-                    "grader_model": grader_model,
+                    "optimizer_model": optimizer_client.model,
+                    "critic_model": critic_client.model,
+                    "grader_model": grader_client.model,
                     "session_dir": str(session_dir),
                 },
             )
@@ -747,8 +816,8 @@ async def run_prompt_optimizer(
             prompt_eval = await comp.mount_inproc(
                 "prompt_eval",
                 PromptEvalServer(
-                    critic_client=build_client(critic_model),
-                    grader_client=build_client(grader_model),
+                    critic_client=critic_client,
+                    grader_client=grader_client,
                     docker_client=docker_client,
                     hydrator=hydrator,
                     name="Prompt Evaluation MCP Server",
@@ -765,14 +834,14 @@ async def run_prompt_optimizer(
             user = f"""Your budget is: ${budget:.2f}.
 
 Models in use:
-- Optimizer (you): {optimizer_model}
-- Critic: {critic_model}
-- Grader: {grader_model}
+- Optimizer (you): {optimizer_client.model}
+- Critic: {critic_client.model}
+- Grader: {grader_client.model}
 
 Note: The database may contain results from other models. These historical results might provide useful insights for optimization.
 
 Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
-Prioritize recall first, then precision.
+Prioritize recall.
 """
 
             # Use the prompt_eval server reference for introspection
@@ -786,7 +855,7 @@ Prioritize recall first, then precision.
                 bootstrap,
                 *build_props_handlers(
                     transcript_id=transcript_id,
-                    verbose_prefix=f"[OPTIMIZER:{str(transcript_id)[:8]}] " if verbose else None,
+                    verbose_prefix=(f"[OPTIMIZER:{short_uuid(transcript_id)}] " if verbose else None),
                     servers=servers,
                     max_lines=max_lines,
                 ),
@@ -795,7 +864,7 @@ Prioritize recall first, then precision.
             async with Client(comp) as mcp_client:
                 agent = await Agent.create(
                     mcp_client=mcp_client,
-                    client=build_client(optimizer_model),
+                    client=optimizer_client,
                     handlers=handlers,
                     parallel_tool_calls=True,
                     reasoning_summary=ReasoningSummary.detailed,

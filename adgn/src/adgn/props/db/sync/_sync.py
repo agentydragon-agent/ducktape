@@ -11,16 +11,16 @@ import logging
 from pathlib import Path
 
 from pydantic import TypeAdapter
+from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 import yaml
 
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticScopeDB, FalsePositive, ModelMetadata, Snapshot, TruePositive
+from adgn.props.db.models import FalsePositive, ModelMetadata, Snapshot, TruePositive
 from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScope
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.splits import Split
@@ -310,57 +310,95 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
-    """Sync critic scopes from filesystem to database.
+def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: Split) -> list[tuple[list[str], str]]:
+    """Generate training examples for a snapshot from expect_caught_from data.
 
-    Loads critic scopes from specimens/critic_scopes.yaml and upserts to
-    critic_scopes table with proper hash calculation for uniqueness.
+    For TRAIN snapshots:
+        - One example per unique expect_caught_from trigger set
+        - Plus one full-specimen example (all files with issues)
 
-    IMPORTANT: The files_hash is ALWAYS computed from resolved files, never a sentinel.
-    For AllFilesScope, we resolve to actual files with issues before hashing.
-    This ensures CriticRun.files_hash (always from resolved files) can join to
-    CriticScopeDB.files_hash for any scope type.
+    For VALID/TEST snapshots:
+        - Only full-specimen example
 
-    Auto-adds full-specimen scopes: For valid/test snapshots, automatically adds a
-    full-specimen scope (all files with issues) if not already present. This ensures
-    the terminal metric (comprehensive review) is always available for validation/test.
+    Returns examples ordered by files_hash (deterministic, required for GEPA checkpoint resume).
 
     Args:
         session: SQLAlchemy session
-        base_path: Specimens base directory
+        slug: Snapshot slug
+        split: Train/valid/test split
+
+    Returns:
+        List of (files, files_hash) tuples for this snapshot, ordered by files_hash
+    """
+    # Get all issues for this snapshot
+    snapshot = session.query(Snapshot).filter_by(slug=slug).one()
+    true_positives = snapshot.true_positives
+    false_positives = snapshot.false_positives
+
+    # Collect all files with issues (for full-specimen example)
+    all_files: set[Path] = set()
+    for tp in true_positives:
+        for tp_occ in tp.occurrences:
+            all_files.update(tp_occ.files.keys())
+    for fp in false_positives:
+        for fp_occ in fp.occurrences:
+            all_files.update(fp_occ.files.keys())
+
+    # Collect unique file sets (set of frozenset of Paths)
+    # Keep as Path objects until hashing to avoid premature string conversion
+    file_sets: set[frozenset[Path]] = set()
+
+    if split == Split.TRAIN:
+        # Collect all unique trigger sets from expect_caught_from
+        for tp in true_positives:
+            for occurrence in tp.occurrences:
+                for trigger_set in occurrence.expect_caught_from:
+                    file_sets.add(trigger_set)
+
+    # Always add full-specimen example (terminal metric) - automatically dedupes
+    file_sets.add(frozenset(all_files))
+
+    # Convert to output format with hashes, then sort by hash (deterministic ordering)
+    examples_with_hashes: list[tuple[list[str], str]] = []
+    for file_set in file_sets:
+        # Compute hash from Path objects
+        files_hash = hash_file_set(file_set)
+        # Convert to sorted string list for storage
+        files_list = sorted(str(p) for p in file_set)
+        examples_with_hashes.append((files_list, files_hash))
+
+    # Sort by files_hash for deterministic ordering (required for GEPA checkpoint resume)
+    examples_with_hashes.sort(key=lambda x: x[1])
+
+    return examples_with_hashes
+
+
+def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
+    """Sync training examples to database (auto-generated from expect_caught_from data).
+
+    For each snapshot:
+    - TRAIN: One example per unique expect_caught_from trigger set + full-specimen example
+    - VALID/TEST: Only full-specimen example (terminal metric)
+
+    No YAML loading - examples are purely derived from issue definitions.
+
+    Args:
+        session: SQLAlchemy session
+        base_path: Specimens base directory (used to load snapshot manifests)
 
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
-    # Load critic scopes from YAML
-    loader = FilesystemLoader(base_path)
-    scopes_by_slug = loader.load_critic_scopes()
+    from adgn.props.db.models import Example
 
-    # Load snapshots to check splits
-    snapshots = loader.load_snapshots()
+    # Load snapshot manifests to get slugs and splits
+    manifests = load_manifests_from_yaml(base_path)
 
-    # Auto-add full-specimen scopes for valid/test snapshots
-    # Per training strategy: valid/test use ONLY full-specimen scopes (terminal metric)
-    # Replace any per-file scopes with a single full-specimen scope
-    for slug, snapshot in snapshots.items():
-        if snapshot.split in (Split.VALID, Split.TEST):
-            snapshot_scopes = scopes_by_slug.get(slug, [])
-            has_full_specimen = any(isinstance(scope.files, AllFilesScope) for scope in snapshot_scopes)
+    # Get existing examples from DB
+    existing_examples = {(ex.snapshot_slug, ex.files_hash): ex for ex in session.query(Example).all()}
 
-            if not has_full_specimen:
-                # Replace all scopes with full-specimen scope for validation/test split
-                logger.info(
-                    f"Replacing {len(snapshot_scopes)} per-file scopes with full-specimen scope "
-                    f"for {snapshot.split.value} snapshot: {slug}"
-                )
-                full_scope = CriticScope(files=AllFilesScope())
-                scopes_by_slug[slug] = [full_scope]  # Replace, not append
-
-    # Get existing critic scopes from DB
-    existing_scopes = {(scope.snapshot_slug, scope.files_hash): scope for scope in session.query(CriticScopeDB).all()}
-
-    # Track which scopes we've seen (to detect deletions)
-    seen_scope_keys = set()
+    # Track which examples we've seen (to detect deletions)
+    seen_example_keys = set()
 
     # Track stats
     total = 0
@@ -368,54 +406,51 @@ def sync_critic_scopes_to_db(session: Session, base_path: Path) -> SyncStats:
     updated = 0
     deleted = 0
 
-    # Cache for resolved "all files" per snapshot (avoid re-loading issues)
-    all_files_cache: dict[SnapshotSlug, set[Path]] = {}
+    # Collect all examples to upsert (use dict to ensure uniqueness by key)
+    examples_to_upsert: dict[tuple[SnapshotSlug, str], dict] = {}
 
-    def get_all_files_for_snapshot(slug: SnapshotSlug) -> set[Path]:
-        """Get all files with issues for a snapshot (cached)."""
-        if slug not in all_files_cache:
-            tps, fps = loader.load_issues_for_snapshot(slug)
-            all_files_cache[slug] = loader._collect_all_files_from_issues(tps, fps)
-        return all_files_cache[slug]
+    # Process each snapshot
+    for slug, manifest in manifests.items():
+        # Generate examples for this snapshot
+        examples = generate_examples_for_snapshot(session, slug, manifest.split)
 
-    # Process each snapshot's critic scopes
-    for slug, scope_list in scopes_by_slug.items():
-        for scope in scope_list:
-            # Resolve scope to actual files before hashing
-            # This ensures AllFilesScope gets hashed by its resolved file list,
-            # matching how CriticRun computes its files_hash
-            all_files = get_all_files_for_snapshot(slug)
-            resolved_files = loader._resolve_critic_scope(scope, all_files, slug)
-            resolved_files_list = sorted(str(f) for f in resolved_files)
-            files_hash = hash_file_set(resolved_files)
+        for files_list, files_hash in examples:
             key = (slug, files_hash)
-            seen_scope_keys.add(key)
+            seen_example_keys.add(key)
 
-            if key not in existing_scopes:
-                # New critic scope - create ORM instance
-                logger.debug(f"Adding critic scope: {slug} (hash={files_hash[:8]}...)")
-                orm_scope = CriticScopeDB(snapshot_slug=slug, files=resolved_files_list, files_hash=files_hash)
-                session.add(orm_scope)
+            if key not in existing_examples:
+                # New example
+                logger.debug(f"Adding example: {slug} (hash={files_hash[:8]}...)")
+                examples_to_upsert[key] = {"snapshot_slug": slug, "files_hash": files_hash, "files": files_list}
                 added += 1
             else:
-                # Existing critic scope - check if update needed
-                existing = existing_scopes[key]
-                if existing.files != resolved_files_list:
-                    logger.debug(f"Updating critic scope files: {slug}")
-                    existing.files = resolved_files_list
+                # Existing example - check if update needed
+                existing = existing_examples[key]
+                if existing.files != files_list:
+                    logger.debug(f"Updating example files: {slug} (hash={files_hash[:8]}...)")
+                    examples_to_upsert[key] = {"snapshot_slug": slug, "files_hash": files_hash, "files": files_list}
                     updated += 1
 
             total += 1
 
-    # Delete orphaned critic scopes (in DB but not in source)
-    for key in set(existing_scopes.keys()) - seen_scope_keys:
+    # Batch upsert using PostgreSQL's ON CONFLICT
+    if examples_to_upsert:
+        stmt = insert(Example).values(list(examples_to_upsert.values()))
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["snapshot_slug", "files_hash"],
+            set_={"files": stmt.excluded.files, "updated_at": func.now()},
+        )
+        session.execute(stmt)
+
+    # Delete orphaned examples (in DB but not in generated set)
+    for key in set(existing_examples.keys()) - seen_example_keys:
         slug, files_hash = key
-        logger.info(f"Deleting orphaned critic scope: {slug} (hash={files_hash[:8]}...)")
-        session.delete(existing_scopes[key])
+        logger.info(f"Deleting orphaned example: {slug} (hash={files_hash[:8]}...)")
+        session.delete(existing_examples[key])
         deleted += 1
 
     session.commit()
-    logger.info(f"Critic scopes synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
+    logger.info(f"Examples synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 

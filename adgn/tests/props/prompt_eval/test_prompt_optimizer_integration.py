@@ -17,19 +17,27 @@ from hamcrest import assert_that, equal_to, has_length, has_properties, instance
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-from adgn.props.critic.critic import AddOccurrenceInput, SubmitInput, UpsertIssueInput
+from adgn.props.critic.critic import (
+    AddOccurrenceInput,
+    CriticCompositor,
+    CriticSubmitServer,
+    SubmitInput,
+    UpsertIssueInput,
+)
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, GraderRun, Snapshot
+from adgn.props.db.models import CriticRun, GraderRun
 from adgn.props.db.snapshots import DBGraderOutput
 from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
+from adgn.props.files_hash import hash_file_set
+from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
 from adgn.props.grader.models import GradeSubmitInput
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.snapshot import LocalSource
 from adgn.props.prompt_optimize.prompt_optimizer import (
+    PromptEvalServer,
+    PromptOptimizerCompositor,
+    RunCriticOnExampleInput,
     RunCriticOutput,
-    RunCriticToolInput,
     RunGraderInput,
     UpsertPromptInput,
     UpsertPromptOutput,
@@ -37,14 +45,21 @@ from adgn.props.prompt_optimize.prompt_optimizer import (
 )
 from adgn.props.runs_context import RunsContext
 from tests.support.responses import _StepRunner
-from tests.support.steps import AssertDockerExecThenFinish, CheckThenCall, DockerExecCall, ExtractThenCall, Finish
+from tests.support.steps import (
+    AssertDockerExecThenFinish,
+    CheckThenCall,
+    DockerExecCall,
+    ExtractThenCall,
+    Finish,
+    MakeCall,
+)
 
 logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 # Test specimen slug used throughout this test
-TEST_SPECIMEN_SLUG = "test-fixtures/test-trivial"
+TEST_SPECIMEN_SLUG = SnapshotSlug("test-fixtures/test-trivial")
 
 
 def get_critic_runs_for_slug(slug: str) -> list[CriticRun]:
@@ -66,60 +81,90 @@ def get_grader_runs_for_slug(slug: str) -> list[GraderRun]:
 
 
 @pytest.fixture
-def test_specimen(test_db):
-    """Create test specimen record (uses test_db fixture from tests/props/conftest.py)."""
-    with get_session() as session:
-        specimen = Snapshot(slug=TEST_SPECIMEN_SLUG, split="train", source=LocalSource(vcs="local", root="."))
-        session.merge(specimen)
-        session.commit()
+def test_specimen(test_db, test_specimens_hydrator):
+    """Sync test fixtures to database (snapshots, issues, examples).
+
+    Examples are auto-generated from expect_caught_from in the issue file.
+    Uses patch to point sync_all at test fixtures instead of production specimens.
+    """
+    from adgn.props.cli.cmd_db import sync_all
+
+    # Patch get_specimens_base_path to return test fixtures path
+    with patch("adgn.props.cli.cmd_db.get_specimens_base_path", return_value=test_specimens_hydrator._base_path):
+        sync_all()
 
 
 @pytest.fixture
 def po_agent_steps():
     """Declarative steps for PO agent - prompt optimization workflow."""
+    # Compute files_hash for the test example (matches test-issue.libsonnet expectCaughtFrom)
+    test_files = ["subtract.py"]
+    files_hash = hash_file_set(test_files)
+
+    # Use shared constants
+
     return [
         DockerExecCall(
             ["sh", "-c", "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt"],
             timeout_ms=30000,
         ),
         CheckThenCall(
-            "docker_exec", "prompt_eval", "upsert_prompt", UpsertPromptInput(file_path="/workspace/prompt-v1.txt")
+            expected_tool=build_mcp_function(DOCKER_MOUNT_PREFIX, "exec"),
+            server=PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+            tool=PromptEvalServer.UPSERT_PROMPT_TOOL,
+            args=UpsertPromptInput(file_path="/workspace/prompt-v1.txt"),
         ),
         ExtractThenCall(
-            "prompt_eval_upsert_prompt",
-            UpsertPromptOutput,
-            lambda out: (
-                "prompt_eval",
-                "run_critic",
-                RunCriticToolInput(
-                    snapshot_slug=SnapshotSlug(TEST_SPECIMEN_SLUG),
-                    scope_kind="all",
-                    scope_paths=None,
+            expected_tool=build_mcp_function(
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.UPSERT_PROMPT_TOOL
+            ),
+            output_type=UpsertPromptOutput,
+            make_next=lambda out: (
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+                PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
+                RunCriticOnExampleInput(
+                    snapshot_slug=TEST_SPECIMEN_SLUG,
+                    files_hash=files_hash,
                     prompt_sha256=out.prompt_sha256,
                     max_turns=10,
                 ),
             ),
         ),
         ExtractThenCall(
-            "prompt_eval_run_critic",
-            RunCriticOutput,
-            lambda out: ("prompt_eval", "run_grader", RunGraderInput(critique_id=out.critique_id, max_turns=10)),
+            expected_tool=build_mcp_function(
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL
+            ),
+            output_type=RunCriticOutput,
+            make_next=lambda out: (
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+                PromptEvalServer.RUN_GRADER_TOOL,
+                RunGraderInput(critique_id=out.critique_id, max_turns=10),
+            ),
         ),
-        Finish("prompt_eval_run_grader", message="Done"),
+        Finish(
+            expected_tool=build_mcp_function(
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.RUN_GRADER_TOOL
+            ),
+            message="Done",
+        ),
     ]
 
 
 @pytest.fixture
 def critic_agent_steps():
-    """Declarative steps for Critic agent - uses compositor/server constants."""
+    """Declarative steps for Critic agent - uses compositor/server constants.
+
+    TODO: pytest.fail() from nested agent contexts (PO → critic → mock) doesn't propagate
+    properly and causes hangs instead of fast-fails. This is why the first step MUST be
+    MakeCall (no assertions) rather than CheckThenCall. The test framework can't catch
+    exceptions raised deep in async agent execution chains.
+    """
     # Import here to get constants
-    from adgn.props.critic.critic import CriticCompositor, CriticSubmitServer
 
     prefix = CriticCompositor.SUBMIT_PREFIX
 
     return [
-        CheckThenCall(
-            build_mcp_function(DOCKER_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
+        MakeCall(
             prefix,
             CriticSubmitServer.UPSERT_ISSUE_TOOL_NAME,
             UpsertIssueInput(issue_id="test-issue", description="Test issue"),
@@ -141,10 +186,12 @@ def critic_agent_steps():
 
 @pytest.fixture
 def grader_agent_steps():
-    """Declarative steps for Grader agent - uses compositor/server constants."""
+    """Declarative steps for Grader agent - uses compositor/server constants.
+
+    TODO: Same issue as critic_agent_steps - first step must be MakeCall to avoid
+    pytest.fail() hangs from nested async contexts.
+    """
     # Import here to get constants
-    from adgn.props.critic.critic import CriticCompositor, CriticSubmitServer
-    from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
 
     grade_input = {
         "canonical_tp_coverage": [
@@ -164,8 +211,7 @@ def grader_agent_steps():
         "summary": "Good coverage of canonical issues.",
     }
     return [
-        CheckThenCall(
-            build_mcp_function(CriticCompositor.SUBMIT_PREFIX, CriticSubmitServer.SUBMIT_TOOL_NAME),
+        MakeCall(
             GraderCompositor.SUBMIT_PREFIX,
             GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME,
             GradeSubmitInput.model_validate(grade_input),
@@ -173,104 +219,81 @@ def grader_agent_steps():
     ]
 
 
-class WorkflowMock(OpenAIModelProto):
-    """Smart mock that delegates to appropriate step runner based on tool context."""
+class SimpleMockClient(OpenAIModelProto):
+    """Simple mock client that delegates to a step runner and optionally dumps requests."""
 
-    def __init__(
-        self, po_runner: _StepRunner, critic_runner: _StepRunner, grader_runner: _StepRunner, dump_requests_to: Path
-    ):
-        self.po_runner = po_runner
-        self.critic_runner = critic_runner
-        self.grader_runner = grader_runner
-        self.dump_requests_to = dump_requests_to
+    def __init__(self, runner: _StepRunner, agent_type: str, dump_dir: Path | None = None):
+        self.runner = runner
+        self.agent_type = agent_type
+        self.dump_dir = dump_dir
         self.model = "fake-model"
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        """Determine which agent from request context and delegate to appropriate runner."""
-        # Dump request for debugging
-        self._dump_request(req)
-
-        # Determine agent type from available tools
-        tool_names = {t.name for t in req.tools} if req.tools else set()
-
-        if any("critic_submit" in name for name in tool_names):
-            return await self.critic_runner.handle_request_async(req)
-        if any("grader_submit" in name for name in tool_names):
-            return await self.grader_runner.handle_request_async(req)
-        return await self.po_runner.handle_request_async(req)
+        """Delegate to runner and optionally dump request for debugging."""
+        if self.dump_dir:
+            self._dump_request(req)
+        return await self.runner.handle_request_async(req)
 
     def _dump_request(self, req: ResponsesRequest):
-        """Dump request to file for debugging. Creates separate files per agent in subdirectories."""
-        tool_names = {t.name for t in req.tools} if req.tools else set()
-
-        if any("critic_submit" in name for name in tool_names):
-            agent_type = "critic"
-            turn_num = self.critic_runner.turn
-        elif any("grader_submit" in name for name in tool_names):
-            agent_type = "grader"
-            turn_num = self.grader_runner.turn
-        else:
-            agent_type = "po"
-            turn_num = self.po_runner.turn
-
-        # Create agent-specific subdirectory
-        agent_dir = self.dump_requests_to / agent_type
+        """Dump request to file for debugging."""
+        assert self.dump_dir is not None
+        agent_dir = self.dump_dir / self.agent_type
         agent_dir.mkdir(parents=True, exist_ok=True)
-
-        # Write full request to file named by turn number
-        with (agent_dir / f"{turn_num}.json").open("w") as f:
+        with (agent_dir / f"{self.runner.turn}.json").open("w") as f:
             json.dump(req.model_dump(mode="json"), f, indent=2)
 
 
 @pytest.mark.timeout(10)
+@pytest.mark.requires_docker
 async def test_full_workflow_po_agent_critic_grader(
     test_specimen,
     tmp_path,
     make_step_runner,
     po_agent_steps,
+    critic_agent_steps,
+    grader_agent_steps,
     test_specimens_hydrator,
     patch_prompt_optimizer_for_test_db,
     async_docker_client,
 ):
-    """Full integration: run_prompt_optimizer() with real Docker, mocked LLM and specimens.
+    """Full integration: prompt optimizer agent with compositor-based tool orchestration.
 
-    Tests the complete CLI workflow: specimen hydration → Docker setup → compositor → agent → database writes.
+    Tests the complete workflow: PO agent → run_critic → critic agent → run_grader → grader agent.
 
     This test catches bugs like:
     - Naming collisions (run_critic tool vs run_critic function)
     - Tool name prefixing issues
     - Database schema problems
     - RLS policy issues
-    - New workflow: docker_exec write_file → upsert_prompt → run_critic (with SHA256) → run_grader
+    - New workflow: docker_exec write_file → upsert_prompt → run_critic_on_example → run_grader
 
     Set DUMP_REQUESTS env var to override dump directory (defaults to test tmp_path).
     Uses test-fixtures/test-trivial specimen from test fixtures registry.
     """
-    # Create step runners for each agent (fixtures provide step sequences)
     po_runner = make_step_runner(steps=po_agent_steps)
     critic_runner = make_step_runner(steps=critic_agent_steps)
     grader_runner = make_step_runner(steps=grader_agent_steps)
 
-    # Always dump requests; use DUMP_REQUESTS override or default to tmp_path
     dump_dir = Path(os.environ.get("DUMP_REQUESTS", str(tmp_path / "agent_requests")))
-    mock = WorkflowMock(
-        po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
-    )
+
+    # Create separate mock clients for each agent type
+    optimizer_client = SimpleMockClient(po_runner, "po", dump_dir)
+    critic_client = SimpleMockClient(critic_runner, "critic", dump_dir)
+    grader_client = SimpleMockClient(grader_runner, "grader", dump_dir)
 
     # patch_prompt_optimizer_for_test_db fixture already applies the necessary patches
-    with patch("adgn.props.prompt_optimize.prompt_optimizer.build_client", return_value=mock):
-        await run_prompt_optimizer(
-            budget=1.0,
-            ctx=RunsContext.from_pkg_dir(),
-            hydrator=test_specimens_hydrator,
-            out_dir=tmp_path,
-            docker_client=async_docker_client,
-            optimizer_model="gpt-5-nano",
-            critic_model="gpt-5-nano",
-            grader_model="gpt-5-nano",
-        )
+    await run_prompt_optimizer(
+        budget=1.0,
+        ctx=RunsContext.from_pkg_dir(),
+        hydrator=test_specimens_hydrator,
+        optimizer_client=optimizer_client,
+        critic_client=critic_client,
+        grader_client=grader_client,
+        docker_client=async_docker_client,
+        out_dir=tmp_path,
+    )
 
-    # make_step_runner fixture automatically validates all steps were executed for all three agents
+    # Step runner validates all steps were executed
 
     critic_runs = get_critic_runs_for_slug(TEST_SPECIMEN_SLUG)
     assert_that(critic_runs, has_length(1), "Expected exactly one critic run")
@@ -291,15 +314,10 @@ def patch_prompt_optimizer_for_test_db(test_db, test_specimens_hydrator):
 
     Yields with patches active:
     - get_production_config() to return test database config
-    - get_specimens_base_path() to return test fixtures path (for DB sync)
     - specimens_definitions_root() to return test fixtures path (patched where imported in hydration.py)
     """
     with (
         patch("adgn.props.prompt_optimize.prompt_optimizer.get_production_config", return_value=test_db),
-        patch(
-            "adgn.props.prompt_optimize.prompt_optimizer.get_specimens_base_path",
-            return_value=test_specimens_hydrator._base_path,
-        ),
         patch("adgn.props.hydration.specimens_definitions_root", return_value=test_specimens_hydrator._base_path),
     ):
         yield
@@ -344,21 +362,22 @@ async def test_po_agent_psql_connectivity(
     grader_runner = make_step_runner(steps=[])
 
     dump_dir = Path(os.environ.get("DUMP_REQUESTS", str(tmp_path / "agent_requests")))
-    mock = WorkflowMock(
-        po_runner=po_runner, critic_runner=critic_runner, grader_runner=grader_runner, dump_requests_to=dump_dir
-    )
+
+    # Create separate mock clients for each agent type
+    optimizer_client = SimpleMockClient(po_runner, "po", dump_dir)
+    critic_client = SimpleMockClient(critic_runner, "critic", dump_dir)
+    grader_client = SimpleMockClient(grader_runner, "grader", dump_dir)
 
     # patch_prompt_optimizer_for_test_db fixture already applies the necessary patches
-    with patch("adgn.props.prompt_optimize.prompt_optimizer.build_client", return_value=mock):
-        await run_prompt_optimizer(
-            budget=1.0,
-            ctx=RunsContext.from_pkg_dir(),
-            hydrator=test_specimens_hydrator,
-            out_dir=tmp_path,
-            docker_client=async_docker_client,
-            optimizer_model="gpt-5-nano",
-            critic_model="gpt-5-nano",
-            grader_model="gpt-5-nano",
-        )
+    await run_prompt_optimizer(
+        budget=1.0,
+        ctx=RunsContext.from_pkg_dir(),
+        hydrator=test_specimens_hydrator,
+        optimizer_client=optimizer_client,
+        critic_client=critic_client,
+        grader_client=grader_client,
+        docker_client=async_docker_client,
+        out_dir=tmp_path,
+    )
 
     # Step runner validates that psql executed successfully and returned "1"

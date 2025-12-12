@@ -12,27 +12,26 @@ import plotext as plt  # type: ignore[import-untyped]
 from rich import box
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import joinedload
 
 from adgn.props.db import get_session
 from adgn.props.db.datapoints import count_available_examples_for_split
-from adgn.props.db.models import CriticRun, CriticScopeDB, GraderRun, Prompt
+from adgn.props.db.models import CriticRun, Event, Example, GraderRun, Prompt
+from adgn.props.display import SHORT_SHA_LENGTH, short_sha
 from adgn.props.grader.staleness import check_staleness
 from adgn.props.splits import Split
 
-# Display constants
-SHORT_SHA_LENGTH = 6
-
 
 def _generate_buckets(
-    values: Sequence[float | int], num_buckets: int = 7
+    values: Sequence[float | int], num_buckets: int = 7, equal_width: bool = False
 ) -> list[tuple[str, float | int, float | int]]:
     """Generate bucket ranges automatically based on data distribution.
 
     Args:
         values: List of numeric values
         num_buckets: Desired number of buckets (default 7)
+        equal_width: If True, use equal-width bins; if False, use percentile-based (default False)
 
     Returns:
         List of (label, low, high) tuples defining bucket ranges
@@ -47,29 +46,34 @@ def _generate_buckets(
     if min_val == max_val:
         return [(str(min_val), min_val, min_val + 1)]
 
-    # Use percentile-based buckets for better distribution
-    sorted_vals = sorted(values)
-    n = len(sorted_vals)
-
-    # Calculate bucket boundaries using percentiles
-    percentiles = [i * 100 / num_buckets for i in range(num_buckets + 1)]
-    bounds = []
-    for p in percentiles:
-        idx = int(n * p / 100)
-        if idx >= n:
-            idx = n - 1
-        bounds.append(sorted_vals[idx])
-
-    # Deduplicate consecutive boundaries
-    unique_bounds = [bounds[0]]
-    for b in bounds[1:]:
-        if b != unique_bounds[-1]:
-            unique_bounds.append(b)
-
-    # If we have fewer unique bounds than buckets, fall back to equal-width bins
-    if len(unique_bounds) < num_buckets:
+    if equal_width:
+        # Use equal-width bins
         bin_width = (max_val - min_val) / num_buckets
         unique_bounds = [min_val + i * bin_width for i in range(num_buckets + 1)]
+    else:
+        # Use percentile-based buckets for better distribution
+        sorted_vals = sorted(values)
+        n = len(sorted_vals)
+
+        # Calculate bucket boundaries using percentiles
+        percentiles = [i * 100 / num_buckets for i in range(num_buckets + 1)]
+        bounds = []
+        for p in percentiles:
+            idx = int(n * p / 100)
+            if idx >= n:
+                idx = n - 1
+            bounds.append(sorted_vals[idx])
+
+        # Deduplicate consecutive boundaries
+        unique_bounds = [bounds[0]]
+        for b in bounds[1:]:
+            if b != unique_bounds[-1]:
+                unique_bounds.append(b)
+
+        # If we have fewer unique bounds than buckets, fall back to equal-width bins
+        if len(unique_bounds) < num_buckets:
+            bin_width = (max_val - min_val) / num_buckets
+            unique_bounds = [min_val + i * bin_width for i in range(num_buckets + 1)]
 
     # Create bucket tuples with labels
     buckets = []
@@ -148,8 +152,7 @@ def _display_distribution(
 class SplitStats:
     """Statistics for a prompt on a specific split."""
 
-    initiated: int = 0  # Critic runs initiated
-    completed: int = 0  # Grader runs completed
+    completed: int = 0  # Unique examples evaluated (with grader runs completed)
     recalls: list[float] = None  # type: ignore[assignment]
     total_available: int = 0  # Total training examples available in this split
 
@@ -234,7 +237,7 @@ def _display_split_analysis(
         # Show top prompts tried on zero-recall examples
         for sha, count in prompt_counts_zero.most_common(10):
             pct = 100.0 * count / len(zero_recall_samples)
-            console.print(f"  {sha[:SHORT_SHA_LENGTH]}: evaluated on {count}/{len(zero_recall_samples)} ({pct:.0f}%)")
+            console.print(f"  {short_sha(sha)}: evaluated on {count}/{len(zero_recall_samples)} ({pct:.0f}%)")
 
     # For nonzero-recall examples, show prompt best-coverage heatmap
     if nonzero_recall_samples:
@@ -289,7 +292,7 @@ def _display_split_analysis(
             visual = "".join(visual_chars)
 
             coverage_table.add_row(
-                sha[:SHORT_SHA_LENGTH], f"{count}/{len(nonzero_recall_samples)}", f"{pct:.0f}%", f"[{visual}]"
+                short_sha(sha), f"{count}/{len(nonzero_recall_samples)}", f"{pct:.0f}%", f"[{visual}]"
             )
 
         console.print(coverage_table)
@@ -338,35 +341,56 @@ def cmd_stats() -> None:
                 },
             )
 
-            # Count critic runs by split
-            for critic_run in prompt.critic_runs:
-                split = critic_run.snapshot_obj.split
-                stats.splits[split].initiated += 1
-
-            # Query grader runs for this prompt's critiques
-            # Join: critique → critic_run → prompt, filter by prompt_sha256
+            # Query grader runs for this prompt's critiques, grouped by (snapshot_slug, files_hash)
+            # This gives us one recall per unique example (training/validation/test example)
+            # IMPORTANT: Join with Example table to only count grader runs for current valid examples
+            # (filters out stale runs from deleted/changed examples, e.g., old per-file valid/test examples)
+            # Join: grader_run → critique → critic_run → prompt → example, filter by prompt_sha256
             grader_query = (
-                select(GraderRun)
+                select(GraderRun, CriticRun.snapshot_slug, CriticRun.files_hash)
                 .join(GraderRun.critique_obj)
                 .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
+                .join(
+                    Example,
+                    (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash),
+                )
                 .where(CriticRun.prompt_sha256 == prompt.prompt_sha256)
                 .options(joinedload(GraderRun.snapshot_obj))
             )
-            grader_runs = session.execute(grader_query).unique().scalars().all()
+            grader_results = session.execute(grader_query).all()
 
-            # Accumulate grader metrics by split
-            for grader_run in grader_runs:
+            # Accumulate grader metrics by split and example
+            # Track recalls per unique example (most recent grader run per example)
+            example_recalls_by_split: dict[Split, dict[tuple[str, str], tuple[float, datetime]]] = {
+                Split.TRAIN: {},
+                Split.VALID: {},
+                Split.TEST: {},
+            }
+
+            for grader_run, snapshot_slug, files_hash in grader_results:
                 split = grader_run.snapshot_obj.split
 
                 # Skip grader runs with no output (incomplete/failed)
                 if grader_run.output is None:
                     continue
 
-                stats.splits[split].completed += 1
-
                 # Extract recall from grader output (recall is in [0,1])
                 recall_pct = grader_run.output.recall * 100.0
-                stats.splits[split].recalls.append(recall_pct)
+                example_key = (snapshot_slug, files_hash)
+
+                # Keep the most recent recall for each unique example
+                if example_key not in example_recalls_by_split[split]:
+                    example_recalls_by_split[split][example_key] = (recall_pct, grader_run.created_at)
+                else:
+                    # Update if this grader run is more recent
+                    _, existing_timestamp = example_recalls_by_split[split][example_key]
+                    if grader_run.created_at > existing_timestamp:
+                        example_recalls_by_split[split][example_key] = (recall_pct, grader_run.created_at)
+
+            # Update stats with unique example recalls
+            for split in [Split.TRAIN, Split.VALID, Split.TEST]:
+                stats.splits[split].completed = len(example_recalls_by_split[split])
+                stats.splits[split].recalls = [recall for recall, _ in example_recalls_by_split[split].values()]
 
             prompt_stats_list.append(stats)
 
@@ -387,9 +411,8 @@ def cmd_stats() -> None:
                 .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
                 .join(GraderRun.snapshot_obj)
                 .join(
-                    CriticScopeDB,
-                    (CriticScopeDB.snapshot_slug == CriticRun.snapshot_slug)
-                    & (CriticScopeDB.files_hash == CriticRun.files_hash),
+                    Example,
+                    (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash),
                 )
                 .where(GraderRun.snapshot_obj.has(split=split))
                 .where(GraderRun.output.isnot(None))
@@ -437,70 +460,48 @@ def cmd_stats() -> None:
     # Display summary
     console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_stats_list)} prompts)\n")
 
-    # Create table
+    # Create new table with requested columns
     table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 1))
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
     table.add_column("Created", width=19)
     table.add_column("Chars", justify="right", width=6)
-    table.add_column("Split", width=5)
-    table.add_column("Runs (B/C/I)", justify="right", width=14)
-    table.add_column("Mean Recall", justify="right", width=11)
-    table.add_column("Zero Rate", justify="right", width=10)
+    table.add_column("Valid Recall", justify="right", width=12)
+    table.add_column("Train N", justify="right", width=8)
+    table.add_column("Train Recall", justify="right", width=12)
+    table.add_column("Train Zero%", justify="right", width=11)
 
-    for idx, stats in enumerate(prompt_stats_list):
-        sha_short = stats.prompt_sha256[:SHORT_SHA_LENGTH]
+    for stats in prompt_stats_list:
+        sha_short = short_sha(stats.prompt_sha256)
         created_str = stats.created_at.strftime("%Y-%m-%dT%H:%M:%S")
 
         # Format length as "11k" for > 1000, otherwise just the number
         length_str = f"{stats.prompt_length // 1000}k" if stats.prompt_length >= 1000 else str(stats.prompt_length)
 
-        first_row = True
-
-        # Process each split (train, valid, test)
-        for split in [Split.TRAIN, Split.VALID, Split.TEST]:
-            split_stats = stats.splits[split]
-
-            # Skip if no data for this split
-            if split_stats.initiated == 0:
-                continue
-
-            # Format metrics
-            recall = f"{split_stats.mean_recall:.1f}%" if split_stats.mean_recall is not None else "—"
-            zero_rate = f"{split_stats.zero_rate:.0f}%" if split_stats.zero_rate is not None else "—"
-
-            # Format runs as best/completed/initiated (best count only for valid split)
-            if split == Split.VALID and stats.valid_best_count > 0:
-                runs = f"{stats.valid_best_count}/{split_stats.completed}/{split_stats.initiated}"
+        # Validation recall: show mean % if fully evaluated, otherwise "N/M"
+        valid_stats = stats.splits[Split.VALID]
+        if valid_stats.completed == 0:
+            valid_recall_str = "—"
+        elif valid_stats.completed == valid_stats.total_available:
+            # Fully evaluated - show mean recall percentage with color
+            if valid_stats.mean_recall is not None:
+                valid_recall_str = f"[green]{valid_stats.mean_recall:.1f}%[/green]"
             else:
-                runs = f"{split_stats.completed}/{split_stats.initiated}"
+                valid_recall_str = "—"
+        else:
+            # Partially evaluated - show "N/M"
+            valid_recall_str = f"{valid_stats.completed}/{valid_stats.total_available}"
 
-            table.add_row(
-                sha_short if first_row else "",
-                created_str if first_row else "",
-                length_str if first_row else "",
-                split.value,  # Use split.value to get "train", "valid", "test"
-                runs,
-                recall,
-                zero_rate,
-                style="bright_blue" if split == Split.VALID and split_stats.mean_recall else "",
-            )
-            first_row = False
+        # Training stats
+        train_stats = stats.splits[Split.TRAIN]
+        train_n_str = str(train_stats.completed) if train_stats.completed > 0 else "—"
+        train_recall_str = f"{train_stats.mean_recall:.1f}%" if train_stats.mean_recall is not None else "—"
+        train_zero_str = f"{train_stats.zero_rate:.0f}%" if train_stats.zero_rate is not None else "—"
 
-        # Separator between prompts (only if we added at least one row and not the last prompt)
-        if not first_row and idx < len(prompt_stats_list) - 1:
-            table.add_row("", "", "", "", "", "", "")
+        table.add_row(
+            sha_short, created_str, length_str, valid_recall_str, train_n_str, train_recall_str, train_zero_str
+        )
 
     console.print(table)
-
-    # Summary statistics
-    total_initiated = sum(
-        s.splits[Split.TRAIN].initiated + s.splits[Split.VALID].initiated + s.splits[Split.TEST].initiated
-        for s in prompt_stats_list
-    )
-    total_completed = sum(
-        s.splits[Split.TRAIN].completed + s.splits[Split.VALID].completed + s.splits[Split.TEST].completed
-        for s in prompt_stats_list
-    )
 
     # Get total available from any prompt's stats (they're all the same)
     if prompt_stats_list:
@@ -512,9 +513,7 @@ def cmd_stats() -> None:
 
     console.print("\n[bold]Summary:[/bold]")
     console.print(f"  Total prompts: {len(prompt_stats_list)}")
-    console.print(f"  Total critic runs initiated: {total_initiated}")
-    console.print(f"  Total grader runs completed: {total_completed}")
-    console.print("\n  Available training examples:")
+    console.print("\n  Available examples per split:")
     console.print(f"    Train: {train_total}")
     console.print(f"    Valid: {valid_total}")
     console.print(f"    Test: {test_total}")
@@ -529,7 +528,7 @@ def cmd_stats() -> None:
         best = max(valid_prompts, key=lambda x: x[1])  # type: ignore[arg-type, return-value]
         console.print(
             f"\n[bold green]Best prompt (valid):[/bold green] "
-            f"{best[0].prompt_sha256[:SHORT_SHA_LENGTH]} with {best[1]:.1f}% recall "  # type: ignore[index]
+            f"{short_sha(best[0].prompt_sha256)} with {best[1]:.1f}% recall "  # type: ignore[index]
             f"({best[0].splits[Split.VALID].completed} samples)"
         )
 
@@ -571,6 +570,44 @@ def cmd_stats() -> None:
             tp_counts_per_sample[split],
             total_available=split_total,
             show_all_prompts=show_all,
+        )
+
+    # Display tool call count distributions for successful runs
+    with get_session() as session:
+        # Query tool call counts for successful critic runs
+        critic_tool_calls = (
+            session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
+            .join(CriticRun, CriticRun.transcript_id == Event.transcript_id)
+            .where(Event.event_type == "tool_call")
+            .where(CriticRun.critique_id.isnot(None))  # Only successful runs
+            .group_by(Event.transcript_id)
+            .all()
+        )
+
+        # Query tool call counts for successful grader runs
+        grader_tool_calls = (
+            session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
+            .join(GraderRun, GraderRun.transcript_id == Event.transcript_id)
+            .where(Event.event_type == "tool_call")
+            .where(GraderRun.output.isnot(None))  # Only successful runs
+            .group_by(Event.transcript_id)
+            .all()
+        )
+
+    # Display critic tool call distribution
+    if critic_tool_calls:
+        critic_counts = [count for _, count in critic_tool_calls]
+        critic_buckets = _generate_buckets(critic_counts, num_buckets=10, equal_width=True)
+        _display_distribution(
+            console, critic_counts, "Tool Calls per Successful Critic Run", critic_buckets, value_format="{:.0f}"
+        )
+
+    # Display grader tool call distribution
+    if grader_tool_calls:
+        grader_counts = [count for _, count in grader_tool_calls]
+        grader_buckets = _generate_buckets(grader_counts, num_buckets=10, equal_width=True)
+        _display_distribution(
+            console, grader_counts, "Tool Calls per Successful Grader Run", grader_buckets, value_format="{:.0f}"
         )
 
     # Check for stale grader runs

@@ -94,66 +94,42 @@ any(
 - Catchable from `{client.py, utils.py}`: ✅ Yes
 - Catchable from `{client.py, utils.py, other.py}`: ✅ Yes (superset okay)
 
-## Critic Scopes (Training Example Specification)
+## Training Examples (Auto-Generated)
 
-### Sidecar YAML Format
+### Generation Strategy
 
-File: `specimens/critic_scopes.yaml`
+Training examples are **automatically generated** from `expect_caught_from` data at database sync time. No manual YAML specification is needed.
 
-```yaml
-# Defines which file combinations to use as training examples for each snapshot
-# Each entry generates one TrainingExample (snapshot + targeted_files)
-# Rationale for groupings documented via comments
+**For TRAIN split snapshots:**
+- One example per unique `expect_caught_from` trigger set
+  - If `tp.occurrences[0].expect_caught_from = [[A], [B]]`, generates examples for `{A}` and `{B}`
+  - If `tp.occurrences[0].expect_caught_from = [[A, B]]`, generates one example for `{A, B}`
+- Plus one full-specimen example (all files with issues)
 
-ducktape/2025-11-26-00:
-  # Server initialization and lifecycle issues
-  - files: [src/agent/server.py]
+**For VALID/TEST split snapshots:**
+- Only full-specimen example (terminal metric)
 
-  # Approval hub logic and state management
-  - files: [src/agent/approvals.py]
+**Example:** Given a snapshot with:
+- TP1: `expect_caught_from = [[server.py], [client.py]]` (duplication)
+- TP2: `expect_caught_from = [[types.py, utils.py]]` (missing abstraction)
+- TP3: `expect_caught_from = [[dead.py]]` (dead code)
 
-  # Check for duplicated type definitions across layers
-  - files: [src/mcp/types.py, src/mcp/persist.py]
+Generates training examples:
+1. `files: [server.py]` (from TP1 trigger 1)
+2. `files: [client.py]` (from TP1 trigger 2)
+3. `files: [types.py, utils.py]` (from TP2)
+4. `files: [dead.py]` (from TP3)
+5. `files: [server.py, client.py, types.py, utils.py, dead.py]` (full-specimen)
 
-  # UI component patterns and style consistency
-  - files: [src/agent/web/src/components/*.svelte]
+**Deduplication:** Identical trigger sets are automatically deduplicated by file set hash
 
-ducktape/2025-11-20-00:
-  # ... similar structure
-```
-
-**Comments:** Explain why each file combination makes sense (documentation only, not parsed)
-
-**File patterns:** Support globs (`*.py`, `**/*.py`) for convenience, expanded at load time
-
-### Generating Scopes
-
-**Manual curation (initial):**
-- For each snapshot, identify natural review boundaries:
-  - Individual files with self-contained issues
-  - File pairs/groups with cross-cutting concerns (duplication, inconsistent patterns)
-  - Component boundaries (e.g., all UI components, all DB layer)
-
-**Heuristics (future):**
-- One example per file with issues
-- One example per directory with multiple related files
-- One example for files sharing common imports/dependencies
-- Full snapshot as final example (terminal metric)
-
-**Important:** Always include ONE full-snapshot example per snapshot as the terminal metric
-
-### Default Behavior
-
-If `critic_scopes.yaml` doesn't specify scopes for a snapshot, fall back to:
-1. One example per file with issues (naive per-file split)
-2. One example with all files (full snapshot)
+**Important:** Full-specimen examples are ALWAYS included as the terminal metric
 
 ## Metrics
 
 ### Training Metrics (per-file examples)
 - **Recall:** TP_found / TP_catchable (given targeted_files)
 - **Precision:** TP_found / (TP_found + FP_triggered)
-- **F1:** Harmonic mean of recall and precision
 
 ### Terminal Metric (full snapshot)
 - **Full-repo recall:** How well does the critic perform when targeting ALL files?
@@ -164,7 +140,7 @@ If `critic_scopes.yaml` doesn't specify scopes for a snapshot, fall back to:
 
 **GEPA evolutionary search:**
 1. Sample mini-batches of training examples (snapshot + targeted_files pairs)
-2. Run critic on each example, measure recall/precision
+2. Run critic on each example, measure recall
 3. Reflection LM analyzes failures and proposes prompt improvements
 4. Evolve population of prompt variants
 5. Validate on held-out examples
@@ -182,9 +158,9 @@ If `critic_scopes.yaml` doesn't specify scopes for a snapshot, fall back to:
 
 See:
 - `models/training_example.py` - TrainingExample model and filtering logic
-- `db/models.py` - ORM models (Snapshot, TruePositive, FalsePositive) for loading issues from database
-- `db/sync/_loader.py` - FilesystemLoader (private, sync-only) for syncing jsonnet to database
+- `db/models.py` - ORM models (Snapshot, Example, TruePositive, FalsePositive)
+- `db/sync/_sync.py` - `generate_examples_for_snapshot()` - auto-generates examples from `expect_caught_from` data
+- `db/datapoints.py` - `get_examples_for_split()` - loads examples for GEPA/training
 - `gepa/gepa_adapter.py` - GEPA integration (loads training examples from database via ORM)
-- `specimens/critic_scopes.yaml` - Training example specifications (to be created)
 
-**Note:** Training examples are loaded from the database at runtime. The jsonnet files (`.libsonnet`) are synced to the database once via `adgn-properties db sync`.
+**Note:** Training examples are auto-generated during database sync (`adgn-properties db sync`). The jsonnet issue files (`.libsonnet`) define `expect_caught_from` data which drives example generation.

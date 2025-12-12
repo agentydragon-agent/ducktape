@@ -166,7 +166,6 @@ class GradeMetrics(BaseModel):
     false_positive: int = Field(..., description="Reported items known to be false positives (in known-FP list)")
     unknown: int = Field(..., description="Reported items neither in canonical positives nor in known false positives")
     false_negatives: int = Field(..., description="Canonical items missing in report")
-    precision: float = Field(..., description="TP / (TP + false_positive + unknown); 0.0 if undefined")
     recall: float = Field(..., description="TP / expected (known-positives); 0.0 if undefined")
     # Fractional coverage-based recall in [0,1], computed from coverage credits when expected>0
     coverage_recall: float | None = Field(

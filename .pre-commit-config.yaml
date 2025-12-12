@@ -75,7 +75,7 @@ repos:
         alias: mypy-adgn
         name: mypy (adgn)
         files: "^adgn/.*\\.py$"
-        exclude: "(/third_party/|/testdata/|/fixtures/|/vendor/)"
+        exclude: "(/third_party/|/testdata/|/fixtures/|/vendor/|/migrations/)"
         language_version: python3.12
         args: ["--config-file=mypy.ini"]
         additional_dependencies:

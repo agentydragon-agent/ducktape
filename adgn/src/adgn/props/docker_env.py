@@ -26,8 +26,11 @@ PROPS_DIR: Path = Path("/props")
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 DOCKER_MOUNT_PREFIX = "docker"  # Mount prefix for properties Docker exec server
 
-# Docker network name for properties containers (allows container→host communication while blocking internet)
-PROPS_NETWORK_NAME = "props-network"
+# Docker network name for properties containers
+# - Shared with postgres container (container-to-container communication)
+# - Allows container→host communication for MCP HTTP mode
+# - Non-internal network (needed for host access)
+PROPS_NETWORK_NAME = "props_default"
 
 
 def get_docker_network_gateway(network_name: str) -> str:

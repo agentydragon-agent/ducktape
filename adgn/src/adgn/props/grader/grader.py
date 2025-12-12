@@ -50,6 +50,7 @@ from adgn.props.db.models import (
     GraderRun as DBGraderRun,
     Snapshot,
 )
+from adgn.props.display import short_uuid
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.models import (
@@ -471,7 +472,7 @@ Grade the critique, then submit your result by invoking the grader_submit server
                     *build_props_handlers(
                         transcript_id=transcript_id,
                         verbose_prefix=(
-                            f"[GRADER {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                            f"[GRADER {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
                             if verbose
                             else None
                         ),

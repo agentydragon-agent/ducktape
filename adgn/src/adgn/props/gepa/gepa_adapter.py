@@ -50,7 +50,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.datapoints import get_datapoints_for_split
+from adgn.props.db.datapoints import get_examples_for_split
 from adgn.props.db.models import (
     CriticRun as DBCriticRun,
     Critique,
@@ -158,7 +158,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
     For warm-start to work, load_datasets() MUST return datasets in deterministic
     order across all runs. This is enforced via:
     - Snapshot queries: order_by(Snapshot.slug)
-    - CriticScope relationship: order_by="CriticScopeDB.id"
+    - Example relationship: order_by="Example.files_hash"
 
     See warm_start.py for checkpoint reconstruction from historical database runs.
     """
@@ -168,7 +168,6 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         hydrator: SnapshotHydrator,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
-        docker_client: aiodocker.Docker,
         run_dir: Path,
         reflection_model: str | None = None,
         verbose: bool = False,
@@ -177,7 +176,6 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         self.hydrator = hydrator
         self.critic_client = critic_client
         self.grader_client = grader_client
-        self.docker_client = docker_client
         self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
@@ -322,11 +320,19 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         # GEPA's evaluate() is synchronous, but our implementation is async
         # Run async code in a new thread with its own event loop to avoid conflicts
+        # Create Docker client in the new loop to avoid cross-loop issues
+        async def run_in_new_loop_async():
+            docker_client = aiodocker.Docker()
+            try:
+                return await self._evaluate_async(batch, candidate, capture_traces, docker_client)
+            finally:
+                await docker_client.close()
+
         def run_in_new_loop():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             try:
-                return loop.run_until_complete(self._evaluate_async(batch, candidate, capture_traces))
+                return loop.run_until_complete(run_in_new_loop_async())
             finally:
                 loop.close()
 
@@ -351,17 +357,22 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         return gepa.EvaluationBatch(outputs=outputs, scores=scores, trajectories=trajectories)
 
     async def _evaluate_one_specimen(
-        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool, semaphore: asyncio.Semaphore
+        self,
+        specimen_input: SnapshotInput,
+        prompt_sha256: str,
+        capture_traces: bool,
+        semaphore: asyncio.Semaphore,
+        docker_client: aiodocker.Docker,
     ) -> EvaluationResult:
         """Evaluate a single specimen (for parallel execution).
 
         Uses semaphore to limit concurrent critic/grader runs.
         """
         async with semaphore:
-            return await self._evaluate_one_specimen_impl(specimen_input, prompt_sha256, capture_traces)
+            return await self._evaluate_one_specimen_impl(specimen_input, prompt_sha256, capture_traces, docker_client)
 
     async def _evaluate_one_specimen_impl(
-        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool
+        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool, docker_client: aiodocker.Docker
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
         slug = specimen_input.slug
@@ -377,7 +388,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             critic_output, critic_run_id, critique_id = await run_critic(
                 input_data=critic_input,
                 client=self.critic_client,
-                docker_client=self.docker_client,
+                docker_client=docker_client,
                 content_root=hydrated.content_root,
                 prompt_optimization_run_id=None,
                 mount_properties=True,
@@ -399,12 +410,13 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         # CRITICAL: Extract grader_output inside session before object becomes detached
         with get_session() as session:
             grader_run_id = await grade_critique_by_id(
-                session, critique_id, self.grader_client, self.docker_client, verbose=self.verbose
+                session, critique_id, self.grader_client, docker_client, verbose=self.verbose
             )
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
-            # Access recall directly from DB model
-            score = grader_run.output.recall
+            # CRITICAL: Extract output and score INSIDE session before object becomes detached
+            grader_output = grader_run.output
+            score = grader_output.recall
 
             # Fetch critique payload (DB model) for trajectory
             critique = session.get(Critique, critique_id)
@@ -418,7 +430,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         )
 
         return EvaluationResult(
-            output=self._build_critic_output(grader_run.output, critique_id), score=score, trajectory=trajectory
+            output=self._build_critic_output(grader_output, critique_id), score=score, trajectory=trajectory
         )
 
     def _reconstruct_from_cache(
@@ -460,7 +472,11 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         )
 
     async def _evaluate_async(
-        self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool
+        self,
+        batch: list[SnapshotInput],
+        candidate: dict[str, str],
+        capture_traces: bool,
+        docker_client: aiodocker.Docker,
     ) -> list[EvaluationResult]:
         """Async implementation with database-backed caching.
 
@@ -470,6 +486,12 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         3. Reorder results: Return in original batch order
 
         Semaphore ensures max_parallelism concurrent critic/grader runs.
+
+        Args:
+            batch: List of SnapshotInput to evaluate
+            candidate: Prompt candidate dictionary
+            capture_traces: Whether to capture execution traces
+            docker_client: Docker client created in this event loop
         """
         # Create semaphore for this evaluation batch (scoped to this event loop)
         semaphore = asyncio.Semaphore(self.max_parallelism)
@@ -534,7 +556,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         if uncached_inputs:
             tasks = [
                 asyncio.create_task(
-                    self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore)
+                    self._evaluate_one_specimen(specimen_input, prompt_sha256, capture_traces, semaphore, docker_client)
                 )
                 for _, specimen_input in uncached_inputs
             ]
@@ -636,8 +658,8 @@ async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
 
     with get_session() as session:
         # Use shared datapoints module for consistent filtering logic
-        trainset = get_datapoints_for_split(session, Split.TRAIN)
-        valset = get_datapoints_for_split(session, Split.VALID)
+        trainset = get_examples_for_split(session, Split.TRAIN)
+        valset = get_examples_for_split(session, Split.VALID)
 
     logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
 
@@ -654,7 +676,6 @@ async def optimize_with_gepa(
     hydrator: SnapshotHydrator,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
-    docker_client: aiodocker.Docker,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
@@ -744,7 +765,6 @@ async def optimize_with_gepa(
         hydrator,
         critic_client,
         grader_client,
-        docker_client,
         Path(run_dir),
         reflection_model=reflection_model,
         verbose=verbose,

@@ -250,15 +250,17 @@ async def prompt_optimize(
     hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
+    from adgn.openai_utils.client_factory import build_client
+
     docker_client = aiodocker.Docker()
     try:
         await run_prompt_optimizer(
             budget=budget,
             ctx=RunsContext.from_pkg_dir(),
             hydrator=hydrator,
-            optimizer_model=optimizer_model,
-            critic_model=critic_model,
-            grader_model=grader_model,
+            optimizer_client=build_client(optimizer_model),
+            critic_client=build_client(critic_model),
+            grader_client=build_client(grader_model),
             docker_client=docker_client,
             verbose=verbose,
         )

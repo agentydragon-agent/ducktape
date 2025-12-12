@@ -1,4 +1,4 @@
-local I = import '../../lib.libsonnet';
+local I = import '../../../lib.libsonnet';
 
 I.issue(
   rationale=|||
@@ -8,4 +8,5 @@ I.issue(
   filesToRanges={
     'subtract.py': [[10, 15]],
   },
+  expect_caught_from=[['subtract.py']],
 )

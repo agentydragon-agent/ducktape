@@ -355,16 +355,11 @@ def test_db(request):
 def synced_test_db(test_db):
     """Test database with production specimens synced."""
     from adgn.props.db import get_session
-    from adgn.props.db.sync import (
-        get_specimens_base_path,
-        sync_critic_scopes_to_db,
-        sync_issues_to_db,
-        sync_snapshots_to_db,
-    )
+    from adgn.props.db.sync import get_specimens_base_path, sync_examples_to_db, sync_issues_to_db, sync_snapshots_to_db
 
     specimens_dir = get_specimens_base_path()
     with get_session() as session:
         sync_snapshots_to_db(session, specimens_dir)
         sync_issues_to_db(session, specimens_dir)
-        sync_critic_scopes_to_db(session, specimens_dir)
+        sync_examples_to_db(session, specimens_dir)
     return test_db

@@ -82,7 +82,7 @@ catchable = any(
 - File pairs: "Review types.py + persist.py" (check for duplication)
 - Component sets: "Review all *.svelte files" (UI patterns)
 
-**Metrics:** Recall/precision on catchable issues given targeted_files
+**Metrics:** Recall on catchable issues given targeted_files
 
 **Why This Helps:**
 - More training signal: 5 snapshots → 100+ examples (not just 5)
@@ -119,7 +119,7 @@ TrainingExample(
 **What GEPA does:**
 1. Sample mini-batches of training examples (per-file scenarios)
 2. Run the critic on each example → collect execution traces
-3. Grade the critique → compute recall/precision, identify missed issues
+3. Grade the critique → compute recall, identify missed issues
 4. You (reflection LM) analyze failures and propose improvements
 5. GEPA evolves a population of prompt variants based on your suggestions
 

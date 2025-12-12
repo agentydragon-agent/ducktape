@@ -1,17 +1,17 @@
 import asyncio
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
+import logging
 from typing import Annotated, Final, Literal, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
-from fastmcp.server.server import add_resource_prefix, remove_resource_prefix
+from fastmcp.server.server import add_resource_prefix
 from fastmcp.tools import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.mcp._shared.resources import derive_origin_server
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
@@ -22,6 +22,8 @@ from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
+logger = logging.getLogger(__name__)
+
 # Server naming (internal display name)
 RESOURCES_SERVER_NAME: Final[str] = "Resources Server"
 
@@ -30,6 +32,11 @@ DEFAULT_MAX_BYTES = 25_000
 
 
 class ResourcesListArgs(OpenAIStrictModeBaseModel):
+    """Filter arguments for listing resources.
+
+    All fields are required but accept None to indicate "no filter".
+    """
+
     server: str | None = Field(description="Filter by server name (None = all servers)")
     uri_prefix: str | None = Field(description="Restrict to URIs starting with this prefix (None = no filter)")
 
@@ -383,27 +390,32 @@ class ResourcesServer(EnhancedFastMCP):
             Returns only resources that MCP servers explicitly expose via the resources capability.
             Call this first to see what resources are available before trying to read them.
             """
-            # Call compositor's internal _list_resources_mcp directly to avoid client dependency
-            # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-            mcp_list = await self._compositor._list_resources_mcp()
-            specs = await self._compositor.mount_specs()
-            mount_names = list(specs.keys())
+            # Query each mounted server individually to get unprefixed resources
+            entries = await self._compositor.server_entries()
             out: list[ResourceEntry] = []
-            for r in mcp_list:
-                uri_str = str(r.uri)
-                try:
-                    origin = derive_origin_server(uri_str, mount_names, self._compositor.resource_prefix_format)
-                except ValueError:
-                    # Skip resources that don't match any known server
+
+            for server_name, entry in entries.items():
+                # Filter by server name if specified
+                if input.server and server_name != input.server:
                     continue
-                if input.server and origin != input.server:
+
+                if not isinstance(entry, RunningServerEntry):
                     continue
-                # If a uri_prefix filter is provided, match against the raw (de-prefixed) URI
-                if input.uri_prefix:
-                    raw_uri = remove_resource_prefix(uri_str, origin, self._compositor.resource_prefix_format)
-                    if not raw_uri.startswith(input.uri_prefix):
+
+                # Only query servers that advertise resources capability
+                if entry.initialize.capabilities.resources is None:
+                    continue
+
+                # Get resources directly from this server (unprefixed)
+                child_client = self._compositor.get_child_client(server_name)
+                resources = await child_client.list_resources()
+
+                for r in resources:
+                    # Apply uri_prefix filter if specified
+                    if input.uri_prefix and not str(r.uri).startswith(input.uri_prefix):
                         continue
-                out.append(ResourceEntry(server=origin, resource=r))
+                    out.append(ResourceEntry(server=server_name, resource=r))
+
             return ResourcesListResult(resources=out)
 
         self.list_tool = self.flat_model()(list_resources)
@@ -439,7 +451,7 @@ class ResourcesServer(EnhancedFastMCP):
             Only works for resources that servers explicitly expose via their resources capability.
             Use list_resources first to see what resources are available.
             """
-            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
             # Call compositor method that converts FastMCP types to MCP protocol types
             # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
@@ -464,7 +476,7 @@ class ResourcesServer(EnhancedFastMCP):
             - Text: slice at UTF-8 byte boundaries (may split multi-byte characters, uses errors='replace')
             - Blob: slice base64 string directly (always valid since base64 is ASCII)
             """
-            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
             contents = await self._compositor.read_resource_contents(uri_value)
 
@@ -570,7 +582,7 @@ class ResourcesServer(EnhancedFastMCP):
         async def subscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
             """Subscribe to updates for a resource."""
             await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
             # Attempt subscribe; reflect success/error in index and re-raise on error.
             try:
@@ -598,7 +610,7 @@ class ResourcesServer(EnhancedFastMCP):
         async def unsubscribe(input: ResourcesSubscribeArgs) -> SimpleOk:
             """Unsubscribe from updates for a resource."""
             await self._ensure_capability(input.server, feature=ResourceCapabilityFeature.SUBSCRIBE)
-            prefixed = add_resource_prefix(input.uri, input.server, self._compositor.resource_prefix_format)
+            prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
             rec_key = (input.server, input.uri)
             try:

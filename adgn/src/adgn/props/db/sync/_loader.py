@@ -21,13 +21,6 @@ from pathlib import Path
 import yaml
 
 from ...ids import split_snapshot_slug
-from ...models.critic_scopes import (
-    ALL_FILES_WITH_ISSUES,
-    AllFilesScope,
-    CriticScope,
-    CriticScopeSpec,
-    ExplicitFileScope,
-)
 from ...models.snapshot import Snapshot, SnapshotSlug
 from ._jsonnet import evaluate_snapshot_issues
 from ._models import FalsePositive, TruePositive
@@ -125,53 +118,6 @@ class FilesystemLoader:
             ],
         )
 
-    def load_critic_scopes(self) -> dict[SnapshotSlug, list[CriticScope]]:
-        """Load critic_scopes.yaml → CriticScope objects.
-
-        Returns:
-            Dict mapping snapshot slug → list of critic scopes
-
-        Raises:
-            FileNotFoundError: If critic_scopes.yaml doesn't exist (now required)
-            ValueError: If YAML is malformed or validation fails
-        """
-        scopes_yaml = self.specimens_dir / "critic_scopes.yaml"
-        if not scopes_yaml.exists():
-            raise FileNotFoundError(
-                f"critic_scopes.yaml is required but not found at {scopes_yaml}. "
-                "Critic scopes must be explicitly defined for all snapshots."
-            )
-
-        raw = yaml.safe_load(scopes_yaml.read_text(encoding="utf-8")) or {}
-        if not isinstance(raw, dict):
-            raise ValueError(f"critic_scopes.yaml must contain a mapping, got {type(raw)}")
-
-        scopes: dict[SnapshotSlug, list[CriticScope]] = {}
-        for slug_str, scope_list in raw.items():
-            if not isinstance(scope_list, list):
-                raise ValueError(f"Scope data for '{slug_str}' must be a list, got {type(scope_list)}")
-
-            validated_scopes = []
-            for scope_data in scope_list:
-                # Convert YAML format to CriticScope type
-                files_raw = scope_data.get("files")
-                parsed_files: CriticScopeSpec
-                if files_raw == ALL_FILES_WITH_ISSUES:
-                    # "all" sentinel -> AllFilesScope
-                    parsed_files = AllFilesScope()
-                elif isinstance(files_raw, list):
-                    # List of strings -> ExplicitFileScope
-                    parsed_files = ExplicitFileScope(files=files_raw)
-                else:
-                    raise ValueError(f"Scope files for '{slug_str}' must be list or 'all', got {type(files_raw)}")
-
-                scope = CriticScope(files=parsed_files)
-                validated_scopes.append(scope)
-
-            scopes[SnapshotSlug(slug_str)] = validated_scopes
-
-        return scopes
-
     @staticmethod
     def _collect_all_files_from_issues(
         true_positives: list[TruePositive], false_positives: list[FalsePositive]
@@ -195,83 +141,6 @@ class FilesystemLoader:
             for fp_occ in fp.occurrences:
                 all_files.update(fp_occ.files.keys())
         return all_files
-
-    @staticmethod
-    def _resolve_critic_scope(scope: CriticScope, all_files: set[Path], slug: SnapshotSlug) -> set[Path]:
-        """Resolve a critic scope to a set of file paths.
-
-        Args:
-            scope: CriticScope to resolve
-            all_files: All files with issues in the snapshot
-            slug: Snapshot slug (for error messages)
-
-        Returns:
-            Resolved set of file paths
-
-        Raises:
-            ValueError: If scope references files not in the snapshot
-        """
-        if isinstance(scope.files, AllFilesScope):
-            return all_files.copy()
-        # Type narrowing: must be ExplicitFileScope
-        assert isinstance(scope.files, ExplicitFileScope)
-        # Convert list[str] to set[Path] for validation
-        scope_paths = {Path(f) for f in scope.files.files}
-        # Validate that scope files exist in the snapshot
-        missing = scope_paths - all_files
-        if missing:
-            missing_str = ", ".join(str(f) for f in sorted(missing))
-            raise ValueError(f"Critic scope for {slug} references files not in snapshot: {missing_str}")
-        return scope_paths
-
-    def validate_critic_scopes_coverage(self) -> None:
-        """Validate that all expect_caught_from sets have corresponding scopes.
-
-        For each true positive in all snapshots, verify that every minimal triggering
-        set (expect_caught_from) has a corresponding scope defined in critic_scopes.yaml.
-        This ensures we're explicitly testing detection of each issue from its minimal sets.
-
-        Raises:
-            ValueError: If any expect_caught_from sets are missing from critic_scopes.yaml
-        """
-        snapshots = self.load_snapshots()
-        critic_scopes = self.load_critic_scopes()
-
-        missing_scopes: dict[SnapshotSlug, list[tuple[str, frozenset[Path]]]] = {}
-
-        for slug in snapshots:
-            all_tps, _ = self.load_issues_for_snapshot(slug)
-            all_files = self._collect_all_files_from_issues(all_tps, [])
-            snapshot_scopes = critic_scopes.get(slug, [])
-
-            # Build set of scope file sets for fast lookup
-            # Resolve "all" sentinel and validate files exist
-            scope_file_sets: set[frozenset[Path]] = set()
-
-            for scope in snapshot_scopes:
-                # Resolve scope and validate files exist
-                scope_paths = self._resolve_critic_scope(scope, all_files, slug)
-                scope_file_sets.add(frozenset(scope_paths))
-
-            # Check each expect_caught_from set
-            for tp in all_tps:
-                for occurrence in tp.occurrences:
-                    for trigger_set in occurrence.expect_caught_from:
-                        trigger_frozenset = frozenset(trigger_set)
-
-                        # Check if this exact set appears in scopes
-                        if trigger_frozenset not in scope_file_sets:
-                            missing_scopes.setdefault(slug, []).append((tp.tp_id, trigger_frozenset))
-
-        if missing_scopes:
-            error_lines = ["Some expect_caught_from sets are missing from critic_scopes.yaml:"]
-            for slug, missing in missing_scopes.items():
-                error_lines.append(f"\nSnapshot {slug}:")
-                for tp_id, file_set in missing:
-                    files_str = ", ".join(str(f) for f in sorted(file_set))
-                    error_lines.append(f"  - TP {tp_id}: [{files_str}]")
-
-            raise ValueError("\n".join(error_lines))
 
 
 __all__ = ["FilesystemLoader"]

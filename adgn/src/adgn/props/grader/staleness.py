@@ -83,6 +83,9 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
 
     Returns:
         Tuple of (total_runs, stale_runs, by_snapshot_stats)
+
+    Note: All grader runs now have canonical_issues_snapshot (NOT NULL constraint enforced).
+    Legacy runs without snapshots were cleaned up in Dec 2025.
     """
     total = 0
     stale = 0
@@ -100,6 +103,10 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
         for snapshot_slug, stored_snapshot, critic_files in session.execute(query):
             total += 1
             by_snapshot[snapshot_slug]["total"] += 1
+
+            # All grader runs must have canonical_issues_snapshot (enforced by NOT NULL constraint)
+            # This assertion documents the database invariant
+            assert stored_snapshot is not None, f"Grader run {snapshot_slug} missing canonical_issues_snapshot"
 
             targeted_files = {Path(f) for f in critic_files}
 

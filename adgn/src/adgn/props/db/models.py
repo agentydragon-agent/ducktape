@@ -182,9 +182,9 @@ class Snapshot(Base):
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
     # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
-    # GEPA maps SnapshotInput → DataId via list position, so critic_scopes must load in stable order
-    critic_scopes: Mapped[list[CriticScopeDB]] = relationship(
-        back_populates="snapshot_obj", cascade="all, delete-orphan", order_by="CriticScopeDB.id"
+    # GEPA maps SnapshotInput → DataId via list position, so examples must load in stable order
+    examples: Mapped[list[Example]] = relationship(
+        back_populates="snapshot_obj", cascade="all, delete-orphan", order_by="Example.files_hash"
     )
     critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
     grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
@@ -217,19 +217,6 @@ class Snapshot(Base):
             file_path for fp in self.false_positives for occurrence in fp.occurrences for file_path in occurrence.files
         }
         return tp_files | fp_files
-
-    def is_full_specimen_scope(self, scope: CriticScopeDB) -> bool:
-        """Check if a critic scope represents all files with issues (full-specimen).
-
-        Args:
-            scope: CriticScopeDB instance to check
-
-        Returns:
-            True if scope.files matches this snapshot's files_with_issues()
-        """
-        all_files_with_issues = {str(f) for f in self.files_with_issues()}
-        scope_files_set = set(scope.files)
-        return scope_files_set == all_files_with_issues
 
 
 class TruePositive(Base):
@@ -324,42 +311,38 @@ class FalsePositive(Base):
         return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
-class CriticScopeDB(Base):
-    """Critic scope defining targeted files for training examples.
+class Example(Base):
+    """Training/evaluation examples.
 
-    Each scope represents one training example: a specific set of files to review
-    together. Multiple scopes per snapshot enable per-file training (tighter feedback
-    loops for optimization).
+    Defines which file sets to evaluate against.
+    All examples (train/valid/test) are stored here.
 
-    See docs/training_strategy.md for details on per-file examples approach.
+    Auto-generated from expect_caught_from data at db sync time.
+    See docs/training_strategy.md for details on example generation.
     """
 
-    __tablename__ = "critic_scopes"
-    __table_args__ = (
-        UniqueConstraint("snapshot_slug", "files_hash", name="uq_critic_scopes_snapshot_files"),
-        Index("ix_critic_scopes_snapshot_slug", "snapshot_slug"),
-    )
+    __tablename__ = "examples"
+    __table_args__ = (Index("ix_examples_snapshot_slug", "snapshot_slug"),)
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # Composite primary key
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
+    )
+    files_hash: Mapped[str] = mapped_column(
+        String(64), primary_key=True, comment="SHA256 hash of normalized files field for uniqueness"
     )
     files: Mapped[list[str]] = mapped_column(JSONB, nullable=False, comment="List of file paths to review")
-    # Hash of files field for unique constraint (JSONB not directly indexable)
-    files_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="SHA256 hash of normalized files field for uniqueness"
-    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationships
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critic_scopes")
+    # Relationships (no back-populate from CriticRun - no FK)
+    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="examples")
 
     @classmethod
-    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[CriticScopeDB]:
-        """Get all critic scopes for a snapshot."""
+    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[Example]:
+        """Get all examples for a snapshot."""
 
         session = Session.object_session(cls)
         if session is None:

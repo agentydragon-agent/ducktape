@@ -27,9 +27,9 @@ from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.models import (
     CriticRun,
-    CriticScopeDB,
     Critique,
     Event,
+    Example,
     FalsePositive,
     GraderRun,
     Prompt,
@@ -696,9 +696,9 @@ class TestJsonbNullFiltering:
             )
             session.flush()
 
-            # Create scope and critic run with matching files_hash
+            # Create example and critic run with matching files_hash
             session.add(
-                CriticScopeDB(snapshot_slug="train/scope-null-test", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH)
+                Example(snapshot_slug="train/scope-null-test", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH)
             )
             session.flush()
 

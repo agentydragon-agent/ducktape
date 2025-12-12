@@ -6,6 +6,8 @@ from adgn.mcp.resources.server import (
     ListSubscribeArgs,
     ReadBlocksArgs,
     ReadBlocksResult,
+    ResourcesListArgs,
+    ResourcesListResult,
     ResourcesSubscribeArgs,
     ResourceTemplatesListResult,
 )
@@ -15,6 +17,9 @@ from adgn.mcp.stubs.server_stubs import ServerStub
 
 class ResourcesServerStub(ServerStub):
     """Typed stub for resources server operations."""
+
+    async def list_resources(self, input: ResourcesListArgs) -> ResourcesListResult:
+        raise NotImplementedError  # Auto-wired at runtime
 
     async def subscribe(self, input: ResourcesSubscribeArgs) -> SimpleOk:
         raise NotImplementedError  # Auto-wired at runtime

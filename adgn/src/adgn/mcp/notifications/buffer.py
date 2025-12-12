@@ -87,10 +87,9 @@ class NotificationsBuffer:
             self._servers.setdefault(name, _ServerNoticeAccumulator()).list_changed = True
 
     async def _derive_server(self, uri: str) -> str:
-        """Derive origin server from resource URI using compositor mount specs."""
-        specs = await self._compositor.mount_specs()
-        fmt = self._compositor.resource_prefix_format
-        return derive_origin_server(uri, specs.keys(), fmt)
+        """Derive origin server from resource URI using all compositor mounts."""
+        mount_names = await self._compositor._mount_names()
+        return derive_origin_server(uri, mount_names)
 
     async def _on_resource_listener(self, name: str, uri: str) -> None:
         self._servers.setdefault(name, _ServerNoticeAccumulator()).updated.add(uri)

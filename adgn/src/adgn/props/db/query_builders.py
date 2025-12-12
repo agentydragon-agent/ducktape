@@ -17,9 +17,9 @@ from sqlalchemy.dialects import postgresql
 
 from adgn.props.db.models import (
     CriticRun,
-    CriticScopeDB,
     Critique,
     Event,
+    Example,
     FalsePositive,
     GraderRun,
     Prompt,
@@ -657,24 +657,24 @@ def blocked_valid_events() -> Select:
 
 
 def list_train_scopes() -> Select:
-    """List all scopes for train split snapshots.
+    """List all examples for train split snapshots.
 
     Returns:
-        Query selecting (snapshot_slug, scope_id, files) for train snapshots
+        Query selecting (snapshot_slug, files_hash, files) for train snapshots
     """
     return (
-        select(CriticScopeDB.snapshot_slug, CriticScopeDB.id.label("scope_id"), CriticScopeDB.files)
-        .join(Snapshot, CriticScopeDB.snapshot_slug == Snapshot.slug)
+        select(Example.snapshot_slug, Example.files_hash, Example.files)
+        .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == "train")
-        .order_by(CriticScopeDB.snapshot_slug, CriticScopeDB.id)
+        .order_by(Example.snapshot_slug, Example.files_hash)
     )
 
 
 def grader_runs_by_scope_train(limit: int = 10) -> Select:
-    """Count completed grader runs per scope for train split.
+    """Count completed grader runs per example for train split.
 
     Returns grader runs grouped by (snapshot_slug, files_hash) to show
-    how many times each scope has been evaluated.
+    how many times each example has been evaluated.
 
     Args:
         limit: Maximum number of results (default 10)
@@ -686,8 +686,8 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
     return (
         select(
             GraderRun.snapshot_slug,
-            CriticScopeDB.files_hash,
-            CriticScopeDB.files,
+            Example.files_hash,
+            Example.files,
             func.count().label("run_count"),
             func.avg(GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("avg_recall"),
         )
@@ -695,15 +695,13 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
         .join(Critique, GraderRun.critique_id == Critique.id)
         .join(CriticRun, Critique.id == CriticRun.critique_id)
-        # Join scopes by matching files_hash (critic_runs.files matches scope.files via hash)
+        # Join examples by matching files_hash (critic_runs.files matches example.files via hash)
         .join(
-            CriticScopeDB,
-            (CriticRun.snapshot_slug == CriticScopeDB.snapshot_slug)
-            & (CriticRun.files_hash == CriticScopeDB.files_hash),
+            Example, (CriticRun.snapshot_slug == Example.snapshot_slug) & (CriticRun.files_hash == Example.files_hash)
         )
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
-        .group_by(GraderRun.snapshot_slug, CriticScopeDB.files_hash, CriticScopeDB.files)
+        .group_by(GraderRun.snapshot_slug, Example.files_hash, Example.files)
         .order_by(func.count().desc())
         .limit(limit)
     )

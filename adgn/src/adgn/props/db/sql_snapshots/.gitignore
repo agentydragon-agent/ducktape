@@ -1,0 +1,7 @@
+# Ignore all SQL snapshots (can be large)
+*.sql
+*.sql.gz
+
+# Keep the directory structure
+!.gitkeep
+!.gitignore

@@ -20,18 +20,18 @@ class KeyValue(OpenAIStrictModeBaseModel):
 class StdioServerSpec(OpenAIStrictModeBaseModel):
     """Stdio server spec."""
 
-    type: Literal["stdio"] = "stdio"
+    type: Literal["stdio"]
     command: str = Field(description="Command to execute")
-    args: list[str] | None = Field(default=None, description="Command arguments")
-    env: list[KeyValue] | None = Field(default=None, description="Environment variables")
+    args: list[str] | None = Field(description="Command arguments")
+    env: list[KeyValue] | None = Field(description="Environment variables")
 
 
 class HttpServerSpec(OpenAIStrictModeBaseModel):
     """HTTP server spec."""
 
-    type: Literal["http"] = "http"
+    type: Literal["http"]
     url: str = Field(description="HTTP server URL")
-    headers: list[KeyValue] | None = Field(default=None, description="HTTP headers")
+    headers: list[KeyValue] | None = Field(description="HTTP headers")
 
 
 # Plain union (generates anyOf, not oneOf) - OpenAI strict mode compatible
@@ -55,10 +55,12 @@ def convert_mcp_server_types_to_spec(mcp_spec: MCPServerTypes) -> ServerSpec:
     """
     if isinstance(mcp_spec, StdioMCPServer):
         env_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.env.items()] if mcp_spec.env else None
-        return StdioServerSpec(command=mcp_spec.command, args=mcp_spec.args if mcp_spec.args else None, env=env_list)
+        return StdioServerSpec(
+            type="stdio", command=mcp_spec.command, args=mcp_spec.args if mcp_spec.args else None, env=env_list
+        )
     if isinstance(mcp_spec, RemoteMCPServer):
         headers_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.headers.items()] if mcp_spec.headers else None
-        return HttpServerSpec(url=mcp_spec.url, headers=headers_list)
+        return HttpServerSpec(type="http", url=mcp_spec.url, headers=headers_list)
     raise TypeError(f"Unsupported MCP server type: {type(mcp_spec)}")
 
 

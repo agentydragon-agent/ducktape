@@ -122,7 +122,7 @@ Your budget of ${self._budget_limit:.2f} has been exceeded.
 Tool calls are now disabled. Produce a final summary report with:
 
 1. **Best prompt found**: prompt SHA256 and key insights
-2. **Performance summary**: best recall/precision achieved on valid split
+2. **Performance summary**: best recall achieved on valid split
 3. **Key learnings**: what worked, what didn't, patterns discovered
 4. **Recommendations**: next steps for further optimization
 

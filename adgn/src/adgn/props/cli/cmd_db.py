@@ -19,7 +19,7 @@ from adgn.props.db.sync import (
     ModelMetadataSyncStats,
     SyncStats,
     get_specimens_base_path,
-    sync_critic_scopes_to_db,
+    sync_examples_to_db,
     sync_issues_to_db,
     sync_model_metadata_with_session,
     sync_snapshots_to_db,
@@ -39,17 +39,17 @@ class DetectorPromptSyncResult:
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, critic scopes, detector prompts, and model metadata."""
+    """Combined result from syncing snapshots, issues, examples, detector prompts, and model metadata."""
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
-    critic_scope_stats: SyncStats
+    example_stats: SyncStats
     detector_prompts: list[DetectorPromptSyncResult]
     model_metadata_stats: ModelMetadataSyncStats
 
 
 def sync_all() -> FullSyncResult:
-    """Sync snapshots, issues, critic scopes, detector prompts, and model metadata in a single operation.
+    """Sync snapshots, issues, examples, detector prompts, and model metadata in a single operation.
 
     All sync operations happen within a single database session for consistency.
 
@@ -61,7 +61,7 @@ def sync_all() -> FullSyncResult:
     with get_session() as session:
         snapshot_stats = sync_snapshots_to_db(session, base_path)
         issue_stats = sync_issues_to_db(session, base_path)
-        critic_scope_stats = sync_critic_scopes_to_db(session, base_path)
+        example_stats = sync_examples_to_db(session, base_path)
 
         # Sync critic system prompts
         detector_prompts = [
@@ -77,7 +77,7 @@ def sync_all() -> FullSyncResult:
         return FullSyncResult(
             snapshot_stats=snapshot_stats,
             issue_stats=issue_stats,
-            critic_scope_stats=critic_scope_stats,
+            example_stats=example_stats,
             detector_prompts=detector_prompts,
             model_metadata_stats=model_metadata_stats,
         )
@@ -129,7 +129,7 @@ def recreate_database_and_sync() -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
     Drops all tables/views/policies, creates fresh schema, and syncs all data
-    (snapshots, issues, critic scopes, detector prompts, and model metadata).
+    (snapshots, issues, examples, detector prompts, and model metadata).
 
     Returns:
         Combined results from all sync operations
@@ -143,7 +143,7 @@ def recreate_database_and_sync() -> FullSyncResult:
 
 @async_run
 async def cmd_sync() -> None:
-    """Sync snapshots, issues, critic scopes, detector prompts, and model metadata from source to DB."""
+    """Sync snapshots, issues, examples, detector prompts, and model metadata from source to DB."""
     console = Console()
 
     # Sync all data sources
@@ -156,7 +156,7 @@ async def cmd_sync() -> None:
     table.add_column("Stats")
     table.add_row("Snapshots", result.snapshot_stats.summary_text)
     table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Critic scopes", result.critic_scope_stats.summary_text)
+    table.add_row("Examples", result.example_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
     console.print(table)
 
@@ -176,7 +176,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     3. Create agent_user role (read-only with RLS)
     4. Create tables from ORM models
     5. Enable Row-Level Security policies
-    6. Sync all data from filesystem (snapshots, issues, critic scopes, detector prompts, model metadata)
+    6. Sync all data from filesystem (snapshots, issues, examples, detector prompts, model metadata)
 
     Requires database connection configured via environment variables (postgres superuser).
     """
@@ -203,7 +203,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     table.add_column("Stats")
     table.add_row("Snapshots", result.snapshot_stats.summary_text)
     table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Critic scopes", result.critic_scope_stats.summary_text)
+    table.add_row("Examples", result.example_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
     table.add_row("Detector prompts", f"{len(result.detector_prompts)} synced")
     console.print(table)

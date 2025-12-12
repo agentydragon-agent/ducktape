@@ -51,13 +51,13 @@ Host Machine
     ├── Tools: upsert_prompt, run_critic, run_grader
     └── run_critic/run_grader spawn critic/grader agents in their own containers
 
-Docker Network (props-network)
+Docker Network (props_default)
 ├── props-postgres (PostgreSQL - persistent)
 ├── [Ephemeral] prompt-optimizer-agent-container
 │   ├── Talks to prompt_eval server on host (dynamic port)
-│   ├── Can reach: host.docker.internal:<port>
+│   ├── Can reach: gateway IP on props_default network
 │   ├── Can reach: props-postgres:5432
-│   └── Cannot reach: public internet
+│   └── Note: Non-internal network (needed for host access)
 ├── [Ephemeral] critic-agent-container (spawned by prompt_eval.run_critic)
 │   └── Talks to critic_submit server on host (dynamic port)
 └── [Ephemeral] grader-agent-container (spawned by prompt_eval.run_grader)
@@ -147,7 +147,7 @@ The full sequence when running prompt optimization:
    └── Server ready at http://localhost:54321
 
 3. Host: Launch agent container (via properties_docker_spec + wiring.attach)
-   ├── Network: props-network (no internet)
+   ├── Network: props_default (shared with postgres)
    ├── Environment: MCP_SERVER_URL=http://host.docker.internal:54321/mcp
    └── Environment: MCP_SERVER_TOKEN=<token>
 
@@ -202,7 +202,7 @@ wiring = properties_docker_spec(
     ephemeral=True,  # Container removed after use
     workspace_mode="rw",  # Read-write access to workspace
     db_url=os.getenv("PROPS_DB_URL"),  # Database connection
-    network_mode="props-network",  # Custom Docker network (allows host.docker.internal)
+    network_mode="props_default",  # Shared network with postgres
 )
 
 # For HTTP mode: Extend ContainerOptions with MCP server connection environment
@@ -224,7 +224,7 @@ runtime_server = await wiring.attach(comp)
 - Add MCP URL/token to environment variables for HTTP mode
 - Call `wiring.attach(comp)` to start the container
 - Container lifecycle is managed by the MCP exec server (`make_container_exec_server`)
-- Network mode `props-network` allows `host.docker.internal` to reach host
+- Network mode `props_default` allows container to reach host via gateway IP
 
 ### Agent Code Pattern (Same for All Agent Types)
 
@@ -321,7 +321,7 @@ async def run_*_http(...):
 
 **Tokens**: Generate via `openssl rand -hex 32`, store in `.env.secrets`. Server validates via `DebugTokenVerifier` (see implementation section).
 
-**Network isolation**: `props-network` has no internet route. Agents reach only postgres + host MCP servers via `host.docker.internal`.
+**Network isolation**: `props_default` is a non-internal network (needed for host access). Agents can reach postgres (container-to-container) and host MCP servers (via gateway IP).
 
 ## Migration Path
 
@@ -365,7 +365,7 @@ async def run_*_http(...):
   - [ ] Yield port number to caller for agent environment variables
   - [ ] Clean shutdown on context exit
 - [ ] Update Dockerfile to install MCP Python SDK (`mcp>=1.0.0`)
-- [ ] Create Docker network setup script (`props-network`)
+- [x] Create Docker network setup script (`props_default` - done in devenv.nix)
 - [ ] Extend `properties_docker_spec()` to support additional environment variables:
   - [ ] Add `extra_env` parameter (dict) to merge with default cache/tmp env vars
   - [ ] Use this to pass generic `MCP_SERVER_URL` and `MCP_SERVER_TOKEN` to containers

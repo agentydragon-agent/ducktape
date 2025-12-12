@@ -57,7 +57,7 @@ EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
 EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
 
 # Cap for stdout/stderr/stdin bytes in exec-like servers
-MAX_BYTES_CAP = 100_000
+MAX_BYTES_CAP = 20_000
 
 # Cap for execution timeout across exec-like servers (milliseconds)
 # Keep reasonably low to avoid runaway processes; tune per product needs.
@@ -139,23 +139,7 @@ EnvVar = Annotated[
 class ExecInput(OpenAIStrictModeBaseModel):
     """Typed payload for container exec tool.
 
-    The cmd array is passed directly to Docker's exec API (execve-style execution, no shell).
-    For shell features (pipes, globs, variable expansion), wrap in a shell:
-        ["sh", "-c", "echo hello | tr a-z A-Z"]
-        ["sh", "-c", "sed -n 1,10p file.txt"]
-
-    No quoting needed - array elements are literal arguments.
-
-    Environment variables use Docker's native format: list of "NAME=value" strings.
-
     Note: TTY is not allocated for processes to ensure stdout/stderr separation.
-
-    OpenAI strict mode compatible: all fields are required (no defaults).
-    - cmd: Command array passed directly to Docker exec (no shell quoting)
-    - cwd: Working directory (None = container default)
-    - env: Environment variables as ["NAME=value", ...] (None = inherit)
-    - user: Username (None = container default)
-    - timeout_ms: Timeout in milliseconds
     """
 
     cmd: list[str] = Field(
@@ -276,11 +260,7 @@ def render_streams(stdout: bytes, stderr: bytes, max_bytes: int) -> tuple[ExecSt
 def render_outcome_to_result(outcome: ExecOutcome, max_bytes: int) -> BaseExecResult:
     """Render ExecOutcome directly to BaseExecResult (preserves types)."""
     stdout_render, stderr_render = render_streams(outcome.output.stdout, outcome.output.stderr, max_bytes)
-
-    # Pass through exit status directly - all subprocess types are valid MCP types
-    exit_status = outcome.exit
-
-    return BaseExecResult.from_rendered_streams(exit_status, stdout_render, stderr_render, outcome.duration_ms)
+    return BaseExecResult.from_rendered_streams(outcome.exit, stdout_render, stderr_render, outcome.duration_ms)
 
 
 def render_raw_to_result(

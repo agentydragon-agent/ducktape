@@ -54,6 +54,7 @@ from adgn.props.critic.models import (
 )
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt, Snapshot
+from adgn.props.display import short_uuid
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import BaseIssueID, SnapshotSlug
@@ -614,7 +615,7 @@ async def run_critic(
             f"Created initial critic run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
         )
         # Print IDs early to console for easy retrieval if run is interrupted
-        typer.echo(f"[critic] transcript_id={transcript_id} run_id={run_id}", err=True)
+        typer.echo(f"[critic] transcript_id={short_uuid(transcript_id)} run_id={short_uuid(run_id)}", err=True)
 
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
@@ -643,7 +644,7 @@ async def run_critic(
             bootstrap,
             *build_props_handlers(
                 transcript_id=transcript_id,
-                verbose_prefix=f"[CRITIC {str(transcript_id)[:8]} {snapshot_split} {input_data.snapshot_slug}] "
+                verbose_prefix=f"[CRITIC {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
                 if verbose
                 else None,
                 servers=servers,
