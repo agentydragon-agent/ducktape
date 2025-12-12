@@ -18,7 +18,7 @@ adgn-properties gepa --max-metric-calls 100
 
 ## Feedback
 
-GEPA receives rich feedback for each evaluation, including both successful runs and max_turns_exceeded cases:
+GEPA receives rich feedback for each evaluation, including successful runs, max_turns_exceeded, and context_length_exceeded cases:
 
 **1. Execution Traces** (from `events` table):
 ```
@@ -39,13 +39,21 @@ SUMMARY: The critic focused on runtime issues but neglected...
 
 **2b. Max Turns Exceeded** (when critic ran out of turns before submitting):
 ```
-critic_output: {"tag": "max_turns_exceeded"}
+critic_output: {"tag": "max_turns_exceeded", "max_turns": 100}
 grader_output: null
 score: 0.0
 trajectory: includes all tool calls/events but no critique_payload
 ```
 
-The reflection LLM sees the full discriminated union (success or max_turns_exceeded) and can learn from cases where the critic got stuck, looped, or wasted turns.
+**2c. Context Length Exceeded** (when prompt was too long for the model):
+```
+critic_output: {"tag": "context_length_exceeded", "error_message": "Error code: 400 - ..."}
+grader_output: null
+score: 0.0
+trajectory: empty or incomplete (failed before agent could run)
+```
+
+The reflection LLM sees the full discriminated union (success, max_turns_exceeded, or context_length_exceeded) and can learn from cases where the critic got stuck, looped, wasted turns, or had prompts that were too long.
 
 ## Key Types
 

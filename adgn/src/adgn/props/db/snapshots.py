@@ -143,9 +143,18 @@ class DBCriticMaxTurnsExceeded(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class DBCriticContextLengthExceeded(BaseModel):
+    """Database representation of critic input exceeding context window."""
+
+    tag: Literal["context_length_exceeded"] = "context_length_exceeded"
+    error_message: str = Field(description="Error message from the API")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 DBCriticOutput = Annotated[
-    DBCriticSuccess | DBCriticMaxTurnsExceeded,
-    Field(discriminator="tag", description="Critic output: either success or max turns exceeded"),
+    DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded,
+    Field(discriminator="tag", description="Critic output: success, max turns exceeded, or context length exceeded"),
 ]
 """Discriminated union of critic outcomes for database persistence."""
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from adgn.props.critic.models import (
+    CriticContextLengthExceeded,
     CriticMaxTurnsExceeded,
     CriticOutput,
     CriticSubmitPayload,
@@ -21,6 +22,7 @@ from adgn.props.critic.models import (
     ReportedIssue,
 )
 from adgn.props.db.snapshots import (
+    DBCriticContextLengthExceeded,
     DBCriticMaxTurnsExceeded,
     DBCriticOutput,
     DBCriticSubmitPayload,
@@ -107,4 +109,6 @@ def critic_output_to_db(output: CriticOutput) -> DBCriticOutput:
         return DBCriticSuccess(tag="success", result=critic_submit_payload_to_db(output.result))
     if isinstance(output, CriticMaxTurnsExceeded):
         return DBCriticMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
+    if isinstance(output, CriticContextLengthExceeded):
+        return DBCriticContextLengthExceeded(tag="context_length_exceeded", error_message=output.error_message)
     raise TypeError(f"Unexpected CriticOutput variant: {type(output)}")

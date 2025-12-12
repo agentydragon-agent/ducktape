@@ -45,6 +45,7 @@ from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from adgn.props.critic.models import (
+    CriticContextLengthExceeded,
     CriticInput,
     CriticMaxTurnsExceeded,
     CriticOutput,
@@ -700,6 +701,21 @@ async def run_critic(
                 output = CriticMaxTurnsExceeded(max_turns=max_turns)
                 # Skip state validation - we're terminating early due to turn limit
                 # Jump to Phase 2 to persist the max_turns_exceeded output
+            except Exception as e:
+                # Check if this is a context length exceeded error
+                # TODO: Check specifically for openai.BadRequestError with code='context_length_exceeded'
+                # instead of string matching - more robust for different API providers
+                error_str = str(e).lower()
+                if "context_length_exceeded" in error_str or "context window" in error_str:
+                    logger.warning(
+                        f"Critic hit context length limit for {input_data.snapshot_slug}, "
+                        f"transcript_id={short_uuid(transcript_id)}: {e}"
+                    )
+                    output = CriticContextLengthExceeded(error_message=str(e))
+                    # Jump to Phase 2 to persist the context_length_exceeded output
+                else:
+                    # Re-raise other exceptions
+                    raise
             else:
                 # Agent completed normally - validate state and create success output
                 if critic_state.error is not None:

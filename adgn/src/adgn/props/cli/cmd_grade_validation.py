@@ -17,7 +17,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.critic.models import CriticContextLengthExceeded, CriticInput, CriticMaxTurnsExceeded, CriticSuccess
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Example, GraderRun, Prompt, Snapshot
 from adgn.props.display import short_sha, short_uuid
@@ -191,7 +191,7 @@ async def cmd_grade_validation(
                             prompt_sha256=prompt_sha256,
                         )
 
-                        (_critic_output, _critic_run_id, critique_id) = await run_critic(
+                        (critic_output, _critic_run_id, critique_id) = await run_critic(
                             input_data=critic_input,
                             client=critic_client,
                             docker_client=docker_client,
@@ -201,7 +201,24 @@ async def cmd_grade_validation(
                             verbose=verbose,
                             max_turns=100,
                         )
-                        assert critique_id is not None, "Critic should return critique_id on success"
+
+                        # Check if critic succeeded - if not, skip grading
+                        if not isinstance(critic_output, CriticSuccess):
+                            # Critic failed (max_turns_exceeded or context_length_exceeded)
+                            if isinstance(critic_output, CriticMaxTurnsExceeded):
+                                status_msg = "max_turns_exceeded"
+                            elif isinstance(critic_output, CriticContextLengthExceeded):
+                                status_msg = "context_length_exceeded"
+                            else:
+                                status_msg = f"unknown_error_{critic_output.tag}"
+
+                            if not verbose:
+                                typer.echo(
+                                    f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status_msg}: {snapshot_slug} x {short_sha(prompt_sha256)}"
+                                )
+                            return (status_msg, False, False, None)
+
+                        assert critique_id is not None, "CriticSuccess should have critique_id"
 
                         if not verbose:
                             typer.echo(
