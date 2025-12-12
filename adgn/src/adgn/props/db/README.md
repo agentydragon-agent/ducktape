@@ -9,24 +9,12 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 ### Production Database: `eval_results`
 - **Purpose**: Real evaluation results, persistent storage
 - **DO NOT DROP/RECREATE**: Contains valuable data
-- **Admin access**: `PROPS_DB_URL`
-- **Agent access**: `PROPS_AGENT_DB_URL`
-
-```bash
-export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
-export PROPS_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results'
-```
+- **Connection**: Uses individual environment variables for database configuration
 
 ### Test Database: `eval_results_test`
 - **Purpose**: Integration tests only
 - **FREELY DROP/RECREATE**: Tests use drop_tables() in fixture
-- **Admin access**: `PROPS_TEST_DB_URL`
-- **Agent access**: `PROPS_TEST_AGENT_DB_URL`
-
-```bash
-export PROPS_TEST_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results_test'
-export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results_test'
-```
+- **Connection**: Uses individual environment variables for test database configuration
 
 ## Setup
 
@@ -48,17 +36,13 @@ export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@
 
 3. **Initialize database schema**:
    ```bash
-   # Set environment variable for production database
-   export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
-
    # Initialize tables, RLS policies, and sync specimens
    adgn-properties sync
    ```
 
    To drop and recreate everything (includes specimen sync, destructive):
    ```bash
-   PROPS_DB_URL='postgresql://postgres:postgres@localhost:5433/eval_results' \
-     adgn-properties db-recreate --yes
+   adgn-properties db-recreate --yes
    ```
 
 ## Database Users
@@ -67,19 +51,17 @@ export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@
 - **Full access**: Create/drop tables, write data, read all data
 - **Purpose**: Migrations, data loading, test setup
 - **Bypasses RLS**: Can see all splits (train/valid/test)
+- **Connection**: Uses admin user credentials from environment
 
 ### agent_user
 - **Read-only**: SELECT only (no INSERT/UPDATE/DELETE)
 - **RLS-restricted**: Can only see train/valid splits (NOT test)
 - **Purpose**: LLM agent queries during prompt optimization
+- **Connection**: Uses agent user credentials from environment
 
 ## Running Tests
 
 ```bash
-# Set test database URLs
-export PROPS_TEST_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results_test'
-export PROPS_TEST_AGENT_DB_URL='postgresql://agent_user:agent_password_changeme@localhost:5433/eval_results_test'
-
 # Run integration tests (these will drop/recreate tables in test database)
 pytest tests/props/db/test_db_integration.py -v
 ```

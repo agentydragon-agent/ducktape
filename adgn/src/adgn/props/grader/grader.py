@@ -33,7 +33,7 @@ if TYPE_CHECKING:
 from adgn.agent.agent import Agent
 from adgn.agent.handler import AbortIf, BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.agent.turn_limit import MaxTurnsHandler
+from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
@@ -57,13 +57,16 @@ from adgn.props.grader.models import (
     CritiqueInputIssue,
     FalsePositiveID,
     GraderInput,
+    GraderMaxTurnsExceeded,
+    GraderOutput,
+    GraderSuccess,
     GradeSubmitInput,
     GradeValidationContext,
     KnownFalsePositive,
     TruePositiveID,
     TruePositiveIssue,
 )
-from adgn.props.grader.persistence import fp_to_db, grade_submit_input_to_db, tp_to_db
+from adgn.props.grader.persistence import fp_to_db, grader_output_to_db, tp_to_db
 from adgn.props.http_compositor import PropertiesDockerCompositorHTTP
 from adgn.props.hydration import HydratedSnapshot, SnapshotHydrator
 from adgn.props.ids import InputIssueID, SnapshotSlug
@@ -357,8 +360,8 @@ async def _run_grader_agent(
     extra_handlers: tuple[BaseHandler, ...],
     http_mode: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
-    max_turns: int | None = None,
-) -> None:
+    max_turns: int,
+) -> GraderOutput:
     """Run the grader agent.
 
     Args:
@@ -367,6 +370,9 @@ async def _run_grader_agent(
         canonical_tps: True positive issues from specimen
         critique_typed: Issues from the critique being graded
         canonical_fps: Known false positives from specimen
+
+    Returns:
+        GraderSuccess if completed, GraderMaxTurnsExceeded if agent ran out of turns
     """
     # Choose compositor based on http_mode
     # HTTP mode: use PropertiesDockerCompositorHTTP (manages both HTTP server and container)
@@ -480,12 +486,9 @@ Grade the critique, then submit your result by invoking the grader_submit server
                         max_lines=max_lines,
                     ),
                     *extra_handlers,
+                    MaxTurnsHandler(max_turns=max_turns),
                 ]
             )
-
-            # Add turn limit handler if max_turns is specified
-            if max_turns is not None:
-                handlers_list.append(MaxTurnsHandler(max_turns=max_turns))
 
             agent = await Agent.create(
                 mcp_client=mcp_client,
@@ -497,7 +500,21 @@ Grade the critique, then submit your result by invoking the grader_submit server
                 tool_policy=RequireAnyTool(),
             )
             agent.insert_messages([SystemMessage.text(system), UserMessage.text(prompt)])
-            await agent.run()
+            try:
+                await agent.run()
+            except MaxTurnsExceededError:
+                # Agent ran out of turns - create max_turns_exceeded output
+                logger.warning(
+                    f"Grader hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
+                    f"transcript_id={short_uuid(transcript_id)}"
+                )
+                return GraderMaxTurnsExceeded(max_turns=max_turns)
+
+    # Agent completed normally - validate state and return success
+    if grader_state.result is None:
+        raise GraderDidNotSubmitError("Grader did not submit result")
+
+    return GraderSuccess(result=grader_state.result)
 
 
 # =============================================================================
@@ -516,7 +533,7 @@ async def run_grader(
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
-    max_turns: int | None = None,
+    max_turns: int,
 ) -> UUID:
     """Run grader agent: evaluate critique against ground truth, persist to DB.
 
@@ -610,7 +627,7 @@ async def run_grader(
 
     # Run agent with either HTTP or in-proc server based on toggle
     logger.info(f"HTTP mode enabled: {USE_MCP_HTTP}")
-    await _run_grader_agent(
+    output = await _run_grader_agent(
         grader_state=grader_state,
         inputs=inputs,
         workspace_root=hydrated_specimen.content_root,
@@ -629,17 +646,16 @@ async def run_grader(
         max_turns=max_turns,
     )
 
-    if grader_state.result is None:
-        raise GraderDidNotSubmitError("Grader did not submit result")
-
     # Phase 2: Update run with output
     with get_session() as session:
         found_run = session.get(DBGraderRun, run_id)
         assert found_run is not None, f"Grader run {run_id} not found in database"
-        # Convert MCP model to DB model for storage
-        found_run.output = grade_submit_input_to_db(grader_state.result)
+        # Convert MCP model (discriminated union) to DB model for storage
+        found_run.output = grader_output_to_db(output)
         session.commit()
-        logger.info(f"Updated grader run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
+        logger.info(
+            f"Updated grader run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}, status={output.tag}"
+        )
 
     return run_id
 
@@ -651,7 +667,7 @@ async def grade_critique_by_id(
     docker_client: aiodocker.Docker,
     prompt_optimization_run_id: UUID | None = None,
     verbose: bool = False,
-    max_turns: int | None = None,
+    max_turns: int = 200,
 ) -> UUID:
     """Grade critique by ID, return grader_run_id.
 

@@ -12,8 +12,24 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from adgn.props.critic.models import CriticSubmitPayload, Occurrence, ReportedIssue
-from adgn.props.db.snapshots import DBCriticSubmitPayload, DBFileOccurrence, DBLineRange, DBOccurrence, DBReportedIssue
+from adgn.props.critic.models import (
+    CriticMaxTurnsExceeded,
+    CriticOutput,
+    CriticSubmitPayload,
+    CriticSuccess,
+    Occurrence,
+    ReportedIssue,
+)
+from adgn.props.db.snapshots import (
+    DBCriticMaxTurnsExceeded,
+    DBCriticOutput,
+    DBCriticSubmitPayload,
+    DBCriticSuccess,
+    DBFileOccurrence,
+    DBLineRange,
+    DBOccurrence,
+    DBReportedIssue,
+)
 from adgn.props.ids import BaseIssueID
 from adgn.props.models.true_positive import FileOccurrence, LineRange
 from adgn.props.rationale import Rationale
@@ -83,3 +99,12 @@ def critic_submit_payload_from_db(db_payload: DBCriticSubmitPayload) -> CriticSu
     return CriticSubmitPayload(
         issues=[reported_issue_from_db(issue) for issue in db_payload.issues], notes_md=db_payload.notes_md
     )
+
+
+def critic_output_to_db(output: CriticOutput) -> DBCriticOutput:
+    """Convert MCP CriticOutput (discriminated union) to DB representation."""
+    if isinstance(output, CriticSuccess):
+        return DBCriticSuccess(tag="success", result=critic_submit_payload_to_db(output.result))
+    if isinstance(output, CriticMaxTurnsExceeded):
+        return DBCriticMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
+    raise TypeError(f"Unexpected CriticOutput variant: {type(output)}")

@@ -163,8 +163,6 @@ Notes
 Run structured critic to find issues in a specimen:
 
 ```bash
-export PROPS_DB_URL='postgresql://admin_user:admin_password_changeme@localhost:5433/eval_results'
-
 # Run critic with default preset (max-recall-critic)
 adgn-properties run --snapshot ducktape/2025-11-20-00 --structured true
 

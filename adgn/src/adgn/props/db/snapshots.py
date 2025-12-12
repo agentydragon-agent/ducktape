@@ -13,6 +13,8 @@ Key differences from MCP models:
 
 from __future__ import annotations
 
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -118,6 +120,36 @@ class DBCriticSubmitPayload(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+# =============================================================================
+# Critic Output Models (Discriminated Union)
+# =============================================================================
+
+
+class DBCriticSuccess(BaseModel):
+    """Database representation of successful critic output."""
+
+    tag: Literal["success"] = "success"
+    result: DBCriticSubmitPayload = Field(description="Successful critique with issues and optional notes")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBCriticMaxTurnsExceeded(BaseModel):
+    """Database representation of critic running out of turns."""
+
+    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
+    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+DBCriticOutput = Annotated[
+    DBCriticSuccess | DBCriticMaxTurnsExceeded,
+    Field(discriminator="tag", description="Critic output: either success or max turns exceeded"),
+]
+"""Discriminated union of critic outcomes for database persistence."""
+
+
 class DBIssueCoverageEntry(BaseModel):
     """Database representation of single input issue's contribution to canonical coverage."""
 
@@ -191,13 +223,14 @@ class DBReportedIssueRatios(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class DBGraderOutput(BaseModel):
-    """Database representation of grader output.
+class DBGraderSuccess(BaseModel):
+    """Database representation of successful grader output.
 
     This is the persisted form, decoupled from MCP I/O types.
     All NewType IDs are stored as strings.
     """
 
+    tag: Literal["success"] = "success"
     canonical_tp_coverage: list[DBTPCoverageEntry]
     canonical_fp_coverage: list[DBFPCoverageEntry]
     novel_critique_issues: list[DBNovelIssueEntry]
@@ -206,3 +239,19 @@ class DBGraderOutput(BaseModel):
     summary: str = Field(description="Summary rationale (stored as string)")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBGraderMaxTurnsExceeded(BaseModel):
+    """Database representation of grader running out of turns."""
+
+    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
+    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+DBGraderOutput = Annotated[
+    DBGraderSuccess | DBGraderMaxTurnsExceeded,
+    Field(discriminator="tag", description="Grader output: either success or max turns exceeded"),
+]
+"""Discriminated union of grader outcomes for database persistence."""

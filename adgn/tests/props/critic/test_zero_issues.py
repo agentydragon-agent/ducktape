@@ -9,7 +9,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.critic.models import CriticInput, CriticSuccess
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique
 from adgn.props.db.prompts import hash_and_upsert_prompt
@@ -130,9 +130,11 @@ async def test_critic_zero_issues_submits_successfully(
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
+        max_turns=100,
     )
 
     # Verify output
+    assert isinstance(output, CriticSuccess), "Critic should succeed"
     assert output.result is not None
     assert len(output.result.issues) == 0, "Should find zero issues in trivial clean code"
     assert critic_run_id is not None
@@ -189,8 +191,10 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
+        max_turns=100,
     )
 
+    assert isinstance(output, CriticSuccess), "Critic should succeed"
     assert output.result is not None
     assert len(output.result.issues) == 0
 

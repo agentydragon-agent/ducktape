@@ -17,7 +17,9 @@ from adgn.props.db.snapshots import (
     DBCanonicalTPCoverage,
     DBFalsePositiveOccurrence,
     DBFPCoverageEntry,
+    DBGraderMaxTurnsExceeded,
     DBGraderOutput,
+    DBGraderSuccess,
     DBIssueCoverageEntry,
     DBKnownFalsePositive,
     DBLineRange,
@@ -32,6 +34,9 @@ from adgn.props.grader.models import (
     CanonicalFPCoverage,
     CanonicalTPCoverage,
     FalsePositiveID,
+    GraderMaxTurnsExceeded,
+    GraderOutput,
+    GraderSuccess,
     GradeSubmitInput,
     InputIssueID,
     IssueCoverageEntry,
@@ -173,9 +178,10 @@ def _canonical_fp_coverage_from_db(db_coverage: DBCanonicalFPCoverage) -> Canoni
     )
 
 
-def grade_submit_input_to_db(grade: GradeSubmitInput) -> DBGraderOutput:
-    """Convert MCP GradeSubmitInput to DB representation."""
-    return DBGraderOutput(
+def grade_submit_input_to_db(grade: GradeSubmitInput) -> DBGraderSuccess:
+    """Convert MCP GradeSubmitInput to DB representation (success variant)."""
+    return DBGraderSuccess(
+        tag="success",
         canonical_tp_coverage=[
             DBTPCoverageEntry(
                 canonical_id=str(entry.canonical_id), coverage=_canonical_tp_coverage_to_db(entry.coverage)
@@ -206,3 +212,12 @@ def grade_submit_input_to_db(grade: GradeSubmitInput) -> DBGraderOutput:
         recall=grade.recall,
         summary=str(grade.summary),
     )
+
+
+def grader_output_to_db(output: GraderOutput) -> DBGraderOutput:
+    """Convert MCP GraderOutput (discriminated union) to DB representation."""
+    if isinstance(output, GraderSuccess):
+        return grade_submit_input_to_db(output.result)
+    if isinstance(output, GraderMaxTurnsExceeded):
+        return DBGraderMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
+    raise TypeError(f"Unexpected GraderOutput variant: {type(output)}")

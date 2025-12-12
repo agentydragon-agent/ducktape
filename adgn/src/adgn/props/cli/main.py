@@ -41,7 +41,7 @@ from adgn.props.cli.resources import get_hydrator
 from adgn.props.cli.shared import BuildOptions, build_cmd, filter_files
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.critic.models import CriticInput, CriticSuccess
 from adgn.props.db import get_session, init_db
 from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
@@ -171,7 +171,13 @@ async def _run_snapshot_minicodex_async(
             docker_client=docker_client,
             mount_properties=True,
             verbose=True,
+            max_turns=100,
         )
+
+        # Handle max turns exceeded
+        if not isinstance(critic_output, CriticSuccess):
+            typer.echo("Error: Critic exceeded max turns limit", err=True)
+            return 1
 
         # Output final message if requested
         if output_final_message:
@@ -284,7 +290,7 @@ async def snapshot_grade(
         # Query database and grade critique in single session
         with get_session() as session:
             grader_run_id = await grade_critique_by_id(
-                session, UUID(critique_id), build_client(model), docker_client, verbose=verbose
+                session, UUID(critique_id), build_client(model), docker_client, verbose=verbose, max_turns=200
             )
             db_grader_run = session.get(DBGraderRun, grader_run_id)
             if db_grader_run is None:
@@ -348,7 +354,12 @@ async def cmd_grade_missing(
                 try:
                     with get_session() as session:
                         grader_run_id = await grade_critique_by_id(
-                            session, critique_id, build_client(grader_model), docker_client, verbose=verbose
+                            session,
+                            critique_id,
+                            build_client(grader_model),
+                            docker_client,
+                            verbose=verbose,
+                            max_turns=200,
                         )
                         if not verbose:
                             typer.echo(f"✓ Graded critique {critique_id} → grader_run {grader_run_id}")
@@ -603,14 +614,18 @@ async def cmd_run(
                 mount_properties=True,
                 verbose=True,
                 max_lines=max_lines,
+                max_turns=100,
             )
 
             # Print results
             typer.echo("\n=== Critique Complete ===")
             typer.echo(f"Critic Run ID: {critic_run_id}")
             typer.echo(f"Critique ID: {critique_id}")
-            typer.echo(f"Issues found: {len(critic_output.result.issues)}")
-            typer.echo(f"\n{critic_output.result.model_dump_json(indent=2)}")
+            if isinstance(critic_output, CriticSuccess):
+                typer.echo(f"Issues found: {len(critic_output.result.issues)}")
+                typer.echo(f"\n{critic_output.result.model_dump_json(indent=2)}")
+            else:
+                typer.echo("Critic exceeded max turns limit", err=True)
     finally:
         await docker_client.close()
 

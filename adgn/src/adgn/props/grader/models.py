@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated, NewType
+from typing import TYPE_CHECKING, Annotated, Literal, NewType
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
@@ -589,3 +589,33 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
             raise ValueError("Must use None for reported_issue_ratios when critique has no input issues.")
 
         return self
+
+
+# =============================================================================
+# Grader Output Models
+# =============================================================================
+
+
+class GraderSuccess(BaseModel):
+    """Successful grader output."""
+
+    tag: Literal["success"] = "success"
+    result: GradeSubmitInput = Field(description="Successful grading with coverage analysis and metrics")
+
+    model_config = ConfigDict(frozen=True)
+
+
+class GraderMaxTurnsExceeded(BaseModel):
+    """Grader ran out of turns before completing."""
+
+    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
+    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
+
+    model_config = ConfigDict(frozen=True)
+
+
+GraderOutput = Annotated[
+    GraderSuccess | GraderMaxTurnsExceeded,
+    Field(discriminator="tag", description="Grader output: either success with result or max turns exceeded"),
+]
+"""Discriminated union of grader outcomes: success or max_turns_exceeded."""

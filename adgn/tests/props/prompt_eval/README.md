@@ -60,21 +60,13 @@ docker-compose up -d postgres
 
 #### Environment Variables
 
-```bash
-# Admin user credentials (for test setup/teardown)
-export PROPS_TEST_DB_URL="postgresql://admin_user:password@localhost:5432/eval_results_test"
+Tests use individual database configuration environment variables (host, port, database name, user, password).
 
-# Agent user credentials (for RLS verification)
-export PROPS_TEST_AGENT_DB_URL="postgresql://agent_user:password@localhost:5432/eval_results_test"
-```
-
-**Note**: These environment variables point to the TEST database (`eval_results_test`), which is separate from production (`eval_results`). Tests can freely drop/recreate tables without affecting production data.
+**Note**: The environment should be configured to point to the TEST database (`eval_results_test`), which is separate from production (`eval_results`). Tests can freely drop/recreate tables without affecting production data.
 
 ## Run with database environment
 
 ```bash
-PROPS_TEST_DB_URL="postgresql://admin_user:pass@localhost:5432/eval_results_test" \
-PROPS_TEST_AGENT_DB_URL="postgresql://agent_user:pass@localhost:5432/eval_results_test" \
 pytest tests/props/prompt_eval/test_prompt_optimizer_integration.py -v
 ```
 
@@ -88,8 +80,7 @@ pytest tests/props/prompt_eval/test_prompt_optimizer_integration.py -v
 ## Skipping Behavior
 
 Tests will **skip automatically** if:
-- `PROPS_TEST_DB_URL` is not set (admin credentials required)
-- `PROPS_TEST_AGENT_DB_URL` is not set (for RLS tests only)
+- Required database configuration environment variables are not set
 - PostgreSQL is not running
 
 This allows the test suite to run in CI without requiring database setup.

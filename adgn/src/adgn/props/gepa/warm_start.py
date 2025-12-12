@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, GraderRun as DBGraderRun, Prompt, Snapshot
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
@@ -108,7 +109,8 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
                 continue
 
             # Store score keyed by valset index (will become DataId in GEPA checkpoint)
-            recall = grader_output.recall
+            # Extract recall: 0.0 if max_turns_exceeded, otherwise from success variant
+            recall = grader_output.recall if isinstance(grader_output, DBGraderSuccess) else 0.0
             prompt_to_scores[prompt_sha][val_idx] = recall
 
         if skipped_no_grader_output > 0:

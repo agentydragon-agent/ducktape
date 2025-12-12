@@ -55,11 +55,11 @@ from adgn.props.db.models import (
     CriticRun as DBCriticRun,
     Critique,
     DBCriticSubmitPayload,
-    DBGraderOutput,
     Event,
     GraderRun as DBGraderRun,
 )
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.snapshots import DBCriticMaxTurnsExceeded, DBCriticOutput, DBGraderOutput, DBGraderSuccess
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.grader.grader import grade_critique_by_id
@@ -103,19 +103,29 @@ def _filter_reflection_events(transcript_id: UUID) -> list[EventType]:
 
 @dataclass
 class CriticTrajectory:
-    """Execution trajectory for a critic run."""
+    """Execution trajectory for a critic run.
+
+    critique_payload is None if the critic ran out of turns before submitting.
+    """
 
     transcript_id: UUID
     events: list[EventType]
-    critique_payload: DBCriticSubmitPayload
+    critique_payload: DBCriticSubmitPayload | None
 
 
 @dataclass
 class CriticOutput:
-    """Output from a critic evaluation."""
+    """Output from a critic evaluation for GEPA.
 
+    Includes the critic's DB output (success or max_turns_exceeded) and grader output if available.
+
+    TODO: Rename this class to avoid confusion with critic.models.CriticOutput
+    (the MCP I/O discriminated union). Perhaps GEPACriticOutput or CriticEvaluationOutput.
+    """
+
+    critic_output: DBCriticOutput
     grader_output: DBGraderOutput | None
-    critique_id: UUID
+    critique_id: UUID | None
 
 
 @dataclass
@@ -128,13 +138,19 @@ class EvaluationResult:
 
 
 class ReflectionExample(BaseModel):
-    """Example for GEPA's reflection dataset."""
+    """Example for GEPA's reflection dataset.
+
+    Includes both successful critiques and max_turns_exceeded cases.
+    - critic_output: discriminated union (success or max_turns_exceeded)
+    - grader_output: present only when critic succeeded (None for max_turns_exceeded)
+    """
 
     component_name: str
     current_text: str
     score: float
     trajectory: CriticTrajectory
-    grader_output: DBGraderOutput
+    critic_output: DBCriticOutput
+    grader_output: DBGraderOutput | None
 
 
 # =============================================================================
@@ -292,17 +308,20 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         self.propose_new_texts = propose_new_texts
 
     @staticmethod
-    def _build_critic_output(grader_output: DBGraderOutput, critique_id: UUID) -> CriticOutput:
-        """Build CriticOutput from grader output and critique ID.
+    def _build_critic_output(
+        critic_output: DBCriticOutput, grader_output: DBGraderOutput | None, critique_id: UUID | None
+    ) -> CriticOutput:
+        """Build CriticOutput from critic DB output, grader output, and critique ID.
 
         Args:
-            grader_output: DBGraderOutput (database persistence model)
-            critique_id: Critique UUID
+            critic_output: DBCriticOutput (database persistence model discriminated union)
+            grader_output: DBGraderOutput (database persistence model), or None if critic ran out of turns
+            critique_id: Critique UUID, or None if critic ran out of turns
 
         Returns:
-            CriticOutput with grader data
+            CriticOutput with critic and grader data
         """
-        return CriticOutput(grader_output=grader_output, critique_id=critique_id)
+        return CriticOutput(critic_output=critic_output, grader_output=grader_output, critique_id=critique_id)
 
     def evaluate(
         self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool = False
@@ -393,30 +412,52 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                 prompt_optimization_run_id=None,
                 mount_properties=True,
                 verbose=self.verbose,
+                max_turns=100,
             )
 
-        # Get transcript_id
+        # Get transcript_id and critic output from database
         with get_session() as session:
             critic_run = session.get(DBCriticRun, critic_run_id)
             assert critic_run is not None, f"CriticRun {critic_run_id} not found"
             transcript_id = critic_run.transcript_id
+            # CRITICAL: Extract critic output INSIDE session before object becomes detached
+            critic_db_output = critic_run.output
+            assert critic_db_output is not None, f"CriticRun {critic_run_id} has no output"
 
         # Load and filter events for reflection (separate session)
         events: list[EventType] = []
         if capture_traces:
             events = _filter_reflection_events(transcript_id)
 
+        # If critic ran out of turns, there's no critique to grade
+        if isinstance(critic_db_output, DBCriticMaxTurnsExceeded):
+            # Critic ran out of turns - no grader run, score is 0.0
+            trajectory = (
+                CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=None)
+                if capture_traces
+                else None
+            )
+            return EvaluationResult(
+                output=self._build_critic_output(critic_output=critic_db_output, grader_output=None, critique_id=None),
+                score=0.0,
+                trajectory=trajectory,
+            )
+
+        # Critic succeeded - critique_id must be present
+        assert critique_id is not None, "critique_id must be present when critic succeeds"
+
         # Grade and fetch output in single session
         # CRITICAL: Extract grader_output inside session before object becomes detached
         with get_session() as session:
             grader_run_id = await grade_critique_by_id(
-                session, critique_id, self.grader_client, docker_client, verbose=self.verbose
+                session, critique_id, self.grader_client, docker_client, verbose=self.verbose, max_turns=200
             )
             grader_run = session.get(DBGraderRun, grader_run_id)
             assert grader_run is not None, f"GraderRun {grader_run_id} not found"
             # CRITICAL: Extract output and score INSIDE session before object becomes detached
             grader_output = grader_run.output
-            score = grader_output.recall
+            # Extract score: 0.0 if grader max_turns_exceeded, otherwise recall from success variant
+            score = grader_output.recall if isinstance(grader_output, DBGraderSuccess) else 0.0
 
             # Fetch critique payload (DB model) for trajectory
             critique = session.get(Critique, critique_id)
@@ -430,18 +471,26 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         )
 
         return EvaluationResult(
-            output=self._build_critic_output(grader_output, critique_id), score=score, trajectory=trajectory
+            output=self._build_critic_output(critic_db_output, grader_output, critique_id),
+            score=score,
+            trajectory=trajectory,
         )
 
     def _reconstruct_from_cache(
-        self, transcript_id: UUID, critique_id: UUID, grader_output: DBGraderOutput, capture_traces: bool
+        self,
+        transcript_id: UUID,
+        critique_id: UUID | None,
+        critic_output: DBCriticOutput,
+        grader_output: DBGraderOutput | None,
+        capture_traces: bool,
     ) -> EvaluationResult:
         """Reconstruct an EvaluationResult from cached database runs.
 
         Args:
             transcript_id: Transcript UUID from critic run
-            critique_id: Critique UUID from critic run
-            grader_output: DBGraderOutput (database persistence model, extracted inside session at call site)
+            critique_id: Critique UUID from critic run, or None if critic ran out of turns
+            critic_output: DBCriticOutput (database persistence model, extracted inside session at call site)
+            grader_output: DBGraderOutput (database persistence model, extracted inside session at call site), or None if no grader run
             capture_traces: Whether to fetch events for trajectory
 
         Returns:
@@ -454,20 +503,26 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         # Fetch trajectory if requested
         trajectory: CriticTrajectory | None = None
         if capture_traces:
-            # Fetch critique payload (use DB model directly - no conversion needed)
-            with get_session() as session:
-                critique = session.get(Critique, critique_id)
-                assert critique is not None, f"Critique {critique_id} not found"
-                critique_payload_db = critique.payload
+            critique_payload_db: DBCriticSubmitPayload | None = None
+            if critique_id is not None:
+                with get_session() as session:
+                    critique = session.get(Critique, critique_id)
+                    assert critique is not None, f"Critique {critique_id} not found"
+                    critique_payload_db = critique.payload
 
             filtered_events = _filter_reflection_events(transcript_id)
             trajectory = CriticTrajectory(
                 transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
             )
 
+        # Extract score: 0.0 if no grader output or max_turns_exceeded, otherwise recall from success variant
+        score = 0.0
+        if grader_output is not None and isinstance(grader_output, DBGraderSuccess):
+            score = grader_output.recall
+
         return EvaluationResult(
-            output=self._build_critic_output(grader_output, critique_id),
-            score=grader_output.recall,
+            output=self._build_critic_output(critic_output, grader_output, critique_id),
+            score=score,
             trajectory=trajectory,
         )
 
@@ -499,57 +554,74 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         system_prompt = candidate["system_prompt"]
         prompt_sha256 = hash_and_upsert_prompt(system_prompt)
 
-        # Phase 1: Check DB for each input
+        # Phase 1: Check DB for each input (single query with LEFT JOIN)
         cached_results: dict[int, EvaluationResult] = {}  # batch_idx -> result found in DB
         uncached_inputs: list[tuple[int, SnapshotInput]] = []  # (batch_idx, input)
 
         with get_session() as session:
-            for idx, specimen_input in enumerate(batch):
-                # Use precomputed files_hash from SnapshotInput (computed during sync from resolved files)
-                files_hash = specimen_input.files_hash
-
-                # Query for cached run - joint query to find completed critic+grader pair
-                db_row = (
-                    session.query(DBCriticRun, DBGraderRun)
-                    .join(DBGraderRun, DBCriticRun.critique_id == DBGraderRun.critique_id)
-                    .filter(
-                        DBCriticRun.prompt_sha256 == prompt_sha256,
-                        DBCriticRun.snapshot_slug == specimen_input.slug,  # type: ignore[arg-type]
-                        DBCriticRun.files_hash == files_hash,
-                        DBCriticRun.model == self.critic_client.model,
-                        DBGraderRun.model == self.grader_client.model,
-                        # Ensure both runs completed successfully
-                        DBCriticRun.critique_id.isnot(None),
-                        DBCriticRun.output.isnot(None),
-                        DBGraderRun.output.isnot(None),  # Excludes SQL NULL
-                        DBGraderRun.output != cast(None, JSONB),  # Excludes JSON null
-                    )
-                    .first()
+            # Single query: fetch critic runs with optional grader runs via LEFT JOIN
+            cache_rows = (
+                session.query(DBCriticRun, DBGraderRun)
+                .outerjoin(
+                    DBGraderRun,
+                    (DBCriticRun.critique_id == DBGraderRun.critique_id)
+                    & (DBGraderRun.model == self.grader_client.model)
+                    & DBGraderRun.output.isnot(None)
+                    & (DBGraderRun.output != cast(None, JSONB)),
                 )
+                .filter(
+                    DBCriticRun.prompt_sha256 == prompt_sha256,
+                    DBCriticRun.model == self.critic_client.model,
+                    DBCriticRun.output.isnot(None),
+                )
+                .all()
+            )
 
-                if db_row:
-                    critic_run, grader_run = db_row
-                    # CRITICAL: Extract all needed data inside session before objects become detached
-                    transcript_id = critic_run.transcript_id
-                    critique_id = critic_run.critique_id
-                    assert critique_id is not None, "critique_id must be non-null (query ensures this)"
-                    # Access output directly from DB model (detach-safe: grader_run.output is eagerly loaded)
-                    grader_output = grader_run.output
-                    # Cache hit - reconstruct result
+            # Index results by (snapshot_slug, files_hash)
+            cache_by_key: dict[tuple[str, str], tuple[DBCriticRun, DBGraderRun | None]] = {
+                (critic.snapshot_slug, critic.files_hash): (critic, grader) for critic, grader in cache_rows
+            }
+
+            # Process each specimen using indexed results
+            for idx, specimen_input in enumerate(batch):
+                files_hash = specimen_input.files_hash
+                cache_key = (specimen_input.slug, files_hash)
+
+                cache_hit = cache_by_key.get(cache_key)
+                if not cache_hit:
                     logger.info(
-                        f"Cache HIT: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., "
-                        f"files_hash={files_hash[:8]}...)"
+                        f"Cache MISS: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash[:8]}...)"
                     )
-                    cached_results[idx] = self._reconstruct_from_cache(
-                        transcript_id, critique_id, grader_output, capture_traces
-                    )
+                    uncached_inputs.append((idx, specimen_input))
                     continue
 
-                # Cache miss - add to evaluation queue
+                critic_run, grader_run = cache_hit
+
+                # Extract critic data
+                transcript_id = critic_run.transcript_id
+                critic_output = critic_run.output
+                critique_id = critic_run.critique_id
+                assert critic_output is not None
+
+                # Check if grader run is required but missing
+                grader_output: DBGraderOutput | None = None
+                if critique_id is not None:
+                    if not grader_run:
+                        logger.info(
+                            f"Cache MISS (no grader): {specimen_input.slug} (prompt={prompt_sha256[:8]}..., "
+                            f"files_hash={files_hash[:8]}...)"
+                        )
+                        uncached_inputs.append((idx, specimen_input))
+                        continue
+                    grader_output = grader_run.output
+
+                # Cache hit
                 logger.info(
-                    f"Cache MISS: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash[:8]}...)"
+                    f"Cache HIT: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash[:8]}...)"
                 )
-                uncached_inputs.append((idx, specimen_input))
+                cached_results[idx] = self._reconstruct_from_cache(
+                    transcript_id, critique_id, critic_output, grader_output, capture_traces
+                )
 
         # Phase 2: Evaluate uncached inputs in parallel
         fresh_results: dict[int, EvaluationResult] = {}
@@ -618,14 +690,14 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         for output, score, trajectory in zip(
             eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
         ):
-            # In GEPA context, grader always runs after critic
-            assert output.grader_output is not None, "grader_output must be present in reflection dataset"
-
+            # Include both successful critiques and max_turns_exceeded cases
+            # grader_output is None when critic exceeded max turns
             example = ReflectionExample(
                 component_name="system_prompt",
                 current_text=candidate["system_prompt"],
                 score=score,
                 trajectory=trajectory,
+                critic_output=output.critic_output,
                 grader_output=output.grader_output,
             )
 
@@ -664,6 +736,58 @@ async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
     logger.info(f"Loaded {len(trainset)} training examples, {len(valset)} validation examples")
 
     return trainset, valset
+
+
+# =============================================================================
+# Statistics Helpers
+# =============================================================================
+
+
+def _log_run_statistics(critic_model: str, grader_model: str) -> None:
+    """Log statistics about critic and grader run statuses (success vs max_turns_exceeded).
+
+    Args:
+        critic_model: Critic model name to filter runs
+        grader_model: Grader model name to filter runs
+    """
+    from sqlalchemy import func
+
+    with get_session() as session:
+        # Count critic run statuses using SQL aggregation
+        critic_status_counts = (
+            session.query(DBCriticRun.output["tag"].astext, func.count(DBCriticRun.id))
+            .filter(DBCriticRun.model == critic_model, DBCriticRun.output.isnot(None))
+            .group_by(DBCriticRun.output["tag"].astext)
+            .all()
+        )
+
+        # Count grader run statuses using SQL aggregation
+        grader_status_counts = (
+            session.query(DBGraderRun.output["tag"].astext, func.count(DBGraderRun.id))
+            .filter(DBGraderRun.model == grader_model, DBGraderRun.output.isnot(None))
+            .group_by(DBGraderRun.output["tag"].astext)
+            .all()
+        )
+
+    # Log critic statistics
+    total_critic = sum(count for _, count in critic_status_counts)
+    if total_critic > 0:
+        logger.info(f"Critic run statistics (model={critic_model}, total={total_critic}):")
+        for status, count in sorted(critic_status_counts):
+            pct = count / total_critic
+            logger.info(f"  {status}: {count} ({pct:.1%})")
+    else:
+        logger.info("No critic runs found")
+
+    # Log grader statistics
+    total_grader = sum(count for _, count in grader_status_counts)
+    if total_grader > 0:
+        logger.info(f"Grader run statistics (model={grader_model}, total={total_grader}):")
+        for status, count in sorted(grader_status_counts):
+            pct = count / total_grader
+            logger.info(f"  {status}: {count} ({pct:.1%})")
+    else:
+        logger.info("No grader runs found")
 
 
 # =============================================================================
@@ -792,5 +916,8 @@ async def optimize_with_gepa(
     optimized_prompt = result.best_candidate["system_prompt"]
     best_score = result.val_aggregate_scores[result.best_idx]
     logger.info(f"GEPA optimization complete. Best score: {best_score:.3f}, Metric calls: {result.total_metric_calls}")
+
+    # Log run statistics (critic/grader status breakdown)
+    _log_run_statistics(critic_client.model, grader_client.model)
 
     return optimized_prompt, result

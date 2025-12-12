@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import logging
 from uuid import UUID
 
@@ -82,9 +83,10 @@ async def cmd_grade_validation(
 
             typer.echo(f"Found {len(all_prompts)} prompts\n")
 
-            # Build list of all work items: (snapshot, files_hash, prompt, critique_id_or_none)
+            # Build work items grouped by prompt
+            # Each prompt gets a list of (snapshot, files_hash, critique_id_or_none)
             # critique_id_or_none is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items: list[tuple[SnapshotSlug, str, str, UUID | None]] = []
+            work_items_by_prompt: dict[str, list[tuple[SnapshotSlug, str, UUID | None]]] = defaultdict(list)
 
             for example in validation_examples:
                 for prompt in all_prompts:
@@ -104,7 +106,9 @@ async def cmd_grade_validation(
 
                     if critic_run is None:
                         # No successful critic run exists, need to run critic then grader
-                        work_items.append((example.snapshot_slug, example.files_hash, prompt.prompt_sha256, None))
+                        work_items_by_prompt[prompt.prompt_sha256].append(
+                            (example.snapshot_slug, example.files_hash, None)
+                        )
                         continue
 
                     # Check if successful grader run exists for this critique
@@ -120,16 +124,17 @@ async def cmd_grade_validation(
 
                     if not successful_grader_exists:
                         # Critic succeeded, need to run grader
-                        work_items.append(
-                            (example.snapshot_slug, example.files_hash, prompt.prompt_sha256, critic_run.critique_id)
+                        work_items_by_prompt[prompt.prompt_sha256].append(
+                            (example.snapshot_slug, example.files_hash, critic_run.critique_id)
                         )
                     # else: both critic and grader succeeded - nothing to do
 
-            # Count work needed
+            # Count work needed (flatten to count)
             total_pairs = len(validation_examples) * len(all_prompts)
-            need_critic = sum(1 for _, _, _, cid in work_items if cid is None)
-            need_grader_only = sum(1 for _, _, _, cid in work_items if isinstance(cid, UUID))
-            completed = total_pairs - len(work_items)
+            all_work_items = [item for items in work_items_by_prompt.values() for item in items]
+            need_critic = sum(1 for _, _, cid in all_work_items if cid is None)
+            need_grader_only = sum(1 for _, _, cid in all_work_items if isinstance(cid, UUID))
+            completed = total_pairs - len(all_work_items)
 
             typer.echo("\nWork summary:")
             typer.echo(f"  {need_critic} items need critic + grader")
@@ -140,108 +145,154 @@ async def cmd_grade_validation(
                 typer.echo("\n✓ All validation set examples have complete coverage!")
                 return
 
-        # Phase 2: Process all work items in parallel (each item processes serially: critic→grader)
-        typer.echo(f"\n=== Processing {need_critic + need_grader_only} items with max_parallel={max_parallel} ===\n")
-        semaphore = asyncio.Semaphore(max_parallel)
+        # Phase 2: Process prompts with worker pool, examples within each prompt in parallel
+        typer.echo(f"\n=== Processing {need_critic + need_grader_only} items with {max_parallel} workers ===\n")
 
         async def process_one(
             snapshot_slug: SnapshotSlug,
             files_hash: str,
             prompt_sha256: str,
             critique_id_or_none: UUID | None,
-            index: int,
-            total: int,
+            worker_id: int,
+            item_index: int,
+            total_items: int,
         ) -> tuple[str, bool, bool, UUID | None]:
             """Process one work item: run critic if needed, then grader.
             Returns (status, critic_success, grader_success, grader_run_id)"""
-            async with semaphore:
-                critique_id = critique_id_or_none
-                critic_success = True
-                grader_success = True
-                grader_run_id: UUID | None = None
+            critique_id = critique_id_or_none
+            critic_success = True
+            grader_success = True
+            grader_run_id: UUID | None = None
 
-                # Step 1: Run critic if needed
-                if critique_id is None:
-                    try:
-                        # Get scope files from DB
-                        with get_session() as session:
-                            snapshot_obj = session.execute(
-                                select(Snapshot)
-                                .join(Snapshot.examples)
-                                .where(
-                                    Snapshot.slug == snapshot_slug  # type: ignore[arg-type]
-                                )
-                            ).scalar_one()
-
-                            matching_example = next(
-                                (e for e in snapshot_obj.examples if e.files_hash == files_hash), None
-                            )
-                            if not matching_example:
-                                raise RuntimeError(f"Example not found for files_hash={files_hash}")
-
-                            scope_files = matching_example.files
-
-                        # Hydrate snapshot and run critic
-                        async with hydrator.hydrate(snapshot_slug) as hydrated:
-                            critic_input = CriticInput(
-                                snapshot_slug=snapshot_slug,
-                                files=ExplicitFileScope(files=[str(f) for f in scope_files]),
-                                prompt_sha256=prompt_sha256,
-                            )
-
-                            (_critic_output, _critic_run_id, critique_id) = await run_critic(
-                                input_data=critic_input,
-                                client=critic_client,
-                                docker_client=docker_client,
-                                content_root=hydrated.content_root,
-                                prompt_optimization_run_id=None,
-                                mount_properties=True,
-                                verbose=verbose,
-                            )
-
-                            if not verbose:
-                                typer.echo(
-                                    f"[{index}/{total}] ✓ Critic {snapshot_slug} x {short_sha(prompt_sha256)} → {short_uuid(critique_id)}"
-                                )
-                    except Exception as e:
-                        typer.echo(
-                            f"[{index}/{total}] ✗ Critic failed {snapshot_slug} x {short_sha(prompt_sha256)}: {e}",
-                            err=True,
-                        )
-                        return ("critic_failed", False, False, None)
-
-                # At this point, critique_id must be a UUID (str case was handled by early return)
-                assert isinstance(critique_id, UUID)
-
-                # Step 2: Run grader
+            # Step 1: Run critic if needed
+            if critique_id is None:
                 try:
+                    # Get scope files from DB
                     with get_session() as session:
-                        grader_run_id = await grade_critique_by_id(
-                            session, critique_id, grader_client, docker_client, verbose=verbose
+                        snapshot_obj = session.execute(
+                            select(Snapshot)
+                            .join(Snapshot.examples)
+                            .where(
+                                Snapshot.slug == snapshot_slug  # type: ignore[arg-type]
+                            )
+                        ).scalar_one()
+
+                        matching_example = next((e for e in snapshot_obj.examples if e.files_hash == files_hash), None)
+                        if not matching_example:
+                            raise RuntimeError(f"Example not found for files_hash={files_hash}")
+
+                        scope_files = matching_example.files
+
+                    # Hydrate snapshot and run critic
+                    async with hydrator.hydrate(snapshot_slug) as hydrated:
+                        critic_input = CriticInput(
+                            snapshot_slug=snapshot_slug,
+                            files=ExplicitFileScope(files=[str(f) for f in scope_files]),
+                            prompt_sha256=prompt_sha256,
                         )
 
-                        # Fetch recall for progress message
-                        grader_run = session.get(GraderRun, grader_run_id)
-                        recall_pct = grader_run.output.recall * 100.0 if grader_run and grader_run.output else 0.0
+                        (_critic_output, _critic_run_id, critique_id) = await run_critic(
+                            input_data=critic_input,
+                            client=critic_client,
+                            docker_client=docker_client,
+                            content_root=hydrated.content_root,
+                            prompt_optimization_run_id=None,
+                            mount_properties=True,
+                            verbose=verbose,
+                            max_turns=100,
+                        )
+                        assert critique_id is not None, "Critic should return critique_id on success"
 
                         if not verbose:
                             typer.echo(
-                                f"[{index}/{total}] ✓ Graded {short_uuid(critique_id)} → {short_uuid(grader_run_id)} "
-                                f"(recall: {recall_pct:.1f}%)"
+                                f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {short_sha(prompt_sha256)} → {short_uuid(critique_id)}"
                             )
                 except Exception as e:
-                    typer.echo(f"[{index}/{total}] ✗ Grader failed {short_uuid(critique_id)}: {e}", err=True)
-                    return ("grader_failed", critic_success, False, None)
+                    typer.echo(
+                        f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {short_sha(prompt_sha256)}: {e}",
+                        err=True,
+                    )
+                    return ("critic_failed", False, False, None)
 
-                return ("complete", critic_success, grader_success, grader_run_id)
+            # At this point, critique_id must be a UUID (str case was handled by early return)
+            assert isinstance(critique_id, UUID)
 
-        # Process all work items
-        results = await asyncio.gather(
-            *[
-                process_one(snapshot, files_hash, prompt_sha256, critique_id, i, len(work_items))
-                for i, (snapshot, files_hash, prompt_sha256, critique_id) in enumerate(work_items, 1)
-            ]
-        )
+            # Step 2: Run grader
+            try:
+                with get_session() as session:
+                    grader_run_id = await grade_critique_by_id(
+                        session, critique_id, grader_client, docker_client, verbose=verbose, max_turns=200
+                    )
+
+                    # Fetch recall for progress message
+                    grader_run = session.get(GraderRun, grader_run_id)
+                    assert grader_run is not None
+                    assert grader_run.output is not None
+
+                    from adgn.props.db.snapshots import DBGraderSuccess
+
+                    if isinstance(grader_run.output, DBGraderSuccess):
+                        result_str = f"recall: {grader_run.output.recall * 100.0:.1f}%"
+                    else:
+                        result_str = "max_turns_exceeded"
+
+                    if not verbose:
+                        typer.echo(
+                            f"[W{worker_id} {item_index}/{total_items}] ✓ Graded {short_uuid(critique_id)} → {short_uuid(grader_run_id)} "
+                            f"({result_str})"
+                        )
+            except Exception as e:
+                typer.echo(
+                    f"[W{worker_id} {item_index}/{total_items}] ✗ Grader failed {short_uuid(critique_id)}: {e}",
+                    err=True,
+                )
+                return ("grader_failed", critic_success, False, None)
+
+            return ("complete", critic_success, grader_success, grader_run_id)
+
+        # Worker pool: process (prompt, example) pairs with queue
+        all_results: list[tuple[str, bool, bool, UUID | None]] = []
+        results_lock = asyncio.Lock()
+
+        # Build queue of (prompt_sha256, snapshot_slug, files_hash, critique_id_or_none) tuples
+        # Ordered by prompt (all examples for prompt1, then prompt2, etc.)
+        work_queue: asyncio.Queue[tuple[str, SnapshotSlug, str, UUID | None]] = asyncio.Queue()
+        total_items = 0
+        for prompt_sha256, items in work_items_by_prompt.items():
+            for snapshot_slug, files_hash, critique_id_or_none in items:
+                await work_queue.put((prompt_sha256, snapshot_slug, files_hash, critique_id_or_none))
+                total_items += 1
+
+        items_processed = 0
+        progress_lock = asyncio.Lock()
+
+        async def worker(worker_id: int) -> None:
+            """Worker that grabs (prompt, example) items from queue and processes them."""
+            nonlocal items_processed
+
+            while True:
+                try:
+                    prompt_sha256, snapshot_slug, files_hash, critique_id_or_none = work_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    break
+
+                async with progress_lock:
+                    items_processed += 1
+                    item_index = items_processed
+
+                result = await process_one(
+                    snapshot_slug, files_hash, prompt_sha256, critique_id_or_none, worker_id, item_index, total_items
+                )
+
+                async with results_lock:
+                    all_results.append(result)
+
+                work_queue.task_done()
+
+        # Run workers
+        await asyncio.gather(*[worker(i) for i in range(1, max_parallel + 1)])
+
+        results = all_results
 
         # Summary
         complete = sum(1 for status, _, _, _ in results if status == "complete")
@@ -262,16 +313,20 @@ async def cmd_grade_validation(
                 grader_runs = session.query(GraderRun).filter(GraderRun.id.in_(grader_run_ids)).all()
 
                 if grader_runs:
-                    recalls = []
+                    from adgn.props.db.snapshots import DBGraderSuccess
 
+                    recalls = []
                     for run in grader_runs:
-                        recall = run.output.recall
-                        recalls.append(recall)
+                        if isinstance(run.output, DBGraderSuccess):
+                            recalls.append(run.output.recall)
 
                     typer.echo("\n=== Metrics ===")
-                    typer.echo(f"Mean recall:    {sum(recalls) / len(recalls):.3f}")
-                    typer.echo(f"Min recall:     {min(recalls):.3f}")
-                    typer.echo(f"Max recall:     {max(recalls):.3f}")
-                    typer.echo(f"Samples:        {len(grader_runs)}")
+                    if recalls:
+                        typer.echo(f"Mean recall:    {sum(recalls) / len(recalls):.3f}")
+                        typer.echo(f"Min recall:     {min(recalls):.3f}")
+                        typer.echo(f"Max recall:     {max(recalls):.3f}")
+                        typer.echo(f"Samples:        {len(recalls)}")
+                    else:
+                        typer.echo("No successful grader runs with recall data")
     finally:
         await docker_client.close()

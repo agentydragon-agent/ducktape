@@ -35,7 +35,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
-from adgn.agent.turn_limit import MaxTurnsHandler
+from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
@@ -46,6 +46,8 @@ from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from adgn.props.critic.models import (
     CriticInput,
+    CriticMaxTurnsExceeded,
+    CriticOutput,
     CriticScopeSpec,
     CriticSubmitPayload,
     CriticSuccess,
@@ -563,14 +565,17 @@ async def run_critic(
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
-    max_turns: int | None = None,
-) -> tuple[CriticSuccess, UUID, UUID]:
+    max_turns: int,
+) -> tuple[CriticOutput, UUID, UUID | None]:
     """Execute critic agent to produce candidate issues and persist to DB.
 
     Sets up critic submit server, Docker exec MCP, and standard handlers (bootstrap,
     database events, AbortIf). Runs agent until submit_result or error is called.
 
-    Returns tuple of (output, critic_run_id, critique_id). Raises RuntimeError on failure.
+    Returns tuple of (output, critic_run_id, critique_id).
+    - output: CriticSuccess if completed, CriticMaxTurnsExceeded if agent ran out of turns
+    - critique_id: None if max_turns_exceeded, UUID if success
+
     Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
     from within an MCP tool that outlives the session.
     """
@@ -652,11 +657,8 @@ async def run_critic(
             ),
             AbortIf(should_abort=_ready_state),
             *extra_handlers,
+            MaxTurnsHandler(max_turns=max_turns),
         ]
-
-        # Add turn limit handler if max_turns is specified
-        if max_turns is not None:
-            handlers.append(MaxTurnsHandler(max_turns=max_turns))
 
         # Build combined dynamic instructions by rendering the template
         async def _build_critic_instructions() -> str:
@@ -686,16 +688,26 @@ async def run_critic(
                 dynamic_instructions=_build_critic_instructions,
             )
             agent.insert_message(UserMessage.text(user_prompt))
-            await agent.run()
+            output: CriticOutput
+            try:
+                await agent.run()
+            except MaxTurnsExceededError:
+                # Agent ran out of turns - create max_turns_exceeded output
+                logger.warning(
+                    f"Critic hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
+                    f"transcript_id={short_uuid(transcript_id)}"
+                )
+                output = CriticMaxTurnsExceeded(max_turns=max_turns)
+                # Skip state validation - we're terminating early due to turn limit
+                # Jump to Phase 2 to persist the max_turns_exceeded output
+            else:
+                # Agent completed normally - validate state and create success output
+                if critic_state.error is not None:
+                    raise CriticExecutionError(f"Critic failed: {critic_state.error}")
+                if critic_state.result is None:
+                    raise CriticDidNotSubmitError("Critic did not submit")
+                output = CriticSuccess(result=critic_state.result)
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
-
-    # Convert state to output
-    if critic_state.error is not None:
-        raise CriticExecutionError(f"Critic failed: {critic_state.error}")
-    if critic_state.result is None:
-        raise CriticDidNotSubmitError("Critic did not submit")
-
-    output = CriticSuccess(result=critic_state.result)
 
     # Phase 2: Update run with output
     with get_session() as session:
@@ -713,9 +725,12 @@ async def run_critic(
             critique_id = critique.id
 
         # Update run with output and critique_id
+        # Use critic_output_to_db() to convert discriminated union to DB format
+        from adgn.props.critic.persistence import critic_output_to_db
+
         found_run = session.get(DBCriticRun, run_id)
         assert found_run is not None, f"Critic run {run_id} not found in database"
-        found_run.output = output.model_dump(mode="json")
+        found_run.output = critic_output_to_db(output)
         found_run.critique_id = critique_id
         session.commit()
 

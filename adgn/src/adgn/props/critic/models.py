@@ -7,7 +7,7 @@ Extracted to avoid circular dependencies with prompts.util.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -84,3 +84,28 @@ class CriticSuccess(BaseModel):
     result: CriticSubmitPayload = Field(description="Successful critique with issues and optional notes")
 
     model_config = ConfigDict(frozen=True)
+
+
+class CriticMaxTurnsExceeded(BaseModel):
+    """Critic ran out of turns before completing."""
+
+    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
+    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
+
+    model_config = ConfigDict(frozen=True)
+
+
+class CriticContextLengthExceeded(BaseModel):
+    """Critic input exceeded model's context window."""
+
+    tag: Literal["context_length_exceeded"] = "context_length_exceeded"
+    error_message: str = Field(description="Error message from the API")
+
+    model_config = ConfigDict(frozen=True)
+
+
+CriticOutput = Annotated[
+    CriticSuccess | CriticMaxTurnsExceeded | CriticContextLengthExceeded,
+    Field(discriminator="tag", description="Critic output: success, max turns exceeded, or context length exceeded"),
+]
+"""Discriminated union of critic outcomes: success, max_turns_exceeded, or context_length_exceeded."""

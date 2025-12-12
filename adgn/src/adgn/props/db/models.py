@@ -19,7 +19,13 @@ from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
-from adgn.props.db.snapshots import DBCriticSubmitPayload, DBGraderOutput, DBKnownFalsePositive, DBTruePositiveIssue
+from adgn.props.db.snapshots import (
+    DBCriticOutput,
+    DBCriticSubmitPayload,
+    DBGraderOutput,
+    DBKnownFalsePositive,
+    DBTruePositiveIssue,
+)
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
@@ -457,7 +463,11 @@ class CriticRun(Base):
     files_hash: Mapped[str] = mapped_column(
         String(64), nullable=False, comment="SHA256 hash of sorted file paths for cache lookup"
     )
-    output: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    output: Mapped[DBCriticOutput | None] = mapped_column(
+        PydanticColumn(DBCriticOutput),
+        nullable=True,
+        comment="Critic output (discriminated union: success or max_turns_exceeded). NULL only during initial creation, always set after run completes.",
+    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -505,7 +515,9 @@ class GraderRun(Base):
         comment="Snapshot of canonical TPs+FPs used at grading time",
     )
     output: Mapped[DBGraderOutput] = mapped_column(
-        PydanticColumn(DBGraderOutput), nullable=False, comment="Grader output (DB model, flat structure)."
+        PydanticColumn(DBGraderOutput),
+        nullable=False,
+        comment="Grader output (discriminated union: success or max_turns_exceeded)",
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

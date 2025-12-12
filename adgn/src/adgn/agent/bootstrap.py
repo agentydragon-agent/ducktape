@@ -306,6 +306,35 @@ def docker_exec_call_mounted(
     )
 
 
+def read_package_file_call(
+    builder: TypedBootstrapBuilder,
+    runtime: Mounted[ContainerExecServer],
+    package: str,
+    file_path: str,
+    *,
+    timeout_ms: int = 10_000,
+) -> FunctionCallItem:
+    """Bootstrap helper for reading a file from a Python package using importlib.resources.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        runtime: Mounted runtime server (e.g., comp.runtime)
+        package: Python package name (e.g., 'adgn.props.critic')
+        file_path: Path to file within package (e.g., 'prompts/critic_system.j2.md')
+        timeout_ms: Execution timeout in milliseconds
+
+    Example:
+        call = read_package_file_call(
+            builder, comp.runtime,
+            'adgn.props.critic', 'prompts/critic_system.j2.md'
+        )
+    """
+    python_code = (
+        f"from importlib import resources; print(resources.files('{package}').joinpath('{file_path}').read_text())"
+    )
+    return docker_exec_call_mounted(builder, runtime, ["python", "-c", python_code], timeout_ms=timeout_ms)
+
+
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)
 # Scope these appropriately (e.g., in conftest for tests, per-module for specific domains)
 # Do not pollute global scope with domain-specific helpers

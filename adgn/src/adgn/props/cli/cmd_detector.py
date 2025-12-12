@@ -18,7 +18,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.shared import filter_files
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.critic.models import CriticInput, CriticSuccess
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Snapshot
@@ -164,6 +164,7 @@ async def run_detector_on_specimen(
             prompt_optimization_run_id=None,
             mount_properties=False,
             verbose=verbose,
+            max_turns=100,
         )
     return (detector_filename, snapshot_slug, True)
 
@@ -294,11 +295,15 @@ async def cmd_run_detector(
                 prompt_optimization_run_id=None,
                 mount_properties=False,
                 verbose=verbose,
+                max_turns=100,
             )
 
         # Output structured critique
-        Console().print(render_to_rich(critic_output.result))
-        typer.echo(f"\nRun: {run_id} | Critique: {critique_id}")
+        if isinstance(critic_output, CriticSuccess):
+            Console().print(render_to_rich(critic_output.result))
+            typer.echo(f"\nRun: {run_id} | Critique: {critique_id}")
+        else:
+            typer.echo(f"Critic exceeded max turns limit. Run: {run_id}", err=True)
     finally:
         await docker_client.close()
 

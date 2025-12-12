@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from sqlalchemy import Select, bindparam, cast, column, func, literal, select, table, text, type_coerce, union_all
+from sqlalchemy import Select, bindparam, case, cast, func, literal, select, text, type_coerce, union_all
 from sqlalchemy.dialects import postgresql
 
 from adgn.props.db.models import (
@@ -209,24 +209,46 @@ def recent_grader_results(limit: int = 10) -> Select:
         limit: Maximum number of results (default 10)
 
     Returns:
-        Query selecting grader run details with recall and coverage counts.
-        Schema matches DBGraderOutput (flat structure):
-        - recall: direct field from GradeSubmitInput
-        - canonical_tp_count: array length of canonical_tp_coverage
-        - canonical_fp_count: array length of canonical_fp_coverage
-        - reported_issue_ratios: tp/fp/unlabeled ratios (nullable)
+        Query selecting grader run details with status and conditional metrics.
+        - status: success or max_turns_exceeded
+        - recall: NULL if max_turns_exceeded, otherwise from output
+        - canonical_tp_count: NULL if max_turns_exceeded, otherwise array length
+        - canonical_fp_count: NULL if max_turns_exceeded, otherwise array length
+        - reported_issue_ratios: NULL if max_turns_exceeded or empty critique
     """
     return (
         select(
             GraderRun.snapshot_slug,
             GraderRun.transcript_id,
-            GraderRun.output["recall"].astext.label("recall"),
-            # Count canonical TPs/FPs from array lengths
-            func.jsonb_array_length(GraderRun.output["canonical_tp_coverage"]).label("canonical_tp_count"),
-            func.jsonb_array_length(GraderRun.output["canonical_fp_coverage"]).label("canonical_fp_count"),
-            # Reported issue ratios (can be null for empty critiques)
-            GraderRun.output["reported_issue_ratios"]["tp"].astext.label("reported_tp_ratio"),
-            GraderRun.output["reported_issue_ratios"]["fp"].astext.label("reported_fp_ratio"),
+            GraderRun.output["tag"].astext.label("status"),
+            # Recall is NULL if max_turns_exceeded
+            case((GraderRun.output["tag"].astext == "success", GraderRun.output["recall"].astext), else_=None).label(
+                "recall"
+            ),
+            # Count canonical TPs/FPs from array lengths (NULL if max_turns_exceeded)
+            case(
+                (
+                    GraderRun.output["tag"].astext == "success",
+                    func.jsonb_array_length(GraderRun.output["canonical_tp_coverage"]),
+                ),
+                else_=None,
+            ).label("canonical_tp_count"),
+            case(
+                (
+                    GraderRun.output["tag"].astext == "success",
+                    func.jsonb_array_length(GraderRun.output["canonical_fp_coverage"]),
+                ),
+                else_=None,
+            ).label("canonical_fp_count"),
+            # Reported issue ratios (NULL if max_turns_exceeded or empty critique)
+            case(
+                (GraderRun.output["tag"].astext == "success", GraderRun.output["reported_issue_ratios"]["tp"].astext),
+                else_=None,
+            ).label("reported_tp_ratio"),
+            case(
+                (GraderRun.output["tag"].astext == "success", GraderRun.output["reported_issue_ratios"]["fp"].astext),
+                else_=None,
+            ).label("reported_fp_ratio"),
             GraderRun.model,
             GraderRun.created_at,
         )
@@ -294,41 +316,43 @@ def snapshot_files_with_issues_select() -> Select:
     )
 
 
-def valid_full_snapshot_grader_metrics_select() -> Select:
-    """Define the SELECT query for the valid_full_snapshot_grader_metrics view.
+def valid_metrics_select() -> Select:
+    """Define the SELECT query for the valid_metrics view.
 
     Shows grader runs for valid split with full provenance:
     - Which critique was graded
     - How it was produced (critic prompt, model)
     - How it was graded (grader run ID, model)
-    - What score it got (recall)
+    - What score it got (recall, NULL if max_turns_exceeded)
+    - Status (success or max_turns_exceeded)
 
-    Filters to full-snapshot critiques only (where critic reviewed ALL files with issues).
-
-    A full-snapshot run is defined as: CriticRun.files (JSONB array) contains exactly
-    the same files as computed by the snapshot_files_with_issues view (which replicates
-    Snapshot.files_with_issues() method).
+    Goes over all validation examples (from examples table) that have been evaluated.
+    No manual file filtering - just joins with examples table to identify which
+    validation examples have grader runs.
 
     Returns:
         Query defining the view's row structure (not aggregated)
     """
-    # Reference the snapshot_files_with_issues view
-    # This view computes files_with_issues for each snapshot (same logic as Snapshot.files_with_issues())
-
-    # Create a table reference for the snapshot_files_with_issues view
-    snapshot_files_view = table("snapshot_files_with_issues", column("snapshot_slug"), column("files_with_issues"))
-
-    # Main query: join to snapshot_files_with_issues view and filter for full-snapshot runs
-    # Use bidirectional array containment (@> and <@) to check set equality
+    # Join grader runs with examples table via critic_runs (snapshot_slug, files_hash)
+    # Filter to validation split snapshots only
     return (
         select(
             GraderRun.snapshot_slug,
+            Example.files_hash,
             GraderRun.critique_id.label("critique_id"),
             CriticRun.prompt_sha256.label("critic_prompt_sha256"),
             CriticRun.model.label("critic_model"),
             GraderRun.id.label("grader_run_id"),
             GraderRun.model.label("grader_model"),
-            (GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("recall"),
+            GraderRun.output["tag"].astext.label("status"),
+            # Recall is NULL if max_turns_exceeded, otherwise extract from output
+            case(
+                (
+                    GraderRun.output["tag"].astext == "success",
+                    GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION),
+                ),
+                else_=None,
+            ).label("recall"),
             GraderRun.created_at,
         )
         .select_from(GraderRun)
@@ -336,12 +360,7 @@ def valid_full_snapshot_grader_metrics_select() -> Select:
         .join(Critique, GraderRun.critique_id == Critique.id)
         .join(CriticRun, Critique.id == CriticRun.critique_id)
         .join(
-            snapshot_files_view,
-            text(
-                "grader_runs.snapshot_slug::text = snapshot_files_with_issues.snapshot_slug::text AND "
-                "ARRAY(SELECT jsonb_array_elements_text(critic_runs.files)) @> snapshot_files_with_issues.files_with_issues AND "
-                "ARRAY(SELECT jsonb_array_elements_text(critic_runs.files)) <@ snapshot_files_with_issues.files_with_issues"
-            ),
+            Example, (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash)
         )
         .where(Snapshot.split == "valid")
         .where(GraderRun.output.isnot(None))
@@ -354,7 +373,7 @@ def valid_aggregates_view() -> Select:
     Returns:
         Query selecting avg_recall, snapshot_count, run_count, grader_model
     """
-    # This queries the materialized view valid_full_snapshot_grader_metrics
+    # This queries the valid_metrics view
     # We use text() to reference the view since it's not mapped as an ORM model
     return (
         select(
@@ -363,7 +382,7 @@ def valid_aggregates_view() -> Select:
             text("COUNT(*) as run_count"),
             text("grader_model"),
         )
-        .select_from(text("valid_full_snapshot_grader_metrics"))
+        .select_from(text("valid_metrics"))
         .group_by(text("grader_model"))
         .order_by(text("avg_recall DESC"))
     )
@@ -408,14 +427,18 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         limit: Maximum number of results (default 1)
 
     Returns:
-        Query selecting grader_run_id, snapshot_slug, recall, critique_id,
-        critic_run_id, prompt_sha256, prompt_text
+        Query selecting grader_run_id, snapshot_slug, status, recall (NULL if max_turns_exceeded),
+        critique_id, critic_run_id, prompt_sha256, prompt_text
     """
     return (
         select(
             GraderRun.id.label("grader_run_id"),
             GraderRun.snapshot_slug,
-            GraderRun.output["recall"].astext.label("recall"),
+            GraderRun.output["tag"].astext.label("status"),
+            # Recall is NULL if max_turns_exceeded
+            case((GraderRun.output["tag"].astext == "success", GraderRun.output["recall"].astext), else_=None).label(
+                "recall"
+            ),
             Critique.id.label("critique_id"),
             CriticRun.id.label("critic_run_id"),
             CriticRun.prompt_sha256,
@@ -680,8 +703,9 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
         limit: Maximum number of results (default 10)
 
     Returns:
-        Query selecting (snapshot_slug, files_hash, run_count, avg_recall)
-        ordered by run_count descending
+        Query selecting (snapshot_slug, files_hash, run_count, avg_recall, success_count)
+        ordered by run_count descending.
+        avg_recall only includes successful runs (status='success'), not max_turns_exceeded.
     """
     return (
         select(
@@ -689,7 +713,18 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
             Example.files_hash,
             Example.files,
             func.count().label("run_count"),
-            func.avg(GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION)).label("avg_recall"),
+            # Average recall only for successful runs (where tag='success')
+            func.avg(
+                case(
+                    (
+                        GraderRun.output["tag"].astext == "success",
+                        GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION),
+                    ),
+                    else_=None,
+                )
+            ).label("avg_recall"),
+            # Count successful runs (status='success')
+            func.sum(case((GraderRun.output["tag"].astext == "success", 1), else_=0)).label("success_count"),
         )
         .select_from(GraderRun)
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)

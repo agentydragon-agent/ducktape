@@ -18,7 +18,7 @@ adgn-properties gepa --max-metric-calls 100
 
 ## Feedback
 
-GEPA receives rich feedback for each evaluation:
+GEPA receives rich feedback for each evaluation, including both successful runs and max_turns_exceeded cases:
 
 **1. Execution Traces** (from `events` table):
 ```
@@ -27,7 +27,7 @@ CALL docker__run_command({"command": "ruff check src/"})
 CALL critic_submit__upsert_issue({"issue_id": "line-too-long", ...})
 ```
 
-**2. Grader Analysis** (full `GradeSubmitInput`):
+**2a. Grader Analysis** (when critic succeeded - full `GradeSubmitInput`):
 ```
 MISSED ISSUES:
   - dead-import: The critic didn't check for unused imports
@@ -37,9 +37,20 @@ FALSE POSITIVES TRIGGERED:
 SUMMARY: The critic focused on runtime issues but neglected...
 ```
 
+**2b. Max Turns Exceeded** (when critic ran out of turns before submitting):
+```
+critic_output: {"tag": "max_turns_exceeded"}
+grader_output: null
+score: 0.0
+trajectory: includes all tool calls/events but no critique_payload
+```
+
+The reflection LLM sees the full discriminated union (success or max_turns_exceeded) and can learn from cases where the critic got stuck, looped, or wasted turns.
+
 ## Key Types
 
 - `SnapshotInput`: Input for evaluation (slug, target_files, known_true_positives, known_false_positives)
-- `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload)
-- `CriticOutput`: Evaluation result (issues_found, grader_output, recall)
+- `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload or None if max_turns)
+- `CriticOutput`: Evaluation result (critic_output discriminated union, grader_output or None, critique_id or None)
+- `ReflectionExample`: Feedback for reflection LLM (current_text, score, trajectory, critic_output, grader_output or None)
 - `CriticAdapter`: GEPA adapter wrapping Agent + grader

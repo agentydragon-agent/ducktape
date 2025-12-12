@@ -13,11 +13,7 @@ from sqlalchemy import DDL, Engine, inspect, text
 import sqlalchemy.exc
 
 from adgn.props.db.models import Base
-from adgn.props.db.query_builders import (
-    compile_to_sql,
-    snapshot_files_with_issues_select,
-    valid_full_snapshot_grader_metrics_select,
-)
+from adgn.props.db.query_builders import compile_to_sql, snapshot_files_with_issues_select, valid_metrics_select
 
 logger = logging.getLogger(__name__)
 
@@ -142,6 +138,11 @@ def enable_rls(engine: Engine) -> None:
     - Valid split: Only aggregate metrics from grader_runs (no critique details or execution traces)
     - Test split: Completely hidden
 
+    Tables WITHOUT RLS (readable by agent_user for all splits):
+    - examples: Allows agent to see which validation examples exist and run evaluations on them
+    - snapshots: Metadata about snapshots (no sensitive labels)
+    - prompts: Prompt definitions
+
     Postgres superuser bypasses RLS (table owner).
     """
     with engine.connect() as check_conn:
@@ -149,6 +150,11 @@ def enable_rls(engine: Engine) -> None:
         existing_policies = {(row[0], row[1]) for row in result}
 
     # RLS-enabled tables
+    # Note: The 'examples' table is intentionally NOT RLS-protected. This allows agent_user
+    # to read validation examples (snapshot_slug, files_hash, files) for running evaluations,
+    # while ground truth labels (true_positives, false_positives) remain RLS-filtered to
+    # train split only. This design lets the agent evaluate on validation examples without
+    # being able to reverse-engineer the ground truth.
     rls_table_names = [
         "snapshots",
         "true_positives",
@@ -201,23 +207,24 @@ def create_views(engine: Engine) -> None:
     """
     # Build view SELECT queries using SQLAlchemy (single source of truth in query_builders.py)
     snapshot_files_sql = compile_to_sql(snapshot_files_with_issues_select())
-    grader_metrics_sql = compile_to_sql(valid_full_snapshot_grader_metrics_select())
+    valid_metrics_sql = compile_to_sql(valid_metrics_select())
 
     with engine.begin() as conn:
-        # Drop old view name if it exists (migration)
+        # Drop old view names if they exist (migration)
         conn.execute(DDL("DROP VIEW IF EXISTS valid_grader_metrics"))
+        conn.execute(DDL("DROP VIEW IF EXISTS valid_full_snapshot_grader_metrics"))
 
-        # Create snapshot_files_with_issues view FIRST (dependency for valid_full_snapshot_grader_metrics)
+        # Create snapshot_files_with_issues view
         conn.execute(DDL("DROP VIEW IF EXISTS snapshot_files_with_issues CASCADE"))
         conn.execute(DDL(f"CREATE VIEW snapshot_files_with_issues AS {snapshot_files_sql}"))
 
-        # Create valid_full_snapshot_grader_metrics view (depends on snapshot_files_with_issues)
-        conn.execute(DDL("DROP VIEW IF EXISTS valid_full_snapshot_grader_metrics"))
-        conn.execute(DDL(f"CREATE VIEW valid_full_snapshot_grader_metrics AS {grader_metrics_sql}"))
+        # Create valid_metrics view (no longer depends on snapshot_files_with_issues)
+        conn.execute(DDL("DROP VIEW IF EXISTS valid_metrics"))
+        conn.execute(DDL(f"CREATE VIEW valid_metrics AS {valid_metrics_sql}"))
 
         # Grant SELECT on views to agent_user
         conn.execute(text("GRANT SELECT ON snapshot_files_with_issues TO agent_user"))
-        conn.execute(text("GRANT SELECT ON valid_full_snapshot_grader_metrics TO agent_user"))
+        conn.execute(text("GRANT SELECT ON valid_metrics TO agent_user"))
         conn.execute(text("GRANT SELECT ON run_costs TO agent_user"))
 
     logger.info("Views created")

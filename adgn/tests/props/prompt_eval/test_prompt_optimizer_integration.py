@@ -27,7 +27,7 @@ from adgn.props.critic.critic import (
 )
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun
-from adgn.props.db.snapshots import DBGraderOutput
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
 from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
@@ -304,7 +304,8 @@ async def test_full_workflow_po_agent_critic_grader(
     assert_that(grader_runs, has_length(1), "Expected exactly one grader run")
     grader_run = grader_runs[0]
     assert_that(grader_run, has_properties(critique_id=equal_to(critic_run.critique_id), model=equal_to("fake-model")))
-    assert_that(grader_run.output, instance_of(DBGraderOutput))
+    assert_that(grader_run.output, instance_of(DBGraderSuccess))
+    assert isinstance(grader_run.output, DBGraderSuccess)
     assert_that(grader_run.output.recall, equal_to(0.8))
 
 

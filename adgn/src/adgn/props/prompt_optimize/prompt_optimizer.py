@@ -36,7 +36,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import Field
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call, read_resource_call
 from adgn.agent.handler import SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsExceededError
@@ -56,6 +56,7 @@ from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.config import DbConnectionConfig, get_production_config
 from adgn.props.db.models import Example, GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.display import short_uuid
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
@@ -110,7 +111,7 @@ def make_po_bootstrap_calls(
     runtime: Mounted[ContainerExecServer],
     prompt_eval: Mounted[PromptEvalServer],
 ) -> list[FunctionCallItem]:
-    """Build bootstrap calls for prompt optimizer: reads PO run ID and critic template.
+    """Build bootstrap calls for prompt optimizer: reads PO run ID, critic template, and example query scripts.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
@@ -127,15 +128,9 @@ def make_po_bootstrap_calls(
             max_bytes=256,
         ),
         # Read critic template structure from container to show prompt optimizer how its prompts will be used
-        docker_exec_call_mounted(
-            builder,
-            runtime,
-            cmd=[
-                "python",
-                "-c",
-                "from importlib import resources; print(resources.files('adgn.props.critic').joinpath('prompts/critic_system.j2.md').read_text())",
-            ],
-        ),
+        read_package_file_call(builder, runtime, "adgn.props.critic", "prompts/critic_system.j2.md"),
+        # Read example: querying top-performing prompts on validation
+        read_package_file_call(builder, runtime, "adgn.props.examples", "query_top_prompts.py"),
     ]
 
 
@@ -619,11 +614,14 @@ class PromptEvalServer(EnhancedFastMCP):
 
             - VALID: Restricted to prevent overfitting. Ground truth HIDDEN by RLS (true_positives/
               false_positives queries return 0 rows). Individual grader_runs/critiques HIDDEN by RLS.
-              ONLY aggregate metrics visible via valid_full_snapshot_grader_metrics view.
-              Example: SELECT snapshot_slug, recall FROM valid_full_snapshot_grader_metrics;
+              Examples table READABLE (allows querying which validation examples exist for evaluation).
+              Aggregate metrics visible via valid_metrics view.
+              Example: SELECT snapshot_slug, files_hash FROM examples WHERE ... split='valid';
+              Example: SELECT snapshot_slug, recall FROM valid_metrics;
 
-            This ensures validation recall is a trustworthy proxy for test performance. You cannot inspect
-            validation details to reverse-engineer answers.
+            This ensures validation recall is a trustworthy proxy for test performance. You can run
+            evaluations on validation examples (via examples table) but cannot inspect ground truth
+            or reverse-engineer answers.
 
             Use validation aggregates to measure generalization performance across all validation specimens.
             """
@@ -658,6 +656,8 @@ class PromptEvalServer(EnhancedFastMCP):
                     raise ToolError(f"Grader run {grader_run_id} not found in database")
                 if not grader_run.output:
                     raise ToolError(f"Grader run {grader_run_id} has no output")
+                if not isinstance(grader_run.output, DBGraderSuccess):
+                    raise ToolError(f"Grader run {grader_run_id} exceeded max turns (no recall available)")
 
                 # Access recall directly from DB model
                 recall = grader_run.output.recall

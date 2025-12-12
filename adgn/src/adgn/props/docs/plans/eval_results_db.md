@@ -77,7 +77,7 @@ PostgreSQL database for evaluation results with:
 **admin_user** (eval tools):
 - Full read/write access to all tables
 - Used by `CriticRun._write_to_db()`, `GraderRun._write_to_db()`
-- Connection via `PROPS_DB_URL`
+- Connection via admin credentials from environment
 
 **agent_user** (optimization agents):
 - SELECT on all tables, BUT:
@@ -85,7 +85,7 @@ PostgreSQL database for evaluation results with:
   - **Valid split**: Aggregate metrics ONLY via `valid_grader_metrics` view
     - RLS blocks direct queries to `critiques`, `critic_runs`, `grader_runs`, `events` for valid specimens
   - **Test split**: Completely hidden (all data blocked)
-- Connection via `PROPS_AGENT_DB_URL`
+- Connection via agent credentials from environment
 - RLS policies managed by SQLAlchemy metadata (`enable_rls()`)
 
 **RLS policy summary** (enforced by PostgreSQL):

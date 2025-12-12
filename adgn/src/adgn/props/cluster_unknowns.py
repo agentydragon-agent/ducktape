@@ -18,6 +18,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, GraderRun
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 
@@ -63,6 +64,10 @@ def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[Un
     """
     # Skip grader runs where output is None (incomplete/failed runs)
     if db_run.output is None:
+        return []
+
+    # Skip grader runs that exceeded max turns (no novel_critique_issues)
+    if not isinstance(db_run.output, DBGraderSuccess):
         return []
 
     # Use DB models directly (no conversion needed)

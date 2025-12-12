@@ -17,7 +17,7 @@ from sqlalchemy.orm import joinedload
 
 from adgn.props.db import get_session
 from adgn.props.db.datapoints import count_available_examples_for_split
-from adgn.props.db.models import CriticRun, Event, Example, GraderRun, Prompt
+from adgn.props.db.models import CriticRun, Event, Example, GraderRun, Prompt, Snapshot
 from adgn.props.display import SHORT_SHA_LENGTH, short_sha
 from adgn.props.grader.staleness import check_staleness
 from adgn.props.splits import Split
@@ -155,6 +155,7 @@ class SplitStats:
     completed: int = 0  # Unique examples evaluated (with grader runs completed)
     recalls: list[float] = None  # type: ignore[assignment]
     total_available: int = 0  # Total training examples available in this split
+    critic_max_turns: int = 0  # Number of critic runs that exceeded max turns
 
     def __post_init__(self) -> None:
         if self.recalls is None:
@@ -304,6 +305,10 @@ def cmd_stats() -> None:
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
     tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
 
+    # Track critic and grader run statuses
+    critic_status_counts: Counter[str] = Counter()
+    grader_status_counts: Counter[str] = Counter()
+
     with get_session() as session:
         # Compute total available training examples per split using shared logic
         # IMPORTANT: Uses same logic as GEPA's dataset loading:
@@ -392,6 +397,23 @@ def cmd_stats() -> None:
                 stats.splits[split].completed = len(example_recalls_by_split[split])
                 stats.splits[split].recalls = [recall for recall, _ in example_recalls_by_split[split].values()]
 
+            # Count critic runs that exceeded max turns, grouped by split (single query with JOIN)
+            max_turns_by_split = (
+                session.query(Snapshot.split, func.count(CriticRun.id))
+                .select_from(CriticRun)
+                .join(CriticRun.snapshot_obj)
+                .filter(
+                    CriticRun.prompt_sha256 == prompt.prompt_sha256,
+                    CriticRun.output.isnot(None),
+                    CriticRun.output["tag"].astext == "max_turns_exceeded",
+                )
+                .group_by(Snapshot.split)
+                .all()
+            )
+
+            for split, count in max_turns_by_split:
+                stats.splits[split].critic_max_turns = count
+
             prompt_stats_list.append(stats)
 
         # Compute best_count per split: how many samples each prompt is best on (or tied for best)
@@ -450,12 +472,34 @@ def cmd_stats() -> None:
         for stats in prompt_stats_list:
             stats.valid_best_count = prompt_best_counts.get(stats.prompt_sha256, 0)
 
+        # Count critic and grader run statuses using SQL aggregation
+        critic_status_rows = (
+            session.query(CriticRun.output["tag"].astext, func.count(CriticRun.id))
+            .filter(CriticRun.output.isnot(None))
+            .group_by(CriticRun.output["tag"].astext)
+            .all()
+        )
+        for status, count in critic_status_rows:
+            critic_status_counts[status] = count
+
+        grader_status_rows = (
+            session.query(GraderRun.output["tag"].astext, func.count(GraderRun.id))
+            .filter(GraderRun.output.isnot(None))
+            .group_by(GraderRun.output["tag"].astext)
+            .all()
+        )
+        for status, count in grader_status_rows:
+            grader_status_counts[status] = count
+
     # Sort by valid recall (descending), then by created_at (newest first)
     def sort_key(s: PromptStats) -> tuple[float, float]:
         recall = s.splits[Split.VALID].mean_recall
         return (-(recall if recall is not None else -1.0), -s.created_at.timestamp())
 
     prompt_stats_list.sort(key=sort_key)
+
+    # Get total available from any prompt's stats (they're all the same) for header
+    valid_total_for_header = prompt_stats_list[0].splits[Split.VALID].total_available if prompt_stats_list else 0
 
     # Display summary
     console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_stats_list)} prompts)\n")
@@ -465,10 +509,13 @@ def cmd_stats() -> None:
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
     table.add_column("Created", width=19)
     table.add_column("Chars", justify="right", width=6)
-    table.add_column("Valid Recall", justify="right", width=12)
+    valid_recall_header = f"Valid Recall (/{valid_total_for_header})" if valid_total_for_header > 0 else "Valid Recall"
+    table.add_column(valid_recall_header, justify="right", width=12)
+    table.add_column("Valid MaxT", justify="right", width=9)
     table.add_column("Train N", justify="right", width=8)
     table.add_column("Train Recall", justify="right", width=12)
     table.add_column("Train Zero%", justify="right", width=11)
+    table.add_column("Train MaxT", justify="right", width=9)
 
     for stats in prompt_stats_list:
         sha_short = short_sha(stats.prompt_sha256)
@@ -477,28 +524,37 @@ def cmd_stats() -> None:
         # Format length as "11k" for > 1000, otherwise just the number
         length_str = f"{stats.prompt_length // 1000}k" if stats.prompt_length >= 1000 else str(stats.prompt_length)
 
-        # Validation recall: show mean % if fully evaluated, otherwise "N/M"
+        # Validation recall: always show mean %, tint green if fully computed
         valid_stats = stats.splits[Split.VALID]
-        if valid_stats.completed == 0:
+        if valid_stats.completed == 0 or valid_stats.mean_recall is None:
             valid_recall_str = "—"
         elif valid_stats.completed == valid_stats.total_available:
-            # Fully evaluated - show mean recall percentage with color
-            if valid_stats.mean_recall is not None:
-                valid_recall_str = f"[green]{valid_stats.mean_recall:.1f}%[/green]"
-            else:
-                valid_recall_str = "—"
+            # Fully computed - show mean recall percentage with green color
+            valid_recall_str = f"[green]{valid_stats.mean_recall:.1f}%[/green]"
         else:
-            # Partially evaluated - show "N/M"
-            valid_recall_str = f"{valid_stats.completed}/{valid_stats.total_available}"
+            # Partially computed - show mean recall percentage with sample count
+            valid_recall_str = f"{valid_stats.mean_recall:.1f}% @ {valid_stats.completed}"
+
+        # Valid max turns
+        valid_max_turns_str = str(valid_stats.critic_max_turns) if valid_stats.critic_max_turns > 0 else "—"
 
         # Training stats
         train_stats = stats.splits[Split.TRAIN]
         train_n_str = str(train_stats.completed) if train_stats.completed > 0 else "—"
         train_recall_str = f"{train_stats.mean_recall:.1f}%" if train_stats.mean_recall is not None else "—"
         train_zero_str = f"{train_stats.zero_rate:.0f}%" if train_stats.zero_rate is not None else "—"
+        train_max_turns_str = str(train_stats.critic_max_turns) if train_stats.critic_max_turns > 0 else "—"
 
         table.add_row(
-            sha_short, created_str, length_str, valid_recall_str, train_n_str, train_recall_str, train_zero_str
+            sha_short,
+            created_str,
+            length_str,
+            valid_recall_str,
+            valid_max_turns_str,
+            train_n_str,
+            train_recall_str,
+            train_zero_str,
+            train_max_turns_str,
         )
 
     console.print(table)
@@ -531,6 +587,33 @@ def cmd_stats() -> None:
             f"{short_sha(best[0].prompt_sha256)} with {best[1]:.1f}% recall "  # type: ignore[index]
             f"({best[0].splits[Split.VALID].completed} samples)"
         )
+
+    # Display run status statistics
+    console.print("\n[bold cyan]Run Status Statistics[/bold cyan]")
+
+    # Critic runs
+    total_critic = sum(critic_status_counts.values())
+    if total_critic > 0:
+        console.print(f"\n  Critic runs (total: {total_critic}):")
+        for status in sorted(critic_status_counts.keys(), key=lambda x: (x is None, x)):
+            count = critic_status_counts[status]
+            pct = count / total_critic
+            status_label = status if status is not None else "(no tag)"
+            console.print(f"    {status_label}: {count} ({pct:.1%})")
+    else:
+        console.print("  No critic runs found")
+
+    # Grader runs
+    total_grader = sum(grader_status_counts.values())
+    if total_grader > 0:
+        console.print(f"\n  Grader runs (total: {total_grader}):")
+        for status in sorted(grader_status_counts.keys(), key=lambda x: (x is None, x)):
+            count = grader_status_counts[status]
+            pct = count / total_grader
+            status_label = status if status is not None else "(no tag)"
+            console.print(f"    {status_label}: {count} ({pct:.1%})")
+    else:
+        console.print("  No grader runs found")
 
     # Display distributions for each split
     for split in [Split.TRAIN, Split.VALID, Split.TEST]:

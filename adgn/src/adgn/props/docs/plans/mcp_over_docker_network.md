@@ -201,7 +201,6 @@ wiring = properties_docker_spec(
     mount_properties=True,  # Mount property definitions at /props
     ephemeral=True,  # Container removed after use
     workspace_mode="rw",  # Read-write access to workspace
-    db_url=os.getenv("PROPS_DB_URL"),  # Database connection
     network_mode="props_default",  # Shared network with postgres
 )
 
