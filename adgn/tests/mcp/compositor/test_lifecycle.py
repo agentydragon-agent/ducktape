@@ -326,6 +326,6 @@ async def test_compositor_warns_on_leak(make_simple_mcp):
         warning_category = call_args[0][1]
 
         assert "COMPOSITOR LEAK" in warning_msg
-        assert "test" in warning_msg
+        assert "backend" in warning_msg
         assert "was never used as context manager" in warning_msg
         assert warning_category is ResourceWarning

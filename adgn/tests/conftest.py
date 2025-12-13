@@ -326,6 +326,9 @@ def make_pg_client(sqlite_persistence, docker_client, async_docker_client, test_
             result = await client.call_tool(...)
 
     For tests that need access to the compositor or engine, use make_pg_compositor instead.
+
+    TODO: Deduplicate this setup with production (AgentContainer._setup_mcp_infrastructure)
+    and with make_pg_compositor (both fixtures have identical initialization logic).
     """
 
     @asynccontextmanager
@@ -341,6 +344,8 @@ def make_pg_client(sqlite_persistence, docker_client, async_docker_client, test_
             agent_id=test_agent_id,
         )
         async with comp:
+            # Install policy gateway middleware (required for policy enforcement)
+            comp.add_middleware(policy_engine.gateway)
             await _mount_servers(comp, servers)
             async with Client(comp) as sess:
                 yield sess
@@ -375,6 +380,8 @@ def make_pg_compositor(sqlite_persistence, docker_client, async_docker_client, t
             agent_id=test_agent_id,
         )
         async with comp:
+            # Install policy gateway middleware (required for policy enforcement)
+            comp.add_middleware(policy_engine.gateway)
             await _mount_servers(comp, servers)
             yield comp
 

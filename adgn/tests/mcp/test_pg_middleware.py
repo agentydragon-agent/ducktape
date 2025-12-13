@@ -128,16 +128,16 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
         await asyncio.sleep(0.2)
 
         # Read pending calls from the reader server
-        async with Client(comp.approval_engine.reader) as reader:
+        async with Client(comp._approval_engine.reader) as reader:
             pending_data: PendingCallsResponse = await read_text_json_typed(
-                reader, comp.approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
+                reader, comp._approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
             )
             assert len(pending_data.pending) > 0, "Expected at least one pending call"
             call_id = pending_data.pending[0].call_id
             call_ids.append(call_id)
 
         # Approve via admin server
-        async with Client(comp.approval_engine.admin) as admin:
+        async with Client(comp._approval_engine.admin) as admin:
             await admin.call_tool("decide_call", arguments={"call_id": call_id, "decision": CallDecision.APPROVE})
 
         # Wait for the tool call to complete

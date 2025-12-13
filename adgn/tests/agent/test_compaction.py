@@ -102,7 +102,7 @@ async def test_compact_transcript_insufficient_history(compositor_client, mock_o
     assert not result.compacted
 
     # Transcript unchanged
-    assert len(agent._transcript) == 2  # 2 messages
+    assert len(agent._transcript) == 3  # System + User + Assistant messages
 
     # No summarization call
     mock_openai.responses_create.assert_not_called()
