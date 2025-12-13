@@ -16,7 +16,6 @@ from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 import aiodocker
-from fastmcp import FastMCP
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
@@ -31,11 +30,11 @@ if TYPE_CHECKING:
     from adgn.mcp._shared.mounted import Mounted
 
 from adgn.agent.agent import Agent
-from adgn.agent.handler import AbortIf, BaseHandler
-from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.llm.rendering.rich_renderers import render_to_rich
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningSummary
@@ -262,7 +261,7 @@ class GraderCompositor(PropertiesDockerCompositor):
     """
 
     # Mount prefix constant (for test infrastructure only)
-    SUBMIT_PREFIX = "grader_submit"
+    SUBMIT_PREFIX = MCPMountPrefix("grader_submit")
 
     # Mounted server attributes (runtime inherited, grader_submit added here)
     grader_submit: Mounted[GraderSubmitServer]
@@ -406,21 +405,7 @@ async def _run_grader_agent(
         )
 
     async with comp_ctx as handle:
-        # Build servers dict for agent
-        # HTTP mode: only runtime (grader_submit is external)
-        # Inproc mode: runtime + grader_submit
-        if http_mode:
-            servers: dict[str, FastMCP | None] = {handle.runtime.prefix: handle.runtime.server}
-        else:
-            # Type narrowing: handle is GraderCompositor in else branch
-            assert isinstance(handle, GraderCompositor)
-            servers = {
-                handle.runtime.prefix: handle.runtime.server,
-                handle.grader_submit.prefix: handle.grader_submit.server,
-            }
-
-        # Build prompt now that we have access to servers
-        # Tool name differs based on mode:
+        # Build prompt - tool name differs based on mode:
         # - HTTP mode: direct connection to grader server, use bare tool name from server instance
         # - In-proc mode: via compositor, use Mounted.tool_name() helper (adds prefix)
         if http_mode:
@@ -475,15 +460,24 @@ Grade the critique, then submit your result by invoking the grader_submit server
             handlers_list.extend(
                 [
                     AbortIf(should_abort=lambda: grader_state.result is not None),
-                    *build_props_handlers(
+                    *await build_props_handlers(
                         transcript_id=transcript_id,
                         verbose_prefix=(
                             f"[GRADER {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
                             if verbose
                             else None
                         ),
-                        servers=servers,
+                        compositor=handle,
                         max_lines=max_lines,
+                    ),
+                    RedirectOnTextMessageHandler(
+                        reminder_message=(
+                            "You are a grader agent. Your grading has not yet been submitted to the MCP server. "
+                            "Your task is to evaluate the given input critique by comparing it against canonical findings "
+                            "using the provided MCP tools, then submit your grading. "
+                            "This is not an interactive workflow - complete your analysis and submit the grading via the MCP tool. "
+                            "Do not attempt to submit your grade by sending a text message - use the tool."
+                        )
                     ),
                     *extra_handlers,
                     MaxTurnsHandler(max_turns=max_turns),
@@ -497,13 +491,14 @@ Grade the critique, then submit your result by invoking the grader_submit server
                 dynamic_instructions=handle.render_agent_dynamic_instructions,
                 parallel_tool_calls=True,
                 reasoning_summary=ReasoningSummary.detailed,
-                tool_policy=RequireAnyTool(),
+                tool_policy=AllowAnyToolOrTextMessage(),
             )
             agent.insert_messages([SystemMessage.text(system), UserMessage.text(prompt)])
             try:
                 await agent.run()
             except MaxTurnsExceededError:
                 # Agent ran out of turns - create max_turns_exceeded output
+                # NOTE: max_turns_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
                 logger.warning(
                     f"Grader hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
                     f"transcript_id={short_uuid(transcript_id)}"

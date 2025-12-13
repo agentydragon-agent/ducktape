@@ -10,10 +10,13 @@ between test execution and template injection.
 
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID
 
+from pydantic import BaseModel
 from sqlalchemy import Select, bindparam, case, cast, func, literal, select, text, type_coerce, union_all
 from sqlalchemy.dialects import postgresql
+from sqlalchemy.orm import Session
 
 from adgn.props.db.models import (
     CriticRun,
@@ -29,6 +32,28 @@ from adgn.props.db.models import (
     TruePositive,
 )
 from adgn.props.ids import SnapshotSlug
+
+
+class SplitPerformanceStats(BaseModel):
+    """Performance statistics for a prompt on a single split."""
+
+    mean_recall: float
+    lcb: float | None  # Lower confidence bound (NULL if n < 2)
+    success_count: int
+    total_count: int
+    zero_pct: float
+    stuck_pct: float
+    context_pct: float
+
+
+class PromptPerformanceRow(BaseModel):
+    """Performance statistics for a single prompt across splits."""
+
+    prompt_sha256: str
+    created_at: datetime
+    prompt_length: int
+    valid: SplitPerformanceStats | None
+    train: SplitPerformanceStats | None
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -740,3 +765,155 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
         .order_by(func.count().desc())
         .limit(limit)
     )
+
+
+# ============================================================================
+# Prompt performance queries
+# ============================================================================
+
+
+def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[PromptPerformanceRow]:
+    """Query comprehensive prompt performance statistics across train/valid splits.
+
+    For each prompt, computes:
+    - Mean recall (over all runs, failures count as 0.0)
+    - Success/total counts (successful runs vs all runs)
+    - Zero%: percentage of successful runs with 0% recall
+    - Stuck%: percentage of all runs that exceeded max_turns
+    - Context%: percentage of all runs that exceeded context_length
+
+    IMPORTANT: max_turns_exceeded/context_exceeded are taken as recall=0.0 in mean calculation.
+    Example: 4 successful (25% recall each) + 1 stuck = 20% mean recall.
+    See lines 803-806: CASE WHEN status='success' THEN recall ELSE 0.0 END
+
+    Args:
+        session: SQLAlchemy session
+        limit: Maximum number of prompts to return (default 50, most recent)
+
+    Returns:
+        List of PromptPerformanceRow models with split statistics
+    """
+    # Use text() for the complex CTE-based query
+    # This matches the query from query_train_vs_valid_performance.py
+    query_text = text("""
+        WITH latest_grader_per_example AS (
+            -- Get most recent grader run per (prompt, example, split)
+            SELECT DISTINCT ON (cr.prompt_sha256, cr.snapshot_slug, cr.files_hash)
+                cr.prompt_sha256,
+                cr.snapshot_slug,
+                cr.files_hash,
+                s.split,
+                gr.output->>'tag' as status,
+                CASE
+                    WHEN gr.output->>'tag' = 'success' THEN (gr.output->'recall')::float
+                    ELSE 0.0
+                END as recall,
+                gr.created_at
+            FROM grader_runs gr
+            JOIN critiques c ON gr.critique_id = c.id
+            JOIN critic_runs cr ON cr.critique_id = c.id
+            JOIN examples e ON e.snapshot_slug = cr.snapshot_slug AND e.files_hash = cr.files_hash
+            JOIN snapshots s ON s.slug = cr.snapshot_slug
+            WHERE s.split IN ('train', 'valid')
+            ORDER BY cr.prompt_sha256, cr.snapshot_slug, cr.files_hash, gr.created_at DESC
+        ),
+        split_stats AS (
+            -- Aggregate statistics per (prompt, split)
+            SELECT
+                prompt_sha256,
+                split,
+                AVG(recall) * 100 as mean_recall,
+                -- Lower confidence bound: mean - 1.0 * (stddev / sqrt(n))
+                -- NULL if n < 2 (can't compute stddev with single sample)
+                CASE
+                    WHEN COUNT(*) >= 2 THEN
+                        AVG(recall) * 100 - 1.0 * (STDDEV_SAMP(recall) * 100 / SQRT(COUNT(*)))
+                    ELSE NULL
+                END as recall_lcb,
+                COUNT(*) as total_count,
+                COUNT(CASE WHEN status = 'success' THEN 1 END) as success_count,
+                SUM(CASE WHEN status = 'success' AND recall = 0.0 THEN 1 ELSE 0 END)::float
+                    / NULLIF(COUNT(CASE WHEN status = 'success' THEN 1 END), 0) * 100 as zero_pct,
+                SUM(CASE WHEN status = 'max_turns_exceeded' THEN 1 ELSE 0 END)::float / COUNT(*) * 100 as stuck_pct,
+                SUM(CASE WHEN status = 'context_length_exceeded' THEN 1 ELSE 0 END)::float / COUNT(*) * 100 as context_pct
+            FROM latest_grader_per_example
+            GROUP BY prompt_sha256, split
+        ),
+        prompt_info AS (
+            -- Get prompt metadata
+            SELECT
+                prompt_sha256,
+                created_at,
+                LENGTH(prompt_text) as prompt_length
+            FROM prompts
+        )
+        SELECT
+            p.prompt_sha256,
+            p.created_at,
+            p.prompt_length,
+            v.mean_recall as valid_recall,
+            v.recall_lcb as valid_lcb,
+            v.success_count as valid_success,
+            v.total_count as valid_total,
+            v.zero_pct as valid_zero_pct,
+            v.stuck_pct as valid_stuck_pct,
+            v.context_pct as valid_context_pct,
+            t.mean_recall as train_recall,
+            t.recall_lcb as train_lcb,
+            t.success_count as train_success,
+            t.total_count as train_total,
+            t.zero_pct as train_zero_pct,
+            t.stuck_pct as train_stuck_pct,
+            t.context_pct as train_context_pct
+        FROM prompt_info p
+        LEFT JOIN split_stats v ON v.prompt_sha256 = p.prompt_sha256 AND v.split = 'valid'
+        LEFT JOIN split_stats t ON t.prompt_sha256 = p.prompt_sha256 AND t.split = 'train'
+        ORDER BY
+            v.recall_lcb DESC NULLS LAST,  -- Primary: valid LCB (descending)
+            t.recall_lcb DESC NULLS LAST,  -- Secondary: train LCB (descending)
+            p.created_at DESC              -- Tertiary: creation time (tiebreaker)
+        LIMIT :limit
+    """)
+
+    results = session.execute(query_text, {"limit": limit}).fetchall()
+
+    # Convert to Pydantic models
+    rows = []
+    for row in results:
+        # Build valid stats if data exists
+        valid_stats = None
+        if row.valid_recall is not None:
+            valid_stats = SplitPerformanceStats(
+                mean_recall=row.valid_recall,
+                lcb=row.valid_lcb,  # NULL if n < 2
+                success_count=row.valid_success,
+                total_count=row.valid_total,
+                zero_pct=row.valid_zero_pct or 0.0,
+                stuck_pct=row.valid_stuck_pct or 0.0,
+                context_pct=row.valid_context_pct or 0.0,
+            )
+
+        # Build train stats if data exists
+        train_stats = None
+        if row.train_recall is not None:
+            train_stats = SplitPerformanceStats(
+                mean_recall=row.train_recall,
+                lcb=row.train_lcb,  # NULL if n < 2
+                success_count=row.train_success,
+                total_count=row.train_total,
+                zero_pct=row.train_zero_pct or 0.0,
+                stuck_pct=row.train_stuck_pct or 0.0,
+                context_pct=row.train_context_pct or 0.0,
+            )
+
+        rows.append(
+            PromptPerformanceRow(
+                prompt_sha256=row.prompt_sha256,
+                created_at=row.created_at,
+                prompt_length=row.prompt_length,
+                valid=valid_stats,
+                train=train_stats,
+            )
+        )
+
+    return rows

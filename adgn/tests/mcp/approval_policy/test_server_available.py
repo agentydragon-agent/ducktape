@@ -7,6 +7,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.model import UserMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage
@@ -29,8 +30,8 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
         tools = await mcp_client.list_tools()
         tool_names = {t.name for t in tools}
         expected = {
-            build_mcp_function("policy_proposer", "create_proposal"),
-            build_mcp_function("policy_proposer", "withdraw_proposal"),
+            build_mcp_function(MCPMountPrefix("policy_proposer"), "create_proposal"),
+            build_mcp_function(MCPMountPrefix("policy_proposer"), "withdraw_proposal"),
         }
         assert expected <= tool_names
 

@@ -4,6 +4,7 @@ from importlib import resources
 
 from mcp import types
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.rendering import render_compositor_instructions
 from adgn.mcp.snapshots import RunningServerEntry
 
@@ -28,7 +29,7 @@ def test_render_single_running_with_instructions() -> None:
         instructions="Hello world",
     )
     state = RunningServerEntry(initialize=init, tools=[])
-    out = render_compositor_instructions({"docker_exec": state})
+    out = render_compositor_instructions({MCPMountPrefix("docker_exec"): state})
     assert "The following MCP servers" in out
     assert "# docker_exec" in out
     assert "## Instructions" in out

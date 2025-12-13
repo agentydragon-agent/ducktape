@@ -9,6 +9,8 @@ from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 from mcp import types as mcp_types
 
+from adgn.agent.events import ToolCall, ToolCallOutput
+
 # ------------------------
 # Hamcrest matcher helpers
 # ------------------------
@@ -25,8 +27,11 @@ def is_ui_message(content: str | None = None, mime: str | None = None):
 
 
 def has_function_call_output_structured(**kvs):
-    """Matcher: function_call_output with structured_content containing kvs."""
-    return has_entries(kind="function_call_output", result=has_entries(structured_content=has_entries(**kvs)))
+    """Matcher: function_call_output with structured_content containing kvs.
+
+    Expects Pydantic models (ToolCallOutput), not dicts.
+    """
+    return has_properties(type="function_call_output", result=has_properties(structuredContent=has_entries(**kvs)))
 
 
 def assert_payloads_have(payloads: list[object], *matchers):
@@ -113,12 +118,21 @@ def is_function_call_output_end_turn(call_id: str | None = None):
     return is_function_call_output(call_id=call_id, kind="EndTurn")
 
 
-def assert_function_call_output_structured(records: list[dict], **kvs: Any) -> None:
+def assert_function_call_output_structured(
+    records: list[ToolCall | ToolCallOutput], structured_content_matcher: Any
+) -> None:
     """Assert that a RecordingHandler-style records list contains a function_call_output
-    whose structuredContent matches the provided kv pairs.
+    whose structuredContent matches the provided matcher.
+
+    Expects Pydantic models (ToolCallOutput), not dicts.
+
+    Example:
+        assert_function_call_output_structured(
+            recording_handler.records,
+            has_entries(echo="hello")
+        )
     """
     # Break down nested matchers with explicit Any types for PyHamcrest compatibility
-    structured_content_matcher: Any = has_entries(**kvs)
-    result_matcher: Any = has_entries(structured_content=structured_content_matcher)
-    entry_matcher: Any = has_entries(kind="function_call_output", result=result_matcher)
+    result_matcher: Any = has_properties(structuredContent=structured_content_matcher)
+    entry_matcher: Any = has_properties(type="function_call_output", result=result_matcher)
     assert_that(records, has_item(entry_matcher))

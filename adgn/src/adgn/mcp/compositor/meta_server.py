@@ -4,6 +4,7 @@ from typing import cast
 
 from fastmcp.resources import FunctionResource, ResourceTemplate
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.snapshots import ServerEntry
@@ -64,8 +65,9 @@ class CompositorMetaServer(EnhancedFastMCP):
         )
 
         async def server_state(server: str) -> ServerEntry:
+            prefix = MCPMountPrefix(server)
             entries = await self._compositor.server_entries()
-            if (entry := entries.get(server)) is None:
+            if (entry := entries.get(prefix)) is None:
                 raise KeyError(server)
             return entry
 

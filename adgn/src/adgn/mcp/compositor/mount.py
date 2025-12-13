@@ -15,6 +15,8 @@ from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
 from fastmcp.server.proxy import FastMCPProxy
 
+from adgn.mcp._shared.types import MCPMountPrefix
+
 logger = logging.getLogger(__name__)
 
 
@@ -74,7 +76,7 @@ class Mount:
     """A mounted MCP server with encapsulated lifecycle.
 
     Usage:
-        mount = Mount(name="runtime", pinned=False)
+        mount = Mount(prefix="runtime", pinned=False)
         await mount.setup_inproc(server)  # Exception-safe
 
         if mount.is_active:
@@ -83,9 +85,9 @@ class Mount:
         await mount.cleanup()  # Idempotent, exception-safe
     """
 
-    def __init__(self, name: str, *, pinned: bool = False, spec: MCPServerTypes | None = None):
+    def __init__(self, prefix: MCPMountPrefix, *, pinned: bool = False, spec: MCPServerTypes | None = None):
         """Create mount. Does not initialize - call setup_*() to initialize."""
-        self._name = name
+        self._prefix = prefix
         self._pinned = pinned
         self._spec = spec
         self._state_data: _MountStateData = _MountPending()
@@ -94,8 +96,8 @@ class Mount:
     # Read-only properties
 
     @property
-    def name(self) -> str:
-        return self._name
+    def prefix(self) -> MCPMountPrefix:
+        return self._prefix
 
     @property
     def pinned(self) -> bool:
@@ -139,19 +141,21 @@ class Mount:
     def proxy(self) -> FastMCPProxy:
         """Get proxy. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._name}' not active (state: {self._state_data.kind.name})")
+            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
         return self._state_data.proxy
 
     @property
     def child_client(self) -> Client:
         """Get child client. Raises if mount not active."""
         if not isinstance(self._state_data, _MountActive):
-            raise RuntimeError(f"Mount '{self._name}' not active (state: {self._state_data.kind.name})")
+            raise RuntimeError(f"Mount '{self._prefix}' not active (state: {self._state_data.kind.name})")
         return self._state_data.child_client
 
     # Setup methods
 
-    async def setup_inproc(self, server: FastMCP, child_handler_factory: Callable[[str], object] | None = None) -> None:
+    async def setup_inproc(
+        self, server: FastMCP, child_handler_factory: Callable[[MCPMountPrefix], object] | None = None
+    ) -> None:
         """Setup in-process server mount. Exception-safe.
 
         On success: mount.is_active == True
@@ -166,7 +170,7 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._name}' already setup")
+            raise RuntimeError(f"Mount '{self._prefix}' already setup")
 
         stack = AsyncExitStack()
         try:
@@ -174,7 +178,7 @@ class Mount:
             self._server = server
 
             # Create client with optional message handler
-            handler = child_handler_factory(self._name) if child_handler_factory else None
+            handler = child_handler_factory(self._prefix) if child_handler_factory else None
             child_client = Client(server, message_handler=handler)
             await stack.enter_async_context(child_client)
 
@@ -188,7 +192,7 @@ class Mount:
                 _ = child_client.initialize_result
                 self._state_data = _MountActive(stack=stack, proxy=proxy, child_client=child_client)
             except Exception as e:
-                logger.warning(f"Failed to get initialize result for '{self._name}': {e}")
+                logger.warning(f"Failed to get initialize result for '{self._prefix}': {e}")
                 self._state_data = _MountFailed(exception=e, stack=stack)
                 # Don't raise - mount is registered but failed
 
@@ -202,7 +206,7 @@ class Mount:
         self,
         spec: MCPServerTypes,
         transport_factory: Callable[[MCPServerTypes], ClientTransport],
-        child_handler_factory: Callable[[str], object] | None = None,
+        child_handler_factory: Callable[[MCPMountPrefix], object] | None = None,
     ) -> None:
         """Setup external server mount. Exception-safe.
 
@@ -219,13 +223,13 @@ class Mount:
             Exception: If setup fails (after cleanup)
         """
         if not isinstance(self._state_data, _MountPending):
-            raise RuntimeError(f"Mount '{self._name}' already setup")
+            raise RuntimeError(f"Mount '{self._prefix}' already setup")
 
         stack = AsyncExitStack()
         try:
             # Create transport and client
             transport = transport_factory(spec)
-            handler = child_handler_factory(self._name) if child_handler_factory else None
+            handler = child_handler_factory(self._prefix) if child_handler_factory else None
             base_client = Client(transport, message_handler=handler, raise_on_error=True)
             await stack.enter_async_context(base_client)
 
@@ -239,7 +243,7 @@ class Mount:
                 _ = base_client.initialize_result
                 self._state_data = _MountActive(stack=stack, proxy=proxy, child_client=base_client)
             except Exception as e:
-                logger.warning(f"Failed to get initialize result for '{self._name}': {e}")
+                logger.warning(f"Failed to get initialize result for '{self._prefix}': {e}")
                 self._state_data = _MountFailed(exception=e, stack=stack)
                 # Don't raise - mount is registered but failed
 
@@ -262,7 +266,7 @@ class Mount:
         # Defensive check: warn if already closing
         if isinstance(self._state_data, _MountPending):
             logger.warning(
-                f"Cleaning up mount '{self._name}' that was never initialized "
+                f"Cleaning up mount '{self._prefix}' that was never initialized "
                 "(state: PENDING). This is safe but unexpected."
             )
 
@@ -275,6 +279,6 @@ class Mount:
             try:
                 await stack.aclose()
             except Exception as e:
-                logger.exception(f"Error during cleanup for '{self._name}'", exc_info=e)
+                logger.exception(f"Error during cleanup for '{self._prefix}'", exc_info=e)
 
         self._state_data = _MountClosed()

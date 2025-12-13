@@ -22,9 +22,9 @@ GEPA receives rich feedback for each evaluation, including successful runs, max_
 
 **1. Execution Traces** (from `events` table):
 ```
-CALL docker__run_command({"command": "ruff check src/"})
+CALL docker_run_command({"command": "ruff check src/"})
   → src/foo.py:42: E501 Line too long...
-CALL critic_submit__upsert_issue({"issue_id": "line-too-long", ...})
+CALL critic_submit_upsert_issue({"issue_id": "line-too-long", ...})
 ```
 
 **2a. Grader Analysis** (when critic succeeded - full `GradeSubmitInput`):

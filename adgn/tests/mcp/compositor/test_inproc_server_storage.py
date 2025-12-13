@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from fastmcp.server import FastMCP
 
+from adgn.mcp._shared.types import MCPMountPrefix
+
 
 async def test_mount_stores_inproc_server(compositor):
     """Test that Mount stores the server instance when setup_inproc() is called."""
@@ -41,9 +43,10 @@ async def test_mount_inproc_server_none_for_external():
     # This test assumes we have a way to create an external mount
     # For now, we'll just verify the behavior with a freshly created mount
     # before setup (which has _server = None)
+    from adgn.mcp._shared.types import MCPMountPrefix
     from adgn.mcp.compositor.mount import Mount
 
-    mount = Mount(name="external", pinned=False, spec=None)
+    mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec=None)
     assert mount.inproc_server is None
 
 
@@ -159,16 +162,17 @@ async def test_inproc_server_available_before_proxy_use(compositor):
 
 async def test_compositor_get_inproc_server_after_unmount(compositor):
     """Test that get_inproc_server returns None after unmount."""
+    temp_prefix = MCPMountPrefix("temp")
     server = FastMCP("temp")
 
-    await compositor.mount_inproc("temp", server)
+    await compositor.mount_inproc(temp_prefix, server)
 
     # Initially available
-    assert compositor.get_inproc_server("temp") is server
+    assert compositor.get_inproc_server(temp_prefix) is server
 
     # After unmount, should return None
-    await compositor.unmount_server("temp")
-    assert compositor.get_inproc_server("temp") is None
+    await compositor.unmount_server(temp_prefix)
+    assert compositor.get_inproc_server(temp_prefix) is None
 
 
 async def test_pinned_inproc_server_persists_after_close(compositor):
@@ -204,3 +208,63 @@ async def test_multiple_inproc_servers_independent(compositor):
     assert server1 is not server2
     assert server2 is not server3
     assert server1 is not server3
+
+
+async def test_compositor_get_inproc_servers_returns_all(compositor):
+    """Test that get_inproc_servers() returns all mounted in-process servers."""
+    server1 = FastMCP("server1")
+    server2 = FastMCP("server2")
+    server3 = FastMCP("server3")
+
+    await compositor.mount_inproc("s1", server1)
+    await compositor.mount_inproc("s2", server2)
+    await compositor.mount_inproc("s3", server3)
+
+    servers = await compositor.get_inproc_servers()
+
+    # Should include our three servers plus infrastructure servers (resources, compositor_meta)
+    assert len(servers) >= 3
+    assert servers[MCPMountPrefix("s1")] is server1
+    assert servers[MCPMountPrefix("s2")] is server2
+    assert servers[MCPMountPrefix("s3")] is server3
+    # Infrastructure servers are also present
+    assert MCPMountPrefix("resources") in servers
+    assert MCPMountPrefix("compositor_meta") in servers
+
+
+async def test_compositor_get_inproc_servers_empty(compositor):
+    """Test that get_inproc_servers() returns infrastructure servers (not empty)."""
+    servers = await compositor.get_inproc_servers()
+    # Compositor always has infrastructure servers (resources, compositor_meta)
+    assert MCPMountPrefix("resources") in servers
+    assert MCPMountPrefix("compositor_meta") in servers
+    # At minimum these two servers
+    assert len(servers) >= 2
+
+
+async def test_compositor_get_inproc_servers_excludes_external():
+    """Test that get_inproc_servers() excludes external (non-inproc) mounts."""
+    from adgn.mcp._shared.types import MCPMountPrefix
+    from adgn.mcp.compositor.mount import Mount
+    from adgn.mcp.compositor.server import Compositor
+
+    async with Compositor() as comp:
+        # Mount one in-process server
+        inproc_server = FastMCP("inproc")
+        await comp.mount_inproc("inproc", inproc_server)
+
+        # Simulate an external mount by creating a mount with spec
+        # (Real external mounts would go through mount_server, but that requires actual servers)
+        external_mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec={"dummy": "spec"})  # type: ignore[arg-type]
+        async with comp._mount_lock:
+            comp._mounts[MCPMountPrefix("external")] = external_mount
+
+        servers = await comp.get_inproc_servers()
+
+        # Should include in-process server plus infrastructure servers, but NOT external mount
+        assert MCPMountPrefix("inproc") in servers
+        assert servers[MCPMountPrefix("inproc")] is inproc_server
+        assert MCPMountPrefix("external") not in servers
+        # Infrastructure servers should be present
+        assert MCPMountPrefix("resources") in servers
+        assert MCPMountPrefix("compositor_meta") in servers

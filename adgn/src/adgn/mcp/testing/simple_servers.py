@@ -14,11 +14,12 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)
-ECHO_MOUNT_PREFIX = "echo"
+ECHO_MOUNT_PREFIX = MCPMountPrefix("echo")
 ECHO_TOOL_NAME = "echo"
 
 

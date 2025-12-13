@@ -21,17 +21,17 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 ### What the agent already sees automatically
 - The Agent prepends an MCP "wiring banner" to the system message before sampling (see `src/adgn/agent/agent.py`: `_build_effective_instructions`).
 - The banner is computed from a live MCP snapshot: running server names, their tool names/descriptions, and a short list of resources (URIs) per server.
-- For the Docker exec server, the `container.info` resource includes image tag/ID, image build history (e.g., `pip install ... ruff==…`), mounted volumes (e.g., `/workspace`, `/props`), working directory, and network mode.
+- For the Docker exec server, the `container.info` resource includes image tag/ID, image build history (e.g., `pip install ... ruff==…`), mounted volumes (e.g., `/workspace`), working directory, and network mode.
 - The banner lists only a few resources per server for readability; the agent can call `resources/list`/`resources/read` to enumerate/read more.
 
 ### Implications for runbooks/prompts (do vs don’t)
 - Do:
   - Describe the analysis strategy and sequencing (what to check, in what order, why).
   - Provide concrete command examples (e.g., run Ruff/Mypy/Vulture/custom detectors) and define the required final outputs (inline JSON/markdown with truncation rules).
-- Don’t (redundant due to wiring/banner):
+- Don't (redundant due to wiring/banner):
   - Re‑enumerate MCP servers, tool schemas, or resource URIs shown in the banner.
   - Restate tool versions/pins or platform details; the agent can read them from `container.info`.
-  - Repeat wiring details like server names, volumes (`/workspace`, `/props`), or cache/temp env; these are implied by the container wiring.
+  - Repeat wiring details like server names, volumes (`/workspace`), or cache/temp env; these are implied by the container wiring.
   - Restate long acceptance criteria verbatim; link to property docs or summarize briefly.
 
 ## Tooling Specifics (Current Image)

@@ -9,7 +9,7 @@ from adgn.props.critic.persistence import critic_submit_payload_to_db
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import Critique, CriticRun, Example, GraderRun, Prompt, Snapshot
-from adgn.props.ids import SnapshotSlug
+from adgn.props.db.snapshots import DBCriticSuccess
 from tests.props.conftest import make_grader_output
 
 
@@ -56,7 +56,7 @@ def test_query_top_prompts_with_synced_data(synced_test_db, capsys):
                 critique_id=critique.id,
                 files=example.files,
                 files_hash=example.files_hash,
-                output={},
+                output=DBCriticSuccess(result=payload),
             )
             session.add(critic_run)
             session.flush()
@@ -89,7 +89,7 @@ def test_query_top_prompts_with_synced_data(synced_test_db, capsys):
             critique_id=critique_bad.id,
             files=valid_examples[0].files,
             files_hash=valid_examples[0].files_hash,
-            output={},
+            output=DBCriticSuccess(result=payload_bad),
         )
         session.add(critic_run_bad)
         session.flush()

@@ -6,23 +6,24 @@ from jinja2 import Environment
 from pydantic import BaseModel
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.snapshots import ServerEntry
 
 
-def render_compositor_instructions(states: dict[str, ServerEntry]) -> str:
+def render_compositor_instructions(states: dict[MCPMountPrefix, ServerEntry]) -> str:
     """Render grouped MCP server instructions/capabilities using a Jinja2 template.
 
     Passes raw typed states directly to the template; filtering/sorting is done in Jinja.
     Returns an empty string if there are no running servers with content.
 
     Args:
-        states: Dictionary of server names to ServerEntry objects
+        states: Dictionary of server prefixes to ServerEntry objects
     """
     if not states:
         return ""
 
     # Compute example tool using canonical naming helper with placeholder names
-    example_tool = build_mcp_function("server_name", "tool_name")
+    example_tool = build_mcp_function(MCPMountPrefix("server_name"), "tool_name")
 
     # Load template from package resources and render
     template_name = "compositor_instructions.md.j2"

@@ -6,6 +6,7 @@ from fastmcp.mcp_config import StdioMCPServer
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.exec.direct import DirectExecArgs, DirectExecServer
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.exec.models import BaseExecResult, Exited
@@ -54,7 +55,7 @@ async def test_direct_inprocess_server(make_compositor) -> None:
     async with make_compositor({"local": srv}) as (sess, _comp):
         tools = await sess.list_tools()
         # Tools are composed under the compositor with namespaced tool names
-        tool_name = build_mcp_function("local", "exec")
+        tool_name = build_mcp_function(MCPMountPrefix("local"), "exec")
         assert any(t.name == tool_name for t in tools)
         # Sanity-call exec via the namespaced tool using the typed helper
         exec_stub = ToolStub(sess, tool_name, BaseExecResult)

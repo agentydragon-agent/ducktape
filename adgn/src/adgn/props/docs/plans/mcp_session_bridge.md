@@ -4,7 +4,7 @@
 
 The MCP Session Bridge is a transparent forwarder that maintains a single persistent MCP session over HTTP SSE while allowing multiple ephemeral processes to connect via Unix domain socket.
 
-**Problem it solves:** Agent code runs as ephemeral `docker__exec` subprocesses that can't maintain state between invocations. But we want:
+**Problem it solves:** Agent code runs as ephemeral `docker_exec` subprocesses that can't maintain state between invocations. But we want:
 - One persistent MCP session to the upstream server (avoiding re-initialization overhead)
 - Background notification accumulation (while no subprocess is connected)
 - Multiple sequential subprocess connections sharing the same session
@@ -41,7 +41,7 @@ Container:
 - **First client initializes:** First subprocess sends the `initialize` request with desired capabilities
 - **Notification buffering:** When no client connected, incoming notifications are queued
 - **Buffer flush on connect:** Client gets all buffered notifications immediately on connection
-- **Sequential access:** Only one subprocess connected at a time (matches `docker__exec` pattern)
+- **Sequential access:** Only one subprocess connected at a time (matches `docker_exec` pattern)
 - **Transparent forwarding:** Upstream server sees a normal MCP client, subprocess sees a normal MCP server
 
 ## Protocol Details: Streamable HTTP Session Flow
@@ -580,7 +580,7 @@ async def agent_workflow():
 ## When to Use This Pattern
 
 **Use the bridge when:**
-- Agent runs as ephemeral subprocesses (e.g., `docker__exec`)
+- Agent runs as ephemeral subprocesses (e.g., `docker_exec`)
 - Need background notification accumulation
 - Want to avoid re-initialization overhead
 - Want to maintain subscriptions across subprocess invocations

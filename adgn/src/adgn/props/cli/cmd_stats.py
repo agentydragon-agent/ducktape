@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 import statistics
 
 import plotext as plt  # type: ignore[import-untyped]
@@ -13,15 +13,110 @@ from rich import box
 from rich.console import Console
 from rich.table import Table
 from sqlalchemy import func, select
-from sqlalchemy.orm import joinedload
 
 from adgn.props.db import get_session
 from adgn.props.db.datapoints import count_available_examples_for_split
-from adgn.props.db.models import CriticRun, Event, Example, GraderRun, Prompt, Snapshot
+from adgn.props.db.models import CriticRun, Event, Example, GraderRun
+from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats
 from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.display import SHORT_SHA_LENGTH, short_sha
 from adgn.props.grader.staleness import check_staleness
 from adgn.props.splits import Split
+
+# Stats table column legend (shared between CLI and examples)
+STATS_TABLE_LEGEND = """
+[bold]Column Legend:[/bold]
+  [cyan]Recall%[/cyan]: Mean recall over all runs (failures count as 0.0)
+  [cyan]LCB[/cyan]: Lower confidence bound (mean - 1σ/√n), — if n < 2
+    - Penalizes high variance, useful for selecting reliable prompts
+    - ~84% confidence the true mean is above this value
+  [cyan]N / {total}[/cyan]: Number of examples evaluated out of total available
+  [cyan]Z%[/cyan]: Percentage of successful runs with 0% recall
+  [cyan]S%[/cyan]: Percentage of all runs that exceeded max turns (stuck)
+  [cyan]C%[/cyan]: Percentage of all runs that exceeded context length
+
+[bold]Notes:[/bold]
+  - Results sorted by valid LCB (descending), then train LCB, then age
+  - Success count is implicit from Z%, S%, C% (they sum to explain N)
+  - Green recall means fully evaluated (N = total available)
+  - Many prompts have no valid data (— in Valid columns)
+"""
+
+
+def format_age(dt: datetime) -> str:
+    """Format datetime as relative age string (e.g., '2d', '3h', '15m').
+
+    Args:
+        dt: Datetime to format (assumed UTC or naive)
+
+    Returns:
+        Age string like '2y', '3mo', '5d', '12h', '45m', or 'now'
+    """
+    now = datetime.now(UTC) if dt.tzinfo else datetime.now()
+    delta = now - dt
+
+    if delta.days >= 365:
+        return f"{delta.days // 365}y"
+    if delta.days >= 30:
+        return f"{delta.days // 30}mo"
+    if delta.days > 0:
+        return f"{delta.days}d"
+    if delta.seconds >= 3600:
+        return f"{delta.seconds // 3600}h"
+    if delta.seconds >= 60:
+        return f"{delta.seconds // 60}m"
+    return "now"
+
+
+@dataclass
+class FormattedSplitStats:
+    """Pre-formatted display strings for a single split's statistics.
+
+    Field order defines canonical column ordering for display:
+    recall, lcb, n, zero, stuck, context
+    """
+
+    recall: str
+    lcb: str
+    n: str
+    zero: str
+    stuck: str
+    context: str
+
+    def as_row_fields(self) -> tuple[str, str, str, str, str, str]:
+        """Return fields in canonical column order for table display."""
+        return (self.recall, self.lcb, self.n, self.zero, self.stuck, self.context)
+
+
+def format_split_stats(stats: SplitPerformanceStats | None, fully_computed: bool = False) -> FormattedSplitStats:
+    """Format split statistics for display.
+
+    Args:
+        stats: Split performance statistics or None
+        fully_computed: If True, apply green color to recall
+
+    Returns:
+        FormattedSplitStats with display-ready strings
+
+    Note:
+        - N shows total_count (how many examples evaluated), not success/total
+        - Success count is implicit from Z%, S%, C% (they sum to explain the N)
+    """
+    if stats is None:
+        return FormattedSplitStats("—", "—", "—", "—", "—", "—")
+
+    recall_str = f"{stats.mean_recall:.0f}%"
+    if fully_computed:
+        recall_str = f"[green]{recall_str}[/green]"
+
+    return FormattedSplitStats(
+        recall=recall_str,
+        lcb=f"{stats.lcb:.0f}%" if stats.lcb is not None else "—",
+        n=str(stats.total_count),  # Just the count of examples evaluated
+        zero=f"{stats.zero_pct:.0f}%",
+        stuck=f"{stats.stuck_pct:.0f}%",
+        context=f"{stats.context_pct:.0f}%",
+    )
 
 
 def _generate_buckets(
@@ -300,8 +395,32 @@ def _display_split_analysis(
         console.print(coverage_table)
 
 
+def _add_split_columns(table: Table, split_name: str, color: str, total_examples: int) -> None:
+    """Add columns for a single split (Valid or Train) with consistent formatting.
+
+    Args:
+        table: Rich Table to add columns to
+        split_name: Name of split (e.g., "Valid", "Train")
+        color: Rich color name (e.g., "cyan", "yellow")
+        total_examples: Total available examples for this split
+    """
+    # Column order: Recall, LCB, N/{total}, Z%, S%, C%
+    table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
+    table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)
+    table.add_column(f"[{color}]N/{total_examples}[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]Z%[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]S%[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]C%[/{color}]", justify="right", width=4)
+
+
 def cmd_stats() -> None:
-    """Display prompt statistics: count, runs per split, recall metrics."""
+    """Display prompt statistics: count, runs per split, recall metrics.
+
+    TODO: Add multi-level column headers (valid/train grouping) when Rich supports it.
+    Currently Rich doesn't support column spanning (Issue #1529, #164), so we use
+    prefixed column names. Workarounds: color-coded headers, visual separators, or
+    wait for upstream support.
+    """
     console = Console()
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
     tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
@@ -320,103 +439,7 @@ def cmd_stats() -> None:
             for split in [Split.TRAIN, Split.VALID, Split.TEST]
         }
 
-        # Query all prompts with their critic runs
-        prompts_query = (
-            select(Prompt)
-            .options(joinedload(Prompt.critic_runs).joinedload(CriticRun.snapshot_obj))
-            .order_by(Prompt.created_at)
-        )
-        prompts = session.execute(prompts_query).unique().scalars().all()
-
-        if not prompts:
-            console.print("[yellow]No prompts found in database.[/yellow]")
-            return
-
-        # Build stats for each prompt
-        prompt_stats_list: list[PromptStats] = []
-
-        for prompt in prompts:
-            stats = PromptStats(
-                prompt_sha256=prompt.prompt_sha256,
-                prompt_length=len(prompt.prompt_text),
-                created_at=prompt.created_at,
-                splits={
-                    Split.TRAIN: SplitStats(total_available=total_samples_by_split[Split.TRAIN]),
-                    Split.VALID: SplitStats(total_available=total_samples_by_split[Split.VALID]),
-                    Split.TEST: SplitStats(total_available=total_samples_by_split[Split.TEST]),
-                },
-            )
-
-            # Query grader runs for this prompt's critiques, grouped by (snapshot_slug, files_hash)
-            # This gives us one recall per unique example (training/validation/test example)
-            # IMPORTANT: Join with Example table to only count grader runs for current valid examples
-            # (filters out stale runs from deleted/changed examples, e.g., old per-file valid/test examples)
-            # Join: grader_run → critique → critic_run → prompt → example, filter by prompt_sha256
-            grader_query = (
-                select(GraderRun, CriticRun.snapshot_slug, CriticRun.files_hash)
-                .join(GraderRun.critique_obj)
-                .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
-                .join(
-                    Example,
-                    (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash),
-                )
-                .where(CriticRun.prompt_sha256 == prompt.prompt_sha256)
-                .options(joinedload(GraderRun.snapshot_obj))
-            )
-            grader_results = session.execute(grader_query).all()
-
-            # Accumulate grader metrics by split and example
-            # Track recalls per unique example (most recent grader run per example)
-            example_recalls_by_split: dict[Split, dict[tuple[str, str], tuple[float, datetime]]] = {
-                Split.TRAIN: {},
-                Split.VALID: {},
-                Split.TEST: {},
-            }
-
-            for grader_run, snapshot_slug, files_hash in grader_results:
-                split = grader_run.snapshot_obj.split
-
-                # Failed critic runs (no output or non-success) count as 0% recall
-                if grader_run.output is None or not isinstance(grader_run.output, DBGraderSuccess):
-                    recall_pct = 0.0
-                else:
-                    # Extract recall from grader output (recall is in [0,1])
-                    recall_pct = grader_run.output.recall * 100.0
-
-                example_key = (snapshot_slug, files_hash)
-
-                # Keep the most recent recall for each unique example
-                if example_key not in example_recalls_by_split[split]:
-                    example_recalls_by_split[split][example_key] = (recall_pct, grader_run.created_at)
-                else:
-                    # Update if this grader run is more recent
-                    _, existing_timestamp = example_recalls_by_split[split][example_key]
-                    if grader_run.created_at > existing_timestamp:
-                        example_recalls_by_split[split][example_key] = (recall_pct, grader_run.created_at)
-
-            # Update stats with unique example recalls
-            for split in [Split.TRAIN, Split.VALID, Split.TEST]:
-                stats.splits[split].completed = len(example_recalls_by_split[split])
-                stats.splits[split].recalls = [recall for recall, _ in example_recalls_by_split[split].values()]
-
-            # Count critic runs that exceeded max turns, grouped by split (single query with JOIN)
-            max_turns_by_split = (
-                session.query(Snapshot.split, func.count(CriticRun.id))
-                .select_from(CriticRun)
-                .join(CriticRun.snapshot_obj)
-                .filter(
-                    CriticRun.prompt_sha256 == prompt.prompt_sha256,
-                    CriticRun.output.isnot(None),
-                    CriticRun.output["tag"].astext == "max_turns_exceeded",
-                )
-                .group_by(Snapshot.split)
-                .all()
-            )
-
-            for split, count in max_turns_by_split:
-                stats.splits[split].critic_max_turns = count
-
-            prompt_stats_list.append(stats)
+        # No longer building prompt_stats_list here - using query builder instead
 
         # Compute best_count per split: how many samples each prompt is best on (or tied for best)
         # Query all grader runs with their critic runs, grouped by split
@@ -474,10 +497,6 @@ def cmd_stats() -> None:
                     best_prompts = [sha for sha, recall in sample_recalls.items() if recall == max_recall]
                     prompt_best_counts.update(best_prompts)
 
-        # Update stats with valid best counts
-        for stats in prompt_stats_list:
-            stats.valid_best_count = prompt_best_counts.get(stats.prompt_sha256, 0)
-
         # Count critic and grader run statuses using SQL aggregation
         critic_status_rows = (
             session.query(CriticRun.output["tag"].astext, func.count(CriticRun.id))
@@ -497,101 +516,74 @@ def cmd_stats() -> None:
         for status, count in grader_status_rows:
             grader_status_counts[status] = count
 
-    # Sort by valid recall (descending), then by created_at (newest first)
-    def sort_key(s: PromptStats) -> tuple[float, float]:
-        recall = s.splits[Split.VALID].mean_recall
-        return (-(recall if recall is not None else -1.0), -s.created_at.timestamp())
-
-    prompt_stats_list.sort(key=sort_key)
-
-    # Get total available from any prompt's stats (they're all the same) for header
-    valid_total_for_header = prompt_stats_list[0].splits[Split.VALID].total_available if prompt_stats_list else 0
+    # Use query builder to get comprehensive prompt performance stats (already sorted by created_at DESC)
+    prompt_perf_rows = query_prompt_performance_stats(session, limit=100)
 
     # Display summary
-    console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_stats_list)} prompts)\n")
+    console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_perf_rows)} prompts)\n")
+
+    # Get total available examples for headers
+    valid_total = total_samples_by_split[Split.VALID]
+    train_total = total_samples_by_split[Split.TRAIN]
 
     # Create new table with requested columns
-    table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 1))
+    table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 0))
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
-    table.add_column("Created", width=19)
+    table.add_column("Age", justify="right", width=4)
     table.add_column("Chars", justify="right", width=6)
-    valid_recall_header = f"Valid Recall (/{valid_total_for_header})" if valid_total_for_header > 0 else "Valid Recall"
-    table.add_column(valid_recall_header, justify="right", width=12)
-    table.add_column("Valid MaxT", justify="right", width=9)
-    table.add_column("Train N", justify="right", width=8)
-    table.add_column("Train Recall", justify="right", width=12)
-    table.add_column("Train Zero%", justify="right", width=11)
-    table.add_column("Train MaxT", justify="right", width=9)
+    # Add Valid and Train split columns using helper
+    _add_split_columns(table, "Valid", "cyan", valid_total)
+    _add_split_columns(table, "Train", "yellow", train_total)
 
-    for stats in prompt_stats_list:
-        sha_short = short_sha(stats.prompt_sha256)
-        created_str = stats.created_at.strftime("%Y-%m-%dT%H:%M:%S")
+    for row in prompt_perf_rows:
+        sha_short = short_sha(row.prompt_sha256)
+        age_str = format_age(row.created_at)
 
         # Format length as "11k" for > 1000, otherwise just the number
-        length_str = f"{stats.prompt_length // 1000}k" if stats.prompt_length >= 1000 else str(stats.prompt_length)
+        length_str = f"{row.prompt_length // 1000}k" if row.prompt_length >= 1000 else str(row.prompt_length)
 
-        # Validation recall: always show mean %, tint green if fully computed
-        valid_stats = stats.splits[Split.VALID]
-        if valid_stats.completed == 0 or valid_stats.mean_recall is None:
-            valid_recall_str = "—"
-        elif valid_stats.completed == valid_stats.total_available:
-            # Fully computed - show mean recall percentage with green color
-            valid_recall_str = f"[green]{valid_stats.mean_recall:.1f}%[/green]"
-        else:
-            # Partially computed - show mean recall percentage with sample count
-            valid_recall_str = f"{valid_stats.mean_recall:.1f}% @ {valid_stats.completed}"
+        # Format valid stats (green if fully computed)
+        fully_computed = row.valid is not None and row.valid.success_count == valid_total
+        valid_stats = format_split_stats(row.valid, fully_computed=fully_computed)
 
-        # Valid max turns
-        valid_max_turns_str = str(valid_stats.critic_max_turns) if valid_stats.critic_max_turns > 0 else "—"
-
-        # Training stats
-        train_stats = stats.splits[Split.TRAIN]
-        train_n_str = str(train_stats.completed) if train_stats.completed > 0 else "—"
-        train_recall_str = f"{train_stats.mean_recall:.1f}%" if train_stats.mean_recall is not None else "—"
-        train_zero_str = f"{train_stats.zero_rate:.0f}%" if train_stats.zero_rate is not None else "—"
-        train_max_turns_str = str(train_stats.critic_max_turns) if train_stats.critic_max_turns > 0 else "—"
+        # Format train stats (never marked as fully computed)
+        train_stats = format_split_stats(row.train, fully_computed=False)
 
         table.add_row(
             sha_short,
-            created_str,
+            age_str,
             length_str,
-            valid_recall_str,
-            valid_max_turns_str,
-            train_n_str,
-            train_recall_str,
-            train_zero_str,
-            train_max_turns_str,
+            # Valid stats (canonical ordering via as_row_fields)
+            *valid_stats.as_row_fields(),
+            # Train stats (same canonical ordering)
+            *train_stats.as_row_fields(),
         )
 
     console.print(table)
 
-    # Get total available from any prompt's stats (they're all the same)
-    if prompt_stats_list:
-        train_total = prompt_stats_list[0].splits[Split.TRAIN].total_available
-        valid_total = prompt_stats_list[0].splits[Split.VALID].total_available
-        test_total = prompt_stats_list[0].splits[Split.TEST].total_available
-    else:
-        train_total = valid_total = test_total = 0
+    # Display legend
+    console.print(STATS_TABLE_LEGEND)
 
-    console.print("\n[bold]Summary:[/bold]")
-    console.print(f"  Total prompts: {len(prompt_stats_list)}")
+    # Get total available from counts computed earlier
+    test_total = total_samples_by_split[Split.TEST]
+
+    console.print("[bold]Summary:[/bold]")
+    console.print(f"  Total prompts: {len(prompt_perf_rows)}")
     console.print("\n  Available examples per split:")
     console.print(f"    Train: {train_total}")
     console.print(f"    Valid: {valid_total}")
     console.print(f"    Test: {test_total}")
 
     # Find best prompt by valid recall
-    valid_prompts = [
-        (s, s.splits[Split.VALID].mean_recall)
-        for s in prompt_stats_list
-        if s.splits[Split.VALID].mean_recall is not None
-    ]
+    valid_prompts = [(row, row.valid.mean_recall) for row in prompt_perf_rows if row.valid is not None]
     if valid_prompts:
-        best = max(valid_prompts, key=lambda x: x[1])  # type: ignore[arg-type, return-value]
+        best = max(valid_prompts, key=lambda x: x[1])
+        best_valid_stats = best[0].valid
+        assert best_valid_stats is not None  # Filtered above
         console.print(
             f"\n[bold green]Best prompt (valid):[/bold green] "
-            f"{short_sha(best[0].prompt_sha256)} with {best[1]:.1f}% recall "  # type: ignore[index]
-            f"({best[0].splits[Split.VALID].completed} samples)"
+            f"{short_sha(best[0].prompt_sha256)} with {best[1]:.1f}% recall "
+            f"({best_valid_stats.success_count}/{best_valid_stats.total_count} runs)"
         )
 
     # Display run status statistics

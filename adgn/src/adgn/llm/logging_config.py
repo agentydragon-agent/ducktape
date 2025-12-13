@@ -59,18 +59,13 @@ def configure_logging(log_output: str = "stderr", log_level: str = "WARNING") ->
     dictConfig(
         {
             "version": 1,
-            "disable_existing_loggers": True,
+            "disable_existing_loggers": False,
             "formatters": {
                 "console": {"format": "%(levelname)s %(name)s: %(message)s"},
                 "file": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
             },
             "handlers": handlers_config,
             "root": {"level": log_level_upper, "handlers": root_handlers},
-            "loggers": {
-                # Ensure library loggers propagate to root (no own handlers)
-                "mcp": {"level": "INFO", "propagate": True, "handlers": []},
-                "agent": {"level": "INFO", "propagate": True, "handlers": []},
-            },
         }
     )
 

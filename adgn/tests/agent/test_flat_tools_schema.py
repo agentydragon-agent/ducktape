@@ -26,13 +26,14 @@ import pytest
 from adgn.agent.agent import Agent
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import RequireAnyTool
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import SystemMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
-# Test server/tool name constants
-SERVER_A_NAME: Final[str] = "server_a"
+# Test server prefix and tool name constants
+SERVER_A_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("server_a")
 TOOL_A_NAME: Final[str] = "tool_a"
 
 # ============================================================================
@@ -164,7 +165,7 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     mock_phase1 = make_step_runner(
         steps=[
-            MakeCall(SERVER_A_NAME, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
+            MakeCall(SERVER_A_PREFIX, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )
@@ -195,7 +196,7 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     mock_phase2 = make_step_runner(
         steps=[
-            MakeCall(SERVER_A_NAME, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
+            MakeCall(SERVER_A_PREFIX, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )

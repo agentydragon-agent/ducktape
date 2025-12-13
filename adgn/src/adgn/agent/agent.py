@@ -759,7 +759,27 @@ class Agent:
             self.finished = True
             return
         if isinstance(decision, Compact):
-            await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            # ReasoningItems cannot be reused outside their original response context,
+            # so compaction must not be triggered if the last transcript item is a ReasoningItem
+            if self._transcript and isinstance(self._transcript[-1], ReasoningItem):
+                raise RuntimeError(
+                    "Cannot compact transcript when last item is a ReasoningItem. "
+                    "Handlers must not return Compact() after receiving reasoning output."
+                )
+            result = await self.compact_transcript(keep_recent_turns=decision.keep_recent_turns)
+            if result.compacted:
+                logger.info(
+                    "Transcript compacted (kept %d recent turns, compacted %d items)",
+                    decision.keep_recent_turns,
+                    len(self._transcript) - decision.keep_recent_turns - 1,  # -1 for summary message
+                )
+            else:
+                logger.info("Compaction skipped (not enough items to compact)")
+
+            # Notify handlers of compaction result
+            for h in self._handlers:
+                h.on_compaction_complete(compacted=result.compacted)
+
             return  # Continue to next iteration after compaction
 
         # Handle InjectItems: append all items to transcript and notify handlers
@@ -837,8 +857,8 @@ class Agent:
 
         if resp_output is not None:
             self._process_resp_output(resp_output)
-        if not self.pending_function_calls:
-            self.finished = True
+        # Note: Loop termination is now controlled by handlers (e.g., AbortIf, MaxTurnsHandler)
+        # or explicit tool policies (e.g., RequireAnyTool prevents text-only responses)
 
     def _process_resp_output(
         self, resp_output: Sequence[ReasoningItem | FunctionCallItem | FunctionCallOutputItem | AssistantMessageOut]

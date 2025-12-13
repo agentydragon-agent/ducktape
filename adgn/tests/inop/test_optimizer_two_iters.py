@@ -32,6 +32,7 @@ import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
 from adgn.openai_utils.types import ReasoningEffort
 
@@ -70,7 +71,8 @@ class FakeModelLayer(OpenAIModelProto):
         if tool_choice == "required":
             # Always propose a prompt when tool is required (outer PE agent)
             return self._responses_factory.make_tool_call(
-                name=build_mcp_function("prompt_feedback", "propose_prompt"), arguments={"prompt": "test_prompt"}
+                name=build_mcp_function(MCPMountPrefix("prompt_feedback"), "propose_prompt"),
+                arguments={"prompt": "test_prompt"},
             )
         # Default assistant text
         return self._responses_factory.make_assistant_message("default")

@@ -8,6 +8,7 @@ from unittest.mock import patch
 from fastmcp.server import FastMCP
 import pytest
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.mount import Mount, MountState
 from adgn.mcp.compositor.server import Compositor, CompositorState
 
@@ -105,7 +106,7 @@ async def test_mount_state_transitions(compositor, make_simple_mcp):
     assert not mount.is_closed
 
     # Unmount
-    await compositor.unmount_server("backend")
+    await compositor.unmount_server(MCPMountPrefix("backend"))
 
     # After unmount: CLOSED
     assert mount.state == MountState.CLOSED
@@ -268,7 +269,7 @@ async def test_get_child_client_validates_state(compositor, make_simple_mcp):
     assert client is not None
 
     # Unmount
-    await compositor.unmount_server("backend")
+    await compositor.unmount_server(MCPMountPrefix("backend"))
 
     # Inactive mount: raises
     with pytest.raises(ValueError, match="not mounted"):

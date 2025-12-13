@@ -31,11 +31,14 @@ from adgn.agent.server.protocol import FunctionCallOutput
 from adgn.agent.server.state import new_state
 from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.editor_server import EditorServer
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.testing.editor_stubs import EditorServerStub
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesResult
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.agent.testdata.approval_policy import fetch_policy, make_policy
 from tests.llm.support.openai_mock import CapturingOpenAIModel, FakeOpenAIModel
 from tests.support.types import McpServerSpecs
@@ -116,11 +119,11 @@ def policy_const() -> str:
 # ---- PolicyRequest test helper ----
 
 
-def make_policy_request(server: str, tool: str, arguments: dict[str, Any] | None = None) -> PolicyRequest:
+def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, Any] | None = None) -> PolicyRequest:
     """Helper to create PolicyRequest instances for tests.
 
     Args:
-        server: MCP server name
+        server: MCP mount prefix (validated)
         tool: Tool name
         arguments: Tool arguments dict (will be JSON-encoded). Defaults to empty dict.
 
@@ -170,24 +173,30 @@ def make_capturing_client():
 
 
 @pytest.fixture
-def make_test_agent():
-    """Factory to create Agent with provided client and MCP client.
+def make_test_agent(responses_factory):
+    """Factory to create Agent backed by FakeOpenAIModel with canned responses.
+
+    Returns (agent, fake_client) tuple so tests can inspect the client after run.
 
     Usage:
-        client = make_capturing_client([responses_factory.make_assistant_message("done")])
-        agent = await make_test_agent(mcp_client, client)
-        result = await agent.run()
+        agent, client = await make_test_agent(
+            mcp_client,
+            [responses_factory.make_assistant_message("done")],
+        )
+        result = await agent.run("hi")
         assert client.calls == 1
     """
 
-    async def _make(mcp_client, client, *, handlers=(), tool_policy=None, **kwargs):
+    async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
+        client = FakeOpenAIModel(list(responses))
         if not handlers:
             handlers = [BaseHandler()]
         if tool_policy is None:
             tool_policy = RequireAnyTool()
-        return await Agent.create(
+        agent = await Agent.create(
             mcp_client=mcp_client, client=client, handlers=handlers, tool_policy=tool_policy, **kwargs
         )
+        return agent, client
 
     return _make
 
@@ -311,28 +320,54 @@ def recording_handler() -> RecordingHandler:
     return RecordingHandler()
 
 
+@pytest.fixture
+def test_handlers(recording_handler: RecordingHandler) -> list:
+    """Standard handler list for agent tests.
+
+    Includes:
+    - FinishOnTextMessageHandler: Abort loop on text messages (test mocks often return text)
+    - RecordingHandler: Capture events for assertions
+    """
+    from adgn.agent.handler import FinishOnTextMessageHandler
+
+    return [FinishOnTextMessageHandler(), recording_handler]
+
+
 # ---- Server fixtures for tool error and parallel tests ------------------------
 
 
 @pytest.fixture
-def validation_server() -> FastMCP:
-    """FastMCP server with a tool that validates input strictly."""
-    mcp = FastMCP("validator")
+def validation_server() -> EnhancedFastMCP:
+    """EnhancedFastMCP server with a tool that validates input strictly."""
+    from fastmcp.exceptions import ToolError
 
-    @mcp.tool()
+    mcp = EnhancedFastMCP("validator")
+
+    @mcp.flat_model()
     def send_message(input: SendMessageInput) -> dict[str, Any]:
+        # Reject text/plain to test error handling
+        if input.mime == "text/plain":
+            raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
         return {"ok": True, "message": input.content}
 
     return mcp
 
 
-@pytest.fixture
-def failing_server() -> FastMCP:
-    """FastMCP server with a tool that returns an error."""
-    mcp = FastMCP("editor")
+class _FailInput(OpenAIStrictModeBaseModel):
+    """Input for fail tool (test fixture)."""
 
-    @mcp.tool()
-    def fail(x: int) -> dict[str, Any]:
+    x: int
+
+
+@pytest.fixture
+def failing_server() -> EnhancedFastMCP:
+    """EnhancedFastMCP server with a tool that returns an error payload."""
+    mcp = EnhancedFastMCP("editor")
+
+    @mcp.flat_model()
+    def fail(input: _FailInput) -> dict[str, Any]:
+        # Return error payload in structured_content (not raise ToolError)
+        # The test expects ok=False, error="boom" in structured_content
         return {"ok": False, "error": "boom"}
 
     return mcp
@@ -381,10 +416,8 @@ def call_id_gen() -> Callable[[], str]:
 def make_tool_call(call_id_gen: Callable[[], str]) -> Callable[..., ToolCall]:
     """Factory for ToolCall events with auto call_id generation."""
 
-    def _make(server: str, tool: str, args: dict[str, Any] | None = None, args_json: str | None = None) -> ToolCall:
-        # Support both args (dict) and args_json (string) for backwards compatibility
-        if args_json is None and args is not None:
-            args_json = json.dumps(args)
+    def _make(server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> ToolCall:
+        args_json = json.dumps(args) if args is not None else None
         return ToolCall(name=build_mcp_function(server, tool), args_json=args_json, call_id=call_id_gen())
 
     return _make
@@ -469,8 +502,8 @@ def make_tool_call_event(
 ) -> Callable[..., EventRecord]:
     """Factory for ToolCall EventRecord."""
 
-    def _make(seq: int, server: str, tool: str, args_json: str | None = None) -> EventRecord:
-        return make_event_record(make_tool_call(server, tool, args_json=args_json), seq)
+    def _make(seq: int, server: MCPMountPrefix, tool: str, args: dict[str, Any] | None = None) -> EventRecord:
+        return make_event_record(make_tool_call(server, tool, args=args), seq)
 
     return _make
 

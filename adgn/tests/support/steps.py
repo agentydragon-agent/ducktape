@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict
 
 from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from adgn.mcp._shared.mounted import Mounted
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
 from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
@@ -27,10 +28,7 @@ from tests.support.responses import ResponsesFactory
 
 T = TypeVar("T", bound=BaseModel)
 
-# Test MCP server/tool name constants (for test fixtures)
-DOCKER_TEST_MOUNT_PREFIX = "docker"  # Used in test fixtures
-EXEC_TEST_TOOL_NAME = "exec"  # Used in test fixtures
-EDITOR_TEST_MOUNT_PREFIX = "editor"  # Used in test fixtures
+# Test constants (not re-exported - use server class constants directly)
 FAIL_TEST_TOOL_NAME = "fail"  # Used in test fixtures
 
 
@@ -53,7 +51,7 @@ class Step(Protocol):
 class MakeCall:
     """Initial turn: make a tool call."""
 
-    server: str
+    server: MCPMountPrefix
     tool: str
     args: BaseModel
 
@@ -66,7 +64,7 @@ class CheckThenCall:
     """Assert previous tool completed, then call next."""
 
     expected_tool: str
-    server: str
+    server: MCPMountPrefix
     tool: str
     args: BaseModel
 
@@ -81,7 +79,7 @@ class ExtractThenCall[T: BaseModel]:
 
     expected_tool: str
     output_type: type[T]
-    make_next: Callable[[T], tuple[str, str, BaseModel]]
+    make_next: Callable[[T], tuple[MCPMountPrefix, str, BaseModel]]
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         output = assert_and_extract(req, self.expected_tool, self.output_type)

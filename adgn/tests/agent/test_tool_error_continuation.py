@@ -6,7 +6,7 @@ the agent continues with the next phase instead of aborting the entire turn.
 
 from __future__ import annotations
 
-from hamcrest import assert_that, contains_string
+from hamcrest import assert_that, contains_string, has_entries
 
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import SendMessageInput
@@ -17,7 +17,7 @@ VALIDATOR_MOUNT_PREFIX = "validator"
 
 
 async def test_tool_error_continues_turn(
-    responses_factory, make_pg_client, validation_server, recording_handler, make_test_agent
+    responses_factory, make_pg_client, validation_server, test_handlers, recording_handler, make_test_agent
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -46,32 +46,32 @@ async def test_tool_error_continues_turn(
         agent, _ = await make_test_agent(
             mcp_client,
             seq,
-            handlers=[recording_handler],
+            handlers=test_handlers,
             system="You are a helpful assistant. Use the validator tools.",
             tool_policy=RequireAnyTool(),
         )
 
-        result = await agent.run("Send a greeting")
+        result = await agent.run()
 
     # Verify the sequence of events
-    tool_calls = [evt for evt in recording_handler.records if evt.get("kind") == "tool_call"]
-    outputs = [evt for evt in recording_handler.records if evt.get("kind") == "function_call_output"]
+    tool_calls = [evt for evt in recording_handler.records if evt.type == "tool_call"]
+    outputs = [evt for evt in recording_handler.records if evt.type == "function_call_output"]
 
     # Should have 2 tool calls
     assert len(tool_calls) == 2, f"Expected 2 tool calls, got {len(tool_calls)}"
 
     # First call should fail with validation error
     first_output = outputs[0]
-    assert first_output["result"].get("is_error") is True
-    error_content = first_output["result"]["content"][0]["text"]
+    assert first_output.result.isError is True
+    error_content = first_output.result.content[0].text
     # Hamcrest contains-string checks for clarity
     assert_that(error_content.lower(), contains_string("error"))
     assert "text/markdown" in error_content or "literal" in error_content.lower()
 
     # Second call should succeed
     second_output = outputs[1]
-    assert second_output["result"].get("is_error") is False
-    assert_function_call_output_structured([second_output], ok=True)
+    assert second_output.result.isError is False
+    assert_function_call_output_structured([second_output], has_entries(ok=True))
 
     # Final result should contain the success message
     assert_that(result.text, contains_string("Successfully sent message"))

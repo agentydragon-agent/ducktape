@@ -14,7 +14,7 @@ from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import BaseHandler, SequenceHandler
 from adgn.agent.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from adgn.mcp._shared.mounted import Mounted
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.git_ro.server import (
@@ -33,7 +33,7 @@ from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 def make_commit_bootstrap_calls(
     builder: TypedBootstrapBuilder,
-    mount_prefix: str,
+    mount_prefix: MCPMountPrefix,
     git_server: GitRoServer,
     *,
     amend: bool = False,
@@ -185,8 +185,9 @@ class CommitCompositor(Compositor):
 
         # Mount submit server
         submit_server = make_submit_server(self._submit_state)
-        await self.mount_inproc("submit_commit_message", submit_server)
-        self.submit = Mounted(prefix="submit_commit_message", server=submit_server)
+        submit_prefix = MCPMountPrefix("submit_commit_message")
+        await self.mount_inproc(submit_prefix, submit_server)
+        self.submit = Mounted(prefix=submit_prefix, server=submit_server)
 
         return self
 

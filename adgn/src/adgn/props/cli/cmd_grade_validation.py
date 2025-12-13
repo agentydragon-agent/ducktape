@@ -20,6 +20,7 @@ from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticContextLengthExceeded, CriticInput, CriticMaxTurnsExceeded, CriticSuccess
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Example, GraderRun, Prompt, Snapshot
+from adgn.props.db.query_builders import query_prompt_performance_stats
 from adgn.props.display import short_sha, short_uuid
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
@@ -74,14 +75,25 @@ async def cmd_grade_validation(
 
             typer.echo(f"Found {len(validation_examples)} validation examples")
 
-            # Get all prompts
-            all_prompts = session.query(Prompt).all()
+            # Get all prompts in the same order as stats command displays them
+            # (ordered by valid LCB desc, train LCB desc, created_at desc)
+            prompt_perf_rows = query_prompt_performance_stats(session, limit=1000)
+            ordered_prompt_sha256s = [row.prompt_sha256 for row in prompt_perf_rows]
 
-            if not all_prompts:
+            # Also get any prompts not yet evaluated (not in perf stats)
+            all_prompts_query = session.query(Prompt).all()
+            unevaluated_shas = [
+                p.prompt_sha256 for p in all_prompts_query if p.prompt_sha256 not in ordered_prompt_sha256s
+            ]
+
+            # Combine: evaluated prompts first (in priority order), then unevaluated
+            all_prompt_sha256s = ordered_prompt_sha256s + unevaluated_shas
+
+            if not all_prompt_sha256s:
                 typer.echo("No prompts found in database")
                 return
 
-            typer.echo(f"Found {len(all_prompts)} prompts\n")
+            typer.echo(f"Found {len(all_prompt_sha256s)} prompts\n")
 
             # Build work items grouped by prompt
             # Each prompt gets a list of (snapshot, files_hash, critique_id_or_none)
@@ -89,7 +101,7 @@ async def cmd_grade_validation(
             work_items_by_prompt: dict[str, list[tuple[SnapshotSlug, str, UUID | None]]] = defaultdict(list)
 
             for example in validation_examples:
-                for prompt in all_prompts:
+                for prompt_sha256 in all_prompt_sha256s:
                     # Check if successful critic run exists for (example, prompt)
                     # Prefer most recent successful run
                     critic_run = session.execute(
@@ -97,7 +109,7 @@ async def cmd_grade_validation(
                         .where(
                             CriticRun.snapshot_slug == example.snapshot_slug,  # type: ignore[arg-type]
                             CriticRun.files_hash == example.files_hash,
-                            CriticRun.prompt_sha256 == prompt.prompt_sha256,
+                            CriticRun.prompt_sha256 == prompt_sha256,
                             CriticRun.critique_id.isnot(None),  # Only successful critic runs
                         )
                         .order_by(CriticRun.created_at.desc())
@@ -106,9 +118,7 @@ async def cmd_grade_validation(
 
                     if critic_run is None:
                         # No successful critic run exists, need to run critic then grader
-                        work_items_by_prompt[prompt.prompt_sha256].append(
-                            (example.snapshot_slug, example.files_hash, None)
-                        )
+                        work_items_by_prompt[prompt_sha256].append((example.snapshot_slug, example.files_hash, None))
                         continue
 
                     # Check if successful grader run exists for this critique
@@ -124,13 +134,13 @@ async def cmd_grade_validation(
 
                     if not successful_grader_exists:
                         # Critic succeeded, need to run grader
-                        work_items_by_prompt[prompt.prompt_sha256].append(
+                        work_items_by_prompt[prompt_sha256].append(
                             (example.snapshot_slug, example.files_hash, critic_run.critique_id)
                         )
                     # else: both critic and grader succeeded - nothing to do
 
             # Count work needed (flatten to count)
-            total_pairs = len(validation_examples) * len(all_prompts)
+            total_pairs = len(validation_examples) * len(all_prompt_sha256s)
             all_work_items = [item for items in work_items_by_prompt.values() for item in items]
             need_critic = sum(1 for _, _, cid in all_work_items if cid is None)
             need_grader_only = sum(1 for _, _, cid in all_work_items if isinstance(cid, UUID))
@@ -272,10 +282,11 @@ async def cmd_grade_validation(
         results_lock = asyncio.Lock()
 
         # Build queue of (prompt_sha256, snapshot_slug, files_hash, critique_id_or_none) tuples
-        # Ordered by prompt (all examples for prompt1, then prompt2, etc.)
+        # Ordered by prompt priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
         work_queue: asyncio.Queue[tuple[str, SnapshotSlug, str, UUID | None]] = asyncio.Queue()
         total_items = 0
-        for prompt_sha256, items in work_items_by_prompt.items():
+        for prompt_sha256 in all_prompt_sha256s:
+            items = work_items_by_prompt.get(prompt_sha256, [])
             for snapshot_slug, files_hash, critique_id_or_none in items:
                 await work_queue.put((prompt_sha256, snapshot_slug, files_hash, critique_id_or_none))
                 total_items += 1

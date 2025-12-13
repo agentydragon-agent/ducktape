@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from adgn.agent.db_event_handler import DatabaseEventHandler
@@ -10,11 +11,14 @@ from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.handler import BaseHandler
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 
+if TYPE_CHECKING:
+    from adgn.mcp.compositor.server import Compositor
+
 logger = logging.getLogger(__name__)
 
 
-def build_props_handlers(
-    *, transcript_id: UUID, verbose_prefix: str | None, servers: dict, max_lines: int = DEFAULT_MAX_LINES
+async def build_props_handlers(
+    *, transcript_id: UUID, verbose_prefix: str | None, compositor: Compositor, max_lines: int = DEFAULT_MAX_LINES
 ) -> list[BaseHandler]:
     """Build standard handlers for props agent workflows.
 
@@ -31,12 +35,15 @@ def build_props_handlers(
         transcript_id: Transcript ID for database event tracking
         verbose_prefix: Optional prefix for verbose display (e.g., "[CRITIC snapshot-slug] ").
                        If None, no verbose handler is added.
-        servers: Server dict for CompactDisplayHandler (maps server names to FastMCP instances)
+        compositor: Compositor instance for extracting server schemas
         max_lines: Max lines per event in verbose display (default from common_options)
     """
     handlers: list[BaseHandler] = [DatabaseEventHandler(transcript_id=transcript_id)]
 
     if verbose_prefix is not None:
-        handlers.append(CompactDisplayHandler(max_lines=max_lines, prefix=verbose_prefix, servers=servers))
+        display_handler = await CompactDisplayHandler.from_compositor(
+            compositor, max_lines=max_lines, prefix=verbose_prefix
+        )
+        handlers.append(display_handler)
 
     return handlers

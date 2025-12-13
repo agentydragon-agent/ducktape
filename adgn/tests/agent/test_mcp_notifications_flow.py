@@ -9,7 +9,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp._shared.urls import parse_any_url
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.stubs.typed_stubs import ToolStub
@@ -20,7 +20,7 @@ from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
 
 # Test MCP server/tool constants for this test
-NOTIFIER_MOUNT_PREFIX = "notifier"
+NOTIFIER_MOUNT_PREFIX = MCPMountPrefix("notifier")
 NOTIFY_POLICY_TOOL_NAME = "notify_policy"
 
 
@@ -87,7 +87,7 @@ async def test_notifications_pre_sampling_out_of_band(
     # Buffered client path via shared fixture
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Prime a protocol-level notification before sampling by calling the server tool once
-        stub = ToolStub(mcp_client, build_mcp_function("notifier", "notify_policy"), NotifyPolicyOutput)
+        stub = ToolStub(mcp_client, build_mcp_function(NOTIFIER_MOUNT_PREFIX, "notify_policy"), NotifyPolicyOutput)
         await stub(NotifyPolicyInput(uri="notifier://policy.py"))
 
         captured: list[ResponsesRequest] = []
@@ -160,7 +160,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
 
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         # Establish session (prime) then broadcast outside any tool handler
-        await mcp_client.call_tool(name=build_mcp_function("notifier", "prime"), arguments={})
+        await mcp_client.call_tool(name=build_mcp_function(NOTIFIER_MOUNT_PREFIX, "prime"), arguments={})
         await server.broadcast_resource_updated("notifier://policy.py")
 
         client = make_mock(_create)

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 
 from compact_json import Formatter  # type: ignore[import-untyped]
 from mcp import types as mcp_types
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 from rich import box
 from rich.console import Console, ConsoleOptions, RenderableType
 from rich.json import JSON
@@ -16,6 +16,7 @@ from rich.segment import Segment
 from rich.text import Text
 
 from adgn.mcp._shared.naming import parse_tool_name
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
 from adgn.props.grader.models import GradeSubmitInput
@@ -26,6 +27,8 @@ from .json_utils import parse_json_or_none
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
+
+    from adgn.mcp.compositor.server import Compositor
 
 # Display configuration constants
 DEFAULT_MAX_LINES = 20  # Default maximum lines for rendered content (both Panel height and truncation)
@@ -107,7 +110,7 @@ class RichDisplayHandler(BaseHandler):
         max_lines: int = DEFAULT_MAX_LINES,
         console: Console | None = None,
         prefix: str = "",
-        servers: dict[str, FastMCP] | None = None,
+        servers: dict[MCPMountPrefix, FastMCP] | None = None,
     ) -> None:
         """Initialize Rich display handler.
 
@@ -130,6 +133,29 @@ class RichDisplayHandler(BaseHandler):
             self._tool_schemas = {}
 
         self._calls: dict[str, ToolCall] = {}
+
+    @classmethod
+    async def from_compositor(
+        cls,
+        compositor: Compositor,
+        *,
+        max_lines: int = DEFAULT_MAX_LINES,
+        console: Console | None = None,
+        prefix: str = "",
+    ) -> RichDisplayHandler:
+        """Create handler with schemas extracted from compositor.
+
+        Args:
+            compositor: Compositor instance to extract tool schemas from
+            max_lines: Maximum lines per event
+            console: Rich console (or create default)
+            prefix: Prefix for all output
+
+        Returns:
+            RichDisplayHandler with schemas extracted from compositor's servers
+        """
+        servers = await compositor.get_inproc_servers()
+        return cls(max_lines=max_lines, console=console, prefix=prefix, servers=servers)
 
     # Observer hooks ---------------------------------------------------------
 
@@ -320,7 +346,7 @@ class CompactDisplayHandler(BaseHandler):
         max_lines: int = DEFAULT_MAX_LINES,
         console: Console | None = None,
         prefix: str = "",
-        servers: dict[str, FastMCP] | None = None,
+        servers: dict[MCPMountPrefix, FastMCP] | None = None,
         show_usage: bool = True,
     ) -> None:
         """Initialize compact display handler.
@@ -346,6 +372,31 @@ class CompactDisplayHandler(BaseHandler):
             self._tool_schemas = {}
 
         self._calls: dict[str, ToolCall] = {}
+
+    @classmethod
+    async def from_compositor(
+        cls,
+        compositor: Compositor,
+        *,
+        max_lines: int = DEFAULT_MAX_LINES,
+        console: Console | None = None,
+        prefix: str = "",
+        show_usage: bool = True,
+    ) -> CompactDisplayHandler:
+        """Create handler with schemas extracted from compositor.
+
+        Args:
+            compositor: Compositor instance to extract tool schemas from
+            max_lines: Maximum lines for truncated content
+            console: Rich console (or create default)
+            prefix: Prefix for tool calls/results
+            show_usage: Show token usage after each response
+
+        Returns:
+            CompactDisplayHandler with schemas extracted from compositor's servers
+        """
+        servers = await compositor.get_inproc_servers()
+        return cls(max_lines=max_lines, console=console, prefix=prefix, servers=servers, show_usage=show_usage)
 
     # Observer hooks ---------------------------------------------------------
 
@@ -538,7 +589,9 @@ class CompactDisplayHandler(BaseHandler):
             return stream.truncated_text + "\n[truncated]"
         return stream
 
-    def _try_parse_with_schema(self, parsed_data: Any, tool_name: str, schemas: dict[tuple[str, str], type]) -> Any:
+    def _try_parse_with_schema(
+        self, parsed_data: Any, tool_name: str, schemas: dict[tuple[MCPMountPrefix, str], type]
+    ) -> Any:
         """Try to parse data with registered schema, return original on failure."""
         if parsed_data is None:
             return None
@@ -721,6 +774,11 @@ class CompactDisplayHandler(BaseHandler):
             # Calculate available width: console width minus prefix and indentation
             available_width = self._console.width - len(self._TOOL_RESULT_PREFIX) - self._TOOL_RESULT_INDENT
             formatter = Formatter(max_inline_length=available_width)
+
+            # Convert Pydantic models to dicts for JSON serialization
+            if isinstance(display_data, BaseModel):
+                display_data = display_data.model_dump()
+
             json_str = formatter.serialize(display_data)
             truncated = self._truncate_lines(json_str, self._max_lines, indent=len(self._TOOL_RESULT_PREFIX))
             lines = truncated.splitlines()

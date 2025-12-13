@@ -43,6 +43,7 @@ HTTP (optional)
 
 3.1 Middleware surface (inside the Compositor)
 - Intercept `tools/call` pre‑dispatch; compare the namespaced tool (`{server}_{tool}`) against policy rules
+  - Tool names constructed via `build_mcp_function(server, tool)` from `adgn.mcp._shared.naming`
 - Allow: dispatch to the target mount and return result
 - Deny: map to JSON‑RPC error
 - Ask: create approval item; await resolution; then approve→dispatch or deny→error

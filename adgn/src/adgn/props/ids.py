@@ -74,6 +74,11 @@ _SnapshotSlugBase: TypeAlias = Annotated[  # type: ignore[valid-type]
 SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-newtype]
 """Snapshot slug ID. Compile-time distinct from str, runtime is validated string."""
 
+# TODO: SnapshotSlug uses NewType which doesn't validate on construction (SnapshotSlug("foo")
+# just returns "foo" without validation). This is inconsistent with newer patterns like
+# MCPMountPrefix which is a str subclass with validating __new__. Consider migrating to
+# the validating constructor pattern for consistency.
+
 
 # =============================================================================
 # Namespaced IDs (NewType for type safety)

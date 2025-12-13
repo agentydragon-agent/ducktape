@@ -260,7 +260,9 @@ class InfrastructureRegistry:
 
             # Unmount from global
             try:
-                await comp.unmount_server(f"agent_{agent_id}")
+                from adgn.mcp._shared.types import MCPMountPrefix
+
+                await comp.unmount_server(MCPMountPrefix(f"agent_{agent_id}"))
             except KeyError:
                 logger.debug(f"Agent {agent_id} already unmounted")
 

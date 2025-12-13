@@ -37,11 +37,12 @@ from pydantic import Field
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call, read_resource_call
-from adgn.agent.handler import SequenceHandler
-from adgn.agent.loop_control import InjectItems, RequireAnyTool
+from adgn.agent.handler import RedirectOnTextMessageHandler, SequenceHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError
 from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.mounted import Mounted
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
@@ -105,13 +106,20 @@ def _trace_query_advice(*, snapshot_slug: str | None = None, critique_id: str | 
 # ============================================================================
 
 
+def _read_package_files(
+    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], package: str, files: list[str]
+) -> list[FunctionCallItem]:
+    """Helper to generate multiple read_package_file_call invocations."""
+    return [read_package_file_call(builder, runtime, package, f) for f in files]
+
+
 def make_po_bootstrap_calls(
     builder: TypedBootstrapBuilder,
     resources: Mounted[ResourcesServer],
     runtime: Mounted[ContainerExecServer],
     prompt_eval: Mounted[PromptEvalServer],
 ) -> list[FunctionCallItem]:
-    """Build bootstrap calls for prompt optimizer: reads PO run ID, critic template, and example query scripts.
+    """Build bootstrap calls: reads PO run ID, critic template, example query scripts, and research docs.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
@@ -120,6 +128,7 @@ def make_po_bootstrap_calls(
         prompt_eval: Mounted prompt eval server
     """
     return [
+        # Prompt optimization run ID
         read_resource_call(
             builder,
             resources,
@@ -127,10 +136,30 @@ def make_po_bootstrap_calls(
             uri=prompt_eval.server.optimization_run_id_resource.uri,
             max_bytes=256,
         ),
-        # Read critic template structure from container to show prompt optimizer how its prompts will be used
-        read_package_file_call(builder, runtime, "adgn.props.critic", "prompts/critic_system.j2.md"),
-        # Read example: querying top-performing prompts on validation
-        read_package_file_call(builder, runtime, "adgn.props.examples", "query_top_prompts.py"),
+        # Critic template structure
+        *_read_package_files(builder, runtime, "adgn.props.critic", ["prompts/critic_system.j2.md"]),
+        # Database query examples
+        *_read_package_files(
+            builder,
+            runtime,
+            "adgn.props.examples",
+            [
+                "query_top_prompts.py",
+                "query_train_examples.py",
+                "query_full_snapshot_train_examples.py",
+                "query_valid_examples.py",
+                "query_run_status.py",
+                "query_execution_traces.py",
+                "query_train_vs_valid_performance.py",
+            ],
+        ),
+        # Prompt engineering research (best practices and patterns)
+        *_read_package_files(
+            builder,
+            runtime,
+            "adgn.props.prompt_optimize.research",
+            ["meta_prompting.md", "anthropic_best_practices.md", "automatic_optimization.md"],
+        ),
     ]
 
 
@@ -170,7 +199,7 @@ class PromptOptimizerCompositor(PropertiesDockerCompositor):
     """
 
     # Mount prefix constant (SSOT for test infrastructure)
-    PROMPT_EVAL_PREFIX = "prompt_eval"
+    PROMPT_EVAL_PREFIX = MCPMountPrefix("prompt_eval")
 
     # Mounted server attributes (runtime inherited, prompt_eval added here)
     prompt_eval: Mounted[PromptEvalServer]
@@ -430,7 +459,7 @@ class PromptEvalServer(EnhancedFastMCP):
             name,
             instructions=(
                 "Prompt optimization tools: save prompts to database (upsert_prompt), "
-                "run critic agents on training examples (run_critic), "
+                "run critic agents on training examples (run_critic_on_example), "
                 "grade critiques against ground truth (run_grader). "
                 "Query the database for results, costs, and metrics."
             ),
@@ -461,20 +490,10 @@ class PromptEvalServer(EnhancedFastMCP):
 
         # Register tools - names derived from function names
         async def upsert_prompt(payload: UpsertPromptInput) -> UpsertPromptOutput:
-            """Save a prompt into the Postgres database. When you want to test or eval a prompt, first make sure it's in the db.
+            """Save prompt to database and return SHA256 hash.
 
-            Workflow:
-            1. Write prompt to file using docker_exec with shell heredoc:
-               bash -c "cat > /workspace/prompt-v1.md << 'EOF'
-               <your prompt text here>
-               EOF"
-            2. Call this tool with the container file path: /workspace/prompt-v1.md
-            3. Tool reads from mapped host path, hashes content, stores in database
-            4. Use returned SHA256 hash in run_critic calls
-
-            IMPORTANT: Use bash -c with heredoc for multi-line content. Do not use printf or echo with redirection.
-
-            Returns SHA256 hash for use in run_critic tool.
+            Write prompt file using heredoc: bash -c "cat > /workspace/prompt-v1.md << 'EOF' ... EOF"
+            Then call this tool with the file path. Returns hash for use in run_critic_on_example.
             """
             # Map container path to host path
             # Container paths like /workspace/prompt-v1.txt map to workspace_root/prompt-v1.txt
@@ -828,9 +847,6 @@ async def run_prompt_optimizer(
                 ),
             )
 
-            # Collect servers for tool schema extraction
-            servers = {runtime.prefix: runtime.server}
-
             user = f"""Your budget is: ${budget:.2f}.
 
 Models in use:
@@ -853,11 +869,19 @@ Prioritize recall.
 
             handlers: list = [
                 bootstrap,
-                *build_props_handlers(
+                *await build_props_handlers(
                     transcript_id=transcript_id,
                     verbose_prefix=(f"[OPTIMIZER:{short_uuid(transcript_id)}] " if verbose else None),
-                    servers=servers,
+                    compositor=comp,
                     max_lines=max_lines,
+                ),
+                RedirectOnTextMessageHandler(
+                    reminder_message=(
+                        "You are not in an interactive conversation. Your task is to optimize "
+                        "the critic prompt by using the provided MCP tools (run_critic_on_example, "
+                        "run_grader, upsert_prompt) to evaluate different prompts and improve "
+                        "validation recall. Please use the tools to continue your optimization work."
+                    )
                 ),
             ]
             # Note: resources and compositor_meta are auto-mounted by base Compositor
@@ -868,7 +892,7 @@ Prioritize recall.
                     handlers=handlers,
                     parallel_tool_calls=True,
                     reasoning_summary=ReasoningSummary.detailed,
-                    tool_policy=RequireAnyTool(),
+                    tool_policy=AllowAnyToolOrTextMessage(),
                 )
 
                 # Add budget enforcement handler after agent creation (needs agent reference)

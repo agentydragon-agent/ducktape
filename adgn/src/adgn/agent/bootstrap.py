@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.exec.models import ExecInput
 from adgn.mcp.resources.server import ResourcesReadArgs, ResourcesServer
 from adgn.mcp.stubs.typed_stubs import _resolve_output_type
@@ -127,11 +128,13 @@ class TypedBootstrapBuilder:
         self._counter += 1
         return f"{self._prefix}:{self._counter}"
 
-    def call(self, server: str, tool: str, payload: BaseModel, *, call_id: str | None = None) -> FunctionCallItem:
+    def call(
+        self, server: MCPMountPrefix, tool: str, payload: BaseModel, *, call_id: str | None = None
+    ) -> FunctionCallItem:
         """Create a typed MCP tool call item.
 
         Args:
-            server: MCP server name
+            server: MCP mount prefix (already validated)
             tool: Tool name on the server
             payload: Pydantic model instance with call arguments
             call_id: Optional explicit call_id (auto-generated if not provided)
@@ -207,7 +210,7 @@ class TypedBootstrapBuilder:
 def read_resource_call(
     builder: TypedBootstrapBuilder,
     resources: Mounted[ResourcesServer],
-    server: str,
+    server: MCPMountPrefix,
     uri: str | AnyUrl,
     *,
     max_bytes: int = 65536,
@@ -217,7 +220,7 @@ def read_resource_call(
     Args:
         builder: Bootstrap builder for generating typed tool calls
         resources: Mounted resources server (comp.resources)
-        server: Server name to read resource from
+        server: Mount prefix of server to read resource from (already validated)
         uri: Resource URI to read
         max_bytes: Maximum bytes to read (default: 65536)
 
@@ -230,13 +233,18 @@ def read_resource_call(
 
 
 def docker_exec_call(
-    builder: TypedBootstrapBuilder, mount_prefix: str, exec_server: FastMCP, cmd: list[str], *, timeout_ms: int = 10_000
+    builder: TypedBootstrapBuilder,
+    mount_prefix: MCPMountPrefix,
+    exec_server: FastMCP,
+    cmd: list[str],
+    *,
+    timeout_ms: int = 10_000,
 ) -> FunctionCallItem:
     """Bootstrap helper for docker exec.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
-        mount_prefix: Server mount name (where the exec server is mounted)
+        mount_prefix: Server mount prefix (already validated, where exec server is mounted)
         exec_server: FastMCP server instance with exec tool
         cmd: Command to execute
         timeout_ms: Execution timeout in milliseconds

@@ -10,7 +10,7 @@ from typing import TypeGuard
 from pydantic import BaseModel
 import pytest
 
-from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, UserMessage
+from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, SystemMessage, UserMessage
 from tests.support.extraction import get_last_function_output
 
 logger = logging.getLogger(__name__)
@@ -59,8 +59,10 @@ def assert_and_extract[T: BaseModel](req: ResponsesRequest, expected_tool: str, 
 # Type narrowing helpers (TypeGuard)
 
 
-def is_all_function_calls(items: Sequence[UserMessage | FunctionCallItem]) -> TypeGuard[Sequence[FunctionCallItem]]:
-    """TypeGuard to narrow Sequence[UserMessage | FunctionCallItem] to Sequence[FunctionCallItem]."""
+def is_all_function_calls(
+    items: Sequence[SystemMessage | UserMessage | FunctionCallItem],
+) -> TypeGuard[Sequence[FunctionCallItem]]:
+    """TypeGuard to narrow Sequence[SystemMessage | UserMessage | FunctionCallItem] to Sequence[FunctionCallItem]."""
     return all(isinstance(x, FunctionCallItem) for x in items)
 
 

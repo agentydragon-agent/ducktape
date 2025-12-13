@@ -38,7 +38,8 @@ def main():
             prompt = session.query(Prompt).filter_by(prompt_sha256=sha).first()
             preview = prompt.prompt_text[:100].replace("\n", " ") if prompt else "(not found)"
             plural = "evals" if count != 1 else "eval"
-            print(f"  {sha[:8]}: {recall:.3f} ({count} {plural}) - {preview}...")
+            recall_val = recall if recall is not None else 0.0
+            print(f"  {sha[:8]}: {recall_val:.3f} ({count} {plural}) - {preview}...")
 
 
 if __name__ == "__main__":

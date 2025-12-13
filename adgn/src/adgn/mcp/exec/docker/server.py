@@ -23,7 +23,7 @@ from adgn.mcp._shared.container_session import (
     run_session_container,
     session_state_from_ctx,
 )
-from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo
+from adgn.mcp._shared.types import ContainerImageHistoryEntry, ContainerImageInfo, ContainerInfo, MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, async_timer
 
@@ -37,6 +37,11 @@ class ContainerExecServer(EnhancedFastMCP):
 
     # Tool name constant (for test infrastructure only)
     EXEC_TOOL_NAME = "exec"
+
+    # Default mount prefixes for container exec servers in tests
+    # Different test contexts use different names for the same server type
+    DOCKER_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("docker")
+    RUNTIME_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("runtime")
 
     # Resource attribute (stashed result of @resource decorator - single source of truth for URI access)
     container_info_resource: FunctionResource

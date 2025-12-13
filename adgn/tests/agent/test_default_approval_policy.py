@@ -4,6 +4,8 @@ import pytest
 
 from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.constants import RESOURCES_MOUNT_PREFIX, UI_MOUNT_PREFIX
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
 from tests.agent.conftest import make_policy_request
 
 
@@ -43,7 +45,10 @@ async def test_resource_operations_allowed(policy_evaluator):
 
 @pytest.mark.requires_docker
 async def test_other_tools_require_approval(policy_evaluator):
-    other_tools = [make_policy_request("echo", "echo"), make_policy_request("some_server", "some_tool")]
+    other_tools = [
+        make_policy_request(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME),
+        make_policy_request(MCPMountPrefix("some_server"), "some_tool"),
+    ]
     for ctx in other_tools:
         result = await policy_evaluator.decide(ctx)
         assert result.decision is ApprovalDecision.ASK

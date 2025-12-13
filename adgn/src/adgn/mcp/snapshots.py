@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 from mcp import types as mcp_types
 from pydantic import BaseModel, Field
 
+from adgn.mcp._shared.types import MCPMountPrefix
+
 
 class McpServerState(StrEnum):
     INITIALIZING = "initializing"
@@ -33,4 +35,4 @@ ServerEntry = Annotated[InitializingServerEntry | RunningServerEntry | FailedSer
 
 class SamplingSnapshot(BaseModel):
     ts: str | None = None
-    servers: dict[str, ServerEntry]
+    servers: dict[MCPMountPrefix, ServerEntry]

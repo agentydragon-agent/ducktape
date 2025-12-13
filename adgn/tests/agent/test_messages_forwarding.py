@@ -84,7 +84,7 @@ async def test_mixed_reasoning_fc_ordering(
     # Note: .make() requires individual items; tool_call still uses build_mcp_function (justified)
     resp = responses_factory.make(
         responses_factory.make_item_reasoning(),
-        responses_factory.mcp_tool_call("echo", "echo", EchoInput(text="hi")),
+        responses_factory.mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hi")),
         responses_factory.assistant_text("done"),
     )
     agent, client = await make_test_agent(pg_client_echo, [resp, _make_reasoning_then_message("ok", responses_factory)])
@@ -125,7 +125,11 @@ async def test_model_provided_tool_output_records_without_execution(
     """If the model supplies tool output inline, agent should not run the tool again."""
     agent, client = await make_test_agent(
         pg_client_echo,
-        [responses_factory.make_mcp_tool_call_with_output("echo", "echo", EchoInput(text="hi"), {"echo": "hi"})],
+        [
+            responses_factory.make_mcp_tool_call_with_output(
+                ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hi"), {"echo": "hi"}
+            )
+        ],
     )
 
     await agent.run("say hi")

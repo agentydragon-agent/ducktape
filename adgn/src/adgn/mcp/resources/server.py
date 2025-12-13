@@ -12,7 +12,7 @@ from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
 from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
@@ -37,7 +37,7 @@ class ResourcesListArgs(OpenAIStrictModeBaseModel):
     All fields are required but accept None to indicate "no filter".
     """
 
-    server: str | None = Field(description="Filter by server name (None = all servers)")
+    server: MCPMountPrefix | None = Field(description="Filter by server name (None = all servers)")
     uri_prefix: str | None = Field(description="Restrict to URIs starting with this prefix (None = no filter)")
 
 
@@ -49,7 +49,7 @@ class ResourcesListResult(BaseModel):
 
 
 class ResourceTemplateEntry(BaseModel):
-    server: str = Field(description="Origin MCP server name that owns this template")
+    server: MCPMountPrefix = Field(description="Origin MCP server name that owns this template")
     template: mcp_types.ResourceTemplate = Field(description="Resource template from origin server")
     model_config = ConfigDict(extra="forbid")
 
@@ -73,7 +73,7 @@ Typed read result is defined after WindowedPart to avoid forward refs.
 
 
 class ResourcesReadArgs(OpenAIStrictModeBaseModel):
-    server: str = Field(description="Origin MCP server name that owns the resource")
+    server: MCPMountPrefix = Field(description="Origin MCP server name that owns the resource")
     uri: str = Field(description="Resource URI as reported by the origin server's list")
     start_offset: int = Field(ge=0, description="Start byte offset for windowed reads")
     max_bytes: int | None = Field(
@@ -82,7 +82,7 @@ class ResourcesReadArgs(OpenAIStrictModeBaseModel):
 
 
 class ResourcesSubscribeArgs(OpenAIStrictModeBaseModel):
-    server: str = Field(description="Origin MCP server name")
+    server: MCPMountPrefix = Field(description="Origin MCP server mount prefix")
     uri: str = Field(description="Resource URI to subscribe to")
 
 
@@ -101,7 +101,7 @@ class SubscriptionRecord(BaseModel):
 
 
 class ListSubscribeArgs(OpenAIStrictModeBaseModel):
-    server: str
+    server: MCPMountPrefix
 
 
 class ResourceCapabilityFeature(StrEnum):
@@ -429,7 +429,7 @@ class ResourcesServer(EnhancedFastMCP):
             # Query each mounted server individually to track template ownership
             entries = await self._compositor.server_entries()
             out: list[ResourceTemplateEntry] = []
-            for server_name, entry in entries.items():
+            for server_prefix, entry in entries.items():
                 if not isinstance(entry, RunningServerEntry):
                     continue
                 # Only query servers that advertise resources capability
@@ -437,10 +437,10 @@ class ResourcesServer(EnhancedFastMCP):
                 if entry.initialize.capabilities.resources is None:
                     continue
                 # Query this server's templates
-                child_client = self._compositor.get_child_client(server_name)
+                child_client = self._compositor.get_child_client(server_prefix)
                 templates = await child_client.list_resource_templates()
                 for template in templates:
-                    out.append(ResourceTemplateEntry(server=server_name, template=template))
+                    out.append(ResourceTemplateEntry(server=server_prefix, template=template))
             return ResourceTemplatesListResult(templates=out)
 
         self.list_templates_tool = self.flat_model()(list_resource_templates)
@@ -749,7 +749,7 @@ class ResourcesServer(EnhancedFastMCP):
             self._subs[key] = rec
         return rec
 
-    async def _require_running_entry(self, server: str) -> RunningServerEntry:
+    async def _require_running_entry(self, server: MCPMountPrefix) -> RunningServerEntry:
         """Fetch the running server entry for a mounted server or raise a ToolError.
 
         This uses the Compositor's typed entries to ensure we have the
@@ -763,7 +763,7 @@ class ResourcesServer(EnhancedFastMCP):
             raise ToolError(f"Server '{server}' is not running (state={entry.state})")
         return entry
 
-    async def _ensure_capability(self, server: str, *, feature: ResourceCapabilityFeature) -> None:
+    async def _ensure_capability(self, server: MCPMountPrefix, *, feature: ResourceCapabilityFeature) -> None:
         """Ensure the target server advertises a required resources capability.
 
         Supported feature values:

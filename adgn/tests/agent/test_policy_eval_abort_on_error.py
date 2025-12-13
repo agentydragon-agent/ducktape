@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import POLICY_EVALUATOR_ERROR_MSG
 from tests.agent.testdata.approval_policy import fetch_policy
 
@@ -25,5 +26,5 @@ async def test_container_timeout_causes_deny_abort(
     async with make_pg_client({"backend": make_simple_mcp, "approval_policy": reader}) as sess:
         # High-level client surfaces ToolError with message only; assert the canonical message
         with pytest.raises(Exception, match=POLICY_EVALUATOR_ERROR_MSG) as ei:
-            await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "timeout"})
+            await sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "timeout"})
         assert POLICY_EVALUATOR_ERROR_MSG in str(ei.value)

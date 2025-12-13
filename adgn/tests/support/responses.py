@@ -9,6 +9,8 @@ from mcp import types as mcp_types
 from pydantic import BaseModel, TypeAdapter
 import pytest
 
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.exec.models import ExecInput
 from adgn.openai_utils import builders
 from adgn.openai_utils.model import (
@@ -75,11 +77,11 @@ class ResponsesFactory:
         return self._item_factory.tool_call(name, arguments, call_id)
 
     def mcp_tool_call(
-        self, server: str, tool: str, arguments: BaseModel, call_id: str | None = None
+        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, call_id: str | None = None
     ) -> FunctionCallItem:
         return self._item_factory.mcp_tool_call(server, tool, arguments, call_id)
 
-    def make_mcp_tool_call(self, server: str, tool: str, arguments: BaseModel) -> ResponsesResult:
+    def make_mcp_tool_call(self, server: MCPMountPrefix, tool: str, arguments: BaseModel) -> ResponsesResult:
         """Create tool call response for MCP server/tool with automatic naming."""
         return self.make(self.mcp_tool_call(server, tool, arguments))
 
@@ -109,7 +111,7 @@ class ResponsesFactory:
             FunctionCallItem for docker/{tool_name} tool
         """
         exec_input = ExecInput(cmd=cmd, cwd=str(cwd) if cwd else None, env=env, user=user, timeout_ms=timeout_ms)
-        return self.mcp_tool_call("docker", tool_name, exec_input)
+        return self.mcp_tool_call(ContainerExecServer.DOCKER_MOUNT_PREFIX, tool_name, exec_input)
 
     def make_item_reasoning(self, id: str | None = None) -> ReasoningItem:
         return ReasoningItem(id=id or f"rs_{self._next_reasoning_id()}")
@@ -151,7 +153,7 @@ class ResponsesFactory:
         return self._make_call_with_output(self.tool_call(name, arguments, call_id), output)
 
     def make_mcp_tool_call_with_output(
-        self, server: str, tool: str, arguments: BaseModel, output: Any
+        self, server: MCPMountPrefix, tool: str, arguments: BaseModel, output: Any
     ) -> ResponsesResult:
         """Create paired tool call + output for MCP server/tool."""
         return self._make_call_with_output(self.mcp_tool_call(server, tool, arguments), output)

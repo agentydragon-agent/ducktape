@@ -8,6 +8,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import UserMessage
 from tests.agent.helpers import NoopOpenAIClient
@@ -38,8 +39,8 @@ class OneShotSyntheticHandler(BaseHandler):
 async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server, recording_handler):
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
     factory = ItemFactory(call_id_prefix="test")
-    tc1 = factory.mcp_tool_call("dummy", "slow", SlowInput())
-    tc2 = factory.mcp_tool_call("dummy", "slow2", Slow2Input())
+    tc1 = factory.mcp_tool_call(MCPMountPrefix("dummy"), "slow", SlowInput())
+    tc2 = factory.mcp_tool_call(MCPMountPrefix("dummy"), "slow2", Slow2Input())
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 

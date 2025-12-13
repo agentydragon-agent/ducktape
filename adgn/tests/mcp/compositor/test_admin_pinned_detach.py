@@ -5,7 +5,7 @@ from fastmcp.exceptions import ToolError
 import pytest
 
 from adgn.mcp._shared.constants import COMPOSITOR_META_MOUNT_PREFIX
-from adgn.mcp.compositor.admin import CompositorAdminServer, DetachServerArgs
+from adgn.mcp.compositor.admin import CompositorAdminServer
 from adgn.mcp.compositor.server import Compositor
 
 
@@ -24,7 +24,7 @@ async def test_admin_cannot_detach_pinned_server(make_pg_client, approval_policy
         # Create admin server and attempt to detach the pinned meta server
         admin_server = CompositorAdminServer(compositor=comp)
         with pytest.raises(ToolError, match="pinned"):
-            await admin_server.detach_server_tool.fn(DetachServerArgs(name=COMPOSITOR_META_MOUNT_PREFIX))
+            await admin_server.detach_server_tool.fn(prefix=COMPOSITOR_META_MOUNT_PREFIX)
 
         # Verify meta server still present after failed detach
         states_after = await comp.server_entries()

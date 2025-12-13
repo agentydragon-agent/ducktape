@@ -9,6 +9,7 @@ from typing import Literal
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
@@ -142,6 +143,9 @@ class EditorServer(EnhancedFastMCP):
     Subclasses EnhancedFastMCP and adds typed tool attributes for accessing
     tool names. This is the single source of truth - no string literals elsewhere.
     """
+
+    # Default mount prefix for editor servers in tests
+    DEFAULT_MOUNT_PREFIX: MCPMountPrefix = MCPMountPrefix("editor")
 
     # Tool references (assigned in __init__ after tool registration)
     read_info_tool: FunctionTool

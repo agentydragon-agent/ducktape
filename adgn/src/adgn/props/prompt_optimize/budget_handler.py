@@ -36,6 +36,9 @@ class BudgetState(StrEnum):
     SUMMARY_PRODUCED = "summary_produced"
 
 
+# TextMessageRedirectHandler moved to adgn.agent.handler.RedirectOnTextMessageHandler
+
+
 class BudgetEnforcementHandler(BaseHandler):
     """Enforce budget limits for prompt optimization runs.
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from hamcrest import assert_that, contains_inanyorder, has_length
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.resources.server import ResourcesListArgs
 
 
@@ -56,8 +57,12 @@ async def test_list_resources_filters_by_server_when_provided(compositor, origin
     await compositor.mount_inproc("other", other)
 
     # Filter by specific server
-    result_origin = await typed_resources_client.list_resources(ResourcesListArgs(server="origin", uri_prefix=None))
-    result_other = await typed_resources_client.list_resources(ResourcesListArgs(server="other", uri_prefix=None))
+    result_origin = await typed_resources_client.list_resources(
+        ResourcesListArgs(server=MCPMountPrefix("origin"), uri_prefix=None)
+    )
+    result_other = await typed_resources_client.list_resources(
+        ResourcesListArgs(server=MCPMountPrefix("other"), uri_prefix=None)
+    )
 
     # Origin should have resources, other should not
     assert_that(result_origin.resources, has_length(1))
@@ -88,15 +93,17 @@ async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources
     await compositor.mount_inproc("test", server)
 
     # List all resources (no filter)
-    all_resources = await typed_resources_client.list_resources(ResourcesListArgs(server="test", uri_prefix=None))
+    all_resources = await typed_resources_client.list_resources(
+        ResourcesListArgs(server=MCPMountPrefix("test"), uri_prefix=None)
+    )
     assert_that(all_resources.resources, has_length(3))
 
     # Filter by uri_prefix
     test_resources = await typed_resources_client.list_resources(
-        ResourcesListArgs(server="test", uri_prefix="resource://test/")
+        ResourcesListArgs(server=MCPMountPrefix("test"), uri_prefix="resource://test/")
     )
     other_resources = await typed_resources_client.list_resources(
-        ResourcesListArgs(server="test", uri_prefix="resource://other/")
+        ResourcesListArgs(server=MCPMountPrefix("test"), uri_prefix="resource://other/")
     )
 
     # Should find 2 resources with test prefix, 1 with other prefix

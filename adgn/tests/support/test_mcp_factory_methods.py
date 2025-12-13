@@ -6,10 +6,12 @@ from hamcrest.core.base_matcher import BaseMatcher
 from hamcrest.core.description import Description
 from pydantic import BaseModel
 
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.exec.docker.server import ContainerExecServer
+from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
 from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 from tests.support.responses import ResponsesFactory
-from tests.support.steps import DOCKER_TEST_MOUNT_PREFIX, EXEC_TEST_TOOL_NAME
 
 
 class SampleInput(BaseModel):
@@ -97,7 +99,9 @@ def has_json_output(expected: dict[str, Any]) -> HasJsonOutput:
 
 def test_item_factory_mcp_tool_call():
     factory = ItemFactory(call_id_prefix="test")
-    call = factory.mcp_tool_call("echo", "echo", SampleInput(text="hello", count=2), call_id="call_1")
+    call = factory.mcp_tool_call(
+        ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, SampleInput(text="hello", count=2), call_id="call_1"
+    )
 
     assert_that(
         call,
@@ -111,14 +115,16 @@ def test_item_factory_mcp_tool_call():
 
 def test_item_factory_mcp_tool_call_auto_id():
     factory = ItemFactory(call_id_prefix="auto")
-    call = factory.mcp_tool_call("server", "tool", SampleInput(text="test"))
+    call = factory.mcp_tool_call(MCPMountPrefix("server"), "tool", SampleInput(text="test"))
 
     assert call.name == "server_tool"
     assert call.call_id == "auto:1"
 
 
 def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactory):
-    result = responses_factory.make_mcp_tool_call(DOCKER_TEST_MOUNT_PREFIX, EXEC_TEST_TOOL_NAME, SampleInput(text="ls"))
+    result = responses_factory.make_mcp_tool_call(
+        ContainerExecServer.DOCKER_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME, SampleInput(text="ls")
+    )
 
     assert_that(result, has_properties(id="resp_generic"))
     assert_that(result.output, has_length(1))
@@ -135,7 +141,9 @@ def test_responses_factory_make_mcp_tool_call(responses_factory: ResponsesFactor
 
 
 def test_responses_factory_mcp_tool_call_item(responses_factory: ResponsesFactory):
-    call = responses_factory.mcp_tool_call("runtime", "exec", SampleInput(text="echo"))
+    call = responses_factory.mcp_tool_call(
+        ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME, SampleInput(text="echo")
+    )
 
     assert_that(
         call,
@@ -149,7 +157,7 @@ def test_responses_factory_mcp_tool_call_item(responses_factory: ResponsesFactor
 
 def test_responses_factory_make_mcp_tool_call_with_output(responses_factory: ResponsesFactory):
     result = responses_factory.make_mcp_tool_call_with_output(
-        "echo", "echo", SampleInput(text="hello"), {"echo": "hello"}
+        ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, SampleInput(text="hello"), {"echo": "hello"}
     )
 
     assert_that(result.output, has_length(2))
@@ -180,7 +188,7 @@ def test_responses_factory_make_mcp_tool_call_with_output(responses_factory: Res
 def test_mcp_tool_call_composes_with_make(responses_factory: ResponsesFactory):
     result = responses_factory.make(
         responses_factory.make_item_reasoning(),
-        responses_factory.mcp_tool_call("server", "tool", SampleInput(text="test")),
+        responses_factory.mcp_tool_call(MCPMountPrefix("server"), "tool", SampleInput(text="test")),
         responses_factory.assistant_text("done"),
     )
 

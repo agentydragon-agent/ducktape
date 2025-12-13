@@ -11,9 +11,18 @@ from typing import Literal
 from pydantic import BaseModel
 
 from adgn.agent.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
-from adgn.agent.loop_control import Abort, LoopDecision, NoAction
+from adgn.agent.loop_control import Abort, InjectItems, LoopDecision, NoAction
+from adgn.openai_utils.model import UserMessage
 
-__all__ = ["AbortIf", "AbortTurnDecision", "BaseHandler", "ContinueDecision", "SequenceHandler"]
+__all__ = [
+    "AbortIf",
+    "AbortTurnDecision",
+    "BaseHandler",
+    "ContinueDecision",
+    "FinishOnTextMessageHandler",
+    "RedirectOnTextMessageHandler",
+    "SequenceHandler",
+]
 
 
 # ----- Generic before-tool-call decision algebra (handler-level, generic) -----
@@ -95,6 +104,14 @@ class BaseHandler:
         """Called when the model emits reasoning tokens (extended thinking mode)."""
         return
 
+    def on_compaction_complete(self, compacted: bool) -> None:
+        """Called after compaction attempt completes.
+
+        Args:
+            compacted: True if compaction succeeded, False if skipped
+        """
+        return
+
 
 class SequenceHandler(BaseHandler):
     """Execute a fixed sequence of actions, then NoAction() forever.
@@ -138,4 +155,68 @@ class AbortIf(BaseHandler):
     def on_before_sample(self) -> LoopDecision:
         if self._should_abort():
             return Abort()
+        return NoAction()
+
+
+class FinishOnTextMessageHandler(BaseHandler):
+    """Abort the agent loop when assistant sends a text message.
+
+    Used for interactive scenarios where each agent.run() should complete
+    after the assistant responds with text (allowing user to respond).
+
+    Usage:
+        handlers = [FinishOnTextMessageHandler(), ...]
+        agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
+        while True:
+            user_input = get_user_input()
+            agent.insert_message(UserMessage.text(user_input))
+            await agent.run()  # Returns after assistant sends text
+    """
+
+    def __init__(self):
+        self._text_detected = False
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        """Mark that assistant text was detected."""
+        self._text_detected = True
+
+    def on_before_sample(self) -> LoopDecision:
+        """Abort if assistant sent text in the previous turn."""
+        if self._text_detected:
+            self._text_detected = False
+            return Abort()
+        return NoAction()
+
+
+class RedirectOnTextMessageHandler(BaseHandler):
+    """Redirect agent when it sends text messages instead of using tools.
+
+    For non-interactive agents that should use MCP tools rather than sending
+    conversational text, this handler injects a reminder message when text is
+    detected.
+
+    Usage:
+        reminder = "You are not interactive. Use tools: foo, bar, baz."
+        handlers = [RedirectOnTextMessageHandler(reminder), ...]
+        agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
+    """
+
+    def __init__(self, reminder_message: str):
+        """Initialize redirect handler.
+
+        Args:
+            reminder_message: Message to inject when assistant sends text instead of using tools
+        """
+        self._reminder = reminder_message
+        self._text_detected = False
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        """Mark that assistant text was detected."""
+        self._text_detected = True
+
+    def on_before_sample(self) -> LoopDecision:
+        """If text was detected last turn, inject reminder and reset flag."""
+        if self._text_detected:
+            self._text_detected = False
+            return InjectItems(items=[UserMessage.text(self._reminder)])
         return NoAction()

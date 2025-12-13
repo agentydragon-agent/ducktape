@@ -11,24 +11,26 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from adgn.mcp._shared.types import MCPMountPrefix
+
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
 
-def extract_tool_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], type[BaseModel]]:
+def extract_tool_schemas(servers: dict[MCPMountPrefix, FastMCP]) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
     """Extract tool result types from FastMCP servers.
 
     Args:
-        servers: Mapping of server_name -> FastMCP instance
+        servers: Mapping of MCPMountPrefix -> FastMCP instance
 
     Returns:
-        Mapping of (server_name, tool_name) -> Pydantic result type
+        Mapping of (server_prefix, tool_name) -> Pydantic result type
 
     Only includes tools with Pydantic BaseModel return annotations.
     """
-    schemas: dict[tuple[str, str], type[BaseModel]] = {}
+    schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
 
-    for server_name, server in servers.items():
+    for server_prefix, server in servers.items():
         # Access internal tool registry (stable FastMCP API)
         try:
             tools = server._tool_manager._tools
@@ -51,26 +53,28 @@ def extract_tool_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], t
             return_type = sig.return_annotation
             # Only register if it's a Pydantic BaseModel subclass
             if inspect.isclass(return_type) and issubclass(return_type, BaseModel):
-                schemas[(server_name, tool_name)] = return_type
+                schemas[(server_prefix, tool_name)] = return_type
 
     return schemas
 
 
-def extract_tool_input_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, str], type[BaseModel]]:
+def extract_tool_input_schemas(
+    servers: dict[MCPMountPrefix, FastMCP],
+) -> dict[tuple[MCPMountPrefix, str], type[BaseModel]]:
     """Extract tool input types from FastMCP servers.
 
     Args:
-        servers: Mapping of server_name -> FastMCP instance
+        servers: Mapping of MCPMountPrefix -> FastMCP instance
 
     Returns:
-        Mapping of (server_name, tool_name) -> Pydantic input type
+        Mapping of (server_prefix, tool_name) -> Pydantic input type
 
     Only includes tools with a single Pydantic BaseModel parameter annotation.
     Handles both regular tools and flat-model tools (with _mcp_flat_input_model).
     """
-    schemas: dict[tuple[str, str], type[BaseModel]] = {}
+    schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {}
 
-    for server_name, server in servers.items():
+    for server_prefix, server in servers.items():
         # Access internal tool registry (stable FastMCP API)
         try:
             tools = server._tool_manager._tools
@@ -87,7 +91,7 @@ def extract_tool_input_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, s
             try:
                 input_model = fn._mcp_flat_input_model  # type: ignore[attr-defined]
                 if inspect.isclass(input_model) and issubclass(input_model, BaseModel):
-                    schemas[(server_name, tool_name)] = input_model
+                    schemas[(server_prefix, tool_name)] = input_model
                 continue
             except AttributeError:
                 pass
@@ -108,6 +112,6 @@ def extract_tool_input_schemas(servers: dict[str, FastMCP]) -> dict[tuple[str, s
             ]
 
             if len(pydantic_params) == 1:
-                schemas[(server_name, tool_name)] = pydantic_params[0].annotation
+                schemas[(server_prefix, tool_name)] = pydantic_params[0].annotation
 
     return schemas

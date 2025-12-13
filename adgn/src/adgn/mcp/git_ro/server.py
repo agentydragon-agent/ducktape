@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 import pygit2
 from pygit2.enums import BranchType
 
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -49,7 +50,7 @@ from .formatting import (
 )
 
 # Shared server name constant for clients/tests
-GIT_RO_SERVER_NAME = "git-ro"
+GIT_RO_SERVER_NAME = MCPMountPrefix("git-ro")
 
 # -------------------------- shared slicing -----------------------------------
 

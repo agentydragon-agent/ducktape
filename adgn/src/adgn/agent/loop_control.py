@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from adgn.openai_utils.model import FunctionCallItem, UserMessage
+from adgn.openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 
 # ---------------------------------------------------------------------------
 # Tool policy algebraic types (what the model is allowed/required to do next)
@@ -76,6 +76,7 @@ class InjectItems:
     """Inject items into the agent loop, then skip sampling.
 
     Supported item types:
+    - SystemMessage: inject system guidance (e.g., warnings, constraints)
     - UserMessage: inject user input (e.g., notifications)
     - FunctionCallItem: inject tool calls (e.g., bootstrap)
 
@@ -84,7 +85,7 @@ class InjectItems:
     the loop continues without sampling (handlers run again next iteration).
     """
 
-    items: Sequence[UserMessage | FunctionCallItem]
+    items: Sequence[SystemMessage | UserMessage | FunctionCallItem]
 
 
 @dataclass(frozen=True)

@@ -13,6 +13,7 @@ from docker.errors import ImageNotFound
 
 from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.props.db.config import DbConnectionConfig
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 PROPS_DIR: Path = Path("/props")
 
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
-DOCKER_MOUNT_PREFIX = "docker"  # Mount prefix for properties Docker exec server
+DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")  # Mount prefix for properties Docker exec server
 
 # Docker network name for properties containers
 # - Shared with postgres container (container-to-container communication)
@@ -157,7 +158,7 @@ class PropertiesDockerCompositor(Compositor):
                 f"PGPORT={self._db_conn.port}, PGDATABASE={self._db_conn.database}, PGUSER={self._db_conn.user}"
             )
         else:
-            logger.warning("No db_conn provided - container will not have database access")
+            logger.info("No db_conn provided - container will not have database access")
         if self._extra_env:
             env.update(self._extra_env)
             logger.info(f"Injecting extra environment variables: {list(self._extra_env.keys())}")

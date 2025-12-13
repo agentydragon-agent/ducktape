@@ -17,13 +17,15 @@ from uuid import UUID
 
 import aiodocker
 from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
 from rich.traceback import install as rich_traceback_install
-from sqlalchemy import select
+from sqlalchemy import distinct, func, select, tuple_
 import typer
 from typer_di import Depends, TyperDI
 
+from adgn.cli.logging_callback import make_logging_callback
 from adgn.cli_utils import async_run
-from adgn.llm.logging_config import VALID_LOG_LEVELS, configure_logging
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
@@ -43,8 +45,11 @@ from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
 from adgn.props.critic.models import CriticInput, CriticSuccess
 from adgn.props.db import get_session, init_db
-from adgn.props.db.models import Critique, GraderRun as DBGraderRun, Snapshot
+from adgn.props.db.datapoints import get_examples_for_split
+from adgn.props.db.models import CriticRun as DBCriticRun, Critique, GraderRun as DBGraderRun, Prompt, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.query_builders import query_prompt_performance_stats
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.eval_harness import run_all_evals
@@ -53,11 +58,18 @@ from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.lint_issue import run_specimen_lint_issue_async
 from adgn.props.models.true_positive import LineRange, Occurrence
+from adgn.props.prompt_improve.improve_agent import (
+    OutcomeExhausted,
+    OutcomeSuccess,
+    OutcomeUnexpectedTermination,
+    run_improvement_agent,
+)
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, get_templates_env
 from adgn.props.runs_context import RunsContext
+from adgn.props.splits import Split
 
 # Reduce Rich traceback verbosity for CLI errors
 rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
@@ -70,9 +82,13 @@ app = TyperDI(help="adgn-properties — properties tooling", add_completion=Fals
 app.add_typer(db_app, name="db")
 app.add_typer(snapshot_app, name="snapshot")
 
+# Configure logging via shared callback (default: WARNING level for props)
+# Then add database initialization on top
+_logging_callback = make_logging_callback(default_level="WARNING")
+
 
 @app.callback()
-def _init_logging(
+def _init_logging_and_db(
     log_output: Annotated[
         str,
         typer.Option(
@@ -84,14 +100,19 @@ def _init_logging(
     log_level: Annotated[
         str,
         typer.Option(
-            "--log-level", envvar="ADGN_LOG_LEVEL", help=f"Log level: {', '.join(VALID_LOG_LEVELS)} (default: WARNING)"
+            "--log-level",
+            envvar="ADGN_LOG_LEVEL",
+            help="Log level: DEBUG, INFO, WARNING, ERROR, CRITICAL (default: WARNING)",
         ),
     ] = "WARNING",
 ) -> None:
     """Global callback to configure logging and initialize database for all subcommands."""
-    configure_logging(log_output=log_output, log_level=log_level)
+    # First, configure logging via the shared callback
+    _logging_callback(log_output=log_output, log_level=log_level)
+
     # Reduce Rich traceback verbosity for CLI errors
     rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
+
     # Initialize database once at CLI entry (uses production config from env vars)
     init_db()
 
@@ -256,8 +277,6 @@ async def prompt_optimize(
     hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
-    from adgn.openai_utils.client_factory import build_client
-
     docker_client = aiodocker.Docker()
     try:
         await run_prompt_optimizer(
@@ -272,6 +291,273 @@ async def prompt_optimize(
         )
     finally:
         await docker_client.close()
+
+
+@app.command("prompt-improve")
+@async_run
+async def prompt_improve_cmd(
+    n_examples: int = typer.Option(10, "--n-examples", "-n", help="Number of training examples to analyze"),
+    token_budget: int = typer.Option(200_000, "--token-budget", "-t", help="Maximum token budget"),
+    model: str = opt.OPT_OPTIMIZER_MODEL,
+    prompt_sha256: str | None = typer.Option(
+        None, "--prompt-sha256", "-p", help="Prompt SHA256 to improve (default: best recent prompt)"
+    ),
+    out_dir: Path | None = typer.Option(None, "--out-dir", "-o", help="Output directory (default: temp dir in /tmp)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Enable verbose logging"),
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
+) -> None:
+    """Run prompt improvement agent on training examples.
+
+    Selects N Pareto-optimal training examples and runs improvement agent with
+    token budget enforcement. The agent analyzes failure patterns and proposes
+    an improved prompt.
+
+    Example:
+        adgn-properties prompt-improve
+        adgn-properties prompt-improve -n 20 -t 100000 -p abc123def...
+    """
+    console = Console()
+    console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
+
+    # Helper function for Pareto selection
+    def select_pareto_examples(session, prompt_sha256_param: str, limit: int) -> list[tuple[str, str]]:
+        """Select Pareto-optimal training examples for a prompt."""
+        all_train_examples = get_examples_for_split(session, Split.TRAIN)
+        if not all_train_examples:
+            raise ValueError("No training examples found")
+
+        # Query grader runs for this prompt on training examples
+        grader_runs = (
+            session.query(DBGraderRun, DBCriticRun)
+            .join(DBCriticRun, DBGraderRun.critique_id == DBCriticRun.critique_id)
+            .filter(
+                DBCriticRun.prompt_sha256 == prompt_sha256_param,
+                DBCriticRun.snapshot_slug.in_([ex.slug for ex in all_train_examples]),
+            )
+            .all()
+        )
+
+        if not grader_runs:
+            logger.warning(
+                f"No grader runs found for prompt {prompt_sha256_param[:12]}..., using first {limit} examples"
+            )
+            return [(ex.slug, ex.files_hash) for ex in all_train_examples[:limit]]
+
+        # Extract recall scores for each (snapshot_slug, files_hash)
+        example_scores: dict[tuple[str, str], float] = {}
+        for grader_run, critic_run in grader_runs:
+            key = (critic_run.snapshot_slug, critic_run.files_hash)
+            if isinstance(grader_run.output, DBGraderSuccess):
+                recall = grader_run.output.recall
+                if key not in example_scores or recall > example_scores[key]:
+                    example_scores[key] = recall
+
+        if not example_scores:
+            logger.warning(
+                f"No successful grader runs for prompt {prompt_sha256_param[:12]}..., using first {limit} examples"
+            )
+            return [(ex.slug, ex.files_hash) for ex in all_train_examples[:limit]]
+
+        # Sort by recall descending and take top N
+        sorted_examples = sorted(example_scores.items(), key=lambda x: x[1], reverse=True)
+        top_n = sorted_examples[:limit]
+        logger.info(
+            f"Selected {len(top_n)} Pareto-optimal examples (recall range: {top_n[-1][1]:.1%} to {top_n[0][1]:.1%})"
+        )
+        return [key for key, _score in top_n]
+
+    # 1. Load current prompt
+    console.print("[dim]Loading prompt from database...[/dim]")
+    with get_session() as session:
+        if prompt_sha256:
+            # Explicit prompt specified - verify it has enough training examples
+            prompt = session.query(Prompt).filter_by(prompt_sha256=prompt_sha256).first()
+            if not prompt:
+                console.print(f"[red]Error:[/red] Prompt not found: {prompt_sha256}")
+                raise typer.Exit(1)
+            prompt_text = prompt.prompt_text
+
+            # Count training examples with grader runs for this prompt
+            all_train_examples = get_examples_for_split(session, Split.TRAIN)
+            grader_runs = (
+                session.query(DBCriticRun, DBGraderRun)
+                .join(DBGraderRun, DBCriticRun.critique_id == DBGraderRun.critique_id)
+                .filter(
+                    DBCriticRun.prompt_sha256 == prompt_sha256,
+                    DBCriticRun.snapshot_slug.in_([ex.slug for ex in all_train_examples]),
+                )
+                .all()
+            )
+
+            if len(grader_runs) < n_examples:
+                console.print(
+                    f"[red]Error:[/red] Prompt {prompt_sha256[:12]}... has only {len(grader_runs)} "
+                    f"training examples with grader runs (need {n_examples})"
+                )
+                raise typer.Exit(1)
+
+            console.print(
+                f"[green]✓[/green] Loaded prompt: {prompt_sha256[:12]}... "
+                f"({len(grader_runs)} training examples available)"
+            )
+        else:
+            # Auto-select: find prompts with enough training examples, pick best by validation LCB
+            all_train_examples = get_examples_for_split(session, Split.TRAIN)
+            if not all_train_examples:
+                console.print("[red]Error:[/red] No training examples found")
+                raise typer.Exit(1)
+
+            # Count training examples per prompt
+            prompt_example_counts = (
+                session.query(
+                    DBCriticRun.prompt_sha256,
+                    func.count(distinct(tuple_(DBCriticRun.snapshot_slug, DBCriticRun.files_hash))).label(
+                        "example_count"
+                    ),
+                )
+                .join(DBGraderRun, DBCriticRun.critique_id == DBGraderRun.critique_id)
+                .filter(DBCriticRun.snapshot_slug.in_([ex.slug for ex in all_train_examples]))
+                .group_by(DBCriticRun.prompt_sha256)
+                .having(func.count(distinct(tuple_(DBCriticRun.snapshot_slug, DBCriticRun.files_hash))) >= n_examples)
+                .all()
+            )
+
+            if not prompt_example_counts:
+                console.print(f"[red]Error:[/red] No prompts have {n_examples}+ training examples with grader runs")
+                raise typer.Exit(1)
+
+            eligible_sha256s = {p for p, _ in prompt_example_counts}
+
+            # Get performance stats for eligible prompts
+            stats = query_prompt_performance_stats(session, limit=100)
+            eligible_stats = [
+                s
+                for s in stats
+                if s.prompt_sha256 in eligible_sha256s and s.valid is not None and s.valid.success_count > 0
+            ]
+
+            if not eligible_stats:
+                console.print(
+                    f"[red]Error:[/red] No prompts with {n_examples}+ training examples have validation results"
+                )
+                raise typer.Exit(1)
+
+            # Pick best by validation LCB
+            best = max(eligible_stats, key=lambda s: s.valid.lcb if s.valid and s.valid.lcb else -1.0)
+            prompt_sha256 = best.prompt_sha256
+            prompt = session.query(Prompt).filter_by(prompt_sha256=prompt_sha256).first()
+            if not prompt:
+                console.print(f"[red]Error:[/red] Prompt metadata missing: {prompt_sha256}")
+                raise typer.Exit(1)
+
+            example_count = next(count for p, count in prompt_example_counts if p == prompt_sha256)
+            prompt_text = prompt.prompt_text
+            console.print(
+                f"[green]✓[/green] Selected best prompt: {prompt_sha256[:12]}... ({example_count} training examples)"
+            )
+            if best.valid:
+                lcb_str = f"{best.valid.lcb:.1f}%" if best.valid.lcb is not None else "N/A"
+                console.print(
+                    f"  Valid: recall={best.valid.mean_recall:.1f}%, LCB={lcb_str}, "
+                    f"n={best.valid.success_count}/{best.valid.total_count}"
+                )
+
+    # 2. Select training examples
+    console.print(f"\n[dim]Selecting {n_examples} training examples...[/dim]")
+    with get_session() as session:
+        example_keys = select_pareto_examples(session, prompt_sha256, n_examples)
+        if not example_keys:
+            console.print("[red]Error:[/red] No training examples found")
+            raise typer.Exit(1)
+
+        if len(example_keys) < n_examples:
+            console.print(
+                f"[yellow]Warning:[/yellow] Only {len(example_keys)} examples available (requested {n_examples})"
+            )
+
+        console.print(f"[green]✓[/green] Selected {len(example_keys)} examples")
+
+        table = Table(title="Training Examples")
+        table.add_column("Snapshot", style="cyan")
+        table.add_column("Files Hash", style="dim")
+        for slug, files_hash in example_keys[:5]:
+            table.add_row(slug, files_hash[:8] + "...")
+        if len(example_keys) > 5:
+            table.add_row("[dim]...[/dim]", f"[dim](+{len(example_keys) - 5} more)[/dim]")
+        console.print(table)
+
+    # 3. Run improvement agent
+    console.print("\n[bold]Running improvement agent[/bold]")
+    console.print(f"  Model: {model}")
+    console.print(f"  Token budget: {token_budget:,}")
+    console.print(f"  Examples: {len(example_keys)}")
+    console.print()
+
+    docker_client = aiodocker.Docker()
+    try:
+        result = await run_improvement_agent(
+            examples=example_keys,
+            current_prompt=prompt_text,
+            token_budget=token_budget,
+            model=model,
+            hydrator=hydrator,
+            docker_client=docker_client,
+            output_dir=out_dir,
+            verbose=verbose,
+        )
+    except Exception as e:
+        console.print(f"\n[red]Error:[/red] {e}")
+        if verbose:
+            logger.exception("Improvement agent failed")
+        raise typer.Exit(1)
+    finally:
+        await docker_client.close()
+
+    # 4. Display results
+    console.print()
+    if isinstance(result.outcome, OutcomeSuccess):
+        # Persist to database
+        prompt_sha256 = hash_and_upsert_prompt(result.outcome.submission.prompt_text)
+
+        panel = Panel(
+            f"[green]✓ Prompt submitted successfully[/green]\n\n"
+            f"[bold]Prompt SHA256:[/bold] {prompt_sha256}\n\n"
+            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
+            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
+            f"[bold]Rationale:[/bold]\n{result.outcome.submission.rationale}\n\n"
+            f"[bold]Expected improvement:[/bold]\n{result.outcome.submission.expected_improvement}\n\n"
+            f"[bold]Prompt length:[/bold] {len(result.outcome.submission.prompt_text):,} characters",
+            title="Improvement Result",
+            border_style="green",
+        )
+        console.print(panel)
+
+        # Display prompt text
+        console.print("\n[bold cyan]Improved Prompt:[/bold cyan]\n")
+        console.print(Panel(result.outcome.submission.prompt_text, border_style="dim"))
+    elif isinstance(result.outcome, OutcomeExhausted):
+        panel = Panel(
+            f"[yellow]! Token budget exhausted[/yellow]\n\n"
+            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
+            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
+            f"The agent exhausted its token budget without submitting a prompt. "
+            f"Try increasing --token-budget or reducing --n-examples.",
+            title="Improvement Result",
+            border_style="yellow",
+        )
+        console.print(panel)
+    elif isinstance(result.outcome, OutcomeUnexpectedTermination):
+        panel = Panel(
+            f"[red]✗ Unexpected termination[/red]\n\n"
+            f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
+            f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
+            f"[bold]Message:[/bold] {result.outcome.message}",
+            title="Improvement Result",
+            border_style="red",
+        )
+        console.print(panel)
+
+    console.print()
 
 
 @app.command("snapshot-grade")
@@ -418,7 +704,7 @@ async def cmd_fix(
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await proc.communicate(input=prompt.encode("utf-8"))
+        _stdout, _stderr = await proc.communicate(input=prompt.encode("utf-8"))
         rc = proc.returncode if proc.returncode is not None else 1
         raise typer.Exit(code=rc)
     finally:

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 from fastmcp import FastMCP
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 
 if TYPE_CHECKING:
     from fastmcp.tools import FunctionTool
@@ -23,7 +24,7 @@ class Mounted(Generic[T]):
 
     Example:
         runtime: Mounted[RuntimeServer] = Mounted(
-            prefix="runtime",
+            prefix=MCPMountPrefix("runtime"),
             server=RuntimeServer(...)
         )
 
@@ -36,7 +37,7 @@ class Mounted(Generic[T]):
         call = builder.call_mounted(runtime, runtime.server.exec_tool, ExecInput(...))
     """
 
-    prefix: str
+    prefix: MCPMountPrefix
     server: T
 
     def tool_name(self, tool: "FunctionTool") -> str:

@@ -66,6 +66,9 @@ ignore = [
 # Avoid conflicts between ruff-format and trailing-comma rules
 extend-ignore = ["COM812"]
 
+# Allow mathematical symbols in strings
+allowed-confusables = ["σ"]
+
 # Enforce modern typing
 [lint.pyupgrade]
 # Target Python 3.12+ - no runtime typing imports needed

@@ -4,6 +4,7 @@ import pytest
 
 from adgn.agent.notifications.handler import format_notifications_message
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from tests.util.notifications import parse_system_notification_payload
 
@@ -33,8 +34,9 @@ def notifier(make_notifier):
 
 
 async def test_notifications_envelope_with_real_mcp(make_buffered_client, notifier):
+    child_prefix = MCPMountPrefix("child")
     async with make_buffered_client({"child": notifier}) as (sess, _comp, buf):
-        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
+        await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
         batch = buf.poll()
         msg = format_notifications_message(batch)
         assert msg is not None
@@ -48,15 +50,16 @@ async def test_notifications_envelope_with_real_mcp(make_buffered_client, notifi
 
 
 async def test_notifications_envelope_after_remount(make_buffered_client, notifier, make_notifier):
+    child_prefix = MCPMountPrefix("child")
     async with make_buffered_client({"child": notifier}) as (sess, comp, buf):
-        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
+        await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
         _ = buf.poll()
 
         # Unmount and re-mount a fresh notifier to simulate reconnect/new client path
-        await comp.unmount_server("child")
-        await comp.mount_inproc("child", make_notifier())
+        await comp.unmount_server(child_prefix)
+        await comp.mount_inproc(child_prefix, make_notifier())
 
-        await sess.call_tool(name=build_mcp_function("child", "emit"), arguments={})
+        await sess.call_tool(name=build_mcp_function(child_prefix, "emit"), arguments={})
         batch = buf.poll()
         msg = format_notifications_message(batch)
         assert msg is not None

@@ -9,10 +9,13 @@ import pytest
 
 from adgn.llm.llm_edit import _execute
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp.editor_server import EditorServer
 from adgn.openai_utils.model import ResponsesRequest
 from tests.support.responses import ResponsesFactory
 
 from ..support.openai_mock import LIVE
+
+EDITOR_PREFIX = EditorServer.DEFAULT_MOUNT_PREFIX
 
 
 def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
@@ -28,21 +31,23 @@ def make_edit_behavior() -> Callable[..., Awaitable[Any]]:
         if i == 0:
             return responses_factory.make(
                 responses_factory.tool_call(
-                    build_mcp_function("editor", "replace_text"),
+                    build_mcp_function(EDITOR_PREFIX, "replace_text"),
                     {"old_text": "HELLO_WORLD", "new_text": "GOODBYE_WORLD"},
                 )
             )
         if i == 1:
-            return responses_factory.make(responses_factory.tool_call(build_mcp_function("editor", "save"), {}))
+            return responses_factory.make(responses_factory.tool_call(build_mcp_function(EDITOR_PREFIX, "save"), {}))
         if i == 2:
             # Inspect buffer to verify content before done
             return responses_factory.make(
-                responses_factory.tool_call(build_mcp_function("editor", "read_line_range"), {"start": 1, "end": 1})
+                responses_factory.tool_call(
+                    build_mcp_function(EDITOR_PREFIX, "read_line_range"), {"start": 1, "end": 1}
+                )
             )
         if i == 3:
             return responses_factory.make(
                 responses_factory.tool_call(
-                    build_mcp_function("editor", "done"), {"outcome": "success", "summary": "ok"}
+                    build_mcp_function(EDITOR_PREFIX, "done"), {"outcome": "success", "summary": "ok"}
                 )
             )
         return responses_factory.make_assistant_message("done")
@@ -64,9 +69,9 @@ async def test_llm_edit_obvious_replace(openai_client_param, tmp_path: Path) -> 
     prompt = (
         "Replace the exact text HELLO_WORLD with GOODBYE_WORLD in the file. "
         "Call exactly these tools in order, and no others: "
-        f"1) {build_mcp_function('editor', 'replace_text')} with old_text='HELLO_WORLD' and new_text='GOODBYE_WORLD' (do NOT use replace_text_all); "
-        f"2) {build_mcp_function('editor', 'save')}; "
-        f"3) {build_mcp_function('editor', 'done')} with outcome='success' and summary='ok'."
+        f"1) {build_mcp_function(EDITOR_PREFIX, 'replace_text')} with old_text='HELLO_WORLD' and new_text='GOODBYE_WORLD' (do NOT use replace_text_all); "
+        f"2) {build_mcp_function(EDITOR_PREFIX, 'save')}; "
+        f"3) {build_mcp_function(EDITOR_PREFIX, 'done')} with outcome='success' and summary='ok'."
     )
 
     code = await _execute(

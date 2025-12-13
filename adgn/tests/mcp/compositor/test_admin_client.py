@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from adgn.mcp.compositor.admin import CompositorAdminServer, DetachServerArgs
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.compositor.admin import CompositorAdminServer
 
 
 async def test_admin_server_detach(make_pg_compositor, make_simple_mcp):
@@ -12,7 +13,7 @@ async def test_admin_server_detach(make_pg_compositor, make_simple_mcp):
 
         # Create admin server and detach backend
         admin_server = CompositorAdminServer(compositor=comp)
-        await admin_server.detach_server_tool.fn(DetachServerArgs(name="backend"))
+        await admin_server.detach_server_tool.fn(prefix=MCPMountPrefix("backend"))
 
         # Verify backend was removed
         states_after = await comp.server_entries()

@@ -14,6 +14,7 @@ import pytest
 from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.resources import read_text_json_typed
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import (
     POLICY_BACKEND_RESERVED_MISUSE_MSG,
     POLICY_DENIED_ABORT_CODE,
@@ -58,7 +59,7 @@ def make_policy_test_backend() -> FlatModelMixin:
 @pytest.mark.requires_docker
 async def test_pg_middleware_allow(pg_client):
     # pg_client already has allow-all policy
-    res = await pg_client.call_tool(build_mcp_function("backend", "echo"), {"text": "7"})
+    res = await pg_client.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "7"})
     assert not res.is_error
     assert res.structured_content == {"echo": "7"}
 
@@ -75,7 +76,7 @@ async def test_pg_middleware_deny(make_pg_client, make_decision_engine, make_sim
     engine = await make_decision_engine(decision)
     async with make_pg_client({"backend": make_simple_mcp}, policy_engine=engine) as sess:
         with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "echo"), {"text": "1"})
+            await sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "1"})
         assert expected_msg in str(ei.value)
 
 
@@ -83,7 +84,7 @@ async def test_pg_middleware_deny(make_pg_client, make_decision_engine, make_sim
 async def test_pg_middleware_reserved_backend_code_remap(make_pg_client, make_policy_test_backend):
     async with make_pg_client({"backend": make_policy_test_backend}) as sess:
         with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "raise_reserved"), {})
+            await sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "raise_reserved"), {})
         # Backend used reserved policy code/message; middleware remaps to explicit misuse error
         assert "policy_backend_reserved_misuse" in str(ei.value)
 
@@ -93,7 +94,7 @@ async def test_pg_middleware_reserved_backend_code_remap(make_pg_client, make_po
 async def test_pg_middleware_backend_stamp_misuse(make_pg_client, make_policy_test_backend):
     async with make_pg_client({"backend": make_policy_test_backend}) as sess:
         with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("backend", "raise_with_gateway_stamp"), {})
+            await sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "raise_with_gateway_stamp"), {})
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in str(ei.value)
 
 
@@ -106,7 +107,7 @@ async def test_pg_middleware_backend_stamp_misuse_via_proxy(make_pg_client, make
 
     async with make_pg_client({"proxy": proxy}) as sess:
         with pytest.raises(ToolError) as ei:
-            await sess.call_tool(build_mcp_function("proxy", "raise_with_gateway_stamp"), {})
+            await sess.call_tool(build_mcp_function(MCPMountPrefix("proxy"), "raise_with_gateway_stamp"), {})
         s = str(ei.value)
         assert POLICY_BACKEND_RESERVED_MISUSE_MSG in s
 
@@ -119,7 +120,9 @@ async def test_pg_middleware_ask_then_allow(make_pg_compositor, make_decision_en
 
     async with make_pg_compositor({"backend": make_simple_mcp}, policy_engine=engine) as comp, Client(comp) as sess:
         # Start tool call in background - it will block waiting for approval
-        call_task = asyncio.create_task(sess.call_tool(build_mcp_function("backend", "echo"), {"text": "3"}))
+        call_task = asyncio.create_task(
+            sess.call_tool(build_mcp_function(MCPMountPrefix("backend"), "echo"), {"text": "3"})
+        )
 
         # Wait briefly for the call to reach pending state
         await asyncio.sleep(0.2)

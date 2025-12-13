@@ -1,3 +1,4 @@
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.server import ResourcesSubscribeArgs
 from tests.util.notifications import enable_resources_caps, install_subscription_recorder
@@ -20,7 +21,11 @@ async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resou
     await compositor.mount_inproc("origin", origin)
 
     # Subscribe to the resource and then unsubscribe
-    await typed_resources_client.subscribe(ResourcesSubscribeArgs(server="origin", uri="resource://foo/bar"))
-    await typed_resources_client.unsubscribe(ResourcesSubscribeArgs(server="origin", uri="resource://foo/bar"))
+    await typed_resources_client.subscribe(
+        ResourcesSubscribeArgs(server=MCPMountPrefix("origin"), uri="resource://foo/bar")
+    )
+    await typed_resources_client.unsubscribe(
+        ResourcesSubscribeArgs(server=MCPMountPrefix("origin"), uri="resource://foo/bar")
+    )
     assert recorder.subscribed, "expected origin to receive subscribe"
     assert recorder.unsubscribed, "expected origin unsubscribe call"

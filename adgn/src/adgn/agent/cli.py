@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 from datetime import datetime
-import logging
 import os
 from pathlib import Path
 import socket
@@ -22,14 +21,14 @@ import uvicorn
 from adgn.agent.agent import Agent
 from adgn.agent.compaction_handler import CompactionHandler
 from adgn.agent.display import CompactDisplayHandler
-from adgn.agent.logging_config import configure_logging_info
+from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.mcp_bridge.auth import TokensConfig
 from adgn.agent.server.app import create_app
 from adgn.agent.server.system_message import get_ui_system_message
 from adgn.agent.transcript_handler import TranscriptHandler
+from adgn.cli.logging_callback import make_logging_callback
 from adgn.cli_utils import async_run
-from adgn.llm.logging_config import configure_logging
 from adgn.mcp._shared.config_loader import build_mcp_config
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.client_factory import build_client
@@ -42,6 +41,10 @@ SYSTEM_INSTRUCTIONS = os.getenv(
 )
 
 app = typer.Typer(help="Mini Codex CLI — run an agent REPL or launch the local UI server.", no_args_is_help=True)
+
+# Configure logging via shared callback (default: INFO level)
+app.callback()(make_logging_callback(default_level="INFO"))
+
 
 # For the HTML UI, prefer the composed UI system message when the caller
 # does not provide an override. Keep REPL behavior unchanged.
@@ -98,24 +101,6 @@ def _print_enabled(servers: list[str]) -> None:
     print("Tip: prefer HTTP specs; inproc factory specs are embedded over HTTP")
 
 
-def _configure_logging_debug() -> None:
-    """Configure logging with DEBUG level on console for UI commands to show OpenAI traffic."""
-    configure_logging()
-    # Set root logger level to DEBUG
-    logging.getLogger().setLevel(logging.DEBUG)
-    # Set console handler to DEBUG
-    for h in logging.getLogger().handlers:
-        if isinstance(h, logging.StreamHandler):
-            h.setLevel(logging.DEBUG)
-    # Trim noise from very chatty libraries while keeping our own DEBUG
-    # aiosqlite is especially verbose (execute/fetchmany/close per call). Suppress DEBUG by default.
-    logging.getLogger("aiosqlite").setLevel(logging.WARNING)
-    # Other common noisy loggers
-    logging.getLogger("watchfiles").setLevel(logging.INFO)
-    logging.getLogger("websockets.client").setLevel(logging.INFO)
-    logging.getLogger("websockets.server").setLevel(logging.INFO)
-
-
 def _build_cfg_and_print(mcp_configs: list[Path]) -> MCPConfig:
     cfg = build_mcp_config(mcp_configs)
     _print_enabled(list(cfg.mcpServers.keys()))
@@ -149,7 +134,6 @@ async def run(
     transcript: Path | None = TRANSCRIPT_OPT,
 ) -> None:
     """Start a simple stdin/stdout REPL."""
-    configure_logging_info()
     console = Console()
     console.print("[bold green]Agent ready.[/] Ctrl-D to exit.", highlight=False)
 
@@ -164,16 +148,24 @@ async def run(
         transcript = Path(f"/tmp/adgn-agent-transcript-{timestamp}.jsonl")
     console.print(f"[dim]Writing transcript to: {transcript}[/dim]")
 
-    # Build handlers with compact rich display
-    handlers: list = [CompactDisplayHandler(console=console), TranscriptHandler(events_path=transcript)]
-    if compact_at_tokens is not None:
-        handlers.append(CompactionHandler(threshold_tokens=compact_at_tokens))
-        console.print(f"[dim]Compaction enabled: will compact at {compact_at_tokens} tokens[/dim]")
-
     # Build in-proc Compositor and mount servers
     # Use Compositor as async context manager to ensure cleanup
     async with Compositor() as comp:
         await comp.mount_servers_from_config(cfg)
+
+        # Build handlers with compact rich display
+        # Handler order matters: on_before_sample() returns first non-NoAction decision.
+        # CompactionHandler must come before FinishOnTextMessageHandler so it can trigger
+        # compaction before the loop aborts (when assistant sends text after hitting threshold).
+        handlers: list = []
+        if compact_at_tokens is not None:
+            handlers.append(CompactionHandler(threshold_tokens=compact_at_tokens))
+            console.print(f"[dim]Compaction enabled: will compact at {compact_at_tokens} tokens[/dim]")
+
+        display_handler = await CompactDisplayHandler.from_compositor(comp, console=console)
+
+        handlers.extend([FinishOnTextMessageHandler(), display_handler, TranscriptHandler(events_path=transcript)])
+
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
@@ -199,9 +191,10 @@ async def run(
 @app.command("serve")
 @async_run
 async def serve(host: str = HOST_OPT, port: int = PORT_OPT, mcp_configs: list[Path] = MCP_CONFIGS_OPT) -> None:
-    """Launch the local FastAPI UI server and keep running."""
-    _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
+    """Launch the local FastAPI UI server and keep running.
 
+    Tip: Use --log-level=DEBUG to show detailed OpenAI traffic.
+    """
     print("Agent serve: starting agent + UI server")
 
     _ = _build_cfg_and_print(mcp_configs)
@@ -228,9 +221,10 @@ def dev(
     mcp_configs: list[Path] = MCP_CONFIGS_OPT,
     open_browser: bool = typer.Option(True, "--open-browser/--no-open-browser"),
 ) -> None:
-    """Run dev mode: Vite frontend (HMR) + backend in one command."""
-    _configure_logging_debug()  # Enable DEBUG logging to show OpenAI traffic
+    """Run dev mode: Vite frontend (HMR) + backend in one command.
 
+    Tip: Use --log-level=DEBUG to show detailed OpenAI traffic.
+    """
     # UI has moved to src/adgn/agent/web
     web_dir = Path(__file__).parent / "web"
     if not (web_dir / "package.json").exists():

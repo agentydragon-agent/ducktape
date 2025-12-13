@@ -9,6 +9,8 @@ Payload is validated with Pydantic.
 Critic agent MUST call ``submit(issues_count)`` after building the critique using the incremental tools.
 
 TODO: Enable compaction for critic runs to reduce transcript size.
+TODO: Do not install adgn package into critic container - snapshots contain past versions of adgn
+      and installing current adgn would create conflicts/pollution in the review environment.
 """
 
 from __future__ import annotations
@@ -33,10 +35,10 @@ if TYPE_CHECKING:
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
-from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
-from adgn.agent.loop_control import InjectItems, RequireAnyTool
+from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -478,7 +480,7 @@ class CriticCompositor(PropertiesDockerCompositor):
     """
 
     # Mount prefix constant (for test infrastructure only)
-    SUBMIT_PREFIX = "critic_submit"
+    SUBMIT_PREFIX = MCPMountPrefix("critic_submit")
 
     # Mounted server attributes (runtime inherited, critic_submit added here)
     critic_submit: Mounted[CriticSubmitServer]
@@ -640,21 +642,28 @@ async def run_critic(
         bootstrap_calls = make_bootstrap_calls_for_inspection(comp, builder)
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-        # Build servers dict for handlers
-        servers = {comp.runtime.prefix: comp.runtime.server, comp.critic_submit.prefix: comp.critic_submit.server}
-
         def _ready_state() -> bool:
             return (critic_state.result is not None) or (critic_state.error is not None)
 
         handlers: list = [
             bootstrap,
-            *build_props_handlers(
+            *await build_props_handlers(
                 transcript_id=transcript_id,
                 verbose_prefix=f"[CRITIC {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
                 if verbose
                 else None,
-                servers=servers,
+                compositor=comp,
                 max_lines=max_lines,
+            ),
+            RedirectOnTextMessageHandler(
+                reminder_message=(
+                    "You are a code review critic agent. The critique has not yet been submitted "
+                    "(critique_submit tool has not been called), so your task is unfinished. "
+                    "Use the provided MCP tools to mark all issues and occurrences you want to report, "
+                    "then either submit the critique or report failure if you encounter unrecoverable problems. "
+                    "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
+                    "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
+                )
             ),
             AbortIf(should_abort=_ready_state),
             *extra_handlers,
@@ -684,7 +693,7 @@ async def run_critic(
                 client=client,
                 handlers=handlers,
                 parallel_tool_calls=True,
-                tool_policy=RequireAnyTool(),
+                tool_policy=AllowAnyToolOrTextMessage(),
                 reasoning_summary=ReasoningSummary.detailed,
                 dynamic_instructions=_build_critic_instructions,
             )
@@ -694,6 +703,7 @@ async def run_critic(
                 await agent.run()
             except MaxTurnsExceededError:
                 # Agent ran out of turns - create max_turns_exceeded output
+                # NOTE: max_turns_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
                 logger.warning(
                     f"Critic hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
                     f"transcript_id={short_uuid(transcript_id)}"
@@ -707,6 +717,7 @@ async def run_critic(
                 # instead of string matching - more robust for different API providers
                 error_str = str(e).lower()
                 if "context_length_exceeded" in error_str or "context window" in error_str:
+                    # NOTE: context_length_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
                     logger.warning(
                         f"Critic hit context length limit for {input_data.snapshot_slug}, "
                         f"transcript_id={short_uuid(transcript_id)}: {e}"

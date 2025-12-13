@@ -127,9 +127,9 @@ TrainingExample(
 
 **Execution Traces:**
 ```
-CALL docker__run_command({"command": "ruff check src/"})
+CALL docker_run_command({"command": "ruff check src/"})
   → src/foo.py:42: E501 Line too long...
-CALL critic_submit__upsert_issue({"issue_id": "line-too-long", ...})
+CALL critic_submit_upsert_issue({"issue_id": "line-too-long", ...})
 ```
 
 **Grader Analysis:**

@@ -6,6 +6,8 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.loop_control import RequireAnyTool
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
 from tests.llm.support.openai_mock import make_mock
@@ -24,9 +26,14 @@ async def test_model_reads_container_info_with_stubbed_openai(
         runner = make_step_runner(
             steps=[
                 MakeCall(
-                    "resources",
+                    MCPMountPrefix("resources"),
                     "read",
-                    ResourcesReadArgs(server="docker", uri=container_info_uri, start_offset=0, max_bytes=1024),
+                    ResourcesReadArgs(
+                        server=ContainerExecServer.DOCKER_MOUNT_PREFIX,
+                        uri=container_info_uri,
+                        start_offset=0,
+                        max_bytes=1024,
+                    ),
                 ),
                 AssistantMessage("ok"),
             ]

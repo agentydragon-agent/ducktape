@@ -8,6 +8,8 @@ from adgn.mcp.exec.models import BaseExecResult, Exited, TimedOut, make_exec_inp
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from tests.conftest import make_container_opts
 
+RUNTIME_PREFIX = ContainerExecServer.RUNTIME_MOUNT_PREFIX
+
 
 def _runtime_spec_persession(docker_client, image: str = "alpine:3.19"):
     return ContainerExecServer(
@@ -21,7 +23,7 @@ async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_client, asy
     async with make_pg_client({"runtime": _runtime_spec_persession(async_docker_client)}) as mcp_client:
         # Cause a host-side timeout: sleep longer than timeout_ms
         # Namespaced exec via Compositor
-        stub = ToolStub(mcp_client, build_mcp_function("runtime", "exec"), BaseExecResult)
+        stub = ToolStub(mcp_client, build_mcp_function(RUNTIME_PREFIX, "exec"), BaseExecResult)
 
         res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
         assert isinstance(res_timeout.exit, TimedOut)

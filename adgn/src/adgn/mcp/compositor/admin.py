@@ -4,7 +4,7 @@ from fastmcp.mcp_config import MCPServerTypes, RemoteMCPServer, StdioMCPServer
 from fastmcp.tools import FunctionTool
 from pydantic import Field
 
-from adgn.mcp._shared.types import SimpleOk
+from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -39,12 +39,12 @@ ServerSpec = StdioServerSpec | HttpServerSpec
 
 
 class AttachServerArgs(OpenAIStrictModeBaseModel):
-    name: str = Field(description="Mount name (must be unique and not contain '__')")
+    prefix: MCPMountPrefix = Field(description="Mount prefix (validated server mount prefix)")
     spec: ServerSpec = Field(description="Server spec (stdio or http)")
 
 
 class DetachServerArgs(OpenAIStrictModeBaseModel):
-    name: str
+    prefix: MCPMountPrefix
 
 
 def convert_mcp_server_types_to_spec(mcp_spec: MCPServerTypes) -> ServerSpec:
@@ -108,14 +108,14 @@ class CompositorAdminServer(EnhancedFastMCP):
         async def attach_server(input: AttachServerArgs) -> SimpleOk:
             """Attach an MCP server (stdio or http transport)."""
             mcp_spec = _convert_spec_to_mcp_server_types(input.spec)
-            await self._compositor.mount_server(input.name, mcp_spec)
+            await self._compositor.mount_server(input.prefix, mcp_spec)
             return SimpleOk(ok=True)
 
         self.attach_server_tool = self.flat_model()(attach_server)
 
         async def detach_server(input: DetachServerArgs) -> SimpleOk:
             """Detach a mounted MCP server."""
-            await self._compositor.unmount_server(input.name)
+            await self._compositor.unmount_server(input.prefix)
             return SimpleOk(ok=True)
 
         self.detach_server_tool = self.flat_model()(detach_server)

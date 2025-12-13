@@ -15,6 +15,8 @@ from syrupy.assertion import SnapshotAssertion
 from adgn.agent.display.rich_display import CompactDisplayHandler
 from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, Exited
 
 
@@ -27,9 +29,15 @@ def render_handler_to_string(call: ToolCall, output: ToolCallOutput, prefix: str
     console = Console(file=out, width=80, legacy_windows=False, color_system=None)
 
     # Register tool schemas so the handler can recognize ExecInput/BaseExecResult
-    # Use tuple keys (server_name, tool_name) as expected by CompactDisplayHandler
-    tool_input_schemas: dict[tuple[str, str], type[BaseModel]] = {("runtime", "exec"): cast(type[BaseModel], ExecInput)}
-    tool_schemas: dict[tuple[str, str], type[BaseModel]] = {("runtime", "exec"): cast(type[BaseModel], BaseExecResult)}
+    # Use tuple keys (MCPMountPrefix, tool_name) as expected by CompactDisplayHandler
+    tool_input_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
+        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(type[BaseModel], ExecInput)
+    }
+    tool_schemas: dict[tuple[MCPMountPrefix, str], type[BaseModel]] = {
+        (ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME): cast(
+            type[BaseModel], BaseExecResult
+        )
+    }
 
     # Create handler with the console and schemas
     test_handler = CompactDisplayHandler(max_lines=20, console=console, prefix=prefix, show_usage=False)
@@ -63,7 +71,9 @@ def test_docker_exec_shell_unwrapping_snapshot(snapshot: SnapshotAssertion, call
 
     # Create ToolCall with ExecInput
     call = ToolCall(
-        name=build_mcp_function("runtime", "exec"), args_json=json.dumps(exec_input.model_dump()), call_id=call_id_gen()
+        name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
+        args_json=json.dumps(exec_input.model_dump()),
+        call_id=call_id_gen(),
     )
 
     # Create BaseExecResult (successful exit)
@@ -89,7 +99,9 @@ def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_
 
     # Create ToolCall
     call = ToolCall(
-        name=build_mcp_function("runtime", "exec"), args_json=json.dumps(exec_input.model_dump()), call_id=call_id_gen()
+        name=build_mcp_function(ContainerExecServer.RUNTIME_MOUNT_PREFIX, ContainerExecServer.EXEC_TOOL_NAME),
+        args_json=json.dumps(exec_input.model_dump()),
+        call_id=call_id_gen(),
     )
 
     # Create BaseExecResult
