@@ -18,7 +18,7 @@ async def test_container_timeout_causes_deny_abort(
     monkeypatch.setenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "0.1")
     # Policy that sleeps (exceeds timeout)
     sleepy_policy = fetch_policy("sleepy_timeout")
-    engine = make_approval_policy_server(sleepy_policy)
+    engine = await make_approval_policy_server(sleepy_policy)
 
     # Reader server
     reader = engine.reader

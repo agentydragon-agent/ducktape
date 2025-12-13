@@ -1,4 +1,4 @@
-"""Test that the valid_full_snapshot_grader_metrics view correctly extracts fields from GraderOutput."""
+"""Test that the valid_metrics view correctly extracts fields from GraderOutput."""
 
 import hashlib
 from pathlib import Path
@@ -9,7 +9,7 @@ from sqlalchemy import text
 
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot, TruePositive
+from adgn.props.db.models import CriticRun, Critique, Example, GraderRun, Snapshot, TruePositive
 from adgn.props.grader.models import (
     CanonicalTPCoverage,
     GradeSubmitInput,
@@ -94,6 +94,10 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         )
         session.add(tp2)
 
+        # Insert example (required for valid_metrics view join)
+        example = Example(snapshot_slug=snapshot_slug, files=files, files_hash=files_hash)
+        session.add(example)
+
         # Insert critique (required FK for grader_run)
         critique_payload = CriticSubmitPayload(issues=[], notes_md=None)
         critique = Critique(id=critique_id, snapshot_slug=snapshot_slug, payload=critique_payload)
@@ -128,7 +132,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         result = session.execute(
             text("""
                 SELECT recall
-                FROM valid_full_snapshot_grader_metrics
+                FROM valid_metrics
                 WHERE snapshot_slug = :slug
             """),
             {"slug": str(snapshot_slug)},

@@ -67,7 +67,7 @@ class TestPresetPolicyLoading:
         async with Client(engine.reader) as sess:
             # Read the policy resource
             result = await sess.read_resource(engine.reader.active_policy_resource.uri)
-            policy_text = extract_single_text_content(result.contents)
+            policy_text = extract_single_text_content(result)
             # Should contain the allow_all policy
             assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
 
@@ -84,7 +84,7 @@ class TestPresetPolicyLoading:
 
         async with Client(engine.reader) as sess:
             result = await sess.read_resource(engine.reader.active_policy_resource.uri)
-            policy_text = extract_single_text_content(result.contents)
+            policy_text = extract_single_text_content(result)
             # const policy should be returned
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text
 

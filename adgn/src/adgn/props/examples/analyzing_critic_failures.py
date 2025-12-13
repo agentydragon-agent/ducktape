@@ -13,6 +13,10 @@ Note: You only have access to the training examples assigned to you in the
 improvement context. Query by (snapshot_slug, files_hash) pairs.
 """
 
+from pydantic import TypeAdapter
+
+from adgn.agent.events import ToolCall, ToolCallOutput
+from adgn.mcp.exec.models import ExecInput
 from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Event, GraderRun
@@ -66,10 +70,9 @@ def main():
             print("- Encountered an error")
             print()
             return
-        else:
-            print("Status: SUCCESS (critique submitted)")
-            print(f"Critique ID: {critic_run.critique_id}")
-            print()
+        print("Status: SUCCESS (critique submitted)")
+        print(f"Critique ID: {critic_run.critique_id}")
+        print()
 
         # Get grader result for this critic run
         grader_run = session.query(GraderRun).filter_by(critique_id=critic_run.critique_id).first()
@@ -83,19 +86,32 @@ def main():
         if isinstance(grader_run.output, DBGraderSuccess):
             grade = grader_run.output
             print(f"Recall: {grade.recall:.1%}")
-            print(f"Precision: {grade.precision:.1%}")
-            print(f"True Positives: {len(grade.true_positives)}")
-            print(f"False Positives: {len(grade.false_positives)}")
-            print(f"False Negatives: {len(grade.false_negatives)} (missed issues)")
+
+            # Count coverage entries
+            tp_count = len(grade.canonical_tp_coverage)
+            fp_count = len(grade.canonical_fp_coverage)
+            novel_count = len(grade.novel_critique_issues)
+
+            print(f"TP Coverage Entries: {tp_count}")
+            print(f"FP Coverage Entries: {fp_count}")
+            print(f"Novel Issues: {novel_count}")
+
+            if grade.reported_issue_ratios:
+                print(f"Reported Issue Ratios: TP={grade.reported_issue_ratios.true_positive:.1%}, "
+                      f"FP={grade.reported_issue_ratios.false_positive:.1%}, "
+                      f"Unlabeled={grade.reported_issue_ratios.unlabeled:.1%}")
             print()
 
-            # Show some missed issues
-            if grade.false_negatives:
-                print("=== Sample Missed Issues (False Negatives) ===\n")
-                for fn in grade.false_negatives[:3]:
-                    print(f"  - {fn.canonical_id}")
-                    print(f"    Category: {fn.category}")
-                    print(f"    Rationale: {fn.rationale[:80]}...")
+            # Show missed issues (TPs with zero recall credit)
+            missed = [entry for entry in grade.canonical_tp_coverage if entry.recall_credit == 0.0]
+            if missed:
+                print(f"=== Missed Issues ({len(missed)} TPs with zero recall credit) ===\n")
+                for entry in missed[:3]:
+                    print(f"  - {entry.canonical_id}")
+                    if entry.matched_inputs:
+                        print("    (Partially matched but zero credit)")
+                    else:
+                        print("    (Not matched at all)")
                     print()
         else:
             print("Grader run failed or incomplete")
@@ -106,7 +122,7 @@ def main():
         events = (
             session.query(Event)
             .filter(Event.transcript_id == critic_run.transcript_id)
-            .order_by(Event.sequence_number)
+            .order_by(Event.sequence_num)
             .limit(10)
             .all()
         )
@@ -114,30 +130,61 @@ def main():
         if events:
             for evt in events:
                 payload = evt.payload
-                event_type = payload.get("type", "unknown")
 
-                if event_type == "tool_call":
-                    tool_name = payload.get("name", "unknown")
-                    args = payload.get("arguments", {})
-                    print(f"  [{evt.sequence_number}] CALL {tool_name}")
+                # Event payload is a typed Pydantic model (EventType discriminated union)
+                # Access typed attributes instead of using .get()
+                if isinstance(payload, ToolCall):
+                    print(f"  [{evt.sequence_num}] CALL {payload.name}")
 
-                    # Show interesting command args
-                    if "command" in args:
-                        cmd = args["command"]
-                        if isinstance(cmd, list):
-                            print(f"       Command: {' '.join(cmd[:5])}")
-                        else:
-                            print(f"       Command: {cmd[:60]}...")
+                    # Show interesting command args from docker_exec calls
+                    if payload.args_json and "docker_exec" in payload.name:
+                        # Use Pydantic TypeAdapter to parse docker_exec arguments
+                        exec_input = TypeAdapter(ExecInput).validate_json(payload.args_json)
+                        # Show truncated command
+                        cmd_parts = exec_input.cmd[:5]
+                        if len(exec_input.cmd) > 5:
+                            cmd_parts.append("...")
+                        print(f"       Command: {' '.join(cmd_parts)}")
 
-                elif event_type == "tool_result":
-                    print(f"  [{evt.sequence_number}] RESULT")
-                    # Could show structured_content here if needed
+                elif isinstance(payload, ToolCallOutput):
+                    result = payload.result
+                    if result.isError:
+                        print(f"  [{evt.sequence_num}] ERROR")
+                    else:
+                        print(f"  [{evt.sequence_num}] OK")
 
             total_events = session.query(Event).filter(Event.transcript_id == critic_run.transcript_id).count()
             if len(events) < total_events:
                 print(f"  ... ({total_events - len(events)} more events)")
         else:
             print("  No execution trace found")
+
+        # Show reasoning summaries (if any)
+        reasoning_events = (
+            session.query(Event)
+            .filter(Event.transcript_id == critic_run.transcript_id, Event.event_type == "reasoning")
+            .order_by(Event.sequence_num)
+            .all()
+        )
+
+        if reasoning_events:
+            print("\n=== Reasoning Summaries ===\n")
+            for evt in reasoning_events[:5]:  # Show first 5 reasoning events
+                payload = evt.payload
+                # Payload is a ReasoningItem with typed 'summary' attribute
+                if hasattr(payload, "summary") and payload.summary:
+                    print(f"  [{evt.sequence_num}] Reasoning:")
+                    for item in payload.summary:
+                        # Each item is a ReasoningSummaryItem with 'text' attribute
+                        text = item.text if hasattr(item, "text") else str(item)
+                        # Truncate long summaries
+                        if len(text) > 100:
+                            text = text[:100] + "..."
+                        print(f"    - {text}")
+                    print()
+
+            if len(reasoning_events) > 5:
+                print(f"  ... ({len(reasoning_events) - 5} more reasoning events)")
 
 
 if __name__ == "__main__":

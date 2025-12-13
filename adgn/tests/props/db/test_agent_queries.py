@@ -39,7 +39,13 @@ from adgn.props.db.models import (
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import FileOccurrence, Occurrence
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST, make_grader_output
+from tests.props.conftest import (
+    TEST_FILES_HASH,
+    TEST_FILES_LIST,
+    make_critic_success,
+    make_critique_payload,
+    make_grader_output,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -134,6 +140,17 @@ def query_test_data(test_db):
 
         session.flush()
 
+        # Create examples (required for valid_metrics view join)
+        examples = [
+            Example(snapshot_slug="train/spec-a", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH),
+            Example(snapshot_slug="train/spec-b", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH),
+            Example(snapshot_slug="valid/spec-a", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH),
+        ]
+        for example in examples:
+            session.add(example)
+
+        session.flush()
+
         # Create critiques (train and valid)
         critique_a_id = uuid4()
         critique_b_id = uuid4()
@@ -204,7 +221,7 @@ def query_test_data(test_db):
                 critique_id=critique_a_id,
                 files=TEST_FILES_LIST,
                 files_hash=TEST_FILES_HASH,
-                output={"tag": "success"},
+                output=make_critic_success(),
             ),
             CriticRun(
                 transcript_id=uuid4(),
@@ -214,7 +231,7 @@ def query_test_data(test_db):
                 critique_id=critique_b_id,
                 files=TEST_FILES_LIST,
                 files_hash=TEST_FILES_HASH,
-                output={"tag": "success"},
+                output=make_critic_success(),
             ),
             CriticRun(
                 transcript_id=uuid4(),
@@ -224,7 +241,7 @@ def query_test_data(test_db):
                 critique_id=critique_valid_id,
                 files=TEST_FILES_LIST,
                 files_hash=TEST_FILES_HASH,
-                output={"tag": "success"},
+                output=make_critic_success(),
             ),
         ]
         for run in critic_runs:
@@ -547,7 +564,7 @@ class TestJsonbNullFiltering:
             session.flush()
 
             session.add(
-                Critique(id=critique_id, snapshot_slug="train/jsonb-null-test", payload={"issues": [], "notes_md": ""})
+                Critique(id=critique_id, snapshot_slug="train/jsonb-null-test", payload=make_critique_payload())
             )
             session.commit()
 
@@ -593,8 +610,8 @@ class TestJsonbNullFiltering:
             jsonb_null_runs = [r for r in result if r.snapshot_slug == "train/jsonb-null-test"]
             assert len(jsonb_null_runs) == 0, "Grader runs with JSONB null output should be excluded"
 
-    def test_recent_grader_results_excludes_missing_grade_field(self, test_db, test_prompt_sha):
-        """Grader runs with output missing 'grade' field are excluded from recent_grader_results."""
+    def test_recent_grader_results_handles_missing_grade_field(self, test_db, test_prompt_sha):
+        """Grader runs with output missing 'grade' field return NULL for derived fields."""
         critique_id = uuid4()
         grader_missing_grade_id = uuid4()
 
@@ -603,9 +620,7 @@ class TestJsonbNullFiltering:
             session.flush()
 
             session.add(
-                Critique(
-                    id=critique_id, snapshot_slug="train/missing-grade-test", payload={"issues": [], "notes_md": ""}
-                )
+                Critique(id=critique_id, snapshot_slug="train/missing-grade-test", payload=make_critique_payload())
             )
             session.commit()
 
@@ -630,7 +645,12 @@ class TestJsonbNullFiltering:
         with get_session() as session:
             result = session.execute(qb.recent_grader_results(limit=100)).fetchall()
             missing_grade_runs = [r for r in result if r.snapshot_slug == "train/missing-grade-test"]
-            assert len(missing_grade_runs) == 0, "Grader runs with missing grade field should be excluded"
+            # The query is designed to be permissive - it includes rows with malformed output
+            # and returns NULL for fields that can't be extracted via CASE statements
+            assert len(missing_grade_runs) == 1, "Should include rows with malformed output"
+            row = missing_grade_runs[0]
+            assert row.status is None, "status should be NULL (no 'tag' field)"
+            assert row.recall is None, "recall should be NULL (CASE returns NULL when tag != 'success')"
 
     def test_recent_grader_results_includes_valid_output(self, test_db, test_prompt_sha):
         """Grader runs with proper output containing grade field are included."""
@@ -642,9 +662,7 @@ class TestJsonbNullFiltering:
             session.flush()
 
             session.add(
-                Critique(
-                    id=critique_id, snapshot_slug="train/valid-output-test", payload={"issues": [], "notes_md": ""}
-                )
+                Critique(id=critique_id, snapshot_slug="train/valid-output-test", payload=make_critique_payload())
             )
             session.commit()
 
@@ -652,7 +670,7 @@ class TestJsonbNullFiltering:
             valid_output = make_grader_output(
                 tp_count=2, fp_count=1, recall=0.5, tp_ratio=0.6, fp_ratio=0.2, summary="Valid output test"
             )
-            valid_output_json = json.dumps(valid_output)
+            valid_output_json = json.dumps(valid_output.model_dump())
 
             # Insert grader run with valid output using raw SQL
             session.execute(
@@ -692,7 +710,7 @@ class TestJsonbNullFiltering:
             session.flush()
 
             session.add(
-                Critique(id=critique_id, snapshot_slug="train/scope-null-test", payload={"issues": [], "notes_md": ""})
+                Critique(id=critique_id, snapshot_slug="train/scope-null-test", payload=make_critique_payload())
             )
             session.flush()
 
@@ -711,7 +729,7 @@ class TestJsonbNullFiltering:
                     critique_id=critique_id,
                     files=TEST_FILES_LIST,
                     files_hash=TEST_FILES_HASH,
-                    output={"tag": "success"},
+                    output=make_critic_success(),
                 )
             )
             session.commit()

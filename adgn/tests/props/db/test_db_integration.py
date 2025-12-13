@@ -28,11 +28,18 @@ from sqlalchemy.orm import sessionmaker
 
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.models import CriticRun, Critique, GraderRun, Snapshot, TruePositive
+from adgn.props.db.models import CriticRun, Critique, Example, GraderRun, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.true_positive import TruePositiveOccurrence
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import TEST_FILES_HASH, TEST_FILES_LIST, make_grader_output
+from tests.props.conftest import (
+    TEST_FILES_HASH,
+    TEST_FILES_LIST,
+    make_critic_max_turns_exceeded,
+    make_critic_success,
+    make_critique_payload,
+    make_grader_output,
+)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -109,7 +116,7 @@ def test_rls_blocks_test_split_for_agent_user(test_db, test_prompt_sha):
             model="test-model",
             files=TEST_FILES_LIST,
             files_hash=TEST_FILES_HASH,
-            output={"tag": "failure", "error": "test"},
+            output=make_critic_max_turns_exceeded(max_turns=10),
         )
         session.add(test_run)
         session.commit()
@@ -153,7 +160,7 @@ def test_rls_allows_train_split_for_agent_user(test_db, test_prompt_sha):
             model="test-model",
             files=TEST_FILES_LIST,
             files_hash=TEST_FILES_HASH,
-            output={"tag": "failure", "error": "test"},
+            output=make_critic_max_turns_exceeded(max_turns=10),
         )
         session.add(train_run)
         session.commit()
@@ -201,11 +208,14 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
         session.add(tp)
         session.commit()
 
+        # Create example (required for valid_metrics view join)
+        example = Example(snapshot_slug="valid/spec-test", files=TEST_FILES_LIST, files_hash=TEST_FILES_HASH)
+        session.add(example)
+        session.commit()
+
         # Create a critique for the valid specimen
         valid_critique = Critique(
-            id=valid_critique_id,
-            snapshot_slug="valid/spec-test",
-            payload={"issues": [{"id": "issue-1", "rationale": "Secret valid rationale"}], "notes_md": ""},
+            id=valid_critique_id, snapshot_slug="valid/spec-test", payload=make_critique_payload(notes_md="")
         )
         session.add(valid_critique)
         session.commit()
@@ -219,7 +229,7 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
             critique_id=valid_critique_id,
             files=TEST_FILES_LIST,
             files_hash=TEST_FILES_HASH,
-            output={"tag": "success"},
+            output=make_critic_success(),
         )
         session.add(valid_critic_run)
         session.commit()
@@ -259,13 +269,9 @@ def test_rls_blocks_valid_critique_details_for_agent_user(test_db, test_prompt_s
 
         # SHOULD see valid aggregates via the view
         result = session.execute(
-            text(
-                "SELECT snapshot_slug, recall FROM valid_full_snapshot_grader_metrics WHERE snapshot_slug = 'valid/spec-test'"
-            )
+            text("SELECT snapshot_slug, recall FROM valid_metrics WHERE snapshot_slug = 'valid/spec-test'")
         ).fetchall()
-        assert len(result) == 1, (
-            "agent_user SHOULD see valid split aggregates via valid_full_snapshot_grader_metrics view"
-        )
+        assert len(result) == 1, "agent_user SHOULD see valid split aggregates via valid_metrics view"
         assert result[0].recall == 0.8
 
         # Test the blocked SQL from prompt: attempt to get critique details

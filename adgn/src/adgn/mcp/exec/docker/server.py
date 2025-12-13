@@ -118,7 +118,19 @@ class ContainerExecServer(EnhancedFastMCP):
             """Run a command inside the per-session Docker container.
 
             The cmd array is passed directly to Docker exec (execve-style, no shell).
-            For shell features, the caller wraps in: ["sh", "-c", "command string"]
+            No shell interpretation - arguments are passed as-is to the executable.
+
+            Usage patterns:
+            - Simple command: {"cmd": ["python", "--version"]}
+            - With arguments: {"cmd": ["nl", "-ba", "/workspace/file.py"]}
+            - Shell features (pipes, redirection): {"cmd": ["sh", "-c", "grep pattern | head"]}
+            - Python from stdin: {"cmd": ["python"], "stdin_text": "print('hello')\\n"}
+            - Working directory: {"cmd": ["ls"], "cwd": "/snapshots"}
+
+            Common mistakes:
+            - DON'T: {"cmd": ["python '- << 'PY'"]} (shell syntax without sh -c)
+            - DON'T: {"cmd": ["grep", "'pattern'"]} (quotes in string)
+            - DO: {"cmd": ["sh", "-c", "cat > file.txt"], "stdin_text": "content"}
             """
             async with async_timer() as get_duration_ms:
                 s = session_state_from_ctx(context)

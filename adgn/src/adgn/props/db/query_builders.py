@@ -34,6 +34,29 @@ from adgn.props.db.models import (
 from adgn.props.ids import SnapshotSlug
 
 
+def _exclude_jsonb_null(column):
+    """Helper to exclude JSON null values from JSONB columns.
+
+    PydanticColumn stores Python None as JSON null ('null'::jsonb), not SQL NULL.
+    SQLAlchemy's .isnot(None) only excludes SQL NULL, so JSON null rows pass through
+    and crash when deserialized to Python None.
+
+    Usage:
+        .where(GraderRun.output.isnot(None))  # Excludes SQL NULL
+        .where(_exclude_jsonb_null(GraderRun.output))  # Excludes JSON null
+
+    Args:
+        column: SQLAlchemy column expression (e.g., GraderRun.output)
+
+    Returns:
+        SQLAlchemy binary expression: column != cast('null', JSONB)
+    """
+    from sqlalchemy.dialects import postgresql
+
+    # Cast 'null' string to JSONB type and compare
+    return column != cast(literal("null"), postgresql.JSONB)
+
+
 class SplitPerformanceStats(BaseModel):
     """Performance statistics for a prompt on a single split."""
 
@@ -280,6 +303,7 @@ def recent_grader_results(limit: int = 10) -> Select:
         .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
+        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
         .order_by(GraderRun.created_at.desc())
         .limit(limit)
     )
@@ -389,6 +413,7 @@ def valid_metrics_select() -> Select:
         )
         .where(Snapshot.split == "valid")
         .where(GraderRun.output.isnot(None))
+        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
     )
 
 
@@ -474,6 +499,7 @@ def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select
         .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
         .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .where(GraderRun.output.isnot(None))
+        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
         .limit(limit)
     )
 
@@ -761,6 +787,7 @@ def grader_runs_by_scope_train(limit: int = 10) -> Select:
         )
         .where(Snapshot.split == "train")
         .where(GraderRun.output.isnot(None))
+        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
         .group_by(GraderRun.snapshot_slug, Example.files_hash, Example.files)
         .order_by(func.count().desc())
         .limit(limit)

@@ -50,7 +50,7 @@ from tests.support.types import McpServerSpecs
 
 
 @pytest.fixture
-def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
+async def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).

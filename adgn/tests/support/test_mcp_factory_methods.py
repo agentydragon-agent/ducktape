@@ -180,7 +180,7 @@ def test_responses_factory_make_mcp_tool_call_with_output(responses_factory: Res
         all_of(
             instance_of(FunctionCallOutputItem),
             has_properties(call_id=equal_to(call_item.call_id)),  # output matches call
-            has_json_output({"structured_content": {"echo": "hello"}, "is_error": False}),
+            has_json_output({"_meta": None, "content": [], "structuredContent": {"echo": "hello"}, "isError": False}),
         ),
     )
 

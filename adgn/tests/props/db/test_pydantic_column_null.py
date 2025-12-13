@@ -12,7 +12,7 @@ import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from adgn.props.db import get_session, init_db
+from adgn.props.db import get_session
 from adgn.props.db.models import PydanticColumn
 
 
@@ -38,9 +38,11 @@ class TestTable(Base):
 
 @pytest.fixture
 def test_pydantic_column_db(test_db):
-    """Create test table for PydanticColumn testing."""
-    init_db(config=test_db)
+    """Create test table for PydanticColumn testing.
 
+    Note: test_db fixture already calls init_db(), so we don't call it again.
+    We only need to create our specific test table.
+    """
     # Create just our test table (don't use recreate_database - that's for props schema)
     with get_session() as session:
         Base.metadata.create_all(bind=session.connection().engine)

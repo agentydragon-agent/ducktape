@@ -128,6 +128,8 @@ def make_po_bootstrap_calls(
         prompt_eval: Mounted prompt eval server
     """
     return [
+        # System overview (snapshots, database, critic architecture, evaluation flow)
+        *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
         # Prompt optimization run ID
         read_resource_call(
             builder,

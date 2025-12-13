@@ -11,6 +11,7 @@ from adgn.openai_utils.model import (
     FunctionCallOutputItem,
     ReasoningItem,
     ResponsesResult,
+    UserMessage,
 )
 from tests.agent.ui.typed_asserts import assert_items_exclude_instance, assert_items_include_instances
 from tests.support.responses import ResponsesFactory
@@ -49,7 +50,8 @@ async def test_stateless_reasoning_forwarding(
     """Request1 produces reasoning+assistant; Request2 should include reasoning in input."""
     agent, _client = await make_test_agent(pg_client_echo, [_make_reasoning_then_message("ok", responses_factory)])
 
-    await agent.run("say hi")
+    agent.insert_message(UserMessage.text("say hi"))
+    await agent.run()
 
     # Reasoning should be present in the agent transcript/messages for stateless forwarding
     assert_items_include_instances(agent.to_openai_messages(), ReasoningItem, AssistantMessage)
@@ -67,7 +69,8 @@ async def test_function_call_and_function_call_output_replay(
         ],
     )
 
-    await agent.run("say hi")
+    agent.insert_message(UserMessage.text("say hi"))
+    await agent.run()
 
     # Check that the captured second input includes function_call and function_call_output
     assert client.calls == 2
@@ -89,7 +92,8 @@ async def test_mixed_reasoning_fc_ordering(
     )
     agent, client = await make_test_agent(pg_client_echo, [resp, _make_reasoning_then_message("ok", responses_factory)])
 
-    await agent.run("start")
+    agent.insert_message(UserMessage.text("start"))
+    await agent.run()
 
     # Expect exactly two calls; validate second call input ordering/types
     assert client.calls == 2
@@ -111,7 +115,8 @@ async def test_no_synthesized_reasoning_items(
         ],
     )
 
-    await agent.run("say hi")
+    agent.insert_message(UserMessage.text("say hi"))
+    await agent.run()
 
     idx = min(1, len(client.captured) - 1)
     input_items = list(client.captured[idx].input or [])
@@ -132,7 +137,8 @@ async def test_model_provided_tool_output_records_without_execution(
         ],
     )
 
-    await agent.run("say hi")
+    agent.insert_message(UserMessage.text("say hi"))
+    await agent.run()
 
     assert_items_include_instances(agent.to_openai_messages(), FunctionCallOutputItem)
     assert not agent.pending_function_calls

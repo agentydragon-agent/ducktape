@@ -14,7 +14,15 @@ from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import init_db, recreate_database
 from adgn.props.db.config import get_production_config
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.snapshots import DBGraderOutput
+from adgn.props.db.snapshots import (
+    DBCriticContextLengthExceeded,
+    DBCriticMaxTurnsExceeded,
+    DBCriticOutput,
+    DBCriticSubmitPayload,
+    DBCriticSuccess,
+    DBGraderOutput,
+    DBReportedIssue,
+)
 from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.models import (
     CanonicalFPCoverage,
@@ -83,6 +91,58 @@ def make_grader_output(
     )
     # Convert to DB format (flat structure)
     return grade_submit_input_to_db(grade)
+
+
+def make_critic_success(issues: list[DBReportedIssue] | None = None, notes_md: str | None = None) -> DBCriticOutput:
+    """Build successful critic output for test storage.
+
+    Uses actual Pydantic DB models to ensure test data matches the schema.
+
+    Args:
+        issues: List of reported issues (empty list if None)
+        notes_md: Optional notes in markdown
+
+    Returns:
+        DBCriticSuccess with the provided payload
+    """
+    return DBCriticSuccess(result=DBCriticSubmitPayload(issues=issues or [], notes_md=notes_md))
+
+
+def make_critic_max_turns_exceeded(max_turns: int = 10) -> DBCriticOutput:
+    """Build max_turns_exceeded critic output for test storage.
+
+    Args:
+        max_turns: Maximum turns that were allowed
+
+    Returns:
+        DBCriticMaxTurnsExceeded with the provided max_turns
+    """
+    return DBCriticMaxTurnsExceeded(max_turns=max_turns)
+
+
+def make_critic_context_length_exceeded(error_message: str = "Context length exceeded") -> DBCriticOutput:
+    """Build context_length_exceeded critic output for test storage.
+
+    Args:
+        error_message: Error message from the API
+
+    Returns:
+        DBCriticContextLengthExceeded with the provided error message
+    """
+    return DBCriticContextLengthExceeded(error_message=error_message)
+
+
+def make_critique_payload(issues: list[DBReportedIssue] | None = None, notes_md: str = "") -> DBCriticSubmitPayload:
+    """Build critique payload (for Critique.payload field) for test storage.
+
+    Args:
+        issues: List of reported issues (empty list if None)
+        notes_md: Notes in markdown (empty string by default)
+
+    Returns:
+        DBCriticSubmitPayload with the provided data
+    """
+    return DBCriticSubmitPayload(issues=issues or [], notes_md=notes_md)
 
 
 @pytest.fixture

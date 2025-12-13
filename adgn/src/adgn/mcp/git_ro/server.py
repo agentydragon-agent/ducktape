@@ -50,7 +50,7 @@ from .formatting import (
 )
 
 # Shared server name constant for clients/tests
-GIT_RO_SERVER_NAME = MCPMountPrefix("git-ro")
+GIT_RO_SERVER_NAME = MCPMountPrefix("git_ro")
 
 # -------------------------- shared slicing -----------------------------------
 

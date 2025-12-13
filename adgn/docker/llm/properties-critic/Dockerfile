@@ -7,7 +7,6 @@ FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1 \
     PATH="/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 # OS tools
@@ -37,18 +36,30 @@ WORKDIR /opt/adgn
 RUN curl -sSL https://github.com/semgrep/semgrep/releases/latest/download/semgrep-$(uname -s)-$(uname -m) -o /usr/local/bin/semgrep \
  && chmod +x /usr/local/bin/semgrep
 
-# Install adgn package with all dependencies
+# Install UV for faster package installation
+RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
+    python -m pip install --upgrade pip uv
+
+# Install adgn package dependencies (without copying src yet for better caching)
 COPY pyproject.toml uv.lock ./
+
+# Create a minimal dummy package structure to satisfy build requirements
+RUN mkdir -p src/adgn && echo '__version__ = "0.0.0"' > src/adgn/__init__.py
+
+# Install dependencies + package (this layer is cached unless pyproject.toml/uv.lock changes)
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv pip install --system -e .[dev]
+
+# Now copy real source code (changes here won't invalidate dependency cache above)
 COPY src ./src
 
-# Install the adgn package (pulls all dependencies from pyproject.toml)
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    python -m pip install --upgrade pip \
- && PIP_NO_CACHE_DIR=0 python -m pip install .[dev]
+# Reinstall the package itself with real source code (no deps needed, they're already installed)
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv pip install --system --no-deps --force-reinstall -e .
 
 # Install additional analysis tools used by critic runbooks
-RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    PIP_NO_CACHE_DIR=0 python -m pip install \
+RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
+    uv pip install --system \
         vulture==2.14 \
         bandit \
         safety \

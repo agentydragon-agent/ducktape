@@ -5,7 +5,7 @@ from adgn.props.ids import SnapshotSlug
 
 
 async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(
-    production_specimens_hydrator: SnapshotHydrator,
+    production_specimens_hydrator: SnapshotHydrator, synced_test_db
 ) -> None:
     """Hydrated local specimen workspace should contain only the scoped file.
 
@@ -22,7 +22,7 @@ async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(
 
 
 async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly(
-    production_specimens_hydrator: SnapshotHydrator,
+    production_specimens_hydrator: SnapshotHydrator, synced_test_db
 ) -> None:
     """Hydrated git/github specimen should yield a content root whose subtree
     contains wt/src/wt/server directly under the yielded directory.

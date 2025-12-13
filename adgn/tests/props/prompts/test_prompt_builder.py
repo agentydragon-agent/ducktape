@@ -34,7 +34,7 @@ def test_find_prompt_renders_schemas(mock_compositor: MockCompositor):
     """Test that find.j2.md template renders with schemas."""
     files = [Path("src/foo.py"), Path("src/bar.py")]
     context = build_standard_context(files=files, compositor=mock_compositor)  # type: ignore[arg-type]
-    text = render_prompt_template("find.j2.md", **context)
+    text = render_prompt_template("prompts/find.j2.md", **context)
     lines = text.splitlines()
     assert lines[0].startswith("# "), "expected H1 header at top of prompt"
     assert "Input Schemas:" in text
@@ -46,6 +46,6 @@ def test_open_prompt_has_header_and_schemas(mock_compositor: MockCompositor):
     """Test that open.j2.md template renders with schemas."""
     files = [Path("src/foo.py"), Path("src/bar.py")]
     context = build_standard_context(files=files, compositor=mock_compositor)  # type: ignore[arg-type]
-    text = render_prompt_template("open.j2.md", **context)
+    text = render_prompt_template("prompts/open.j2.md", **context)
     assert text.startswith("# ")
     assert "Input Schemas:" in text

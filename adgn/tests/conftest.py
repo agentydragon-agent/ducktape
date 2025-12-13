@@ -192,7 +192,7 @@ async def sqlite_persistence(tmp_path):
 
 
 @pytest.fixture
-def make_approval_policy_server(
+async def make_approval_policy_server(
     sqlite_persistence, docker_client, test_agent_id
 ) -> Callable[[str], Awaitable[PolicyEngine]]:
     """Factory producing PolicyEngine instances with per-test defaults.
@@ -224,6 +224,12 @@ async def approval_policy_server(sqlite_persistence, docker_client) -> PolicyEng
         persistence=sqlite_persistence,
         policy_source=load_default_policy_source(),
     )
+
+
+@pytest.fixture
+def policy_allow_all() -> str:
+    """Return the text of the approve-all policy from packaged resources."""
+    return approve_all_policy_text()
 
 
 @pytest.fixture
@@ -525,7 +531,7 @@ if __name__ == "__main__":
 
 
 @pytest.fixture
-def make_decision_engine(
+async def make_decision_engine(
     make_approval_policy_server: Callable[[str], Awaitable[PolicyEngine]],
 ) -> Callable[[ApprovalDecision], Awaitable[PolicyEngine]]:
     """Factory for creating PolicyEngine with a specific decision policy.

@@ -14,7 +14,7 @@ import logging
 
 from adgn.agent.events import AssistantText, ReasoningItem, Response, ToolCall
 from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import Abort, InjectItems, LoopDecision, NoAction
+from adgn.agent.loop_control import InjectItems, LoopDecision, NoAction
 from adgn.openai_utils.model import SystemMessage
 
 logger = logging.getLogger(__name__)
@@ -27,8 +27,6 @@ class TokenBudgetState(Enum):
     WARNING_50 = auto()  # 50-90%: Informational notice
     WARNING_90 = auto()  # 90-100%: Urgent warning
     FORCING_SUBMIT = auto()  # 100%+: Force submission
-    SUBMITTED = auto()  # Agent successfully submitted
-    EXHAUSTED = auto()  # Budget exceeded without submission
 
 
 class TokenBudgetHandler(BaseHandler):
@@ -39,8 +37,6 @@ class TokenBudgetHandler(BaseHandler):
     - WARNING_50 (50-90%): Informational message ("halfway through budget")
     - WARNING_90 (90-100%): Urgent message ("prepare to submit soon")
     - FORCING_SUBMIT (100%+): Inject system message demanding immediate submission
-    - SUBMITTED: Agent called submit_prompt
-    - EXHAUSTED: Budget exceeded without submission (fallback)
 
     Token counting:
     - Tracks cumulative tokens from all API responses
@@ -52,31 +48,27 @@ class TokenBudgetHandler(BaseHandler):
     - Waits for next non-reasoning response before injecting messages
     - Follows same pattern as CompactionHandler
 
-    Example:
-        handler = TokenBudgetHandler(
-            max_tokens=200_000,
-            submit_tool_name="prompt_submission_submit_prompt"
-        )
+    Agent termination:
+    - Termination on successful submission is handled by AbortIf in improve_agent.py
+    - This handler only tracks budget and injects warnings
 
-        # Handler tracks tokens and injects warnings
-        # At 100%: injects SystemMessage forcing submission
-        # Agent must call submit_prompt to mark SUBMITTED
+    Example:
+        handler = TokenBudgetHandler(max_tokens=200_000)
+        # Handler tracks tokens and injects warnings at 50%, 90%, 100%
     """
 
-    def __init__(self, max_tokens: int, submit_tool_name: str):
+    def __init__(self, max_tokens: int):
         """Initialize token budget handler.
 
         Args:
             max_tokens: Maximum token budget (e.g., 200_000)
-            submit_tool_name: Full MCP tool name for submission (e.g., "prompt_submission_submit_prompt")
         """
         self._max_tokens = max_tokens
-        self._submit_tool_name = submit_tool_name
         self._cumulative_tokens = 0
         self._state = TokenBudgetState.MONITORING
         self._last_was_reasoning = False
 
-        logger.info("Initialized: max_tokens=%d, submit_tool=%s", max_tokens, submit_tool_name)
+        logger.info("Initialized: max_tokens=%d", max_tokens)
 
     @property
     def cumulative_tokens(self) -> int:
@@ -92,16 +84,6 @@ class TokenBudgetHandler(BaseHandler):
     def percentage_used(self) -> float:
         """Percentage of budget consumed (0.0 to 1.0+)."""
         return self._cumulative_tokens / self._max_tokens
-
-    def mark_submitted(self) -> None:
-        """Mark agent as having successfully submitted prompt.
-
-        Called automatically when submit_prompt tool is detected, or manually after
-        agent completion to transition to SUBMITTED state. This prevents forced
-        submission messages after successful submission.
-        """
-        logger.info("Marking as SUBMITTED")
-        self._state = TokenBudgetState.SUBMITTED
 
     # ========== Event Handlers ==========
 
@@ -121,11 +103,6 @@ class TokenBudgetHandler(BaseHandler):
         if self._last_was_reasoning:
             logger.debug("Tool calls after reasoning, warnings now safe")
         self._last_was_reasoning = False
-
-        # Check if agent called submit_prompt
-        if evt.name == self._submit_tool_name:
-            logger.info("Agent called submit_prompt")
-            self.mark_submitted()
 
     def on_response(self, evt: Response) -> None:
         """Track actual token usage from API responses.
@@ -152,16 +129,12 @@ class TokenBudgetHandler(BaseHandler):
         2. WARNING_50 → WARNING_90 at 90%
         3. WARNING_90 → FORCING_SUBMIT at 100%
         4. FORCING_SUBMIT → (stays until SUBMITTED or EXHAUSTED)
-        5. SUBMITTED → Abort (terminate agent loop)
 
         Will not inject messages after ReasoningItem (illegal in OpenAI API).
+
+        Note: Agent loop termination is handled by AbortIf in improve_agent.py.
         """
         pct = self.percentage_used
-
-        # Abort loop if already submitted
-        if self._state == TokenBudgetState.SUBMITTED:
-            logger.info("Prompt submitted, aborting agent loop")
-            return Abort()
 
         # Defer warnings after reasoning
         if self._last_was_reasoning:

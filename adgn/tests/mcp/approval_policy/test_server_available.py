@@ -4,8 +4,8 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.agent.agent import Agent
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.handler import FinishOnTextMessageHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.model import UserMessage
@@ -36,7 +36,10 @@ async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor
         assert expected <= tool_names
 
         agent = await Agent.create(
-            mcp_client=mcp_client, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+            mcp_client=mcp_client,
+            client=client,
+            handlers=[FinishOnTextMessageHandler()],
+            tool_policy=AllowAnyToolOrTextMessage(),
         )
         agent.insert_message(UserMessage.text("test"))
 

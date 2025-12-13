@@ -23,10 +23,9 @@ from pydantic import BaseModel, Field
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call, read_resource_call
-from adgn.agent.handler import SequenceHandler
+from adgn.agent.handler import AbortIf, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.mcp._shared.mounted import Mounted
-from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
@@ -111,6 +110,8 @@ def make_improvement_bootstrap_calls(
         prompt_submission: Mounted prompt submission server
     """
     return [
+        # System overview (snapshots, database, critic architecture, evaluation flow)
+        *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
         # Improvement context (examples, current prompt SHA)
         read_resource_call(
             builder,
@@ -249,10 +250,7 @@ async def run_improvement_agent(
                 prompt_submission = await comp.mount_inproc("prompt_submission", prompt_submission_server)
 
                 # 5. Set up handlers
-                token_handler = TokenBudgetHandler(
-                    max_tokens=token_budget,
-                    submit_tool_name=build_mcp_function(prompt_submission.prefix, "submit_prompt"),
-                )
+                token_handler = TokenBudgetHandler(max_tokens=token_budget)
 
                 # Bootstrap calls (inject improvement context and database query examples)
                 builder = TypedBootstrapBuilder.for_server(prompt_submission.server)
@@ -267,7 +265,24 @@ async def run_improvement_agent(
                     verbose_prefix=f"[IMPROVE {str(run_id)[:8]}] " if verbose else None,
                     compositor=comp,
                 )
-                handlers = [bootstrap, *props_handlers, token_handler]
+                handlers = [
+                    bootstrap,
+                    *props_handlers,
+                    RedirectOnTextMessageHandler(
+                        reminder_message=(
+                            "You are a prompt improvement agent. Your improved prompt has not yet been submitted "
+                            "(prompt_submission_submit_prompt tool has not been called), so your task is unfinished. "
+                            "Analyze the provided training examples by querying the database, identify failure patterns, "
+                            "design improvements to the critic prompt, write the improved prompt to /workspace/improved-prompt.md "
+                            "using docker_exec, then submit it via the prompt_submission_submit_prompt MCP tool. "
+                            "This is not an interactive workflow with a user - you must complete the analysis and "
+                            "submit the improved prompt via MCP tools, not via text messages asking for confirmation. "
+                            "Do not ask 'if you want, I can...' - just execute your plan and submit the result."
+                        )
+                    ),
+                    AbortIf(should_abort=lambda: prompt_submission_server.get_submission() is not None),
+                    token_handler,
+                ]
 
                 # 6. System prompt
                 system_prompt = _render_improvement_prompt(
@@ -308,8 +323,6 @@ async def run_improvement_agent(
 
                 outcome: ImprovementOutcome
                 if submission is not None:
-                    # Mark token handler if submission was successful
-                    token_handler.mark_submitted()
                     outcome = OutcomeSuccess(submission=submission)
                 elif token_handler.percentage_used >= 1.0:
                     outcome = OutcomeExhausted()
