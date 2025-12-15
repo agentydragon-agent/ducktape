@@ -64,11 +64,16 @@ async def test_mount_after_close_raises():
 
 
 async def test_cleanup_removes_non_pinned_servers():
-    """Test that close() removes all non-pinned servers."""
+    """Test that close() removes non-pinned servers, but __aexit__() removes all."""
     backend1 = FastMCP("backend1")
     backend2 = FastMCP("backend2")
     pinned = FastMCP("pinned")
 
+    # Mount prefixes for dict access
+    pinned_prefix = MCPMountPrefix("pinned")
+
+    # Note: Using manual Compositor() instead of fixture because this test needs to
+    # verify state AFTER __aexit__(), which happens during fixture teardown
     async with Compositor() as comp:
         await comp.mount_inproc("backend1", backend1)
         await comp.mount_inproc("backend2", backend2)
@@ -80,25 +85,41 @@ async def test_cleanup_removes_non_pinned_servers():
         assert "backend2" in entries
         assert "pinned" in entries
 
-    # After close: only pinned remains
+        # Call close() explicitly (not __aexit__)
+        await comp.close()
+
+        # After close(): non-pinned removed, pinned remains
+        entries = await comp.server_entries()
+        assert "backend1" not in entries
+        assert "backend2" not in entries
+        assert "pinned" in entries
+
+        # Verify pinned server is still active after close()
+        mount = comp._mounts.get(pinned_prefix)
+        assert mount is not None
+        assert mount.is_active
+
+    # After __aexit__: ALL servers cleaned up (including pinned)
     entries = await comp.server_entries()
     assert "backend1" not in entries
     assert "backend2" not in entries
-    assert "pinned" in entries
+    assert "pinned" not in entries  # Now cleaned up
 
-    # Verify pinned server is still active
-    mount = comp._mounts.get("pinned")
-    assert mount is not None
-    assert mount.is_active
+    # Pinned server should be closed after __aexit__
+    pinned_mount = comp._mounts.get(pinned_prefix)
+    assert pinned_mount is None or not pinned_mount.is_active
 
 
 async def test_mount_state_transitions(compositor, make_simple_mcp):
     """Test that mounts follow correct state transitions."""
     backend = make_simple_mcp
 
+    # Mount prefix for dict access
+    backend_prefix = MCPMountPrefix("backend")
+
     await compositor.mount_inproc("backend", backend)
 
-    mount = compositor._mounts["backend"]
+    mount = compositor._mounts[backend_prefix]
     # After successful mount: ACTIVE
     assert mount.state == MountState.ACTIVE
     assert mount.is_active
@@ -106,7 +127,7 @@ async def test_mount_state_transitions(compositor, make_simple_mcp):
     assert not mount.is_closed
 
     # Unmount
-    await compositor.unmount_server(MCPMountPrefix("backend"))
+    await compositor.unmount_server(backend_prefix)
 
     # After unmount: CLOSED
     assert mount.state == MountState.CLOSED
@@ -277,24 +298,38 @@ async def test_get_child_client_validates_state(compositor, make_simple_mcp):
 
 
 async def test_pinned_server_survives_close(make_simple_mcp):
-    """Test that pinned servers remain after close()."""
+    """Test that pinned servers survive close() but not __aexit__()."""
     pinned = make_simple_mcp
 
+    # Mount prefix for dict access
+    pinned_prefix = MCPMountPrefix("pinned")
+
+    # Note: Using manual Compositor() instead of fixture because this test needs to
+    # verify state AFTER __aexit__(), which happens during fixture teardown
     async with Compositor() as comp:
         await comp.mount_inproc("pinned", pinned, pinned=True)
 
         # Verify mounted
         entries = await comp.server_entries()
         assert "pinned" in entries
-        mount = comp._mounts["pinned"]
+        mount = comp._mounts[pinned_prefix]
         assert mount.is_active
 
-    # After close: pinned server still active
+        # Call close() explicitly
+        await comp.close()
+
+        # After close(): pinned server still active
+        entries = await comp.server_entries()
+        assert "pinned" in entries
+        mount = comp._mounts[pinned_prefix]
+        assert mount.is_active
+        assert not mount.is_closed
+
+    # After __aexit__(): pinned server is cleaned up
     entries = await comp.server_entries()
-    assert "pinned" in entries
-    mount = comp._mounts["pinned"]
-    assert mount.is_active
-    assert not mount.is_closed
+    assert "pinned" not in entries
+    # Mount should be closed or removed
+    assert pinned_prefix not in comp._mounts or not comp._mounts[pinned_prefix].is_active
 
 
 async def test_compositor_warns_on_leak(make_simple_mcp):

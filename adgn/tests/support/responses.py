@@ -135,9 +135,6 @@ class ResponsesFactory:
     def make_final_assistant(self, text: str) -> ResponsesResult:
         return self.make(self.assistant_text(text))
 
-    def make_reasoning_then_assistant(self, text: str) -> ResponsesResult:
-        return self.make(self.make_item_reasoning(), self.assistant_text(text))
-
     def _make_output_item(self, call_id: str, output: Any) -> FunctionCallOutputItem:
         """Create FunctionCallOutputItem from structured output."""
         tool_result = mcp_types.CallToolResult(content=[], structuredContent=output, isError=False)

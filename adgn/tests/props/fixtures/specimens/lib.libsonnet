@@ -75,7 +75,7 @@ local normFiles(files) = {
 //   - If filesToRanges has >1 file AND expect_caught_from not provided:
 //     Raises error (author must specify minimal detection sets)
 //
-// Returns: {rationale, occurrences: [{files, expect_caught_from}]}
+// Returns: {rationale, occurrences: [{occurrence_id, files, expect_caught_from}]}
 local issue(rationale, filesToRanges, expect_caught_from=null) =
   local files_list = std.objectFields(filesToRanges);
   local inferred_expect_caught_from =
@@ -86,6 +86,7 @@ local issue(rationale, filesToRanges, expect_caught_from=null) =
     rationale: rationale,
     should_flag: true,
     occurrences: [{
+      occurrence_id: 'occ-1',
       files: normFiles(filesToRanges),
       expect_caught_from: inferred_expect_caught_from,
     }],
@@ -154,11 +155,12 @@ local issueMulti(rationale, occurrences) =
     should_flag: true,
     occurrences: [
       {
-        files: normFiles(occ.files),
-        note: occ.note,
-        expect_caught_from: occ.expect_caught_from,
+        occurrence_id: 'occ-%d' % (i + 1),
+        files: normFiles(occurrences[i].files),
+        note: occurrences[i].note,
+        expect_caught_from: occurrences[i].expect_caught_from,
       }
-      for occ in occurrences
+      for i in std.range(0, std.length(occurrences) - 1)
     ],
   };
 
@@ -176,7 +178,7 @@ local issueMulti(rationale, occurrences) =
 //
 // Semantics: Show this FP to grader if critic reviewed ANY of relevant_files
 //
-// Returns: {rationale, occurrences: [{files, relevant_files}]}
+// Returns: {rationale, occurrences: [{occurrence_id, files, relevant_files}]}
 local falsePositive(rationale, filesToRanges, relevant_files=null) =
   local inferred_relevant_files =
     if relevant_files != null then relevant_files
@@ -185,6 +187,7 @@ local falsePositive(rationale, filesToRanges, relevant_files=null) =
     rationale: rationale,
     should_flag: false,
     occurrences: [{
+      occurrence_id: 'occ-1',
       files: normFiles(filesToRanges),
       relevant_files: inferred_relevant_files,
     }],
@@ -219,11 +222,12 @@ local falsePositiveMulti(rationale, occurrences) =
     should_flag: false,
     occurrences: [
       {
-        files: normFiles(occ.files),
-        note: occ.note,
-        relevant_files: occ.relevant_files,
+        occurrence_id: 'occ-%d' % (i + 1),
+        files: normFiles(occurrences[i].files),
+        note: occurrences[i].note,
+        relevant_files: occurrences[i].relevant_files,
       }
-      for occ in occurrences
+      for i in std.range(0, std.length(occurrences) - 1)
     ],
   };
 

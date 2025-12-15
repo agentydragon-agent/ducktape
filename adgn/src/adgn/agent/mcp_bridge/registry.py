@@ -14,13 +14,13 @@ from dataclasses import dataclass, field
 import logging
 
 import aiodocker
-from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.persist.sqlite import SQLitePersistence
 from adgn.agent.presets import create_agent_from_preset
 from adgn.agent.runtime.container import AgentContainer, build_container
 from adgn.agent.types import AgentID
+from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.server import Compositor
 from adgn.openai_utils.model import OpenAIModelProto
 
@@ -28,6 +28,21 @@ from adgn.openai_utils.model import OpenAIModelProto
 AGENT_CONTROL_SERVER_NAME = "agent_control"
 
 logger = logging.getLogger(__name__)
+
+
+def agent_mount_prefix(agent_id: AgentID) -> MCPMountPrefix:
+    """Generate MCPMountPrefix for an agent's compositor mount.
+
+    AgentID is already validated to match MCPMountPrefix pattern (^[a-z][a-z0-9_]*$),
+    so we just add the "agent_" prefix.
+
+    Args:
+        agent_id: Agent identifier (already MCPMountPrefix-compatible)
+
+    Returns:
+        Mount prefix for the agent's compositor (e.g., "myagent" → "agent_myagent")
+    """
+    return MCPMountPrefix(f"agent_{agent_id}")
 
 
 class CompositorNotInitializedError(RuntimeError):
@@ -49,7 +64,6 @@ class InfrastructureRegistry:
     persistence: SQLitePersistence
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
-    docker_client: DockerClient
     async_docker_client: aiodocker.Docker
     mcp_config: MCPConfig  # Base MCP config for new agents
     initial_policy: str | None = None
@@ -97,7 +111,8 @@ class InfrastructureRegistry:
         if container._compositor is None:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor after build")
 
-        await comp.mount_inproc(f"agent_{container.agent_id}", container._compositor)
+        mount_prefix = agent_mount_prefix(container.agent_id)
+        await comp.mount_inproc(mount_prefix, container._compositor)
 
     async def _mount_agent_control(self, container: AgentContainer) -> None:
         """Mount agent_control server on container's compositor.
@@ -139,7 +154,6 @@ class InfrastructureRegistry:
             client_factory=self.client_factory,
             with_ui=True,
             system=system,
-            docker_client=self.docker_client,
             async_docker_client=self.async_docker_client,
             initial_policy=self.initial_policy,
         )
@@ -260,9 +274,8 @@ class InfrastructureRegistry:
 
             # Unmount from global
             try:
-                from adgn.mcp._shared.types import MCPMountPrefix
-
-                await comp.unmount_server(MCPMountPrefix(f"agent_{agent_id}"))
+                mount_prefix = agent_mount_prefix(agent_id)
+                await comp.unmount_server(mount_prefix)
             except KeyError:
                 logger.debug(f"Agent {agent_id} already unmounted")
 

@@ -7,21 +7,60 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import statistics
+from typing import cast
 
 import plotext as plt  # type: ignore[import-untyped]
 from rich import box
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import func, select
+from sqlalchemy import func
+import typer
 
 from adgn.props.db import get_session
-from adgn.props.db.datapoints import count_available_examples_for_split
-from adgn.props.db.models import CriticRun, Event, Example, GraderRun
-from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.datapoints import count_available_examples_by_scope, count_available_examples_for_split
+from adgn.props.db.models import (
+    AggregatedRecallByExample,
+    AggregatedRecallByPrompt,
+    CriticRun,
+    Event,
+    GraderRun,
+    OccurrenceCredit,
+    OccurrenceStatistics,
+)
+from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats, query_recall_by_example
 from adgn.props.display import SHORT_SHA_LENGTH, short_sha
 from adgn.props.grader.staleness import check_staleness
+from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
+
+# Stats subcommand group
+stats_app = typer.Typer(help="Statistics and metrics commands")
+
+
+# ============================================================================
+# Formatting Helpers
+# ============================================================================
+
+
+def fmt_pct(value: float | None) -> str:
+    """Format value as percentage (0 decimal places) or dash if None."""
+    return f"{value:.0%}" if value is not None else "—"
+
+
+def fmt_float(value: float | None, decimals: int = 2) -> str:
+    """Format float with N decimal places or dash if None."""
+    return f"{value:.{decimals}f}" if value is not None else "—"
+
+
+def fmt_model(model: str, max_length: int = 12) -> str:
+    """Truncate model name to max_length characters."""
+    return model[:max_length]
+
+
+def fmt_hash(hash_value: str | None) -> str:
+    """Format hash as short SHA prefix or dash if None."""
+    return short_sha(hash_value) if hash_value else "—"
+
 
 # Stats table column legend (shared between CLI and examples)
 STATS_TABLE_LEGEND = """
@@ -31,13 +70,18 @@ STATS_TABLE_LEGEND = """
     - Penalizes high variance, useful for selecting reliable prompts
     - ~84% confidence the true mean is above this value
   [cyan]N / {total}[/cyan]: Number of examples evaluated out of total available
-  [cyan]Z%[/cyan]: Percentage of successful runs with 0% recall
-  [cyan]S%[/cyan]: Percentage of all runs that exceeded max turns (stuck)
-  [cyan]C%[/cyan]: Percentage of all runs that exceeded context length
+  [cyan]Z[/cyan]: Count of examples with 0% recall
+  [cyan]S[/cyan]: Count of runs that exceeded max turns (stuck)
+  [cyan]C[/cyan]: Count of runs that exceeded context length
+
+[bold]Split Groups:[/bold]
+  [cyan]Valid[/cyan]: Validation split (whole-snapshot only, terminal metric)
+  [yellow]Tr-W[/yellow]: Train whole-snapshot (comprehensive full-repo review)
+  [magenta]Tr-P[/magenta]: Train partial (per-file and multi-file examples)
 
 [bold]Notes:[/bold]
-  - Results sorted by valid LCB (descending), then train LCB, then age
-  - Success count is implicit from Z%, S%, C% (they sum to explain N)
+  - Results sorted by valid LCB, then train-whole LCB, then train-partial LCB, then age
+  - Success count is implicit from Z, S, C (their sum explains run distribution)
   - Green recall means fully evaluated (N = total available)
   - Many prompts have no valid data (— in Valid columns)
 """
@@ -100,7 +144,7 @@ def format_split_stats(stats: SplitPerformanceStats | None, fully_computed: bool
 
     Note:
         - N shows total_count (how many examples evaluated), not success/total
-        - Success count is implicit from Z%, S%, C% (they sum to explain the N)
+        - Success count is implicit from Z, S, C counts (they sum to explain the N)
     """
     if stats is None:
         return FormattedSplitStats("—", "—", "—", "—", "—", "—")
@@ -113,9 +157,9 @@ def format_split_stats(stats: SplitPerformanceStats | None, fully_computed: bool
         recall=recall_str,
         lcb=f"{stats.lcb:.0f}%" if stats.lcb is not None else "—",
         n=str(stats.total_count),  # Just the count of examples evaluated
-        zero=f"{stats.zero_pct:.0f}%",
-        stuck=f"{stats.stuck_pct:.0f}%",
-        context=f"{stats.context_pct:.0f}%",
+        zero=str(stats.zero_count),
+        stuck=str(stats.stuck_count),
+        context=str(stats.context_count),
     )
 
 
@@ -287,8 +331,8 @@ class PromptStats:
 def _display_split_analysis(
     console: Console,
     split_name: str,
-    sample_results: dict[tuple[str, str], dict[str, float]],
-    tp_counts_per_sample: dict[tuple[str, str], int],
+    sample_results: dict[tuple[SnapshotSlug, str | None], dict[str, float]],
+    tp_counts_per_sample: dict[tuple[SnapshotSlug, str | None], int],
     total_available: int,
     show_all_prompts: bool = False,
 ) -> None:
@@ -404,26 +448,271 @@ def _add_split_columns(table: Table, split_name: str, color: str, total_examples
         color: Rich color name (e.g., "cyan", "yellow")
         total_examples: Total available examples for this split
     """
-    # Column order: Recall, LCB, N/{total}, Z%, S%, C%
+    # Column order: Recall, LCB, N/{total}, Z, S, C
     table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
     table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)
     table.add_column(f"[{color}]N/{total_examples}[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]Z%[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]S%[/{color}]", justify="right", width=4)
-    table.add_column(f"[{color}]C%[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]Z[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]S[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]C[/{color}]", justify="right", width=4)
 
 
-def cmd_stats() -> None:
+@stats_app.command("prompt")
+def cmd_stats_prompt(
+    split: Split | None = None,
+    critic_model: str | None = None,
+    whole_snapshot_only: bool = False,
+    top: int | None = typer.Option(None, help="Show top N results by recall"),
+    bottom: int | None = typer.Option(None, help="Show bottom N results by recall"),
+) -> None:
+    """Query aggregated recall metrics by prompt.
+
+    Shows recall metrics aggregated by (split, prompt_sha256, critic_model, scope).
+    By default shows top 50 results. Use --top/--bottom to customize.
+    """
+    console = Console()
+
+    # Default to showing top 50 if neither top nor bottom is specified
+    if top is None and bottom is None:
+        top = 50
+
+    with get_session() as session:
+        # Build base query with filters
+        base_query = session.query(AggregatedRecallByPrompt)
+        if split:
+            base_query = base_query.filter(AggregatedRecallByPrompt.split == split)
+        if critic_model:
+            base_query = base_query.filter(AggregatedRecallByPrompt.critic_model == critic_model)
+        if whole_snapshot_only:
+            base_query = base_query.filter(AggregatedRecallByPrompt.is_whole_snapshot)
+
+        # Fetch top and/or bottom results
+        sections_to_show: list[tuple[str, list[AggregatedRecallByPrompt]]] = []
+
+        if top is not None:
+            top_results: list[AggregatedRecallByPrompt] = (
+                base_query.order_by(AggregatedRecallByPrompt.recall.desc()).limit(top).all()
+            )
+            sections_to_show.append((f"Top {top} by Recall", top_results))
+
+        if bottom is not None:
+            bottom_results: list[AggregatedRecallByPrompt] = (
+                base_query.order_by(AggregatedRecallByPrompt.recall.asc()).limit(bottom).all()
+            )
+            sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
+
+        # Display each section
+        for section_title, prompt_results in sections_to_show:
+            console.print(
+                f"\n[bold]Aggregated Recall by Prompt: {section_title}[/bold] ({len(prompt_results)} results)\n"
+            )
+            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
+            table.add_column("Prompt", width=SHORT_SHA_LENGTH)
+            table.add_column("Split", width=6)
+            table.add_column("Critic Model", width=15)
+            table.add_column("Scope", width=5)
+            table.add_column("Recall %", justify="right", width=9)
+            table.add_column("Credit", justify="right", width=7)
+            table.add_column("N Occ", justify="right", width=6)
+            table.add_column("N Snap", justify="right", width=7)
+            table.add_column("N Ex", justify="right", width=5)
+
+            for r_prompt in prompt_results:
+                scope_str = "whole" if r_prompt.is_whole_snapshot else "part"
+                table.add_row(
+                    short_sha(r_prompt.prompt_sha256),
+                    r_prompt.split.value,
+                    r_prompt.critic_model,
+                    scope_str,
+                    fmt_pct(r_prompt.recall),
+                    fmt_float(r_prompt.total_credit, decimals=1),
+                    str(r_prompt.n_occurrences),
+                    str(r_prompt.n_snapshots),
+                    str(r_prompt.n_examples),
+                )
+
+            console.print(table)
+
+
+@stats_app.command("example")
+def cmd_stats_example(
+    split: Split | None = None,
+    critic_model: str | None = None,
+    grader_model: str | None = None,
+    top: int | None = typer.Option(None, help="Show top N results by recall"),
+    bottom: int | None = typer.Option(None, help="Show bottom N results by recall"),
+) -> None:
+    """Query aggregated recall metrics by example.
+
+    Shows recall metrics aggregated by (split, snapshot_slug, files_hash, critic_model, grader_model).
+    By default shows top 50 results. Use --top/--bottom to customize.
+    """
+    console = Console()
+
+    # Default to showing top 50 if neither top nor bottom is specified
+    if top is None and bottom is None:
+        top = 50
+
+    with get_session() as session:
+        # Build base query with filters
+        base_query = session.query(AggregatedRecallByExample)
+        if split:
+            base_query = base_query.filter(AggregatedRecallByExample.split == split)
+        if critic_model:
+            base_query = base_query.filter(AggregatedRecallByExample.critic_model == critic_model)
+        if grader_model:
+            base_query = base_query.filter(AggregatedRecallByExample.grader_model == grader_model)
+
+        # Fetch top and/or bottom results
+        sections_to_show: list[tuple[str, list[AggregatedRecallByExample]]] = []
+
+        if top is not None:
+            top_results = cast(
+                list[AggregatedRecallByExample],
+                base_query.order_by(AggregatedRecallByExample.recall.desc()).limit(top).all(),
+            )
+            sections_to_show.append((f"Top {top} by Recall", top_results))
+
+        if bottom is not None:
+            bottom_results = cast(
+                list[AggregatedRecallByExample],
+                base_query.order_by(AggregatedRecallByExample.recall.asc()).limit(bottom).all(),
+            )
+            sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
+
+        # Display each section
+        for section_title, example_results in sections_to_show:
+            console.print(
+                f"\n[bold]Aggregated Recall by Example: {section_title}[/bold] ({len(example_results)} results)\n"
+            )
+            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
+            table.add_column("Snapshot", width=25)
+            table.add_column("Files Hash", width=12)
+            table.add_column("Split", width=6)
+            table.add_column("Critic", width=12)
+            table.add_column("Grader", width=12)
+            table.add_column("Recall %", justify="right", width=9)
+            table.add_column("Credit", justify="right", width=7)
+            table.add_column("N Occ", justify="right", width=6)
+
+            for r_example in example_results:
+                table.add_row(
+                    r_example.snapshot_slug,
+                    fmt_hash(r_example.files_hash),
+                    r_example.split.value,
+                    fmt_model(r_example.critic_model),
+                    fmt_model(r_example.grader_model),
+                    fmt_pct(r_example.recall),
+                    fmt_float(r_example.total_credit, decimals=1),
+                    str(r_example.n_occurrences),
+                )
+
+            console.print(table)
+
+
+@stats_app.command("occurrence")
+def cmd_stats_occurrence(
+    split: Split | None = None,
+    critic_model: str | None = None,
+    grader_model: str | None = None,
+    top: int | None = typer.Option(None, help="Show top N results by mean credit"),
+    bottom: int | None = typer.Option(None, help="Show bottom N results by mean credit"),
+) -> None:
+    """Query per-occurrence statistics.
+
+    Shows statistics for individual occurrences: mean/stddev/min/max credit, catch rate.
+    By default shows top 50 results. Use --top/--bottom to customize.
+    """
+    console = Console()
+
+    # Default to showing top 50 if neither top nor bottom is specified
+    if top is None and bottom is None:
+        top = 50
+
+    with get_session() as session:
+        # Build base query with filters
+        base_query = session.query(OccurrenceStatistics)
+        if split:
+            base_query = base_query.filter(OccurrenceStatistics.split == split)
+        if critic_model:
+            base_query = base_query.filter(OccurrenceStatistics.critic_model == critic_model)
+        if grader_model:
+            base_query = base_query.filter(OccurrenceStatistics.grader_model == grader_model)
+
+        # Fetch top and/or bottom results
+        sections_to_show: list[tuple[str, list[OccurrenceStatistics]]] = []
+
+        if top is not None:
+            top_results = cast(
+                list[OccurrenceStatistics],
+                base_query.order_by(OccurrenceStatistics.mean_credit.desc()).limit(top).all(),
+            )
+            sections_to_show.append((f"Top {top} by Mean Credit", top_results))
+
+        if bottom is not None:
+            bottom_results = cast(
+                list[OccurrenceStatistics],
+                base_query.order_by(OccurrenceStatistics.mean_credit.asc()).limit(bottom).all(),
+            )
+            sections_to_show.append((f"Bottom {bottom} by Mean Credit", bottom_results))
+
+        # Display each section
+        for section_title, occurrence_results in sections_to_show:
+            console.print(
+                f"\n[bold]Occurrence Statistics: {section_title}[/bold] ({len(occurrence_results)} results)\n"
+            )
+            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
+            table.add_column("TP ID", width=20)
+            table.add_column("Occ ID", width=15)
+            table.add_column("Split", width=6)
+            table.add_column("Critic", width=12)
+            table.add_column("Grader", width=12)
+            table.add_column("Mean", justify="right", width=6)
+            table.add_column("σ", justify="right", width=6)
+            table.add_column("Min", justify="right", width=5)
+            table.add_column("Max", justify="right", width=5)
+            table.add_column("N Runs", justify="right", width=6)
+            table.add_column("Catch%", justify="right", width=7)
+
+            for r_occ in occurrence_results:
+                table.add_row(
+                    r_occ.tp_id[:20],
+                    r_occ.occurrence_id[:15],
+                    r_occ.split.value,
+                    fmt_model(r_occ.critic_model),
+                    fmt_model(r_occ.grader_model),
+                    fmt_float(r_occ.mean_credit, decimals=2),
+                    fmt_float(r_occ.stddev_credit, decimals=2),
+                    fmt_float(r_occ.min_credit, decimals=2),
+                    fmt_float(r_occ.max_credit, decimals=2),
+                    str(r_occ.n_runs),
+                    fmt_pct(r_occ.full_catch_rate),
+                )
+
+            console.print(table)
+
+
+@stats_app.callback(invoke_without_command=True)
+def cmd_stats(ctx: typer.Context) -> None:
     """Display prompt statistics: count, runs per split, recall metrics.
+
+    Run without subcommand to see overall statistics, or use subcommands for specific views:
+    - prompt: View aggregated recall by prompt
+    - example: View aggregated recall by example
+    - occurrence: View per-occurrence statistics
 
     TODO: Add multi-level column headers (valid/train grouping) when Rich supports it.
     Currently Rich doesn't support column spanning (Issue #1529, #164), so we use
     prefixed column names. Workarounds: color-coded headers, visual separators, or
     wait for upstream support.
     """
+    # Only run default stats if no subcommand was invoked
+    if ctx.invoked_subcommand is not None:
+        return
+
     console = Console()
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
-    tp_counts_per_sample: dict[Split, dict[tuple[str, str], int]] = defaultdict(dict)
+    tp_counts_per_sample: dict[Split, dict[tuple[SnapshotSlug, str | None], int]] = defaultdict(dict)
 
     # Track critic and grader run statuses
     critic_status_counts: Counter[str] = Counter()
@@ -439,49 +728,43 @@ def cmd_stats() -> None:
             for split in [Split.TRAIN, Split.VALID, Split.TEST]
         }
 
+        # Get counts for train split broken down by scope
+        train_whole_count = count_available_examples_by_scope(session, Split.TRAIN, is_whole_snapshot=True)
+        train_partial_count = count_available_examples_by_scope(session, Split.TRAIN, is_whole_snapshot=False)
+
         # No longer building prompt_stats_list here - using query builder instead
 
         # Compute best_count per split: how many samples each prompt is best on (or tied for best)
-        # Query all grader runs with their critic runs, grouped by split
-        sample_results_by_split: dict[Split, dict[tuple[str, str], dict[str, float]]] = {
+        # Query aggregated recall by example view (occurrence-weighted)
+        sample_results_by_split: dict[Split, dict[tuple[SnapshotSlug, str | None], dict[str, float]]] = {
             Split.TRAIN: defaultdict(dict),
             Split.VALID: defaultdict(dict),
             Split.TEST: defaultdict(dict),
         }
 
         for split in [Split.TRAIN, Split.VALID, Split.TEST]:
-            # Only include grader runs that match current critic scopes
-            # This filters out stale runs from when valid/test used per-file scopes
-            graders_query = (
-                select(GraderRun, CriticRun)
-                .join(GraderRun.critique_obj)
-                .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
-                .join(GraderRun.snapshot_obj)
-                .join(
-                    Example,
-                    (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash),
+            # Query occurrence-weighted recall per (example, prompt) using helper
+            results = query_recall_by_example(session, split=split)
+
+            for recall_row in results:
+                sample_key = (recall_row.snapshot_slug, recall_row.files_hash)
+                sample_results_by_split[split][sample_key][recall_row.prompt_sha256] = recall_row.recall
+
+            # Get TP counts per sample (constant per example, not per prompt/run)
+            tp_count_results = (
+                session.query(
+                    OccurrenceCredit.snapshot_slug,
+                    OccurrenceCredit.files_hash,
+                    func.count(func.distinct(OccurrenceCredit.occurrence_id)).label("n_occurrences"),
                 )
-                .where(GraderRun.snapshot_obj.has(split=split))
-                .where(GraderRun.output.isnot(None))
+                .filter(OccurrenceCredit.split == split)
+                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.files_hash)
+                .all()
             )
-            graders = session.execute(graders_query).all()
 
-            # Group by training example (snapshot + files combination)
-            for grader_run, critic_run in graders:
-                sample_key = (critic_run.snapshot_slug, critic_run.files_hash)
-
-                # Failed critic runs (no output or non-success) count as 0% recall
-                if grader_run.output is None or not isinstance(grader_run.output, DBGraderSuccess):
-                    recall_pct = 0.0
-                    # Skip TP count collection for failed runs
-                else:
-                    recall_pct = grader_run.output.recall * 100.0
-                    # Collect TP count for this sample (only need to record once per sample)
-                    if sample_key not in tp_counts_per_sample[split]:
-                        tp_count = len(grader_run.output.canonical_tp_coverage)
-                        tp_counts_per_sample[split][sample_key] = tp_count
-
-                sample_results_by_split[split][sample_key][critic_run.prompt_sha256] = recall_pct
+            for result in tp_count_results:
+                sample_key = (result.snapshot_slug, result.files_hash)
+                tp_counts_per_sample[split][sample_key] = result.n_occurrences
 
         # For each split and sample, find which prompt(s) achieved max recall
         prompt_best_counts: Counter[str] = Counter()
@@ -522,18 +805,15 @@ def cmd_stats() -> None:
     # Display summary
     console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_perf_rows)} prompts)\n")
 
-    # Get total available examples for headers
-    valid_total = total_samples_by_split[Split.VALID]
-    train_total = total_samples_by_split[Split.TRAIN]
-
     # Create new table with requested columns
     table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 0))
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
     table.add_column("Age", justify="right", width=4)
     table.add_column("Chars", justify="right", width=6)
-    # Add Valid and Train split columns using helper
-    _add_split_columns(table, "Valid", "cyan", valid_total)
-    _add_split_columns(table, "Train", "yellow", train_total)
+    # Add Valid, Train Whole, and Train Partial split columns using helper
+    _add_split_columns(table, "Valid", "cyan", total_samples_by_split[Split.VALID])
+    _add_split_columns(table, "Tr-W", "yellow", train_whole_count)
+    _add_split_columns(table, "Tr-P", "magenta", train_partial_count)
 
     for row in prompt_perf_rows:
         sha_short = short_sha(row.prompt_sha256)
@@ -543,11 +823,18 @@ def cmd_stats() -> None:
         length_str = f"{row.prompt_length // 1000}k" if row.prompt_length >= 1000 else str(row.prompt_length)
 
         # Format valid stats (green if fully computed)
-        fully_computed = row.valid is not None and row.valid.success_count == valid_total
-        valid_stats = format_split_stats(row.valid, fully_computed=fully_computed)
+        fully_computed_valid = row.valid is not None and row.valid.success_count == total_samples_by_split[Split.VALID]
+        valid_stats = format_split_stats(row.valid, fully_computed=fully_computed_valid)
 
-        # Format train stats (never marked as fully computed)
-        train_stats = format_split_stats(row.train, fully_computed=False)
+        # Format train whole-snapshot stats (green if fully computed)
+        fully_computed_train_whole = row.train_whole is not None and row.train_whole.success_count == train_whole_count
+        train_whole_stats = format_split_stats(row.train_whole, fully_computed=fully_computed_train_whole)
+
+        # Format train partial stats (green if fully computed)
+        fully_computed_train_partial = (
+            row.train_partial is not None and row.train_partial.success_count == train_partial_count
+        )
+        train_partial_stats = format_split_stats(row.train_partial, fully_computed=fully_computed_train_partial)
 
         table.add_row(
             sha_short,
@@ -555,8 +842,10 @@ def cmd_stats() -> None:
             length_str,
             # Valid stats (canonical ordering via as_row_fields)
             *valid_stats.as_row_fields(),
-            # Train stats (same canonical ordering)
-            *train_stats.as_row_fields(),
+            # Train whole stats (same canonical ordering)
+            *train_whole_stats.as_row_fields(),
+            # Train partial stats (same canonical ordering)
+            *train_partial_stats.as_row_fields(),
         )
 
     console.print(table)
@@ -564,15 +853,14 @@ def cmd_stats() -> None:
     # Display legend
     console.print(STATS_TABLE_LEGEND)
 
-    # Get total available from counts computed earlier
-    test_total = total_samples_by_split[Split.TEST]
-
     console.print("[bold]Summary:[/bold]")
     console.print(f"  Total prompts: {len(prompt_perf_rows)}")
     console.print("\n  Available examples per split:")
-    console.print(f"    Train: {train_total}")
-    console.print(f"    Valid: {valid_total}")
-    console.print(f"    Test: {test_total}")
+    console.print(f"    Valid: {total_samples_by_split[Split.VALID]} (whole-snapshot only)")
+    console.print(
+        f"    Train: {total_samples_by_split[Split.TRAIN]} total (whole: {train_whole_count}, partial: {train_partial_count})"
+    )
+    console.print(f"    Test: {total_samples_by_split[Split.TEST]}")
 
     # Find best prompt by valid recall
     valid_prompts = [(row, row.valid.mean_recall) for row in prompt_perf_rows if row.valid is not None]
@@ -643,7 +931,7 @@ def cmd_stats() -> None:
         # Display split analysis (zero-recall and best coverage)
         # Show all prompts for training split, top 15 for others
         show_all = split == Split.TRAIN
-        split_total = train_total if split == Split.TRAIN else (valid_total if split == Split.VALID else test_total)
+        split_total = total_samples_by_split[split]
         _display_split_analysis(
             console,
             split_name,

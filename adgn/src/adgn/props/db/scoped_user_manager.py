@@ -4,244 +4,204 @@ Creates ephemeral database users for improvement agents with access restricted t
 specific training examples via Row-Level Security policies.
 
 Usage:
-    async with scoped_db_user(admin_config, run_id, allowed_examples) as agent_config:
+    async with ImprovementUserManager(admin_config, run_id, allowed_examples) as creds:
         # Agent has scoped database access
-        session = create_session(agent_config)
+        engine = create_engine(creds.url())
         ...
     # User and policies automatically cleaned up on exit
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
 import logging
-import secrets
+from typing import ClassVar
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
 
 from adgn.props.db.config import DbConnectionConfig
+from adgn.props.db.temp_user_manager import TempUserManager
+from adgn.props.ids import SnapshotSlug
 
 logger = logging.getLogger(__name__)
 
 
-@asynccontextmanager
-async def scoped_db_user(
-    admin_config: DbConnectionConfig,
-    run_id: UUID,
-    allowed_examples: list[tuple[str, str]],  # [(snapshot_slug, files_hash), ...]
-) -> AsyncIterator[DbConnectionConfig]:
-    """Create temporary PostgreSQL user with RLS-scoped access.
+class ImprovementUserManager(TempUserManager):
+    """Temporary PostgreSQL user with RLS-scoped access to specific training examples.
 
     The created user can only read rows from specific training examples. This provides
     isolation for improvement agents analyzing subsets of the training data.
 
-    Lifecycle:
-    1. Create role: improve_agent_{run_id[:8]}
-    2. Create RLS policies (scope to allowed_examples)
-    3. Yield agent connection config
-    4. Cleanup: DROP policies + DROP role
-
-    Args:
-        admin_config: Admin database connection (must have permission to CREATE ROLE)
-        run_id: Unique identifier for this improvement run
-        allowed_examples: List of (snapshot_slug, files_hash) tuples agent can access
-
-    Yields:
-        DbConnectionConfig for the scoped agent user
-
-    Example:
-        async with scoped_db_user(config.admin, run_id, examples) as agent_cfg:
-            # Agent can only see data from 'examples'
-            engine = create_engine(agent_cfg.url())
-            with Session(engine) as session:
-                # Queries automatically filtered by RLS
-                runs = session.query(CriticRun).all()
+    Custom RLS policies are created per-user to filter tables by (snapshot_slug, files_hash).
     """
-    if not allowed_examples:
-        raise ValueError("allowed_examples must not be empty")
 
-    # Generate secure username and password
-    username = f"improve_agent_{str(run_id)[:8]}"
-    password = secrets.token_urlsafe(32)
-
-    logger.info(f"Creating scoped database user: {username} (for {len(allowed_examples)} examples)")
-
-    # Create async engine for admin operations
-    admin_url = admin_config.url().replace("postgresql://", "postgresql+asyncpg://")
-    admin_engine = create_async_engine(admin_url, echo=False)
-
-    try:
-        # Create user and policies
-        await _create_user(admin_engine, username, password)
-        await _create_policies(admin_engine, username, allowed_examples)
-
-        # Yield agent connection config
-        agent_config = admin_config.with_host(admin_config.host, admin_config.port)
-        agent_config = DbConnectionConfig(
-            host=admin_config.host,
-            port=admin_config.port,
-            user=username,
-            password=password,
-            database=admin_config.database,
-        )
-
-        logger.info(f"Scoped user {username} ready (access to {len(allowed_examples)} examples)")
-        yield agent_config
-
-    finally:
-        # Cleanup: drop policies and user
-        try:
-            await _drop_policies(admin_engine, username)
-            await _drop_user(admin_engine, username)
-            logger.info(f"Scoped user {username} cleaned up")
-        except Exception as e:
-            logger.error(f"Failed to cleanup user {username}: {e}", exc_info=True)
-        finally:
-            await admin_engine.dispose()
-
-
-async def _create_user(engine, username: str, password: str) -> None:
-    """Create PostgreSQL role with LOGIN privilege.
-
-    Uses conditional logic for idempotent creation (skips if role exists).
-    Note: Password must be embedded in SQL string as DO blocks don't support parameters.
-    """
-    async with engine.begin() as conn:
-        # Check if role exists first
-        result = await conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})
-        role_exists = result.scalar() is not None
-
-        if not role_exists:
-            # Create role with password (escape single quotes in password)
-            escaped_password = password.replace("'", "''")
-            await conn.execute(text(f"CREATE ROLE {username} WITH LOGIN PASSWORD '{escaped_password}'"))
-
-        # Grant schema access
-        await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {username}"))
-
-        # Grant SELECT on all tables (agent is read-only)
-        # RLS policies will further restrict which rows are visible
-        await conn.execute(text(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {username}"))
-
-    logger.debug(f"Created user: {username}")
-
-
-async def _create_policies(engine, username: str, allowed_examples: list[tuple[str, str]]) -> None:
-    """Create RLS policies to scope access to specific training examples.
-
-    Policies filter tables by (snapshot_slug, files_hash) pairs. Different tables
-    need different policy patterns based on their schema:
-
-    - snapshots/true_positives/false_positives: Filter by snapshot_slug IN (...)
-    - critic_runs: Filter by (snapshot_slug, files_hash) IN VALUES (...)
-    - critiques: Filter by id IN (SELECT critique_id FROM critic_runs WHERE ...)
-    - grader_runs: Filter by critique_id IN (SELECT id FROM critiques WHERE ...)
-    - events: Filter via FK to critic_runs (transcript_id)
-
-    Args:
-        engine: SQLAlchemy engine (must be admin connection)
-        username: Role name to create policies for
-        allowed_examples: List of (snapshot_slug, files_hash) tuples
-    """
-    # Extract unique snapshot slugs for snapshot-only tables
-    snapshot_slugs = sorted({slug for slug, _ in allowed_examples})
-    snapshot_slug_list = ", ".join(f"'{slug}'" for slug in snapshot_slugs)
-
-    # Build VALUES clause for (snapshot_slug, files_hash) pairs
-    values_clause = ", ".join(f"('{slug}', '{hash_}')" for slug, hash_ in allowed_examples)
-
-    # Policy definitions (table_name → USING clause)
-    policies = {
-        # Snapshot-level tables (no files_hash)
-        "snapshots": f"(slug IN ({snapshot_slug_list}))",
-        "true_positives": f"(snapshot_slug IN ({snapshot_slug_list}))",
-        "false_positives": f"(snapshot_slug IN ({snapshot_slug_list}))",
-        # Example-level tables with (snapshot_slug, files_hash)
-        "examples": f"((snapshot_slug, files_hash) IN (VALUES {values_clause}))",
-        "critic_runs": f"((snapshot_slug, files_hash) IN (VALUES {values_clause}))",
-        # Critiques: filter by being referenced from allowed critic_runs
-        "critiques": f"""(id IN (
-            SELECT critique_id FROM critic_runs
-            WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
-            AND critique_id IS NOT NULL
-        ))""",
-        # Grader runs: filter by critique_id being in allowed critiques
-        "grader_runs": f"""(critique_id IN (
-            SELECT critique_id FROM critic_runs
-            WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
-            AND critique_id IS NOT NULL
-        ))""",
-        # Events: FK to critic_runs via transcript_id
-        "events": f"""(transcript_id IN (
-            SELECT transcript_id FROM critic_runs
-            WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
-        ))""",
-    }
-
-    async with engine.begin() as conn:
-        for table_name, using_clause in policies.items():
-            policy_name = f"{username}_{table_name}"
-
-            # Check if policy already exists
-            result = await conn.execute(
-                text(
-                    "SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = :table AND policyname = :policy"
-                ),
-                {"table": table_name, "policy": policy_name},
-            )
-            exists = result.scalar() is not None
-
-            if exists:
-                logger.debug(f"Policy {policy_name} already exists on {table_name}, skipping")
-                continue
-
-            # Create policy
-            policy_sql = f"CREATE POLICY {policy_name} ON {table_name} FOR SELECT TO {username} USING {using_clause}"
-            await conn.execute(text(policy_sql))
-            logger.debug(f"Created policy: {policy_name} on {table_name}")
-
-    logger.info(f"Created {len(policies)} RLS policies for {username}")
-
-
-async def _drop_policies(engine, username: str) -> None:
-    """Drop all RLS policies created for this user.
-
-    Policies are named {username}_{table_name}, so we can find them by prefix.
-    """
-    tables = [
+    # Tables with policies (single source of truth for create/drop symmetry)
+    # Policy creation/deletion both derive from this list
+    POLICY_TABLES: ClassVar[list[str]] = [
         "snapshots",
         "true_positives",
         "false_positives",
         "examples",
-        "critiques",
         "critic_runs",
+        "critiques",
         "grader_runs",
         "events",
     ]
 
-    async with engine.begin() as conn:
-        for table_name in tables:
-            policy_name = f"{username}_{table_name}"
-            await conn.execute(text(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}"))
+    def __init__(
+        self,
+        admin_config: DbConnectionConfig,
+        run_id: UUID,
+        allowed_examples: list[
+            tuple[SnapshotSlug, str | None]
+        ],  # [(snapshot_slug, files_hash), ...] - files_hash is None for whole-snapshot
+    ):
+        """Initialize improvement user manager.
 
-    logger.debug(f"Dropped policies for {username}")
+        Args:
+            admin_config: Admin database connection (must have CREATE ROLE permission)
+            run_id: Unique identifier for this improvement run
+            allowed_examples: List of (snapshot_slug, files_hash) tuples agent can access
+                            (files_hash is None for whole-snapshot examples)
 
+        Raises:
+            ValueError: If allowed_examples is empty
+        """
+        if not allowed_examples:
+            raise ValueError("allowed_examples must not be empty")
 
-async def _drop_user(engine, username: str) -> None:
-    """Drop PostgreSQL role.
+        super().__init__(admin_config)
+        self.run_id = run_id
+        self.allowed_examples = allowed_examples
 
-    Revokes all privileges before dropping. PostgreSQL requires all dependencies
-    to be removed first (policies are dropped in _drop_policies).
-    """
-    async with engine.begin() as conn:
-        # Revoke all privileges to break dependencies
-        await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {username}"))
-        await conn.execute(text(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {username}"))
+    def generate_username(self) -> str:
+        """Generate username with run ID prefix."""
+        return f"improve_agent_{str(self.run_id)[:8]}"
 
-        # Now safe to drop the role
-        await conn.execute(text(f"DROP ROLE IF EXISTS {username}"))
+    async def grant_permissions(self, username: str) -> None:
+        """Grant read-only access and create custom RLS policies.
 
-    logger.debug(f"Dropped user: {username}")
+        Grants:
+        - Schema usage
+        - SELECT on all tables (RLS policies filter rows)
+
+        Then creates custom RLS policies for each table based on allowed_examples.
+        """
+        assert self.admin_engine is not None, "admin_engine not initialized"
+        async with self.admin_engine.begin() as conn:
+            # Grant schema access
+            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {username}"))
+
+            # Grant SELECT on all tables (agent is read-only)
+            # RLS policies will further restrict which rows are visible
+            await conn.execute(text(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {username}"))
+
+        logger.debug(f"Granted base permissions to {username}")
+
+        # Create custom RLS policies
+        await self._create_policies(username)
+
+    async def revoke_permissions(self, username: str) -> None:
+        """Drop custom RLS policies before revoking grants."""
+        # Drop custom policies first
+        await self._drop_policies(username)
+
+        # Then revoke grants
+        await super().revoke_permissions(username)
+
+    async def _create_policies(self, username: str) -> None:
+        """Create RLS policies to scope access to specific training examples.
+
+        Policies filter tables by (snapshot_slug, files_hash) pairs. Different tables
+        need different policy patterns based on their schema:
+
+        - snapshots/true_positives/false_positives: Filter by snapshot_slug IN (...)
+        - critic_runs: Filter by (snapshot_slug, files_hash) IN VALUES (...)
+        - critiques: Filter by id IN (SELECT critique_id FROM critic_runs WHERE ...)
+        - grader_runs: Filter by critique_id IN (SELECT id FROM critiques WHERE ...)
+        - events: Filter via FK to critic_runs (transcript_id)
+        """
+        # Extract unique snapshot slugs for snapshot-only tables
+        snapshot_slugs = sorted({slug for slug, _ in self.allowed_examples})
+        snapshot_slug_list = ", ".join(f"'{slug}'" for slug in snapshot_slugs)
+
+        # Build VALUES clause for (snapshot_slug, files_hash) pairs
+        values_clause = ", ".join(f"('{slug}', '{hash_}')" for slug, hash_ in self.allowed_examples)
+
+        # Policy definitions (table_name → USING clause)
+        # Keys must match POLICY_TABLES
+        policies = {
+            # Snapshot-level tables (no files_hash)
+            "snapshots": f"(slug IN ({snapshot_slug_list}))",
+            "true_positives": f"(snapshot_slug IN ({snapshot_slug_list}))",
+            "false_positives": f"(snapshot_slug IN ({snapshot_slug_list}))",
+            # Example-level tables with (snapshot_slug, files_hash)
+            "examples": f"((snapshot_slug, files_hash) IN (VALUES {values_clause}))",
+            "critic_runs": f"((snapshot_slug, files_hash) IN (VALUES {values_clause}))",
+            # Critiques: filter by being referenced from allowed critic_runs
+            "critiques": f"""(id IN (
+                SELECT critique_id FROM critic_runs
+                WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
+                AND critique_id IS NOT NULL
+            ))""",
+            # Grader runs: filter by critique_id being in allowed critiques
+            "grader_runs": f"""(critique_id IN (
+                SELECT critique_id FROM critic_runs
+                WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
+                AND critique_id IS NOT NULL
+            ))""",
+            # Events: FK to critic_runs via transcript_id
+            "events": f"""(transcript_id IN (
+                SELECT transcript_id FROM critic_runs
+                WHERE (snapshot_slug, files_hash) IN (VALUES {values_clause})
+            ))""",
+        }
+
+        # Verify policies dict matches POLICY_TABLES
+        missing = set(self.POLICY_TABLES) - set(policies.keys())
+        if missing:
+            raise RuntimeError(f"Policy definitions missing for tables: {missing}")
+
+        assert self.admin_engine is not None, "admin_engine not initialized"
+        created_count = 0
+        async with self.admin_engine.begin() as conn:
+            for table_name in self.POLICY_TABLES:
+                using_clause = policies[table_name]
+                policy_name = f"{username}_{table_name}"
+
+                # Check if policy already exists
+                result = await conn.execute(
+                    text(
+                        "SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = :table AND policyname = :policy"
+                    ),
+                    {"table": table_name, "policy": policy_name},
+                )
+                exists = result.scalar() is not None
+
+                if exists:
+                    logger.debug(f"Policy {policy_name} already exists on {table_name}, skipping")
+                    continue
+
+                # Create policy
+                policy_sql = (
+                    f"CREATE POLICY {policy_name} ON {table_name} FOR SELECT TO {username} USING {using_clause}"
+                )
+                await conn.execute(text(policy_sql))
+                created_count += 1
+                logger.debug(f"Created policy: {policy_name} on {table_name}")
+
+        logger.info(f"Created {created_count} RLS policies for {username}")
+
+    async def _drop_policies(self, username: str) -> None:
+        """Drop RLS policies for this user.
+
+        Drops policies for all tables in POLICY_TABLES (symmetric with _create_policies).
+        Uses DROP POLICY IF EXISTS for idempotency.
+        """
+        assert self.admin_engine is not None, "admin_engine not initialized"
+        async with self.admin_engine.begin() as conn:
+            for table_name in self.POLICY_TABLES:
+                policy_name = f"{username}_{table_name}"
+                await conn.execute(text(f"DROP POLICY IF EXISTS {policy_name} ON {table_name}"))
+
+        logger.debug(f"Dropped policies for {username} from {len(self.POLICY_TABLES)} tables")

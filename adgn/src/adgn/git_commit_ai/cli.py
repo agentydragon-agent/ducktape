@@ -7,7 +7,7 @@ git-commit-ai
 
 Call exactly like `git commit`; every flag is forwarded. Extra wrapper flags:
 
-    --model MODEL (default: o4-mini)
+    --model MODEL (default: gpt-5.1-codex-mini)
     --debug                Enable debug logging (shows exact AI command)
     --accept-ai            Commit immediately with the AI-drafted message (skip editor)
 
@@ -56,7 +56,7 @@ from .editor_template import SCISSORS_MARK, build_commit_template
 MAX_FILE_LINES = 400  # truncate each file's hunk lines (per-file preview)
 # Global cap on total diff size sent to AI (characters)
 MAX_TOTAL_DIFF_CHARS = 120_000
-DEFAULT_MODEL = "o4-mini"
+DEFAULT_MODEL = "gpt-5.1-codex-mini"
 SPINNER_CHARS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 DEFAULT_AI_TIMEOUT = timedelta(seconds=60)  # shared subprocess timeout for providers
 

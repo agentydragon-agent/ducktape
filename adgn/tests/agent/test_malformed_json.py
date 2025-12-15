@@ -8,6 +8,7 @@ from hamcrest import all_of, assert_that, contains_string
 
 from adgn.agent.agent import Agent
 from adgn.agent.events import ToolCallOutput
+from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 from tests.agent.test_matchers import tool_call_with_error_text
@@ -16,7 +17,7 @@ from tests.support.responses import ResponsesFactory
 
 
 async def _run_malformed_json_test(
-    pg_client_echo,
+    mcp_client_echo,
     recording_handler,
     make_first_turn: Callable[[ResponsesFactory], ResponsesResult],
     parallel: bool = False,
@@ -31,9 +32,9 @@ async def _run_malformed_json_test(
 
     client = make_mock(handle_request)
     agent = await Agent.create(
-        mcp_client=pg_client_echo,
+        mcp_client=mcp_client_echo,
         client=client,
-        handlers=[recording_handler],
+        handlers=[FinishOnTextMessageHandler(), recording_handler],
         parallel_tool_calls=parallel,
         tool_policy=RequireAnyTool(),
     )
@@ -44,7 +45,7 @@ async def _run_malformed_json_test(
     return res.text, events
 
 
-async def test_malformed_json_in_tool_arguments(pg_client_echo, recording_handler) -> None:
+async def test_malformed_json_in_tool_arguments(mcp_client_echo, recording_handler) -> None:
     """Test that malformed JSON in tool arguments is converted to error tool result."""
 
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
@@ -56,7 +57,7 @@ async def test_malformed_json_in_tool_arguments(pg_client_echo, recording_handle
         )
         return factory.make(malformed_call)
 
-    text, events = await _run_malformed_json_test(pg_client_echo, recording_handler, make_turn)
+    text, events = await _run_malformed_json_test(mcp_client_echo, recording_handler, make_turn)
 
     # Agent should complete successfully despite malformed JSON
     assert "error" in text.lower() or "invalid" in text.lower()
@@ -72,7 +73,7 @@ async def test_malformed_json_in_tool_arguments(pg_client_echo, recording_handle
     )
 
 
-async def test_non_dict_json_in_tool_arguments(pg_client_echo, recording_handler) -> None:
+async def test_non_dict_json_in_tool_arguments(mcp_client_echo, recording_handler) -> None:
     """Test that non-dict JSON (like array) in tool arguments is converted to error."""
 
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
@@ -84,7 +85,7 @@ async def test_non_dict_json_in_tool_arguments(pg_client_echo, recording_handler
         )
         return factory.make(non_dict_call)
 
-    text, events = await _run_malformed_json_test(pg_client_echo, recording_handler, make_turn)
+    text, events = await _run_malformed_json_test(mcp_client_echo, recording_handler, make_turn)
 
     # Agent should complete successfully
     assert "error" in text.lower()
@@ -97,7 +98,7 @@ async def test_non_dict_json_in_tool_arguments(pg_client_echo, recording_handler
     assert_that(tool_result, tool_call_with_error_text(contains_string("must be a JSON object")))
 
 
-async def test_malformed_json_parallel_tool_calls(pg_client_echo, recording_handler) -> None:
+async def test_malformed_json_parallel_tool_calls(mcp_client_echo, recording_handler) -> None:
     """Test malformed JSON handling with parallel tool calls enabled."""
 
     def make_turn(factory: ResponsesFactory) -> ResponsesResult:
@@ -112,7 +113,7 @@ async def test_malformed_json_parallel_tool_calls(pg_client_echo, recording_hand
         )
         return factory.make(good_call, bad_call)
 
-    text, events = await _run_malformed_json_test(pg_client_echo, recording_handler, make_turn, parallel=True)
+    text, events = await _run_malformed_json_test(mcp_client_echo, recording_handler, make_turn, parallel=True)
 
     # Agent should complete successfully
     assert text

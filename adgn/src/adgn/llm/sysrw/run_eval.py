@@ -476,7 +476,7 @@ def generate_html_report(report_base: Path):
                     "rewritten_system": rewritten_system,
                     "shared_prefix": shared_prefix,
                     "bad_branch": bad_branch,
-                    "alternative": sample_record.new_assistant_message.model_dump(),
+                    "alternative": sample_record.new_assistant_message.model_dump(mode="json"),
                     "grade": row_grade,
                 }
             )
@@ -751,7 +751,7 @@ async def run_eval(
             # Return combined records for saving
             sample_record = EvalSampleRecord(
                 request=sample_request,
-                response=sample.model_dump(),
+                response=sample.model_dump(mode="json"),
                 new_assistant_message=new_assistant_message,
                 correlation_id=item.correlation_id,
                 timestamp=item.timestamp,
@@ -813,7 +813,7 @@ async def run_eval(
             by_source=by_source,
         )
         with summary_out.open("w", encoding="utf-8") as f:
-            json.dump(summary.model_dump(), f, sort_keys=True)
+            json.dump(summary.model_dump(mode="json"), f, sort_keys=True)
         return summary.model_dump()
 
     with (
@@ -826,7 +826,7 @@ async def run_eval(
             # Determine source from sampling record shape
             source = None
             if sample_record:
-                samples_output.write(json.dumps(sample_record.model_dump(), sort_keys=True) + "\n")
+                samples_output.write(json.dumps(sample_record.model_dump(mode="json"), sort_keys=True) + "\n")
                 # Determine source from message type
                 source = (
                     "crush" if isinstance(sample_record.new_assistant_message, ResponsesAssistantMessage) else "ccr"
@@ -842,7 +842,7 @@ async def run_eval(
                 if source in tool_stats_by_source:
                     tool_stats_by_source[source].update_from_tool_calls(tool_calls)
             if grade_record:
-                grades_output.write(json.dumps(grade_record.model_dump(), sort_keys=True) + "\n")
+                grades_output.write(json.dumps(grade_record.model_dump(mode="json"), sort_keys=True) + "\n")
                 try:
                     grade = parse_grade_from_responses(grade_record.response)
                     score = float(grade.score)

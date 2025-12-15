@@ -8,7 +8,6 @@ from adgn.agent.agent import Agent
 from adgn.agent.events import ToolCall, ToolCallOutput
 from adgn.agent.handler import BaseHandler
 from adgn.agent.loop_control import Abort, InjectItems, RequireAnyTool
-from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.builders import ItemFactory
 from adgn.openai_utils.model import UserMessage
 from tests.agent.helpers import NoopOpenAIClient
@@ -36,27 +35,29 @@ class OneShotSyntheticHandler(BaseHandler):
         return Abort()
 
 
-async def test_parallel_tool_calls_reduce_wall_time(make_compositor, slow_server, recording_handler):
+async def test_parallel_tool_calls_reduce_wall_time(compositor, compositor_client, slow_server, recording_handler):
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
+    # Mount slow server and capture Mounted object
+    mounted_slow = await compositor.mount_inproc("dummy", slow_server)
+
     factory = ItemFactory(call_id_prefix="test")
-    tc1 = factory.mcp_tool_call(MCPMountPrefix("dummy"), "slow", SlowInput())
-    tc2 = factory.mcp_tool_call(MCPMountPrefix("dummy"), "slow2", Slow2Input())
+    tc1 = factory.mcp_tool_call(mounted_slow.prefix, "slow", SlowInput())
+    tc2 = factory.mcp_tool_call(mounted_slow.prefix, "slow2", Slow2Input())
 
     handler = OneShotSyntheticHandler(outputs=[tc1, tc2])
 
-    async with make_compositor({"dummy": slow_server}) as (mcp_client, _):
-        agent = await Agent.create(
-            mcp_client=mcp_client,
-            client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
-            parallel_tool_calls=True,
-            handlers=[handler, recording_handler],
-            tool_policy=RequireAnyTool(),
-        )
-        agent.insert_message(UserMessage.text("go"))
+    agent = await Agent.create(
+        mcp_client=compositor_client,
+        client=NoopOpenAIClient(),  # SyntheticAction path bypasses OpenAI
+        parallel_tool_calls=True,
+        handlers=[handler, recording_handler],
+        tool_policy=RequireAnyTool(),
+    )
+    agent.insert_message(UserMessage.text("go"))
 
-        t0 = time.perf_counter()
-        await agent.run()
-        elapsed = time.perf_counter() - t0
+    t0 = time.perf_counter()
+    await agent.run()
+    elapsed = time.perf_counter() - t0
 
     # Assert shorter than serial (~0.60s), with generous headroom for CI noise
     # Threshold tuned for CI noise; serial takes ~0.60s, expect faster here

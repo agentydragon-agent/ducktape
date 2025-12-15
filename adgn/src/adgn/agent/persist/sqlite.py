@@ -10,6 +10,7 @@ import uuid
 import aiosqlite
 from fastmcp.mcp_config import MCPConfig
 from pydantic import JsonValue
+import pydantic_core
 
 from adgn.agent.events import EventType as Event, ToolCall, ToolCallOutput
 from adgn.agent.models.proposal_status import ProposalStatus
@@ -124,13 +125,20 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
     async def create_agent(self, *, mcp_config: MCPConfig | None = None, metadata: AgentMetadata) -> AgentID:
         if mcp_config is None:
             mcp_config = MCPConfig()
-        agent_id = uuid.uuid4().hex
+        # Generate agent_id compatible with MCPMountPrefix pattern: ^[a-z][a-z0-9_]*$
+        # Prefix with 'a' to ensure it starts with a letter; UUID hex is [0-9a-f] which fits the pattern
+        agent_id = f"a{uuid.uuid4().hex}"
         async with self._open() as db:
             # Persist only user-configured servers (exclude default auto-attached)
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
             await db.execute(
                 "INSERT INTO agents (id, created_at, specs, metadata) VALUES (?, ?, ?, ?)",
-                (agent_id, _now().isoformat(), json.dumps(spec_json), json.dumps(metadata.model_dump())),
+                (
+                    agent_id,
+                    _now().isoformat(),
+                    pydantic_core.to_json(spec_json, fallback=str).decode("utf-8"),
+                    pydantic_core.to_json(metadata.model_dump(), fallback=str).decode("utf-8"),
+                ),
             )
             await db.commit()
         return agent_id
@@ -138,7 +146,10 @@ CREATE TABLE IF NOT EXISTS chat_last_read (
     async def update_agent_specs(self, agent_id: AgentID, *, mcp_config: MCPConfig) -> None:
         async with self._open() as db:
             spec_json = filter_persistable_servers(mcp_config).model_dump(mode="json")
-            await db.execute("UPDATE agents SET specs = ? WHERE id = ?", (json.dumps(spec_json), agent_id))
+            await db.execute(
+                "UPDATE agents SET specs = ? WHERE id = ?",
+                (pydantic_core.to_json(spec_json, fallback=str).decode("utf-8"), agent_id),
+            )
             await db.commit()
 
     async def list_agents(self) -> list[AgentRow]:
@@ -358,7 +369,8 @@ WHERE agent_id = ? AND id = ?
         tool_key = event.name if isinstance(event, ToolCall) else None
 
         # Apply hard limit per event payload (serialized JSON)
-        s = json.dumps(payload, ensure_ascii=False)
+        # Use pydantic_core.to_json for proper serialization of nested Pydantic models
+        s = pydantic_core.to_json(payload, fallback=str).decode("utf-8")
         if len(s.encode("utf-8")) > MAX_EVENT_PAYLOAD_BYTES:
             raise ValueError(f"event payload exceeds {MAX_EVENT_PAYLOAD_BYTES} bytes")
         async with self._open() as db:
@@ -390,7 +402,7 @@ VALUES (?, ?, ?, ?, ?, ?)
                     tool_key,
                     outcome.value,
                     decided_at.isoformat(),
-                    json.dumps(details) if details else None,
+                    pydantic_core.to_json(details, fallback=str).decode("utf-8") if details else None,
                 ),
             )
             await db.commit()

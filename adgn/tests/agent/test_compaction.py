@@ -132,7 +132,10 @@ async def test_compaction_handler_triggers_at_threshold(compositor_client, mock_
     assert isinstance(decision, Compact)  # Should trigger compaction
     assert decision.keep_recent_turns == 2
 
-    # Second check should return NoAction (only compact once)
+    # Simulate successful compaction (resets token counter)
+    handler.on_compaction_complete(compacted=True)
+
+    # After successful compaction, should return NoAction
     decision = handler.on_before_sample()
     assert isinstance(decision, NoAction)
 

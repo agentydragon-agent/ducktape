@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
 from compact_json import Formatter  # type: ignore[import-untyped]
 from mcp import types as mcp_types
-from pydantic import BaseModel, TypeAdapter, ValidationError
+from pydantic import TypeAdapter, ValidationError
+from pydantic_core import to_jsonable_python
 from rich import box
 from rich.console import Console, ConsoleOptions, RenderableType
 from rich.json import JSON
@@ -29,6 +31,8 @@ if TYPE_CHECKING:
     from fastmcp.server import FastMCP
 
     from adgn.mcp.compositor.server import Compositor
+
+logger = logging.getLogger(__name__)
 
 # Display configuration constants
 DEFAULT_MAX_LINES = 20  # Default maximum lines for rendered content (both Panel height and truncation)
@@ -472,16 +476,8 @@ class CompactDisplayHandler(BaseHandler):
         return "  ".join(parts)
 
     def _format_grader_metadata(self, grader_output: GradeSubmitInput) -> str:
-        """Format grader result metadata (recall, precision) for inline display."""
+        """Format grader result metadata (counts) for inline display."""
         parts = []
-
-        # Recall (always present)
-        parts.append(f"recall={grader_output.recall:.1%}")
-
-        # Reported issue ratios (if present)
-        if grader_output.reported_issue_ratios:
-            ratios = grader_output.reported_issue_ratios
-            parts.append(f"tp={ratios.tp:.0%} fp={ratios.fp:.0%} unlabeled={ratios.unlabeled:.0%}")
 
         # Counts
         tp_count = len(grader_output.canonical_tp_coverage)
@@ -775,9 +771,9 @@ class CompactDisplayHandler(BaseHandler):
             available_width = self._console.width - len(self._TOOL_RESULT_PREFIX) - self._TOOL_RESULT_INDENT
             formatter = Formatter(max_inline_length=available_width)
 
-            # Convert Pydantic models to dicts for JSON serialization
-            if isinstance(display_data, BaseModel):
-                display_data = display_data.model_dump()
+            # Ensure display_data is JSON-safe using pydantic_core
+            # (handles BaseModel, dicts with Url/AnyUrl, and other Pydantic types)
+            display_data = to_jsonable_python(display_data)
 
             json_str = formatter.serialize(display_data)
             truncated = self._truncate_lines(json_str, self._max_lines, indent=len(self._TOOL_RESULT_PREFIX))

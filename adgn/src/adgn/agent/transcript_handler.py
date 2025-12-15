@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-import json
 from pathlib import Path
+
+import pydantic_core
 
 from adgn.agent.events import ApiRequest, AssistantText, ToolCall, ToolCallOutput, UserText
 from adgn.agent.handler import BaseHandler, Response
@@ -29,7 +30,7 @@ class TranscriptHandler(BaseHandler):
         # Timestamped envelope (events.jsonl)
         out = {"ts": datetime.now(UTC).isoformat(), **rec}
         with self._path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(out, ensure_ascii=False) + "\n")
+            f.write(pydantic_core.to_json(out, fallback=str).decode("utf-8") + "\n")
 
     # ---- BaseHandler hooks (typed) ----
     def on_user_text_event(self, evt: UserText) -> None:

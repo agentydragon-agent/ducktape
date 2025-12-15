@@ -1,25 +1,21 @@
 from __future__ import annotations
 
-from fastmcp.server.server import add_resource_prefix
-import pytest
-
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp.snapshots import RunningServerEntry, ServerEntry
 from tests.conftest import TEST_BACKEND_SERVER_NAME
 
 
-@pytest.mark.requires_docker
-async def test_compositor_meta_resources_available(pg_client):
-    # Get compositor and meta server
-    comp = pg_client.transport.server
-    meta_server = comp.compositor_meta.server
+async def test_compositor_meta_resources_available(make_compositor, make_simple_mcp):
+    """Test compositor_meta server resources without policy gateway."""
+    async with make_compositor({TEST_BACKEND_SERVER_NAME: make_simple_mcp}) as (client, comp):
+        # Get meta server
+        meta_server = comp.compositor_meta.server
 
-    # Read per-mount state from the compositor_meta server
-    # Expect running or initializing depending on initialization timing
-    # Note: The URI gets prefixed with the mount name (compositor_meta)
-    state_uri = add_resource_prefix(
-        meta_server.server_state_resource.uri_template.format(server=TEST_BACKEND_SERVER_NAME),
-        comp.compositor_meta.prefix,
-    )
-    entry: ServerEntry = await read_text_json_typed(pg_client, state_uri, ServerEntry)
-    assert isinstance(entry, RunningServerEntry)
+        # Read per-mount state from the compositor_meta server
+        # Expect running or initializing depending on initialization timing
+        # Note: The URI gets prefixed with the mount name (compositor_meta)
+        state_uri = comp.compositor_meta.add_resource_prefix(
+            meta_server.server_state_resource.uri_template.format(server=TEST_BACKEND_SERVER_NAME)
+        )
+        entry: ServerEntry = await read_text_json_typed(client, state_uri, ServerEntry)
+        assert isinstance(entry, RunningServerEntry)

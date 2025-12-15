@@ -15,8 +15,8 @@ from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Server names (mounted in-proc with a shared store)
-CHAT_HUMAN_SERVER_NAME = "chat.human"
-CHAT_ASSISTANT_SERVER_NAME = "chat.assistant"
+CHAT_HUMAN_SERVER_NAME = "chat_human"
+CHAT_ASSISTANT_SERVER_NAME = "chat_assistant"
 
 
 class ChatAuthor(StrEnum):

@@ -59,13 +59,13 @@ class MatrixBotCompositor(Compositor):
         self.runtime = await self.mount_inproc(
             "runtime",
             ContainerExecServer(
+                self._docker_client,
                 ContainerOptions(
                     image=self._docker_image,
                     network_mode=self._network_mode,
                     environment=self._environment,
                     ephemeral=True,
                 ),
-                self._docker_client,
             ),
             pinned=True,
         )
@@ -91,7 +91,7 @@ app = typer.Typer(help="Matrix-driven Agent entrypoint (docker + yield-only cont
 
 @app.command()
 def run(
-    model: str = typer.Option(os.getenv("OPENAI_MODEL", "o4-mini"), "--model"),
+    model: str = typer.Option(os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini"), "--model"),
     mcp_configs: list[Path] = typer.Option(  # noqa: B008
         [], "--mcp-config", exists=True, file_okay=True, dir_okay=False, readable=True, resolve_path=True
     ),

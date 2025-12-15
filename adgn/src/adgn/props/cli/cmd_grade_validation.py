@@ -15,17 +15,18 @@ from typer_di import Depends
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.resources import get_hydrator
+from adgn.props.cli.resources import get_database_config, get_hydrator
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticContextLengthExceeded, CriticInput, CriticMaxTurnsExceeded, CriticSuccess
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Example, GraderRun, Prompt, Snapshot
 from adgn.props.db.query_builders import query_prompt_performance_stats
+from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.display import short_sha, short_uuid
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ExplicitFileScope
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,7 @@ async def cmd_grade_validation(
     Note: Validation/test snapshots should have exactly one example each (full-specimen scope).
     """
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         critic_client = build_client(critic_model)
         grader_client = build_client(grader_model)
@@ -98,7 +100,8 @@ async def cmd_grade_validation(
             # Build work items grouped by prompt
             # Each prompt gets a list of (snapshot, files_hash, critique_id_or_none)
             # critique_id_or_none is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items_by_prompt: dict[str, list[tuple[SnapshotSlug, str, UUID | None]]] = defaultdict(list)
+            # files_hash is None for whole-snapshot examples
+            work_items_by_prompt: dict[str, list[tuple[SnapshotSlug, str | None, UUID | None]]] = defaultdict(list)
 
             for example in validation_examples:
                 for prompt_sha256 in all_prompt_sha256s:
@@ -160,7 +163,7 @@ async def cmd_grade_validation(
 
         async def process_one(
             snapshot_slug: SnapshotSlug,
-            files_hash: str,
+            files_hash: str | None,
             prompt_sha256: str,
             critique_id_or_none: UUID | None,
             worker_id: int,
@@ -168,7 +171,9 @@ async def cmd_grade_validation(
             total_items: int,
         ) -> tuple[str, bool, bool, UUID | None]:
             """Process one work item: run critic if needed, then grader.
-            Returns (status, critic_success, grader_success, grader_run_id)"""
+            Returns (status, critic_success, grader_success, grader_run_id).
+
+            files_hash can be None for whole-snapshot examples."""
             critique_id = critique_id_or_none
             critic_success = True
             grader_success = True
@@ -180,9 +185,7 @@ async def cmd_grade_validation(
                     # Get scope files from DB
                     with get_session() as session:
                         snapshot_obj = session.execute(
-                            select(Snapshot)
-                            .join(Snapshot.examples)
-                            .where(
+                            select(Snapshot).where(
                                 Snapshot.slug == snapshot_slug  # type: ignore[arg-type]
                             )
                         ).scalar_one()
@@ -193,47 +196,51 @@ async def cmd_grade_validation(
 
                         scope_files = matching_example.files
 
-                    # Hydrate snapshot and run critic
-                    async with hydrator.hydrate(snapshot_slug) as hydrated:
-                        critic_input = CriticInput(
-                            snapshot_slug=snapshot_slug,
-                            files=ExplicitFileScope(files=[str(f) for f in scope_files]),
-                            prompt_sha256=prompt_sha256,
-                        )
+                    # Run critic (compositor handles snapshot hydration internally)
+                    # Use AllFilesScope for whole-snapshot examples, ExplicitFileScope for per-file
+                    files_scope: CriticScopeSpec
+                    if scope_files is None:
+                        files_scope = AllFilesScope()
+                    else:
+                        files_scope = ExplicitFileScope(files=[str(f) for f in scope_files])
 
-                        (critic_output, _critic_run_id, critique_id) = await run_critic(
-                            input_data=critic_input,
-                            client=critic_client,
-                            docker_client=docker_client,
-                            content_root=hydrated.content_root,
-                            prompt_optimization_run_id=None,
-                            mount_properties=True,
-                            verbose=verbose,
-                            max_turns=100,
-                        )
+                    critic_input = CriticInput(
+                        snapshot_slug=snapshot_slug, files=files_scope, prompt_sha256=prompt_sha256
+                    )
 
-                        # Check if critic succeeded - if not, skip grading
-                        if not isinstance(critic_output, CriticSuccess):
-                            # Critic failed (max_turns_exceeded or context_length_exceeded)
-                            if isinstance(critic_output, CriticMaxTurnsExceeded):
-                                status_msg = "max_turns_exceeded"
-                            elif isinstance(critic_output, CriticContextLengthExceeded):
-                                status_msg = "context_length_exceeded"
-                            else:
-                                status_msg = f"unknown_error_{critic_output.tag}"
+                    (critic_output, _critic_run_id, critique_id) = await run_critic(
+                        input_data=critic_input,
+                        client=critic_client,
+                        docker_client=docker_client,
+                        hydrator=hydrator,
+                        prompt_optimization_run_id=None,
+                        mount_properties=True,
+                        verbose=verbose,
+                        max_turns=100,
+                    )
 
-                            if not verbose:
-                                typer.echo(
-                                    f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status_msg}: {snapshot_slug} x {short_sha(prompt_sha256)}"
-                                )
-                            return (status_msg, False, False, None)
-
-                        assert critique_id is not None, "CriticSuccess should have critique_id"
+                    # Check if critic succeeded - if not, skip grading
+                    if not isinstance(critic_output, CriticSuccess):
+                        # Critic failed (max_turns_exceeded or context_length_exceeded)
+                        if isinstance(critic_output, CriticMaxTurnsExceeded):
+                            status_msg = "max_turns_exceeded"
+                        elif isinstance(critic_output, CriticContextLengthExceeded):
+                            status_msg = "context_length_exceeded"
+                        else:
+                            status_msg = f"unknown_error_{critic_output.tag}"
 
                         if not verbose:
                             typer.echo(
-                                f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {short_sha(prompt_sha256)} → {short_uuid(critique_id)}"
+                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status_msg}: {snapshot_slug} x {short_sha(prompt_sha256)}"
                             )
+                        return (status_msg, False, False, None)
+
+                    assert critique_id is not None, "CriticSuccess should have critique_id"
+
+                    if not verbose:
+                        typer.echo(
+                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {short_sha(prompt_sha256)} → {short_uuid(critique_id)}"
+                        )
                 except Exception as e:
                     typer.echo(
                         f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {short_sha(prompt_sha256)}: {e}",
@@ -248,7 +255,14 @@ async def cmd_grade_validation(
             try:
                 with get_session() as session:
                     grader_run_id = await grade_critique_by_id(
-                        session, critique_id, grader_client, docker_client, verbose=verbose, max_turns=200
+                        session,
+                        critique_id,
+                        grader_client,
+                        docker_client,
+                        hydrator,
+                        db_config,
+                        verbose=verbose,
+                        max_turns=200,
                     )
 
                     # Fetch recall for progress message
@@ -256,10 +270,14 @@ async def cmd_grade_validation(
                     assert grader_run is not None
                     assert grader_run.output is not None
 
-                    from adgn.props.db.snapshots import DBGraderSuccess
-
                     if isinstance(grader_run.output, DBGraderSuccess):
-                        result_str = f"recall: {grader_run.output.recall * 100.0:.1f}%"
+                        # Show absolute numbers instead of percentage
+                        if grader_run.output.occurrence_results:
+                            total_credit = sum(o.found_credit for o in grader_run.output.occurrence_results)
+                            n_occurrences = len(grader_run.output.occurrence_results)
+                            result_str = f"{total_credit:.1f} / {n_occurrences} found"
+                        else:
+                            result_str = "0 / 0 found"
                     else:
                         result_str = "max_turns_exceeded"
 
@@ -283,7 +301,8 @@ async def cmd_grade_validation(
 
         # Build queue of (prompt_sha256, snapshot_slug, files_hash, critique_id_or_none) tuples
         # Ordered by prompt priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
-        work_queue: asyncio.Queue[tuple[str, SnapshotSlug, str, UUID | None]] = asyncio.Queue()
+        # files_hash is None for whole-snapshot examples
+        work_queue: asyncio.Queue[tuple[str, SnapshotSlug, str | None, UUID | None]] = asyncio.Queue()
         total_items = 0
         for prompt_sha256 in all_prompt_sha256s:
             items = work_items_by_prompt.get(prompt_sha256, [])
@@ -327,34 +346,10 @@ async def cmd_grade_validation(
         critic_failures = sum(1 for status, _, _, _ in results if status == "critic_failed")
         grader_failures = sum(1 for status, _, _, _ in results if status == "grader_failed")
 
-        # Collect grader run IDs for recall calculation
-        grader_run_ids = [gid for _, _, _, gid in results if gid is not None]
-
         typer.echo("\n=== Final Summary ===")
         typer.echo(f"Complete: {complete}")
         typer.echo(f"Critic failures: {critic_failures}")
         typer.echo(f"Grader failures: {grader_failures}")
-
-        # Calculate and print recall statistics
-        if grader_run_ids:
-            with get_session() as session:
-                grader_runs = session.query(GraderRun).filter(GraderRun.id.in_(grader_run_ids)).all()
-
-                if grader_runs:
-                    from adgn.props.db.snapshots import DBGraderSuccess
-
-                    recalls = []
-                    for run in grader_runs:
-                        if isinstance(run.output, DBGraderSuccess):
-                            recalls.append(run.output.recall)
-
-                    typer.echo("\n=== Metrics ===")
-                    if recalls:
-                        typer.echo(f"Mean recall:    {sum(recalls) / len(recalls):.3f}")
-                        typer.echo(f"Min recall:     {min(recalls):.3f}")
-                        typer.echo(f"Max recall:     {max(recalls):.3f}")
-                        typer.echo(f"Samples:        {len(recalls)}")
-                    else:
-                        typer.echo("No successful grader runs with recall data")
+        typer.echo("\nFor recall metrics, query: aggregated_recall_by_prompt or aggregated_recall_by_example views")
     finally:
         await docker_client.close()

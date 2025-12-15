@@ -12,12 +12,15 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.testing.simple_servers import SendMessageInput
 from tests.agent.test_matchers import assert_function_call_output_structured
 
-# Test MCP server/tool constants for this test
-VALIDATOR_MOUNT_PREFIX = "validator"
-
 
 async def test_tool_error_continues_turn(
-    responses_factory, make_pg_client, validation_server, test_handlers, recording_handler, make_test_agent
+    responses_factory,
+    compositor,
+    compositor_client,
+    validation_server,
+    test_handlers,
+    recording_handler,
+    make_test_agent,
 ) -> None:
     """Test that a tool validation error doesn't abort the turn.
 
@@ -28,30 +31,36 @@ async def test_tool_error_continues_turn(
     4. Retry with correct mime type (text/markdown)
     5. Successfully complete
     """
-    async with make_pg_client({"validator": validation_server}) as mcp_client:
-        # Simulate the agent trying with wrong mime, then correcting itself
-        seq = [
-            # First attempt with wrong mime type
-            responses_factory.make_mcp_tool_call(
-                VALIDATOR_MOUNT_PREFIX, "send_message", SendMessageInput(mime="text/plain", content="Hello")
-            ),
-            # After error, agent retries with correct mime type
-            responses_factory.make_mcp_tool_call(
-                VALIDATOR_MOUNT_PREFIX, "send_message", SendMessageInput(mime="text/markdown", content="Hello")
-            ),
-            # Final message
-            responses_factory.make_assistant_message("Successfully sent message"),
-        ]
+    # Mount validation server and capture Mounted object
+    mounted_validator = await compositor.mount_inproc("validator", validation_server)
 
-        agent, _ = await make_test_agent(
-            mcp_client,
-            seq,
-            handlers=test_handlers,
-            system="You are a helpful assistant. Use the validator tools.",
-            tool_policy=RequireAnyTool(),
-        )
+    # Simulate the agent trying with wrong mime, then correcting itself
+    seq = [
+        # First attempt with wrong mime type
+        responses_factory.make_mcp_tool_call(
+            mounted_validator.prefix,
+            mounted_validator.server.send_message_tool.name,
+            SendMessageInput(mime="text/plain", content="Hello"),
+        ),
+        # After error, agent retries with correct mime type
+        responses_factory.make_mcp_tool_call(
+            mounted_validator.prefix,
+            mounted_validator.server.send_message_tool.name,
+            SendMessageInput(mime="text/markdown", content="Hello"),
+        ),
+        # Final message
+        responses_factory.make_assistant_message("Successfully sent message"),
+    ]
 
-        result = await agent.run()
+    agent, _ = await make_test_agent(
+        compositor_client,
+        seq,
+        handlers=test_handlers,
+        system="You are a helpful assistant. Use the validator tools.",
+        tool_policy=RequireAnyTool(),
+    )
+
+    result = await agent.run()
 
     # Verify the sequence of events
     tool_calls = [evt for evt in recording_handler.records if evt.type == "tool_call"]

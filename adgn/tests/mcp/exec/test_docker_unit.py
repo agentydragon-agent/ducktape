@@ -12,7 +12,7 @@ def make_exec_server(async_docker_client):
     """Factory fixture for creating exec servers."""
 
     def _make(ephemeral: bool):
-        return ContainerExecServer(make_container_opts("alpine:3.19", ephemeral=ephemeral), async_docker_client)
+        return ContainerExecServer(async_docker_client, make_container_opts("python:3.12-slim", ephemeral=ephemeral))
 
     return _make
 

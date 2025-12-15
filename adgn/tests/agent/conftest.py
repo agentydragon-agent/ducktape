@@ -11,15 +11,17 @@ from typing import Any
 from fastapi.testclient import TestClient
 from fastmcp.client import Client
 from fastmcp.client.client import CallToolResult
+from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPServerTypes
 from fastmcp.server import FastMCP
+from fastmcp.tools import FunctionTool
 import mcp.types
 from pydantic import BaseModel
 import pytest
 
 from adgn.agent.agent import Agent
 from adgn.agent.events import EventType, ToolCall, ToolCallOutput, UserText
-from adgn.agent.handler import BaseHandler
+from adgn.agent.handler import BaseHandler, FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.persist.events import EventRecord
 from adgn.agent.policies.loader import approve_all_policy_text
@@ -50,13 +52,13 @@ from tests.support.types import McpServerSpecs
 
 
 @pytest.fixture
-async def policy_evaluator(docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
+async def policy_evaluator(async_docker_client, approval_policy_server: PolicyEngine) -> ContainerPolicyEvaluator:
     """Container-backed policy evaluator using the default policy engine.
 
     Deduplicates setup across tests that need to call policy.decide(...).
     Requires Docker (tests should mark with @pytest.mark.requires_docker).
     """
-    return ContainerPolicyEvaluator(agent_id="tests", docker_client=docker_client, engine=approval_policy_server)
+    return ContainerPolicyEvaluator(agent_id="tests", docker_client=async_docker_client, engine=approval_policy_server)
 
 
 # ---- Standard policy text fixtures (string sources) ----
@@ -71,7 +73,7 @@ def policy_allow_all() -> str:
 @pytest.fixture
 def policy_ui_send_message_allow() -> str:
     result: str = make_policy(
-        decision_expr="PolicyDecision.ALLOW",
+        decision_expr="ApprovalDecision.ALLOW",
         server="ui",
         tool="send_message",
         default=ApprovalDecision.ASK,
@@ -91,7 +93,7 @@ def policy_failing_tests() -> str:
 @pytest.fixture
 def policy_version_test() -> str:
     result: str = make_policy(
-        decision_expr="PolicyDecision.ALLOW",
+        decision_expr="ApprovalDecision.ALLOW",
         server="ui",
         tool="send_message",
         default=ApprovalDecision.ASK,
@@ -103,7 +105,7 @@ def policy_version_test() -> str:
 @pytest.fixture
 def policy_invalid_syntax() -> str:
     # Intentionally invalid Python
-    return "class ApprovalPolicy:\n    '''invalid'''\n    def decide(self, ctx):\n        return (PolicyDecision.ALLOW, 'ok'\n"
+    return "class ApprovalPolicy:\n    '''invalid'''\n    def decide(self, ctx):\n        return (ApprovalDecision.ALLOW, 'ok'\n"
 
 
 @pytest.fixture
@@ -130,7 +132,9 @@ def make_policy_request(server: MCPMountPrefix, tool: str, arguments: dict[str, 
     Returns:
         PolicyRequest with arguments JSON-encoded as string.
     """
-    return PolicyRequest(name=build_mcp_function(server, tool), arguments=json.dumps(arguments or {}))
+    return PolicyRequest(
+        name=build_mcp_function(server, tool), arguments_json=json.dumps(arguments) if arguments is not None else None
+    )
 
 
 # reasoning_model fixture is provided globally in tests/support/responses.py
@@ -188,9 +192,11 @@ def make_test_agent(responses_factory):
     """
 
     async def _make(mcp_client, responses, *, handlers=(), system="test", tool_policy=None, **kwargs):
-        client = FakeOpenAIModel(list(responses))
+        fake_model = FakeOpenAIModel(list(responses))
+        client = CapturingOpenAIModel(fake_model)  # Wrap to enable .captured
+        # Minimal defaults - tests should be explicit about their needs
         if not handlers:
-            handlers = [BaseHandler()]
+            handlers = [BaseHandler()]  # Minimal no-op handler (Agent requires at least one)
         if tool_policy is None:
             tool_policy = RequireAnyTool()
         agent = await Agent.create(
@@ -328,7 +334,6 @@ def test_handlers(recording_handler: RecordingHandler) -> list:
     - FinishOnTextMessageHandler: Abort loop on text messages (test mocks often return text)
     - RecordingHandler: Capture events for assertions
     """
-    from adgn.agent.handler import FinishOnTextMessageHandler
 
     return [FinishOnTextMessageHandler(), recording_handler]
 
@@ -336,21 +341,29 @@ def test_handlers(recording_handler: RecordingHandler) -> list:
 # ---- Server fixtures for tool error and parallel tests ------------------------
 
 
-@pytest.fixture
-def validation_server() -> EnhancedFastMCP:
+class ValidationServer(EnhancedFastMCP):
     """EnhancedFastMCP server with a tool that validates input strictly."""
-    from fastmcp.exceptions import ToolError
 
-    mcp = EnhancedFastMCP("validator")
+    # Tool attribute (assigned in __init__)
+    send_message_tool: FunctionTool
 
-    @mcp.flat_model()
-    def send_message(input: SendMessageInput) -> dict[str, Any]:
-        # Reject text/plain to test error handling
-        if input.mime == "text/plain":
-            raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
-        return {"ok": True, "message": input.content}
+    def __init__(self):
+        super().__init__("validator")
 
-    return mcp
+        def send_message(input: SendMessageInput) -> dict[str, Any]:
+            """Send a message with mime type validation."""
+            # Reject text/plain to test error handling
+            if input.mime == "text/plain":
+                raise ToolError("Validation error: Only text/markdown is supported, not text/plain")
+            return {"ok": True, "message": input.content}
+
+        self.send_message_tool = self.flat_model()(send_message)
+
+
+@pytest.fixture
+def validation_server() -> ValidationServer:
+    """ValidationServer with typed tool access."""
+    return ValidationServer()
 
 
 class _FailInput(OpenAIStrictModeBaseModel):

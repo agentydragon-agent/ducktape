@@ -17,9 +17,15 @@ Refer to that document for architectural fundamentals. This section covers your 
 
 **Objective:** Develop prompts that maximize validation recall - the percentage of known issues the critic catches on held-out examples.
 
+**CRITICAL:** Review the "Critical Context: Subjective Dataset" section in `system_overview.md` (provided during bootstrap). The ground truth reflects one person's subjective preferences - you must study the training data to understand their standards.
+
 **Core Constraint:** Training data is fully accessible (ground truth, transcripts, execution traces), but validation data is held-out. You can run evaluations on validation examples but cannot inspect their ground truth or execution details. This tests true generalization.
 
-**Critical Insight:** Validation examples are ALWAYS full-snapshot (all files with issues per specimen). Training examples include single-file, multi-file, and full-snapshot variants. Most train examples are small subsets (1-5 files), making them easier than validation. A prompt that works on single-file train examples will likely fail on full-snapshot validation.
+{% if target_metric == "whole-repo" %}
+**Critical Insight (Whole-Repo Mode):** Validation examples are ALWAYS full-snapshot (all files with issues per specimen). Training examples include single-file, multi-file, and full-snapshot variants for easier hill-climbing. Most train examples are small subsets (1-5 files), making them easier than validation. A prompt that works on single-file train examples will likely fail on full-snapshot validation. In this mode, you can run per-file evaluations on TRAIN split (for rapid iteration) but can only run whole-snapshot evaluations on VALID split. You CANNOT see validation example filenames - only aggregate recall metrics.
+{% elif target_metric == "targeted" %}
+**Critical Insight (Targeted Mode):** Validation includes both per-file and full-snapshot examples. Training examples similarly mix single-file, multi-file, and full-snapshot variants. In this mode, you CAN see validation example filenames (but not ground truth or traces), allowing you to target specific files for evaluation. Always check sample size (n_examples >= 5) before trusting validation metrics - small samples have high variance. Use UCB/LCB bounds to quantify uncertainty.
+{% endif %}
 
 **Success Criterion:** Beat current baseline validation recall. Any statistically significant improvement over the current best becomes the new baseline to beat. There is no predetermined "good enough" threshold - the goal is continuous improvement.
 
@@ -105,7 +111,17 @@ Let data guide your next move. Common patterns:
 - `upsert_prompt`: Save prompt text to database, returns SHA256 hash for referencing
 
 **Evaluation:**
-- `run_critic_on_example`: Run critic on specific example from `examples` table (requires `snapshot_slug`, `files_hash`, `prompt_sha256`, `max_turns`)
+- `run_critic_on_example`: Run critic on snapshot with specified file scope
+  - Parameters: `snapshot_slug`, `scope` (discriminated union), `prompt_sha256`, `max_turns`
+  - Scope types:
+    - `{"kind": "specific_files", "files": ["path/to/file.py", ...]}` - review specific files
+    - `{"kind": "entire_snapshot"}` - review all files in snapshot
+  - Train split: Can use both specific_files (per-file examples) and entire_snapshot (whole-snapshot)
+{% if target_metric == "whole-repo" %}
+  - Valid split: Can ONLY use entire_snapshot (whole-snapshot required in whole-repo mode)
+{% elif target_metric == "targeted" %}
+  - Valid split: Can use both specific_files and entire_snapshot (targeted mode allows per-file validation)
+{% endif %}
 - `run_grader`: Grade critique against ground truth, returns recall metrics (requires `critique_id`, `max_turns`)
 
 **Execution:**
@@ -125,20 +141,61 @@ with get_session() as session:
     # Your queries here (SQLAlchemy ORM or raw SQL)
 ```
 
-**Views specific to optimization:**
-- `valid_metrics`: Aggregate validation recall by prompt (only way to see validation performance)
-- `valid_aggregates`: Per-prompt validation statistics
+**Data access by split:**
+- **'train' split:** Full direct access to all tables and views (snapshots, true_positives, false_positives, examples, critic_runs, grader_runs, critiques, events, all aggregated views)
+- **'valid' split:** Common constraints across both modes:
+  - Can see snapshot slugs (query `snapshots` table where `split='valid'`)
+  - CANNOT see ground truth (true_positives, false_positives tables blocked via RLS)
+  - CANNOT see execution traces (events table blocked via RLS)
+{% if target_metric == "whole-repo" %}
+  - **Whole-Repo Mode specific:**
+    - CANNOT see examples table rows (examples table is train-only via RLS in whole-repo mode)
+    - Can run whole-snapshot evaluations: `run_critic_on_example(snapshot_slug='...', scope={"kind": "entire_snapshot"}, ...)`
+    - Can query per-run aggregates via `get_validation_run_aggregates()` function (returns per-run results, not pre-aggregated stats)
+{% elif target_metric == "targeted" %}
+  - **Targeted Mode specific:**
+    - CAN see examples table rows (filenames only - query `examples` table for validation examples)
+    - Can run both per-file and whole-snapshot evaluations: `run_critic_on_example(snapshot_slug='...', scope=...)`
+    - Can query aggregates via `aggregated_recall_by_prompt` view (includes n_examples, n_runs, ucb, lcb)
+    - **CRITICAL:** Always check `n_examples >= 5` before trusting validation metrics (small samples = high variance)
+{% endif %}
+- **'test' split:** Completely off-limits (no access at all)
+
+**Evaluation workflow:**
+1. **Run critic** on snapshot: `run_critic_on_example(snapshot_slug, scope, prompt_sha256, max_turns)` → returns `critique_id`
+2. **Run grader** on critique: `run_grader(critique_id, max_turns)` → returns `grader_run_id` and query instructions
+3. **Query metrics** using the method indicated in the grader response message
+
+{% if target_metric == "whole-repo" %}
+**Validation metrics (Whole-Repo Mode):**
+- Use `get_validation_run_aggregates()` SECURITY DEFINER function
+- Returns per-run results (not pre-aggregated) - you must aggregate manually
+- Examples table is NOT accessible (RLS blocked) - you cannot see which files were tested
+
+**Key constraint:** Validation structure is hidden (black-box). You can only see aggregate recall numbers.
+{% elif target_metric == "targeted" %}
+**Validation metrics (Targeted Mode):**
+- Use `aggregated_recall_by_prompt` view (pre-aggregated with stats)
+- Includes `n_examples`, `n_runs`, `ucb`, `lcb` columns
+- **CRITICAL:** Always check `n_examples >= 5` before trusting metrics (small samples = high variance)
+- Examples table IS accessible - you can see validation filenames and target specific files
+
+**Key advantage:** You can iterate on specific validation patterns. **Key risk:** Easier to overfit to validation.
+{% endif %}
 
 ### Example Scripts (Loaded in Bootstrap)
 
 Reference patterns from `adgn.props.examples` module:
 - `query_top_prompts.py` - Top validation performers
 - `query_train_examples.py` - List training examples
-- `query_full_snapshot_train_examples.py` - **Critical:** Query hardest train examples (same distribution as validation)
-- `query_valid_examples.py` - List validation examples (file paths only, no ground truth)
 - `query_run_status.py` - Check success vs max_turns_exceeded
 - `query_execution_traces.py` - Link runs to prompts, examine tool call sequences
-- `query_train_vs_valid_performance.py` - Detect overfitting (compare train vs valid recall)
+{% if target_metric == "whole-repo" %}
+- `query_full_snapshot_train_examples.py` - **Critical:** Query hardest train examples (same distribution as validation)
+- `query_train_vs_valid_performance_whole_repo.py` - Detect overfitting (compare train vs valid recall using `get_validation_run_aggregates()`)
+{% elif target_metric == "targeted" %}
+- `query_train_vs_valid_performance_targeted.py` - Detect overfitting (compare train vs valid recall with sample size checks)
+{% endif %}
 
 **Usage:** Study these patterns, then write your own custom analysis scripts in `/workspace/` to test hypotheses, compute custom metrics, visualize trends. Use `docker_exec` to run them.
 
@@ -154,7 +211,7 @@ Reference patterns from `adgn.props.examples` module:
 
 **Environment:**
 - `/workspace`: Your scratch space (prompts, analysis scripts)
-- `/snapshots/train/<snapshot-slug>/`: Training snapshot source code (read-only)
+- Snapshot source code: Read-only mounts (see `system_overview.md` for paths and conventions)
 - Database: Full read access to train split (ground truth, traces, metrics)
 
 Example patterns to explore:
@@ -167,16 +224,12 @@ Example patterns to explore:
 
 ### Why Baseline Recall is Low (1-4%)
 
-**Task difficulty:** Behavior-cloning code review is inherently hard. The critic must learn subjective preferences:
-- What duplication is acceptable (visual consistency) vs should be refactored
-- What naming is clear vs verbose
-- What abstraction level is appropriate
-- What patterns are idiomatic vs anti-patterns
+**Task difficulty:** Behavior-cloning code review is inherently hard. The critic must learn subjective preferences from examples, not generic rules. (See "Critical Context: Subjective Dataset" in `system_overview.md` for details on the dataset's subjective nature.)
 
 **Dataset characteristics:**
 - Validation is full-snapshot only (comprehensive review, most issues per example)
 - Small validation set (~4 examples) causes high variance
-- Ground truth reflects specific, consistent preferences (not generic best practices)
+- Training signal requires careful study of labeled examples to understand preferences
 
 ### Common Failure Modes
 
@@ -214,22 +267,15 @@ Questions to ask when analyzing failures:
 
 ## Appendix: Reference
 
-### Useful Database Queries
+### Useful Database Views
 
-**Recent grader runs with metrics:**
-```sql
-{{ sql_recent_graders }}
-```
+The database provides pre-aggregated views for analyzing critic performance:
+- `aggregated_recall_by_prompt` - recall metrics per prompt configuration
+- `aggregated_recall_by_example` - recall metrics per example
+- `occurrence_statistics` - per-occurrence statistics across all runs
+- `occurrence_credits` - per-occurrence credits for each run
 
-**Link critic run to its prompt:**
-```sql
-{{ sql_link_to_prompt }}
-```
-
-**Count issues by snapshot:**
-```sql
-{{ sql_count_issues_by_snapshot }}
-```
+View schemas (columns, types, indexes) were provided during bootstrap via `\d+` commands. Use `docker_exec` with `psql` to query these views directly.
 
 ### Run Status Handling
 
@@ -329,35 +375,44 @@ Use this ID to query database tables and track all work in this optimization ses
 
 **Recommended workflow:**
 
-1. **Baseline assessment:**
-   - Query current best validation recall from `valid_metrics` view (`query_top_prompts.py`)
+1. **Understand the subjective standards (REQUIRED FIRST STEP):**
+   - Query training examples: What files were reviewed, what issues were found?
+   - Read ground truth: What true positives should be flagged? What false positives should NOT be flagged?
+   - Study the labeled data to internalize the subjective preferences
+   - Example queries:
+     - TPs: `SELECT id, category, rationale FROM true_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train') LIMIT 50`
+     - FPs: `SELECT id, category, rationale FROM false_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train')`
+   - Look for patterns: What categories of issues matter? What patterns should be ignored? What's the language and reasoning style?
+
+2. **Baseline assessment:**
+   - Query current best validation recall using `get_validation_run_aggregates()` function (see example in `query_top_prompts.py`)
    - Read high-performing prompts from database
    - That's your baseline - beat it
 
-2. **Hypothesis formation:**
+3. **Hypothesis formation:**
    - Identify failure patterns from train data
    - Understand issue types from train ground truth
    - Form hypotheses about what prompt changes would improve recall
 
-3. **Rapid iteration (train):**
+4. **Rapid iteration (train):**
    - Write prompt iteration to `/workspace/prompt-v{N}.md` (use `docker_exec` with heredoc)
    - Call `upsert_prompt(file_path)` to save and get SHA256 hash
    - Test on small train sample (5-20 examples)
    - Read execution traces from `events` table (`query_execution_traces.py`)
    - Diagnose failures, iterate rapidly
 
-4. **Generalization check:**
+5. **Generalization check:**
    - Test on full-snapshot train examples (`query_full_snapshot_train_examples.py`)
    - These match validation distribution - critical diagnostic step
    - If recall collapses, prompt overfits to easy examples
 
-5. **Validation checkpoint:**
-   - Query validation examples (`query_valid_examples.py`)
-   - For each: call `run_critic_on_example`, then `run_grader`
-   - Query aggregate metrics from `valid_metrics` view
+6. **Validation checkpoint:**
+   - Query validation snapshots: `SELECT slug FROM snapshots WHERE split='valid' ORDER BY slug`
+   - For each validation snapshot: call `run_critic_on_example(snapshot_slug=slug, scope={"kind": "entire_snapshot"}, ...)` then `run_grader`
+   - Query aggregate metrics using `get_validation_run_aggregates()` function
    - Compare to baseline
 
-6. **Continuous improvement:**
+7. **Continuous improvement:**
    - Any improvement over baseline becomes new baseline
    - Analyze what worked, iterate to beat your new baseline
    - Repeat until validation recall plateaus or budget exhausted

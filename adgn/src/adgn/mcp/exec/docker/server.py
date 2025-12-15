@@ -49,12 +49,12 @@ class ContainerExecServer(EnhancedFastMCP):
     # Tool reference (assigned in __init__ after tool registration)
     exec_tool: FunctionTool
 
-    def __init__(self, opts: ContainerOptions, docker_client: aiodocker.Docker):
+    def __init__(self, docker_client: aiodocker.Docker, opts: ContainerOptions):
         """Create a generic per-session container exec FastMCP server.
 
         Args:
-            opts: Container configuration options
             docker_client: Async Docker client (owned and managed by caller).
+            opts: Container configuration options
 
         Note:
             The caller must create and manage the docker_client lifecycle. The server

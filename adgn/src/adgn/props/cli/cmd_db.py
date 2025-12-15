@@ -4,17 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from psycopg2 import sql
 from rich.console import Console
 from rich.table import Table
-from sqlalchemy import create_engine, text
 import typer
 
 from adgn.cli_utils import async_run
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session, recreate_database
-from adgn.props.db.config import get_production_config
+from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.prompts import load_and_upsert_detector_prompt_with_session
+from adgn.props.db.setup import ensure_database_exists
 from adgn.props.db.sync import (
     ModelMetadataSyncStats,
     SyncStats,
@@ -83,46 +82,14 @@ def sync_all() -> FullSyncResult:
         )
 
 
-def ensure_databases_exist() -> None:
-    """Ensure eval_results database and agent_user role exist.
+def ensure_databases_exist(config: DatabaseConfig) -> None:
+    """Ensure eval_results database exists.
 
-    Connects to the postgres database and creates application database if needed.
-    Note: Tests create per-test databases (props_test_*), not a shared test database.
+    Uses the unified helper from setup.py for database creation.
+    Tests create per-test databases (props_test_*), not a shared test database.
+    Note: agent_user role was deprecated - temporary users are now created per-agent instead.
     """
-    config = get_production_config()
-
-    # Connect to postgres database to create application database
-    postgres_config = config.with_database("postgres")
-    engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
-
-    with engine.connect() as conn:
-        # Create eval_results database if it doesn't exist
-        result = conn.execute(
-            text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": config.admin.database}
-        )
-        if not result.fetchone():
-            typer.echo(f"  Creating database: {config.admin.database}")
-            # Use psycopg2.sql for safe identifier quoting
-            raw_conn = conn.connection
-            cursor = raw_conn.cursor()
-            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(config.admin.database)))
-            cursor.close()
-
-        # Create agent_user role if it doesn't exist
-        result = conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :rolname"), {"rolname": config.agent.user})
-        if not result.fetchone():
-            typer.echo(f"  Creating role: {config.agent.user}")
-            # Use psycopg2.sql for safe identifier and literal quoting
-            raw_conn = conn.connection
-            cursor = raw_conn.cursor()
-            cursor.execute(
-                sql.SQL("CREATE ROLE {} WITH LOGIN PASSWORD {}").format(
-                    sql.Identifier(config.agent.user), sql.Literal(config.agent.password)
-                )
-            )
-            cursor.close()
-
-    engine.dispose()
+    ensure_database_exists(config, config.admin.database, drop_existing=False)
 
 
 def recreate_database_and_sync() -> FullSyncResult:
@@ -171,12 +138,13 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     """Recreate database from scratch (destructive - drops all tables/views/policies).
 
     This command will:
-    1. Ensure databases (eval_results, eval_results_test) exist
-    2. Drop all existing tables, views, and RLS policies
-    3. Create agent_user role (read-only with RLS)
-    4. Create tables from ORM models
-    5. Enable Row-Level Security policies
-    6. Sync all data from filesystem (snapshots, issues, examples, detector prompts, model metadata)
+    1. Ensure database exists (eval_results)
+    2. Drop all existing schema objects (tables, views, RLS policies, functions)
+    3. Run Alembic migrations to recreate schema
+    4. Sync all data from filesystem (snapshots, issues, examples, detector prompts, model metadata)
+
+    Note: Temporary database users are created per-agent instead of a shared agent_user role.
+          Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
 
     Requires database connection configured via environment variables (postgres superuser).
     """
@@ -189,7 +157,8 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
 
     # Ensure databases exist before trying to connect
     typer.echo("Ensuring databases exist...")
-    ensure_databases_exist()
+    db_config = get_database_config()
+    ensure_databases_exist(db_config)
 
     # Connect and recreate (includes full sync)
     console = Console()

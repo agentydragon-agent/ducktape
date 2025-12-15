@@ -25,11 +25,11 @@ This repository manages configuration and deployment for several systems:
 
 ## Active Development Areas (High Churn)
 
-1. **LLM Tooling** (`llm/`, `experimental/`)
-   - Claude Code hooks and integration (`claude_hooks/`, `claude/`)
-   - AI teams and spawn systems (`llm/ai-teams/`)
-   - MCP (Model Context Protocol) tools (`llm/mcp/`)
-   - Claude linter and optimizer tools
+1. **LLM Tooling** (`llm/`, `experimental/`, `adgn/`)
+   - Agent framework with MCP support (`adgn/`)
+   - Claude Code hooks and optimizer (`claude/claude_hooks/`, `claude/claude_optimizer/`)
+   - LLM utilities and templates (`llm/ducktape_llm_common/`, `llm/claude-instructions/`)
+   - Experimental LLM projects (`experimental/cotrl/`, `experimental/ember_evals/`)
 
 2. **Development Tools** (`wt/`, `gatelet/`)
    - Worktree management system
@@ -127,7 +127,7 @@ pip install -r requirements.txt
 python -m pytest
 pre-commit install  # For development
 ```
-- Target runtime version: Python 3.12 (stdlib features like `tomllib` are assumed available).
+- Target runtime version: Python 3.11+ (most projects use 3.11+, with some targeting 3.12).
 - Each active project directory has a `.envrc`; run `direnv allow` so the expected Python/UV environments and PATH customisations load automatically before running tooling.
 
 ### Rust (Finance tools)

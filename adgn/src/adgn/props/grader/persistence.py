@@ -16,19 +16,17 @@ from adgn.props.db.snapshots import (
     DBCanonicalFPCoverage,
     DBCanonicalTPCoverage,
     DBFalsePositiveOccurrence,
-    DBFPCoverageEntry,
     DBGraderMaxTurnsExceeded,
     DBGraderOutput,
     DBGraderSuccess,
     DBIssueCoverageEntry,
     DBKnownFalsePositive,
     DBLineRange,
-    DBNovelIssueEntry,
-    DBNovelIssueReasoning,
-    DBReportedIssueRatios,
-    DBTPCoverageEntry,
+    DBOccurrenceMatch,
+    DBOccurrenceResult,
     DBTruePositiveIssue,
     DBTruePositiveOccurrence,
+    DBUnknownIssue,
 )
 from adgn.props.grader.models import (
     CanonicalFPCoverage,
@@ -37,12 +35,14 @@ from adgn.props.grader.models import (
     GraderMaxTurnsExceeded,
     GraderOutput,
     GraderSuccess,
-    GradeSubmitInput,
     InputIssueID,
     IssueCoverageEntry,
     KnownFalsePositive,
+    OccurrenceMatch,
+    OccurrenceResult,
     TruePositiveID,
     TruePositiveIssue,
+    UnknownIssue,
 )
 from adgn.props.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from adgn.props.rationale import Rationale
@@ -58,6 +58,22 @@ def _convert_line_range_from_db(db_lr: DBLineRange) -> LineRange:
     return LineRange(start_line=db_lr.start_line, end_line=db_lr.end_line)
 
 
+def convert_files_dict_to_db(files: dict[Path, list[LineRange] | None]) -> dict[str, list[DBLineRange] | None]:
+    """Convert MCP files dict (Path -> list[LineRange]) to DB representation (str -> list[DBLineRange])."""
+    return {
+        str(path): [_convert_line_range_to_db(lr) for lr in ranges] if ranges else None
+        for path, ranges in files.items()
+    }
+
+
+def convert_files_dict_from_db(files: dict[str, list[DBLineRange] | None]) -> dict[Path, list[LineRange] | None]:
+    """Convert DB files dict (str -> list[DBLineRange]) to MCP representation (Path -> list[LineRange])."""
+    return {
+        Path(path): [_convert_line_range_from_db(lr) for lr in ranges] if ranges else None
+        for path, ranges in files.items()
+    }
+
+
 def tp_to_db(tp: TruePositiveIssue) -> DBTruePositiveIssue:
     """Convert MCP TruePositiveIssue to DB representation."""
     return DBTruePositiveIssue(
@@ -65,10 +81,8 @@ def tp_to_db(tp: TruePositiveIssue) -> DBTruePositiveIssue:
         rationale=str(tp.rationale),
         occurrences=[
             DBTruePositiveOccurrence(
-                files={
-                    str(path): [_convert_line_range_to_db(lr) for lr in ranges] if ranges else None
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_to_db(occ.files),
                 note=occ.note,
                 expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
             )
@@ -84,10 +98,8 @@ def tp_from_db(db_tp: DBTruePositiveIssue) -> TruePositiveIssue:
         rationale=Rationale(db_tp.rationale),
         occurrences=[
             TruePositiveOccurrence(
-                files={
-                    Path(path): [_convert_line_range_from_db(lr) for lr in ranges] if ranges else None
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_from_db(occ.files),
                 note=occ.note,
                 expect_caught_from={frozenset(Path(p) for p in fs) for fs in occ.expect_caught_from},
             )
@@ -103,10 +115,8 @@ def fp_to_db(fp: KnownFalsePositive) -> DBKnownFalsePositive:
         rationale=str(fp.rationale),
         occurrences=[
             DBFalsePositiveOccurrence(
-                files={
-                    str(path): [_convert_line_range_to_db(lr) for lr in ranges] if ranges else None
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_to_db(occ.files),
                 note=occ.note,
                 relevant_files=[str(p) for p in occ.relevant_files],
             )
@@ -122,10 +132,8 @@ def fp_from_db(db_fp: DBKnownFalsePositive) -> KnownFalsePositive:
         rationale=Rationale(db_fp.rationale),
         occurrences=[
             FalsePositiveOccurrence(
-                files={
-                    Path(path): [_convert_line_range_from_db(lr) for lr in ranges] if ranges else None
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_from_db(occ.files),
                 note=occ.note,
                 relevant_files={Path(p) for p in occ.relevant_files},
             )
@@ -155,8 +163,6 @@ def _canonical_tp_coverage_to_db(coverage: CanonicalTPCoverage) -> DBCanonicalTP
 
 def _canonical_tp_coverage_from_db(db_coverage: DBCanonicalTPCoverage) -> CanonicalTPCoverage:
     """Convert DB CanonicalTPCoverage to MCP representation."""
-    from adgn.props.rationale import Rationale
-
     return CanonicalTPCoverage(
         covered_by=[_issue_coverage_entry_from_db(e) for e in db_coverage.covered_by],
         recall_credit=db_coverage.recall_credit,
@@ -171,53 +177,46 @@ def _canonical_fp_coverage_to_db(coverage: CanonicalFPCoverage) -> DBCanonicalFP
 
 def _canonical_fp_coverage_from_db(db_coverage: DBCanonicalFPCoverage) -> CanonicalFPCoverage:
     """Convert DB CanonicalFPCoverage to MCP representation."""
-    from adgn.props.rationale import Rationale
-
     return CanonicalFPCoverage(
         covered_by=[InputIssueID(id) for id in db_coverage.covered_by], rationale=Rationale(db_coverage.rationale)
     )
 
 
-def grade_submit_input_to_db(grade: GradeSubmitInput) -> DBGraderSuccess:
-    """Convert MCP GradeSubmitInput to DB representation (success variant)."""
+def _occurrence_match_to_db(match: OccurrenceMatch) -> DBOccurrenceMatch:
+    """Convert MCP OccurrenceMatch to DB representation."""
+    return DBOccurrenceMatch(input_id=str(match.input_id), credit=match.credit)
+
+
+def _occurrence_result_to_db(result: OccurrenceResult) -> DBOccurrenceResult:
+    """Convert MCP OccurrenceResult to DB representation."""
+    return DBOccurrenceResult(
+        tp_id=str(result.tp_id),
+        occurrence_id=result.occurrence_id,
+        found_credit=result.found_credit,
+        matched_by=[_occurrence_match_to_db(m) for m in result.matched_by],
+        rationale=str(result.rationale),
+    )
+
+
+def _unknown_issue_to_db(unknown: UnknownIssue) -> DBUnknownIssue:
+    """Convert MCP UnknownIssue to DB representation."""
+    return DBUnknownIssue(id=str(unknown.input_id), rationale=str(unknown.rationale))
+
+
+def grader_success_to_db(success: GraderSuccess) -> DBGraderSuccess:
+    """Convert MCP GraderSuccess to DB representation."""
     return DBGraderSuccess(
         tag="success",
-        canonical_tp_coverage=[
-            DBTPCoverageEntry(
-                canonical_id=str(entry.canonical_id), coverage=_canonical_tp_coverage_to_db(entry.coverage)
-            )
-            for entry in grade.canonical_tp_coverage
-        ],
-        canonical_fp_coverage=[
-            DBFPCoverageEntry(
-                canonical_id=str(entry.canonical_id), coverage=_canonical_fp_coverage_to_db(entry.coverage)
-            )
-            for entry in grade.canonical_fp_coverage
-        ],
-        novel_critique_issues=[
-            DBNovelIssueEntry(
-                input_id=str(entry.input_id), reasoning=DBNovelIssueReasoning(rationale=str(entry.reasoning.rationale))
-            )
-            for entry in grade.novel_critique_issues
-        ],
-        reported_issue_ratios=(
-            DBReportedIssueRatios(
-                tp=grade.reported_issue_ratios.tp,
-                fp=grade.reported_issue_ratios.fp,
-                unlabeled=grade.reported_issue_ratios.unlabeled,
-            )
-            if grade.reported_issue_ratios
-            else None
-        ),
-        recall=grade.recall,
-        summary=str(grade.summary),
+        occurrence_results=[_occurrence_result_to_db(r) for r in success.occurrence_results],
+        unknowns=[_unknown_issue_to_db(u) for u in success.unknowns],
+        summary=str(success.summary),
     )
 
 
 def grader_output_to_db(output: GraderOutput) -> DBGraderOutput:
     """Convert MCP GraderOutput (discriminated union) to DB representation."""
     if isinstance(output, GraderSuccess):
-        return grade_submit_input_to_db(output.result)
+        return grader_success_to_db(output)
     if isinstance(output, GraderMaxTurnsExceeded):
         return DBGraderMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
     raise TypeError(f"Unexpected GraderOutput variant: {type(output)}")

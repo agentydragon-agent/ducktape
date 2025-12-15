@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import Agent
+from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.openai_utils.model import UserMessage
@@ -23,15 +24,15 @@ def make_echo_calls():
 
 
 @pytest.fixture
-def make_agent_with_turn_limit(pg_client_echo, recording_handler, make_step_runner):
+def make_agent_with_turn_limit(mcp_client_echo, recording_handler, make_step_runner):
     """Factory for creating agents with turn limit."""
 
     async def _make(steps: list[Step], max_turns: int):
         runner = make_step_runner(steps=steps)
         return await Agent.create(
-            mcp_client=pg_client_echo,
+            mcp_client=mcp_client_echo,
             client=make_mock(runner.handle_request_async),
-            handlers=[recording_handler, MaxTurnsHandler(max_turns=max_turns)],
+            handlers=[FinishOnTextMessageHandler(), recording_handler, MaxTurnsHandler(max_turns=max_turns)],
             tool_policy=RequireAnyTool(),
         )
 

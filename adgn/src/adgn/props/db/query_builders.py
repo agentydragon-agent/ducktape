@@ -14,7 +14,7 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import Select, bindparam, case, cast, func, literal, select, text, type_coerce, union_all
+from sqlalchemy import Select, bindparam, cast, func, literal, select, text, type_coerce, union_all
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
@@ -25,13 +25,14 @@ from adgn.props.db.models import (
     Example,
     FalsePositive,
     GraderRun,
-    Prompt,
+    OccurrenceCredit,
     PromptOptimizationRun,
     RunCost,
     Snapshot,
     TruePositive,
 )
 from adgn.props.ids import SnapshotSlug
+from adgn.props.splits import Split
 
 
 def _exclude_jsonb_null(column):
@@ -51,8 +52,6 @@ def _exclude_jsonb_null(column):
     Returns:
         SQLAlchemy binary expression: column != cast('null', JSONB)
     """
-    from sqlalchemy.dialects import postgresql
-
     # Cast 'null' string to JSONB type and compare
     return column != cast(literal("null"), postgresql.JSONB)
 
@@ -64,9 +63,9 @@ class SplitPerformanceStats(BaseModel):
     lcb: float | None  # Lower confidence bound (NULL if n < 2)
     success_count: int
     total_count: int
-    zero_pct: float
-    stuck_pct: float
-    context_pct: float
+    zero_count: int  # Number of examples with 0.0 recall
+    stuck_count: int  # Total runs that exceeded max_turns
+    context_count: int  # Total runs that exceeded context_length
 
 
 class PromptPerformanceRow(BaseModel):
@@ -76,7 +75,8 @@ class PromptPerformanceRow(BaseModel):
     created_at: datetime
     prompt_length: int
     valid: SplitPerformanceStats | None
-    train: SplitPerformanceStats | None
+    train_whole: SplitPerformanceStats | None
+    train_partial: SplitPerformanceStats | None
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -118,6 +118,7 @@ def compile_to_sql_with_placeholders(query: Select) -> str:
 # ============================================================================
 
 
+# TODO: Consider removing - compiled but never rendered in template, agents can query directly
 def list_train_snapshots() -> Select:
     """List all train split snapshots.
 
@@ -127,6 +128,7 @@ def list_train_snapshots() -> Select:
     return select(Snapshot.slug, Snapshot.split).where(Snapshot.split == "train").order_by(Snapshot.slug)
 
 
+# TODO: Consider removing - no usages found anywhere
 def list_snapshots_by_split(split: str) -> Select:
     """List all snapshots for a given split.
 
@@ -144,6 +146,7 @@ def list_snapshots_by_split(split: str) -> Select:
 # ============================================================================
 
 
+# TODO: Consider removing - no usages found anywhere
 def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     """Get all true positives for a snapshot.
 
@@ -160,6 +163,7 @@ def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     )
 
 
+# TODO: Consider removing - no usages found anywhere
 def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     """Get all false positives for a snapshot.
 
@@ -176,6 +180,7 @@ def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
     )
 
 
+# TODO: Consider removing - compiled but never rendered in template, agents can query directly
 def list_train_true_positives() -> Select:
     """List all true positives for train split snapshots.
 
@@ -190,6 +195,7 @@ def list_train_true_positives() -> Select:
     )
 
 
+# TODO: Consider removing - compiled but never rendered in template, agents can query directly
 def list_train_false_positives() -> Select:
     """List all false positives for train split snapshots.
 
@@ -250,65 +256,6 @@ def count_issues_by_snapshot(split: str | None = None) -> Select:
 # ============================================================================
 
 
-def recent_grader_results(limit: int = 10) -> Select:
-    """Get recent grader runs with metrics for train split.
-
-    Args:
-        limit: Maximum number of results (default 10)
-
-    Returns:
-        Query selecting grader run details with status and conditional metrics.
-        - status: success or max_turns_exceeded
-        - recall: NULL if max_turns_exceeded, otherwise from output
-        - canonical_tp_count: NULL if max_turns_exceeded, otherwise array length
-        - canonical_fp_count: NULL if max_turns_exceeded, otherwise array length
-        - reported_issue_ratios: NULL if max_turns_exceeded or empty critique
-    """
-    return (
-        select(
-            GraderRun.snapshot_slug,
-            GraderRun.transcript_id,
-            GraderRun.output["tag"].astext.label("status"),
-            # Recall is NULL if max_turns_exceeded
-            case((GraderRun.output["tag"].astext == "success", GraderRun.output["recall"].astext), else_=None).label(
-                "recall"
-            ),
-            # Count canonical TPs/FPs from array lengths (NULL if max_turns_exceeded)
-            case(
-                (
-                    GraderRun.output["tag"].astext == "success",
-                    func.jsonb_array_length(GraderRun.output["canonical_tp_coverage"]),
-                ),
-                else_=None,
-            ).label("canonical_tp_count"),
-            case(
-                (
-                    GraderRun.output["tag"].astext == "success",
-                    func.jsonb_array_length(GraderRun.output["canonical_fp_coverage"]),
-                ),
-                else_=None,
-            ).label("canonical_fp_count"),
-            # Reported issue ratios (NULL if max_turns_exceeded or empty critique)
-            case(
-                (GraderRun.output["tag"].astext == "success", GraderRun.output["reported_issue_ratios"]["tp"].astext),
-                else_=None,
-            ).label("reported_tp_ratio"),
-            case(
-                (GraderRun.output["tag"].astext == "success", GraderRun.output["reported_issue_ratios"]["fp"].astext),
-                else_=None,
-            ).label("reported_fp_ratio"),
-            GraderRun.model,
-            GraderRun.created_at,
-        )
-        .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
-        .where(Snapshot.split == "train")
-        .where(GraderRun.output.isnot(None))
-        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
-        .order_by(GraderRun.created_at.desc())
-        .limit(limit)
-    )
-
-
 def snapshot_files_with_issues_select() -> Select:
     """Define the SELECT query for the snapshot_files_with_issues view.
 
@@ -325,15 +272,15 @@ def snapshot_files_with_issues_select() -> Select:
         return tp_files | fp_files
 
     RLS Note: This view inherits RLS from true_positives and false_positives tables,
-    which filter to split='train' for agent_user. For completeness, we also join
-    with snapshots to ensure snapshot_slug is valid.
+    which may be filtered by temporary agent users (e.g., TRAIN-only for prompt optimizer).
+    We also join with snapshots to ensure snapshot_slug is valid.
 
     Returns:
         Query selecting snapshot_slug and files_with_issues (text array) for each snapshot
     """
     # Extract all file paths (dict keys) from TP occurrences
     # true_positives.occurrences is JSONB array of {files: {...}, ...}
-    # RLS on true_positives ensures only train split is visible to agent_user
+    # RLS on true_positives applies task-specific filtering for temporary agent users
     tp_files = select(
         TruePositive.snapshot_slug,
         func.jsonb_object_keys(func.jsonb_array_elements(TruePositive.occurrences).op("->")(literal("files"))).label(
@@ -342,7 +289,7 @@ def snapshot_files_with_issues_select() -> Select:
     ).select_from(TruePositive)
 
     # Extract all file paths from FP occurrences
-    # RLS on false_positives ensures only train split is visible to agent_user
+    # RLS on false_positives applies task-specific filtering for temporary agent users
     fp_files = select(
         FalsePositive.snapshot_slug,
         func.jsonb_object_keys(func.jsonb_array_elements(FalsePositive.occurrences).op("->")(literal("files"))).label(
@@ -365,84 +312,12 @@ def snapshot_files_with_issues_select() -> Select:
     )
 
 
-def valid_metrics_select() -> Select:
-    """Define the SELECT query for the valid_metrics view.
-
-    Shows grader runs for valid split with full provenance:
-    - Which critique was graded
-    - How it was produced (critic prompt, model)
-    - How it was graded (grader run ID, model)
-    - What score it got (recall, NULL if max_turns_exceeded)
-    - Status (success or max_turns_exceeded)
-
-    Goes over all validation examples (from examples table) that have been evaluated.
-    No manual file filtering - just joins with examples table to identify which
-    validation examples have grader runs.
-
-    Returns:
-        Query defining the view's row structure (not aggregated)
-    """
-    # Join grader runs with examples table via critic_runs (snapshot_slug, files_hash)
-    # Filter to validation split snapshots only
-    return (
-        select(
-            GraderRun.snapshot_slug,
-            Example.files_hash,
-            GraderRun.critique_id.label("critique_id"),
-            CriticRun.prompt_sha256.label("critic_prompt_sha256"),
-            CriticRun.model.label("critic_model"),
-            GraderRun.id.label("grader_run_id"),
-            GraderRun.model.label("grader_model"),
-            GraderRun.output["tag"].astext.label("status"),
-            # Recall is NULL if max_turns_exceeded, otherwise extract from output
-            case(
-                (
-                    GraderRun.output["tag"].astext == "success",
-                    GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION),
-                ),
-                else_=None,
-            ).label("recall"),
-            GraderRun.created_at,
-        )
-        .select_from(GraderRun)
-        .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
-        .join(Critique, GraderRun.critique_id == Critique.id)
-        .join(CriticRun, Critique.id == CriticRun.critique_id)
-        .join(
-            Example, (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.files_hash == CriticRun.files_hash)
-        )
-        .where(Snapshot.split == "valid")
-        .where(GraderRun.output.isnot(None))
-        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
-    )
-
-
-def valid_aggregates_view() -> Select:
-    """Get aggregate grader metrics for valid split (from view).
-
-    Returns:
-        Query selecting avg_recall, snapshot_count, run_count, grader_model
-    """
-    # This queries the valid_metrics view
-    # We use text() to reference the view since it's not mapped as an ORM model
-    return (
-        select(
-            text("AVG(recall) as avg_recall"),
-            text("COUNT(DISTINCT snapshot_slug) as snapshot_count"),
-            text("COUNT(*) as run_count"),
-            text("grader_model"),
-        )
-        .select_from(text("valid_metrics"))
-        .group_by(text("grader_model"))
-        .order_by(text("avg_recall DESC"))
-    )
-
-
 # ============================================================================
 # Critique queries
 # ============================================================================
 
 
+# TODO: Consider removing - no usages found (only parameterized version compiled)
 def critiques_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Select:
     """Get recent critiques for a specific snapshot.
 
@@ -469,46 +344,12 @@ def critiques_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Selec
     )
 
 
-def link_grader_to_prompt(snapshot_slug: SnapshotSlug, limit: int = 1) -> Select:
-    """Link grader run to its prompt text via critique and critic run.
-
-    Args:
-        snapshot_slug: Snapshot to query
-        limit: Maximum number of results (default 1)
-
-    Returns:
-        Query selecting grader_run_id, snapshot_slug, status, recall (NULL if max_turns_exceeded),
-        critique_id, critic_run_id, prompt_sha256, prompt_text
-    """
-    return (
-        select(
-            GraderRun.id.label("grader_run_id"),
-            GraderRun.snapshot_slug,
-            GraderRun.output["tag"].astext.label("status"),
-            # Recall is NULL if max_turns_exceeded
-            case((GraderRun.output["tag"].astext == "success", GraderRun.output["recall"].astext), else_=None).label(
-                "recall"
-            ),
-            Critique.id.label("critique_id"),
-            CriticRun.id.label("critic_run_id"),
-            CriticRun.prompt_sha256,
-            Prompt.prompt_text,
-        )
-        .join(Critique, GraderRun.critique_id == Critique.id)
-        .join(CriticRun, Critique.id == CriticRun.critique_id)
-        .join(Prompt, CriticRun.prompt_sha256 == Prompt.prompt_sha256)
-        .where(GraderRun.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
-        .where(GraderRun.output.isnot(None))
-        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
-        .limit(limit)
-    )
-
-
 # ============================================================================
 # Event trajectory queries (require transcript_id parameter)
 # ============================================================================
 
 
+# TODO: Consider removing - no usages found (only parameterized version compiled)
 def tools_used_by_transcript(transcript_id: UUID) -> Select:
     """Count tool usage by name for a given transcript.
 
@@ -526,6 +367,7 @@ def tools_used_by_transcript(transcript_id: UUID) -> Select:
     )
 
 
+# TODO: Consider removing - no usages found (only parameterized version compiled)
 def tool_sequence_by_transcript(transcript_id: UUID) -> Select:
     """Get tool call sequence for a transcript.
 
@@ -542,6 +384,7 @@ def tool_sequence_by_transcript(transcript_id: UUID) -> Select:
     )
 
 
+# TODO: Consider removing - no usages found (only parameterized version compiled)
 def failed_tools_by_transcript(transcript_id: UUID) -> Select:
     """Get failed tool calls for a transcript.
 
@@ -582,6 +425,7 @@ def failed_tools_by_transcript(transcript_id: UUID) -> Select:
 # ============================================================================
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def critiques_for_snapshot_parameterized() -> Select:
     """Get critiques for a snapshot (parameterized with :snapshot_slug placeholder).
 
@@ -590,14 +434,7 @@ def critiques_for_snapshot_parameterized() -> Select:
     return critiques_for_snapshot(bindparam("snapshot_slug"), limit=5)  # type: ignore[arg-type]
 
 
-def link_grader_to_prompt_parameterized() -> Select:
-    """Link grader to prompt for a snapshot (parameterized with :snapshot_slug placeholder).
-
-    Agents fill in :snapshot_slug at runtime.
-    """
-    return link_grader_to_prompt(bindparam("snapshot_slug"), limit=1)  # type: ignore[arg-type]
-
-
+# TODO: Consider removing - compiled but never rendered in template
 def tools_used_by_transcript_parameterized() -> Select:
     """Tool usage by transcript (parameterized with :transcript_id placeholder).
 
@@ -606,6 +443,7 @@ def tools_used_by_transcript_parameterized() -> Select:
     return tools_used_by_transcript(bindparam("transcript_id"))  # type: ignore[arg-type]
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def tool_sequence_by_transcript_parameterized() -> Select:
     """Tool sequence by transcript (parameterized with :transcript_id placeholder).
 
@@ -614,6 +452,7 @@ def tool_sequence_by_transcript_parameterized() -> Select:
     return tool_sequence_by_transcript(bindparam("transcript_id"))  # type: ignore[arg-type]
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def failed_tools_by_transcript_parameterized() -> Select:
     """Failed tools by transcript (parameterized with :transcript_id placeholder).
 
@@ -675,6 +514,7 @@ def po_run_costs(po_run_id: UUID) -> Select:
     )
 
 
+# TODO: Consider removing - no usages found (only non-param version used)
 def po_run_costs_parameterized() -> Select:
     """PO run costs (parameterized with :po_run_id placeholder).
 
@@ -688,6 +528,7 @@ def po_run_costs_parameterized() -> Select:
 # ============================================================================
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def blocked_valid_critiques() -> Select:
     """Example query that returns 0 rows due to RLS (valid split blocked).
 
@@ -699,6 +540,7 @@ def blocked_valid_critiques() -> Select:
     )
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def blocked_valid_grader_runs() -> Select:
     """Example query that returns 0 rows due to RLS (valid split blocked).
 
@@ -710,6 +552,7 @@ def blocked_valid_grader_runs() -> Select:
     )
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def blocked_valid_events() -> Select:
     """Example query that returns 0 rows due to RLS (valid split blocked).
 
@@ -730,6 +573,7 @@ def blocked_valid_events() -> Select:
 # ============================================================================
 
 
+# TODO: Consider removing - compiled but never rendered in template
 def list_train_scopes() -> Select:
     """List all examples for train split snapshots.
 
@@ -744,56 +588,6 @@ def list_train_scopes() -> Select:
     )
 
 
-def grader_runs_by_scope_train(limit: int = 10) -> Select:
-    """Count completed grader runs per example for train split.
-
-    Returns grader runs grouped by (snapshot_slug, files_hash) to show
-    how many times each example has been evaluated.
-
-    Args:
-        limit: Maximum number of results (default 10)
-
-    Returns:
-        Query selecting (snapshot_slug, files_hash, run_count, avg_recall, success_count)
-        ordered by run_count descending.
-        avg_recall only includes successful runs (status='success'), not max_turns_exceeded.
-    """
-    return (
-        select(
-            GraderRun.snapshot_slug,
-            Example.files_hash,
-            Example.files,
-            func.count().label("run_count"),
-            # Average recall only for successful runs (where tag='success')
-            func.avg(
-                case(
-                    (
-                        GraderRun.output["tag"].astext == "success",
-                        GraderRun.output["recall"].astext.cast(postgresql.DOUBLE_PRECISION),
-                    ),
-                    else_=None,
-                )
-            ).label("avg_recall"),
-            # Count successful runs (status='success')
-            func.sum(case((GraderRun.output["tag"].astext == "success", 1), else_=0)).label("success_count"),
-        )
-        .select_from(GraderRun)
-        .join(Snapshot, GraderRun.snapshot_slug == Snapshot.slug)
-        .join(Critique, GraderRun.critique_id == Critique.id)
-        .join(CriticRun, Critique.id == CriticRun.critique_id)
-        # Join examples by matching files_hash (critic_runs.files matches example.files via hash)
-        .join(
-            Example, (CriticRun.snapshot_slug == Example.snapshot_slug) & (CriticRun.files_hash == Example.files_hash)
-        )
-        .where(Snapshot.split == "train")
-        .where(GraderRun.output.isnot(None))
-        .where(_exclude_jsonb_null(GraderRun.output))  # Exclude JSON null in addition to SQL NULL
-        .group_by(GraderRun.snapshot_slug, Example.files_hash, Example.files)
-        .order_by(func.count().desc())
-        .limit(limit)
-    )
-
-
 # ============================================================================
 # Prompt performance queries
 # ============================================================================
@@ -803,15 +597,17 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
     """Query comprehensive prompt performance statistics across train/valid splits.
 
     For each prompt, computes:
-    - Mean recall (over all runs, failures count as 0.0)
-    - Success/total counts (successful runs vs all runs)
-    - Zero%: percentage of successful runs with 0% recall
-    - Stuck%: percentage of all runs that exceeded max_turns
-    - Context%: percentage of all runs that exceeded context_length
+    - Mean recall (over all examples, computed from occurrence credits like the view)
+    - LCB (Lower Confidence Bound): mean - stddev/sqrt(n) for ranking prompts
+    - Success/total counts (successful runs vs all runs including failures)
+    - Zero%: percentage of examples with 0.0 recall
+    - Stuck%: percentage of runs that exceeded max_turns
+    - Context%: percentage of runs that exceeded context_length
 
-    IMPORTANT: max_turns_exceeded/context_exceeded are taken as recall=0.0 in mean calculation.
-    Example: 4 successful (25% recall each) + 1 stuck = 20% mean recall.
-    See lines 803-806: CASE WHEN status='success' THEN recall ELSE 0.0 END
+    Train split is further divided into whole-snapshot and partial examples.
+
+    Uses occurrence_credits view as data source (includes failed runs via UNION).
+    Recall computation matches aggregated_recall_by_prompt view exactly.
 
     Args:
         session: SQLAlchemy session
@@ -821,34 +617,54 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
         List of PromptPerformanceRow models with split statistics
     """
     # Use text() for the complex CTE-based query
-    # This matches the query from query_train_vs_valid_performance.py
+    # Data source: occurrence_credits view (includes failures with zero credit)
     query_text = text("""
-        WITH latest_grader_per_example AS (
-            -- Get most recent grader run per (prompt, example, split)
-            SELECT DISTINCT ON (cr.prompt_sha256, cr.snapshot_slug, cr.files_hash)
-                cr.prompt_sha256,
-                cr.snapshot_slug,
-                cr.files_hash,
-                s.split,
-                gr.output->>'tag' as status,
-                CASE
-                    WHEN gr.output->>'tag' = 'success' THEN (gr.output->'recall')::float
-                    ELSE 0.0
-                END as recall,
-                gr.created_at
-            FROM grader_runs gr
-            JOIN critiques c ON gr.critique_id = c.id
-            JOIN critic_runs cr ON cr.critique_id = c.id
-            JOIN examples e ON e.snapshot_slug = cr.snapshot_slug AND e.files_hash = cr.files_hash
-            JOIN snapshots s ON s.slug = cr.snapshot_slug
-            WHERE s.split IN ('train', 'valid')
-            ORDER BY cr.prompt_sha256, cr.snapshot_slug, cr.files_hash, gr.created_at DESC
-        ),
-        split_stats AS (
-            -- Aggregate statistics per (prompt, split)
+        WITH per_example_recall AS (
+            -- Compute recall per (prompt, example) - same math as aggregated_recall_by_prompt view
+            -- First: average credits per occurrence across runs
+            -- Then: sum occurrence averages and divide by count
             SELECT
                 prompt_sha256,
                 split,
+                is_whole_snapshot,
+                snapshot_slug,
+                files_hash,
+                SUM(avg_credit) / NULLIF(COUNT(*), 0) as recall,
+                COUNT(DISTINCT critic_run_id) as n_critic_runs,
+                COUNT(DISTINCT CASE
+                    WHEN grader_run_id IS NULL AND grader_rationale LIKE '%max_turns_exceeded%'
+                    THEN critic_run_id
+                END) as n_max_turns,
+                COUNT(DISTINCT CASE
+                    WHEN grader_run_id IS NULL AND grader_rationale LIKE '%context_length_exceeded%'
+                    THEN critic_run_id
+                END) as n_context
+            FROM (
+                SELECT
+                    prompt_sha256,
+                    split,
+                    is_whole_snapshot,
+                    snapshot_slug,
+                    files_hash,
+                    tp_id,
+                    occurrence_id,
+                    critic_run_id,
+                    grader_run_id,
+                    grader_rationale,
+                    AVG(found_credit) as avg_credit
+                FROM occurrence_credits
+                WHERE split = 'train' OR (split = 'valid' AND is_whole_snapshot = TRUE)
+                GROUP BY prompt_sha256, split, is_whole_snapshot, snapshot_slug, files_hash,
+                         tp_id, occurrence_id, critic_run_id, grader_run_id, grader_rationale
+            ) occurrence_avg
+            GROUP BY prompt_sha256, split, is_whole_snapshot, snapshot_slug, files_hash
+        ),
+        split_stats AS (
+            -- Aggregate statistics per (prompt, split, is_whole_snapshot)
+            SELECT
+                prompt_sha256,
+                split,
+                is_whole_snapshot,
                 AVG(recall) * 100 as mean_recall,
                 -- Lower confidence bound: mean - 1.0 * (stddev / sqrt(n))
                 -- NULL if n < 2 (can't compute stddev with single sample)
@@ -858,13 +674,16 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                     ELSE NULL
                 END as recall_lcb,
                 COUNT(*) as total_count,
-                COUNT(CASE WHEN status = 'success' THEN 1 END) as success_count,
-                SUM(CASE WHEN status = 'success' AND recall = 0.0 THEN 1 ELSE 0 END)::float
-                    / NULLIF(COUNT(CASE WHEN status = 'success' THEN 1 END), 0) * 100 as zero_pct,
-                SUM(CASE WHEN status = 'max_turns_exceeded' THEN 1 ELSE 0 END)::float / COUNT(*) * 100 as stuck_pct,
-                SUM(CASE WHEN status = 'context_length_exceeded' THEN 1 ELSE 0 END)::float / COUNT(*) * 100 as context_pct
-            FROM latest_grader_per_example
-            GROUP BY prompt_sha256, split
+                -- Success count: examples with at least one successful run (has grader_run_id)
+                COUNT(CASE WHEN n_critic_runs > n_max_turns + n_context THEN 1 END) as success_count,
+                -- Zero count: number of examples with 0.0 recall
+                SUM(CASE WHEN recall = 0.0 THEN 1 ELSE 0 END) as zero_count,
+                -- Stuck count: total runs that exceeded max_turns
+                SUM(n_max_turns) as stuck_count,
+                -- Context count: total runs that exceeded context
+                SUM(n_context) as context_count
+            FROM per_example_recall
+            GROUP BY prompt_sha256, split, is_whole_snapshot
         ),
         prompt_info AS (
             -- Get prompt metadata
@@ -882,23 +701,32 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
             v.recall_lcb as valid_lcb,
             v.success_count as valid_success,
             v.total_count as valid_total,
-            v.zero_pct as valid_zero_pct,
-            v.stuck_pct as valid_stuck_pct,
-            v.context_pct as valid_context_pct,
-            t.mean_recall as train_recall,
-            t.recall_lcb as train_lcb,
-            t.success_count as train_success,
-            t.total_count as train_total,
-            t.zero_pct as train_zero_pct,
-            t.stuck_pct as train_stuck_pct,
-            t.context_pct as train_context_pct
+            v.zero_count as valid_zero_count,
+            v.stuck_count as valid_stuck_count,
+            v.context_count as valid_context_count,
+            tw.mean_recall as train_whole_recall,
+            tw.recall_lcb as train_whole_lcb,
+            tw.success_count as train_whole_success,
+            tw.total_count as train_whole_total,
+            tw.zero_count as train_whole_zero_count,
+            tw.stuck_count as train_whole_stuck_count,
+            tw.context_count as train_whole_context_count,
+            tp.mean_recall as train_partial_recall,
+            tp.recall_lcb as train_partial_lcb,
+            tp.success_count as train_partial_success,
+            tp.total_count as train_partial_total,
+            tp.zero_count as train_partial_zero_count,
+            tp.stuck_count as train_partial_stuck_count,
+            tp.context_count as train_partial_context_count
         FROM prompt_info p
         LEFT JOIN split_stats v ON v.prompt_sha256 = p.prompt_sha256 AND v.split = 'valid'
-        LEFT JOIN split_stats t ON t.prompt_sha256 = p.prompt_sha256 AND t.split = 'train'
+        LEFT JOIN split_stats tw ON tw.prompt_sha256 = p.prompt_sha256 AND tw.split = 'train' AND tw.is_whole_snapshot = TRUE
+        LEFT JOIN split_stats tp ON tp.prompt_sha256 = p.prompt_sha256 AND tp.split = 'train' AND tp.is_whole_snapshot = FALSE
         ORDER BY
-            v.recall_lcb DESC NULLS LAST,  -- Primary: valid LCB (descending)
-            t.recall_lcb DESC NULLS LAST,  -- Secondary: train LCB (descending)
-            p.created_at DESC              -- Tertiary: creation time (tiebreaker)
+            v.recall_lcb DESC NULLS LAST,   -- Primary: valid LCB (descending)
+            tw.recall_lcb DESC NULLS LAST,  -- Secondary: train whole LCB (descending)
+            tp.recall_lcb DESC NULLS LAST,  -- Tertiary: train partial LCB (descending)
+            p.created_at DESC               -- Quaternary: creation time (tiebreaker)
         LIMIT :limit
     """)
 
@@ -915,22 +743,35 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 lcb=row.valid_lcb,  # NULL if n < 2
                 success_count=row.valid_success,
                 total_count=row.valid_total,
-                zero_pct=row.valid_zero_pct or 0.0,
-                stuck_pct=row.valid_stuck_pct or 0.0,
-                context_pct=row.valid_context_pct or 0.0,
+                zero_count=row.valid_zero_count or 0,
+                stuck_count=row.valid_stuck_count or 0,
+                context_count=row.valid_context_count or 0,
             )
 
-        # Build train stats if data exists
-        train_stats = None
-        if row.train_recall is not None:
-            train_stats = SplitPerformanceStats(
-                mean_recall=row.train_recall,
-                lcb=row.train_lcb,  # NULL if n < 2
-                success_count=row.train_success,
-                total_count=row.train_total,
-                zero_pct=row.train_zero_pct or 0.0,
-                stuck_pct=row.train_stuck_pct or 0.0,
-                context_pct=row.train_context_pct or 0.0,
+        # Build train whole-snapshot stats if data exists
+        train_whole_stats = None
+        if row.train_whole_recall is not None:
+            train_whole_stats = SplitPerformanceStats(
+                mean_recall=row.train_whole_recall,
+                lcb=row.train_whole_lcb,  # NULL if n < 2
+                success_count=row.train_whole_success,
+                total_count=row.train_whole_total,
+                zero_count=row.train_whole_zero_count or 0,
+                stuck_count=row.train_whole_stuck_count or 0,
+                context_count=row.train_whole_context_count or 0,
+            )
+
+        # Build train partial stats if data exists
+        train_partial_stats = None
+        if row.train_partial_recall is not None:
+            train_partial_stats = SplitPerformanceStats(
+                mean_recall=row.train_partial_recall,
+                lcb=row.train_partial_lcb,  # NULL if n < 2
+                success_count=row.train_partial_success,
+                total_count=row.train_partial_total,
+                zero_count=row.train_partial_zero_count or 0,
+                stuck_count=row.train_partial_stuck_count or 0,
+                context_count=row.train_partial_context_count or 0,
             )
 
         rows.append(
@@ -939,8 +780,123 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 created_at=row.created_at,
                 prompt_length=row.prompt_length,
                 valid=valid_stats,
-                train=train_stats,
+                train_whole=train_whole_stats,
+                train_partial=train_partial_stats,
             )
         )
 
     return rows
+
+
+# ============================================================================
+# Recall by Example Queries (Occurrence-Weighted)
+# ============================================================================
+
+
+class RecallByExampleRow(BaseModel):
+    """Single row from recall-by-example query."""
+
+    snapshot_slug: SnapshotSlug
+    files_hash: str | None
+    prompt_sha256: str
+    recall: float
+
+
+def query_recall_by_example(
+    session: Session,
+    split: Split | None = None,
+    prompt_sha256: str | None = None,
+    snapshot_slugs: list[SnapshotSlug] | None = None,
+) -> list[RecallByExampleRow]:
+    """Query occurrence-weighted recall grouped by (example, prompt).
+
+    Computes AVG(found_credit) from occurrence_credits view, grouped by
+    (snapshot_slug, files_hash, prompt_sha256).
+
+    This is the canonical way to compute recall for cross-run aggregation.
+    Single-run recall can be computed inline from occurrence_results.
+
+    Args:
+        session: SQLAlchemy session
+        split: Optional split filter (TRAIN, VALID, TEST)
+        prompt_sha256: Optional prompt filter (get recall for specific prompt)
+        snapshot_slugs: Optional list of snapshot slugs to filter
+
+    Returns:
+        List of RecallByExampleRow (snapshot, files_hash, prompt, recall)
+
+    Example:
+        # Get recall for all train examples with a specific prompt
+        results = query_recall_by_example(
+            session,
+            split=Split.TRAIN,
+            prompt_sha256="abc123..."
+        )
+        for row in results:
+            print(f"{row.snapshot_slug}: {row.recall * 100:.1f}%")
+    """
+    query = session.query(
+        OccurrenceCredit.snapshot_slug,
+        OccurrenceCredit.files_hash,
+        OccurrenceCredit.prompt_sha256,
+        func.avg(OccurrenceCredit.found_credit).label("recall"),
+    )
+
+    if split is not None:
+        query = query.filter(OccurrenceCredit.split == split)
+    if prompt_sha256 is not None:
+        query = query.filter(OccurrenceCredit.prompt_sha256 == prompt_sha256)
+    if snapshot_slugs is not None:
+        query = query.filter(OccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
+
+    query = query.group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.files_hash, OccurrenceCredit.prompt_sha256)
+
+    results = query.all()
+    return [
+        RecallByExampleRow(
+            snapshot_slug=SnapshotSlug(r.snapshot_slug),
+            files_hash=r.files_hash,
+            prompt_sha256=r.prompt_sha256,
+            recall=r.recall,
+        )
+        for r in results
+    ]
+
+
+# ============================================================================
+# Cross-Run Aggregated Recall (Database Views)
+# ============================================================================
+#
+# Use ORM models to query the database views directly:
+#
+# Example 1: Query aggregated_recall_by_prompt view
+#   from adgn.props.db.models import AggregatedRecallByPrompt
+#   from adgn.props.splits import Split
+#
+#   result = session.query(AggregatedRecallByPrompt).filter(
+#       AggregatedRecallByPrompt.split == Split.TRAIN,
+#       AggregatedRecallByPrompt.critic_model == "gpt-4o",
+#       AggregatedRecallByPrompt.is_whole_snapshot == False,
+#   ).first()
+#
+#   if result:
+#       print(f"Recall: {result.recall}, Total credit: {result.total_credit}, Occurrences: {result.n_occurrences}")
+#
+# Example 2: Query aggregated_recall_by_example view
+#   from adgn.props.db.models import AggregatedRecallByExample
+#
+#   results = session.query(AggregatedRecallByExample).filter(
+#       AggregatedRecallByExample.split == Split.TRAIN,
+#       AggregatedRecallByExample.critic_model == "gpt-4o",
+#   ).all()
+#
+# Example 3: Query occurrence_statistics view
+#   from adgn.props.db.models import OccurrenceStatistics
+#
+#   stats = session.query(OccurrenceStatistics).filter(
+#       OccurrenceStatistics.split == Split.TRAIN,
+#       OccurrenceStatistics.full_catch_rate > 0.8,
+#   ).order_by(OccurrenceStatistics.mean_credit.desc()).all()
+#
+# The views handle all JSONB extraction and aggregation logic.
+# No separate query builder functions are needed.

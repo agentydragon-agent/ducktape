@@ -9,12 +9,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from contextlib import suppress
-import json
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
+import pydantic_core
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import MCPMountPrefix
@@ -155,7 +155,7 @@ class TypedBootstrapBuilder:
         return FunctionCallItem(
             call_id=call_id or self.next_call_id(),
             name=build_mcp_function(server, tool),
-            arguments=json.dumps(payload.model_dump()),
+            arguments=pydantic_core.to_json(payload.model_dump(mode="json"), fallback=str).decode("utf-8"),
         )
 
     def call_mounted(
@@ -203,33 +203,37 @@ class TypedBootstrapBuilder:
         builder._models = introspect_server_models(server)
         return builder
 
+    def read_resource(
+        self, resources: Mounted[ResourcesServer], server: MCPMountPrefix, uri: str | AnyUrl, *, max_bytes: int = 65536
+    ) -> FunctionCallItem:
+        """Bootstrap helper for resources.read.
+
+        Args:
+            resources: Mounted resources server (comp.resources)
+            server: Mount prefix of server to read resource from (already validated)
+            uri: Resource URI to read
+            max_bytes: Maximum bytes to read (default: 65536)
+
+        Returns:
+            FunctionCallItem ready for bootstrap injection
+
+        Example:
+            builder = TypedBootstrapBuilder.for_server(runtime.server)
+            call = builder.read_resource(
+                comp.resources,
+                comp.critic_submit.prefix,
+                comp.critic_submit.server.snapshot_slug_resource.uri,
+                max_bytes=256,
+            )
+        """
+        return self.call(
+            resources.prefix,
+            resources.server.read_tool.name,
+            ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes),
+        )
+
 
 # Helper functions for common bootstrap patterns
-
-
-def read_resource_call(
-    builder: TypedBootstrapBuilder,
-    resources: Mounted[ResourcesServer],
-    server: MCPMountPrefix,
-    uri: str | AnyUrl,
-    *,
-    max_bytes: int = 65536,
-) -> FunctionCallItem:
-    """Bootstrap helper for resources.read.
-
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        resources: Mounted resources server (comp.resources)
-        server: Mount prefix of server to read resource from (already validated)
-        uri: Resource URI to read
-        max_bytes: Maximum bytes to read (default: 65536)
-
-    Returns:
-        FunctionCallItem ready for bootstrap injection
-    """
-    return builder.call(
-        resources.prefix, "read", ResourcesReadArgs(server=server, uri=str(uri), start_offset=0, max_bytes=max_bytes)
-    )
 
 
 def docker_exec_call(

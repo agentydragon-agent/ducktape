@@ -3,7 +3,7 @@ from __future__ import annotations
 from hamcrest import assert_that, empty, has_item, has_properties
 
 from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.mcp.resources.server import ResourcesReadArgs
+from adgn.mcp.resources.server import ResourcesSubscribeArgs
 
 
 async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, typed_resources_client):
@@ -13,9 +13,7 @@ async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_re
     await compositor.mount_inproc(origin_prefix, origin)
 
     # Subscribe to an origin resource via the resources server tool
-    await typed_resources_client.subscribe(
-        ResourcesReadArgs(server=origin_prefix, uri="resource://foo/bar", start_offset=0, max_bytes=0)
-    )
+    await typed_resources_client.subscribe(ResourcesSubscribeArgs(server=origin_prefix, uri="resource://foo/bar"))
     assert hooks.subscribed, "expected origin to receive subscribe"
     # Index reflects the subscription
     idx = await typed_resources_client.list_subscriptions()

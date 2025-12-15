@@ -104,7 +104,7 @@ def _make_critic_response_sequence() -> list:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_zero_issues_submits_successfully(
-    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client
+    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client, test_specimens_hydrator
 ):
     """Test that critic successfully calls submit(issues=0) when finding no issues.
 
@@ -112,7 +112,6 @@ async def test_critic_zero_issues_submits_successfully(
     forced the agent to call dummy tools instead of completing with submit(issues=0).
     """
     slug, prompt_sha256 = critic_test_db_setup
-    specimen_dir = test_trivial_specimen.content_root
 
     # Create fake OpenAI client with expected tool call sequence
     client = make_openai_client(_make_critic_response_sequence())
@@ -126,7 +125,7 @@ async def test_critic_zero_issues_submits_successfully(
     output, critic_run_id, critique_id = await run_critic(
         input_data=input_data,
         client=client,
-        content_root=specimen_dir,
+        hydrator=test_specimens_hydrator,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
@@ -157,7 +156,7 @@ async def test_critic_zero_issues_submits_successfully(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client
+    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client, test_specimens_hydrator
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
@@ -165,7 +164,6 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     After the fix, the agent calls submit(issues=0) and the loop terminates via GateUntil.
     """
     slug, prompt_sha256 = critic_test_db_setup
-    specimen_dir = test_trivial_specimen.content_root
 
     # Create response sequence with LIMITED docker_exec calls
     # If the bug exists, this will fail because agent keeps calling docker_exec
@@ -187,7 +185,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     output, _, _ = await run_critic(
         input_data=input_data,
         client=client,
-        content_root=specimen_dir,
+        hydrator=test_specimens_hydrator,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,

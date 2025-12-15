@@ -33,7 +33,7 @@ from adgn.inop.engine.models import (
 from adgn.inop.io.file_utils import collect_workspace_files
 from adgn.inop.runners.base import AgentRunner
 from adgn.mcp._shared.constants import WORKING_DIR
-from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.container_session import BindMount, ContainerOptions
 from adgn.mcp._shared.types import NetworkMode
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.bwrap import BwrapExecServer
@@ -52,7 +52,9 @@ class OpenAIRunner(AgentRunner):
     ) -> None:
         super().__init__(runner_id, config)
         configured_model = config.get("model")
-        self.model = configured_model if isinstance(configured_model, str) else os.getenv("OPENAI_MODEL", "o4-mini")
+        self.model = (
+            configured_model if isinstance(configured_model, str) else os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
+        )
         self.reasoning_effort = config.get("reasoning_effort")
         self.workspace_path: Path | None = None
         self._exit_stack: AsyncExitStack | None = None
@@ -104,14 +106,21 @@ class OpenAIRunner(AgentRunner):
             raise RuntimeError("Workspace not initialised")
 
         if setup and setup.docker:
-            binds: dict[str, dict[str, str]] = {str(self.workspace_path): {"bind": "/workspace", "mode": "rw"}}
+            binds: list[BindMount] = [
+                BindMount(host_path=self.workspace_path, container_path=Path("/workspace"), mode="rw")
+            ]
             for host_path, spec in (setup.docker.volumes or {}).items():
                 if isinstance(spec, dict):
-                    binds[str(host_path)] = spec
+                    binds.append(
+                        BindMount(
+                            host_path=Path(host_path), container_path=Path(spec["bind"]), mode=spec.get("mode", "rw")
+                        )
+                    )
             network_mode = NetworkMode.BRIDGE if setup.docker.network_enabled else NetworkMode.NONE
 
             def _factory(verifier) -> FastMCP:
                 return ContainerExecServer(
+                    self._docker_client,
                     ContainerOptions(
                         image=setup.docker.image,
                         working_dir=WORKING_DIR,
@@ -120,7 +129,6 @@ class OpenAIRunner(AgentRunner):
                         environment=setup.docker.env or {},
                         ephemeral=True,
                     ),
-                    self._docker_client,
                 )
 
             return {"container": _factory}

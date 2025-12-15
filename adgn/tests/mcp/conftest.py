@@ -7,9 +7,11 @@ from fastmcp.client.messages import MessageHandler
 from fastmcp.mcp_config import StdioMCPServer
 from fastmcp.server import FastMCP
 from mcp import types
+from pydantic import AnyUrl
 import pytest
 
 from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.testing.resources_stubs import ResourcesServerStub
 from tests.util.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
 
@@ -18,10 +20,10 @@ class ResourceUpdatedCapture(MessageHandler):
     """MessageHandler that captures resource updated notifications."""
 
     def __init__(self) -> None:
-        self.updated: list[str] = []
+        self.updated: list[AnyUrl] = []
 
     async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
-        self.updated.append(str(message.params.uri))
+        self.updated.append(message.params.uri)
 
 
 @pytest.fixture
@@ -46,7 +48,6 @@ def stdio_echo_spec() -> StdioMCPServer:
 @pytest.fixture
 async def resources_server(compositor):
     """Resources server for the compositor."""
-    from adgn.mcp.resources.server import ResourcesServer
 
     return ResourcesServer(compositor=compositor)
 

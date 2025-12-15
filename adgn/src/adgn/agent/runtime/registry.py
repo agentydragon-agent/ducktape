@@ -4,7 +4,6 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import aiodocker
-from docker.client import DockerClient
 from fastmcp.mcp_config import MCPConfig
 
 from adgn.agent.persist.sqlite import SQLitePersistence
@@ -18,7 +17,6 @@ class AgentRegistry:
     persistence: SQLitePersistence
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
-    docker_client: DockerClient
     async_docker_client: aiodocker.Docker
     _items: dict[str, AgentContainer] = field(default_factory=dict)
 
@@ -39,7 +37,6 @@ class AgentRegistry:
             client_factory=self.client_factory,
             with_ui=with_ui,
             system=system,
-            docker_client=self.docker_client,
             async_docker_client=self.async_docker_client,
         )
         self._items[agent_id] = c

@@ -30,6 +30,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from adgn.openai_utils.json_schema import OpenAICompatibleSchema
+
 
 class OpenAIStrictModeValidationError(ValueError):
     """Raised when a model's JSON schema is not OpenAI strict mode compatible."""
@@ -105,12 +107,28 @@ def validate_openai_strict_mode_schema(schema: dict[str, Any], model_name: str =
         # Lines 341-356: "root level object must be an object, and not use anyOf"
         # Lines 458-516: Shows anyOf at property level is valid
 
-        # Check for additionalProperties: false on objects with properties
-        if "properties" in obj and obj.get("additionalProperties") is not False:
+        # Check for additionalProperties: false on objects with non-empty properties
+        # Empty objects ({properties: {}}) don't need additionalProperties: false
+        if "properties" in obj and obj["properties"] and obj.get("additionalProperties") is not False:
             errors.append(
                 f"{path}: Objects must have additionalProperties: false "
                 f"(use ConfigDict(extra='forbid') in Pydantic model)"
             )
+
+        # Check that all properties are in required array
+        # OpenAI strict mode: "required is required to be supplied and to be an array
+        # including every key in properties"
+        if "properties" in obj:
+            property_keys = set(obj["properties"].keys())
+            required_keys = set(obj.get("required", []))
+            missing_required = property_keys - required_keys
+
+            if missing_required:
+                errors.append(
+                    f"{path}: All properties must be in 'required' array. "
+                    f"Missing: {sorted(missing_required)}. "
+                    f"Use OpenAICompatibleSchema generator to auto-fix."
+                )
 
         # Check for disallowed format values
         if "format" in obj:
@@ -249,8 +267,11 @@ class OpenAIStrictModeBaseModel(BaseModel):
         This is called automatically via __pydantic_init_subclass__ when the class is defined.
         Can also be called explicitly if needed.
 
+        Uses OpenAICompatibleSchema generator to produce the schema that will actually
+        be sent to OpenAI (with all fields in required, anyOf instead of oneOf, etc.).
+
         Raises:
             OpenAIStrictModeValidationError: If schema violates strict mode requirements
         """
-        schema = cls.model_json_schema()
+        schema = cls.model_json_schema(schema_generator=OpenAICompatibleSchema)
         validate_openai_strict_mode_schema(schema, cls.__name__)

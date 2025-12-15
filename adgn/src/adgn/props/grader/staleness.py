@@ -21,10 +21,10 @@ from adgn.props.db.models import (
 from adgn.props.db.snapshots import (
     DBFalsePositiveOccurrence,
     DBKnownFalsePositive,
-    DBLineRange,
     DBTruePositiveIssue,
     DBTruePositiveOccurrence,
 )
+from adgn.props.grader.persistence import convert_files_dict_to_db
 from adgn.props.ids import SnapshotSlug
 
 
@@ -35,14 +35,8 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
         rationale=orm_tp.rationale,
         occurrences=[
             DBTruePositiveOccurrence(
-                files={
-                    str(path): (
-                        [DBLineRange(start_line=lr.start_line, end_line=lr.end_line) for lr in ranges]
-                        if ranges
-                        else None
-                    )
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_to_db(occ.files),
                 note=occ.note,
                 expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from],
             )
@@ -58,14 +52,8 @@ def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
         rationale=orm_fp.rationale,
         occurrences=[
             DBFalsePositiveOccurrence(
-                files={
-                    str(path): (
-                        [DBLineRange(start_line=lr.start_line, end_line=lr.end_line) for lr in ranges]
-                        if ranges
-                        else None
-                    )
-                    for path, ranges in occ.files.items()
-                },
+                occurrence_id=occ.occurrence_id,
+                files=convert_files_dict_to_db(occ.files),
                 note=occ.note,
                 relevant_files=[str(p) for p in occ.relevant_files],
             )

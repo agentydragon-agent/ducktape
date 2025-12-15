@@ -1,6 +1,6 @@
 """Tests for the query_execution_traces example script."""
 
-from unittest.mock import patch
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -8,14 +8,13 @@ import pytest
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.critic.persistence import critic_submit_payload_to_db
 from adgn.props.db import get_session
-from adgn.props.db.models import Critique, CriticRun, Event, Example, GraderRun, Prompt, Snapshot
-from adgn.props.db.snapshots import DBCriticSuccess
-from tests.props.conftest import make_grader_output
+from adgn.props.db.models import CriticRun, Critique, Event, Example, GraderRun, Prompt, Snapshot
+from adgn.props.db.snapshots import DBCriticSuccess, DBGraderSuccess, DBOccurrenceResult
 
 
-def test_query_execution_traces_with_data(synced_test_db, capsys):
+def test_query_execution_traces_with_data(synced_test_db, mock_agent_setup, capsys):
     """Test that query_execution_traces produces reasonable output with run data."""
-    from adgn.props.examples.query_execution_traces import main
+    from adgn.props.examples.query_execution_traces import main  # noqa: PLC0415
 
     # Create test data
     with get_session() as session:
@@ -58,19 +57,17 @@ def test_query_execution_traces_with_data(synced_test_db, capsys):
         session.flush()
 
         # Add some tool call events
-        from datetime import datetime, timezone
-
         for i in range(3):
             event = Event(
                 transcript_id=transcript_id,
                 sequence_num=i,
                 event_type="tool_call",
-                timestamp=datetime.now(timezone.utc),
+                timestamp=datetime.now(UTC),
                 payload={"name": f"test_tool_{i}", "args": {}},
             )
             session.add(event)
 
-        # Create a grader run
+        # Create a grader run with 85% recall (found_credit = 0.85)
         grader_run = GraderRun(
             id=uuid4(),
             transcript_id=uuid4(),
@@ -78,7 +75,18 @@ def test_query_execution_traces_with_data(synced_test_db, capsys):
             model="test-model",
             critique_id=critique.id,
             canonical_issues_snapshot={"true_positives": [], "false_positives": []},
-            output=make_grader_output(tp_count=0, fp_count=0, recall=0.85, tp_ratio=0.0, fp_ratio=0.0, summary="Test summary for grader run"),
+            output=DBGraderSuccess(
+                occurrence_results=[
+                    DBOccurrenceResult(
+                        tp_id="tp-001",
+                        occurrence_id="occ-001",
+                        found_credit=0.85,
+                        matched_by=[],
+                        rationale="Test occurrence with 85% recall",
+                    )
+                ],
+                summary="Test summary for grader run",
+            ),
         )
         session.add(grader_run)
 
@@ -89,9 +97,7 @@ def test_query_execution_traces_with_data(synced_test_db, capsys):
         expected_prompt_prefix = prompt.prompt_sha256[:8]
         expected_snapshot = snapshot.slug
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_execution_traces.setup_agent_database"):
-        main()
+    main()
 
     # Capture output
     captured = capsys.readouterr()
@@ -117,18 +123,16 @@ def test_query_execution_traces_with_data(synced_test_db, capsys):
     # Verify tool call count shows
     assert "Tool calls: 3" in output, "Expected 'Tool calls: 3' in output"
 
-    # Verify recall shows
-    assert "Recall:" in output, "Expected 'Recall:' in output"
-    assert "85.0%" in output, "Expected recall '85.0%' in output"
+    # Verify occurrence results show (found_credit=0.85 rounds to 0.8 at 1 decimal place)
+    assert "Occurrences:" in output, "Expected 'Occurrences:' in output"
+    assert "0.8 / 1 found" in output, "Expected occurrence count '0.8 / 1 found' in output"
 
 
-def test_query_execution_traces_empty_database(test_db, capsys):
+def test_query_execution_traces_empty_database(test_db, mock_agent_setup, capsys):
     """Test that query_execution_traces handles empty database gracefully."""
-    from adgn.props.examples.query_execution_traces import main
+    from adgn.props.examples.query_execution_traces import main  # noqa: PLC0415
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_execution_traces.setup_agent_database"):
-        main()
+    main()
 
     captured = capsys.readouterr()
     output = captured.out

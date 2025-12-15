@@ -22,6 +22,7 @@ from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeValidationErr
 
 from .conftest import (
     DiscriminatedUnionModel,
+    DiscriminatedUnionWithDefaults,
     InvalidPathModel,
     InvalidSetModel,
     MissingAdditionalPropertiesModel,
@@ -108,17 +109,18 @@ ALWAYS_REJECTED = [
 
 # Models with discriminated unions (behavior depends on generator)
 # - With default generator: oneOf → rejected
-# - With OpenAI generator: anyOf → accepted
-DISCRIMINATED_UNIONS = [AnyOfAtPropertyRoot, DiscriminatedUnionModel]
+# - With OpenAI generator: anyOf → accepted (usually)
+# - DiscriminatedUnionWithDefaults: discriminator field has default (not in required array)
+DISCRIMINATED_UNIONS = [AnyOfAtPropertyRoot, DiscriminatedUnionModel, DiscriminatedUnionWithDefaults]
+
+# Models with fields that have defaults (generator-dependent)
+# - With default generator: fields with defaults omitted from required → rejected
+# - With OpenAI generator: all fields in required → accepted
+# OpenAI strict mode requires ALL properties in required array, even with defaults
+FIELDS_WITH_DEFAULTS = [OptionalFieldModel]
 
 # Models that are always accepted (regardless of generator)
-ALWAYS_ACCEPTED = [
-    SimpleValidModel,
-    NestedValidModel,
-    DefsWithAdditionalProperties,
-    SimpleUnionModel,
-    OptionalFieldModel,
-]
+ALWAYS_ACCEPTED = [SimpleValidModel, NestedValidModel, DefsWithAdditionalProperties, SimpleUnionModel]
 
 
 # Generate test cases: (model_class, schema_generator, expected_result)
@@ -132,6 +134,13 @@ def _make_test_cases():
 
     # Discriminated unions x generators (generator-dependent behavior)
     for model, (gen_name, gen_class) in itertools.product(DISCRIMINATED_UNIONS, GENERATORS):
+        expected = "reject" if gen_name == "default" else "accept"
+        cases.append((model, gen_class, expected, gen_name))
+
+    # Fields with defaults x generators (generator-dependent behavior)
+    # Default generator omits fields with defaults from required → rejected by OpenAI
+    # OpenAI generator includes all fields in required → accepted
+    for model, (gen_name, gen_class) in itertools.product(FIELDS_WITH_DEFAULTS, GENERATORS):
         expected = "reject" if gen_name == "default" else "accept"
         cases.append((model, gen_class, expected, gen_name))
 
@@ -203,14 +212,14 @@ async def test_validator_matches_openai_reality(
     model_name = model_class.__name__
 
     # Check our validator
-    validator_accepts = True
+    validator_error = None
     try:
         validate_openai_strict_mode_schema(schema, model_name=model_name)
-    except OpenAIStrictModeValidationError:
-        validator_accepts = False
+    except OpenAIStrictModeValidationError as e:
+        validator_error = e
 
     # Check OpenAI API
-    openai_accepts = True
+    openai_error = None
     try:
         result = await openai_client.responses_create(
             ResponsesRequest(
@@ -221,8 +230,13 @@ async def test_validator_matches_openai_reality(
             )
         )
         assert result is not None
-    except BadRequestError:
-        openai_accepts = False
+    except BadRequestError as e:
+        openai_error = e
 
     # Our validator MUST match OpenAI's behavior
-    assert validator_accepts == openai_accepts, f"Validator: {validator_accepts}, OpenAI: {openai_accepts}"
+    validator_accepts = validator_error is None
+    openai_accepts = openai_error is None
+    error_context = f"\nOpenAI error: {openai_error}" if openai_error else ""
+    assert validator_accepts == openai_accepts, (
+        f"Validator: {validator_accepts}, OpenAI: {openai_accepts}{error_context}"
+    )

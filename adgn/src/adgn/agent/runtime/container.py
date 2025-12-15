@@ -10,7 +10,6 @@ import os
 from typing import TYPE_CHECKING, cast
 
 import aiodocker
-from docker.client import DockerClient
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.mcp_config import MCPConfig
@@ -115,7 +114,7 @@ class AgentContainerCompositor(Compositor):
             runtime_image = resolve_runtime_image()
             opts = ContainerOptions(image=runtime_image, binds=None, ephemeral=True)
             self.runtime = await self.mount_inproc(
-                "runtime", RuntimeServer(opts, self._async_docker_client), pinned=True
+                "runtime", RuntimeServer(self._async_docker_client, opts), pinned=True
             )
 
             # Attach persisted chat servers (separate from 7 core servers)
@@ -204,7 +203,6 @@ class AgentContainer:
     persistence: SQLitePersistence
     model: str
     client_factory: Callable[[str], OpenAIModelProto]
-    docker_client: DockerClient
     async_docker_client: aiodocker.Docker
     with_ui: bool = True
     # Runtime exec server characteristics (wired during attach)
@@ -325,7 +323,10 @@ class AgentContainer:
 
         # Construct PolicyEngine - owns servers, hub, and gateway
         return PolicyEngine(
-            agent_id=self.agent_id, persistence=self.persistence, docker_client=self.docker_client, policy_source=chosen
+            agent_id=self.agent_id,
+            persistence=self.persistence,
+            policy_source=chosen,
+            docker_client=self.async_docker_client,
         )
 
     async def _setup_mcp_infrastructure(
@@ -567,7 +568,6 @@ async def build_container(
     client_factory: Callable[[str], OpenAIModelProto],
     with_ui: bool = True,
     system: str | None = None,
-    docker_client: DockerClient,
     async_docker_client: aiodocker.Docker,
     initial_policy: str | None = None,
 ) -> AgentContainer:
@@ -577,7 +577,6 @@ async def build_container(
         model=model,
         client_factory=client_factory,
         with_ui=with_ui,
-        docker_client=docker_client,
         async_docker_client=async_docker_client,
         system_override=system,
         initial_policy=initial_policy,

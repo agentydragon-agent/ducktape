@@ -28,7 +28,6 @@ Observation (to investigate)
 ## Database/Schema TODOs
 
 - Add critic_scope_id FK to critic_scopes table to track which scope was used (db/models.py)
-- Decouple DB state and MCP I/O shapes so database models can have sensible defaults (models/true_positive.py)
 - Add optional per-range note/context field (models/true_positive.py)
 
 ## Testing TODOs
@@ -43,6 +42,13 @@ Observation (to investigate)
 - Clean up path propagation; reviewed_files is extracted and passed through unnecessarily (grader/grader.py)
 - Deduplicate Docker container creation logic with docker_env.py and MCP server wiring (cli/cmd_snapshot.py)
 - Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it (prompt_optimize/prompt_optimizer.py)
+
+## Documentation TODOs
+
+- Make system_overview.md a proper Jinja2 template (docs/system_overview.md)
+  - Currently hardcodes `/snapshots` path instead of using `SNAPSHOTS_BASE_DIR` constant
+  - Would need mechanism to render package resources as templates at agent startup
+  - Low priority - agents can read from package resources as-is
 
 ## Migration TODOs
 

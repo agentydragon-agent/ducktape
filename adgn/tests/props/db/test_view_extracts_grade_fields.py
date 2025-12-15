@@ -1,32 +1,25 @@
-"""Test that the valid_metrics view correctly extracts fields from GraderOutput."""
+"""Test that the occurrence_credits view correctly extracts fields from GraderOutput."""
 
 import hashlib
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
 from sqlalchemy import text
 
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, Example, GraderRun, Snapshot, TruePositive
-from adgn.props.grader.models import (
-    CanonicalTPCoverage,
-    GradeSubmitInput,
-    InputIssueID,
-    IssueCoverageEntry,
-    ReportedIssueRatios,
-    TPCoverageEntry,
-    TruePositiveID,
-)
-from adgn.props.grader.persistence import grade_submit_input_to_db
+from adgn.props.grader.models import GraderSuccess, InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
+from adgn.props.grader.persistence import grader_success_to_db
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.snapshot import LocalSource
 from adgn.props.models.true_positive import TruePositiveOccurrence
+from adgn.props.rationale import Rationale
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 
 
 def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
-    """Test that the view extracts recall and other fields from GraderOutput."""
+    """Test that the view includes grader runs with occurrence-based results."""
 
     # Create test data
     snapshot_slug = SnapshotSlug("test-view/2025-01-01-00")
@@ -38,31 +31,26 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
     files = ["test/file1.py", "test/file2.py"]
     files_hash = hashlib.sha256("\n".join(sorted(files)).encode()).hexdigest()
 
-    # Create a GradeSubmitInput with the actual schema
-    grade = GradeSubmitInput(
-        canonical_tp_coverage=[
-            TPCoverageEntry(
-                canonical_id=TruePositiveID("tp-test-001"),
-                coverage=CanonicalTPCoverage(
-                    covered_by=[IssueCoverageEntry(input_id=InputIssueID("input-test-001"), credit=1.0)],
-                    recall_credit=1.0,
-                    rationale="Fully covered",
-                ),
+    # Create GraderSuccess with occurrence results
+    grader_success = GraderSuccess(
+        occurrence_results=[
+            OccurrenceResult(
+                tp_id=TruePositiveID("tp-test-001"),
+                occurrence_id="occ-1",
+                found_credit=1.0,
+                matched_by=[OccurrenceMatch(input_id=InputIssueID("input-test-001"), credit=1.0)],
+                rationale=Rationale("Fully found this occurrence"),
             )
         ],
-        canonical_fp_coverage=[],
-        novel_critique_issues=[],
-        reported_issue_ratios=ReportedIssueRatios(tp=1.0, fp=0.0, unlabeled=0.0),
-        recall=0.75,  # 75% recall
-        summary="Test grading",
+        summary=Rationale("Test grading summary"),
     )
 
     # Convert to DB format
-    grader_output_db = grade_submit_input_to_db(grade)
+    grader_output_db = grader_success_to_db(grader_success)
 
     with get_session() as session:
         # Insert snapshot
-        snapshot = Snapshot(slug=snapshot_slug, split="valid")
+        snapshot = Snapshot(slug=snapshot_slug, split="valid", source=LocalSource(vcs="local", root="."))
         session.add(snapshot)
 
         # Insert TruePositive records (required for snapshot_files_with_issues view)
@@ -72,6 +60,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             rationale="Test issue in file1",
             occurrences=[
                 TruePositiveOccurrence(
+                    occurrence_id="occ-1",
                     files={Path("test/file1.py"): None},
                     expect_caught_from={frozenset([Path("test/file1.py")])},
                     note=None,
@@ -86,6 +75,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
             rationale="Test issue in file2",
             occurrences=[
                 TruePositiveOccurrence(
+                    occurrence_id="occ-2",
                     files={Path("test/file2.py"): None},
                     expect_caught_from={frozenset([Path("test/file2.py")])},
                     note=None,
@@ -94,8 +84,8 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         )
         session.add(tp2)
 
-        # Insert example (required for valid_metrics view join)
-        example = Example(snapshot_slug=snapshot_slug, files=files, files_hash=files_hash)
+        # Insert example (required for occurrence_credits view join)
+        example = Example.file_set(snapshot_slug=snapshot_slug, files=files)
         session.add(example)
 
         # Insert critique (required FK for grader_run)
@@ -128,17 +118,18 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         session.add(grader_run)
         session.commit()
 
-        # Query the view
+        # Query the occurrence_credits view - verify the run appears with occurrence results
         result = session.execute(
             text("""
-                SELECT recall
-                FROM valid_metrics
+                SELECT grader_run_id, tp_id, occurrence_id, found_credit
+                FROM occurrence_credits
                 WHERE snapshot_slug = :slug
             """),
             {"slug": str(snapshot_slug)},
         ).fetchone()
 
-        assert result is not None, "View should return a row"
-
-        # Check recall is extracted correctly
-        assert result.recall == pytest.approx(0.75), f"Expected recall=0.75, got {result.recall}"
+        assert result is not None, "View should return a row for the grader run with occurrence results"
+        assert result.grader_run_id == grader_run.id, "Should match the grader run ID"
+        assert result.tp_id == "tp-test-001", "Should extract tp_id from occurrence_results"
+        assert result.occurrence_id == "occ-1", "Should extract occurrence_id from occurrence_results"
+        assert result.found_credit == 1.0, "Should extract found_credit from occurrence_results"

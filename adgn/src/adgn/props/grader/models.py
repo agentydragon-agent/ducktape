@@ -46,7 +46,6 @@ FalsePositiveID = NewType("FalsePositiveID", BaseIssueID)  # type: ignore[valid-
 # Constants and Type Aliases
 # =============================================================================
 
-RATIO_SUM_TOLERANCE = 0.01  # Allow ±0.01 deviation from 1.0
 RatioFloat = Annotated[float, Field(ge=0.0, le=1.0)]
 
 
@@ -65,6 +64,7 @@ class GradeValidationContext:
     allowed_tp_ids: set[TruePositiveID]
     allowed_fp_ids: set[FalsePositiveID]
     allowed_input_ids: set[InputIssueID]
+    expected_occurrences: set[tuple[str, str]]  # (tp_id, occurrence_id) pairs that must be graded
 
     @classmethod
     def from_specimen_and_critique(
@@ -79,6 +79,8 @@ class GradeValidationContext:
                 If provided, only include TPs/FPs that are catchable/relevant from those files.
                 If None, include all TPs/FPs.
         """
+        expected_occurrences: set[tuple[str, str]] = set()
+
         # Filter TPs/FPs by scope if reviewed_files provided
         if reviewed_files:
             # Only include TPs where at least one occurrence is catchable from reviewed files
@@ -87,6 +89,15 @@ class GradeValidationContext:
                 for tp in snapshot_orm.true_positives
                 if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
             }
+            # Build expected occurrences set (filtered by catchability)
+            for tp in snapshot_orm.true_positives:
+                tp_id_str = str(tp.tp_id)
+                if TruePositiveID(tp_id_str) not in allowed_tp_ids:
+                    continue
+                for occ in tp.occurrences:
+                    if should_catch_occurrence(occ, reviewed_files):
+                        expected_occurrences.add((tp_id_str, occ.occurrence_id))
+
             # Only include FPs where at least one occurrence is relevant to reviewed files
             allowed_fp_ids = {
                 FalsePositiveID(fp.fp_id)
@@ -97,11 +108,17 @@ class GradeValidationContext:
             # No filtering: include all TPs/FPs
             allowed_tp_ids = {TruePositiveID(tp.tp_id) for tp in snapshot_orm.true_positives}
             allowed_fp_ids = {FalsePositiveID(fp.fp_id) for fp in snapshot_orm.false_positives}
+            # Build expected occurrences set (all occurrences)
+            for tp in snapshot_orm.true_positives:
+                tp_id_str = str(tp.tp_id)
+                for occ in tp.occurrences:
+                    expected_occurrences.add((tp_id_str, occ.occurrence_id))
 
         return cls(
             allowed_tp_ids=allowed_tp_ids,
             allowed_fp_ids=allowed_fp_ids,
             allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
+            expected_occurrences=expected_occurrences,
         )
 
 
@@ -297,46 +314,8 @@ class NovelIssueEntry(OpenAIStrictModeBaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class ReportedIssueRatios(OpenAIStrictModeBaseModel):
-    """Weighted ratios {tp, fp, unlabeled} in [0,1], must sum to ~1.0.
-
-    Note: This model should only be instantiated when there are actually reported issues.
-    For empty critiques (no issues reported), use None instead of creating a zero-valued instance.
-    """
-
-    tp: float = Field(..., ge=0.0, le=1.0, description="Ratio of reported issue weight that matches canonical TPs")
-
-    fp: float = Field(..., ge=0.0, le=1.0, description="Ratio of reported issue weight that matches known FPs")
-
-    unlabeled: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Ratio of reported issue weight that is novel/unlabeled (doesn't match any canonical)",
-    )
-
-    model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="after")
-    def validate_ratios_sum(self) -> ReportedIssueRatios:
-        """Validate that ratios sum to approximately 1.0.
-
-        Note: This validator does not allow all-zero ratios. For empty critiques,
-        reported_issue_ratios should be None, not ReportedIssueRatios(0, 0, 0).
-        """
-        total = self.tp + self.fp + self.unlabeled
-
-        if not (1.0 - RATIO_SUM_TOLERANCE <= total <= 1.0 + RATIO_SUM_TOLERANCE):
-            raise ValueError(
-                f"Ratios must sum to ~1.0, got {total:.3f} "
-                f"(tp={self.tp:.3f}, fp={self.fp:.3f}, unlabeled={self.unlabeled:.3f}). "
-                f"For empty critiques with no reported issues, use None instead of zero-valued ratios."
-            )
-        return self
-
-
 class GradeSubmitInput(OpenAIStrictModeBaseModel):
-    """Complete grading: coverage for all TPs/FPs/novel issues, metrics, summary.
+    """Complete grading: coverage for all TPs/FPs/novel issues, summary.
 
     Validation enforces completeness. Weight issues fractionally by severity/size.
     Put reasoning in narrowest applicable field; avoid duplication.
@@ -351,8 +330,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
       },
       "canonical_fp_coverage": {},
       "novel_critique_issues": {},
-      "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
-      "recall": 1.0,
       "summary": "..."
     }
 
@@ -365,8 +342,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
         "F1": {"covered_by": ["I1"], "rationale": "..."}
       },
       "novel_critique_issues": {},
-      "reported_issue_ratios": {"tp": 0.5, "fp": 0.5, "unlabeled": 0.0},
-      "recall": 1.0,
       "summary": "..."
     }
 
@@ -381,8 +356,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
       },
       "canonical_fp_coverage": {},
       "novel_critique_issues": {},
-      "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
-      "recall": 0.8,
       "summary": "..."
     }
 
@@ -395,8 +368,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
       "novel_critique_issues": {
         "I1": {"rationale": "Matches C1 for duplication, but adds novel O(n²) concern"}
       },
-      "reported_issue_ratios": {"tp": 0.7, "fp": 0.0, "unlabeled": 0.3},
-      "recall": 1.0,
       "summary": "..."
     }
 
@@ -409,8 +380,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
       "novel_critique_issues": {
         "I2": {"rationale": "Pure novel. Discusses mount failure handling not in canonical"}
       },
-      "reported_issue_ratios": {"tp": 0.0, "fp": 0.0, "unlabeled": 1.0},
-      "recall": 0.0,
       "summary": "..."
     }
 
@@ -421,8 +390,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
       },
       "canonical_fp_coverage": {},
       "novel_critique_issues": {},
-      "reported_issue_ratios": null,
-      "recall": 0.0,
       "summary": "Critique reported no issues. All canonical issues uncovered."
     }
     """
@@ -440,19 +407,6 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
     novel_critique_issues: list[NovelIssueEntry] = Field(
         ...,
         description="Input issues with novel aspects. Can be pure novel (not in any covered_by) or hybrid (appears in covered_by but has additional novel content). Empty list if all input issues fully match canonicals/FPs.",
-    )
-
-    # Metrics
-    reported_issue_ratios: ReportedIssueRatios | None = Field(
-        ...,
-        description="Ratios of reported issues: {tp, fp, unlabeled}. Weighted by importance/severity. Must sum to ~1.0. Use None when critique is empty (no issues reported).",
-    )
-
-    recall: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-        description="Fraction [0,1] of canonical TPs that were covered. Weighted by issue importance/severity. Explain weighting in summary if non-obvious.",
     )
 
     # Required summary
@@ -571,24 +525,71 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
 
         return self
 
-    @model_validator(mode="after")
-    def validate_empty_critique_ratios(self, info: ValidationInfo) -> GradeSubmitInput:
-        """Validate None ratios only allowed for truly empty critique."""
-        if (ctx := self._get_validation_context(info)) is None:
-            return self
 
-        has_input_issues = len(ctx.allowed_input_ids) > 0
+# =============================================================================
+# Per-Occurrence Grading Models (V2)
+# =============================================================================
 
-        if self.reported_issue_ratios is None and has_input_issues:
-            raise ValueError(
-                f"Cannot have None reported_issue_ratios when critique has {len(ctx.allowed_input_ids)} input issues. "
-                f"Use None only for empty critiques with no reported issues."
-            )
 
-        if self.reported_issue_ratios is not None and not has_input_issues:
-            raise ValueError("Must use None for reported_issue_ratios when critique has no input issues.")
+class OccurrenceMatch(OpenAIStrictModeBaseModel):
+    """Match between an input issue and a canonical occurrence.
 
-        return self
+    Represents which critique issues contributed to finding a specific occurrence,
+    and how much credit each should receive.
+    """
+
+    input_id: InputIssueID = Field(description="Input issue ID that matched")
+    credit: RatioFloat = Field(description="Credit for this match (0.0-1.0)")
+
+    model_config = ConfigDict(frozen=True)
+
+
+class OccurrenceResult(OpenAIStrictModeBaseModel):
+    """Grading result for a single occurrence of a true positive.
+
+    Tracks whether this specific occurrence was found, which critique issues
+    matched it, and the rationale for the grading decision.
+    """
+
+    tp_id: TruePositiveID = Field(description="True positive ID this occurrence belongs to")
+    occurrence_id: str = Field(description="Unique identifier for this occurrence within the TP")
+
+    found_credit: RatioFloat = Field(
+        description="Overall credit for finding this occurrence (0.0=not found, 1.0=fully found, 0.x=partial)"
+    )
+
+    matched_by: list[OccurrenceMatch] = Field(
+        description="Which input issues matched this occurrence and their individual credits. Empty if not found."
+    )
+
+    rationale: Rationale = Field(
+        description=(
+            "Explanation of grading decision with code references. "
+            "For matches: why semantically equivalent (include code inspection if ranges differ). "
+            "For partial: what was covered and missed. "
+            "For no-match: what was closest and why insufficient."
+        )
+    )
+
+    model_config = ConfigDict(frozen=True)
+
+
+# =============================================================================
+# Unknown Issue Models
+# =============================================================================
+
+
+class UnknownIssue(OpenAIStrictModeBaseModel):
+    """Input issue with novel aspects not matched to any canonical issue.
+
+    Represents critique issues that don't match any known true positives or false positives.
+    These may be genuinely novel findings or issues that fall outside the canonical set.
+    """
+
+    input_id: InputIssueID = Field(description="Input issue ID from critique")
+    rationale: Rationale = Field(description="Why this issue is novel/unknown and doesn't match canonical issues")
+
+    model_config = ConfigDict(frozen=True)
 
 
 # =============================================================================
@@ -597,10 +598,19 @@ class GradeSubmitInput(OpenAIStrictModeBaseModel):
 
 
 class GraderSuccess(BaseModel):
-    """Successful grader output."""
+    """Successful grader output with per-occurrence results."""
 
     tag: Literal["success"] = "success"
-    result: GradeSubmitInput = Field(description="Successful grading with coverage analysis and metrics")
+
+    occurrence_results: list[OccurrenceResult] = Field(
+        description="Per-occurrence grading results. One entry per catchable occurrence."
+    )
+
+    unknowns: list[UnknownIssue] = Field(
+        default_factory=list, description="Input issues with novel aspects not matched to canonical issues (TPs or FPs)"
+    )
+
+    summary: Rationale = Field(description="High-level summary of grading. Cross-cutting patterns, overall assessment.")
 
     model_config = ConfigDict(frozen=True)
 

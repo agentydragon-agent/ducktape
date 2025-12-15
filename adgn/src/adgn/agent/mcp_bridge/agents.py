@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from adgn.agent.presets import discover_presets
 from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
     from adgn.agent.mcp_bridge.registry import InfrastructureRegistry
@@ -48,7 +49,7 @@ class PresetInfo(BaseModel):
 # ---- Tool I/O models ---------------------------------------------------------
 
 
-class CreateAgentInput(BaseModel):
+class CreateAgentInput(OpenAIStrictModeBaseModel):
     """Input for create_agent tool."""
 
     preset: str | None = Field(description="Preset name to use (None = use default preset)")
@@ -62,7 +63,7 @@ class CreateAgentOutput(BaseModel):
     preset: str
 
 
-class DeleteAgentInput(BaseModel):
+class DeleteAgentInput(OpenAIStrictModeBaseModel):
     """Input for delete_agent tool."""
 
     agent_id: str = Field(description="Agent ID to delete")
@@ -75,7 +76,7 @@ class DeleteAgentOutput(BaseModel):
     status: Literal["deleted"]
 
 
-class BootAgentInput(BaseModel):
+class BootAgentInput(OpenAIStrictModeBaseModel):
     """Input for boot_agent tool."""
 
     agent_id: str = Field(description="Agent ID to boot (must exist in DB)")

@@ -26,6 +26,7 @@ class SnapshotInput:
     The files_hash is precomputed during sync (from resolved files) and used for:
     - Matching historical database runs by (slug, files_hash)
     - Storing CriticRun records with consistent hash keys
+    - None for whole-snapshot examples (AllFilesScope)
 
     TODO: Rename to something clearer (e.g., EvaluationContext, CriticTestCase).
     Current name is ambiguous with CriticInput.
@@ -33,4 +34,4 @@ class SnapshotInput:
 
     slug: SnapshotSlug
     target_files: CriticScopeSpec
-    files_hash: str
+    files_hash: str | None

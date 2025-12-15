@@ -25,13 +25,65 @@ STREAM_TYPE_STDOUT = 1
 STREAM_TYPE_STDERR = 2
 
 
+@dataclass(frozen=True)
+class BindMount:
+    """Type-safe Docker volume bind mount specification.
+
+    Represents a single volume mount from host to container.
+    Internal representation uses Path objects for type safety.
+    """
+
+    host_path: Path
+    container_path: Path
+    mode: str = "rw"
+
+    def to_docker_spec(self) -> str:
+        """Convert to Docker bind spec string: 'host:container:mode'."""
+        return f"{self.host_path}:{self.container_path}:{self.mode}"
+
+    @classmethod
+    def parse_binds(cls, values: list[str] | None) -> list[BindMount] | None:
+        """Parse bind mount specifications into BindMount objects.
+
+        Args:
+            values: List of bind specs in format "host:container[:mode]"
+
+        Returns:
+            List of BindMount objects, or None if no binds
+
+        Raises:
+            ValueError: If bind spec format is invalid
+        """
+        if not values:
+            return None
+        result: list[BindMount] = []
+        entries: list[str] = []
+        for value in values:
+            entries.extend(value.split(","))
+        for entry in entries:
+            if not entry:
+                continue
+            parts = entry.split(":")
+            if len(parts) < 2:
+                raise ValueError(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
+            host, container, *mode_parts = parts
+            result.append(
+                cls(
+                    host_path=Path(host).resolve(),
+                    container_path=Path(container),
+                    mode=mode_parts[0] if mode_parts else "rw",
+                )
+            )
+        return result
+
+
 @dataclass
 class ContainerSessionState:
     docker_client: aiodocker.Docker
     container_id: str | None
     image: str
-    # Raw binds argument used to start the container (dict/list or None)
-    binds: dict[str, dict[str, str]] | list[str] | None
+    # Volume bind mounts for the container
+    binds: list[BindMount] | None
     # Container working directory
     working_dir: Path
     # Network mode used to start the container (str: "none", "bridge", "host", or custom network name)
@@ -45,7 +97,7 @@ class ContainerSessionState:
 class ContainerOptions:
     image: str
     working_dir: Path = WORKING_DIR
-    binds: dict[str, dict[str, str]] | list[str] | None = None
+    binds: list[BindMount] | None = None
     network_mode: str = "none"
     environment: dict[str, str] | None = None
     labels: dict[str, str] | None = None
@@ -110,19 +162,7 @@ def _build_host_config(opts: ContainerOptions, *, auto_remove: bool = False) -> 
 
     # Convert binds to Docker HostConfig format
     if opts.binds:
-        if isinstance(opts.binds, dict):
-            binds = []
-            for host_path, bind_config in opts.binds.items():
-                bind = f"{host_path}:{bind_config['bind']}"
-                if mode := bind_config.get("mode"):
-                    bind += f":{mode}"
-                binds.append(bind)
-            host_config["Binds"] = binds
-        elif isinstance(opts.binds, list):
-            # Binds already in Docker format (list of "host:container:mode" strings)
-            host_config["Binds"] = opts.binds
-        else:
-            raise TypeError(f"binds must be dict or list, got {type(opts.binds)}")
+        host_config["Binds"] = [bind.to_docker_spec() for bind in opts.binds]
 
     host_config["NetworkMode"] = opts.network_mode
 

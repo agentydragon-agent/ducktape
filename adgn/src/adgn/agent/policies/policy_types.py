@@ -23,14 +23,11 @@ class PolicyRequest(BaseModel):
 
     Arguments are JSON-encoded as a string to enable OpenAI strict mode compatibility.
     Policy programs should parse the JSON string when they need to inspect arguments.
-
-    TODO: This is annoying but required for OpenAI strict mode (additionalProperties must be false).
-    Consider adding a flag to disable strict mode validation on this specific tool, or providing
-    a helper method to parse arguments back to dict for policy programs that need it.
+    None means no arguments were provided.
     """
 
     name: str
-    arguments: str  # JSON-encoded tool arguments
+    arguments_json: str | None  # JSON-encoded tool arguments, or None
     model_config = ConfigDict(extra="forbid")
 
 

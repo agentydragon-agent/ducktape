@@ -8,7 +8,6 @@ import os
 from pathlib import Path
 
 import aiodocker
-import docker  # type: ignore
 from fastapi import FastAPI, FastAPI as SubApp, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -25,7 +24,7 @@ from adgn.agent.server.mcp_routing import TOKEN_TABLE, MCPRoutingMiddleware
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +76,12 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
     db_path = db_path.expanduser()
     db_path.parent.mkdir(parents=True, exist_ok=True)
     app.state.persistence = SQLitePersistence(db_path)
-    # Construct Docker clients (sync and async) and pass through to the registry/containers
-    docker_client = docker.from_env()
+    # Construct async Docker client and pass through to the registry/containers
     async_docker_client = aiodocker.Docker()
     app.state.registry = AgentRegistry(
         persistence=app.state.persistence,
         model=DEFAULT_MODEL,
         client_factory=default_client_factory,
-        docker_client=docker_client,
         async_docker_client=async_docker_client,
     )
 
@@ -109,7 +106,6 @@ def create_app(*, require_static_assets: bool = True) -> FastAPI:
             persistence=app.state.persistence,
             model=DEFAULT_MODEL,
             client_factory=default_client_factory,
-            docker_client=docker_client,
             async_docker_client=async_docker_client,
             mcp_config=MCPConfig(),
             initial_policy=None,

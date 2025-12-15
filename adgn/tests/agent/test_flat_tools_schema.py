@@ -17,23 +17,20 @@ from hamcrest import (
     has_entries,
     has_entry,
     has_key,
-    has_length,
     has_properties,
 )
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
 from adgn.agent.agent import Agent
-from adgn.agent.handler import BaseHandler
+from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
-from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import SystemMessage
 from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, MakeCall
 
-# Test server prefix and tool name constants
-SERVER_A_PREFIX: Final[MCPMountPrefix] = MCPMountPrefix("server_a")
+# Test tool name constant
 TOOL_A_NAME: Final[str] = "tool_a"
 
 # ============================================================================
@@ -43,6 +40,8 @@ TOOL_A_NAME: Final[str] = "tool_a"
 
 class ToolAInput(BaseModel):
     """Input for tool A."""
+
+    model_config = ConfigDict(extra="forbid")
 
     param_x: float = Field(description="First parameter")
     param_y: float = Field(description="Second parameter")
@@ -75,12 +74,16 @@ def server_a() -> EnhancedFastMCP:
 class NestedInfo(BaseModel):
     """Nested information block."""
 
+    model_config = ConfigDict(extra="forbid")
+
     regex: Annotated[str, Field(description="Regex validation", pattern=r"^\d{5}$")]
     text_defaultd: str = Field(default="DEFAULT", description="Text with default")
 
 
 class CategoryInfo(BaseModel):
     """Category classification."""
+
+    model_config = ConfigDict(extra="forbid")
 
     type: Literal["type_a", "type_b", "type_c"] = Field(default="type_b")
 
@@ -96,10 +99,8 @@ class ToolBInput(BaseModel):
 
     identifier: Annotated[str, Field(description="Required regex field", pattern=r"^[a-z]{3}$")]
     count: int = Field(description="Int with range", ge=10, le=100)
-    nested: NestedInfo = Field(description="Nested model")
-    category: CategoryInfo = Field(
-        default_factory=lambda: CategoryInfo(type="type_b"), description="Nested model with default_factory"
-    )
+    nested: NestedInfo
+    category: CategoryInfo = Field(default_factory=lambda: CategoryInfo(type="type_b"))
     flag: bool = Field(default=False, description="Boolean with default")
 
 
@@ -147,7 +148,7 @@ def server_b() -> EnhancedFastMCP:
 
 
 async def test_agent_compositor_flat_tools_request_schema(
-    responses_factory, make_compositor, server_a, server_b, make_step_runner
+    responses_factory, compositor, compositor_client, server_a, server_b, make_step_runner
 ) -> None:
     """Test agent with 2 flat MCP servers attached one by one, showing schema evolution.
 
@@ -163,9 +164,12 @@ async def test_agent_compositor_flat_tools_request_schema(
     """
     print("PHASE 1: SERVER_A ONLY")
 
+    # Mount only server_a for phase 1 and capture Mounted object
+    mounted_a = await compositor.mount_inproc("server_a", server_a)
+
     mock_phase1 = make_step_runner(
         steps=[
-            MakeCall(SERVER_A_PREFIX, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
+            MakeCall(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )
@@ -173,50 +177,58 @@ async def test_agent_compositor_flat_tools_request_schema(
 
     system_prompt = "You are a helpful assistant. Calculate 10 + 20."
 
-    async with make_compositor({"server_a": server_a}) as (mcp_client, _comp):
-        agent = await Agent.create(
-            mcp_client=mcp_client,
-            client=client_phase1,
-            handlers=[BaseHandler()],
-            parallel_tool_calls=False,
-            tool_policy=RequireAnyTool(),
-        )
-        agent.insert_message(SystemMessage.text(system_prompt))
-        await agent.run()
+    # Use compositor_client fixture for phase 1
+    agent = await Agent.create(
+        mcp_client=compositor_client,
+        client=client_phase1,
+        handlers=[FinishOnTextMessageHandler()],
+        parallel_tool_calls=False,
+        tool_policy=RequireAnyTool(),
+    )
+    agent.insert_message(SystemMessage.text(system_prompt))
+    await agent.run()
 
     # Verify phase 1
     phase1_request = client_phase1.captured[0]
     assert phase1_request.tools is not None  # Type narrowing for mypy
-    assert_that(phase1_request.tools, has_length(1))
+    # Check that server_a tool is present (resources server tools are also present)
+    phase1_tool_names = {t.name for t in phase1_request.tools}
+    assert "server_a_tool_a" in phase1_tool_names
 
     print("\nPHASE 1 REQUEST (server_a only):")
     print(json.dumps(phase1_request.model_dump(exclude_none=True), indent=2))
 
     print("PHASE 2: SERVER_A + SERVER_B")
 
+    # Mount server_b for phase 2 (server_a already mounted)
+    await compositor.mount_inproc("server_b", server_b)
+
     mock_phase2 = make_step_runner(
         steps=[
-            MakeCall(SERVER_A_PREFIX, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
+            MakeCall(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )
     client_phase2 = make_mock(mock_phase2.handle_request_async)
 
-    async with make_compositor({"server_a": server_a, "server_b": server_b}) as (mcp_client, _comp):
-        agent = await Agent.create(
-            mcp_client=mcp_client,
-            client=client_phase2,
-            handlers=[BaseHandler()],
-            parallel_tool_calls=False,
-            tool_policy=RequireAnyTool(),
-        )
-        agent.insert_message(SystemMessage.text(system_prompt))
-        await agent.run()
+    # Use compositor_client fixture for phase 2
+    agent = await Agent.create(
+        mcp_client=compositor_client,
+        client=client_phase2,
+        handlers=[FinishOnTextMessageHandler()],
+        parallel_tool_calls=False,
+        tool_policy=RequireAnyTool(),
+    )
+    agent.insert_message(SystemMessage.text(system_prompt))
+    await agent.run()
 
     # Verify phase 2
     first_request = client_phase2.captured[0]
     assert first_request.tools is not None  # Type narrowing for mypy
-    assert_that(first_request.tools, has_length(2))
+    # Check that both server tools are present (resources server tools are also present)
+    phase2_tool_names = {t.name for t in first_request.tools}
+    assert "server_a_tool_a" in phase2_tool_names
+    assert "server_b_tool_b" in phase2_tool_names
 
     print("\nPHASE 2 REQUEST (server_a + server_b):")
     print(json.dumps(first_request.model_dump(exclude_none=True), indent=2))
@@ -267,15 +279,15 @@ async def test_agent_compositor_flat_tools_request_schema(
     )
 
     # Verify nested NestedInfo model
-    assert props["nested"]["description"] == "Nested model"
+    # Note: nested field has no description (OpenAI strict mode - $ref fields can't have extra keywords)
     assert_that(params_b, has_key("$defs"))
     nested_def = params_b["$defs"]["NestedInfo"]
     # Explicit Any types for nested matchers to avoid PyHamcrest type inference issues
     regex_matcher: Any = has_entries(description="Regex validation", pattern=equal_to(r"^\d{5}$"), type="string")
     text_defaultd_matcher: Any = has_entries(default="DEFAULT", description="Text with default", type="string")
     assert_that(nested_def["properties"], has_entries(regex=regex_matcher, text_defaultd=text_defaultd_matcher))
-    # NestedInfo required: only regex (text_defaultd has default)
-    assert nested_def["required"] == ["regex"]
+    # NestedInfo required: ALL fields (OpenAI strict mode requires all fields in required array, even with defaults)
+    assert_that(nested_def["required"], contains_inanyorder("regex", "text_defaultd"))
 
     # Verify nested CategoryInfo model (with Literal)
     category_def = params_b["$defs"]["CategoryInfo"]
@@ -283,9 +295,8 @@ async def test_agent_compositor_flat_tools_request_schema(
     assert_that(type_schema, has_key("enum"))
     assert_that(type_schema["enum"], contains_inanyorder("type_a", "type_b", "type_c"))
 
-    # Verify required fields (flag with default should not be required)
-    assert_that(params_b["required"], contains_inanyorder("identifier", "count", "nested", "category"))
-    assert "flag" not in params_b["required"]
+    # Verify required fields (OpenAI strict mode: ALL fields must be required, even with defaults)
+    assert_that(params_b["required"], contains_inanyorder("identifier", "count", "nested", "category", "flag"))
 
     # Print tool schemas for manual inspection
     print("\n" + "=" * 80)

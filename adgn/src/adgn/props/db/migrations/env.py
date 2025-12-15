@@ -1,11 +1,9 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
 
-from adgn.props.db.config import get_production_config
-
-# Import models and database config
+# Import models for autogenerate support
+from adgn.props.db.config import get_database_config
 from adgn.props.db.models import Base
 
 # this is the Alembic Config object, which provides
@@ -16,13 +14,6 @@ config = context.config
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
-
-# Get database URL from environment variables
-db_config = get_production_config()
-db_url = db_config.admin_url()
-
-# Set sqlalchemy.url in config (for migrations to use)
-config.set_main_option("sqlalchemy.url", db_url)
 
 # add your model's MetaData object here
 # for 'autogenerate' support
@@ -46,7 +37,12 @@ def run_migrations_offline() -> None:
     script output.
 
     """
+    # Get URL from config if provided, otherwise get from environment
     url = config.get_main_option("sqlalchemy.url")
+    if url is None:
+        db_config = get_database_config()
+        url = db_config.admin_url()
+
     context.configure(
         url=url, target_metadata=target_metadata, literal_binds=True, dialect_opts={"paramstyle": "named"}
     )
@@ -61,16 +57,26 @@ def run_migrations_online() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
 
+    Expects a connection to be passed via config.attributes['connection'].
+    This is set by session.py's _create_schema() for programmatic usage.
+
+    CLI usage (alembic upgrade head) is NOT supported - use session.py instead.
     """
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}), prefix="sqlalchemy.", poolclass=pool.NullPool
-    )
+    # Get connection passed programmatically (e.g., from session.py)
+    connection = config.attributes.get("connection", None)
 
-    with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+    if connection is None:
+        raise RuntimeError(
+            "No connection provided to env.py. "
+            "Alembic migrations must be run programmatically via session.py, not via CLI. "
+            "Use: from adgn.props.db.session import init_db, recreate_database; init_db(); recreate_database()"
+        )
 
-        with context.begin_transaction():
-            context.run_migrations()
+    # Configure context with the provided connection
+    context.configure(connection=connection, target_metadata=target_metadata)
+
+    with context.begin_transaction():
+        context.run_migrations()
 
 
 if context.is_offline_mode():

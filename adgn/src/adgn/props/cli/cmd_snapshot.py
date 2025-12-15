@@ -8,10 +8,9 @@ from datetime import datetime
 import json
 from pathlib import Path
 import shutil
-import time
-from typing import Annotated
+from typing import Annotated, Any, cast
 
-import docker
+import aiodocker
 import pygit2
 import typer
 from typer_di import Depends, TyperDI
@@ -20,11 +19,11 @@ import yaml
 from adgn.cli_utils import async_run
 from adgn.mcp._shared.constants import SLEEP_FOREVER_CMD
 from adgn.props.cli import common_options as opt
-from adgn.props.cli.resources import get_docker_client, get_hydrator
+from adgn.props.cli.resources import get_hydrator
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.db.sync import get_specimens_base_path
-from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_binds, ensure_critic_image
+from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_binds, ensure_critic_image_async
 from adgn.props.file_filters import apply_gitignore_patterns
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
@@ -148,7 +147,6 @@ async def _run_in_snapshot_container(
     exec_command: list[str],
     *,
     hydrator: SnapshotHydrator,
-    docker_client: docker.DockerClient,
     interactive: bool = False,
     tty_exec: bool = False,
     setup_script: str | None = None,
@@ -160,7 +158,6 @@ async def _run_in_snapshot_container(
         workdir: Working directory in container
         exec_command: Command to execute in container (e.g., ["sed", "-n", "1,10p", "file"])
         hydrator: SnapshotHydrator instance (injected)
-        docker_client: Docker client (injected)
         interactive: If True, pass -i flag to docker exec
         tty_exec: If True, pass -t flag to docker exec
         setup_script: Optional bash script to run before exec_command
@@ -168,59 +165,79 @@ async def _run_in_snapshot_container(
     Returns:
         Exit code from executed command
     """
-    # Docker sanity
-    try:
-        docker_client.ping()
-    except Exception as e:
-        typer.echo(f"ERROR: Docker daemon not reachable: {e}")
-        raise typer.Exit(2) from e
-    ensure_critic_image()
-
-    # Hydrate snapshot source code (keep hydrated for entire container lifetime)
-    async with hydrator.hydrate(snapshot) as hydrated:
+    # Create async docker client locally
+    async with aiodocker.Docker() as docker_client:
+        # Docker sanity check (async)
         try:
-            _ = next(hydrated.content_root.iterdir())
-        except StopIteration:
-            typer.echo(f"ERROR: hydrated snapshot is empty: {hydrated.content_root}")
-            raise typer.Exit(2) from None
-        name = f"adgn_spec_shell_{int(time.time())}"
-        # TODO: Deduplicate Docker container creation logic with docker_env.py and MCP server wiring.
-        # The real duplication is at the MCP layer where critic/grader/optimizer servers manage
-        # their containers. This CLI command manually constructs what those servers build via
-        # ContainerOptions/properties_docker_spec. Consider extracting a shared container factory
-        # or making the MCP container session logic more reusable for interactive/non-MCP cases.
-        binds, _defs = build_critic_binds(hydrated.content_root, mount_properties=True, workspace_mode="rw")
-        container = docker_client.containers.run(
-            image=PROPERTIES_DOCKER_IMAGE,
-            command=SLEEP_FOREVER_CMD,
-            name=name,
-            remove=True,
-            detach=True,
-            network_mode="none",
-            volumes=binds,
-            working_dir=str(workdir),
-            tty=True,
-            stdin_open=True,
-        )
-        try:
-            # Apply optional setup script
-            if setup_script:
-                exec_result = container.exec_run(["bash", "-c", setup_script], demux=False)
-                if exec_result.exit_code != 0:
-                    typer.echo(f"WARNING: Setup script failed: {exec_result.output.decode()}", err=True)
+            await docker_client.version()
+        except Exception as e:
+            typer.echo(f"ERROR: Docker daemon not reachable: {e}")
+            raise typer.Exit(2) from e
 
-            # Execute main command
-            # Docker syntax: docker exec [OPTIONS] CONTAINER COMMAND [ARGS...]
-            exec_flags = []
-            if interactive:
-                exec_flags.append("-i")
-            if tty_exec:
-                exec_flags.append("-t")
-            full_cmd = ["docker", "exec", *exec_flags, name, *exec_command]
-            proc = await asyncio.create_subprocess_exec(*full_cmd)
-            return await proc.wait()
-        finally:
-            container.stop()
+        # Check image exists (async)
+        await ensure_critic_image_async(docker_client)
+
+        # Hydrate snapshot source code (keep hydrated for entire container lifetime)
+        async with hydrator.hydrate(snapshot) as hydrated:
+            try:
+                _ = next(hydrated.content_root.iterdir())
+            except StopIteration:
+                typer.echo(f"ERROR: hydrated snapshot is empty: {hydrated.content_root}")
+                raise typer.Exit(2) from None
+
+            # TODO: Deduplicate Docker container creation logic with docker_env.py and MCP server wiring.
+            # The real duplication is at the MCP layer where critic/grader/optimizer servers manage
+            # their containers. This CLI command manually constructs what those servers build via
+            # ContainerOptions/properties_docker_spec. Consider extracting a shared container factory
+            # or making the MCP container session logic more reusable for interactive/non-MCP cases.
+            binds, _defs = build_critic_binds(hydrated.content_root, mount_properties=True, workspace_mode="rw")
+
+            # Build container config for aiodocker
+            config: dict[str, Any] = {
+                "Image": PROPERTIES_DOCKER_IMAGE,
+                "Cmd": SLEEP_FOREVER_CMD,
+                "WorkingDir": str(workdir),
+                "Tty": True,
+                "OpenStdin": True,
+                "AttachStdin": True,
+                "AttachStdout": True,
+                "AttachStderr": True,
+                "HostConfig": {
+                    "Binds": [f"{host}:{spec['bind']}:{spec.get('mode', 'rw')}" for host, spec in binds.items()],
+                    "NetworkMode": "none",
+                    "AutoRemove": True,
+                },
+            }
+
+            container = await docker_client.containers.create(cast(Any, config))
+            container_id = container.id
+
+            try:
+                await container.start()
+
+                # Apply optional setup script (using subprocess - aiodocker exec doesn't handle TTY well)
+                if setup_script:
+                    setup_cmd = ["docker", "exec", container_id, "bash", "-c", setup_script]
+                    proc = await asyncio.create_subprocess_exec(*setup_cmd)
+                    exit_code = await proc.wait()
+                    if exit_code != 0:
+                        typer.echo("WARNING: Setup script failed", err=True)
+
+                # Execute main command (subprocess for TTY support)
+                # Docker syntax: docker exec [OPTIONS] CONTAINER COMMAND [ARGS...]
+                exec_flags = []
+                if interactive:
+                    exec_flags.append("-i")
+                if tty_exec:
+                    exec_flags.append("-t")
+
+                full_cmd = ["docker", "exec", *exec_flags, container_id, *exec_command]
+                proc = await asyncio.create_subprocess_exec(*full_cmd)
+                return await proc.wait()
+
+            finally:
+                # Cleanup (container auto-removes on stop with AutoRemove=True)
+                await container.stop()
 
 
 @async_run
@@ -231,17 +248,10 @@ async def snapshot_exec(
     tty_exec: bool = opt.OPT_TTY_EXEC,
     cmd: list[str] = opt.ARG_CMD_LIST,
     hydrator: SnapshotHydrator = Depends(get_hydrator),
-    docker_client: docker.DockerClient = Depends(get_docker_client),
 ) -> None:
     """Execute a command in a container with hydrated snapshot mounted at /workspace (RW)."""
     rc = await _run_in_snapshot_container(
-        snapshot,
-        workdir,
-        cmd,
-        hydrator=hydrator,
-        docker_client=docker_client,
-        interactive=interactive,
-        tty_exec=tty_exec,
+        snapshot, workdir, cmd, hydrator=hydrator, interactive=interactive, tty_exec=tty_exec
     )
     raise typer.Exit(rc)
 
@@ -251,7 +261,6 @@ async def snapshot_shell(
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     workdir: Path = opt.OPT_WORKDIR_CRITIC,
     hydrator: SnapshotHydrator = Depends(get_hydrator),
-    docker_client: docker.DockerClient = Depends(get_docker_client),
 ) -> None:
     """Open an interactive bash shell in a container with hydrated snapshot mounted at /workspace (RW).
 
@@ -263,14 +272,7 @@ async def snapshot_shell(
 
     # Launch interactive bash with setup
     rc = await _run_in_snapshot_container(
-        snapshot,
-        workdir,
-        ["/bin/bash"],
-        hydrator=hydrator,
-        docker_client=docker_client,
-        interactive=True,
-        tty_exec=True,
-        setup_script=setup_script,
+        snapshot, workdir, ["/bin/bash"], hydrator=hydrator, interactive=True, tty_exec=True, setup_script=setup_script
     )
     raise typer.Exit(rc)
 

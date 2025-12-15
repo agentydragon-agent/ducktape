@@ -9,6 +9,9 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 ## Key Documentation
 
 **System documentation (in adgn/props):**
+
+@docs/system_overview.md
+
 - @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
 - @docs/prompt_optimizer_context.md — Context specifically for prompt optimization tasks
 - @README.md — Package overview, conventions, workflow
@@ -66,6 +69,119 @@ Examples
 ## Docker Build
 - Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.
 - Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
+
+## Database Migrations (Alembic)
+
+**All schema changes must go through Alembic migrations.** Do not edit the database schema directly.
+
+- **Migrations location:** `src/adgn/props/db/migrations/versions/`
+- **Configuration:** `src/adgn/props/db/migrations/env.py` (reads database URL from environment via `get_production_config()`)
+- **Alembic CLI:** Run from `src/adgn/props/db/` directory with `direnv exec . alembic <command>`
+
+**Project conventions:**
+- Use YYYYMMDD000000 timestamp format for revision IDs (e.g., `20251213000000`)
+- ORM models in `db/*.py` are still required for application code
+- RLS policies: managed in `src/adgn/props/db/setup.py` via `enable_rls()` (not in migrations)
+- RLS helper functions: should be created in migrations (they're part of the schema)
+
+**Fresh database setup (dev/test):**
+```bash
+adgn-properties db recreate  # Drops schema, runs migrations, creates RLS/views
+```
+
+**Example migration:** See `src/adgn/props/db/migrations/versions/20251213000000_add_clustering_tables.py`
+
+## Temporary Database Users (Scoped Access)
+
+**Pattern:** Task-specific agents create temporary PostgreSQL users with RLS-scoped access for the duration of their execution.
+
+**Why temporary users?**
+- Enforces data isolation (e.g., TRAIN-only access for optimization agents)
+- Prevents accidental leakage of validation/test data during training
+- No persistent credentials to manage or rotate
+- Automatic cleanup on agent exit
+
+**Function-Based RLS:**
+- Username pattern encodes scope (e.g., `prompt_optimizer_agent_{uuid}`)
+- PostgreSQL function extracts ID from username: `current_prompt_optimizer_run_id()`
+- Centralized policies use function to filter rows - O(1) overhead
+- Scales to many concurrent users without per-user policy creation
+
+**Example: Prompt Optimizer Agent**
+- Creates temporary user: `prompt_optimizer_agent_{run_id}`
+- RLS function: `current_prompt_optimizer_run_id()` extracts UUID from username
+- RLS policies enforce anti-overfitting data isolation:
+  - **TRAIN split**: Full access
+    - Examples: All examples visible (per-file and whole-snapshot)
+    - Ground truth: `true_positives`, `false_positives` tables readable
+    - Individual runs: `critic_runs`, `critiques`, `grader_runs` readable with full details
+    - Aggregate views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example` for TRAIN
+    - Agent can debug, inspect per-occurrence credits, iterate on specific failures
+  - **VALID/TEST splits**: Restricted to prevent overfitting
+    - Examples: Only whole-snapshot examples visible (per-file examples hidden)
+    - Ground truth: `true_positives`, `false_positives` tables return 0 rows (RLS filtered)
+    - Individual runs: `critic_runs`, `critiques`, `grader_runs` hidden (RLS filtered)
+    - Aggregate views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example` show VALID/TEST metrics
+    - Agent can run evaluations on whole snapshots, but only sees scalar recall metrics
+    - Cannot inspect which issues were missed or iterate on specific VALID failures
+- Container receives temp user credentials (not admin)
+- Automatic cleanup on compositor exit
+
+**Implementation:**
+```python
+from adgn.props.db.prompt_optimizer_user_manager import PromptOptimizerUserManager
+
+# Inside PromptOptimizerCompositor.__aenter__:
+user_manager = PromptOptimizerUserManager(admin_config, run_id)
+temp_creds = await user_manager.__aenter__()
+# Pass temp_creds to Docker container environment (PG* vars)
+
+# On compositor exit, user manager cleans up:
+await user_manager.__aexit__(...)
+```
+
+**Other examples:**
+- `ImprovementUserManager`: Manual per-user policies (O(n) overhead)
+- `ClusteringUserManager`: Function-based RLS like prompt optimizer
+
+**See also:**
+- `src/adgn/props/db/prompt_optimizer_user_manager.py` - Prompt optimizer user manager
+- `src/adgn/props/db/temp_user_manager.py` - Base class for temporary users
+- `src/adgn/props/db/migrations/versions/20251215000000_add_prompt_optimizer_rls.py` - RLS setup migration
+
+## Accessing PostgreSQL Directly
+
+Use Python with the database config module:
+
+```python
+from adgn.props.db.config import get_production_config
+from sqlalchemy import create_engine, text
+
+config = get_production_config()
+engine = create_engine(config.admin_url())
+
+with engine.connect() as conn:
+    result = conn.execute(text('SELECT slug FROM snapshots ORDER BY slug'))
+    for row in result:
+        print(row[0])
+```
+
+**Key points:**
+- Database connection parameters come from environment variables set by devenv:
+  - Standard `PG*` vars for admin access (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE)
+  - Custom `PROPS_DB_CONTAINER_NAME` for container routing
+- Always run from within the adgn devenv shell (`direnv allow && cd adgn` or `direnv exec adgn <command>`)
+- Tables are in the default `public` schema - direct queries work without qualification
+- Temporary users with scoped access are created automatically by specific agents (e.g., prompt optimizer)
+
+**psql access:**
+```bash
+# Connect with psql (uses PG* environment variables set by devenv)
+direnv exec . psql
+
+# Or from outside adgn/:
+direnv exec adgn psql
+```
 
 ## Architecture: MCP I/O Models vs DB Persistence Models
 

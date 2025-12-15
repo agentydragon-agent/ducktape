@@ -26,7 +26,7 @@ async def test_chat_head_notifications_other_participant(compositor) -> None:
         out = await human_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "hello"})
         assert not out.is_error
         await asyncio.sleep(0.05)
-        assert assistant.head_resource.uri in cap_assist.updated, cap_assist.updated
+        assert str(assistant.head_resource.uri) in cap_assist.updated, cap_assist.updated
 
     # Connect directly to human server to capture its notifications
     cap_human = _Capture()
@@ -34,4 +34,4 @@ async def test_chat_head_notifications_other_participant(compositor) -> None:
         out2 = await assist_sess.call_tool(name="post", arguments={"mime": "text/markdown", "content": "roger"})
         assert not out2.is_error
         await asyncio.sleep(0.05)
-        assert human.head_resource.uri in cap_human.updated, cap_human.updated
+        assert str(human.head_resource.uri) in cap_human.updated, cap_human.updated

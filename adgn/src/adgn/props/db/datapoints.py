@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from adgn.props.db.models import Example, Snapshot
 from adgn.props.gepa.models import SnapshotInput
-from adgn.props.models.critic_scopes import ExplicitFileScope
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.splits import Split
 
 
@@ -41,6 +41,26 @@ def count_available_examples_for_split(session: Session, split: Split) -> int:
         session.query(func.count(Example.snapshot_slug))
         .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
         .where(Snapshot.split == split)
+        .scalar()
+    )
+    return count or 0
+
+
+def count_available_examples_by_scope(session: Session, split: Split, is_whole_snapshot: bool) -> int:
+    """Count available training examples for a split and scope.
+
+    Args:
+        session: SQLAlchemy session
+        split: Split to count examples for
+        is_whole_snapshot: If True, count only whole-snapshot examples; if False, count only partial examples
+
+    Returns:
+        Number of training examples matching the criteria
+    """
+    count = (
+        session.query(func.count(Example.snapshot_slug))
+        .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
+        .where(Snapshot.split == split, Example.is_whole_snapshot == is_whole_snapshot)
         .scalar()
     )
     return count or 0
@@ -85,7 +105,9 @@ def get_examples_for_split(session: Session, split: Split) -> list[SnapshotInput
     return [
         SnapshotInput(
             slug=example.snapshot_slug,
-            target_files=ExplicitFileScope(files=example.files),
+            target_files=(
+                AllFilesScope() if example.is_whole_snapshot else ExplicitFileScope(files=example.files or [])
+            ),
             files_hash=example.files_hash,
         )
         for example in examples

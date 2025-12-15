@@ -6,14 +6,20 @@
 
 **The Critic:** An LLM agent that **behavior-clones the user's code review judgment** - finding issues the user would find, following their subjective preferences and taste.
 
-**Not Generic Review:** You're learning specific preferences:
-- What duplication is acceptable vs should be refactored
-- What naming is clear vs verbose
-- What abstraction level is appropriate
+**CRITICAL: This Dataset Reflects One Person's Subjective Taste**
+
+The ground truth issues (true positives and false positives) were hand-labeled by a single individual based on their personal code review preferences. This is NOT a generic "best practices" dataset - it's behavior-cloning training data.
+
+**Not Generic Review:** You're learning specific preferences from labeled examples:
+- What duplication is acceptable (visual consistency) vs should be refactored
+- What naming is clear vs verbose/unclear
+- What abstraction level is appropriate vs over/under-engineered
 - What comments add value vs are noise
 - What patterns are idiomatic vs anti-patterns
 
-**Your Job:** Evolve the critic's system prompt to maximize its ability to find issues the user would flag while avoiding false positives (things that look wrong but the user accepts)
+**Your Job:** Read the training data to understand these subjective standards, then evolve the critic's system prompt to maximize its ability to find issues this person would flag (true positives) while NOT flagging patterns explicitly marked as should-not-flag (false positives).
+
+**Don't assume - study the data:** The labeled issues reflect one person's consistent but subjective judgment. Your prior beliefs about "good code" may not match their preferences. Read actual training examples and ground truth to internalize their standards.
 
 **Optimization Methods:** Multiple approaches can use this dataset:
 - **GEPA:** Evolutionary search with reflection-based improvements
@@ -66,9 +72,11 @@ catchable = any(
 ```
 
 ### False Positives (FPs)
-**Definition:** Things that look wrong but are actually acceptable (intentional patterns)
+**Definition:** Patterns that should explicitly NOT be flagged (even if they might look problematic)
 
-**Example:** Duplication for visual consistency in UI components (known design choice)
+**Example:** Duplication for visual consistency in UI components - looks like it should be refactored, but this person considers it an acceptable design choice and should NOT be flagged
+
+**Purpose:** Teach the critic to avoid flagging patterns this person considers acceptable
 
 **Currently:** All FPs are included in all training examples (not filtered by scope - there are few of them)
 

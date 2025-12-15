@@ -9,10 +9,10 @@ create directly (not full ResponsesResult objects, and not reasoning items).
 Reasoning items originate from the model and should never be synthesized in prod.
 """
 
-import json
 from typing import Any
 
 from pydantic import BaseModel
+import pydantic_core
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import MCPMountPrefix
@@ -22,7 +22,9 @@ from .model import AssistantMessageOut, FunctionCallItem, OutputText
 
 def make_item_tool_call(*, call_id: str, name: str, arguments: dict[str, Any]) -> FunctionCallItem:
     """Create a function call item with JSON-serialized arguments."""
-    return FunctionCallItem(call_id=call_id, name=name, arguments=json.dumps(arguments))
+    return FunctionCallItem(
+        call_id=call_id, name=name, arguments=pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
+    )
 
 
 def make_item_assistant_text(text: str) -> AssistantMessageOut:

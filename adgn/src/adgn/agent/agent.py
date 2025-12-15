@@ -19,6 +19,7 @@ from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
+import pydantic_core
 
 from adgn.agent.events import ApiRequest, AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import (
@@ -199,7 +200,7 @@ def _dump_call_tool_result(res: mcp_types.CallToolResult) -> str:
     Dumps a compact JSON representation of the tool result.
     """
 
-    result = json.dumps(as_minimal_json(res), ensure_ascii=False)
+    result = pydantic_core.to_json(as_minimal_json(res), fallback=str).decode("utf-8")
 
     # Safety check: OpenAI has a 10MB limit for input strings
     # Fail fast if tool output is too large to prevent API errors
@@ -244,10 +245,7 @@ def _normalize_call_arguments(arguments: str | dict[str, Any] | list[Any] | None
     """Normalize function call arguments to JSON string."""
     if arguments is None or isinstance(arguments, str):
         return arguments
-    try:
-        return json.dumps(arguments)
-    except TypeError:
-        return str(arguments)
+    return pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
 
 
 SYSTEM_INSTRUCTIONS = "You are a code agent. Be concise."
@@ -732,7 +730,13 @@ class Agent:
         items: list[InputItem] = []
         for item in self._transcript:
             if isinstance(item, UserMessage | AssistantMessage | SystemMessage):
-                items.append(item.model_copy(deep=True))
+                # Use serialize/deserialize instead of model_copy(deep=True) to avoid pytest-xdist deadlock.
+                # Root cause unclear: no circular refs in data, deepcopy works in isolation, but under
+                # parallel test execution (pytest-xdist -n16) it hangs in Pydantic's __deepcopy__.
+                # Hypothesis: pytest-xdist fork + Pydantic internal state (validators, cached schemas)
+                # causes deepcopy memo dict corruption. Serialize/deserialize forces clean state.
+                item_type = type(item)
+                items.append(item_type.model_validate_json(item.model_dump_json()))
                 continue
             if isinstance(item, ReasoningItem):
                 items.append(item)

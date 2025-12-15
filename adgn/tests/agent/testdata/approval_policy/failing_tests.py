@@ -9,7 +9,7 @@ from adgn.mcp._shared.types import MCPMountPrefix
 TEST_CASES = [
     # Expect DENY_ABORT for UI send_message, but decide() returns ALLOW → preflight fails
     (
-        PolicyRequest(name=build_mcp_function(MCPMountPrefix("ui"), "send_message"), arguments="{}"),
+        PolicyRequest(name=build_mcp_function(MCPMountPrefix("ui"), "send_message"), arguments_json="{}"),
         ApprovalDecision.DENY_ABORT,
     )
 ]

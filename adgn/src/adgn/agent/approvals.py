@@ -9,7 +9,7 @@ from pydantic import BaseModel
 class ApprovalToolCall(BaseModel):
     name: str
     call_id: str
-    args_json: str | None = None
+    args_json: str | None  # JSON string, or None for no arguments
 
 
 class ApprovalRequest(BaseModel):

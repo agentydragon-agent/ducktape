@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from adgn.props.ids import SnapshotSlug
 
 logger = logging.getLogger(__name__)
 
@@ -30,10 +31,16 @@ class PromptSubmission(BaseModel):
 
 
 class ExampleInfo(BaseModel):
-    """Information about an example for few-shot prompt improvement."""
+    """Information about an example for few-shot prompt improvement.
 
-    snapshot_slug: str
-    files_hash: str
+    TODO: This is ugly - files_hash None represents whole-snapshot examples,
+    but we're mixing the database representation (None for whole-snapshot) with
+    the agent-facing model. Should either use a discriminated union or a separate
+    model for whole-snapshot vs file-set examples.
+    """
+
+    snapshot_slug: SnapshotSlug
+    files_hash: str | None  # None = whole-snapshot example
 
 
 class ImprovementContext(BaseModel):

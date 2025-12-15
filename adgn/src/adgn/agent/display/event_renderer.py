@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-import json
 import shlex
 
 # Conditional import to avoid circular dependency when compositor is not available
 from typing import TYPE_CHECKING, Any, get_args, get_type_hints
 
 from fastmcp.tools.tool import FunctionTool
+import pydantic_core
 
 from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp.exec.models import ExecInput
@@ -230,7 +230,7 @@ class DisplayEventsHandler(BaseHandler):
 
     def _pp_json(self, obj: object) -> str:
         try:
-            text = json.dumps(obj, ensure_ascii=False, indent=2)
+            text = pydantic_core.to_json(obj, indent=2, fallback=str).decode("utf-8")
         except (TypeError, ValueError):
             text = str(obj)
         return self._truncate_text(text)
@@ -240,6 +240,6 @@ def _coerce_str(x: object) -> str:
     if isinstance(x, str):
         return x
     try:
-        return json.dumps(x, ensure_ascii=False)
+        return pydantic_core.to_json(x, fallback=str).decode("utf-8")
     except (TypeError, ValueError):
         return str(x)

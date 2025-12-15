@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
@@ -163,8 +163,8 @@ class LintIssueCompositor(PropertiesDockerCompositor):
             workspace_root,
             docker_client,
             mount_properties=True,
+            hydrator=SnapshotHydrator.from_env(),
             db_conn=None,
-            extra_binds=None,
             workspace_mode="ro",
             network_mode="none",
             extra_env=None,
@@ -224,8 +224,7 @@ def make_linter_bootstrap_calls(
 
     # Step 1: Container info
     calls.append(
-        read_resource_call(
-            builder,
+        builder.read_resource(
             compositor.resources,
             server=compositor.runtime.prefix,
             uri=compositor.runtime.server.container_info_resource.uri,
@@ -286,8 +285,7 @@ def make_bootstrap_calls_for_inspection(
         builder: Bootstrap builder for generating typed tool calls
     """
     return [
-        read_resource_call(
-            builder,
+        builder.read_resource(
             compositor.resources,
             server=compositor.runtime.prefix,
             uri=compositor.runtime.server.container_info_resource.uri,

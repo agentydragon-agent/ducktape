@@ -278,8 +278,8 @@ All plans still require server name string literals when creating stubs. This is
 ### Helper Functions (Low Priority)
 **Status**: Optional, add as patterns emerge
 **Location**: `src/adgn/agent/bootstrap.py:238` (TODO comment)
-**Current helpers**: `read_resource_call()`, `docker_exec_call()`
-**Recommendation**: Add more (e.g., `git_diff_call()`, `git_status_call()`) only when repetition justifies it. Scope appropriately (per-module or conftest, not global).
+**Current helpers**: `builder.read_resource()` (method), `docker_exec_call()` (standalone function)
+**Recommendation**: Add more (e.g., `git_diff_call()`, `git_status_call()`) only when repetition justifies it. Scope appropriately (per-module or conftest, not global). Consider moving standalone helpers to methods on `TypedBootstrapBuilder` for consistency.
 
 ### Verify BootstrapInspectHandler Usage
 **Status**: Low priority verification

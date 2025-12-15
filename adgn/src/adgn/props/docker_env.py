@@ -1,23 +1,27 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
+from contextlib import AsyncExitStack
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from adgn.mcp._shared.mounted import Mounted
+    from adgn.props.hydration import SnapshotHydrator
 
 import aiodocker
-import docker
 from docker.errors import ImageNotFound
 
 from adgn.mcp._shared.constants import WORKING_DIR
-from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.mcp._shared.container_session import BindMount, ContainerOptions
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.props.db.config import DbConnectionConfig
+from adgn.props.ids import SnapshotSlug
 from adgn.props.prop_utils import props_definitions_root
+from adgn.props.snapshot_paths import snapshot_container_path
 
 logger = logging.getLogger(__name__)
 
@@ -32,30 +36,6 @@ DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")  # Mount prefix for properties Do
 # - Allows container→host communication for MCP HTTP mode
 # - Non-internal network (needed for host access)
 PROPS_NETWORK_NAME = "props_default"
-
-
-def get_docker_network_gateway(network_name: str) -> str:
-    """Get the gateway IP for a Docker network.
-
-    Args:
-        network_name: Name of the Docker network
-
-    Returns:
-        Gateway IP address (e.g., "172.19.0.1")
-
-    Raises:
-        docker.errors.NotFound: If network does not exist
-        RuntimeError: If gateway cannot be determined from network config
-    """
-    client = docker.from_env()
-    network = client.networks.get(network_name)
-    ipam_config = network.attrs.get("IPAM", {}).get("Config", [])
-    if not ipam_config:
-        raise RuntimeError(f"No IPAM config found for network {network_name}")
-    gateway = ipam_config[0].get("Gateway")
-    if isinstance(gateway, str):
-        return gateway
-    raise RuntimeError(f"No gateway found for network {network_name}")
 
 
 class PropertiesDockerCompositor(Compositor):
@@ -80,13 +60,15 @@ class PropertiesDockerCompositor(Compositor):
         workspace_root: Path,
         docker_client: aiodocker.Docker,
         *,
-        mount_properties: bool = True,
+        mount_properties: bool,
+        hydrator: SnapshotHydrator,
         db_conn: DbConnectionConfig | None = None,
-        extra_binds: dict[str, dict[str, str]] | None = None,
+        extra_binds: Sequence[BindMount] = (),
         workspace_mode: str = "ro",
         network_mode: str = "none",
         extra_env: dict[str, str] | None = None,
         ephemeral: bool = True,
+        snapshot_slugs: Sequence[SnapshotSlug] = (),
     ):
         """Initialize properties compositor with Docker configuration.
 
@@ -94,12 +76,20 @@ class PropertiesDockerCompositor(Compositor):
             workspace_root: Path to workspace directory to mount in container.
             docker_client: Async Docker client (managed by caller).
             mount_properties: Whether to mount property definitions at /props.
+            hydrator: Snapshot hydrator for automatic snapshot mounting (always required; use SnapshotHydrator.from_env() if not hydrating).
             db_conn: Database connection config (sets PG* env vars).
-            extra_binds: Additional bind mounts to mount.
+            extra_binds: Additional bind mounts to mount (default empty tuple).
             workspace_mode: Mount mode for workspace ("ro" or "rw").
             network_mode: Docker network mode (default "none" for isolation).
             extra_env: Additional environment variables to inject.
             ephemeral: Whether container should be removed after use.
+            snapshot_slugs: Snapshot slugs to hydrate and mount (if empty, hydrator is not used).
+
+        Note:
+            If snapshot_slugs is provided, snapshots will be automatically
+            hydrated and mounted at /snapshots/<slug>/ during __aenter__.
+            Hydrated contexts are kept alive until __aexit__.
+            Creating a hydrator is cheap; hydration only occurs if snapshot_slugs is non-empty.
         """
         super().__init__()
         self._workspace_root = workspace_root
@@ -111,31 +101,90 @@ class PropertiesDockerCompositor(Compositor):
         self._network_mode = network_mode
         self._extra_env = extra_env
         self._ephemeral = ephemeral
+        self._hydrator = hydrator
+        self._snapshot_slugs = snapshot_slugs
+        self._snapshot_stack: AsyncExitStack | None = None
 
     async def __aenter__(self):
-        """Start compositor and mount Docker runtime server."""
+        """Start compositor and mount Docker runtime server.
+
+        If hydrator and snapshot_slugs are provided, hydrates and mounts snapshots
+        at /snapshots/<slug>/ before creating the Docker server.
+        """
         await super().__aenter__()  # Mounts resources, compositor_meta
 
-        # Ensure Docker image exists before mounting
-        ensure_critic_image()
+        # Hydrate snapshots if requested
+        if self._hydrator and self._snapshot_slugs:
+            self._snapshot_stack = AsyncExitStack()
+            await self._snapshot_stack.__aenter__()
+
+            extra_snapshot_binds: list[BindMount] = []
+            for slug in self._snapshot_slugs:
+                # Enter hydration context via stack (stack handles cleanup)
+                hydrated = await self._snapshot_stack.enter_async_context(self._hydrator.hydrate(slug))
+
+                # Add bind mount for this snapshot
+                bind = BindMount(
+                    host_path=hydrated.content_root.resolve(),
+                    container_path=self.snapshot_container_path(slug),
+                    mode="ro",
+                )
+                extra_snapshot_binds.append(bind)
+                logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as {bind.container_path})")
+
+            # Merge snapshot binds with user-provided extra_binds
+            self._extra_binds = [*self._extra_binds, *extra_snapshot_binds]
+            logger.info(f"Mounted {len(extra_snapshot_binds)} snapshots (read-only)")
+
+        # Ensure Docker image exists and get immutable reference
+        image_id = await ensure_critic_image_async(self._docker_client)
 
         # Mount Docker runtime (shared by all properties compositors)
-        docker_server = self._create_docker_server()
+        docker_server = self._create_docker_server(image_id)
         self.runtime = await self.mount_inproc(DOCKER_MOUNT_PREFIX, docker_server, pinned=True)
 
         return self
 
-    def _create_docker_server(self) -> ContainerExecServer:
-        """Create ContainerExecServer with standard properties configuration."""
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Clean up compositor and hydrated snapshots."""
+        # Clean up hydrated snapshots (stack handles cleanup in reverse order)
+        if self._snapshot_stack is not None:
+            await self._snapshot_stack.__aexit__(exc_type, exc_val, exc_tb)
+            self._snapshot_stack = None
+
+        # Clean up parent compositor
+        return await super().__aexit__(exc_type, exc_val, exc_tb)
+
+    def snapshot_container_path(self, slug: SnapshotSlug) -> Path:
+        """Get container path for a snapshot's source code.
+
+        Pattern: /snapshots/<slug>
+
+        Delegates to snapshot_paths.snapshot_container_path (canonical SSOT).
+
+        Args:
+            slug: Snapshot slug (e.g., "ducktape/2025-11-26-00")
+
+        Returns:
+            Container path (e.g., Path("/snapshots/ducktape/2025-11-26-00"))
+        """
+        return snapshot_container_path(slug)
+
+    def _create_docker_server(self, image_id: str) -> ContainerExecServer:
+        """Create ContainerExecServer with standard properties configuration.
+
+        Args:
+            image_id: Immutable Docker image ID (e.g., "sha256:abc123...")
+        """
         # Build Docker volume binds
-        binds: dict[str, dict[str, str]] = {
-            str(self._workspace_root.resolve()): {"bind": str(WORKING_DIR), "mode": self._workspace_mode}
-        }
+        binds: list[BindMount] = [
+            BindMount(host_path=self._workspace_root.resolve(), container_path=WORKING_DIR, mode=self._workspace_mode)
+        ]
         if self._extra_binds:
-            binds.update(self._extra_binds)
+            binds.extend(self._extra_binds)
         if self._mount_properties:
             defs_dir = props_definitions_root().resolve()
-            binds[str(defs_dir)] = {"bind": str(PROPS_DIR), "mode": "ro"}
+            binds.append(BindMount(host_path=defs_dir, container_path=PROPS_DIR, mode="ro"))
 
         # Build container environment variables
         env = {
@@ -148,11 +197,7 @@ class PropertiesDockerCompositor(Compositor):
             "PYTHONPYCACHEPREFIX": "/tmp/__pycache__",
         }
         if self._db_conn:
-            env["PGHOST"] = self._db_conn.host
-            env["PGPORT"] = str(self._db_conn.port)
-            env["PGDATABASE"] = self._db_conn.database
-            env["PGUSER"] = self._db_conn.user
-            env["PGPASSWORD"] = self._db_conn.password
+            env.update(self._db_conn.to_env_dict())
             logger.info(
                 f"Set database env vars: PGHOST={self._db_conn.host}, "
                 f"PGPORT={self._db_conn.port}, PGDATABASE={self._db_conn.database}, PGUSER={self._db_conn.user}"
@@ -164,15 +209,15 @@ class PropertiesDockerCompositor(Compositor):
             logger.info(f"Injecting extra environment variables: {list(self._extra_env.keys())}")
 
         return ContainerExecServer(
+            self._docker_client,
             ContainerOptions(
-                image=PROPERTIES_DOCKER_IMAGE,
+                image=image_id,
                 working_dir=WORKING_DIR,
                 binds=binds,
                 environment=env,
                 ephemeral=self._ephemeral,
                 network_mode=self._network_mode,
             ),
-            self._docker_client,
         )
 
     def container_path_for_prop_rel(self, rel: str) -> Path:
@@ -208,15 +253,55 @@ def build_critic_build_hint() -> str:
     return f"docker build -f 'docker/llm/properties-critic/Dockerfile' -t {PROPERTIES_DOCKER_IMAGE} ."
 
 
-def ensure_critic_image() -> None:
-    """Ensure the default properties critic image exists; raise with build hint if missing."""
+async def ensure_critic_image_async(docker_client: aiodocker.Docker) -> str:
+    """Ensure the default properties critic image exists; return image ID.
 
-    dclient = docker.from_env()
+    Args:
+        docker_client: Async Docker client
+
+    Returns:
+        Image ID (e.g., "sha256:abc123...") - immutable reference to the image
+
+    Raises:
+        ImageNotFound: If image does not exist (with build hint)
+    """
     try:
-        dclient.images.get(PROPERTIES_DOCKER_IMAGE)
-    except ImageNotFound as e:
+        image_info = await docker_client.images.inspect(PROPERTIES_DOCKER_IMAGE)
+        image_id: str = image_info["Id"]
+        return image_id
+    except aiodocker.DockerError as e:
         hint = build_critic_build_hint()
         raise ImageNotFound(f"Docker image not found: {PROPERTIES_DOCKER_IMAGE}.\nBuild it first:\n{hint}") from e
+
+
+async def get_docker_network_gateway_async(docker_client: aiodocker.Docker, network_name: str) -> str:
+    """Get gateway IP for Docker network (async version).
+
+    Args:
+        docker_client: Async Docker client
+        network_name: Name of the Docker network
+
+    Returns:
+        Gateway IP address (e.g., "172.19.0.1")
+
+    Raises:
+        RuntimeError: If network does not exist or gateway cannot be determined
+    """
+    networks = await docker_client.networks.list()
+    network = next((n for n in networks if n["Name"] == network_name), None)
+    if not network:
+        raise RuntimeError(f"Network not found: {network_name}")
+
+    network_obj = await docker_client.networks.get(network["Id"])
+    network_info = await network_obj.show()
+    ipam_config = network_info.get("IPAM", {}).get("Config", [])
+    if not ipam_config:
+        raise RuntimeError(f"No IPAM config for network {network_name}")
+
+    gateway = ipam_config[0].get("Gateway")
+    if isinstance(gateway, str):
+        return gateway
+    raise RuntimeError(f"No gateway found for network {network_name}")
 
 
 def build_critic_binds(

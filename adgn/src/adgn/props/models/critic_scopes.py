@@ -23,7 +23,7 @@ class ExplicitFileScope(OpenAIStrictModeBaseModel):
     Used when targeting specific files rather than all files with issues.
     """
 
-    kind: Literal["explicit"] = "explicit"
+    kind: Literal["specific_files"] = "specific_files"
     files: list[str] = Field(description="Explicit file paths to review")
     # list not set: OpenAI strict mode doesn't accept uniqueItems in JSON schemas
     # str not Path: OpenAI strict mode doesn't accept format="path" in JSON schemas
@@ -35,7 +35,7 @@ class AllFilesScope(OpenAIStrictModeBaseModel):
     This sentinel expands to all files that have TP or FP annotations.
     """
 
-    kind: Literal["all"] = "all"
+    kind: Literal["entire_snapshot"] = "entire_snapshot"
 
 
 CriticScopeSpec = Annotated[ExplicitFileScope | AllFilesScope, Field(discriminator="kind")]

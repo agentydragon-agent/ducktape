@@ -35,7 +35,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
 
 # Defaults via environment with sensible fallbacks
-DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "o4-mini")
+DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
 SYSTEM_INSTRUCTIONS = os.getenv(
     "SYSTEM_INSTRUCTIONS", "You are a code agent. Use tools to execute commands. Respond with helpful, concise text."
 )

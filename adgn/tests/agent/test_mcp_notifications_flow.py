@@ -81,6 +81,12 @@ async def _make_agent_with_notifications(mcp_client, buf, client):
     )
 
 
+@pytest.mark.skip(
+    reason="Hangs under pytest-xdist due to importlib.metadata.version('mcp') calling os.stat() "
+    "during FastMCP server initialization. Likely race condition in metadata caching. "
+    "Also previously had issues with Pydantic serialization in CapturingOpenAIModel (now fixed). "
+    "See: tests/llm/support/openai_mock.py for serialization fix."
+)
 async def test_notifications_pre_sampling_out_of_band(
     server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
 ) -> None:

@@ -8,12 +8,11 @@
   # PostgreSQL configuration (single source of truth)
   pgConfig = {
     host = "127.0.0.1";
-    port = "5433";
+    port = "5433"; # Host-mapped port
     containerName = "props-postgres";
+    containerPort = "5432"; # Internal container port (for Docker network communication)
     adminUser = "postgres";
     adminPassword = "props_admin_pass";
-    agentUser = "agent_user";
-    agentPassword = "agent_password_changeme";
     database = "eval_results";
   };
 in {
@@ -60,7 +59,7 @@ in {
     docker run --rm \
       --name ${pgConfig.containerName} \
       --network props_default \
-      -p ${pgConfig.port}:5432 \
+      -p ${pgConfig.port}:${pgConfig.containerPort} \
       -e POSTGRES_USER=${pgConfig.adminUser} \
       -e POSTGRES_PASSWORD=${pgConfig.adminPassword} \
       -v props_eval_results_data:/var/lib/postgresql/data \
@@ -70,15 +69,16 @@ in {
 
   # Environment variables (database connection parameters - single source of truth)
   env = {
-    # Structured database configuration (preferred)
-    PROPS_DB_HOST = pgConfig.host;
-    PROPS_DB_PORT = pgConfig.port;
+    # Standard PostgreSQL client variables (admin credentials, host-side access)
+    PGHOST = pgConfig.host;
+    PGPORT = pgConfig.port;
+    PGUSER = pgConfig.adminUser;
+    PGPASSWORD = pgConfig.adminPassword;
+    PGDATABASE = pgConfig.database;
+
+    # Project-specific: container routing (for Docker network communication)
     PROPS_DB_CONTAINER_NAME = pgConfig.containerName;
-    PROPS_DB_ADMIN_USER = pgConfig.adminUser;
-    PROPS_DB_ADMIN_PASSWORD = pgConfig.adminPassword;
-    PROPS_DB_AGENT_USER = pgConfig.agentUser;
-    PROPS_DB_AGENT_PASSWORD = pgConfig.agentPassword;
-    PROPS_DB_NAME = pgConfig.database;
+    PROPS_DB_CONTAINER_PORT = pgConfig.containerPort;
   };
 
   # On shell entry, ensure the project is installed (editable) with dev extras

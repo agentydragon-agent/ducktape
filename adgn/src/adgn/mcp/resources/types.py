@@ -3,10 +3,13 @@ from __future__ import annotations
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.mcp._shared.types import MCPMountPrefix
+
 
 class ResourceEntry(BaseModel):
-    server: str = Field(description="Origin MCP server name")
+    server: MCPMountPrefix = Field(description="Origin MCP server mount prefix")
     resource: mcp_types.Resource
+    model_config = ConfigDict(extra="forbid")
 
 
 class SubscriptionSummary(BaseModel):

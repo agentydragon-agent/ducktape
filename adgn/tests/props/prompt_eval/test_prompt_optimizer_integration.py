@@ -26,40 +26,44 @@ from adgn.props.critic.critic import (
     UpsertIssueInput,
 )
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, GraderRun
+from adgn.props.db.models import CriticRun, Example, GraderRun, TruePositive
 from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.sync import sync_examples_to_db, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
-from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
-from adgn.props.grader.models import GradeSubmitInput
-from adgn.props.ids import SnapshotSlug
+from adgn.props.grader.models import (
+    CanonicalTPCoverage,
+    GradeSubmitInput,
+    IssueCoverageEntry,
+    TPCoverageEntry,
+    TruePositiveID,
+)
+from adgn.props.ids import InputIssueID, SnapshotSlug
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.prompt_optimize.prompt_optimizer import (
     PromptEvalServer,
     PromptOptimizerCompositor,
     RunCriticOnExampleInput,
     RunCriticOutput,
     RunGraderInput,
+    RunGraderOutput,
     UpsertPromptInput,
     UpsertPromptOutput,
     run_prompt_optimizer,
 )
+from adgn.props.prompt_optimize.target_metric import TargetMetric
+from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
 from tests.support.responses import _StepRunner
-from tests.support.steps import (
-    AssertDockerExecThenFinish,
-    CheckThenCall,
-    DockerExecCall,
-    ExtractThenCall,
-    Finish,
-    MakeCall,
-)
+from tests.support.steps import AssertDockerExecThenFinish, CheckThenCall, DockerExecCall, ExtractThenCall, MakeCall
 
 logger = logging.getLogger(__name__)
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
-# Test specimen slug used throughout this test
-TEST_SPECIMEN_SLUG = SnapshotSlug("test-fixtures/test-trivial")
+# Test specimen slugs used throughout this test
+TEST_TRAIN_SLUG = SnapshotSlug("test-fixtures/test-trivial")
+TEST_VALID_SLUG = SnapshotSlug("test-fixtures/test-validation")
 
 
 def get_critic_runs_for_slug(slug: str) -> list[CriticRun]:
@@ -85,51 +89,89 @@ def test_specimen(test_db, test_specimens_hydrator):
     """Sync test fixtures to database (snapshots, issues, examples).
 
     Examples are auto-generated from expect_caught_from in the issue file.
-    Uses patch to point sync_all at test fixtures instead of production specimens.
+    Uses test fixtures instead of production specimens.
     """
-    from adgn.props.cli.cmd_db import sync_all
 
-    # Patch get_specimens_base_path to return test fixtures path
-    with patch("adgn.props.cli.cmd_db.get_specimens_base_path", return_value=test_specimens_hydrator._base_path):
-        sync_all()
+    # Sync test fixtures (matching synced_test_db pattern)
+    specimens_dir = test_specimens_hydrator._base_path
+    with get_session() as session:
+        sync_snapshots_to_db(session, specimens_dir)
+        sync_issues_to_db(session, specimens_dir)
+        sync_examples_to_db(session, specimens_dir)
+
+        # DEBUG: Check what was synced
+        tps = session.query(TruePositive).filter_by(snapshot_slug=TEST_TRAIN_SLUG).all()
+        print(f"\nDEBUG: Found {len(tps)} TPs for {TEST_TRAIN_SLUG}")
+        for tp in tps:
+            print(f"  TP: {tp.tp_id}")
+            for occ in tp.occurrences:
+                print(f"    occurrence: {occ.occurrence_id}, expect_caught_from: {occ.expect_caught_from}")
+
+        examples = session.query(Example).all()
+        print(f"\nDEBUG: Found {len(examples)} examples total")
+        for ex in examples:
+            print(
+                f"  Example: slug={ex.snapshot_slug}, files={ex.files}, hash={ex.files_hash[:16] if ex.files_hash else 'None'}"
+            )
+
+    return test_db
 
 
 @pytest.fixture
 def po_agent_steps():
-    """Declarative steps for PO agent - prompt optimization workflow."""
-    # Compute files_hash for the test example (matches test-issue.libsonnet expectCaughtFrom)
-    test_files = ["subtract.py"]
-    files_hash = hash_file_set(test_files)
+    """Declarative steps for PO agent - full prompt optimization workflow.
 
-    # Use shared constants
+    Tests complete workflow:
+    1. psql connectivity check (verifies database access)
+    2. Train example evaluation (file-set with scope)
+    3. Validation snapshot evaluation (whole-snapshot with AllFilesScope)
+    4. Query validation results via get_validation_run_aggregates()
+    """
+    # Test files for the train example (matches test-issue.libsonnet expectCaughtFrom)
+    test_files = ["subtract.py"]
+
+    # Mutable container to capture state across steps (prompt_sha256 needed in Step 6)
+    state: dict[str, str] = {}
+
+    def make_train_critic_call(out: UpsertPromptOutput) -> tuple:
+        """Capture prompt_sha256 and create train critic call."""
+        state["prompt_sha256"] = out.prompt_sha256
+        return (
+            PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+            PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
+            RunCriticOnExampleInput(
+                snapshot_slug=TEST_TRAIN_SLUG,
+                scope=ExplicitFileScope(files=test_files),
+                prompt_sha256=out.prompt_sha256,
+                max_turns=10,
+            ),
+        )
 
     return [
+        # Step 1: Verify psql connectivity (database access check)
+        DockerExecCall(["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
+        # Step 2: Write prompt file
         DockerExecCall(
             ["sh", "-c", "echo 'Test critic system prompt for integration test.' > /workspace/prompt-v1.txt"],
             timeout_ms=30000,
         ),
+        # Step 3: Upsert prompt to database
         CheckThenCall(
             expected_tool=build_mcp_function(DOCKER_MOUNT_PREFIX, "exec"),
             server=PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
             tool=PromptEvalServer.UPSERT_PROMPT_TOOL,
             args=UpsertPromptInput(file_path="/workspace/prompt-v1.txt"),
         ),
+        # Step 4: Run critic on train example (file-set)
+        # Captures prompt_sha256 in state for reuse in Step 6 (validation eval)
         ExtractThenCall(
             expected_tool=build_mcp_function(
                 PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.UPSERT_PROMPT_TOOL
             ),
             output_type=UpsertPromptOutput,
-            make_next=lambda out: (
-                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
-                PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
-                RunCriticOnExampleInput(
-                    snapshot_slug=TEST_SPECIMEN_SLUG,
-                    files_hash=files_hash,
-                    prompt_sha256=out.prompt_sha256,
-                    max_turns=10,
-                ),
-            ),
+            make_next=make_train_critic_call,
         ),
+        # Step 5: Grade train critique
         ExtractThenCall(
             expected_tool=build_mcp_function(
                 PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL
@@ -141,11 +183,57 @@ def po_agent_steps():
                 RunGraderInput(critique_id=out.critique_id, max_turns=10),
             ),
         ),
-        Finish(
+        # Step 6: Run critic on validation snapshot (whole-snapshot with AllFilesScope)
+        # Uses captured prompt_sha256 from Step 4
+        ExtractThenCall(
             expected_tool=build_mcp_function(
                 PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.RUN_GRADER_TOOL
             ),
-            message="Done",
+            output_type=RunGraderOutput,
+            make_next=lambda out: (
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+                PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
+                RunCriticOnExampleInput(
+                    snapshot_slug=TEST_VALID_SLUG,
+                    scope=AllFilesScope(),  # Whole-snapshot (required for validation)
+                    prompt_sha256=state["prompt_sha256"],  # Reuse same prompt from Step 4
+                    max_turns=10,
+                ),
+            ),
+        ),
+        # Step 7: Grade validation critique
+        ExtractThenCall(
+            expected_tool=build_mcp_function(
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX, PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL
+            ),
+            output_type=RunCriticOutput,
+            make_next=lambda out: (
+                PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
+                PromptEvalServer.RUN_GRADER_TOOL,
+                RunGraderInput(critique_id=out.critique_id, max_turns=10),
+            ),
+        ),
+        # Step 8: Query validation results via get_validation_run_aggregates()
+        DockerExecCall(
+            [
+                "python",
+                "-c",
+                (
+                    "from adgn.props.agent_helpers import setup_agent_database; "
+                    "from adgn.props.db import get_session; "
+                    "from sqlalchemy import text; "
+                    "setup_agent_database(); "
+                    "with get_session() as session: "
+                    "    result = session.execute(text('SELECT * FROM get_validation_run_aggregates() ORDER BY grader_run_id DESC LIMIT 1')); "
+                    "    row = result.fetchone(); "
+                    "    print(f'validation_recall={row.recall if row else None}')"
+                ),
+            ],
+            timeout_ms=30000,
+        ),
+        # Step 9: Verify validation recall query succeeded (final step)
+        AssertDockerExecThenFinish(
+            expected_output="validation_recall=0.8", message="Validation recall query succeeded - found recall=0.8"
         ),
     ]
 
@@ -193,30 +281,23 @@ def grader_agent_steps():
     """
     # Import here to get constants
 
-    grade_input = {
-        "canonical_tp_coverage": [
-            {
-                "canonical_id": "test-issue",
-                "coverage": {
-                    "covered_by": [{"input_id": "test-issue", "credit": 1.0}],
-                    "recall_credit": 1.0,
-                    "rationale": "Test issue matches canonical TP.",
-                },
-            }
+    # Grader output using new coverage-based format with Pydantic models (minimal mock for integration test)
+    grade_input = GradeSubmitInput(
+        canonical_tp_coverage=[
+            TPCoverageEntry(
+                canonical_id=TruePositiveID("test-issue"),
+                coverage=CanonicalTPCoverage(
+                    covered_by=[IssueCoverageEntry(input_id=InputIssueID("test-issue"), credit=0.8)],
+                    recall_credit=0.8,
+                    rationale=Rationale("Test issue found with 80% coverage."),
+                ),
+            )
         ],
-        "canonical_fp_coverage": [],
-        "novel_critique_issues": [],
-        "reported_issue_ratios": {"tp": 1.0, "fp": 0.0, "unlabeled": 0.0},
-        "recall": 0.8,
-        "summary": "Good coverage of canonical issues.",
-    }
-    return [
-        MakeCall(
-            GraderCompositor.SUBMIT_PREFIX,
-            GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME,
-            GradeSubmitInput.model_validate(grade_input),
-        )
-    ]
+        canonical_fp_coverage=[],  # No false positives triggered
+        novel_critique_issues=[],  # No novel issues
+        summary=Rationale("Good coverage of canonical issues."),
+    )
+    return [MakeCall(GraderCompositor.SUBMIT_PREFIX, GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME, grade_input)]
 
 
 class SimpleMockClient(OpenAIModelProto):
@@ -260,15 +341,21 @@ async def test_full_workflow_po_agent_critic_grader(
 
     Tests the complete workflow: PO agent → run_critic → critic agent → run_grader → grader agent.
 
+    Workflow covered:
+    1. psql connectivity check (database access verification)
+    2. Train example evaluation (file-set with ExplicitFileScope)
+    3. Validation snapshot evaluation (whole-snapshot with AllFilesScope)
+    4. Query validation results via get_validation_run_aggregates()
+
     This test catches bugs like:
     - Naming collisions (run_critic tool vs run_critic function)
     - Tool name prefixing issues
     - Database schema problems
-    - RLS policy issues
-    - New workflow: docker_exec write_file → upsert_prompt → run_critic_on_example → run_grader
+    - RLS policy issues (validation snapshot visibility)
+    - Whole-snapshot vs file-set evaluation (AllFilesScope vs ExplicitFileScope)
 
     Set DUMP_REQUESTS env var to override dump directory (defaults to test tmp_path).
-    Uses test-fixtures/test-trivial specimen from test fixtures registry.
+    Uses test-fixtures/test-trivial (train) and test-fixtures/test-validation (valid) specimens.
     """
     po_runner = make_step_runner(steps=po_agent_steps)
     critic_runner = make_step_runner(steps=critic_agent_steps)
@@ -291,22 +378,50 @@ async def test_full_workflow_po_agent_critic_grader(
         grader_client=grader_client,
         docker_client=async_docker_client,
         out_dir=tmp_path,
+        target_metric=TargetMetric.WHOLE_REPO,
     )
 
     # Step runner validates all steps were executed
 
-    critic_runs = get_critic_runs_for_slug(TEST_SPECIMEN_SLUG)
-    assert_that(critic_runs, has_length(1), "Expected exactly one critic run")
-    critic_run = critic_runs[0]
-    assert_that(critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
+    # Verify train critique run
+    train_critic_runs = get_critic_runs_for_slug(TEST_TRAIN_SLUG)
+    assert_that(train_critic_runs, has_length(1), "Expected exactly one train critic run")
+    train_critic_run = train_critic_runs[0]
+    assert_that(train_critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
 
-    grader_runs = get_grader_runs_for_slug(TEST_SPECIMEN_SLUG)
-    assert_that(grader_runs, has_length(1), "Expected exactly one grader run")
-    grader_run = grader_runs[0]
-    assert_that(grader_run, has_properties(critique_id=equal_to(critic_run.critique_id), model=equal_to("fake-model")))
-    assert_that(grader_run.output, instance_of(DBGraderSuccess))
-    assert isinstance(grader_run.output, DBGraderSuccess)
-    assert_that(grader_run.output.recall, equal_to(0.8))
+    # Verify validation critique run
+    valid_critic_runs = get_critic_runs_for_slug(TEST_VALID_SLUG)
+    assert_that(valid_critic_runs, has_length(1), "Expected exactly one validation critic run")
+    valid_critic_run = valid_critic_runs[0]
+    assert_that(valid_critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
+
+    # Verify train grader run
+    train_grader_runs = get_grader_runs_for_slug(TEST_TRAIN_SLUG)
+    assert_that(train_grader_runs, has_length(1), "Expected exactly one train grader run")
+    train_grader_run = train_grader_runs[0]
+    assert_that(
+        train_grader_run,
+        has_properties(critique_id=equal_to(train_critic_run.critique_id), model=equal_to("fake-model")),
+    )
+    assert_that(train_grader_run.output, instance_of(DBGraderSuccess))
+    assert isinstance(train_grader_run.output, DBGraderSuccess)
+    # Check all found_credit values are 0.8 (from mock grader output)
+    assert_that(train_grader_run.output.occurrence_results, has_length(1))
+    assert_that(train_grader_run.output.occurrence_results[0].found_credit, equal_to(0.8))
+
+    # Verify validation grader run
+    valid_grader_runs = get_grader_runs_for_slug(TEST_VALID_SLUG)
+    assert_that(valid_grader_runs, has_length(1), "Expected exactly one validation grader run")
+    valid_grader_run = valid_grader_runs[0]
+    assert_that(
+        valid_grader_run,
+        has_properties(critique_id=equal_to(valid_critic_run.critique_id), model=equal_to("fake-model")),
+    )
+    assert_that(valid_grader_run.output, instance_of(DBGraderSuccess))
+    assert isinstance(valid_grader_run.output, DBGraderSuccess)
+    # Check all found_credit values are 0.8 (from mock grader output)
+    assert_that(valid_grader_run.output.occurrence_results, has_length(1))
+    assert_that(valid_grader_run.output.occurrence_results[0].found_credit, equal_to(0.8))
 
 
 @pytest.fixture
@@ -379,6 +494,7 @@ async def test_po_agent_psql_connectivity(
         grader_client=grader_client,
         docker_client=async_docker_client,
         out_dir=tmp_path,
+        target_metric=TargetMetric.WHOLE_REPO,
     )
 
     # Step runner validates that psql executed successfully and returned "1"

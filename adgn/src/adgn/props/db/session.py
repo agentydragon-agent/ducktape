@@ -32,12 +32,16 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 import logging
+from pathlib import Path
 
+from alembic import command
+from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
-from adgn.props.db import setup
-from adgn.props.db.config import DatabaseConfig, get_production_config
+from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.models import Base
 
 logger = logging.getLogger(__name__)
@@ -82,7 +86,7 @@ def init_db(config: DatabaseConfig | None = None) -> None:
         )
 
     if config is None:
-        config = get_production_config()
+        config = get_database_config()
 
     url = config.admin_url()
     logger.info(f"Connecting to database: {config.admin.host}:{config.admin.port}/{config.admin.database}")
@@ -125,9 +129,10 @@ def check_connection(timeout_secs: int = 2) -> None:
 
 
 def recreate_database() -> None:
-    """Recreate database from scratch (drop all + create agent_user + schema + RLS).
+    """Recreate database from scratch (drop all + schema + RLS).
 
     This is destructive: drops all existing tables, views, and policies.
+    Temporary database users are created per-agent as needed (not global roles).
 
     Must call init_db() first to establish connection as postgres superuser.
 
@@ -139,7 +144,6 @@ def recreate_database() -> None:
 
     logger.info("Recreating database from scratch...")
     _drop_all()
-    setup.create_agent_user(_engine)
     _create_schema()
     logger.info("Database recreation complete")
 
@@ -154,6 +158,8 @@ def _drop_all() -> None:
     existing_tables = set(inspector.get_table_names())
     our_tables = {table.name for table in Base.metadata.tables.values()}
 
+    logger.debug(f"_drop_all: existing_tables={existing_tables}, our_tables={our_tables}")
+
     if our_tables & existing_tables:
         logger.info("Dropping entire public schema and recreating...")
         with _engine.begin() as conn:
@@ -165,48 +171,73 @@ def _drop_all() -> None:
             conn.execute(text("GRANT ALL ON SCHEMA public TO public"))
         logger.info("Public schema dropped and recreated")
     else:
-        logger.debug("No tables to drop")
-
-
-def _grant_select_on_tables() -> None:
-    """Grant SELECT permission to agent_user on all tables."""
-    if _engine is None:
-        raise RuntimeError("Database not initialized.")
-
-    # Get all table names from our metadata
-    table_names = [table.name for table in Base.metadata.tables.values()]
-
-    if not table_names:
-        logger.debug("No tables to grant permissions on")
-        return
-
-    with _engine.begin() as conn:
-        for table_name in table_names:
-            conn.execute(text(f"GRANT SELECT ON TABLE {table_name} TO agent_user"))
-
-    logger.info(f"Granted SELECT permission on {len(table_names)} tables to agent_user")
+        logger.debug("No tables to drop - schema is clean")
 
 
 def _create_schema() -> None:
-    """Create tables (from ORM models) + RLS policies + views (idempotent)."""
+    """Create schema via Alembic migrations.
+
+    Runs Alembic migrations to create tables, RLS policies, views, and grants.
+    Used for test databases (production uses setup.py).
+    """
     if _engine is None:
         raise RuntimeError("Database not initialized.")
 
-    # Create tables from ORM models
-    logger.info("Creating tables from ORM models...")
-    Base.metadata.create_all(bind=_engine)
+    # Debug: Check what tables exist BEFORE running migrations
+    inspector = inspect(_engine)
+    existing_tables_before = set(inspector.get_table_names())
+    logger.debug(f"_create_schema BEFORE migration: existing_tables={existing_tables_before}")
 
-    # Grant SELECT permission to agent_user on all tables
-    # (in case default privileges didn't work or tables already existed)
-    _grant_select_on_tables()
+    # Check if alembic_version exists
+    with _engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT EXISTS (SELECT FROM pg_tables WHERE schemaname = 'public' AND tablename = 'alembic_version')")
+        )
+        has_alembic_before = result.scalar()
+        logger.debug(f"_create_schema BEFORE migration: alembic_version exists={has_alembic_before}")
 
-    # Enable RLS and create policies
-    setup.enable_rls(_engine)
+        if has_alembic_before:
+            result = conn.execute(text("SELECT version_num FROM alembic_version"))
+            version = result.scalar()
+            logger.debug(f"_create_schema BEFORE migration: current revision={version}")
 
-    # Create views
-    setup.create_views(_engine)
+    # Run Alembic migrations to create all schema objects
+    logger.info("Running Alembic migrations...")
 
-    logger.info("Schema creation complete")
+    # Enable verbose Alembic logging
+    logging.getLogger("alembic").setLevel(logging.DEBUG)
+
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
+
+    # Check what migrations exist
+    migrations_dir = Path(__file__).parent / "migrations" / "versions"
+    migration_files = list(migrations_dir.glob("*.py"))
+    logger.debug(f"Found {len(migration_files)} migration files: {[f.name for f in migration_files]}")
+
+    with _engine.begin() as conn:
+        config.attributes["connection"] = conn
+
+        # Check current revision BEFORE upgrade
+        script = ScriptDirectory.from_config(config)
+        context = MigrationContext.configure(conn)
+        current_rev = context.get_current_revision()
+        logger.debug(f"Current Alembic revision BEFORE upgrade: {current_rev}")
+        logger.debug(f"Target revision (head): {script.get_current_head()}")
+
+        command.upgrade(config, "head")
+
+        # Check current revision AFTER upgrade
+        context = MigrationContext.configure(conn)
+        current_rev_after = context.get_current_revision()
+        logger.debug(f"Current Alembic revision AFTER upgrade: {current_rev_after}")
+
+    # Debug: Check what tables exist AFTER running migrations
+    inspector = inspect(_engine)
+    existing_tables_after = set(inspector.get_table_names())
+    logger.debug(f"_create_schema AFTER migration: existing_tables={existing_tables_after}")
+
+    logger.info("Schema creation complete (via migrations)")
 
 
 @contextmanager

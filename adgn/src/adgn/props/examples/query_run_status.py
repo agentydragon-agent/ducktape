@@ -4,10 +4,11 @@ This script demonstrates how to check which runs succeeded vs exceeded turn limi
 helping identify prompts that cause the agent to get stuck.
 """
 
+from sqlalchemy import func
+
 from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun
-from sqlalchemy import func
 
 
 def main():

@@ -20,44 +20,44 @@ We maintain **TWO separate databases** to ensure tests never affect production d
 
 1. **Start PostgreSQL container**:
    ```bash
-   cd src/adgn/props
-   docker compose up -d
+   cd adgn
+   devenv up
    ```
 
-2. **Create databases and users**:
+   This starts the PostgreSQL container in the background (managed by devenv).
+
+2. **Initialize database**:
    ```bash
-   ./db/init_db.sh
+   # Create database, schema, RLS policies, and sync specimens
+   adgn-properties db recreate --yes
    ```
 
-   This creates:
-   - Both databases (eval_results, eval_results_test)
-   - Both users (admin_user, agent_user)
-   - Grants appropriate permissions
+   This automatically:
+   - Creates the `eval_results` database
+   - Runs Alembic migrations to create schema
+   - Applies RLS policies (temporary agent users created on-demand per task)
+   - Syncs specimen data from the specimens repository
 
-3. **Initialize database schema**:
+   For incremental updates (without dropping tables):
    ```bash
-   # Initialize tables, RLS policies, and sync specimens
    adgn-properties sync
-   ```
-
-   To drop and recreate everything (includes specimen sync, destructive):
-   ```bash
-   adgn-properties db-recreate --yes
    ```
 
 ## Database Users
 
-### admin_user
+### postgres (admin)
 - **Full access**: Create/drop tables, write data, read all data
 - **Purpose**: Migrations, data loading, test setup
 - **Bypasses RLS**: Can see all splits (train/valid/test)
-- **Connection**: Uses admin user credentials from environment
+- **Connection**: Via PGUSER/PGPASSWORD environment variables
 
-### agent_user
+### Temporary Agent Users (per-task)
 - **Read-only**: SELECT only (no INSERT/UPDATE/DELETE)
-- **RLS-restricted**: Can only see train/valid splits (NOT test)
-- **Purpose**: LLM agent queries during prompt optimization
-- **Connection**: Uses agent user credentials from environment
+- **RLS-restricted**: Task-specific data isolation (e.g., TRAIN-only for prompt optimizer)
+- **Purpose**: Enforce data isolation for agent tasks (prevents overfitting to validation data)
+- **Lifecycle**: Created on-demand, automatically cleaned up on task completion
+- **Examples**: `prompt_optimizer_agent_{uuid}`, `clustering_agent_{uuid}`
+- **Implementation**: See `TempUserManager` subclasses in `db/temp_user_manager.py`
 
 ## Running Tests
 

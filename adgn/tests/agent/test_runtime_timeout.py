@@ -8,28 +8,35 @@ from adgn.mcp.exec.models import BaseExecResult, Exited, TimedOut, make_exec_inp
 from adgn.mcp.stubs.typed_stubs import ToolStub
 from tests.conftest import make_container_opts
 
-RUNTIME_PREFIX = ContainerExecServer.RUNTIME_MOUNT_PREFIX
 
-
-def _runtime_spec_persession(docker_client, image: str = "alpine:3.19"):
+def _runtime_spec_persession(docker_client, image: str = "python:3.12-slim"):
     return ContainerExecServer(
-        make_container_opts(image, ephemeral=False),  # per-session container
         docker_client,
+        make_container_opts(image, ephemeral=False),  # per-session container
     )
 
 
 @pytest.mark.requires_docker
-async def test_runtime_per_session_timeout_then_next_call_ok(make_pg_client, async_docker_client) -> None:
-    async with make_pg_client({"runtime": _runtime_spec_persession(async_docker_client)}) as mcp_client:
-        # Cause a host-side timeout: sleep longer than timeout_ms
-        # Namespaced exec via Compositor
-        stub = ToolStub(mcp_client, build_mcp_function(RUNTIME_PREFIX, "exec"), BaseExecResult)
+async def test_runtime_per_session_timeout_then_next_call_ok(
+    compositor, compositor_client, async_docker_client
+) -> None:
+    """Test runtime timeout and recovery without policy gateway."""
+    # Mount runtime server and capture Mounted object
+    mounted_runtime = await compositor.mount_inproc("runtime", _runtime_spec_persession(async_docker_client))
 
-        res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
-        assert isinstance(res_timeout.exit, TimedOut)
+    # Cause a host-side timeout: sleep longer than timeout_ms
+    # Namespaced exec via Compositor
+    stub = ToolStub(
+        compositor_client,
+        build_mcp_function(mounted_runtime.prefix, mounted_runtime.server.exec_tool.name),
+        BaseExecResult,
+    )
 
-        # Next call should work; container should have been restarted
-        res_ok = await stub(make_exec_input(["/bin/echo", "-n", "ok"], timeout_ms=5000))
-        assert isinstance(res_ok.exit, Exited)
-        assert res_ok.exit.exit_code == 0
-        assert (res_ok.stdout or "") == "ok"
+    res_timeout = await stub(make_exec_input(["sh", "-lc", "sleep 3"], timeout_ms=500))
+    assert isinstance(res_timeout.exit, TimedOut)
+
+    # Next call should work; container should have been restarted
+    res_ok = await stub(make_exec_input(["/bin/echo", "-n", "ok"], timeout_ms=5000))
+    assert isinstance(res_ok.exit, Exited)
+    assert res_ok.exit.exit_code == 0
+    assert (res_ok.stdout or "") == "ok"

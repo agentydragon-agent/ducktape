@@ -6,8 +6,15 @@ from io import StringIO
 import json
 from typing import cast
 
-from mcp.types import CallToolResult
-from pydantic import BaseModel
+from mcp.types import (
+    CallToolResult,
+    Implementation,
+    InitializeResult,
+    ReadResourceResult,
+    ServerCapabilities,
+    TextResourceContents,
+)
+from pydantic import AnyUrl, BaseModel
 import pytest
 from rich.console import Console
 from syrupy.assertion import SnapshotAssertion
@@ -120,3 +127,94 @@ def test_docker_exec_with_custom_cwd_snapshot(snapshot: SnapshotAssertion, call_
 
     # Compare against snapshot
     assert rendered == snapshot
+
+
+# CompactDisplayHandler serialization tests (Pydantic Url/AnyUrl handling)
+
+
+def test_compact_display_handler_with_anyurl_in_result():
+    """Test that CompactDisplayHandler handles tool results with AnyUrl correctly.
+
+    This reproduces the original bug: InitializeResult contains serverInfo.url (AnyUrl),
+    and without mode='json', serialization would fail.
+    """
+
+    # Create a realistic MCP InitializeResult - this is what would come back from an MCP server
+    # The serverInfo.url field is Optional[AnyUrl], which caused the original bug
+    init_result = InitializeResult(
+        protocolVersion="2024-11-05",
+        capabilities=ServerCapabilities(),
+        serverInfo=Implementation(name="test-server", version="1.0.0"),
+    )
+
+    # The bug was: when we try to dump this without mode="json", it contains Url objects
+    # that can't be serialized by json.dumps() or compact_json Formatter
+    dumped_without_mode = init_result.model_dump()  # This would have Url objects
+
+    # Now create a CallToolResult with this as structured content (simulating a tool returning it)
+    result = CallToolResult(structuredContent=dumped_without_mode, isError=False, content=[])
+
+    # Create handler with a StringIO console to capture output
+    output_buffer = StringIO()
+    console = Console(file=output_buffer, force_terminal=False, width=120)
+    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_usage=False)
+
+    # Create a fake tool call and output event
+
+    call = ToolCall(call_id="test-123", name="mcp_initialize", args_json="{}")
+    handler._calls["test-123"] = call
+
+    output = ToolCallOutput(call_id="test-123", result=result)
+
+    # This used to raise "TypeError: Object of type Url is not JSON serializable"
+    # Now it should work because the handler uses to_jsonable_python()
+    handler.on_tool_result_event(output)
+    output_text = output_buffer.getvalue()
+
+    # Should have produced some output
+    assert len(output_text) > 0, "Handler should have produced output"
+    # Should contain the server name
+    assert "test-server" in output_text, f"Output should contain server name, got: {output_text}"
+
+
+def test_compact_display_handler_with_read_resource_result():
+    """Test that CompactDisplayHandler handles ReadResourceResult correctly.
+
+    ReadResourceResult was in the original error trace - it contains uri (AnyUrl).
+    """
+
+    # Create a ReadResourceResult - this is what resources_read_blocks returns
+    read_result = ReadResourceResult(
+        contents=[
+            TextResourceContents(
+                uri=AnyUrl("resource://docker/containers/snapshots/crush/2025-08-30-internal_db/info"),
+                mimeType="text/plain",
+                text="test content",
+            )
+        ]
+    )
+
+    # Dump without mode - this will have Url objects
+    dumped = read_result.model_dump()
+
+    # Create a CallToolResult with this as structured content
+    result = CallToolResult(structuredContent=dumped, isError=False, content=[])
+
+    # Create handler with StringIO console
+    output_buffer = StringIO()
+    console = Console(file=output_buffer, force_terminal=False, width=120)
+    handler = CompactDisplayHandler(max_lines=20, console=console, servers=None, show_usage=False)
+
+    call = ToolCall(call_id="test-456", name="resources_read_blocks", args_json='{"uri": "test"}')
+    handler._calls["test-456"] = call
+
+    output = ToolCallOutput(call_id="test-456", result=result)
+
+    # This used to raise "TypeError: Object of type Url is not JSON serializable"
+    handler.on_tool_result_event(output)
+    output_text = output_buffer.getvalue()
+    assert len(output_text) > 0, "Handler should have produced output"
+    # Should contain the resource URI or content
+    assert "resource://" in output_text or "test content" in output_text, (
+        f"Output missing expected content: {output_text}"
+    )

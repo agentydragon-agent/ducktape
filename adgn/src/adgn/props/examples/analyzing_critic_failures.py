@@ -85,7 +85,13 @@ def main():
         print("=== Grader Results ===\n")
         if isinstance(grader_run.output, DBGraderSuccess):
             grade = grader_run.output
-            print(f"Recall: {grade.recall:.1%}")
+            # Print absolute numbers instead of percentage
+            if grade.occurrence_results:
+                total_credit = sum(o.found_credit for o in grade.occurrence_results)
+                n_occurrences = len(grade.occurrence_results)
+                print(f"Occurrences: {total_credit:.1f} / {n_occurrences} found")
+            else:
+                print("Occurrences: 0 / 0 found")
 
             # Count coverage entries
             tp_count = len(grade.canonical_tp_coverage)
@@ -95,11 +101,6 @@ def main():
             print(f"TP Coverage Entries: {tp_count}")
             print(f"FP Coverage Entries: {fp_count}")
             print(f"Novel Issues: {novel_count}")
-
-            if grade.reported_issue_ratios:
-                print(f"Reported Issue Ratios: TP={grade.reported_issue_ratios.true_positive:.1%}, "
-                      f"FP={grade.reported_issue_ratios.false_positive:.1%}, "
-                      f"Unlabeled={grade.reported_issue_ratios.unlabeled:.1%}")
             print()
 
             # Show missed issues (TPs with zero recall credit)

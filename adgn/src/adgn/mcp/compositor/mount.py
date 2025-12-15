@@ -230,7 +230,7 @@ class Mount:
             # Create transport and client
             transport = transport_factory(spec)
             handler = child_handler_factory(self._prefix) if child_handler_factory else None
-            base_client = Client(transport, message_handler=handler, raise_on_error=True)
+            base_client = Client(transport, message_handler=handler)
             await stack.enter_async_context(base_client)
 
             # Create proxy

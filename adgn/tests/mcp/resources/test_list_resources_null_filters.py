@@ -9,7 +9,9 @@ from __future__ import annotations
 from hamcrest import assert_that, contains_inanyorder, has_length
 
 from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.server import ResourcesListArgs
+from tests.util.notifications import enable_resources_caps
 
 
 async def test_list_resources_with_null_server_filter(compositor, origin_with_recorder, typed_resources_client):
@@ -51,7 +53,6 @@ async def test_list_resources_filters_by_server_when_provided(compositor, origin
     await compositor.mount_inproc("origin", origin)
 
     # Create a second server without resources
-    from adgn.mcp.enhanced import EnhancedFastMCP
 
     other = EnhancedFastMCP("other")
     await compositor.mount_inproc("other", other)
@@ -71,8 +72,6 @@ async def test_list_resources_filters_by_server_when_provided(compositor, origin
 
 async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources_client):
     """Test that uri_prefix filter works correctly."""
-    from adgn.mcp.enhanced import EnhancedFastMCP
-    from tests.util.notifications import enable_resources_caps
 
     # Create server with multiple resources
     server = EnhancedFastMCP("test")

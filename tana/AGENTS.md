@@ -3,7 +3,7 @@
 Focused instructions for the Tana export toolkit that now lives as its own project.
 
 ## Environment
-- Requirements: direnv + devenv (see `.envrc`) and Python 3.11 managed by uv.
+- Requirements: direnv + devenv (see `.envrc`) and Python 3.12+ managed by uv.
 - First-time setup:
   - `cd tana`
   - `direnv allow`

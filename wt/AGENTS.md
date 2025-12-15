@@ -3,7 +3,7 @@
 Helpful pointers for working on the `wt` worktree manager: environment, commands, testing, layout, and gotchas. Read alongside `README.md` for product docs and `docs/ARCHITECTURE.md` for in-depth design notes.
 
 ## Environment and Tooling
-- Requirements: Nix + devenv, direnv, Python **3.11**+. `gitstatusd` must be installed separately for integration tests.
+- Requirements: Nix + devenv, direnv, Python **3.12**+. `gitstatusd` must be installed separately for integration tests.
 - First time setup:
   1. `cd wt`
   2. `direnv allow`

@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from adgn.props.db.temp_user_manager import TempUserCredentials
 
 
 @dataclass(frozen=True)
@@ -28,15 +32,19 @@ class DbConnectionConfig:
         """Construct PostgreSQL connection URL."""
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
-    def with_host(self, host: str, port: int | None = None) -> DbConnectionConfig:
-        """Return a copy with different host (and optionally port)."""
-        return DbConnectionConfig(
-            host=host,
-            port=port if port is not None else self.port,
-            user=self.user,
-            password=self.password,
-            database=self.database,
-        )
+    def to_env_dict(self) -> dict[str, str]:
+        """Convert connection config to PostgreSQL environment variables.
+
+        Returns:
+            Dictionary with PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
+        """
+        return {
+            "PGHOST": self.host,
+            "PGPORT": str(self.port),
+            "PGDATABASE": self.database,
+            "PGUSER": self.user,
+            "PGPASSWORD": self.password,
+        }
 
     def with_database(self, database: str) -> DbConnectionConfig:
         """Return a copy with different database name."""
@@ -44,62 +52,107 @@ class DbConnectionConfig:
             host=self.host, port=self.port, user=self.user, password=self.password, database=database
         )
 
+    def with_user(self, creds: TempUserCredentials) -> DbConnectionConfig:
+        """Return a copy with different user credentials.
+
+        For host-side access with temporary credentials:
+            async with ClusteringUserManager(config.admin, run_id) as creds:
+                user_config = config.admin.with_user(creds)
+
+        For container access, use DatabaseConfig.for_container_user() instead.
+        """
+        return DbConnectionConfig(
+            host=self.host, port=self.port, user=creds.username, password=creds.password, database=self.database
+        )
+
 
 @dataclass(frozen=True)
 class DatabaseConfig:
-    """Full database configuration with admin and agent access.
+    """Database configuration for both host-side and container contexts.
 
-    Stores raw configuration values from environment variables. The admin and agent
-    connection configs are computed properties that construct DbConnectionConfig on demand.
+    Host-side (orchestrator spawning containers):
+        - Needs container_name/container_port for Docker network routing
+        - Gets config from get_production_config() (PG* env vars)
+
+    Agent inside container:
+        - Already in Docker network, connects directly via host:port
+        - container_name/container_port should be None
+        - Gets config from agent helpers (PROPS_DB_* env vars)
     """
 
-    # Connection parameters (shared between admin and agent)
+    # Connection parameters
     host: str
     port: int
     database: str
-    container_name: str
+    container_name: str | None  # Required for host-side container routing, None for agents
+    container_port: int | None  # Required for host-side container routing, None for agents
 
-    # Admin credentials
-    admin_user: str
-    admin_password: str
-
-    # Agent credentials
-    agent_user: str
-    agent_password: str
+    # Credentials (may be admin or scoped user depending on context)
+    user: str
+    password: str
 
     @property
     def admin(self) -> DbConnectionConfig:
-        """Admin connection config (full privileges, host-side access)."""
+        """Connection config with credentials from this config (host-side access)."""
         return DbConnectionConfig(
-            host=self.host, port=self.port, user=self.admin_user, password=self.admin_password, database=self.database
-        )
-
-    @property
-    def agent(self) -> DbConnectionConfig:
-        """Agent connection config (restricted privileges, host-side access)."""
-        return DbConnectionConfig(
-            host=self.host, port=self.port, user=self.agent_user, password=self.agent_password, database=self.database
+            host=self.host, port=self.port, user=self.user, password=self.password, database=self.database
         )
 
     def admin_url(self) -> str:
-        """Construct admin connection URL (host-side access)."""
+        """Construct connection URL (host-side access)."""
         return self.admin.url()
 
-    def agent_url(self) -> str:
-        """Construct agent connection URL (host-side access)."""
-        return self.agent.url()
-
     @property
-    def agent_for_container(self) -> DbConnectionConfig:
-        """Agent connection config for container-to-container access within Docker network.
+    def admin_for_container(self) -> DbConnectionConfig:
+        """Connection config for container-to-container access.
 
-        Uses container_name:5432 instead of host:port for Docker network routing.
+        Uses container_name as host and container_port for Docker network communication.
+        Use this for privileged agents (like grader) that need full database access.
+
+        For scoped agents with temporary users, use for_container_user() instead.
+
+        TODO: Grader should have read-only access, not full admin privileges.
+
+        Raises:
+            ValueError: If container_name or container_port is None
         """
+        if self.container_name is None or self.container_port is None:
+            raise ValueError(
+                "container_name and container_port required for container routing. "
+                "This config is for agent contexts (already in container)."
+            )
         return DbConnectionConfig(
             host=self.container_name,
-            port=5432,
-            user=self.agent_user,
-            password=self.agent_password,
+            port=self.container_port,
+            user=self.user,
+            password=self.password,
+            database=self.database,
+        )
+
+    def for_container_user(self, creds: TempUserCredentials) -> DbConnectionConfig:
+        """Create container-accessible config with temporary user credentials.
+
+        Combines container_name and container_port (for Docker network) with temporary user credentials.
+        Use this for scoped agents (prompt optimizer, clustering, improvement).
+
+        Example:
+            async with PromptOptimizerUserManager(config, run_id) as creds:
+                container_config = config.for_container_user(creds)
+                env.update(container_config.to_env_dict())
+
+        Raises:
+            ValueError: If container_name or container_port is None
+        """
+        if self.container_name is None or self.container_port is None:
+            raise ValueError(
+                "container_name and container_port required for container routing. "
+                "This config is for agent contexts (already in container)."
+            )
+        return DbConnectionConfig(
+            host=self.container_name,
+            port=self.container_port,
+            user=creds.username,
+            password=creds.password,
             database=self.database,
         )
 
@@ -110,10 +163,9 @@ class DatabaseConfig:
             port=self.port,
             database=database,
             container_name=self.container_name,
-            admin_user=self.admin_user,
-            admin_password=self.admin_password,
-            agent_user=self.agent_user,
-            agent_password=self.agent_password,
+            container_port=self.container_port,
+            user=self.user,
+            password=self.password,
         )
 
 
@@ -127,29 +179,48 @@ def _get_required_env(name: str) -> str:
     return value
 
 
-def get_production_config() -> DatabaseConfig:
-    """Get production database configuration.
+def _get_optional_env(name: str) -> str | None:
+    """Get optional environment variable."""
+    return os.environ.get(name) or None
 
-    Environment variables (set by devenv.nix):
-        PROPS_DB_HOST: Database host
-        PROPS_DB_PORT: Database port
-        PROPS_DB_CONTAINER_NAME: Container name for Docker network access
-        PROPS_DB_ADMIN_USER: Admin username
-        PROPS_DB_ADMIN_PASSWORD: Admin password
-        PROPS_DB_AGENT_USER: Agent username
-        PROPS_DB_AGENT_PASSWORD: Agent password
-        PROPS_DB_NAME: Database name
+
+def get_database_config() -> DatabaseConfig:
+    """Get database configuration from environment variables.
+
+    Environment variables (set by devenv.nix or passed to containers):
+        Standard PostgreSQL client vars (required):
+            PGHOST: Database host
+            PGPORT: Database port
+            PGUSER: Username (admin or scoped user)
+            PGPASSWORD: Password
+            PGDATABASE: Database name
+
+        Project-specific (optional - for container routing):
+            PROPS_DB_CONTAINER_NAME: Container name for Docker network access
+            PROPS_DB_CONTAINER_PORT: Port inside container (for Docker network communication)
+
+    Two usage contexts:
+    1. Host-side (orchestrators spawning containers):
+       - All vars set, including PROPS_DB_*
+       - Used to create container configs with routing
+
+    2. Agent inside container:
+       - Only PG* vars set (PROPS_DB_* are None)
+       - Direct connection, no routing needed
 
     Raises:
-        ValueError: If any required env var not set (run from devenv shell)
+        ValueError: If required PG* env vars not set (run from devenv shell)
     """
+    container_name = _get_optional_env("PROPS_DB_CONTAINER_NAME")
+    container_port_str = _get_optional_env("PROPS_DB_CONTAINER_PORT")
+    container_port = int(container_port_str) if container_port_str else None
+
     return DatabaseConfig(
-        host=_get_required_env("PROPS_DB_HOST"),
-        port=int(_get_required_env("PROPS_DB_PORT")),
-        database=_get_required_env("PROPS_DB_NAME"),
-        container_name=_get_required_env("PROPS_DB_CONTAINER_NAME"),
-        admin_user=_get_required_env("PROPS_DB_ADMIN_USER"),
-        admin_password=_get_required_env("PROPS_DB_ADMIN_PASSWORD"),
-        agent_user=_get_required_env("PROPS_DB_AGENT_USER"),
-        agent_password=_get_required_env("PROPS_DB_AGENT_PASSWORD"),
+        host=_get_required_env("PGHOST"),
+        port=int(_get_required_env("PGPORT")),
+        database=_get_required_env("PGDATABASE"),
+        container_name=container_name,
+        container_port=container_port,
+        user=_get_required_env("PGUSER"),
+        password=_get_required_env("PGPASSWORD"),
     )

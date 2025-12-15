@@ -16,6 +16,7 @@ else:
     Page = playwright.Page
 
 
+@pytest.mark.timeout(10)
 def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_factory, make_step_runner):
     """Agent attempts a tool call → policy asks → UI shows pending → user approves → tool runs.
 

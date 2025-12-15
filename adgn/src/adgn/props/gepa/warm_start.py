@@ -10,7 +10,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, GraderRun as DBGraderRun, Prompt, Snapshot
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.gepa.fitness import compute_fitness
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
@@ -54,8 +54,8 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
     """
     # Build valset index: (snapshot_slug, files_hash) -> validation dataset index
     # This maps database keys to GEPA DataIds (list indices)
-    # files_hash is precomputed during sync (from resolved files)
-    valset_idx_by_key: dict[tuple[SnapshotSlug, str], int] = {
+    # files_hash is precomputed during sync (from resolved files), None for whole-snapshot examples
+    valset_idx_by_key: dict[tuple[SnapshotSlug, str | None], int] = {
         (snapshot_input.slug, snapshot_input.files_hash): idx for idx, snapshot_input in enumerate(valset)
     }
 
@@ -109,9 +109,7 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
                 continue
 
             # Store score keyed by valset index (will become DataId in GEPA checkpoint)
-            # Extract recall: 0.0 if max_turns_exceeded, otherwise from success variant
-            recall = grader_output.recall if isinstance(grader_output, DBGraderSuccess) else 0.0
-            prompt_to_scores[prompt_sha][val_idx] = recall
+            prompt_to_scores[prompt_sha][val_idx] = compute_fitness(grader_output)
 
         if skipped_no_grader_output > 0:
             logger.warning(

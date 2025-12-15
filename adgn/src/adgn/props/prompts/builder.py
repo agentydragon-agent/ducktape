@@ -5,12 +5,10 @@ from pydantic import TypeAdapter
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.models import (
-    CanonicalFPCoverage,
-    CanonicalTPCoverage,
     CritiqueInputIssue,
     KnownFalsePositive,
-    NovelIssueReasoning,
-    ReportedIssueRatios,
+    OccurrenceMatch,
+    OccurrenceResult,
     TruePositiveIssue,
 )
 from adgn.props.models.true_positive import LineRange, Occurrence
@@ -46,19 +44,11 @@ def build_grade_from_json_prompt(
 ) -> str:
     """Compose grader prompt that consumes structured JSON and requires submit via grader_submit."""
     schemas_json = build_input_schemas_json(
-        [
-            Occurrence,
-            LineRange,
-            ReportedIssue,
-            CriticSubmitPayload,
-            CanonicalTPCoverage,
-            CanonicalFPCoverage,
-            NovelIssueReasoning,
-            ReportedIssueRatios,
-        ]
+        [Occurrence, LineRange, ReportedIssue, CriticSubmitPayload, OccurrenceResult, OccurrenceMatch]
     )
 
     # Serialize lists to compact JSON strings before template rendering
+    # Note: The TruePositiveIssue model already includes occurrence_id field in occurrences
     canonical_json = compact_json_serialize(
         TypeAdapter(list[TruePositiveIssue]).dump_python(true_positive_issues, mode="json")
     )

@@ -1,31 +1,29 @@
 """Tests for the query_run_status example script."""
 
-from unittest.mock import patch
+import re
+
+import pytest
 
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun
 
 
-def test_query_run_status_with_data(synced_test_db, capsys):
+def test_query_run_status_with_data(synced_test_db, mock_agent_setup, capsys):
     """Test that query_run_status produces reasonable output with run data."""
-    from adgn.props.examples.query_run_status import main
+    from adgn.props.examples.query_run_status import main  # noqa: PLC0415
 
     # Verify we have critic runs and check status distribution
     with get_session() as session:
         critic_runs = session.query(CriticRun).filter(CriticRun.output.isnot(None)).all()
 
         if not critic_runs:
-            import pytest
-
             pytest.skip("No critic runs with output in synced_test_db")
 
         # Check if we have any success or max_turns_exceeded runs
         has_success = any(run.output.get("tag") == "success" for run in critic_runs)
         has_max_turns = any(run.output.get("tag") == "max_turns_exceeded" for run in critic_runs)
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_run_status.setup_agent_database"):
-        main()
+    main()
 
     # Capture output
     captured = capsys.readouterr()
@@ -42,8 +40,6 @@ def test_query_run_status_with_data(synced_test_db, capsys):
         assert "max_turns_exceeded:" in output, "Expected 'max_turns_exceeded:' status count in output"
 
     # Verify numeric counts appear (at least one digit for status counts)
-    import re
-
     # Should have status counts like "success: 5" or "max_turns_exceeded: 2"
     assert re.search(r"(success|max_turns_exceeded):\s+\d+", output), "Expected status counts with numbers in output"
 
@@ -51,13 +47,11 @@ def test_query_run_status_with_data(synced_test_db, capsys):
     assert "Prompts with most max_turns_exceeded" in output
 
 
-def test_query_run_status_empty_database(test_db, capsys):
+def test_query_run_status_empty_database(test_db, mock_agent_setup, capsys):
     """Test that query_run_status handles empty database gracefully."""
-    from adgn.props.examples.query_run_status import main
+    from adgn.props.examples.query_run_status import main  # noqa: PLC0415
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_run_status.setup_agent_database"):
-        main()
+    main()
 
     captured = capsys.readouterr()
     output = captured.out

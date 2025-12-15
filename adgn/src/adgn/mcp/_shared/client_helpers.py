@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-import json
 
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from mcp import types as mcp_types
+import pydantic_core
 
 from adgn.mcp._shared.calltool import fastmcp_to_mcp_result
 
@@ -30,7 +30,7 @@ def extract_error_detail(res: mcp_types.CallToolResult) -> str | None:
                     detail = val
                     break
             if detail is None:
-                detail = json.dumps(sc, ensure_ascii=False)[:200]
+                detail = pydantic_core.to_json(sc, fallback=str).decode("utf-8")[:200]
         if not detail:
             texts = extract_text_blocks(res.content or [])
             if texts:

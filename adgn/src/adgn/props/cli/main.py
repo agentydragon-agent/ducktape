@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from importlib import resources
 import logging
 from pathlib import Path
+import shutil
 import tempfile
 from typing import Annotated
 from uuid import UUID
@@ -32,24 +33,25 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_analyze_exec import cmd_analyze_exec
 from adgn.props.cli.cmd_classify_noops import cmd_classify_noops
+from adgn.props.cli.cmd_cluster_unknowns import app as cluster_unknowns_app
 from adgn.props.cli.cmd_db import db_app
 from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
 from adgn.props.cli.cmd_grade_validation import cmd_grade_validation
 from adgn.props.cli.cmd_snapshot import snapshot_app
 from adgn.props.cli.cmd_speak_with_dead import cmd_speak_with_dead
-from adgn.props.cli.cmd_stats import cmd_stats
+from adgn.props.cli.cmd_stats import stats_app
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.cli.shared import BuildOptions, build_cmd, filter_files
 from adgn.props.cluster_unknowns import cluster_unknowns
 from adgn.props.critic.critic import resolve_critic_scope, run_critic
 from adgn.props.critic.models import CriticInput, CriticSuccess
 from adgn.props.db import get_session, init_db
+from adgn.props.db.config import get_database_config
 from adgn.props.db.datapoints import get_examples_for_split
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, GraderRun as DBGraderRun, Prompt, Snapshot
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.query_builders import query_prompt_performance_stats
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.query_builders import query_prompt_performance_stats, query_recall_by_example
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.eval_harness import run_all_evals
@@ -65,14 +67,12 @@ from adgn.props.prompt_improve.improve_agent import (
     run_improvement_agent,
 )
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
+from adgn.props.prompt_optimize.target_metric import TargetMetric
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.prompts.util import build_standard_context, get_templates_env
 from adgn.props.runs_context import RunsContext
 from adgn.props.splits import Split
-
-# Reduce Rich traceback verbosity for CLI errors
-rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,7 @@ app = TyperDI(help="adgn-properties — properties tooling", add_completion=Fals
 # Subcommand groups
 app.add_typer(db_app, name="db")
 app.add_typer(snapshot_app, name="snapshot")
+app.add_typer(cluster_unknowns_app, name="cluster-unknowns")
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top
@@ -110,8 +111,12 @@ def _init_logging_and_db(
     # First, configure logging via the shared callback
     _logging_callback(log_output=log_output, log_level=log_level)
 
-    # Reduce Rich traceback verbosity for CLI errors
-    rich_traceback_install(show_locals=False, max_frames=12, extra_lines=1, width=100)
+    # Suppress verbose OpenAI HTTP request/response logging (too noisy at DEBUG level)
+    logging.getLogger("openai.http").setLevel(logging.WARNING)
+    logging.getLogger("openai._base_client").setLevel(logging.WARNING)
+
+    # Configure Rich traceback for CLI errors (increased detail for debugging)
+    rich_traceback_install(show_locals=True, max_frames=50, extra_lines=2, width=120)
 
     # Initialize database once at CLI entry (uses production config from env vars)
     init_db()
@@ -153,61 +158,70 @@ async def _run_snapshot_minicodex_async(
     hydrator: SnapshotHydrator,
     docker_client: aiodocker.Docker,
 ) -> int:
-    # Hydrate snapshot source code (issues loaded from DB elsewhere)
-    async with hydrator.hydrate(snapshot) as hydrated:
-        supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
+    # Get available files from database (no hydration)
+    with get_session() as session:
+        snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
+        available_files = snapshot_obj.files_with_issues()
 
-        # Filter files if requested (returns CriticScopeSpec: sentinel or explicit set)
-        files_spec = filter_files(hydrated.all_discovered_files, files)
+    supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
 
-        # Resolve files for prompt rendering
-        resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
+    # Filter files if requested (returns CriticScopeSpec: sentinel or explicit set)
+    # Convert set[Path] to dict for filter_files (which expects Mapping)
+    available_files_dict = dict.fromkeys(available_files)
+    files_spec = filter_files(available_files_dict, files)
 
-        # Load preset template based on mode
-        preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
-        prompt_raw = _load_preset_text(preset_name)
+    # Resolve files for prompt rendering
+    resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
 
-        compositor = PropertiesDockerCompositor(hydrated.content_root, docker_client, mount_properties=True)
+    # Load preset template based on mode
+    preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
+    prompt_raw = _load_preset_text(preset_name)
+
+    # Create temporary workspace for compositor (only used for rendering, not execution)
+    tmpdir = Path(tempfile.mkdtemp(prefix="props_cli_workspace_"))
+    try:
+        compositor = PropertiesDockerCompositor(tmpdir, docker_client, mount_properties=True, hydrator=hydrator)
         prompt = _render_prompt_with_context(
             prompt_raw, compositor=compositor, files=resolved_files, supplemental_text=supplemental_text
         )
+    finally:
+        # Clean up temp workspace
+        shutil.rmtree(tmpdir, ignore_errors=True)
 
-        # Dry-run: save prompt and exit (before any agent/compositor setup)
-        if dry_run:
-            tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-            tmpdir.mkdir(parents=True, exist_ok=True)
-            prompt_file = tmpdir / f"codex_prompt_snapshot_{mode}.md"
-            prompt_file.write_text(prompt, encoding="utf-8")
-            typer.echo(f"Prompt saved to: {prompt_file}")
-            return 0
-
-        # Use run_critic for structured execution and DB persistence
-        critic_output, _critic_run_id, _critique_id = await run_critic(
-            input_data=CriticInput(
-                snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
-            ),
-            client=client,
-            content_root=hydrated.content_root,
-            prompt_optimization_run_id=None,
-            docker_client=docker_client,
-            mount_properties=True,
-            verbose=True,
-            max_turns=100,
-        )
-
-        # Handle max turns exceeded
-        if not isinstance(critic_output, CriticSuccess):
-            typer.echo("Error: Critic exceeded max turns limit", err=True)
-            return 1
-
-        # Output final message if requested
-        if output_final_message:
-            output_final_message.write_text(critic_output.result.model_dump_json(indent=2), encoding="utf-8")
-
-        # Display results
-        if not final_only:
-            Console().print(render_to_rich(critic_output.result))
+    # Dry-run: save prompt and exit (before any agent/compositor setup)
+    if dry_run:
+        prompt_dir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+        prompt_dir.mkdir(parents=True, exist_ok=True)
+        prompt_file = prompt_dir / f"codex_prompt_snapshot_{mode}.md"
+        prompt_file.write_text(prompt, encoding="utf-8")
+        typer.echo(f"Prompt saved to: {prompt_file}")
         return 0
+
+    # Use run_critic for structured execution and DB persistence
+    critic_output, _critic_run_id, _critique_id = await run_critic(
+        input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)),
+        client=client,
+        hydrator=hydrator,
+        prompt_optimization_run_id=None,
+        docker_client=docker_client,
+        mount_properties=True,
+        verbose=True,
+        max_turns=100,
+    )
+
+    # Handle max turns exceeded
+    if not isinstance(critic_output, CriticSuccess):
+        typer.echo("Error: Critic exceeded max turns limit", err=True)
+        return 1
+
+    # Output final message if requested
+    if output_final_message:
+        output_final_message.write_text(critic_output.result.model_dump_json(indent=2), encoding="utf-8")
+
+    # Display results
+    if not final_only:
+        Console().print(render_to_rich(critic_output.result))
+    return 0
 
 
 @app.command("snapshot-discover")
@@ -269,6 +283,12 @@ async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None 
 @app.command("prompt-optimize")
 @async_run
 async def prompt_optimize(
+    target_metric: Annotated[
+        TargetMetric,
+        typer.Option(
+            help="Terminal metric mode (REQUIRED): 'whole-repo' (black-box validation, only full-snapshot) or 'targeted' (allows per-file validation examples)"
+        ),
+    ],
     budget: float = typer.Option(50.0, "--budget", help="$ budget for optimization"),
     optimizer_model: str = opt.OPT_OPTIMIZER_MODEL,
     critic_model: str = opt.OPT_CRITIC_MODEL,
@@ -287,6 +307,7 @@ async def prompt_optimize(
             critic_client=build_client(critic_model),
             grader_client=build_client(grader_model),
             docker_client=docker_client,
+            target_metric=target_metric,
             verbose=verbose,
         )
     finally:
@@ -320,43 +341,29 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, prompt_sha256_param: str, limit: int) -> list[tuple[str, str]]:
+    def select_pareto_examples(session, prompt_sha256_param: str, limit: int) -> list[tuple[SnapshotSlug, str | None]]:
         """Select Pareto-optimal training examples for a prompt."""
         all_train_examples = get_examples_for_split(session, Split.TRAIN)
         if not all_train_examples:
             raise ValueError("No training examples found")
 
-        # Query grader runs for this prompt on training examples
-        grader_runs = (
-            session.query(DBGraderRun, DBCriticRun)
-            .join(DBCriticRun, DBGraderRun.critique_id == DBCriticRun.critique_id)
-            .filter(
-                DBCriticRun.prompt_sha256 == prompt_sha256_param,
-                DBCriticRun.snapshot_slug.in_([ex.slug for ex in all_train_examples]),
-            )
-            .all()
+        # Query occurrence-weighted recall per example using helper
+        train_snapshot_slugs = [ex.slug for ex in all_train_examples]
+        results = query_recall_by_example(
+            session, prompt_sha256=prompt_sha256_param, snapshot_slugs=train_snapshot_slugs
         )
 
-        if not grader_runs:
+        if not results:
             logger.warning(
                 f"No grader runs found for prompt {prompt_sha256_param[:12]}..., using first {limit} examples"
             )
             return [(ex.slug, ex.files_hash) for ex in all_train_examples[:limit]]
 
-        # Extract recall scores for each (snapshot_slug, files_hash)
-        example_scores: dict[tuple[str, str], float] = {}
-        for grader_run, critic_run in grader_runs:
-            key = (critic_run.snapshot_slug, critic_run.files_hash)
-            if isinstance(grader_run.output, DBGraderSuccess):
-                recall = grader_run.output.recall
-                if key not in example_scores or recall > example_scores[key]:
-                    example_scores[key] = recall
-
-        if not example_scores:
-            logger.warning(
-                f"No successful grader runs for prompt {prompt_sha256_param[:12]}..., using first {limit} examples"
-            )
-            return [(ex.slug, ex.files_hash) for ex in all_train_examples[:limit]]
+        # Build example scores dict
+        example_scores: dict[tuple[SnapshotSlug, str | None], float] = {}
+        for row in results:
+            key = (row.snapshot_slug, row.files_hash)
+            example_scores[key] = row.recall
 
         # Sort by recall descending and take top N
         sorted_examples = sorted(example_scores.items(), key=lambda x: x[1], reverse=True)
@@ -481,7 +488,8 @@ async def prompt_improve_cmd(
         table.add_column("Snapshot", style="cyan")
         table.add_column("Files Hash", style="dim")
         for slug, files_hash in example_keys[:5]:
-            table.add_row(slug, files_hash[:8] + "...")
+            hash_display = (files_hash[:8] + "...") if files_hash else "whole-snapshot"
+            table.add_row(slug, hash_display)
         if len(example_keys) > 5:
             table.add_row("[dim]...[/dim]", f"[dim](+{len(example_keys) - 5} more)[/dim]")
         console.print(table)
@@ -494,6 +502,7 @@ async def prompt_improve_cmd(
     console.print()
 
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         result = await run_improvement_agent(
             examples=example_keys,
@@ -502,6 +511,7 @@ async def prompt_improve_cmd(
             model=model,
             hydrator=hydrator,
             docker_client=docker_client,
+            db_config=db_config,
             output_dir=out_dir,
             verbose=verbose,
         )
@@ -566,17 +576,26 @@ async def snapshot_grade(
     critique_id: str = typer.Argument(..., help="Critique ID (UUID) from database"),
     model: str = opt.OPT_MODEL,
     verbose: bool = opt.OPT_VERBOSE,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
     """Grade a critique by database ID against canonical findings.
 
     Fetches critique from database, executes grader, and persists results.
     """
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         # Query database and grade critique in single session
         with get_session() as session:
             grader_run_id = await grade_critique_by_id(
-                session, UUID(critique_id), build_client(model), docker_client, verbose=verbose, max_turns=200
+                session,
+                UUID(critique_id),
+                build_client(model),
+                docker_client,
+                hydrator,
+                db_config,
+                verbose=verbose,
+                max_turns=200,
             )
             db_grader_run = session.get(DBGraderRun, grader_run_id)
             if db_grader_run is None:
@@ -596,7 +615,10 @@ async def snapshot_grade(
 @app.command("grade-missing")
 @async_run
 async def cmd_grade_missing(
-    grader_model: str = opt.OPT_GRADER_MODEL, max_parallel: int = opt.OPT_MAX_PARALLEL, verbose: bool = opt.OPT_VERBOSE
+    grader_model: str = opt.OPT_GRADER_MODEL,
+    max_parallel: int = opt.OPT_MAX_PARALLEL,
+    verbose: bool = opt.OPT_VERBOSE,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
     """Grade all critiques missing grader runs for the specified model.
 
@@ -604,6 +626,7 @@ async def cmd_grade_missing(
     in parallel with semaphore-limited concurrency.
     """
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         # Find critique IDs missing grader runs for this model
         with get_session() as session:
@@ -644,6 +667,8 @@ async def cmd_grade_missing(
                             critique_id,
                             build_client(grader_model),
                             docker_client,
+                            hydrator,
+                            db_config,
                             verbose=verbose,
                             max_turns=200,
                         )
@@ -681,7 +706,9 @@ async def cmd_fix(
     docker_client = aiodocker.Docker()
     try:
         schemas_json = build_input_schemas_json([Occurrence, LineRange])
-        compositor = PropertiesDockerCompositor(workdir, docker_client, mount_properties=True)
+        compositor = PropertiesDockerCompositor(
+            workdir, docker_client, mount_properties=True, hydrator=SnapshotHydrator.from_env()
+        )
         prompt = build_enforce_prompt(scope, compositor=compositor, schemas_json=schemas_json)
         cmd = build_cmd(
             model,
@@ -757,8 +784,8 @@ app.command("detector-coverage")(cmd_detector_coverage)
 # GEPA command
 app.command("gepa")(cmd_gepa)
 
-# Stats command
-app.command("stats")(cmd_stats)
+# Stats command group
+app.add_typer(stats_app, name="stats")
 
 # Analyze exec commands
 app.command("analyze-exec")(cmd_analyze_exec)
@@ -870,48 +897,59 @@ async def cmd_run(
         else:
             prompt_raw = prompt_text or ""
 
-        # Hydrate snapshot and run
-        async with hydrator.hydrate(snapshot) as hydrated:
+        # Get available files from database (no hydration)
+        with get_session() as session:
+            snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
+            available_files = snapshot_obj.files_with_issues()
+
+        # Filter files if requested
+        available_files_dict = dict.fromkeys(available_files)
+        files_spec = filter_files(available_files_dict, files)
+        resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
+
+        # Create temporary workspace for compositor (only used for rendering, not execution)
+        workspace_tmpdir = Path(tempfile.mkdtemp(prefix="props_cli_workspace_"))
+        try:
             compositor = PropertiesDockerCompositor(
-                hydrated.content_root, docker_client, mount_properties=True, ephemeral=False
+                workspace_tmpdir, docker_client, mount_properties=True, hydrator=hydrator, ephemeral=False
             )
-            files_spec = filter_files(hydrated.all_discovered_files, files)
-            resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
-
             prompt = _render_prompt_with_context(prompt_raw, compositor=compositor, files=resolved_files)
+        finally:
+            # Clean up temp workspace
+            shutil.rmtree(workspace_tmpdir, ignore_errors=True)
 
-            if dry_run:
-                tmpdir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-                tmpdir.mkdir(parents=True, exist_ok=True)
-                prompt_path = tmpdir / f"codex_prompt_{snapshot}.md"
-                prompt_path.write_text(prompt, encoding="utf-8")
-                typer.echo(f"Prompt saved to: {prompt_path}")
-                return
+        if dry_run:
+            prompt_dir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
+            prompt_dir.mkdir(parents=True, exist_ok=True)
+            prompt_path = prompt_dir / f"codex_prompt_{snapshot}.md"
+            prompt_path.write_text(prompt, encoding="utf-8")
+            typer.echo(f"Prompt saved to: {prompt_path}")
+            return
 
-            # Run critic with DB persistence
-            critic_output, critic_run_id, critique_id = await run_critic(
-                input_data=CriticInput(
-                    snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
-                ),
-                client=build_client(model),
-                content_root=hydrated.content_root,
-                prompt_optimization_run_id=None,
-                docker_client=docker_client,
-                mount_properties=True,
-                verbose=True,
-                max_lines=max_lines,
-                max_turns=100,
-            )
+        # Run critic with DB persistence
+        critic_output, critic_run_id, critique_id = await run_critic(
+            input_data=CriticInput(
+                snapshot_slug=snapshot, files=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
+            ),
+            client=build_client(model),
+            hydrator=hydrator,
+            prompt_optimization_run_id=None,
+            docker_client=docker_client,
+            mount_properties=True,
+            verbose=True,
+            max_lines=max_lines,
+            max_turns=100,
+        )
 
-            # Print results
-            typer.echo("\n=== Critique Complete ===")
-            typer.echo(f"Critic Run ID: {critic_run_id}")
-            typer.echo(f"Critique ID: {critique_id}")
-            if isinstance(critic_output, CriticSuccess):
-                typer.echo(f"Issues found: {len(critic_output.result.issues)}")
-                typer.echo(f"\n{critic_output.result.model_dump_json(indent=2)}")
-            else:
-                typer.echo("Critic exceeded max turns limit", err=True)
+        # Print results
+        typer.echo("\n=== Critique Complete ===")
+        typer.echo(f"Critic Run ID: {critic_run_id}")
+        typer.echo(f"Critique ID: {critique_id}")
+        if isinstance(critic_output, CriticSuccess):
+            typer.echo(f"Issues found: {len(critic_output.result.issues)}")
+            typer.echo(f"\n{critic_output.result.model_dump_json(indent=2)}")
+        else:
+            typer.echo("Critic exceeded max turns limit", err=True)
     finally:
         await docker_client.close()
 

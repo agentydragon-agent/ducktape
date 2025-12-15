@@ -1,24 +1,28 @@
+from __future__ import annotations
+
 import asyncio
 from collections.abc import Iterator, Sequence
 from enum import StrEnum
 import logging
-from typing import Annotated, Final, Literal, cast
+from typing import TYPE_CHECKING, Annotated, Final, Literal, cast
 
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
-from fastmcp.server.server import add_resource_prefix
 from fastmcp.tools import FunctionTool
 from mcp import types as mcp_types
 from mcp.shared.exceptions import McpError
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.mcp._shared.resources import add_resource_prefix
 from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
-from adgn.mcp.compositor.server import Compositor, MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary
 from adgn.mcp.snapshots import RunningServerEntry
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+
+if TYPE_CHECKING:
+    from adgn.mcp.compositor.server import Compositor, MountEvent
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
@@ -455,7 +459,13 @@ class ResourcesServer(EnhancedFastMCP):
             uri_value = ANY_URL.validate_python(prefixed)
             # Call compositor method that converts FastMCP types to MCP protocol types
             # (resources server is tightly coupled to compositor for subscriptions/notifications/metadata)
-            contents = await self._compositor.read_resource_contents(uri_value)
+            try:
+                contents = await self._compositor.read_resource_contents(uri_value)
+            except McpError as e:
+                raise ToolError(
+                    f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
+                    f"Use list_resources to see available resources. Original error: {e}"
+                )
             max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
             return _build_window_payload(contents, input.start_offset, max_bytes)
 
@@ -478,7 +488,13 @@ class ResourcesServer(EnhancedFastMCP):
             """
             prefixed = add_resource_prefix(input.uri, input.server)
             uri_value = ANY_URL.validate_python(prefixed)
-            contents = await self._compositor.read_resource_contents(uri_value)
+            try:
+                contents = await self._compositor.read_resource_contents(uri_value)
+            except McpError as e:
+                raise ToolError(
+                    f"The MCP server '{input.server}' does not provide the resource '{input.uri}'. "
+                    f"Use list_resources to see available resources. Original error: {e}"
+                )
 
             max_bytes = input.max_bytes if input.max_bytes is not None else DEFAULT_MAX_BYTES
             result_blocks: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents | TruncatedBlock] = []
@@ -682,7 +698,10 @@ class ResourcesServer(EnhancedFastMCP):
 
         # Register lifecycle listeners
         async def _on_mount_change(name: str, action: MountEvent) -> None:
-            if action is not MountEvent.UNMOUNTED:
+            # Import at runtime to avoid circular import
+            from adgn.mcp.compositor.server import MountEvent as MountEventEnum
+
+            if action is not MountEventEnum.UNMOUNTED:
                 return
             # Server is being unmounted. Do not attempt remote unsubscriptions; the
             # Compositor tears down underlying sessions. Update local records only.

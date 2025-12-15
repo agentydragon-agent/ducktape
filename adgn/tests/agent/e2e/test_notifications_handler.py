@@ -12,6 +12,7 @@ from tests.support.steps import ApprovalPolicyAdminSetPolicyCall, AssistantMessa
 
 
 @pytest.mark.requires_docker
+@pytest.mark.timeout(35)
 async def test_notifications_handler_in_container_inserts_system_message(
     docker_client,
     async_docker_client,
@@ -38,7 +39,6 @@ async def test_notifications_handler_in_container_inserts_system_message(
         model="test-model",
         client_factory=lambda _model: client,
         with_ui=False,
-        docker_client=docker_client,
         async_docker_client=async_docker_client,
         initial_policy=policy_allow_all,
     )

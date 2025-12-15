@@ -106,7 +106,11 @@ Training examples are **automatically generated** from `expect_caught_from` data
   - If `tp.occurrences[0].expect_caught_from = [[A, B]]`, generates one example for `{A, B}`
 - Plus one full-specimen example (all files with issues)
 
-**For VALID/TEST split snapshots:**
+**For VALID split snapshots:**
+- **Whole-Repo Mode:** Only full-specimen example (terminal metric, black-box validation)
+- **Targeted Mode:** Same as TRAIN (per-file + full-specimen) for easier iteration
+
+**For TEST split snapshots:**
 - Only full-specimen example (terminal metric)
 
 **Example:** Given a snapshot with:

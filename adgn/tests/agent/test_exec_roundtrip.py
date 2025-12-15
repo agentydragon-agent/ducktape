@@ -31,19 +31,19 @@ async def _assert_exec_echo(sess) -> None:
 
 
 @pytest.mark.requires_docker
-async def test_exec_roundtrip_echo(pg_client_box) -> None:
-    """Spin up real Docker container and roundtrip an echo via exec."""
-    await _assert_exec_echo(pg_client_box)
+async def test_exec_roundtrip_echo(mcp_client_box) -> None:
+    """Spin up real Docker container and roundtrip an echo via exec without policy gateway."""
+    await _assert_exec_echo(mcp_client_box)
 
 
 @pytest.mark.live_llm
 @pytest.mark.skipif(os.environ.get("OPENAI_API_KEY") is None, reason="Requires OpenAI API key")
-async def test_live_llm_exec_echo(pg_client_box) -> None:
+async def test_live_llm_exec_echo(mcp_client_box) -> None:
     """End-to-end: real LLM is instructed to call docker exec to print hello and return exactly it."""
     model_name = os.environ.get("OPENAI_MODEL", "gpt-5")
     client = build_client(model_name)
     agent = await Agent.create(
-        mcp_client=pg_client_box, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
+        mcp_client=mcp_client_box, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
     agent.insert_message(
         SystemMessage.text(

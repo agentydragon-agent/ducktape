@@ -4,3 +4,10 @@ test-fixtures/test-trivial:
     root: code
   split: train
   bundle: null
+
+test-fixtures/test-validation:
+  source:
+    vcs: local
+    root: code
+  split: valid
+  bundle: null

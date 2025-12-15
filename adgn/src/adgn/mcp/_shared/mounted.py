@@ -1,22 +1,21 @@
 """Mounted server wrapper bundling prefix and server instance."""
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, TypeVar
+from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
+from pydantic.networks import AnyUrl
 
 from adgn.mcp._shared.naming import build_mcp_function
+from adgn.mcp._shared.resources import add_resource_prefix
 from adgn.mcp._shared.types import MCPMountPrefix
 
 if TYPE_CHECKING:
     from fastmcp.tools import FunctionTool
 
 
-T = TypeVar("T", bound=FastMCP)
-
-
 @dataclass
-class Mounted(Generic[T]):
+class Mounted[T: FastMCP]:
     """A mounted server with its mount prefix and instance.
 
     This bundles the mount prefix and server together, eliminating the need
@@ -53,3 +52,21 @@ class Mounted(Generic[T]):
             submit_tool_name = comp.lint_submit.tool_name(comp.lint_submit.server.submit_result_tool)
         """
         return build_mcp_function(self.prefix, tool.name)
+
+    def add_resource_prefix(self, uri: str | AnyUrl) -> str:
+        """Add this mount's prefix to a resource URI.
+
+        Wrapper around FastMCP's add_resource_prefix using this mount's prefix.
+
+        Args:
+            uri: Resource URI (str or Pydantic AnyUrl)
+
+        Returns:
+            Prefixed URI string
+
+        Example:
+            prefixed = comp.compositor_meta.add_resource_prefix(
+                meta_server.servers_list_resource.uri
+            )
+        """
+        return add_resource_prefix(uri, self.prefix)

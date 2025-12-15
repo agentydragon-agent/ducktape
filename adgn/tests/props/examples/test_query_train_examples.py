@@ -1,16 +1,14 @@
 """Tests for the query_train_examples example script."""
 
-from unittest.mock import patch
-
 import pytest
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Example, Snapshot
 
 
-def test_query_train_examples_with_synced_data(synced_test_db, capsys):
+def test_query_train_examples_with_synced_data(synced_test_db, mock_agent_setup, capsys):
     """Test that query_train_examples produces reasonable output with train examples."""
-    from adgn.props.examples.query_train_examples import main
+    from adgn.props.examples.query_train_examples import main  # noqa: PLC0415
 
     # Verify we have train examples and capture their details
     with get_session() as session:
@@ -30,9 +28,7 @@ def test_query_train_examples_with_synced_data(synced_test_db, capsys):
         expected_snapshot = first_example.snapshot_slug
         expected_hash_prefix = first_example.files_hash[:16]
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_train_examples.setup_agent_database"):
-        main()
+    main()
 
     # Capture output
     captured = capsys.readouterr()
@@ -51,13 +47,11 @@ def test_query_train_examples_with_synced_data(synced_test_db, capsys):
     assert "files" in output.lower() or "Files:" in output
 
 
-def test_query_train_examples_empty_database(test_db, capsys):
+def test_query_train_examples_empty_database(test_db, mock_agent_setup, capsys):
     """Test that query_train_examples handles empty database gracefully."""
-    from adgn.props.examples.query_train_examples import main
+    from adgn.props.examples.query_train_examples import main  # noqa: PLC0415
 
-    # Mock setup_agent_database since test_db already initialized the connection
-    with patch("adgn.props.examples.query_train_examples.setup_agent_database"):
-        main()
+    main()
 
     captured = capsys.readouterr()
     output = captured.out

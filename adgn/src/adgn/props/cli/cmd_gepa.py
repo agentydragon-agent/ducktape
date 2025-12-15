@@ -8,10 +8,13 @@ from typing import Annotated
 
 from rich.console import Console
 import typer
+from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.resources import get_hydrator
+from adgn.props.db.config import get_database_config
 from adgn.props.gepa.gepa_adapter import optimize_with_gepa
 from adgn.props.hydration import SnapshotHydrator
 
@@ -35,6 +38,7 @@ async def cmd_gepa(
     minibatch_size: Annotated[int, typer.Option(help="Number of training examples per reflection iteration")] = 3,
     verbose: Annotated[bool, typer.Option(help="Enable verbose logging")] = False,
     seed: Annotated[int | None, typer.Option(help="Random seed for reproducibility (default: timestamp-based)")] = None,
+    hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
     """Run GEPA optimization to evolve the critic system prompt.
 
@@ -69,16 +73,15 @@ async def cmd_gepa(
     console.print(f"  Output directory: {output_dir}")
     console.print(f"  Initial prompt length: {len(initial_prompt)} chars\n")
 
-    # Create hydrator
-    hydrator = SnapshotHydrator.from_env()
-
     # Run optimization
     console.print("\n[bold green]Starting GEPA optimization...[/bold green]\n")
+    db_config = get_database_config()
     optimized_prompt, result = await optimize_with_gepa(
         initial_prompt=initial_prompt,
         hydrator=hydrator,
         critic_client=build_client(critic_model),
         grader_client=build_client(grader_model),
+        db_config=db_config,
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
         max_parallelism=max_parallelism,

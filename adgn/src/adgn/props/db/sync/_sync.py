@@ -9,17 +9,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
+from typing import cast
 
 from pydantic import TypeAdapter
-from sqlalchemy import func
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 import yaml
 
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
-from adgn.props.db.models import FalsePositive, ModelMetadata, Snapshot, TruePositive
-from adgn.props.files_hash import hash_file_set
+from adgn.props.db.models import Example, FalsePositive, ModelMetadata, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.prop_utils import specimens_definitions_root
@@ -310,7 +309,7 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: Split) -> list[tuple[list[str], str]]:
+def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: Split) -> list[Example]:
     """Generate training examples for a snapshot from expect_caught_from data.
 
     For TRAIN snapshots:
@@ -320,22 +319,21 @@ def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: 
     For VALID/TEST snapshots:
         - Only full-specimen example
 
-    Returns examples ordered by files_hash (deterministic, required for GEPA checkpoint resume).
-
     Args:
         session: SQLAlchemy session
         slug: Snapshot slug
         split: Train/valid/test split
 
     Returns:
-        List of (files, files_hash) tuples for this snapshot, ordered by files_hash
+        List of Example ORM objects (not yet added to session).
+        Unordered - GEPA handles ordering when loading from DB
     """
     # Get all issues for this snapshot
     snapshot = session.query(Snapshot).filter_by(slug=slug).one()
     true_positives = snapshot.true_positives
     false_positives = snapshot.false_positives
 
-    # Collect all files with issues (for full-specimen example)
+    # Collect all files with issues (for detecting full-specimen example)
     all_files: set[Path] = set()
     for tp in true_positives:
         for tp_occ in tp.occurrences:
@@ -344,11 +342,13 @@ def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: 
         for fp_occ in fp.occurrences:
             all_files.update(fp_occ.files.keys())
 
+    all_files_frozen = frozenset(all_files)
+
     # Collect unique file sets (set of frozenset of Paths)
     # Keep as Path objects until hashing to avoid premature string conversion
     file_sets: set[frozenset[Path]] = set()
 
-    if split == Split.TRAIN:
+    if split in (Split.TRAIN, Split.VALID):
         # Collect all unique trigger sets from expect_caught_from
         for tp in true_positives:
             for occurrence in tp.occurrences:
@@ -356,21 +356,31 @@ def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: 
                     file_sets.add(trigger_set)
 
     # Always add full-specimen example (terminal metric) - automatically dedupes
-    file_sets.add(frozenset(all_files))
+    file_sets.add(all_files_frozen)
 
-    # Convert to output format with hashes, then sort by hash (deterministic ordering)
-    examples_with_hashes: list[tuple[list[str], str]] = []
+    # Convert to Example ORM objects
+    examples: list[Example] = []
+
+    logger.debug(f"Generating {len(file_sets)} examples for {slug} (split={split})")
+
     for file_set in file_sets:
-        # Compute hash from Path objects
-        files_hash = hash_file_set(file_set)
-        # Convert to sorted string list for storage
-        files_list = sorted(str(p) for p in file_set)
-        examples_with_hashes.append((files_list, files_hash))
+        is_whole = file_set == all_files_frozen
 
-    # Sort by files_hash for deterministic ordering (required for GEPA checkpoint resume)
-    examples_with_hashes.sort(key=lambda x: x[1])
+        if is_whole:
+            # Whole-snapshot example: NULL files/hash, flag = TRUE
+            example = Example.whole_snapshot(slug)
+            logger.debug(
+                f"Creating whole-snapshot example: slug={slug}, "
+                f"is_whole_snapshot={example.is_whole_snapshot}, "
+                f"files={example.files}, files_hash={example.files_hash}"
+            )
+            examples.append(example)
+        else:
+            # File-set example: factory computes hash and normalizes files
+            example = Example.file_set(slug, file_set)
+            examples.append(example)
 
-    return examples_with_hashes
+    return examples
 
 
 def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
@@ -389,16 +399,20 @@ def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
-    from adgn.props.db.models import Example
-
     # Load snapshot manifests to get slugs and splits
     manifests = load_manifests_from_yaml(base_path)
 
-    # Get existing examples from DB
-    existing_examples = {(ex.snapshot_slug, ex.files_hash): ex for ex in session.query(Example).all()}
+    # Get existing examples from DB (key by snapshot_slug and type)
+    existing_by_slug_whole = {
+        ex.snapshot_slug: ex for ex in session.query(Example).filter_by(is_whole_snapshot=True).all()
+    }
+    existing_by_slug_hash = {
+        (ex.snapshot_slug, ex.files_hash): ex for ex in session.query(Example).filter_by(is_whole_snapshot=False).all()
+    }
 
     # Track which examples we've seen (to detect deletions)
-    seen_example_keys = set()
+    seen_whole_snapshot_slugs = set()
+    seen_file_set_keys = set()
 
     # Track stats
     total = 0
@@ -406,47 +420,62 @@ def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
     updated = 0
     deleted = 0
 
-    # Collect all examples to upsert (use dict to ensure uniqueness by key)
-    examples_to_upsert: dict[tuple[SnapshotSlug, str], dict] = {}
-
     # Process each snapshot
     for slug, manifest in manifests.items():
         # Generate examples for this snapshot
         examples = generate_examples_for_snapshot(session, slug, manifest.split)
 
-        for files_list, files_hash in examples:
-            key = (slug, files_hash)
-            seen_example_keys.add(key)
+        for example in examples:
+            if example.is_whole_snapshot:
+                # Whole-snapshot example
+                seen_whole_snapshot_slugs.add(slug)
 
-            if key not in existing_examples:
-                # New example
-                logger.debug(f"Adding example: {slug} (hash={files_hash[:8]}...)")
-                examples_to_upsert[key] = {"snapshot_slug": slug, "files_hash": files_hash, "files": files_list}
-                added += 1
+                if slug not in existing_by_slug_whole:
+                    # New whole-snapshot example
+                    logger.debug(
+                        f"Adding whole-snapshot example: {slug} "
+                        f"(is_whole_snapshot={example.is_whole_snapshot}, "
+                        f"files={example.files}, files_hash={example.files_hash})"
+                    )
+                    session.add(example)
+                    added += 1
+                # Whole-snapshot examples don't need updates (no mutable data)
+                total += 1
+
             else:
-                # Existing example - check if update needed
-                existing = existing_examples[key]
-                if existing.files != files_list:
-                    logger.debug(f"Updating example files: {slug} (hash={files_hash[:8]}...)")
-                    examples_to_upsert[key] = {"snapshot_slug": slug, "files_hash": files_hash, "files": files_list}
-                    updated += 1
+                # File-set example (must have files_hash)
+                assert example.files_hash is not None, f"File-set example missing files_hash: {slug}"
+                key = (slug, example.files_hash)
+                seen_file_set_keys.add(key)
 
-            total += 1
+                if key not in existing_by_slug_hash:
+                    # New file-set example
+                    logger.debug(f"Adding file-set example: {slug} (hash={example.files_hash[:8]}...)")
+                    session.add(example)
+                    added += 1
+                else:
+                    # Existing file-set example - check if update needed
+                    existing = existing_by_slug_hash[key]
+                    if existing.files != example.files:
+                        logger.debug(f"Updating file-set example: {slug} (hash={example.files_hash[:8]}...)")
+                        existing.files = example.files
+                        updated += 1
 
-    # Batch upsert using PostgreSQL's ON CONFLICT
-    if examples_to_upsert:
-        stmt = insert(Example).values(list(examples_to_upsert.values()))
-        stmt = stmt.on_conflict_do_update(
-            index_elements=["snapshot_slug", "files_hash"],
-            set_={"files": stmt.excluded.files, "updated_at": func.now()},
-        )
-        session.execute(stmt)
+                total += 1
 
-    # Delete orphaned examples (in DB but not in generated set)
-    for key in set(existing_examples.keys()) - seen_example_keys:
-        slug, files_hash = key
-        logger.info(f"Deleting orphaned example: {slug} (hash={files_hash[:8]}...)")
-        session.delete(existing_examples[key])
+    # Delete orphaned whole-snapshot examples
+    for slug in set(existing_by_slug_whole.keys()) - seen_whole_snapshot_slugs:
+        logger.info(f"Deleting orphaned whole-snapshot example: {slug}")
+        session.delete(existing_by_slug_whole[slug])
+        deleted += 1
+
+    # Delete orphaned file-set examples
+    # Cast: file-set examples always have non-None files_hash
+    orphaned_keys = cast(set[tuple[SnapshotSlug, str]], set(existing_by_slug_hash.keys()) - seen_file_set_keys)
+    for slug, files_hash in orphaned_keys:
+        assert files_hash is not None, f"Orphaned file-set key has None files_hash: {slug}"
+        logger.info(f"Deleting orphaned file-set example: {slug} (hash={files_hash[:8]}...)")
+        session.delete(existing_by_slug_hash[(slug, files_hash)])
         deleted += 1
 
     session.commit()

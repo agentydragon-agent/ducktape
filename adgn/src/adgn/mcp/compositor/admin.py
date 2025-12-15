@@ -20,6 +20,7 @@ class KeyValue(OpenAIStrictModeBaseModel):
 class StdioServerSpec(OpenAIStrictModeBaseModel):
     """Stdio server spec."""
 
+    # TODO: Add default to type discriminator (should be supported by OpenAI JSON Schema builder now)
     type: Literal["stdio"]
     command: str = Field(description="Command to execute")
     args: list[str] | None = Field(description="Command arguments")
@@ -29,6 +30,7 @@ class StdioServerSpec(OpenAIStrictModeBaseModel):
 class HttpServerSpec(OpenAIStrictModeBaseModel):
     """HTTP server spec."""
 
+    # TODO: Add default to type discriminator (should be supported by OpenAI JSON Schema builder now)
     type: Literal["http"]
     url: str = Field(description="HTTP server URL")
     headers: list[KeyValue] | None = Field(description="HTTP headers")
@@ -52,12 +54,14 @@ def convert_mcp_server_types_to_spec(mcp_spec: MCPServerTypes) -> ServerSpec:
 
     This is the inverse of _convert_spec_to_mcp_server_types.
     Used when calling attach_server with specs from external sources.
+
+    OpenAI strict mode requires all fields to be explicitly provided (no defaults),
+    so we always pass None for optional fields when not present.
     """
     if isinstance(mcp_spec, StdioMCPServer):
         env_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.env.items()] if mcp_spec.env else None
-        return StdioServerSpec(
-            type="stdio", command=mcp_spec.command, args=mcp_spec.args if mcp_spec.args else None, env=env_list
-        )
+        args_list = mcp_spec.args if mcp_spec.args else None
+        return StdioServerSpec(type="stdio", command=mcp_spec.command, args=args_list, env=env_list)
     if isinstance(mcp_spec, RemoteMCPServer):
         headers_list = [KeyValue(key=k, value=v) for k, v in mcp_spec.headers.items()] if mcp_spec.headers else None
         return HttpServerSpec(type="http", url=mcp_spec.url, headers=headers_list)

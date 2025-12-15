@@ -10,7 +10,7 @@ async def test_resources_list_and_read_policy(make_typed_mcp, approval_policy_se
     """List and read resources directly from the server without a compositor."""
     server = approval_policy_server.reader
 
-    async with make_typed_mcp(server, "approval_policy") as (client, sess):
+    async with make_typed_mcp(server, "approval_policy") as (_, sess):
         # Approval policy server exposes resources for policy and pending calls
         items = await sess.list_resources()
         assert isinstance(items, list)

@@ -22,16 +22,17 @@ from fastmcp.client import Client
 from pydantic import BaseModel, Field
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call, read_resource_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call
 from adgn.agent.handler import AbortIf, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
+from adgn.mcp._shared.container_session import BindMount
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 from adgn.props.agent_setup import build_props_handlers
-from adgn.props.db.config import DatabaseConfig, get_production_config
-from adgn.props.db.scoped_user_manager import scoped_db_user
+from adgn.props.db.config import DatabaseConfig
+from adgn.props.db.scoped_user_manager import ImprovementUserManager
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 from adgn.props.prompt_improve.prompt_submission_server import (
@@ -42,6 +43,7 @@ from adgn.props.prompt_improve.prompt_submission_server import (
 )
 from adgn.props.prompt_improve.token_budget_handler import TokenBudgetHandler
 from adgn.props.prompts.util import render_prompt_template
+from adgn.props.snapshot_paths import snapshot_container_path
 
 logger = logging.getLogger(__name__)
 
@@ -113,8 +115,7 @@ def make_improvement_bootstrap_calls(
         # System overview (snapshots, database, critic architecture, evaluation flow)
         *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
         # Improvement context (examples, current prompt SHA)
-        read_resource_call(
-            builder,
+        builder.read_resource(
             resources,
             server=prompt_submission.prefix,
             uri=prompt_submission.server.improvement_context_resource.uri,
@@ -128,26 +129,29 @@ def make_improvement_bootstrap_calls(
             [
                 "working_with_examples.py",  # Example schema (composite key pattern)
                 "analyzing_critic_failures.py",  # Critic runs, grader results, execution traces
+                "query_run_status.py",  # Check for stuck/looping behavior (max_turns_exceeded)
             ],
         ),
     ]
 
 
 async def run_improvement_agent(
-    examples: list[tuple[str, str]],  # [(snapshot_slug, files_hash), ...]
+    examples: list[
+        tuple[SnapshotSlug, str | None]
+    ],  # [(snapshot_slug, files_hash), ...] - files_hash is None for whole-snapshot
     current_prompt: str,
     token_budget: int,
     model: str,
     hydrator: SnapshotHydrator,
     docker_client: aiodocker.Docker,
-    db_config: DatabaseConfig | None = None,
+    db_config: DatabaseConfig,
     output_dir: Path | None = None,
     verbose: bool = False,
 ) -> ImprovementResult:
     """Run improvement agent on N training examples.
 
     Creates a temporary PostgreSQL user with RLS-scoped access to only the specified
-    training examples. Hydrates and mounts snapshot code at /snapshots/train/{slug}/.
+    training examples. Hydrates and mounts snapshot code at /snapshots/{slug}/.
     Runs agent with token budget enforcement and prompt submission MCP server.
 
     Args:
@@ -157,7 +161,7 @@ async def run_improvement_agent(
         model: LLM model for improvement agent (e.g., "o1-mini")
         hydrator: Snapshot hydrator (required)
         docker_client: Docker client (required)
-        db_config: Database configuration (defaults to production config)
+        db_config: Database configuration (required, from CLI caller)
         output_dir: Output directory for workspace/logs (defaults to temp)
         verbose: Enable verbose logging
 
@@ -182,8 +186,6 @@ async def run_improvement_agent(
     run_id = uuid4()
 
     # Default arguments
-    if db_config is None:
-        db_config = get_production_config()
     if output_dir is None:
         output_dir = Path(tempfile.mkdtemp(prefix=f"improve_agent_{str(run_id)[:8]}_"))
 
@@ -197,12 +199,9 @@ async def run_improvement_agent(
     logger.info(f"Output directory: {output_dir}")
 
     # 1. Create scoped database user with RLS policies
-    async with scoped_db_user(db_config.admin, run_id, examples) as agent_db_config:
-        # Convert to container-accessible config
-        agent_db_container = agent_db_config.with_host(
-            db_config.container_name,
-            5432,  # Container-to-container access
-        )
+    async with ImprovementUserManager(db_config.admin, run_id, examples) as creds:
+        # Container-to-container database access with scoped user credentials
+        agent_db_container = db_config.for_container_user(creds)
 
         # 2. Hydrate snapshots and keep alive for Docker mounting
         unique_slugs = sorted({SnapshotSlug(slug) for slug, _ in examples})
@@ -218,11 +217,12 @@ async def run_improvement_agent(
                 logger.debug(f"Hydrated {slug} → {hydrated.content_root}")
 
             # 3. Build Docker bind mounts
-            # Format: {host_path: {"bind": container_path, "mode": "ro"}}
-            extra_binds = {
-                str(path.resolve()): {"bind": f"/snapshots/train/{slug}", "mode": "ro"}
+            # Snapshot source code (ro) - mount each separately without split in path
+            # Agents should NOT know which split (train/valid/test) they're working on
+            extra_binds = [
+                BindMount(host_path=path.resolve(), container_path=snapshot_container_path(slug), mode="ro")
                 for slug, path in snapshot_paths.items()
-            }
+            ]
 
             logger.info(f"Mounted {len(extra_binds)} snapshots (read-only)")
 
@@ -231,6 +231,7 @@ async def run_improvement_agent(
                 workspace_root=output_dir,
                 docker_client=docker_client,
                 mount_properties=False,  # Agent doesn't need property definitions
+                hydrator=hydrator,
                 extra_binds=extra_binds,
                 ephemeral=False,  # Keep container for debugging if needed
                 workspace_mode="rw",  # Agent writes improved prompt here
@@ -354,7 +355,9 @@ async def run_improvement_agent(
                 return result
 
 
-def _render_improvement_prompt(current_prompt: str, examples: list[tuple[str, str]], output_dir: Path) -> str:
+def _render_improvement_prompt(
+    current_prompt: str, examples: list[tuple[SnapshotSlug, str | None]], output_dir: Path
+) -> str:
     """Render system prompt for improvement agent from template."""
     snapshot_slugs = sorted({slug for slug, _ in examples})
 

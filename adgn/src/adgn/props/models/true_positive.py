@@ -90,6 +90,7 @@ class TruePositiveOccurrence(BaseModel):
     For true positives, each occurrence tracks minimal file sets required for detection.
     """
 
+    occurrence_id: str = Field(description="Unique ID within this TP (e.g., 'occ-0', 'occ-1')")
     files: dict[Path, list[LineRange] | None] = Field(
         description="Maps file paths to line ranges or None for unspecified anchor"
     )
@@ -133,6 +134,7 @@ class FalsePositiveOccurrence(BaseModel):
     For false positives, we track which files make this occurrence relevant.
     """
 
+    occurrence_id: str = Field(description="Unique ID within this FP (e.g., 'occ-0', 'occ-1')")
     files: dict[Path, list[LineRange] | None] = Field(
         description="Maps file paths to line ranges or None for unspecified anchor"
     )

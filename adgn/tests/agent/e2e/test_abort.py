@@ -21,6 +21,7 @@ else:
 """E2E Abort test. Shared fixtures are provided in tests/agent/e2e/conftest.py."""
 
 
+@pytest.mark.timeout(10)
 def test_ui_abort_sampling(e2e_page, run_server, responses_factory):
     """Start a long sampling call, click Abort in UI, and verify the run stops.
 

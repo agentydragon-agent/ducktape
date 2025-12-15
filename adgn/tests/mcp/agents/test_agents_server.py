@@ -35,8 +35,8 @@ class TestAgentsListResource:
             resources = await sess.list_resources()
             # Should have agents://list and agents://presets
             uris = [str(r.uri) for r in resources]
-            assert agents_server.list_resource.uri in uris
-            assert agents_server.presets_resource.uri in uris
+            assert str(agents_server.list_resource.uri) in uris
+            assert str(agents_server.presets_resource.uri) in uris
 
             # Read the list resource and parse as list of AgentInfo
             agents: list[AgentInfo] = await read_text_json_typed(sess, agents_server.list_resource.uri, list[AgentInfo])

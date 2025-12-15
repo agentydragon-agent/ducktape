@@ -28,7 +28,11 @@ class CapturingOpenAIModel(OpenAIModelProto):
         self.calls = 0
 
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        self.captured.append(req.model_copy(deep=True))
+        # Capture request directly without copying.
+        # Previous approaches (model_copy(deep=True) and serialize/deserialize) both caused hangs
+        # under pytest-xdist, likely due to deeply nested structures or circular refs.
+        # Direct capture is sufficient for test inspection since tests don't mutate requests.
+        self.captured.append(req)
         self.calls += 1
         return await self._inner.responses_create(req)
 

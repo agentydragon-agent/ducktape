@@ -4,10 +4,27 @@ from collections.abc import Iterable
 from typing import Any
 
 from fastmcp.client.client import Client
-from fastmcp.server.server import has_resource_prefix
+from fastmcp.server.server import add_resource_prefix as _fastmcp_add_resource_prefix, has_resource_prefix
 from mcp import types as mcp_types
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
+
+
+def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
+    """Add a prefix to a resource URI.
+
+    Wrapper around FastMCP's add_resource_prefix that accepts both str and AnyUrl.
+    FastMCP resources expose .uri as AnyUrl, but add_resource_prefix expects str.
+
+    Args:
+        uri: Resource URI (str or Pydantic AnyUrl)
+        prefix: Prefix to add
+
+    Returns:
+        Prefixed URI string
+    """
+    uri_str = str(uri) if isinstance(uri, AnyUrl) else uri
+    return _fastmcp_add_resource_prefix(uri_str, prefix)
 
 
 def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:

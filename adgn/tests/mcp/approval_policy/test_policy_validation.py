@@ -13,13 +13,13 @@ from tests.agent.testdata.approval_policy import fetch_policy
 
 
 @pytest.fixture
-def policy_engine(sqlite_persistence, docker_client) -> PolicyEngine:
+def policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:
     """PolicyEngine instance for validation tests."""
     return PolicyEngine(
-        docker_client=docker_client,
-        agent_id="test-agent",
+        agent_id="testagent",
         persistence=sqlite_persistence,
         policy_source="# placeholder",
+        docker_client=async_docker_client,
     )
 
 
@@ -37,7 +37,7 @@ class TestPolicyValidation:
     async def test_set_policy_rejects_failing_tests(self, policy_engine, failing_policy):
         """Setting policy with failing tests raises an error."""
         async with Client(policy_engine.admin) as sess:
-            result = await sess.call_tool("set_policy", {"source": failing_policy})
+            result = await sess.call_tool("set_policy", {"source": failing_policy}, raise_on_error=False)
             assert result.is_error, "Expected error for failing tests policy"
 
     async def test_set_policy_accepts_valid_policy(self, policy_engine, policy_allow_all):
@@ -49,14 +49,14 @@ class TestPolicyValidation:
     async def test_create_proposal_validates_policy(self, policy_engine, failing_policy):
         """Creating proposal with failing tests returns error."""
         async with Client(policy_engine.proposer) as sess:
-            result = await sess.call_tool("create_proposal", {"content": failing_policy})
+            result = await sess.call_tool("create_proposal", {"content": failing_policy}, raise_on_error=False)
             assert result.is_error, "Expected error for policy with failing tests"
 
     async def test_self_check_directly(self, policy_engine, failing_policy):
         """PolicyEngine.self_check raises for invalid policy."""
         with pytest.raises(RuntimeError, match="policy eval failed"):
-            policy_engine.self_check(failing_policy)
+            await policy_engine.self_check(failing_policy)
 
     async def test_self_check_passes_valid(self, policy_engine, policy_allow_all):
         """PolicyEngine.self_check passes for valid policy."""
-        policy_engine.self_check(policy_allow_all)
+        await policy_engine.self_check(policy_allow_all)

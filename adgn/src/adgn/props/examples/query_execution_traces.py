@@ -6,11 +6,12 @@ what tools were called during execution.
 
 from uuid import UUID
 
+from sqlalchemy import func
+
 from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Event, GraderRun, Prompt
 from adgn.props.db.snapshots import DBGraderSuccess
-from sqlalchemy import func
 
 
 def main():
@@ -47,13 +48,19 @@ def main():
             grader = (
                 session.query(GraderRun)
                 .filter(
-                    GraderRun.critique_id == critic_run.critique_id, GraderRun.output.isnot(None)  # type: ignore[arg-type]
+                    GraderRun.critique_id == critic_run.critique_id,
+                    GraderRun.output.isnot(None),  # type: ignore[arg-type]
                 )
                 .first()
             )
             if grader and grader.output and isinstance(grader.output, DBGraderSuccess):
-                recall = grader.output.recall
-                print(f"    Recall: {recall * 100:.1f}%")
+                # Show absolute numbers instead of recall percentage
+                if grader.output.occurrence_results:
+                    total_credit = sum(o.found_credit for o in grader.output.occurrence_results)
+                    n_occurrences = len(grader.output.occurrence_results)
+                    print(f"    Occurrences: {total_credit:.1f} / {n_occurrences} found")
+                else:
+                    print("    Occurrences: 0 / 0 found")
 
 
 def show_tool_sequence_for_transcript(transcript_id: UUID):

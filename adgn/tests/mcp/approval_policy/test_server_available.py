@@ -14,12 +14,12 @@ from tests.support.steps import AssistantMessage
 
 
 @pytest.mark.requires_docker
-async def test_approval_policy_server_is_available(echo_spec, make_pg_compositor, make_step_runner):
+async def test_approval_policy_server_is_available(echo_spec, make_policy_gateway_compositor, make_step_runner):
     """Test that the approval policy MCP server is available to the agent and lists tools."""
 
-    # make_pg_compositor creates a PolicyEngine with all servers (reader, proposer, admin) already mounted
+    # make_policy_gateway_compositor creates a PolicyEngine with all servers (reader, proposer, admin) already mounted
     servers = dict(echo_spec)
-    async with make_pg_compositor(servers) as comp, Client(comp) as mcp_client:
+    async with make_policy_gateway_compositor(servers) as comp, Client(comp) as mcp_client:
         # Create a sequence where agent lists available tools
         runner = make_step_runner(steps=[AssistantMessage("I can see the approval tools")])
         client = make_mock(runner.handle_request_async)

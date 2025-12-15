@@ -1,6 +1,6 @@
 {% extends "prompts/_base.j2.md" %}
 {# Schemas commented out - may be confusing the model when also provided via tool definitions #}
-{# {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning", "ReportedIssueRatios"] %} #}
+{# {% set header_schema_names = ["IssueCore", "Occurrence", "LineRange", "ReportedIssue", "CriticSubmitPayload", "CanonicalTPCoverage", "CanonicalFPCoverage", "NovelIssueReasoning"] %} #}
 {% set header_schema_names = [] %}
 {% set read_only = true %}
 {% set include_reporting = false %}
@@ -12,50 +12,64 @@
 You are grading an input critique (structured JSON) against canonical specimen findings (structured JSON) and a set of known false positives (structured JSON).
 
 ## Your Job
-Match input critique items against canonical positives and known false positives, then submit via {{ submit_tool_name }} (GradeSubmitInput).
+Grade each catchable occurrence in the canonical issues, then submit via {{ submit_tool_name }}.
 
 **READ THE CODE FIRST**: Before grading, read the relevant source files to understand what the issues are actually about. This context is essential for competent grading - you cannot accurately match semantic content without seeing the code being criticized.
 
-- Provide coverage for EVERY canonical TP and FP (with reasoning)
-- Track individual recall credit contributions per input issue in covered_by dicts
-- Identify novel/unlabeled input issues (pure novel or hybrid)
-- Compute weighted reported_issue_ratios (must sum to ~1.0)
-- Compute weighted recall for canonical TPs
-- Write summary explaining weighting, novel issues, and partial coverage
+For each catchable occurrence in the canonical issues:
+1. Was it found? Assign **found_credit** (0.0-1.0):
+   - 1.0 = fully found
+   - 0.0 = not found
+   - 0.x = partial (e.g., location identified but rationale incomplete)
 
-## Matching Guidance
+2. Which critique issues matched? List **matched_by** entries:
+   - Each entry has **input_id** (critique issue ID) and **credit** (0.0-1.0 for that match)
+   - Empty list if not found
 
-### Primary: Semantic Content
-- **Match by rationale first**: If a critique issue's rationale captures the same problem as a canonical issue, that's a match - even with no line anchors or different line ranges.
-- **Example**: Critique says "loop-and-append patterns should use list comprehensions" and canonical says "imperative list building violates DRY" → MATCH if they refer to the same code smell, even if one has precise lines and the other doesn't.
-- **A crisp, accurate rationale with no line anchors can achieve 100% coverage credit** if it clearly identifies the problem.
+3. Rationale for the grading decision:
+   - For matches: explain why semantically equivalent (include code inspection if ranges differ)
+   - For partial: what was covered and what was missed
+   - For no-match: what was closest and why insufficient
 
-### Secondary: File/Line Anchors (when available)
-- Use line anchors to **disambiguate** when multiple canonical issues could match
+After grading all occurrences:
+1. Identify **unknowns**: Input critique issues that don't match any canonical TP or FP
+   - These are issues the critic found but aren't in the ground truth
+   - May be genuinely novel findings or issues outside the canonical set
+   - For each unknown, provide a rationale explaining why it doesn't match known issues
+2. Write a **summary** with high-level observations and cross-cutting patterns
+
+## Grading Guidance
+
+### Occurrence Identification
+- Each canonical TP has multiple **occurrences** (specific code locations)
+- Each occurrence has a unique **occurrence_id** field
+- Grade EACH occurrence separately - don't aggregate at the TP level
+
+### Semantic Matching (Primary)
+- **Match by rationale first**: If a critique issue's rationale captures the same problem as a canonical occurrence, that's a match - even with no line anchors or different line ranges.
+- **Example**: Critique says "loop-and-append patterns should use list comprehensions" and canonical occurrence shows imperative list building → MATCH if they refer to the same code location, even if line ranges differ slightly.
+- **A crisp, accurate rationale with no line anchors can achieve full credit** if it clearly identifies the problem.
+
+### File/Line Anchors (Secondary)
+- Use line anchors to **disambiguate** when multiple canonical occurrences could match
 - Use line anchors to **verify** that semantic matches point to the same code locations
 - If rationales match but line ranges differ: inspect the code to confirm they address the same problem
 - **Don't penalize** for adjusted line ranges (±3 lines), expanded context, or contracted focus - verify semantically
 
-### Matching Rules
-- Treat canonical positives and known false positives as separate target sets
-- A single input issue MAY match multiple canonical issues when its rationale clearly covers multiple problems
-- If a single input issue overlaps both a canonical positive and a known FP, COUNT BOTH (add to both covered_by AND novel_critique_issues)
-- ID format: Issues use simple string IDs (e.g., "issue-001", "duplicate-logic")
-  - Use the base ID strings directly in all dictionaries
-  - Namespace is implied by position (canonical_tp_coverage keys are TPs, canonical_fp_coverage keys are FPs, etc.)
+### Credit Assignment
+- **found_credit** (overall): 0.0-1.0 for the entire occurrence
+  - 1.0 = fully found and accurately described
+  - 0.0 = completely missed
+  - 0.x = partial
+- **matched_by credits** (individual): 0.0-1.0 for each matching critique issue
+  - Multiple critique issues can contribute to finding one occurrence
+  - Sum of individual credits may exceed 1.0 (partial overlaps are common)
 
-### Individual Recall Credits
-- For each input issue in a canonical's covered_by dict, assign an individual credit [0,1]
-- Full individual credit (1.0) when that input fully captures the canonical problem
-- Partial individual credit (0.0-1.0) when that input captures only part of it
-- Total recall_credit must satisfy: min(individual credits) ≤ recall_credit ≤ sum(individual credits)
-- This allows multiple input issues to contribute to the same canonical
-
-### Smart Weighting
-- Weight by issue importance/severity throughout (reported_issue_ratios, recall)
-- Explain weighting in summary if non-obvious
-- Proportional credit for partial occurrence coverage
-- No penalty for merged/split reporting if semantic coverage is correct
+### ID Format
+- Use simple string IDs from the JSON (e.g., "dead-import-typing-cast", "duplicate-status-enum")
+- **tp_id**: The true positive ID this occurrence belongs to
+- **occurrence_id**: Unique identifier for this specific occurrence
+- **input_id**: The critique issue ID that matched
 
 ## Inputs (JSON)
 - canonical positives:
@@ -88,6 +102,6 @@ Match input critique items against canonical positives and known false positives
 **Key distinction**: With code context, you can distinguish "no semantic match" from "semantic match with adjusted line ranges" - without reading the code, you're just guessing based on text similarity.
 
 ## Output
-- Use {{ submit_tool_name }} to submit a GradeSubmitInput object
+Use {{ submit_tool_name }} to submit your grading.
 
 {% endblock %}

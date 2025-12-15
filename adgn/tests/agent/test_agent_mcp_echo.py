@@ -12,12 +12,12 @@ from tests.support.steps import AssistantMessage, EchoCall
 
 
 async def test_agent_mcp_echo_tool_use(
-    monkeypatch: pytest.MonkeyPatch, pg_client_echo, test_handlers, recording_handler, make_step_runner
+    monkeypatch: pytest.MonkeyPatch, mcp_client_echo, test_handlers, recording_handler, make_step_runner
 ) -> None:
     runner = make_step_runner(steps=[EchoCall("hello"), AssistantMessage("done")])
     client = make_mock(runner.handle_request_async)
     agent = await Agent.create(
-        mcp_client=pg_client_echo,
+        mcp_client=mcp_client_echo,
         client=client,
         handlers=test_handlers,
         tool_policy=RequireAnyTool(),

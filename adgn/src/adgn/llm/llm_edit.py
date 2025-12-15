@@ -87,7 +87,7 @@ app = typer.Typer(help="LLM-powered single-file editor", add_completion=False)
 async def edit(
     file_path: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True, help="Path to file to edit")],
     prompt: Annotated[str, typer.Argument(help="Editing prompt")],
-    model: Annotated[str, typer.Option("--model", help="Model name")] = "o4-mini",
+    model: Annotated[str, typer.Option("--model", help="Model name")] = "gpt-5.1-codex-mini",
     reasoning_effort: Annotated[
         ReasoningEffort | None, typer.Option(help="Reasoning effort for reasoning-capable models", case_sensitive=False)
     ] = None,

@@ -30,6 +30,7 @@ class DBLineRange(BaseModel):
 class DBTruePositiveOccurrence(BaseModel):
     """Database representation of a true positive occurrence."""
 
+    occurrence_id: str = Field(description="Unique ID within this TP")
     files: dict[str, list[DBLineRange] | None] = Field(description="File paths (as strings) mapped to line ranges")
     note: str | None = Field(default=None)
     expect_caught_from: list[list[str]] = Field(
@@ -42,6 +43,7 @@ class DBTruePositiveOccurrence(BaseModel):
 class DBFalsePositiveOccurrence(BaseModel):
     """Database representation of a false positive occurrence."""
 
+    occurrence_id: str = Field(description="Unique ID within this FP")
     files: dict[str, list[DBLineRange] | None] = Field(description="File paths (as strings) mapped to line ranges")
     note: str | None = Field(default=None)
     relevant_files: list[str] = Field(description="Files that make this FP relevant")
@@ -222,29 +224,54 @@ class DBNovelIssueEntry(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class DBReportedIssueRatios(BaseModel):
-    """Database representation of weighted ratios {tp, fp, unlabeled}."""
+class DBOccurrenceMatch(BaseModel):
+    """Database representation of match between input issue and canonical occurrence."""
 
-    tp: float = Field(ge=0.0, le=1.0, description="Ratio matching canonical TPs")
-    fp: float = Field(ge=0.0, le=1.0, description="Ratio matching known FPs")
-    unlabeled: float = Field(ge=0.0, le=1.0, description="Ratio that is novel/unlabeled")
+    input_id: str = Field(description="Input issue ID (stored as string)")
+    credit: float = Field(ge=0.0, le=1.0, description="Credit for this match")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBOccurrenceResult(BaseModel):
+    """Database representation of grading result for a single occurrence."""
+
+    tp_id: str = Field(description="True positive ID (stored as string)")
+    occurrence_id: str = Field(description="Occurrence identifier")
+    found_credit: float = Field(ge=0.0, le=1.0, description="Overall credit for finding this occurrence")
+    matched_by: list[DBOccurrenceMatch] = Field(description="Which input issues matched and their credits")
+    rationale: str = Field(description="Rationale (stored as string)")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBUnknownIssue(BaseModel):
+    """Database representation of an input issue with novel aspects not matched to any canonical issue.
+
+    This is the persisted form for unknowns from grader output.
+    """
+
+    id: str = Field(description="Unknown issue ID (stored as string)")
+    rationale: str = Field(description="Why this issue is novel/unknown (stored as string)")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class DBGraderSuccess(BaseModel):
-    """Database representation of successful grader output.
+    """Database representation of successful grader output with per-occurrence results.
 
     This is the persisted form, decoupled from MCP I/O types.
     All NewType IDs are stored as strings.
     """
 
     tag: Literal["success"] = "success"
-    canonical_tp_coverage: list[DBTPCoverageEntry]
-    canonical_fp_coverage: list[DBFPCoverageEntry]
-    novel_critique_issues: list[DBNovelIssueEntry]
-    reported_issue_ratios: DBReportedIssueRatios | None
-    recall: float = Field(ge=0.0, le=1.0)
+
+    occurrence_results: list[DBOccurrenceResult] = Field(description="Per-occurrence grading results")
+
+    unknowns: list[DBUnknownIssue] = Field(
+        default_factory=list, description="Input issues with novel aspects not matched to canonical issues"
+    )
+
     summary: str = Field(description="Summary rationale (stored as string)")
 
     model_config = ConfigDict(extra="forbid", frozen=True)

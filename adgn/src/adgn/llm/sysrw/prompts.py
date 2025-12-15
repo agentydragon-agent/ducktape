@@ -43,7 +43,7 @@ def build_grader_prompt(
     user_content = GRADER_USER_TEMPLATE.format(
         prefix_json=json.dumps(prefix_messages, ensure_ascii=False),
         bad_branch_json=json.dumps(bad_branch, ensure_ascii=False),
-        new_asst_json=json.dumps(new_asst_obj.model_dump(), ensure_ascii=False),
+        new_asst_json=json.dumps(new_asst_obj.model_dump(mode="json"), ensure_ascii=False),
     )
     return [
         ChatCompletionSystemMessageParam(role="system", content=GRADER_SYSTEM_PROMPT),

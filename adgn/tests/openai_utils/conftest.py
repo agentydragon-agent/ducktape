@@ -75,6 +75,38 @@ class DiscriminatedUnionModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# ========== Discriminated Union with Defaults on Discriminator ==========
+
+
+class HttpServerSpec(BaseModel):
+    """HTTP server spec with discriminator default."""
+
+    type: Literal["http"] = "http"
+    url: str
+    headers: list[str] | None = None
+    model_config = ConfigDict(extra="forbid")
+
+
+class InprocServerSpec(BaseModel):
+    """Inproc server spec with discriminator default."""
+
+    type: Literal["inproc"] = "inproc"
+    factory: str
+    model_config = ConfigDict(extra="forbid")
+
+
+class DiscriminatedUnionWithDefaults(BaseModel):
+    """Discriminated union where discriminator fields have defaults.
+
+    Tests whether OpenAI strict mode accepts discriminated unions when
+    the discriminator field (type) has a default value and thus isn't in
+    the required array.
+    """
+
+    server: Annotated[HttpServerSpec | InprocServerSpec, Field(discriminator="type")]
+    model_config = ConfigDict(extra="forbid")
+
+
 # ========== Valid Models (strict mode compliant) ==========
 
 

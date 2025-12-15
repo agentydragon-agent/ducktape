@@ -13,34 +13,30 @@ TODO: Do not install adgn package into critic container - snapshots contain past
       and installing current adgn would create conflicts/pollution in the review environment.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
-import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+import tempfile
+from typing import Annotated, cast
 from uuid import UUID, uuid4
 
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
+from fastmcp.resources import FunctionResource
+from fastmcp.tools import FunctionTool
 from pydantic import Field, StringConstraints
 import typer
 
-if TYPE_CHECKING:
-    from fastmcp.tools import FunctionTool
-
-    from adgn.mcp._shared.mounted import Mounted
-
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.model import OpenAIModelProto, UserMessage
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import build_props_handlers
@@ -57,6 +53,7 @@ from adgn.props.critic.models import (
     ReportedIssue,
     ResolvedFileScope,
 )
+from adgn.props.critic.persistence import critic_output_to_db, critic_submit_payload_to_db
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun as DBCriticRun, Critique, Prompt, Snapshot
 from adgn.props.display import short_uuid
@@ -312,6 +309,10 @@ class CriticSubmitServer(EnhancedFastMCP):
     ADD_OCCURRENCE_TOOL_NAME = "add_occurrence"
     SUBMIT_TOOL_NAME = "submit"
 
+    # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
+    snapshot_slug_resource: FunctionResource
+    scope_resource: FunctionResource
+
     # Tool references (assigned in __init__)
     upsert_issue_tool: FunctionTool
     cancel_issue_tool: FunctionTool
@@ -321,13 +322,42 @@ class CriticSubmitServer(EnhancedFastMCP):
     submit_tool: FunctionTool
     report_failure_tool: FunctionTool
 
-    def __init__(self, state: CriticSubmitState):
+    def __init__(self, state: CriticSubmitState, snapshot_slug: SnapshotSlug, scope: CriticScopeSpec):
         """Create critic submit server with state container.
 
         Args:
             state: State container for submitted result.
+            snapshot_slug: Snapshot slug for this critic run (exposed via resource).
+            scope: File scope specification (discriminated union: AllFilesScope | ExplicitFileScope).
         """
         super().__init__("Critic Submit Server", instructions=CRITIC_MCP_INSTRUCTIONS)
+
+        # Register snapshot_slug resource and stash the result
+        async def get_snapshot_slug() -> str:
+            """Get the snapshot slug for this critic run.
+
+            The snapshot source code is mounted at /snapshots/<slug>.
+            """
+            return str(snapshot_slug)
+
+        self.snapshot_slug_resource = cast(
+            FunctionResource, self.resource("resource://critic_submit/snapshot_slug")(get_snapshot_slug)
+        )
+
+        # Register scope resource and stash the result
+        async def get_scope() -> CriticScopeSpec:
+            """Get the file scope for this critic run.
+
+            Returns the scope specification (discriminated union):
+            - AllFilesScope: {"kind": "entire_snapshot"}
+            - ExplicitFileScope: {"kind": "specific_files", "files": [...]}
+
+            The snapshot is mounted at /snapshots/<slug>/ (read-only).
+            Workspace at /workspace is a separate read-write scratch space for agent artifacts.
+            """
+            return scope
+
+        self.scope_resource = cast(FunctionResource, self.resource("resource://critic_submit/scope")(get_scope))
 
         # Helper for parsing line ranges
         def _parse_ranges(atoms: list[RangeAtom]) -> list[LineRange]:
@@ -461,13 +491,17 @@ class CriticCompositor(PropertiesDockerCompositor):
     Adds:
     - critic_submit: Critic submission server
 
+    Handles snapshot hydration internally - callers just pass snapshot_slug and hydrator.
+
     Usage:
         critic_state = CriticSubmitState()
 
         async with CriticCompositor(
-            workspace_root=Path("/workspace"),
+            snapshot_slug=SnapshotSlug("ducktape/2025-11-20-00"),
             docker_client=docker_client,
+            hydrator=hydrator,
             critic_state=critic_state,
+            scope=AllFilesScope(),
             db_conn=DbConnectionConfig(...),
         ) as comp:
             # Access servers via Mounted[T] wrappers:
@@ -486,31 +520,74 @@ class CriticCompositor(PropertiesDockerCompositor):
     critic_submit: Mounted[CriticSubmitServer]
 
     def __init__(
-        self, workspace_root: Path, docker_client: aiodocker.Docker, critic_state: CriticSubmitState, **kwargs
+        self,
+        snapshot_slug: SnapshotSlug,
+        docker_client: aiodocker.Docker,
+        hydrator,
+        critic_state: CriticSubmitState,
+        scope: CriticScopeSpec,
+        **kwargs,
     ):
         """Create compositor with critic dependencies.
 
+        Snapshot is auto-hydrated and mounted at /snapshots/<slug> by parent class.
+        Workspace is separate read-write scratch space at /workspace (managed internally).
+
         Args:
-            workspace_root: Path to workspace directory to mount in container.
+            snapshot_slug: Snapshot slug to hydrate and mount at /snapshots/<slug>.
             docker_client: Async Docker client (managed by caller).
+            hydrator: Snapshot hydrator (parent class handles hydration).
             critic_state: Critic submit state container (shared with caller).
+            scope: File scope specification (discriminated union: AllFilesScope | ExplicitFileScope).
             **kwargs: Additional arguments passed to PropertiesDockerCompositor
-                (mount_properties, db_conn, extra_binds, workspace_mode, network_mode, extra_env, ephemeral)
+                (mount_properties, db_conn, extra_binds, network_mode, extra_env)
+                Note: ephemeral is hardcoded to False
         """
-        super().__init__(workspace_root, docker_client, **kwargs)
+        self._snapshot_slug = snapshot_slug
+        self._docker_client = docker_client
+        self._hydrator = hydrator
         self._critic_state = critic_state
+        self._scope = scope
+        self._kwargs = kwargs
+        self._workspace_tmpdir: tempfile.TemporaryDirectory[str] | None = None
 
     async def __aenter__(self):
         """Start compositor and mount servers."""
-        # Start parent compositor (mounts resources, compositor_meta, runtime)
+        # Create temporary workspace directory (managed internally)
+        self._workspace_tmpdir = tempfile.TemporaryDirectory(prefix="critic_workspace_")
+        workspace_path = Path(self._workspace_tmpdir.__enter__())
+
+        # Initialize parent compositor with temp workspace
+        # ephemeral=False is hardcoded so critic can persist temporary analysis artifacts, checklists, and reasoning
+        super().__init__(
+            workspace_path,
+            self._docker_client,
+            hydrator=self._hydrator,
+            snapshot_slugs=[self._snapshot_slug],
+            workspace_mode="rw",  # Workspace is read-write for agent artifacts
+            ephemeral=False,  # Hardcoded: critic needs persistent workspace
+            **self._kwargs,
+        )
+
+        # Start parent compositor (mounts resources, compositor_meta, runtime, hydrates snapshot)
         await super().__aenter__()
 
         # Mount critic submit server
         self.critic_submit = await self.mount_inproc(
-            "critic_submit", CriticSubmitServer(self._critic_state), pinned=True
+            "critic_submit", CriticSubmitServer(self._critic_state, self._snapshot_slug, self._scope), pinned=True
         )
 
         return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Clean up compositor and temp workspace."""
+        try:
+            return await super().__aexit__(exc_type, exc_val, exc_tb)
+        finally:
+            # Clean up temp workspace directory
+            if self._workspace_tmpdir is not None:
+                self._workspace_tmpdir.__exit__(None, None, None)
+                self._workspace_tmpdir = None
 
 
 # =============================================================================
@@ -561,9 +638,9 @@ async def run_critic(
     *,
     input_data: CriticInput,
     client: OpenAIModelProto,
-    content_root,
     prompt_optimization_run_id: UUID | None,
     docker_client: aiodocker.Docker,
+    hydrator,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
@@ -591,9 +668,6 @@ async def run_critic(
 
     # Resolve file scope (handles ALL_FILES_WITH_ISSUES sentinel - loads from DB)
     resolved_files = await resolve_critic_scope(input_data.snapshot_slug, input_data.files)
-
-    # Build user prompt from resolved files (just the file list as JSON)
-    user_prompt = json.dumps(sorted(str(p) for p in resolved_files), indent=2)
 
     # Generate unique IDs for this run
     run_id = uuid4()
@@ -627,19 +701,48 @@ async def run_critic(
 
     # Set up critic submit server and state
     critic_state = CriticSubmitState()
-    # Use ephemeral=False so critic can persist temporary analysis artifacts, checklists, and reasoning
 
     # Use CriticCompositor to bundle server mounting
+    # Compositor manages its own temp workspace at /workspace (read-write) for agent artifacts
+    # Snapshot code is auto-mounted at /snapshots/<slug> (read-only) by compositor
+    # (ephemeral=False is hardcoded in CriticCompositor)
     async with CriticCompositor(
-        workspace_root=content_root,
         docker_client=docker_client,
         critic_state=critic_state,
+        snapshot_slug=input_data.snapshot_slug,
+        scope=input_data.files,
+        hydrator=hydrator,
         mount_properties=mount_properties,
-        ephemeral=False,
     ) as comp:
         # Set up handlers
         builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-        bootstrap_calls = make_bootstrap_calls_for_inspection(comp, builder)
+
+        # Snapshot code location for this run
+        snapshot_path = comp.snapshot_container_path(input_data.snapshot_slug)
+
+        # TODO: Theoretically, listing the snapshot directory structure should only happen
+        # on the bootstrap round *after* we've received the slug resource, to be causally
+        # consistent. However, since we already know the slug from input_data at construction
+        # time, this works fine in practice.
+        bootstrap_calls = [
+            *make_bootstrap_calls_for_inspection(comp, builder),
+            # Show snapshot directory structure
+            docker_exec_call_mounted(builder, comp.runtime, cmd=["ls", "-la", str(snapshot_path)]),
+            # Read snapshot slug from critic_submit server resource
+            builder.read_resource(
+                comp.resources,
+                server=comp.critic_submit.prefix,
+                uri=comp.critic_submit.server.snapshot_slug_resource.uri,
+                max_bytes=256,
+            ),
+            # Read file scope from critic_submit server resource
+            builder.read_resource(
+                comp.resources,
+                server=comp.critic_submit.prefix,
+                uri=comp.critic_submit.server.scope_resource.uri,
+                max_bytes=65536,
+            ),
+        ]
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         def _ready_state() -> bool:
@@ -697,7 +800,6 @@ async def run_critic(
                 reasoning_summary=ReasoningSummary.detailed,
                 dynamic_instructions=_build_critic_instructions,
             )
-            agent.insert_message(UserMessage.text(user_prompt))
             output: CriticOutput
             try:
                 await agent.run()
@@ -742,8 +844,6 @@ async def run_critic(
         critique_id = None
         if isinstance(output, CriticSuccess):
             # Convert MCP model to DB model
-            from adgn.props.critic.persistence import critic_submit_payload_to_db
-
             critique = Critique(
                 snapshot_slug=input_data.snapshot_slug, payload=critic_submit_payload_to_db(output.result)
             )
@@ -753,8 +853,6 @@ async def run_critic(
 
         # Update run with output and critique_id
         # Use critic_output_to_db() to convert discriminated union to DB format
-        from adgn.props.critic.persistence import critic_output_to_db
-
         found_run = session.get(DBCriticRun, run_id)
         assert found_run is not None, f"Critic run {run_id} not found in database"
         found_run.output = critic_output_to_db(output)

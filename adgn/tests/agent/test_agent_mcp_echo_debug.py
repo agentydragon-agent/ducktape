@@ -9,13 +9,13 @@ from tests.support.steps import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME
 async def test_agent_mcp_echo_tool_use(
     monkeypatch: pytest.MonkeyPatch,
     responses_factory,
-    pg_client_echo,
+    mcp_client_echo,
     test_handlers,
     recording_handler,
     make_test_agent,
 ) -> None:
     agent, _client = await make_test_agent(
-        pg_client_echo,
+        mcp_client_echo,
         [
             responses_factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text="hello")),
             responses_factory.make_assistant_message("done"),

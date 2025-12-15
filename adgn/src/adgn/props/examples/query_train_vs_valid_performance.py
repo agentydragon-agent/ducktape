@@ -41,15 +41,13 @@ def main():
             print("No prompts found in database.")
             return
 
-        print(
-            f"Prompt Performance Overview ({len(results)} most recent prompts, sorted by LCB)"
-        )
+        print(f"Prompt Performance Overview ({len(results)} most recent prompts, sorted by LCB)")
         print()
         print(f"{'SHA':<10} {'Created':<12} {'Len':<5} {'Valid':<40} {'Train':<40}")
         print("-" * 110)
 
         def format_stats(stats):
-            """Format split statistics as: recall% lcb% (N) Z%z S%s C%c"""
+            """Format split statistics as: recall% lcb% (N) Zz Ss Cc"""
             if stats is None:
                 return "—"
             lcb_str = f"{stats.lcb:.1f}%" if stats.lcb is not None else "—"
@@ -57,9 +55,9 @@ def main():
                 f"{stats.mean_recall:.1f}% "
                 f"lcb:{lcb_str} "
                 f"({stats.total_count}) "
-                f"{stats.zero_pct:.0f}%z "
-                f"{stats.stuck_pct:.0f}%s "
-                f"{stats.context_pct:.0f}%c"
+                f"{stats.zero_count}z "
+                f"{stats.stuck_count}s "
+                f"{stats.context_count}c"
             )
 
         for row in results:
@@ -70,12 +68,10 @@ def main():
             valid_str = format_stats(row.valid)
             train_str = format_stats(row.train)
 
-            print(
-                f"{sha:<10} {created:<12} {length:<5} {valid_str:<40} {train_str:<40}"
-            )
+            print(f"{sha:<10} {created:<12} {length:<5} {valid_str:<40} {train_str:<40}")
 
         print()
-        print("Format: recall% lcb:X% (N) Z%z S%s C%c")
+        print("Format: recall% lcb:X% (N) Zz Ss Cc")
         print(STATS_TABLE_LEGEND)
 
 

@@ -3,6 +3,10 @@
 Pydantic generates oneOf for discriminated unions, but OpenAI strict mode
 doesn't support oneOf. This module provides a schema generator that converts
 oneOf to anyOf while preserving discriminator metadata.
+
+Additionally, OpenAI strict mode requires discriminator fields to be in the
+required array, even when they have defaults. This generator detects Literal
+fields with const values and marks them as required.
 """
 
 from __future__ import annotations
@@ -22,6 +26,13 @@ class OpenAICompatibleSchema(GenerateJsonSchema):
 
     - Converts oneOf to anyOf for discriminated unions (oneOf not supported)
     - Preserves discriminator metadata for proper validation
+    - Marks Literal fields with const values as required (even with defaults)
+
+    The last point is important for discriminated unions: fields like
+    `type: Literal["http"] = "http"` are semantically required (must have
+    exactly that value), but Pydantic treats them as optional because they
+    have defaults. OpenAI strict mode requires discriminator fields in the
+    required array for proper variant selection.
 
     Usage:
         from adgn.openai_utils.json_schema import openai_json_schema
@@ -39,6 +50,39 @@ class OpenAICompatibleSchema(GenerateJsonSchema):
     Note: This only affects the JSON schema representation. Pydantic validation
     behavior is unchanged - discriminated union validation still works perfectly.
     """
+
+    def field_is_required(
+        self, field: core_schema.ModelField | core_schema.DataclassField | core_schema.TypedDictField, total: bool
+    ) -> bool:
+        """Determine if a field should be in the required array.
+
+        OpenAI strict mode requires ALL properties to be in the required array,
+        even fields with defaults. This differs from JSON Schema convention where
+        fields with defaults are typically optional.
+
+        OpenAI's rule: "'required' is required to be supplied and to be an array
+        including every key in properties."
+
+        Rationale:
+        - Discriminator fields: `type: Literal["http"] = "http"` must be in
+          required for proper variant selection
+        - Nullable fields: `headers: list[str] | None = None` must be in required
+          even though they have defaults
+        - All fields: OpenAI wants explicit presence, defaults are just conveniences
+
+        This override marks ALL fields as required in the JSON schema, regardless
+        of whether they have defaults in Python. The defaults are still present
+        in the schema (for documentation/tooling), but fields are in required array.
+        """
+        # For OpenAI strict mode: all fields are required in the schema
+        # Only TypedDict fields can be truly optional (when required=False)
+        if field["type"] == "typed-dict-field":
+            # Respect TypedDict's explicit required/optional
+            return field.get("required", total)
+
+        # All model/dataclass fields are required in the JSON schema for OpenAI
+        # (even if they have defaults - that's just for convenient construction)
+        return True
 
     def tagged_union_schema(self, schema: core_schema.TaggedUnionSchema) -> JsonSchemaValue:
         """Override to generate anyOf instead of oneOf for discriminated unions.

@@ -14,43 +14,11 @@ from typer_di import TyperDI
 
 from adgn.cli_utils import async_run
 
-from ..._shared.container_session import ContainerOptions
+from ..._shared.container_session import BindMount, ContainerOptions
 from ..._shared.types import NetworkMode
 from .server import ContainerExecServer
 
 app = TyperDI(help="Run docker_exec MCP over stdio")
-
-
-def _parse_binds(values: list[str] | None) -> dict[str, dict[str, str]] | None:
-    """Parse bind mount specifications into Docker mount format.
-
-    Args:
-        values: List of bind specs in format "host:container[:mode]"
-
-    Returns:
-        Dict mapping resolved host paths to mount specs, or None if no binds
-
-    Raises:
-        typer.BadParameter: If bind spec format is invalid
-    """
-    if not values:
-        return None
-    result: dict[str, dict[str, str]] = {}
-    entries: list[str] = []
-    for value in values:
-        entries.extend(value.split(","))
-    for entry in entries:
-        if not entry:
-            continue
-        parts = entry.split(":")
-        if len(parts) < 2:
-            raise typer.BadParameter(f"Invalid bind mount spec '{entry}'. Use host:container[:mode].")
-        host, container, *mode = parts
-        spec: dict[str, str] = {"bind": container}
-        if mode:
-            spec["mode"] = mode[0]
-        result[str(Path(host).resolve())] = spec
-    return result
 
 
 def _parse_labels(label_values: list[str] | None) -> dict[str, str] | None:
@@ -98,19 +66,22 @@ async def main(
     """Run docker_exec MCP server over stdio transport."""
     docker_client = aiodocker.Docker()
     try:
-        binds_dict = _parse_binds(binds)
+        try:
+            parsed_binds = BindMount.parse_binds(binds)
+        except ValueError as e:
+            raise typer.BadParameter(str(e))
         labels_dict = _parse_labels(label)
 
         opts = ContainerOptions(
             image=image,
             working_dir=Path(working_dir),
-            binds=binds_dict,
+            binds=parsed_binds,
             network_mode=network_mode,
             labels=labels_dict,
             ephemeral=ephemeral,
         )
 
-        server = ContainerExecServer(opts, docker_client)
+        server = ContainerExecServer(docker_client, opts)
         await server.run_stdio_async()
     finally:
         await docker_client.close()

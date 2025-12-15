@@ -44,7 +44,7 @@ def mock_compositor():
 def mock_container():
     """Create mock agent container for verifying close calls."""
     container = MagicMock()
-    container.agent_id = "test-agent-1"
+    container.agent_id = "testagent1"
     container._compositor = MagicMock()
     container.session = None  # For agent_control tests
     container.close = AsyncMock()
@@ -104,7 +104,7 @@ def make_token_router(user_app, agent_app_factory):
 
     Usage:
         router = make_token_router()  # defaults
-        router = make_token_router(agent_tokens={"tok": "agent-1"}, agent_ids=["1"])
+        router = make_token_router(agent_tokens={"tok": "agent1"}, agent_ids=["1"])
     """
 
     def _make(
@@ -130,7 +130,6 @@ def registry(sqlite_persistence):
         persistence=sqlite_persistence,
         model="test-model",
         client_factory=lambda m: MagicMock(),
-        docker_client=MagicMock(),
         async_docker_client=MagicMock(),
         mcp_config=MCPConfig(mcpServers={}),
     )
@@ -170,8 +169,8 @@ users:
   viewer: "viewer-token-456"
 
 agents:
-  claude-code-1: "agent-token-aaa"
-  external-agent: "agent-token-bbb"
+  claudecode1: "agent-token-aaa"
+  externalagent: "agent-token-bbb"
 """)
         config = TokensConfig.from_yaml_file(path)
 
@@ -179,7 +178,7 @@ agents:
         assert config.user_tokens() == {"admin-token-123": "admin", "viewer-token-456": "viewer"}
 
         # Agent tokens: token -> agent_id
-        assert config.agent_tokens() == {"agent-token-aaa": "claude-code-1", "agent-token-bbb": "external-agent"}
+        assert config.agent_tokens() == {"agent-token-aaa": "claudecode1", "agent-token-bbb": "externalagent"}
 
     def test_empty_file(self, tokens_yaml):
         """Returns empty tokens when config file is empty."""
@@ -208,13 +207,13 @@ users:
 users:
   admin: "token-1"
 agents:
-  agent-1: "token-2"
+  agent1: "token-2"
 """)
         )
 
         # Check raw model attributes
         assert config.users == {"admin": "token-1"}
-        assert config.agents == {"agent-1": "token-2"}
+        assert config.agents == {"agent1": "token-2"}
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +227,7 @@ class TestTokenRoutingASGI:
     def test_routes_user_token_to_user_app(self, make_token_router):
         """User tokens route to user compositor app."""
         router = make_token_router(
-            user_tokens={"user-token-123": "admin"}, agent_tokens={"agent-token-abc": "agent-1"}, agent_ids=["agent-1"]
+            user_tokens={"user-token-123": "admin"}, agent_tokens={"agent-token-abc": "agent1"}, agent_ids=["agent1"]
         )
 
         client = TestClient(router)
@@ -240,8 +239,8 @@ class TestTokenRoutingASGI:
         """Agent tokens route to their specific agent compositor app."""
         router = make_token_router(
             user_tokens={"user-token-123": "admin"},
-            agent_tokens={"agent-token-abc": "agent-1", "agent-token-xyz": "agent-2"},
-            agent_ids=["agent-1", "agent-2"],
+            agent_tokens={"agent-token-abc": "agent1", "agent-token-xyz": "agent2"},
+            agent_ids=["agent1", "agent2"],
         )
 
         client = TestClient(router)
@@ -249,12 +248,12 @@ class TestTokenRoutingASGI:
         # First agent
         response = client.get("/", headers={"Authorization": "Bearer agent-token-abc"})
         assert response.status_code == 200
-        assert response.text == "agent-agent-1"
+        assert response.text == "agent-agent1"
 
         # Second agent
         response = client.get("/", headers={"Authorization": "Bearer agent-token-xyz"})
         assert response.status_code == 200
-        assert response.text == "agent-agent-2"
+        assert response.text == "agent-agent2"
 
     def test_returns_401_without_token(self, make_token_router):
         """Returns 401 when no Authorization header is present."""
@@ -287,7 +286,7 @@ class TestTokenRoutingASGI:
         """Returns 404 when agent token is valid but agent app isn't registered."""
         router = make_token_router(
             user_tokens={},
-            agent_tokens={"agent-token": "agent-1"},
+            agent_tokens={"agent-token": "agent1"},
             agent_ids=[],  # No agent apps registered
         )
 
@@ -358,25 +357,26 @@ class TestInfrastructureRegistry:
     async def test_shutdown_agent_closes_container(self, registry, mock_container, mock_compositor):
         """shutdown_agent closes container and unmounts from compositor."""
         registry.global_compositor = mock_compositor
-        registry._agents["test-agent-1"] = mock_container
+        registry._agents["testagent1"] = mock_container
 
-        await registry.shutdown_agent("test-agent-1")
+        await registry.shutdown_agent("testagent1")
 
         mock_container.close.assert_awaited_once()
-        mock_compositor.unmount_server.assert_awaited_once_with("agent_test-agent-1")
-        assert "test-agent-1" not in registry._agents
+        # Agent mount prefix is "agent_" + agent_id
+        mock_compositor.unmount_server.assert_awaited_once_with("agent_testagent1")
+        assert "testagent1" not in registry._agents
 
     async def test_shutdown_agent_cleans_up_external_tracking(self, registry, mock_container, mock_compositor):
         """shutdown_agent removes agent from external tracking set."""
         registry.global_compositor = mock_compositor
-        registry._agents["test-agent-1"] = mock_container
-        registry._external_agents.add("test-agent-1")
+        registry._agents["testagent1"] = mock_container
+        registry._external_agents.add("testagent1")
 
-        assert registry.is_external("test-agent-1") is True
+        assert registry.is_external("testagent1") is True
 
-        await registry.shutdown_agent("test-agent-1")
+        await registry.shutdown_agent("testagent1")
 
-        assert registry.is_external("test-agent-1") is False
+        assert registry.is_external("testagent1") is False
 
     async def test_shutdown_all_shuts_down_all_agents(self, registry, mock_compositor):
         """shutdown_all shuts down all registered agents."""
@@ -384,17 +384,17 @@ class TestInfrastructureRegistry:
 
         # Add multiple mock containers
         container1 = MagicMock()
-        container1.agent_id = "agent-1"
+        container1.agent_id = "agent1"
         container1._compositor = MagicMock()
         container1.close = AsyncMock()
 
         container2 = MagicMock()
-        container2.agent_id = "agent-2"
+        container2.agent_id = "agent2"
         container2._compositor = MagicMock()
         container2.close = AsyncMock()
 
-        registry._agents["agent-1"] = container1
-        registry._agents["agent-2"] = container2
+        registry._agents["agent1"] = container1
+        registry._agents["agent2"] = container2
 
         await registry.shutdown_all()
 
@@ -405,9 +405,9 @@ class TestInfrastructureRegistry:
     async def test_boot_agent_returns_existing_if_already_booted(self, registry, mock_container, mock_compositor):
         """boot_agent returns existing container if already booted."""
         registry.global_compositor = mock_compositor
-        registry._agents["test-agent-1"] = mock_container
+        registry._agents["testagent1"] = mock_container
 
-        result = await registry.boot_agent("test-agent-1")
+        result = await registry.boot_agent("testagent1")
 
         assert result is mock_container
 
@@ -415,28 +415,28 @@ class TestInfrastructureRegistry:
         """boot_agent raises KeyError if agent not in DB (using real persistence)."""
         registry.global_compositor = mock_compositor
         with pytest.raises(KeyError, match="Agent not found"):
-            await registry.boot_agent("nonexistent-agent")
+            await registry.boot_agent("nonexistentagent")
 
     async def test_boot_agent_raises_without_compositor(self, registry):
         """boot_agent raises RuntimeError without global compositor."""
         with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
-            await registry.boot_agent("nonexistent-agent")
+            await registry.boot_agent("nonexistentagent")
 
     async def test_create_external_agent_returns_existing_if_already_created(
         self, registry, mock_container, mock_compositor
     ):
         """create_external_agent returns existing container if already exists."""
         registry.global_compositor = mock_compositor
-        registry._agents["test-agent-1"] = mock_container
+        registry._agents["testagent1"] = mock_container
 
-        result = await registry.create_external_agent("test-agent-1")
+        result = await registry.create_external_agent("testagent1")
 
         assert result is mock_container
 
     async def test_create_external_agent_raises_without_compositor(self, registry):
         """create_external_agent raises RuntimeError without global compositor."""
         with pytest.raises(RuntimeError, match=r"(?i)global compositor not initialized"):
-            await registry.create_external_agent("test-agent-1")
+            await registry.create_external_agent("testagent1")
 
     async def test_create_external_agent_marks_as_external(self, registry, mock_compositor):
         """create_external_agent marks agent as external."""
@@ -445,11 +445,11 @@ class TestInfrastructureRegistry:
         # Patch build_container to return a mock
         with patch("adgn.agent.mcp_bridge.registry.build_container") as mock_build:
             container = MagicMock()
-            container.agent_id = "external-agent"
+            container.agent_id = "externalagent"
             container._compositor = MagicMock()
             mock_build.return_value = container
 
-            await registry.create_external_agent("external-agent")
+            await registry.create_external_agent("externalagent")
 
-            assert registry.is_external("external-agent") is True
-            assert "external-agent" in registry._agents
+            assert registry.is_external("externalagent") is True
+            assert "externalagent" in registry._agents

@@ -6,8 +6,8 @@ from fastmcp.client import Client
 import pytest
 
 from adgn.agent.agent import Agent
-from adgn.agent.handler import BaseHandler
-from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.handler import BaseHandler, FinishOnTextMessageHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
@@ -19,38 +19,43 @@ from tests.support.steps import AssistantMessage, EchoCall
 
 @pytest.mark.requires_docker
 async def test_approval_system_wired_and_blocks_on_ask(
-    responses_factory, echo_spec, make_pg_compositor, make_approval_policy_server, make_step_runner
+    responses_factory, echo_spec, make_policy_gateway_compositor, make_approval_policy_server, make_step_runner
 ) -> None:
     """Test that the approval system is properly wired and blocks tool calls via middleware."""
 
     # Prepare approval engine with an ASK policy for echo.echo using shared factory
     engine = await make_approval_policy_server(
-        make_policy(decision_expr="PolicyDecision.ASK", server="echo", tool="echo", default=ApprovalDecision.ASK)
+        make_policy(decision_expr="ApprovalDecision.ASK", server="echo", tool="echo", default=ApprovalDecision.ASK)
     )
 
-    # Model tries to call the tool then returns text
+    # Model tries to call the tool once (needs approval) then finishes with text
     mock = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
     client = make_mock(mock.handle_request_async)
 
-    # Use make_pg_compositor with custom policy engine
+    # Use make_policy_gateway_compositor with custom policy engine
     servers = dict(echo_spec)
-    async with make_pg_compositor(servers, policy_engine=engine) as comp:
-        async with Client(comp) as mcp_client:
-            agent = await Agent.create(
-                mcp_client=mcp_client, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
-            )
-            agent.insert_message(SystemMessage.text("test"))
+    async with make_policy_gateway_compositor(servers, policy_engine=engine) as comp, Client(comp) as mcp_client:
+        agent = await Agent.create(
+            mcp_client=mcp_client,
+            client=client,
+            handlers=[FinishOnTextMessageHandler(), BaseHandler()],
+            tool_policy=AllowAnyToolOrTextMessage(),
+        )
+        agent.insert_message(SystemMessage.text("test"))
 
-            # Start the agent run in the background
-            run_task = asyncio.create_task(agent.run())
+        # Start the agent run in the background
+        run_task = asyncio.create_task(agent.run())
+
+        # Give the agent time to start and hit the approval block
+        await asyncio.sleep(0.5)
 
         # Wait briefly for the agent to hit the approval block
         # Read pending://calls resource from reader server via MCP
-        async with Client(comp.approval_engine.reader) as reader_client:
+        async with Client(comp._approval_engine.reader) as reader_client:
             pending_data: PendingCallsResponse
             for _ in range(20):  # up to ~1s
                 pending_data = await read_text_json_typed(
-                    reader_client, comp.approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
+                    reader_client, comp._approval_engine.reader.pending_calls_resource.uri, PendingCallsResponse
                 )
                 if len(pending_data.pending) >= 1:
                     break
@@ -62,7 +67,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
             call_id = pending_data.pending[0].call_id
 
         # Approve the tool call via admin server's decide_call tool
-        async with Client(comp.approval_engine.admin) as admin_client:
+        async with Client(comp._approval_engine.admin) as admin_client:
             await admin_client.call_tool(
                 "decide_call", arguments={"call_id": call_id, "decision": CallDecision.APPROVE}
             )

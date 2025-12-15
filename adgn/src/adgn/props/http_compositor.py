@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager, suppress
 from dataclasses import dataclass
 import logging
 from pathlib import Path
 import secrets
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from fastmcp import FastMCP
 import uvicorn
 
-from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor, get_docker_network_gateway
+from adgn.mcp._shared.container_session import BindMount
+from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor, get_docker_network_gateway_async
+from adgn.props.hydration import SnapshotHydrator
 from adgn.util.net import pick_free_port, wait_for_port
 
 if TYPE_CHECKING:
@@ -64,6 +66,7 @@ async def launch_mcp_http_server(
             # Pass as extra_env to PropertiesDockerCompositor:
             async with PropertiesDockerCompositor(
                 workspace_root, docker_client,
+                hydrator=hydrator,
                 extra_env={
                     "MCP_SERVER_URL": handle.url,
                     "MCP_SERVER_TOKEN": handle.token,
@@ -146,7 +149,7 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         db_conn: DbConnectionConfig,
         *,
         mount_properties: bool = False,
-        extra_binds: dict[str, dict[str, str]] | None = None,
+        extra_binds: Sequence[BindMount] = (),
     ) -> None:
         """Create HTTP mode compositor.
 
@@ -156,14 +159,10 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
             server_factory: Factory function that takes a bearer token and returns FastMCP server
             db_conn: Database connection config (required for HTTP mode)
             mount_properties: Whether to mount property definitions at /props (default: False)
-            extra_binds: Additional bind mounts (Docker bind mount dict format)
+            extra_binds: Additional bind mounts (default empty tuple)
         """
-        # Compute gateway IP for the props network
-        container_host = get_docker_network_gateway(PROPS_NETWORK_NAME)
-
-        # Store server factory for __aenter__
+        # Store server factory for __aenter__ (gateway IP will be computed there)
         self._server_factory = server_factory
-        self._container_host = container_host
         self._exit_stack: AsyncExitStack | None = None
 
         # Initialize parent with fixed HTTP mode configuration
@@ -171,6 +170,7 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
             workspace_root,
             docker_client,
             mount_properties=mount_properties,
+            hydrator=SnapshotHydrator.from_env(),
             db_conn=db_conn,
             extra_binds=extra_binds,
             workspace_mode="rw",  # HTTP mode always writable
@@ -184,16 +184,19 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
 
+        # Compute gateway IP for the props network (async)
+        container_host = await get_docker_network_gateway_async(self._docker_client, PROPS_NETWORK_NAME)
+
         # Start HTTP server first
         server_handle = await self._exit_stack.enter_async_context(
-            launch_mcp_http_server(self._server_factory, container_host=self._container_host)
+            launch_mcp_http_server(self._server_factory, container_host=container_host)
         )
 
         # Inject MCP server URL and token into container environment
         self._extra_env = {"MCP_SERVER_URL": server_handle.url, "MCP_SERVER_TOKEN": server_handle.token}
 
         # Now start the parent compositor (which will use the extra_env)
-        return await self._exit_stack.enter_async_context(super().__aenter__())
+        return cast(PropertiesDockerCompositor, await super().__aenter__())
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Clean up compositor and HTTP server (reverse order)."""

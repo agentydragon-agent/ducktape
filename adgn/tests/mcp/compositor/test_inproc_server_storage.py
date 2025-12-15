@@ -10,6 +10,8 @@ from __future__ import annotations
 from fastmcp.server import FastMCP
 
 from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.compositor.mount import Mount
+from adgn.mcp.compositor.server import Compositor
 
 
 async def test_mount_stores_inproc_server(compositor):
@@ -43,9 +45,6 @@ async def test_mount_inproc_server_none_for_external():
     # This test assumes we have a way to create an external mount
     # For now, we'll just verify the behavior with a freshly created mount
     # before setup (which has _server = None)
-    from adgn.mcp._shared.types import MCPMountPrefix
-    from adgn.mcp.compositor.mount import Mount
-
     mount = Mount(prefix=MCPMountPrefix("external"), pinned=False, spec=None)
     assert mount.inproc_server is None
 
@@ -244,10 +243,6 @@ async def test_compositor_get_inproc_servers_empty(compositor):
 
 async def test_compositor_get_inproc_servers_excludes_external():
     """Test that get_inproc_servers() excludes external (non-inproc) mounts."""
-    from adgn.mcp._shared.types import MCPMountPrefix
-    from adgn.mcp.compositor.mount import Mount
-    from adgn.mcp.compositor.server import Compositor
-
     async with Compositor() as comp:
         # Mount one in-process server
         inproc_server = FastMCP("inproc")

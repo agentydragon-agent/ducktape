@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
-from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ReasoningItem, UserMessage
 
 
 async def test_reasoning_threading_filters_reasoning_from_next_input(
-    responses_factory, pg_client_echo, make_test_agent
+    responses_factory, mcp_client_echo, make_test_agent
 ) -> None:
     """Test that reasoning items are properly threaded with their function calls across turns."""
 
@@ -39,9 +39,10 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
         responses_factory.make_assistant_message("done"),
     ]
 
-    agent, client = await make_test_agent(pg_client_echo, seq)
+    agent, client = await make_test_agent(mcp_client_echo, seq)
+    agent.insert_message(UserMessage.text("say hi"))
 
-    res = await agent.run("say hi")
+    res = await agent.run()
 
     # Assertions
     assert res.text.strip() == "done"

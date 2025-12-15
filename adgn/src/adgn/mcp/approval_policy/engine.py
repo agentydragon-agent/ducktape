@@ -8,12 +8,11 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import StrEnum
 from importlib import resources
-import json
 import logging
 from typing import TYPE_CHECKING, Any, Final, cast
 import uuid
 
-from docker.client import DockerClient
+import aiodocker
 from fastmcp.client import Client
 from fastmcp.resources import FunctionResource, ResourceTemplate
 from fastmcp.server import FastMCP
@@ -24,6 +23,7 @@ from jinja2 import Template
 from mcp import McpError, types as mtypes
 from mcp.types import ErrorData
 from pydantic import AnyUrl, BaseModel
+import pydantic_core
 
 from adgn.agent.approvals import ApprovalRequest, ApprovalToolCall
 from adgn.agent.handler import AbortTurnDecision, ContinueDecision
@@ -44,6 +44,18 @@ if TYPE_CHECKING:
     from adgn.mcp.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)
+
+
+def _serialize_arguments_json(arguments: dict[str, Any] | None) -> str | None:
+    """Serialize tool arguments to JSON string.
+
+    Handles nested Pydantic models (like AnyUrl) via pydantic_core.to_json.
+    Returns None for None to match MCP semantics.
+    """
+    if arguments is None:
+        return None
+    return pydantic_core.to_json(arguments, fallback=str).decode("utf-8")
+
 
 # ============================================================================
 # Reserved JSON-RPC Error Codes & Messages for Policy Gateway
@@ -278,10 +290,14 @@ class _PolicyGatewayMiddleware(Middleware):
         tool_key = name
 
         # Evaluate policy
+        logger.warning(f"[POLICY_MW] Evaluating policy for tool: {name}")
         try:
-            decision_res = await self._evaluate(PolicyRequest(name=name, arguments=json.dumps(arguments)))
+            decision_res = await self._evaluate(
+                PolicyRequest(name=name, arguments_json=_serialize_arguments_json(arguments))
+            )
             decision = decision_res.decision
             rationale = decision_res.rationale
+            logger.warning(f"[POLICY_MW] Decision for {name}: {decision} ({rationale})")
         except Exception as e:
             logger.warning("policy evaluator error", exc_info=e)
             raise McpError(
@@ -337,9 +353,7 @@ class _PolicyGatewayMiddleware(Middleware):
         call_id = "pg:" + uuid.uuid4().hex
         req = ApprovalRequest(
             tool_key=tool_key,
-            tool_call=ApprovalToolCall(
-                name=name, call_id=call_id, args_json=(json.dumps(arguments) if arguments else None)
-            ),
+            tool_call=ApprovalToolCall(name=name, call_id=call_id, args_json=_serialize_arguments_json(arguments)),
         )
         decision_obj = await self._hub.await_decision(call_id, req)
 
@@ -534,7 +548,7 @@ class PolicyAdminServer(EnhancedFastMCP):
 
         async def set_policy(input: SetPolicyTextArgs) -> SimpleOk:
             """Directly set active policy text after self-check."""
-            engine.self_check(input.source)
+            await engine.self_check(input.source)
             engine.set_policy(input.source)
             return SimpleOk()
 
@@ -558,16 +572,16 @@ class PolicyEngine:
     """
 
     def __init__(
-        self, *, docker_client: DockerClient, agent_id: AgentID, persistence: Persistence, policy_source: str
+        self, *, agent_id: AgentID, persistence: Persistence, policy_source: str, docker_client: aiodocker.Docker
     ) -> None:
         # Policy state
         self._policy_source: str = policy_source
         self._policy_version: int = 1
 
         # Context for policy operations
-        self.docker_client: DockerClient = docker_client
         self.agent_id: AgentID = agent_id
         self.persistence: Persistence = persistence
+        self._docker_client: aiodocker.Docker = docker_client
 
         # Background task tracking
         self._bg_tasks: set[asyncio.Task] = set()
@@ -617,9 +631,13 @@ class PolicyEngine:
         task.add_done_callback(self._bg_tasks.discard)
 
     async def _evaluate_policy(self, request: PolicyRequest) -> PolicyResponse:
-        """Evaluate policy for a tool call via Docker-backed evaluator."""
-        evaluator = ContainerPolicyEvaluator(agent_id=self.agent_id, docker_client=self.docker_client, engine=self)
-        return await evaluator.decide(request)
+        """Evaluate policy for a tool call via Docker-backed evaluator (uses injected client)."""
+        logger.warning(f"[EVAL_START] Starting policy evaluation for {request.name}")
+        evaluator = ContainerPolicyEvaluator(agent_id=self.agent_id, docker_client=self._docker_client, engine=self)
+        logger.warning("[EVAL_EVALUATOR] Evaluator created, calling decide")
+        result = await evaluator.decide(request)
+        logger.warning(f"[EVAL_RESULT] Got result: {result.decision}")
+        return result
 
     async def _record_outcome(self, call_id: str, tool_key: str, outcome: ApprovalOutcome) -> None:
         """Record approval outcome to persistence."""
@@ -647,20 +665,19 @@ class PolicyEngine:
         self._policy_source = source
         self._policy_version = version
 
-    def self_check(self, source: str) -> None:
-        """Validate policy source by executing it in Docker."""
-        run_policy_source(
-            docker_client=self.docker_client,
+    async def self_check(self, source: str) -> None:
+        """Validate policy source by executing it in Docker (uses injected client)."""
+        await run_policy_source(
+            docker_client=self._docker_client,
             source=source,
-            input_payload=PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, "send_message"), arguments="{}"),
+            input_payload=PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, "send_message"), arguments_json=None),
         )
 
     # ---- Proposal management methods ----
 
     async def create_proposal(self, content: str) -> str:
         """Create a new policy proposal and return its ID."""
-        if self.docker_client is not None:
-            self.self_check(content)
+        await self.self_check(content)
         new_id = uuid.uuid4().hex
         await self.persistence.create_policy_proposal(self.agent_id, proposal_id=new_id, content=content)
         self._notify_proposal_change(new_id)
@@ -676,8 +693,7 @@ class PolicyEngine:
         got = await self.persistence.get_policy_proposal(self.agent_id, proposal_id)
         if got is None:
             raise KeyError(proposal_id)
-        if self.docker_client is not None:
-            self.self_check(got.content)
+        await self.self_check(got.content)
         self.set_policy(got.content)
         await self.persistence.approve_policy_proposal(self.agent_id, proposal_id)
         self._notify_proposal_change(proposal_id)

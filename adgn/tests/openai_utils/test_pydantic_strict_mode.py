@@ -6,6 +6,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
 
+from adgn.openai_utils.json_schema import OpenAICompatibleSchema
 from adgn.openai_utils.pydantic_strict_mode import (
     OpenAIStrictModeBaseModel,
     OpenAIStrictModeValidationError,
@@ -89,18 +90,19 @@ VALIDATION_TEST_CASES = [
     pytest.param(SimpleUnionModel, True, None, id="valid-simple-union"),
     pytest.param(NestedUnionModel, True, None, id="valid-nested-union"),
     pytest.param(OptionalFieldModel, True, None, id="valid-optional-null"),
+    pytest.param(DiscriminatedUnionModel, True, None, id="valid-discriminated-union-anyof"),
     # Invalid cases
     pytest.param(InvalidPathModel, False, "format 'path'", id="invalid-path-format"),
     pytest.param(InvalidSetModel, False, "uniqueItems", id="invalid-set-uniqueitems"),
     pytest.param(MissingAdditionalPropertiesModel, False, "additionalProperties", id="invalid-missing-extra-forbid"),
-    pytest.param(DiscriminatedUnionModel, False, "oneOf", id="invalid-discriminated-union-oneof"),
 ]
 
 
 @pytest.mark.parametrize(("model_class", "should_pass", "error_pattern"), VALIDATION_TEST_CASES)
 def test_validate_model_parameterized(model_class: type[BaseModel], should_pass: bool, error_pattern: str | None):
     """Parameterized test for validating Pydantic models against OpenAI strict mode."""
-    schema = model_class.model_json_schema()
+    # Use OpenAICompatibleSchema generator to match OpenAIStrictModeBaseModel behavior
+    schema = model_class.model_json_schema(schema_generator=OpenAICompatibleSchema)
     model_name = model_class.__name__
 
     if should_pass:

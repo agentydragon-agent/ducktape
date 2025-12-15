@@ -4,11 +4,19 @@ Integrates with gepa-ai/gepa to optimize the critic system prompt using
 evolutionary search with rich feedback from execution traces and grader output.
 
 Usage:
+    import tempfile
     from pathlib import Path
     from gepa import optimize
     from adgn.props.gepa.gepa_adapter import CriticAdapter, load_datasets
 
-    adapter = CriticAdapter(hydrator, critic_client, grader_client, run_dir=Path("/tmp/gepa_run"))
+    # Create scoped temporary directory for this optimization run
+    run_dir = Path(tempfile.mkdtemp(prefix="gepa_run_"))
+
+    adapter = CriticAdapter(
+        hydrator, critic_client, grader_client, db_config,
+        run_dir=run_dir,
+        reflection_model="claude-sonnet-4.5"
+    )
     trainset, valset = await load_datasets()  # Loads from database
 
     result = optimize(
@@ -42,7 +50,7 @@ from gepa.core.result import GEPAResult
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 import litellm
 from pydantic import BaseModel
-from sqlalchemy import cast
+from sqlalchemy import cast, func
 from sqlalchemy.dialects.postgresql import JSONB
 
 from adgn.agent.events import REFLECTION_EVENT_TYPES, EventType
@@ -50,6 +58,7 @@ from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
+from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.datapoints import get_examples_for_split
 from adgn.props.db.models import (
     CriticRun as DBCriticRun,
@@ -59,11 +68,13 @@ from adgn.props.db.models import (
     GraderRun as DBGraderRun,
 )
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.snapshots import DBCriticMaxTurnsExceeded, DBCriticOutput, DBGraderOutput, DBGraderSuccess
+from adgn.props.db.snapshots import DBCriticOutput, DBGraderOutput
+from adgn.props.gepa.fitness import compute_fitness
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.grader.grader import grade_critique_by_id
 from adgn.props.hydration import SnapshotHydrator
+from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -184,6 +195,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         hydrator: SnapshotHydrator,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
+        db_config: DatabaseConfig,
         run_dir: Path,
         reflection_model: str | None = None,
         verbose: bool = False,
@@ -192,19 +204,61 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         self.hydrator = hydrator
         self.critic_client = critic_client
         self.grader_client = grader_client
+        self.db_config = db_config
         self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
 
-        # Always set up proposal logging if reflection_model provided
+        # Set up proposal logging if reflection_model provided
         if reflection_model:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_file = run_dir / f"gepa_proposals_{timestamp}.jsonl"
             self._setup_proposal_logging(log_file)
             logger.info(f"GEPA proposal logging enabled: {log_file.absolute()}")
         else:
-            # Use GEPA's default proposal implementation
+            # No reflection model - GEPA will use default proposal mechanism
             self.propose_new_texts = None
+
+    def _make_evaluation_result(
+        self, transcript_id: UUID, critique_id: UUID | None, grader_output: DBGraderOutput | None, capture_traces: bool
+    ) -> EvaluationResult:
+        """Build EvaluationResult by fetching critic output and trajectory from database.
+
+        Args:
+            transcript_id: Transcript UUID identifying the critic run
+            critique_id: Critique UUID or None if critic ran out of turns
+            grader_output: DBGraderOutput or None if no grader run
+            capture_traces: Whether to fetch and build trajectory
+
+        Returns:
+            EvaluationResult with computed score and optional trajectory
+        """
+        # Fetch critic output from database
+        with get_session() as session:
+            critic_run = session.query(DBCriticRun).filter_by(transcript_id=transcript_id).one()
+            critic_output = critic_run.output
+            assert critic_output is not None
+
+        # Build trajectory if requested
+        trajectory: CriticTrajectory | None = None
+        if capture_traces:
+            critique_payload_db: DBCriticSubmitPayload | None = None
+            if critique_id is not None:
+                with get_session() as session:
+                    critique = session.get(Critique, critique_id)
+                    assert critique is not None, f"Critique {critique_id} not found"
+                    critique_payload_db = critique.payload
+
+            filtered_events = _filter_reflection_events(transcript_id)
+            trajectory = CriticTrajectory(
+                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
+            )
+
+        return EvaluationResult(
+            output=self._build_critic_output(critic_output, grader_output, critique_id),
+            score=compute_fitness(grader_output),
+            trajectory=trajectory,
+        )
 
     def _setup_proposal_logging(self, log_file: Path) -> None:
         """Set up logging of GEPA's proposal step (reflection LM calls).
@@ -397,134 +451,65 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
         slug = specimen_input.slug
 
         # Run critic - use specimen's target_files for consistent cache keys
-        async with self.hydrator.hydrate(slug) as hydrated:
-            critic_input = CriticInput(
-                snapshot_slug=slug,
-                files=specimen_input.target_files,  # Use target_files for cache consistency
-                prompt_sha256=prompt_sha256,
-            )
+        # Compositor handles snapshot hydration internally
+        critic_input = CriticInput(
+            snapshot_slug=slug,
+            files=specimen_input.target_files,  # Use target_files for cache consistency
+            prompt_sha256=prompt_sha256,
+        )
 
-            critic_output, critic_run_id, critique_id = await run_critic(
-                input_data=critic_input,
-                client=self.critic_client,
-                docker_client=docker_client,
-                content_root=hydrated.content_root,
-                prompt_optimization_run_id=None,
-                mount_properties=True,
-                verbose=self.verbose,
-                max_turns=100,
-            )
+        _critic_output, critic_run_id, critique_id = await run_critic(
+            input_data=critic_input,
+            client=self.critic_client,
+            docker_client=docker_client,
+            hydrator=self.hydrator,
+            prompt_optimization_run_id=None,
+            mount_properties=True,
+            verbose=self.verbose,
+            max_turns=100,
+        )
 
-        # Get transcript_id and critic output from database
+        # Get transcript_id from database
         with get_session() as session:
             critic_run = session.get(DBCriticRun, critic_run_id)
             assert critic_run is not None, f"CriticRun {critic_run_id} not found"
             transcript_id = critic_run.transcript_id
-            # CRITICAL: Extract critic output INSIDE session before object becomes detached
-            critic_db_output = critic_run.output
-            assert critic_db_output is not None, f"CriticRun {critic_run_id} has no output"
 
-        # Load and filter events for reflection (separate session)
-        events: list[EventType] = []
-        if capture_traces:
-            events = _filter_reflection_events(transcript_id)
+        # Grade if critic succeeded
+        grader_output: DBGraderOutput | None = None
+        if critique_id is not None:
+            with get_session() as session:
+                grader_run_id = await grade_critique_by_id(
+                    session,
+                    critique_id,
+                    self.grader_client,
+                    docker_client,
+                    self.hydrator,
+                    self.db_config,
+                    verbose=self.verbose,
+                    max_turns=200,
+                )
+                grader_run = session.get(DBGraderRun, grader_run_id)
+                assert grader_run is not None, f"GraderRun {grader_run_id} not found"
+                grader_output = grader_run.output
 
-        # If critic ran out of turns, there's no critique to grade
-        if isinstance(critic_db_output, DBCriticMaxTurnsExceeded):
-            # Critic ran out of turns - no grader run, score is 0.0
-            trajectory = (
-                CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=None)
-                if capture_traces
-                else None
-            )
-            return EvaluationResult(
-                output=self._build_critic_output(critic_output=critic_db_output, grader_output=None, critique_id=None),
-                score=0.0,
-                trajectory=trajectory,
-            )
-
-        # Critic succeeded - critique_id must be present
-        assert critique_id is not None, "critique_id must be present when critic succeeds"
-
-        # Grade and fetch output in single session
-        # CRITICAL: Extract grader_output inside session before object becomes detached
-        with get_session() as session:
-            grader_run_id = await grade_critique_by_id(
-                session, critique_id, self.grader_client, docker_client, verbose=self.verbose, max_turns=200
-            )
-            grader_run = session.get(DBGraderRun, grader_run_id)
-            assert grader_run is not None, f"GraderRun {grader_run_id} not found"
-            # CRITICAL: Extract output and score INSIDE session before object becomes detached
-            grader_output = grader_run.output
-            # Extract score: 0.0 if grader max_turns_exceeded, otherwise recall from success variant
-            score = grader_output.recall if isinstance(grader_output, DBGraderSuccess) else 0.0
-
-            # Fetch critique payload (DB model) for trajectory
-            critique = session.get(Critique, critique_id)
-            assert critique is not None, f"Critique {critique_id} not found"
-            critique_payload_db = critique.payload
-
-        trajectory = (
-            CriticTrajectory(transcript_id=transcript_id, events=events, critique_payload=critique_payload_db)
-            if capture_traces
-            else None
-        )
-
-        return EvaluationResult(
-            output=self._build_critic_output(critic_db_output, grader_output, critique_id),
-            score=score,
-            trajectory=trajectory,
-        )
+        return self._make_evaluation_result(transcript_id, critique_id, grader_output, capture_traces)
 
     def _reconstruct_from_cache(
-        self,
-        transcript_id: UUID,
-        critique_id: UUID | None,
-        critic_output: DBCriticOutput,
-        grader_output: DBGraderOutput | None,
-        capture_traces: bool,
+        self, transcript_id: UUID, critique_id: UUID | None, grader_output: DBGraderOutput | None, capture_traces: bool
     ) -> EvaluationResult:
         """Reconstruct an EvaluationResult from cached database runs.
 
         Args:
             transcript_id: Transcript UUID from critic run
             critique_id: Critique UUID from critic run, or None if critic ran out of turns
-            critic_output: DBCriticOutput (database persistence model, extracted inside session at call site)
-            grader_output: DBGraderOutput (database persistence model, extracted inside session at call site), or None if no grader run
+            grader_output: DBGraderOutput (extracted inside session at call site), or None if no grader run
             capture_traces: Whether to fetch events for trajectory
 
         Returns:
             EvaluationResult with output, score, and optional trajectory
-
-        Note:
-            All data must be extracted inside the calling session to avoid
-            DetachedInstanceError. See call site in _evaluate_async().
         """
-        # Fetch trajectory if requested
-        trajectory: CriticTrajectory | None = None
-        if capture_traces:
-            critique_payload_db: DBCriticSubmitPayload | None = None
-            if critique_id is not None:
-                with get_session() as session:
-                    critique = session.get(Critique, critique_id)
-                    assert critique is not None, f"Critique {critique_id} not found"
-                    critique_payload_db = critique.payload
-
-            filtered_events = _filter_reflection_events(transcript_id)
-            trajectory = CriticTrajectory(
-                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
-            )
-
-        # Extract score: 0.0 if no grader output or max_turns_exceeded, otherwise recall from success variant
-        score = 0.0
-        if grader_output is not None and isinstance(grader_output, DBGraderSuccess):
-            score = grader_output.recall
-
-        return EvaluationResult(
-            output=self._build_critic_output(critic_output, grader_output, critique_id),
-            score=score,
-            trajectory=trajectory,
-        )
+        return self._make_evaluation_result(transcript_id, critique_id, grader_output, capture_traces)
 
     async def _evaluate_async(
         self,
@@ -578,19 +563,21 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             )
 
             # Index results by (snapshot_slug, files_hash)
-            cache_by_key: dict[tuple[str, str], tuple[DBCriticRun, DBGraderRun | None]] = {
+            # files_hash is None for whole-snapshot examples
+            cache_by_key: dict[tuple[SnapshotSlug, str | None], tuple[DBCriticRun, DBGraderRun | None]] = {
                 (critic.snapshot_slug, critic.files_hash): (critic, grader) for critic, grader in cache_rows
             }
 
             # Process each specimen using indexed results
             for idx, specimen_input in enumerate(batch):
                 files_hash = specimen_input.files_hash
+                files_hash_short = files_hash[:8] if files_hash else "whole"
                 cache_key = (specimen_input.slug, files_hash)
 
                 cache_hit = cache_by_key.get(cache_key)
                 if not cache_hit:
                     logger.info(
-                        f"Cache MISS: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash[:8]}...)"
+                        f"Cache MISS: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash_short}...)"
                     )
                     uncached_inputs.append((idx, specimen_input))
                     continue
@@ -609,7 +596,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                     if not grader_run:
                         logger.info(
                             f"Cache MISS (no grader): {specimen_input.slug} (prompt={prompt_sha256[:8]}..., "
-                            f"files_hash={files_hash[:8]}...)"
+                            f"files_hash={files_hash_short}...)"
                         )
                         uncached_inputs.append((idx, specimen_input))
                         continue
@@ -617,10 +604,10 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
                 # Cache hit
                 logger.info(
-                    f"Cache HIT: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash[:8]}...)"
+                    f"Cache HIT: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash_short}...)"
                 )
                 cached_results[idx] = self._reconstruct_from_cache(
-                    transcript_id, critique_id, critic_output, grader_output, capture_traces
+                    transcript_id, critique_id, grader_output, capture_traces
                 )
 
         # Phase 2: Evaluate uncached inputs in parallel
@@ -750,8 +737,6 @@ def _log_run_statistics(critic_model: str, grader_model: str) -> None:
         critic_model: Critic model name to filter runs
         grader_model: Grader model name to filter runs
     """
-    from sqlalchemy import func
-
     with get_session() as session:
         # Count critic run statuses using SQL aggregation
         critic_status_counts = (
@@ -800,6 +785,7 @@ async def optimize_with_gepa(
     hydrator: SnapshotHydrator,
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
+    db_config: DatabaseConfig,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
@@ -826,6 +812,7 @@ async def optimize_with_gepa(
         hydrator: SnapshotHydrator instance for source code hydration
         critic_client: LLM client for critic execution
         grader_client: LLM client for grader execution
+        db_config: Database configuration for critic/grader runs
         reflection_model: Model for GEPA's reflection
         max_metric_calls: Budget for evaluations in this run (not counting historical)
         verbose: Enable verbose logging
@@ -889,6 +876,7 @@ async def optimize_with_gepa(
         hydrator,
         critic_client,
         grader_client,
+        db_config,
         Path(run_dir),
         reflection_model=reflection_model,
         verbose=verbose,

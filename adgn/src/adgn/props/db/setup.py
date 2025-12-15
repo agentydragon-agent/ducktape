@@ -1,4 +1,4 @@
-"""Database setup and initialization (RLS policies, views, agent user).
+"""Database setup and initialization (RLS policies, views).
 
 Extracted from session.py to separate concerns:
 - session.py: Connection management (init_db, get_session)
@@ -8,18 +8,59 @@ Extracted from session.py to separate concerns:
 from __future__ import annotations
 
 import logging
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DDL, Engine, inspect, text
-import sqlalchemy.exc
+from alembic import command
+from alembic.config import Config
+from psycopg2 import sql
+from sqlalchemy import Engine, create_engine, inspect, text
 
+# Import clustering models to register them with Base.metadata
+import adgn.props.db.clustering_models  # noqa: F401
 from adgn.props.db.models import Base
-from adgn.props.db.query_builders import compile_to_sql, snapshot_files_with_issues_select, valid_metrics_select
+
+if TYPE_CHECKING:
+    from adgn.props.db.config import DatabaseConfig
 
 logger = logging.getLogger(__name__)
 
 
+def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, drop_existing: bool = False) -> None:
+    """Ensure a PostgreSQL database exists.
+
+    Args:
+        base_config: Config with connection params (database name will be replaced)
+        database_name: Name of database to create
+        drop_existing: If True, drop and recreate (for test setup).
+                      If False, create only if missing (for production).
+
+    Note: Does not terminate connections. Tests use unique database names so no
+          conflicts in setup. Connection termination remains in test teardown only.
+    """
+    postgres_config = base_config.with_database("postgres")
+    engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+
+    with engine.connect() as conn:
+        if drop_existing:
+            # Idempotent drop (for test setup)
+            conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
+
+        # Check if database exists
+        result = conn.execute(text("SELECT 1 FROM pg_database WHERE datname = :dbname"), {"dbname": database_name})
+
+        if not result.fetchone():
+            # Create using safe identifier quoting
+            raw_conn = conn.connection
+            cursor = raw_conn.cursor()
+            cursor.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(database_name)))
+            cursor.close()
+
+    engine.dispose()
+
+
 def recreate_database(engine: Engine) -> None:
-    """Recreate database from scratch (drop all + create agent_user + schema + RLS).
+    """Recreate database from scratch (drop all + schema + RLS).
 
     This is destructive: drops all existing tables, views, and policies.
 
@@ -28,7 +69,6 @@ def recreate_database(engine: Engine) -> None:
     """
     logger.info("Recreating database from scratch...")
     _drop_all(engine)
-    create_agent_user(engine)
     _create_schema(engine)
     logger.info("Database recreation complete")
 
@@ -54,177 +94,18 @@ def _drop_all(engine: Engine) -> None:
         logger.debug("No tables to drop")
 
 
-def create_agent_user(engine: Engine) -> None:
-    """Create agent_user role with read-only permissions (idempotent)."""
-    logger.info("Creating agent_user role...")
-    with engine.begin() as conn:
-        # Create agent_user role (idempotent)
-        conn.execute(
-            text("""
-            DO $$
-            BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'agent_user') THEN
-                    CREATE ROLE agent_user WITH LOGIN PASSWORD 'agent_password_changeme';
-                END IF;
-            END$$;
-        """)
-        )
-
-        # Grant read-only access to schema
-        conn.execute(text("GRANT USAGE ON SCHEMA public TO agent_user"))
-
-        # Try to set default privileges (requires elevated permissions)
-        # If this fails, we'll grant explicitly on existing tables instead
-        try:
-            conn.execute(
-                text("""
-                ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public
-                    GRANT SELECT ON TABLES TO agent_user
-            """)
-            )
-            logger.info("Default privileges configured for postgres role")
-        except sqlalchemy.exc.ProgrammingError as e:
-            if "permission denied" in str(e).lower():
-                logger.warning(
-                    "Could not set default privileges (requires superuser/owner). "
-                    "Will grant permissions explicitly on existing tables instead."
-                )
-            else:
-                raise
-
-    logger.info("Agent user configured")
-
-
-def _grant_select_on_tables(engine: Engine) -> None:
-    """Grant SELECT permission to agent_user on all tables."""
-    # Get all table names from our metadata
-    table_names = [table.name for table in Base.metadata.tables.values()]
-
-    if not table_names:
-        logger.debug("No tables to grant permissions on")
-        return
-
-    with engine.begin() as conn:
-        for table_name in table_names:
-            conn.execute(text(f"GRANT SELECT ON TABLE {table_name} TO agent_user"))
-
-    logger.info(f"Granted SELECT permission on {len(table_names)} tables to agent_user")
-
-
 def _create_schema(engine: Engine) -> None:
-    """Create tables (from ORM models) + RLS policies + views (idempotent)."""
-    # Create tables from ORM models
-    logger.info("Creating tables from ORM models...")
-    Base.metadata.create_all(bind=engine)
+    """Create tables + RLS policies + views via Alembic migrations (single source of truth).
 
-    # Grant SELECT permission to agent_user on all tables
-    # (in case default privileges didn't work or tables already existed)
-    _grant_select_on_tables(engine)
+    The squashed migration 20251214000000_initial_schema_squashed.py contains ALL schema:
+    tables, enums, RLS function, RLS policies, grants, and views. No ORM create_all needed.
+    """
+    logger.info("Running Alembic migrations...")
+    config = Config()
+    config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
 
-    # Enable RLS and create policies
-    enable_rls(engine)
-
-    # Create views
-    create_views(engine)
+    with engine.begin() as conn:
+        config.attributes["connection"] = conn
+        command.upgrade(config, "head")
 
     logger.info("Schema creation complete")
-
-
-def enable_rls(engine: Engine) -> None:
-    """Enable Row-Level Security policies (idempotent).
-
-    Access control for agent_user:
-    - Train split: Full detail access (critiques, critic_runs, grader_runs, events)
-    - Valid split: Only aggregate metrics from grader_runs (no critique details or execution traces)
-    - Test split: Completely hidden
-
-    Tables WITHOUT RLS (readable by agent_user for all splits):
-    - examples: Allows agent to see which validation examples exist and run evaluations on them
-    - snapshots: Metadata about snapshots (no sensitive labels)
-    - prompts: Prompt definitions
-
-    Postgres superuser bypasses RLS (table owner).
-    """
-    with engine.connect() as check_conn:
-        result = check_conn.execute(text("SELECT tablename, policyname FROM pg_policies WHERE schemaname = 'public'"))
-        existing_policies = {(row[0], row[1]) for row in result}
-
-    # RLS-enabled tables
-    # Note: The 'examples' table is intentionally NOT RLS-protected. This allows agent_user
-    # to read validation examples (snapshot_slug, files_hash, files) for running evaluations,
-    # while ground truth labels (true_positives, false_positives) remain RLS-filtered to
-    # train split only. This design lets the agent evaluate on validation examples without
-    # being able to reverse-engineer the ground truth.
-    rls_table_names = [
-        "snapshots",
-        "true_positives",
-        "false_positives",
-        "critiques",
-        "critic_runs",
-        "grader_runs",
-        "events",
-    ]
-    rls_tables = {Base.metadata.tables[name] for name in rls_table_names}
-
-    # Define agent access rules per table
-    # Note: Cast string literals to split_enum type for enum column comparison
-    agent_access_rules = {
-        "snapshots": "FOR SELECT TO agent_user USING (true)",
-        "true_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
-        "false_positives": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
-        "critiques": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
-        "critic_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
-        "grader_runs": "FOR SELECT TO agent_user USING (snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum))",
-        "events": "FOR SELECT TO agent_user USING (transcript_id IN (SELECT transcript_id FROM critic_runs WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split = 'train'::split_enum)))",
-    }
-
-    with engine.begin() as conn:
-        # Enable RLS on tables
-        for table in rls_tables:
-            conn.execute(DDL(f"ALTER TABLE {table.name} ENABLE ROW LEVEL SECURITY"))
-            conn.execute(DDL(f"ALTER TABLE {table.name} FORCE ROW LEVEL SECURITY"))
-
-        # Create agent policies (skip if exist)
-        policies_created = 0
-        for table_name in rls_table_names:
-            policy_name = f"agent_{table_name}_policy"
-            if (table_name, policy_name) not in existing_policies:
-                conn.execute(DDL(f"CREATE POLICY {policy_name} ON {table_name} {agent_access_rules[table_name]}"))
-                policies_created += 1
-                logger.debug("Created policy: %s on %s", policy_name, table_name)
-            else:
-                logger.debug("Skipping existing policy: %s on %s", policy_name, table_name)
-
-    logger.info(
-        "RLS enabled: %d policies created, %d already exist", policies_created, len(rls_table_names) - policies_created
-    )
-
-
-def create_views(engine: Engine) -> None:
-    """Create database views (idempotent).
-
-    Note: run_costs view is created automatically via DDL event listener in models.py
-    """
-    # Build view SELECT queries using SQLAlchemy (single source of truth in query_builders.py)
-    snapshot_files_sql = compile_to_sql(snapshot_files_with_issues_select())
-    valid_metrics_sql = compile_to_sql(valid_metrics_select())
-
-    with engine.begin() as conn:
-        # Drop old view names if they exist (migration)
-        conn.execute(DDL("DROP VIEW IF EXISTS valid_grader_metrics"))
-        conn.execute(DDL("DROP VIEW IF EXISTS valid_full_snapshot_grader_metrics"))
-
-        # Create snapshot_files_with_issues view
-        conn.execute(DDL("DROP VIEW IF EXISTS snapshot_files_with_issues CASCADE"))
-        conn.execute(DDL(f"CREATE VIEW snapshot_files_with_issues AS {snapshot_files_sql}"))
-
-        # Create valid_metrics view (no longer depends on snapshot_files_with_issues)
-        conn.execute(DDL("DROP VIEW IF EXISTS valid_metrics"))
-        conn.execute(DDL(f"CREATE VIEW valid_metrics AS {valid_metrics_sql}"))
-
-        # Grant SELECT on views to agent_user
-        conn.execute(text("GRANT SELECT ON snapshot_files_with_issues TO agent_user"))
-        conn.execute(text("GRANT SELECT ON valid_metrics TO agent_user"))
-        conn.execute(text("GRANT SELECT ON run_costs TO agent_user"))
-
-    logger.info("Views created")

@@ -9,22 +9,15 @@ import pytest
 from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, Critique, GraderRun, Prompt, Snapshot
-from adgn.props.db.snapshots import DBGraderOutput
 from adgn.props.files_hash import hash_file_set
 from adgn.props.gepa.models import SnapshotInput
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
+from adgn.props.models.snapshot import LocalSource
 from adgn.props.splits import Split
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 from tests.props.conftest import make_grader_output
-
-
-def _make_grader_output_for_recall(recall: float) -> DBGraderOutput:
-    """Thin wrapper for warm-start tests that only care about recall."""
-    return make_grader_output(
-        tp_count=0, fp_count=0, recall=recall, tp_ratio=0.0, fp_ratio=0.0, summary="Test grader output"
-    )
 
 
 @pytest.fixture
@@ -57,9 +50,10 @@ def db_with_historical_runs(test_db):
 
     with get_session() as session:
         # Create snapshots
-        snap_valid_1 = Snapshot(slug=SnapshotSlug("test/valid-1"), split=Split.VALID)
-        snap_valid_2 = Snapshot(slug=SnapshotSlug("test/valid-2"), split=Split.VALID)
-        snap_train = Snapshot(slug=SnapshotSlug("test/train-1"), split=Split.TRAIN)
+        source = LocalSource(vcs="local", root=".")
+        snap_valid_1 = Snapshot(slug=SnapshotSlug("test/valid-1"), split=Split.VALID, source=source)
+        snap_valid_2 = Snapshot(slug=SnapshotSlug("test/valid-2"), split=Split.VALID, source=source)
+        snap_train = Snapshot(slug=SnapshotSlug("test/train-1"), split=Split.TRAIN, source=source)
         session.add_all([snap_valid_1, snap_valid_2, snap_train])
 
         # Create prompts
@@ -145,7 +139,7 @@ def db_with_historical_runs(test_db):
             model="test-model",
             critique_id=critique_1.id,
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=_make_grader_output_for_recall(recall=0.8),
+            output=make_grader_output(tp_count=1, found_credit=0.8),
         )
         grader_run_2 = GraderRun(
             transcript_id=uuid4(),
@@ -153,7 +147,7 @@ def db_with_historical_runs(test_db):
             model="test-model",
             critique_id=critique_2.id,
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=_make_grader_output_for_recall(recall=0.6),
+            output=make_grader_output(tp_count=1, found_credit=0.6),
         )
         grader_run_3 = GraderRun(
             transcript_id=uuid4(),
@@ -161,7 +155,7 @@ def db_with_historical_runs(test_db):
             model="test-model",
             critique_id=critique_3.id,
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=_make_grader_output_for_recall(recall=0.9),
+            output=make_grader_output(tp_count=1, found_credit=0.9),
         )
         # Grader run with JSON null output (simulates incomplete/failed grader)
         grader_run_null = GraderRun(

@@ -9,7 +9,6 @@ from importlib.resources import files
 from typing import cast
 
 from adgn.agent.policies.policy_types import ApprovalDecision
-from adgn.mcp._shared.naming import build_mcp_function
 
 
 def fetch_policy(name: str) -> str:
@@ -30,20 +29,19 @@ def make_policy(
     server/tool, and `default` otherwise. UI send_message is always allowed via
     TEST_CASES to satisfy baseline constraints.
 
-    decision_expr examples: 'PolicyDecision.DENY_CONTINUE', 'PolicyDecision.ASK'
+    decision_expr examples: 'ApprovalDecision.DENY_CONTINUE', 'ApprovalDecision.ASK'
     """
     if default not in {ApprovalDecision.ASK, ApprovalDecision.ALLOW}:
         raise ValueError(f"default must be ASK or ALLOW, got {default}")
     default_expr = (
-        "PolicyDecision.ASK"
+        "ApprovalDecision.ASK"
         if default == ApprovalDecision.ASK
-        else "PolicyDecision.ALLOW"
+        else "ApprovalDecision.ALLOW"
     )
     doc = (
         doc
         or f"policy for {server}.{tool} returns explicit decision; default {default.value}"
     )
-    build_mcp_function(server, tool)
     header = (
         "from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse, ApprovalDecision\n"
         "from adgn.agent.approvals import WellKnownTools\n"
@@ -54,7 +52,7 @@ def make_policy(
     body = f"""
 # {doc}
 TEST_CASES = [
-    (PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE), arguments="{{}}"), ApprovalDecision.ALLOW),
+    (PolicyRequest(name=build_mcp_function(UI_MOUNT_PREFIX, WellKnownTools.SEND_MESSAGE), arguments_json="{{}}"), ApprovalDecision.ALLOW),
 ]
 
 def decide(req: PolicyRequest) -> PolicyResponse:

@@ -13,7 +13,6 @@ import pytest
 
 from adgn.agent.presets import create_agent_from_preset, discover_presets
 from adgn.mcp._shared.resources import extract_single_text_content
-from adgn.mcp.approval_policy.engine import PolicyEngine
 from tests.agent.testdata.approval_policy import fetch_policy
 
 
@@ -55,14 +54,9 @@ approval_policy: |
 class TestPresetPolicyLoading:
     """Tests that preset policies are correctly loaded into PolicyEngine."""
 
-    async def test_policy_engine_uses_provided_source(self, sqlite_persistence, docker_client, policy_allow_all):
+    async def test_policy_engine_uses_provided_source(self, make_approval_policy_server, policy_allow_all):
         """PolicyEngine exposes the provided policy_source via resource."""
-        engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            policy_source=policy_allow_all,
-        )
+        engine = await make_approval_policy_server(policy_allow_all)
 
         async with Client(engine.reader) as sess:
             # Read the policy resource
@@ -71,16 +65,11 @@ class TestPresetPolicyLoading:
             # Should contain the allow_all policy
             assert "approve_all" in policy_text.lower() or "allow" in policy_text.lower()
 
-    async def test_policy_engine_returns_custom_policy(self, sqlite_persistence, docker_client):
+    async def test_policy_engine_returns_custom_policy(self, make_approval_policy_server):
         """PolicyEngine correctly returns custom policy source."""
         custom_policy = fetch_policy("const")
 
-        engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            policy_source=custom_policy,
-        )
+        engine = await make_approval_policy_server(custom_policy)
 
         async with Client(engine.reader) as sess:
             result = await sess.read_resource(engine.reader.active_policy_resource.uri)
@@ -88,27 +77,17 @@ class TestPresetPolicyLoading:
             # const policy should be returned
             assert "const" in policy_text.lower() or "PolicyResponse" in policy_text
 
-    async def test_get_policy_returns_source_and_version(self, sqlite_persistence, docker_client, policy_allow_all):
+    async def test_get_policy_returns_source_and_version(self, make_approval_policy_server, policy_allow_all):
         """PolicyEngine.get_policy returns (source, version)."""
-        engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            policy_source=policy_allow_all,
-        )
+        engine = await make_approval_policy_server(policy_allow_all)
 
         source, version = engine.get_policy()
         assert source == policy_allow_all
         assert version == 1  # Initial version
 
-    async def test_set_policy_increments_version(self, sqlite_persistence, docker_client, policy_allow_all):
+    async def test_set_policy_increments_version(self, make_approval_policy_server, policy_allow_all):
         """PolicyEngine.set_policy increments version."""
-        engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            policy_source="# initial",
-        )
+        engine = await make_approval_policy_server("# initial")
 
         _, initial_version = engine.get_policy()
         assert initial_version == 1
@@ -120,14 +99,9 @@ class TestPresetPolicyLoading:
         assert new_source == policy_allow_all
         assert new_version == 2
 
-    async def test_load_policy_sets_without_incrementing(self, sqlite_persistence, docker_client, policy_allow_all):
+    async def test_load_policy_sets_without_incrementing(self, make_approval_policy_server, policy_allow_all):
         """PolicyEngine.load_policy sets policy at specific version (hydration)."""
-        engine = PolicyEngine(
-            docker_client=docker_client,
-            agent_id="test-agent",
-            persistence=sqlite_persistence,
-            policy_source="# initial",
-        )
+        engine = await make_approval_policy_server("# initial")
 
         # load_policy is for hydration from persistence
         engine.load_policy(policy_allow_all, version=42)

@@ -4,7 +4,7 @@ This file helps AI agents work on the `adgn` package: environment setup, common 
 See `README.md` for a shorter overview.
 
 ## Environment and Setup (direnv + devenv)
-- Requirements: Nix + devenv, direnv, Python 3.11+. Node 20 is available in the dev shell for the UI.
+- Requirements: Nix + devenv, direnv, Python 3.12+. Node 20 is available in the dev shell for the UI.
 - First time here: `cd adgn`, `direnv allow`
   - This loads `.envrc` → devenv, creates a Python venv, and installs `adgn` in editable mode with dev extras.
 - Re-entering later: just `cd adgn`; direnv activates the environment.
@@ -48,7 +48,7 @@ See `README.md` for a shorter overview.
 - Run: `pytest -q tests/agent/e2e -m "not live_llm"`
 
 ## High‑Level Module Map
-- Packaging: name `adgn`, Python `>=3.11,<3.14`, src layout under `src/`
+- Packaging: name `adgn`, Python `>=3.12,<3.14`, src layout under `src/`
 - Tana export tooling now lives in the sibling `tana/` project (`src/tana/export/`).
   - Key entry points: `convert.py`, `materialize_searches.py`, `export_node_subset.py`, plus helpers under `tana/export/lib/*`.
 - Response cache (`src/adgn/rspcache/`)
@@ -61,7 +61,7 @@ See `README.md` for a shorter overview.
   - REPL: `adgn-agent run`
   - UI server: `adgn-agent serve` (opens WS UI at `http://127.0.0.1:8765/`)
   - Dev: `adgn-agent dev` (backend + Vite HMR; auto-picks free ports)
-- Model/system defaults: `--model` (OPENAI_MODEL, default `o4-mini`), `--system` (SYSTEM_INSTRUCTIONS)
+- Model/system defaults: `--model` (OPENAI_MODEL, default `gpt-5.1-codex-mini`), `--system` (SYSTEM_INSTRUCTIONS)
 - MCP configuration:
   - Baseline: if present, `./.mcp.json` in CWD is loaded first
   - Repeatable: `--mcp-config /path/extra.json` merges additional configs (later overrides earlier)
@@ -96,14 +96,10 @@ See `README.md` for a shorter overview.
   - `sandbox-jupyter` → `adgn.mcp.sandboxed_jupyter.wrapper:main`
   - Other helpers: `adgn-openai-probe`, `adgn-sandboxer`, `adgn-mcp-*`, `adgn-matrix-bot`
 ### Properties/specimens
-- Schema (Pydantic source of truth):
-  - @src/adgn/llm/properties/models/specimen.py
-  - @src/adgn/llm/properties/models/issue.py
-- Registry/loader:
-  - @src/adgn/llm/properties/specimen_registry.py
-- Authoring guide:
-  - @src/adgn/props/CLAUDE.md
-- Examples: `adgn-properties snapshot exec <snapshot-slug>`
+**For detailed props-specific documentation, see:**
+- @src/adgn/props/AGENTS.md — Complete guide to specimens, models, database, tooling, and workflows
+- @src/adgn/props/CLAUDE.md — Props package conventions and authoring
+- Quick start: `adgn-properties run --snapshot <slug>` or `adgn-properties snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
 - Typical: `direnv exec adgn pytest -q -m "not live_llm"`
@@ -135,7 +131,7 @@ handlers = [bootstrap, ...other handlers...]
 - Immediate construction (not factories/lambdas)
 - Helper functions for common patterns: `read_resource_call()`, `docker_exec_call()`
 
-**Future enhancement:** See `docs/bootstrap_type_safety_plans.md` for plans to eliminate string literals via generic/typed stubs
+**Future enhancement:** See `src/adgn/agent/docs/bootstrap_type_safety.md` for plans to eliminate string literals via generic/typed stubs
 
 ## Conventions and Tips
 - Production code changes and test updates
@@ -220,10 +216,8 @@ handlers = [bootstrap, ...other handlers...]
   - For resource JSON, use `read_text_json(session, uri)` or the typed variant. Avoid hand‑parsing `contents`.
 
 ### Linting and Typing
-- Ruff
-  - Run `ruff format .` and `ruff check . --fix` locally. Fix E402 (imports not at top) by moving imports to the top; do not add ignore rules unless explicitly approved.
-- Mypy
-  - Run `mypy --config-file pyproject.toml`. Do not add new excludes or ignore patterns without explicit approval. If vendor packages cause false positives (e.g., duplicate module name errors), scope checks to the edited subpackages (e.g., `mypy src/adgn/mcp/...`) while keeping the configuration unchanged.
+- Prefer to use repo-wide configured `pre-commit` over individual tools (like `ruff`, `mypy`, etc.)
+- Do not add ignore rules or silence individual lint errors unless explicitly approved
 - Codemod
   - Run `trivial-patterns --scope tests tests` alongside Ruff and mypy before handing off patches. Add more scopes with repeated flags or comma-separated values (e.g., `--scope tests,src/adgn`). Omit `--scope` to scan the entire project. The CLI wraps `adgn-trivial-patterns`; review its findings and fix or justify each one. Skip patterns live under `[tool.adgn.trivial-patterns]` in `pyproject.toml`.
 
@@ -260,10 +254,9 @@ Approval Policy
 - Tests marked `real_github` or `live_llm` talk to network/services; run explicitly
 
 ## References and Further Reading
-- MCP servers and presets: `docs/special_mcp_servers.md`
+- Bootstrap type safety: `src/adgn/agent/docs/bootstrap_type_safety.md`
 - Approval policy implementation: `src/adgn/agent/approvals.py`
-- LLM docs: `docs/llm/*`
-- Agent presets: see README.md "Agent Presets" and `examples/presets/*.yaml`
+- Agent presets: see README.md "Agent Presets" (if available)
 
 @instructions/fastmcp_pydantic.md
 @instructions/fastmcp_exceptions.md

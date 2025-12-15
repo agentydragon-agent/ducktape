@@ -5,7 +5,7 @@ import logging
 import os
 from typing import TYPE_CHECKING
 
-from docker.client import DockerClient
+import aiodocker
 
 from adgn.agent.policies.policy_types import PolicyRequest, PolicyResponse
 from adgn.agent.policy_eval.runner import run_policy_source
@@ -28,7 +28,7 @@ class ContainerPolicyEvaluator:
     """
 
     agent_id: str
-    docker_client: DockerClient
+    docker_client: aiodocker.Docker
     engine: PolicyEngine
     image: str = field(default_factory=resolve_runtime_image)
     timeout_secs: float = field(default_factory=lambda: float(os.getenv("ADGN_POLICY_EVAL_TIMEOUT_SECS", "5")))
@@ -36,7 +36,7 @@ class ContainerPolicyEvaluator:
     async def decide(self, policy_input: PolicyRequest) -> PolicyResponse:
         """Evaluate using the current policy source via run_policy_source."""
         policy_src, _ver = self.engine.get_policy()
-        return run_policy_source(
+        return await run_policy_source(
             docker_client=self.docker_client,
             source=policy_src,
             input_payload=policy_input,
