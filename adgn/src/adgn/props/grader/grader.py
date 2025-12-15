@@ -128,15 +128,22 @@ class GradeSubmitState:
 
 @dataclass(frozen=True)
 class GradeInputs:
-    """Grading context: snapshot slug and critique."""
+    """Grading context: snapshot slug, critique, and ground truth data."""
 
     snapshot_slug: SnapshotSlug
     critique: DBCriticSubmitPayload  # DB persistence model (not MCP I/O model)
+    # Ground truth data for serving as resources
+    canonical_tps: list[TruePositiveIssue]
+    critique_typed: list[CritiqueInputIssue]
+    canonical_fps: list[KnownFalsePositive]
     reviewed_files: set[Path] | None = None  # Files reviewed by critic (for scope filtering)
 
 
 # MCP Resource URIs (unprefixed - used in server registration and prompts)
 GRADER_SNAPSHOT_SLUG_RESOURCE_URI = "resource://grader_submit/snapshot_slug"
+GRADER_CANONICAL_TPS_RESOURCE_URI = "resource://grader_submit/canonical_tps"
+GRADER_CRITIQUE_ISSUES_RESOURCE_URI = "resource://grader_submit/critique_issues"
+GRADER_KNOWN_FPS_RESOURCE_URI = "resource://grader_submit/known_fps"
 
 GRADER_SUBMIT_INSTRUCTIONS = """\
 Grader submission server for critique evaluation.
@@ -162,6 +169,9 @@ class GraderSubmitServer(EnhancedFastMCP):
 
     # Resource attributes (stashed results of @resource decorator - single source of truth for URI access)
     snapshot_slug_resource: FunctionResource
+    canonical_tps_resource: FunctionResource
+    critique_issues_resource: FunctionResource
+    known_fps_resource: FunctionResource
 
     # Tool reference (assigned in __init__)
     submit_result_tool: FunctionTool
@@ -171,7 +181,7 @@ class GraderSubmitServer(EnhancedFastMCP):
 
         Args:
             state: State container for submitted result.
-            inputs: Grading context (snapshot slug and critique).
+            inputs: Grading context (snapshot slug, critique, and ground truth).
             auth: Auth provider for HTTP mode (None for inproc).
         """
         super().__init__("Grader Submit Server", instructions=GRADER_SUBMIT_INSTRUCTIONS, auth=auth)
@@ -187,6 +197,38 @@ class GraderSubmitServer(EnhancedFastMCP):
         self.snapshot_slug_resource = cast(
             FunctionResource, self.resource(GRADER_SNAPSHOT_SLUG_RESOURCE_URI)(get_snapshot_slug)
         )
+
+        # Register ground truth resources (FastMCP handles Pydantic model serialization)
+        async def get_canonical_tps() -> list[TruePositiveIssue]:
+            """Get canonical true positive issues (JSON array).
+
+            These are the ground truth issues that should be found by the critic.
+            """
+            return inputs.canonical_tps
+
+        self.canonical_tps_resource = cast(
+            FunctionResource, self.resource(GRADER_CANONICAL_TPS_RESOURCE_URI)(get_canonical_tps)
+        )
+
+        async def get_critique_issues() -> list[CritiqueInputIssue]:
+            """Get input critique issues (JSON array).
+
+            These are the issues reported by the critic being graded.
+            """
+            return inputs.critique_typed
+
+        self.critique_issues_resource = cast(
+            FunctionResource, self.resource(GRADER_CRITIQUE_ISSUES_RESOURCE_URI)(get_critique_issues)
+        )
+
+        async def get_known_fps() -> list[KnownFalsePositive]:
+            """Get known false positives (JSON array).
+
+            These are patterns that should explicitly NOT be flagged.
+            """
+            return inputs.canonical_fps
+
+        self.known_fps_resource = cast(FunctionResource, self.resource(GRADER_KNOWN_FPS_RESOURCE_URI)(get_known_fps))
 
         # Load ORM snapshot from database for ground truth issues
         with get_session() as session:
@@ -519,13 +561,7 @@ async def _run_grader_agent(
                 assert isinstance(handle, GraderCompositor)
                 submit_tool_name = handle.grader_submit.tool_name(handle.grader_submit.server.submit_result_tool)
 
-            prompt = build_grade_from_json_prompt(
-                true_positive_issues=canonical_tps,
-                critique_issues=critique_typed,
-                known_fps=canonical_fps,
-                submit_tool_name=submit_tool_name,
-                compositor=handle,
-            )
+            prompt = build_grade_from_json_prompt(submit_tool_name=submit_tool_name, compositor=handle)
 
             # Note: resources and compositor_meta are auto-mounted by base Compositor
             async with Client(handle) as mcp_client:
@@ -580,6 +616,18 @@ async def bootstrap():
         result = await session.read_resource("{GRADER_SNAPSHOT_SLUG_RESOURCE_URI}")
         print(json.dumps(result.model_dump(mode="json"), indent=2))
 
+        print("=== Canonical True Positives ===")
+        result = await session.read_resource("{GRADER_CANONICAL_TPS_RESOURCE_URI}")
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+
+        print("=== Critique Issues ===")
+        result = await session.read_resource("{GRADER_CRITIQUE_ISSUES_RESOURCE_URI}")
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+
+        print("=== Known False Positives ===")
+        result = await session.read_resource("{GRADER_KNOWN_FPS_RESOURCE_URI}")
+        print(json.dumps(result.model_dump(mode="json"), indent=2))
+
 asyncio.run(bootstrap())
 """
                     logger.info("Grader bootstrap: executing docker bootstrap script for MCP initialization")
@@ -600,7 +648,26 @@ asyncio.run(bootstrap())
                             server=handle.grader_submit.prefix,
                             uri=handle.grader_submit.server.snapshot_slug_resource.uri,
                             max_bytes=256,
-                        )
+                        ),
+                        # Read ground truth resources
+                        builder.read_resource(
+                            handle.resources,
+                            server=handle.grader_submit.prefix,
+                            uri=handle.grader_submit.server.canonical_tps_resource.uri,
+                            max_bytes=1_000_000,  # Large enough for canonical TPs JSON
+                        ),
+                        builder.read_resource(
+                            handle.resources,
+                            server=handle.grader_submit.prefix,
+                            uri=handle.grader_submit.server.critique_issues_resource.uri,
+                            max_bytes=1_000_000,  # Large enough for critique issues JSON
+                        ),
+                        builder.read_resource(
+                            handle.resources,
+                            server=handle.grader_submit.prefix,
+                            uri=handle.grader_submit.server.known_fps_resource.uri,
+                            max_bytes=1_000_000,  # Large enough for known FPs JSON
+                        ),
                     ]
                     handlers_list.append(SequenceHandler([InjectItems(items=bootstrap_calls)]))
 
@@ -771,7 +838,12 @@ async def run_grader(
     # Build grader inputs and state
     grader_state = GradeSubmitState()
     inputs = GradeInputs(
-        snapshot_slug=input_data.snapshot_slug, critique=critique_payload_db, reviewed_files=reviewed_files
+        snapshot_slug=input_data.snapshot_slug,
+        critique=critique_payload_db,
+        canonical_tps=canonical_tps,
+        critique_typed=critique_typed,
+        canonical_fps=canonical_fps,
+        reviewed_files=reviewed_files,
     )
 
     # Run agent with either HTTP or in-proc server based on toggle

@@ -71,21 +71,21 @@ After grading all occurrences:
 - **occurrence_id**: Unique identifier for this specific occurrence
 - **input_id**: The critique issue ID that matched
 
-## Inputs (JSON)
-- canonical positives:
-```json
-{{ canonical_issues_json }}
-```
-- input critique (unified run output):
-```json
-{{ critique_issues_json }}
-```
-{% if known_fps_json != "[]" %}- known false positives:
-```json
-{{ known_fps_json }}
-```
-{% else %}- known false positives: (none)
-{% endif %}
+## Inputs (from MCP resources)
+
+**Read the ground truth data from MCP resources before grading:**
+
+1. **Canonical true positives**: Read `{{ canonical_tps_resource_uri }}` (JSON array)
+   - These are the ground truth issues that should be found by the critic
+   - Each TP has multiple occurrences with unique occurrence_id fields
+
+2. **Input critique issues**: Read `{{ critique_issues_resource_uri }}` (JSON array)
+   - These are the issues reported by the critic being graded
+   - Match these against canonical TPs
+
+3. **Known false positives**: Read `{{ known_fps_resource_uri }}` (JSON array)
+   - These are patterns that should explicitly NOT be flagged
+   - May be empty if no FPs are defined for this snapshot
 
 ## Inspection and Verification
 

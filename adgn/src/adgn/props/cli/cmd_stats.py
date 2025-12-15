@@ -17,15 +17,17 @@ from sqlalchemy import func
 import typer
 
 from adgn.props.db import get_session
-from adgn.props.db.datapoints import count_available_examples_by_scope, count_available_examples_for_split
+from adgn.props.db.datapoints import count_available_examples_by_scope_all, count_available_examples_for_split
 from adgn.props.db.models import (
     AggregatedRecallByExample,
     AggregatedRecallByPrompt,
     CriticRun,
+    Critique,
     Event,
     GraderRun,
     OccurrenceCredit,
     OccurrenceStatistics,
+    Snapshot,
 )
 from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats, query_recall_by_example
 from adgn.props.display import SHORT_SHA_LENGTH, short_sha
@@ -714,9 +716,10 @@ def cmd_stats(ctx: typer.Context) -> None:
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
     tp_counts_per_sample: dict[Split, dict[tuple[SnapshotSlug, str | None], int]] = defaultdict(dict)
 
-    # Track critic and grader run statuses
-    critic_status_counts: Counter[str] = Counter()
-    grader_status_counts: Counter[str] = Counter()
+    # Track run statuses by type
+    status_counts: dict[str, defaultdict[str | None, int]] = {"Critic": defaultdict(int), "Grader": defaultdict(int)}
+    # Track example counts by (split, is_whole_snapshot)
+    example_counts: dict[tuple[Split, bool], int] = {}
 
     with get_session() as session:
         # Compute total available training examples per split using shared logic
@@ -728,9 +731,8 @@ def cmd_stats(ctx: typer.Context) -> None:
             for split in [Split.TRAIN, Split.VALID, Split.TEST]
         }
 
-        # Get counts for train split broken down by scope
-        train_whole_count = count_available_examples_by_scope(session, Split.TRAIN, is_whole_snapshot=True)
-        train_partial_count = count_available_examples_by_scope(session, Split.TRAIN, is_whole_snapshot=False)
+        # Get counts for train and valid splits broken down by scope (single query)
+        example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
 
         # No longer building prompt_stats_list here - using query builder instead
 
@@ -780,24 +782,29 @@ def cmd_stats(ctx: typer.Context) -> None:
                     best_prompts = [sha for sha, recall in sample_recalls.items() if recall == max_recall]
                     prompt_best_counts.update(best_prompts)
 
-        # Count critic and grader run statuses using SQL aggregation
+        # Count run statuses using SQL aggregation
+        # Filter to same scope as per-prompt stats: TRAIN + VALID (all examples)
         critic_status_rows = (
             session.query(CriticRun.output["tag"].astext, func.count(CriticRun.id))
-            .filter(CriticRun.output.isnot(None))
+            .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
+            .filter(CriticRun.output.isnot(None), (Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
             .group_by(CriticRun.output["tag"].astext)
             .all()
         )
         for status, count in critic_status_rows:
-            critic_status_counts[status] = count
+            status_counts["Critic"][status] = count
 
         grader_status_rows = (
             session.query(GraderRun.output["tag"].astext, func.count(GraderRun.id))
-            .filter(GraderRun.output.isnot(None))
+            .join(Critique, Critique.id == GraderRun.critique_id)
+            .join(CriticRun, CriticRun.critique_id == Critique.id)
+            .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
+            .filter(GraderRun.output.isnot(None), (Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
             .group_by(GraderRun.output["tag"].astext)
             .all()
         )
         for status, count in grader_status_rows:
-            grader_status_counts[status] = count
+            status_counts["Grader"][status] = count
 
     # Use query builder to get comprehensive prompt performance stats (already sorted by created_at DESC)
     prompt_perf_rows = query_prompt_performance_stats(session, limit=100)
@@ -810,10 +817,11 @@ def cmd_stats(ctx: typer.Context) -> None:
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
     table.add_column("Age", justify="right", width=4)
     table.add_column("Chars", justify="right", width=6)
-    # Add Valid, Train Whole, and Train Partial split columns using helper
-    _add_split_columns(table, "Valid", "cyan", total_samples_by_split[Split.VALID])
-    _add_split_columns(table, "Tr-W", "yellow", train_whole_count)
-    _add_split_columns(table, "Tr-P", "magenta", train_partial_count)
+    # Add Valid (whole and partial), Train Whole, and Train Partial split columns using helper
+    _add_split_columns(table, "Val-W", "cyan", example_counts[(Split.VALID, True)])
+    _add_split_columns(table, "Val-P", "blue", example_counts[(Split.VALID, False)])
+    _add_split_columns(table, "Tr-W", "yellow", example_counts[(Split.TRAIN, True)])
+    _add_split_columns(table, "Tr-P", "magenta", example_counts[(Split.TRAIN, False)])
 
     for row in prompt_perf_rows:
         sha_short = short_sha(row.prompt_sha256)
@@ -822,26 +830,44 @@ def cmd_stats(ctx: typer.Context) -> None:
         # Format length as "11k" for > 1000, otherwise just the number
         length_str = f"{row.prompt_length // 1000}k" if row.prompt_length >= 1000 else str(row.prompt_length)
 
-        # Format valid stats (green if fully computed)
-        fully_computed_valid = row.valid is not None and row.valid.success_count == total_samples_by_split[Split.VALID]
-        valid_stats = format_split_stats(row.valid, fully_computed=fully_computed_valid)
+        # Get stats from dict using (split, is_whole_snapshot) keys
+        valid_whole = row.stats.get((Split.VALID, True))
+        valid_partial = row.stats.get((Split.VALID, False))
+        train_whole = row.stats.get((Split.TRAIN, True))
+        train_partial = row.stats.get((Split.TRAIN, False))
+
+        # Format valid whole stats (green if fully computed)
+        fully_computed_valid_whole = (
+            valid_whole is not None and valid_whole.success_count == example_counts[(Split.VALID, True)]
+        )
+        valid_whole_stats = format_split_stats(valid_whole, fully_computed=fully_computed_valid_whole)
+
+        # Format valid partial stats (green if fully computed)
+        fully_computed_valid_partial = (
+            valid_partial is not None and valid_partial.success_count == example_counts[(Split.VALID, False)]
+        )
+        valid_partial_stats = format_split_stats(valid_partial, fully_computed=fully_computed_valid_partial)
 
         # Format train whole-snapshot stats (green if fully computed)
-        fully_computed_train_whole = row.train_whole is not None and row.train_whole.success_count == train_whole_count
-        train_whole_stats = format_split_stats(row.train_whole, fully_computed=fully_computed_train_whole)
+        fully_computed_train_whole = (
+            train_whole is not None and train_whole.success_count == example_counts[(Split.TRAIN, True)]
+        )
+        train_whole_stats = format_split_stats(train_whole, fully_computed=fully_computed_train_whole)
 
         # Format train partial stats (green if fully computed)
         fully_computed_train_partial = (
-            row.train_partial is not None and row.train_partial.success_count == train_partial_count
+            train_partial is not None and train_partial.success_count == example_counts[(Split.TRAIN, False)]
         )
-        train_partial_stats = format_split_stats(row.train_partial, fully_computed=fully_computed_train_partial)
+        train_partial_stats = format_split_stats(train_partial, fully_computed=fully_computed_train_partial)
 
         table.add_row(
             sha_short,
             age_str,
             length_str,
-            # Valid stats (canonical ordering via as_row_fields)
-            *valid_stats.as_row_fields(),
+            # Valid whole stats (canonical ordering via as_row_fields)
+            *valid_whole_stats.as_row_fields(),
+            # Valid partial stats (same canonical ordering)
+            *valid_partial_stats.as_row_fields(),
             # Train whole stats (same canonical ordering)
             *train_whole_stats.as_row_fields(),
             # Train partial stats (same canonical ordering)
@@ -856,50 +882,59 @@ def cmd_stats(ctx: typer.Context) -> None:
     console.print("[bold]Summary:[/bold]")
     console.print(f"  Total prompts: {len(prompt_perf_rows)}")
     console.print("\n  Available examples per split:")
-    console.print(f"    Valid: {total_samples_by_split[Split.VALID]} (whole-snapshot only)")
-    console.print(
-        f"    Train: {total_samples_by_split[Split.TRAIN]} total (whole: {train_whole_count}, partial: {train_partial_count})"
-    )
+    for split in [Split.VALID, Split.TRAIN]:
+        console.print(
+            f"    {split.value.capitalize()}: {total_samples_by_split[split]} total "
+            f"(whole: {example_counts[(split, True)]}, partial: {example_counts[(split, False)]})"
+        )
     console.print(f"    Test: {total_samples_by_split[Split.TEST]}")
 
-    # Find best prompt by valid recall
-    valid_prompts = [(row, row.valid.mean_recall) for row in prompt_perf_rows if row.valid is not None]
-    if valid_prompts:
-        best = max(valid_prompts, key=lambda x: x[1])
-        best_valid_stats = best[0].valid
-        assert best_valid_stats is not None  # Filtered above
+    # Find best prompt by valid whole-snapshot recall (terminal metric)
+    valid_whole_prompts = []
+    for row in prompt_perf_rows:
+        stats = row.stats.get((Split.VALID, True))
+        if stats is not None:
+            valid_whole_prompts.append((row, stats))
+
+    if valid_whole_prompts:
+        best = max(valid_whole_prompts, key=lambda x: x[1].mean_recall)
+        best_row, best_valid_stats = best
         console.print(
-            f"\n[bold green]Best prompt (valid):[/bold green] "
-            f"{short_sha(best[0].prompt_sha256)} with {best[1]:.1f}% recall "
+            f"\n[bold green]Best prompt (valid whole-snapshot):[/bold green] "
+            f"{short_sha(best_row.prompt_sha256)} with {best_valid_stats.mean_recall:.1f}% recall "
             f"({best_valid_stats.success_count}/{best_valid_stats.total_count} runs)"
         )
 
-    # Display run status statistics
+    # Display run status statistics as table
     console.print("\n[bold cyan]Run Status Statistics[/bold cyan]")
 
-    # Critic runs
-    total_critic = sum(critic_status_counts.values())
-    if total_critic > 0:
-        console.print(f"\n  Critic runs (total: {total_critic}):")
-        for status in sorted(critic_status_counts.keys(), key=lambda x: (x is None, x)):
-            count = critic_status_counts[status]
-            pct = count / total_critic
-            status_label = status if status is not None else "(no tag)"
-            console.print(f"    {status_label}: {count} ({pct:.1%})")
-    else:
-        console.print("  No critic runs found")
+    # Collect all unique statuses across all run types
+    all_statuses = sorted(
+        set().union(*(counts.keys() for counts in status_counts.values())),
+        key=lambda x: (x is None, x),  # None (no tag) sorts last
+    )
 
-    # Grader runs
-    total_grader = sum(grader_status_counts.values())
-    if total_grader > 0:
-        console.print(f"\n  Grader runs (total: {total_grader}):")
-        for status in sorted(grader_status_counts.keys(), key=lambda x: (x is None, x)):
-            count = grader_status_counts[status]
-            pct = count / total_grader
-            status_label = status if status is not None else "(no tag)"
-            console.print(f"    {status_label}: {count} ({pct:.1%})")
-    else:
-        console.print("  No grader runs found")
+    # Build table with dynamic columns
+    status_table = Table(show_header=True, box=box.SIMPLE)
+    status_table.add_column("Type", style="bold")
+    status_table.add_column("Total", justify="right")
+
+    for status in all_statuses:
+        label = "(no tag)" if status is None else status
+        status_table.add_column(label, justify="right")
+
+    # Add rows for each run type
+    for run_type, counts in status_counts.items():
+        total = sum(counts.values())
+        if total > 0:
+            row_data = [run_type, str(total)]
+            for status in all_statuses:
+                count = counts[status]
+                pct = count / total
+                row_data.append(f"{count} ({pct:.1%})")
+            status_table.add_row(*row_data)
+
+    console.print(status_table)
 
     # Display distributions for each split
     for split in [Split.TRAIN, Split.VALID, Split.TEST]:

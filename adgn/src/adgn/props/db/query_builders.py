@@ -74,9 +74,9 @@ class PromptPerformanceRow(BaseModel):
     prompt_sha256: str
     created_at: datetime
     prompt_length: int
-    valid: SplitPerformanceStats | None
-    train_whole: SplitPerformanceStats | None
-    train_partial: SplitPerformanceStats | None
+    # Map from (split, is_whole_snapshot) to statistics
+    # Keys: (Split.VALID, True), (Split.VALID, False), (Split.TRAIN, True), (Split.TRAIN, False)
+    stats: dict[tuple[Split, bool], SplitPerformanceStats]
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -653,7 +653,7 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                     grader_rationale,
                     AVG(found_credit) as avg_credit
                 FROM occurrence_credits
-                WHERE split = 'train' OR (split = 'valid' AND is_whole_snapshot = TRUE)
+                WHERE split = 'train' OR split = 'valid'
                 GROUP BY prompt_sha256, split, is_whole_snapshot, snapshot_slug, files_hash,
                          tp_id, occurrence_id, critic_run_id, grader_run_id, grader_rationale
             ) occurrence_avg
@@ -697,13 +697,20 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
             p.prompt_sha256,
             p.created_at,
             p.prompt_length,
-            v.mean_recall as valid_recall,
-            v.recall_lcb as valid_lcb,
-            v.success_count as valid_success,
-            v.total_count as valid_total,
-            v.zero_count as valid_zero_count,
-            v.stuck_count as valid_stuck_count,
-            v.context_count as valid_context_count,
+            vw.mean_recall as valid_whole_recall,
+            vw.recall_lcb as valid_whole_lcb,
+            vw.success_count as valid_whole_success,
+            vw.total_count as valid_whole_total,
+            vw.zero_count as valid_whole_zero_count,
+            vw.stuck_count as valid_whole_stuck_count,
+            vw.context_count as valid_whole_context_count,
+            vp.mean_recall as valid_partial_recall,
+            vp.recall_lcb as valid_partial_lcb,
+            vp.success_count as valid_partial_success,
+            vp.total_count as valid_partial_total,
+            vp.zero_count as valid_partial_zero_count,
+            vp.stuck_count as valid_partial_stuck_count,
+            vp.context_count as valid_partial_context_count,
             tw.mean_recall as train_whole_recall,
             tw.recall_lcb as train_whole_lcb,
             tw.success_count as train_whole_success,
@@ -719,14 +726,16 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
             tp.stuck_count as train_partial_stuck_count,
             tp.context_count as train_partial_context_count
         FROM prompt_info p
-        LEFT JOIN split_stats v ON v.prompt_sha256 = p.prompt_sha256 AND v.split = 'valid'
+        LEFT JOIN split_stats vw ON vw.prompt_sha256 = p.prompt_sha256 AND vw.split = 'valid' AND vw.is_whole_snapshot = TRUE
+        LEFT JOIN split_stats vp ON vp.prompt_sha256 = p.prompt_sha256 AND vp.split = 'valid' AND vp.is_whole_snapshot = FALSE
         LEFT JOIN split_stats tw ON tw.prompt_sha256 = p.prompt_sha256 AND tw.split = 'train' AND tw.is_whole_snapshot = TRUE
         LEFT JOIN split_stats tp ON tp.prompt_sha256 = p.prompt_sha256 AND tp.split = 'train' AND tp.is_whole_snapshot = FALSE
         ORDER BY
-            v.recall_lcb DESC NULLS LAST,   -- Primary: valid LCB (descending)
-            tw.recall_lcb DESC NULLS LAST,  -- Secondary: train whole LCB (descending)
-            tp.recall_lcb DESC NULLS LAST,  -- Tertiary: train partial LCB (descending)
-            p.created_at DESC               -- Quaternary: creation time (tiebreaker)
+            vw.recall_lcb DESC NULLS LAST,  -- Primary: valid whole LCB (descending)
+            vp.recall_lcb DESC NULLS LAST,  -- Secondary: valid partial LCB (descending)
+            tw.recall_lcb DESC NULLS LAST,  -- Tertiary: train whole LCB (descending)
+            tp.recall_lcb DESC NULLS LAST,  -- Quaternary: train partial LCB (descending)
+            p.created_at DESC               -- Quinary: creation time (tiebreaker)
         LIMIT :limit
     """)
 
@@ -735,25 +744,38 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
     # Convert to Pydantic models
     rows = []
     for row in results:
-        # Build valid stats if data exists
-        valid_stats = None
-        if row.valid_recall is not None:
-            valid_stats = SplitPerformanceStats(
-                mean_recall=row.valid_recall,
-                lcb=row.valid_lcb,  # NULL if n < 2
-                success_count=row.valid_success,
-                total_count=row.valid_total,
-                zero_count=row.valid_zero_count or 0,
-                stuck_count=row.valid_stuck_count or 0,
-                context_count=row.valid_context_count or 0,
+        # Build stats dictionary with (split, is_whole_snapshot) keys
+        stats_dict: dict[tuple[Split, bool], SplitPerformanceStats] = {}
+
+        # Valid whole-snapshot stats
+        if row.valid_whole_recall is not None:
+            stats_dict[(Split.VALID, True)] = SplitPerformanceStats(
+                mean_recall=row.valid_whole_recall,
+                lcb=row.valid_whole_lcb,
+                success_count=row.valid_whole_success,
+                total_count=row.valid_whole_total,
+                zero_count=row.valid_whole_zero_count or 0,
+                stuck_count=row.valid_whole_stuck_count or 0,
+                context_count=row.valid_whole_context_count or 0,
             )
 
-        # Build train whole-snapshot stats if data exists
-        train_whole_stats = None
+        # Valid partial stats
+        if row.valid_partial_recall is not None:
+            stats_dict[(Split.VALID, False)] = SplitPerformanceStats(
+                mean_recall=row.valid_partial_recall,
+                lcb=row.valid_partial_lcb,
+                success_count=row.valid_partial_success,
+                total_count=row.valid_partial_total,
+                zero_count=row.valid_partial_zero_count or 0,
+                stuck_count=row.valid_partial_stuck_count or 0,
+                context_count=row.valid_partial_context_count or 0,
+            )
+
+        # Train whole-snapshot stats
         if row.train_whole_recall is not None:
-            train_whole_stats = SplitPerformanceStats(
+            stats_dict[(Split.TRAIN, True)] = SplitPerformanceStats(
                 mean_recall=row.train_whole_recall,
-                lcb=row.train_whole_lcb,  # NULL if n < 2
+                lcb=row.train_whole_lcb,
                 success_count=row.train_whole_success,
                 total_count=row.train_whole_total,
                 zero_count=row.train_whole_zero_count or 0,
@@ -761,12 +783,11 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 context_count=row.train_whole_context_count or 0,
             )
 
-        # Build train partial stats if data exists
-        train_partial_stats = None
+        # Train partial stats
         if row.train_partial_recall is not None:
-            train_partial_stats = SplitPerformanceStats(
+            stats_dict[(Split.TRAIN, False)] = SplitPerformanceStats(
                 mean_recall=row.train_partial_recall,
-                lcb=row.train_partial_lcb,  # NULL if n < 2
+                lcb=row.train_partial_lcb,
                 success_count=row.train_partial_success,
                 total_count=row.train_partial_total,
                 zero_count=row.train_partial_zero_count or 0,
@@ -779,9 +800,7 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 prompt_sha256=row.prompt_sha256,
                 created_at=row.created_at,
                 prompt_length=row.prompt_length,
-                valid=valid_stats,
-                train_whole=train_whole_stats,
-                train_partial=train_partial_stats,
+                stats=stats_dict,
             )
         )
 

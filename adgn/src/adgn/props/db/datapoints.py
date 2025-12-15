@@ -46,24 +46,28 @@ def count_available_examples_for_split(session: Session, split: Split) -> int:
     return count or 0
 
 
-def count_available_examples_by_scope(session: Session, split: Split, is_whole_snapshot: bool) -> int:
-    """Count available training examples for a split and scope.
+def count_available_examples_by_scope_all(session: Session, splits: list[Split]) -> dict[tuple[Split, bool], int]:
+    """Count examples grouped by split and is_whole_snapshot in a single query.
 
     Args:
         session: SQLAlchemy session
-        split: Split to count examples for
-        is_whole_snapshot: If True, count only whole-snapshot examples; if False, count only partial examples
+        splits: List of splits to count examples for
 
     Returns:
-        Number of training examples matching the criteria
+        Dict mapping (split, is_whole_snapshot) to count
     """
-    count = (
-        session.query(func.count(Example.snapshot_slug))
+    results = (
+        session.query(Snapshot.split, Example.is_whole_snapshot, func.count(Example.snapshot_slug))
         .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
-        .where(Snapshot.split == split, Example.is_whole_snapshot == is_whole_snapshot)
-        .scalar()
+        .where(Snapshot.split.in_(splits))
+        .group_by(Snapshot.split, Example.is_whole_snapshot)
+        .all()
     )
-    return count or 0
+    # Initialize all combinations to 0, then fill in actual counts
+    counts: dict[tuple[Split, bool], int] = {(split, is_whole): 0 for split in splits for is_whole in [True, False]}
+    for split, is_whole, count in results:
+        counts[(split, is_whole)] = count
+    return counts
 
 
 def get_examples_for_split(session: Session, split: Split) -> list[SnapshotInput]:
