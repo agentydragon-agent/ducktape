@@ -560,7 +560,8 @@ The snapshot slug for this grader run is available at the MCP resource `{GRADER_
                 builder = TypedBootstrapBuilder.for_server(handle.runtime.server)
 
                 if http_mode:
-                    bootstrap_script = f'''
+                    # TODO: demonstrate proper tool calling (CallToolResult is not json.dump-able)
+                    bootstrap_script = f"""
 import asyncio
 import json
 from adgn.props.agent_helpers import mcp_client_from_env
@@ -580,7 +581,7 @@ async def bootstrap():
         print(json.dumps(result.model_dump(mode="json"), indent=2))
 
 asyncio.run(bootstrap())
-'''
+"""
                     logger.info("Grader bootstrap: executing docker bootstrap script for MCP initialization")
                     bootstrap_calls = [
                         docker_exec_call_mounted(
@@ -751,9 +752,11 @@ async def run_grader(
                     files=[
                         FileOccurrence(
                             path=Path(fo.path),
-                            ranges=[LineRange(start_line=r.start_line, end_line=r.end_line) for r in fo.ranges]
-                            if fo.ranges
-                            else None,
+                            ranges=(
+                                [LineRange(start_line=r.start_line, end_line=r.end_line) for r in fo.ranges]
+                                if fo.ranges
+                                else None
+                            ),
                         )
                         for fo in occ.files
                     ],
