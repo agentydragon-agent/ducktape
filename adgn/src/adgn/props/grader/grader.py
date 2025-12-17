@@ -6,9 +6,9 @@ AND a tiny FastMCP server that accepts exactly one submission per run via
 submit_result.
 """
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import logging
-import os
 from pathlib import Path
 import tempfile
 from typing import cast
@@ -24,7 +24,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted
+from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
@@ -33,7 +33,7 @@ from adgn.mcp._shared.types import SimpleOk
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.types import ReasoningSummary
-from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
+from adgn.props.agent_setup import USE_MCP_HTTP, AgentEnvironment, build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue as ReportedIssueMCP
 from adgn.props.critic.persistence import convert_reported_occurrence_orm_to_mcp
@@ -75,20 +75,6 @@ from adgn.props.prompts.util import render_prompt_template
 from adgn.props.rationale import Rationale
 
 logger = logging.getLogger(__name__)
-
-# Toggle for MCP HTTP transport (Phase 1: parallel with compositor)
-# Set via environment variable: ADGN_USE_MCP_HTTP=1
-# When enabled:
-#   - grader_submit server launches via HTTP transport
-#   - MCP_SERVER_URL and MCP_SERVER_TOKEN are injected into container environment
-#   - Bootstrap inspects the MCP server to show its tools/resources/instructions
-#   - Container uses custom network config to allow host access but block internet
-# When disabled:
-#   - grader_submit server is mounted in-proc (no HTTP server)
-#   - No MCP environment variables are set in the container
-#   - No bootstrap inspection runs
-#   - Container uses network_mode="none" (full isolation)
-USE_MCP_HTTP = os.getenv("ADGN_USE_MCP_HTTP", "").lower() in ("1", "true", "yes")
 
 
 # =============================================================================
@@ -572,42 +558,11 @@ The snapshot slug for this grader run is available at the MCP resource `{GRADER_
             builder = TypedBootstrapBuilder.for_server(handle.runtime.server)
 
             if http_mode:
-                # TODO: demonstrate proper tool calling (CallToolResult is not json.dump-able)
-                bootstrap_script = f"""
-import asyncio
-import json
-from adgn.props.agent_helpers import mcp_client_from_env
-
-async def bootstrap():
-    async with mcp_client_from_env() as (session, init_result):
-        print("=== MCP Server Initialization ===")
-        print(json.dumps(init_result.model_dump(mode="json"), indent=2))
-
-        tools = await session.list_tools()
-        print("=== Available Tools ===")
-        for tool in tools:
-            print(json.dumps(tool.model_dump(mode="json"), indent=2))
-
-        # Read resources in order
-        resources = [
-            ("Snapshot Slug", "{GRADER_SNAPSHOT_SLUG_RESOURCE_URI}"),
-            ("Canonical True Positives", "{GRADER_CANONICAL_TPS_RESOURCE_URI}"),
-            ("Critique Issues", "{GRADER_CRITIQUE_ISSUES_RESOURCE_URI}"),
-            ("Known False Positives", "{GRADER_KNOWN_FPS_RESOURCE_URI}"),
-        ]
-        for label, uri in resources:
-            print(f"=== {{label}} ===")
-            result = await session.read_resource(uri)
-            print(json.dumps(result.model_dump(mode="json"), indent=2))
-
-asyncio.run(bootstrap())
-"""
-                logger.info("Grader bootstrap: executing docker bootstrap script for MCP initialization")
-                bootstrap_calls = [
-                    docker_exec_call_mounted(
-                        builder, handle.runtime, cmd=["python3", "-c", bootstrap_script], timeout_ms=15_000
-                    )
-                ]
+                # HTTP mode: Use agent environment's bootstrap method
+                logger.info("Grader bootstrap: using agent environment bootstrap items")
+                # Type narrowing: comp_ctx is GraderAgentEnvironment in HTTP mode
+                assert isinstance(comp_ctx, GraderAgentEnvironment), "HTTP mode requires GraderAgentEnvironment"
+                bootstrap_calls = comp_ctx.bootstrap_items(builder, handle.runtime)
                 handlers_list.append(SequenceHandler([InjectItems(items=bootstrap_calls)]))
             else:
                 # Inproc mode: grader_submit is mounted in compositor - use resources server
@@ -1016,4 +971,21 @@ class GraderAgentEnvironment(AgentEnvironment):
             hydrator=hydrator,
             snapshot_slugs=[snapshot_slug],
             workspace_prefix="grader_workspace_",
+            http_mode=USE_MCP_HTTP,  # Respect ADGN_USE_MCP_HTTP env var
         )
+
+    def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
+        """Return MCP resources to read during bootstrap.
+
+        Returns list of grader-specific resources:
+        - Snapshot slug
+        - Canonical true positives
+        - Critique issues to grade
+        - Known false positives
+        """
+        return [
+            ("Snapshot Slug", GRADER_SNAPSHOT_SLUG_RESOURCE_URI),
+            ("Canonical True Positives", GRADER_CANONICAL_TPS_RESOURCE_URI),
+            ("Critique Issues", GRADER_CRITIQUE_ISSUES_RESOURCE_URI),
+            ("Known False Positives", GRADER_KNOWN_FPS_RESOURCE_URI),
+        ]

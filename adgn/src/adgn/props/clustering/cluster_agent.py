@@ -19,6 +19,7 @@ from uuid import UUID, uuid4
 
 import aiodocker
 from fastmcp.client import Client
+from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session
@@ -28,17 +29,16 @@ from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call
 from adgn.agent.handler import BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
 from adgn.mcp._shared.mounted import Mounted
+from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import FunctionCallItem
-from adgn.props.agent_setup import build_props_handlers
+from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
 from adgn.props.clustering.user_manager import ClusteringUserManager
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision
-from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
-from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
+from adgn.props.hydration import SnapshotHydrator
 
 logger = logging.getLogger(__name__)
 
@@ -161,32 +161,96 @@ class ClusteringCompletionHandler(BaseHandler):
 
 
 # ============================================================================
-# Bootstrap Helpers
+# Agent Environment
 # ============================================================================
 
 
-def make_clustering_bootstrap_calls(
-    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer]
-) -> list[FunctionCallItem]:
-    """Build bootstrap calls for clustering agent.
+class ClusteringAgentEnvironment(AgentEnvironment):
+    """Agent environment for clustering with direct SQL access.
 
-    Provides:
-    - System overview (snapshots, database, evaluation flow)
-    - Clustering schema documentation (tables, RLS, constraints)
-    - Example SQL query scripts
+    Provides complete environment for clustering agents:
+    - Temporary database user with RLS scoping (clustering_agent_{run_id})
+    - Docker container with docker_exec and psql access
+    - No custom MCP servers (agent uses SQL directly for clustering decisions)
 
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        runtime: Mounted runtime server for reading package files
+    Agent workflow:
+    1. Queries database for unknowns (grading decisions with no TP match)
+    2. Clusters unknowns by similarity using SQL
+    3. Records clustering decisions in unknown_clusters and unknown_assignments tables
+    4. Completion handler auto-terminates when all unknowns are assigned
+
+    Usage:
+        async with ClusteringAgentEnvironment(
+            docker_client=docker_client,
+            hydrator=hydrator,
+            clustering_run_id=run_id,
+            db_config=config,
+        ) as compositor:
+            # Run clustering agent
+            ...
     """
-    return [
-        # System overview
-        read_package_file_call(builder, runtime, "adgn.props.docs", "system_overview.md"),
-        # Clustering schema (tables, RLS, constraints, query examples)
-        read_package_file_call(builder, runtime, "adgn.props.clustering", "schema_docs.md"),
-        # Example SQL query scripts (auto-detect run_id)
-        read_package_file_call(builder, runtime, "adgn.props.clustering", "example_queries.py"),
-    ]
+
+    def __init__(
+        self,
+        docker_client: aiodocker.Docker,
+        hydrator: SnapshotHydrator,
+        clustering_run_id: int,
+        db_config: DatabaseConfig,
+    ):
+        """Create clustering agent environment.
+
+        Args:
+            docker_client: Async Docker client
+            hydrator: Snapshot hydrator
+            clustering_run_id: Clustering run ID (for RLS scoping)
+            db_config: Database configuration (passed via DI)
+        """
+
+        def make_user_manager() -> ClusteringUserManager:
+            """Create temporary clustering user with RLS scoping."""
+            return ClusteringUserManager(db_config.admin, clustering_run_id)
+
+        def make_mcp_server(auth: AuthProvider) -> EnhancedFastMCP:
+            """No custom MCP server - clustering uses SQL directly.
+
+            Return a minimal FastMCP server to satisfy the AgentEnvironment interface.
+            """
+            return EnhancedFastMCP("clustering_stub")
+
+        super().__init__(
+            docker_client=docker_client,
+            user_manager_factory=make_user_manager,
+            mcp_server_factory=make_mcp_server,
+            hydrator=hydrator,
+            snapshot_slugs=[],  # Clustering doesn't need specific snapshots mounted
+            workspace_prefix="clustering_workspace_",
+            mount_properties=False,
+            # http_mode defaults to USE_MCP_HTTP from agent_setup
+        )
+
+    def bootstrap_items(self, builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer]) -> list:
+        """Build bootstrap items for clustering agent initialization.
+
+        Includes:
+        - System overview (snapshots, database, evaluation flow)
+        - Clustering schema documentation (tables, RLS, constraints)
+        - Example SQL query scripts
+
+        Args:
+            builder: Bootstrap builder for generating typed tool calls
+            runtime: Mounted runtime server (comp.runtime)
+
+        Returns:
+            List of FunctionCallItems to inject before agent sampling
+        """
+        return [
+            # System overview
+            read_package_file_call(builder, runtime, "adgn.props.docs", "system_overview.md"),
+            # Clustering schema (tables, RLS, constraints, query examples)
+            read_package_file_call(builder, runtime, "adgn.props.clustering", "schema_docs.md"),
+            # Example SQL query scripts (auto-detect run_id)
+            read_package_file_call(builder, runtime, "adgn.props.clustering", "example_queries.py"),
+        ]
 
 
 # ============================================================================
@@ -260,94 +324,71 @@ async def run_clustering_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
-    # TODO: Migrate to HTTP mode with AgentEnvironment abstraction (like critic/grader)
-    # - Create ClusteringAgentEnvironment extending AgentEnvironment
-    # - Move user management and compositor setup to base class
-    # - Would simplify lifecycle management and improve consistency with other agents
-    # - Consider adding submit/finalization tool via HTTP transport
+    # 2. Create agent environment with scoped database user and HTTP MCP server
+    agent_env = ClusteringAgentEnvironment(
+        docker_client=docker_client, hydrator=hydrator, clustering_run_id=run_id, db_config=db_config
+    )
 
-    # 2. Create scoped database user with RLS policies
-    async with ClusteringUserManager(db_config.admin, run_id) as creds:
-        # Container-to-container database access with scoped user credentials
-        agent_db_container = db_config.for_container_user(creds)
+    async with agent_env as comp:
+        # 3. Set up handlers
+        completion_handler = ClusteringCompletionHandler(run_id, db_config)
 
-        # 3. Hydrate snapshot and keep alive for Docker mounting
-        logger.info(f"Hydrating snapshot {snapshot_slug}")
+        # Bootstrap calls (inject schema docs and example scripts)
+        builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
+        bootstrap_calls = agent_env.bootstrap_items(builder, comp.runtime)
+        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
-        # Compositor will handle snapshot hydration and mounting at /snapshots/<slug>/
-        # 5. Create compositor with MCP servers
-        async with PropertiesDockerCompositor(
-            workspace_root=output_dir,
-            docker_client=docker_client,
-            mount_properties=False,  # Agent doesn't need property definitions
-            hydrator=hydrator,
-            snapshot_slugs=[SnapshotSlug(snapshot_slug)],  # Automatic snapshot mounting
-            ephemeral=False,  # Keep container for debugging if needed
-            workspace_mode="rw",  # Agent writes logs/output here
-            db_conn=agent_db_container,  # Scoped database access
-            network_mode=PROPS_NETWORK_NAME,  # For database access
-        ) as comp:
-            # 6. Set up handlers
-            completion_handler = ClusteringCompletionHandler(run_id, db_config)
+        # Compose all handlers
+        props_handlers = await build_props_handlers(
+            transcript_id=transcript_id, verbose_prefix=f"[CLUSTER RUN={run_id}] " if verbose else None, compositor=comp
+        )
 
-            # Bootstrap calls (inject schema docs and example scripts)
-            builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-            bootstrap_calls = make_clustering_bootstrap_calls(builder, comp.runtime)
-            bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+        handlers = [
+            bootstrap,
+            *props_handlers,
+            completion_handler,  # Check completion every turn
+            RedirectOnTextMessageHandler(
+                reminder_message=(
+                    "You are a clustering agent working on grouping unknown issues. "
+                    "Your task is not complete. Continue analyzing unknowns and recording "
+                    "decisions in the database using SQL (via docker_exec with psql) or "
+                    "the provided example_queries.py scripts. Do not send text messages - "
+                    "execute tool calls to query the database, inspect code at /workspace, "
+                    "and record clustering decisions via SQL INSERT/UPDATE statements. "
+                    "The agent will automatically stop when all unknowns are assigned."
+                )
+            ),
+        ]
 
-            # Compose all handlers
-            props_handlers = await build_props_handlers(
-                transcript_id=transcript_id,
-                verbose_prefix=f"[CLUSTER RUN={run_id}] " if verbose else None,
-                compositor=comp,
+        # 4. System prompt (static file, no template rendering)
+        system_prompt_path = Path(__file__).parent / "prompts" / "clustering_system.md"
+        system_prompt = system_prompt_path.read_text()
+
+        # 5. Create and run agent
+        client = build_client(model)
+
+        async with Client(comp) as mcp_client:
+
+            async def get_instructions() -> str:
+                return system_prompt
+
+            agent = await Agent.create(
+                mcp_client=mcp_client,
+                client=client,
+                handlers=handlers,
+                parallel_tool_calls=True,
+                dynamic_instructions=get_instructions,
+                tool_policy=AllowAnyToolOrTextMessage(),
             )
 
-            handlers = [
-                bootstrap,
-                *props_handlers,
-                completion_handler,  # Check completion every turn
-                RedirectOnTextMessageHandler(
-                    reminder_message=(
-                        "You are a clustering agent working on grouping unknown issues. "
-                        "Your task is not complete. Continue analyzing unknowns and recording "
-                        "decisions in the database using SQL (via docker_exec with psql) or "
-                        "the provided example_queries.py scripts. Do not send text messages - "
-                        "execute tool calls to query the database, inspect code at /workspace, "
-                        "and record clustering decisions via SQL INSERT/UPDATE statements. "
-                        "The agent will automatically stop when all unknowns are assigned."
-                    )
-                ),
-            ]
+            logger.info("Starting agent execution")
+            await agent.run()
+            logger.info("Agent execution completed")
 
-            # 7. System prompt (static file, no template rendering)
-            system_prompt_path = Path(__file__).parent / "prompts" / "clustering_system.md"
-            system_prompt = system_prompt_path.read_text()
+        # 6. Compute outcome
+        outcome = _compute_outcome(run_id, db_config)
 
-            # 8. Create and run agent
-            client = build_client(model)
-
-            async with Client(comp) as mcp_client:
-
-                async def get_instructions() -> str:
-                    return system_prompt
-
-                agent = await Agent.create(
-                    mcp_client=mcp_client,
-                    client=client,
-                    handlers=handlers,
-                    parallel_tool_calls=True,
-                    dynamic_instructions=get_instructions,
-                    tool_policy=AllowAnyToolOrTextMessage(),
-                )
-
-                logger.info("Starting agent execution")
-                await agent.run()
-                logger.info("Agent execution completed")
-
-            # 9. Compute outcome
-            outcome = _compute_outcome(run_id, db_config)
-
-            return ClusteringResult(run_id=run_id, transcript_id=transcript_id, outcome=outcome)
+        return ClusteringResult(run_id=run_id, transcript_id=transcript_id, outcome=outcome)
 
 
 def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcome:

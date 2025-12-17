@@ -13,8 +13,8 @@ TODO: Do not install adgn package into critic container - snapshots contain past
       and installing current adgn would create conflicts/pollution in the review environment.
 """
 
+from collections.abc import Sequence
 import logging
-import os
 from pathlib import Path
 import tempfile
 from uuid import UUID, uuid4
@@ -58,10 +58,6 @@ from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.prompts.util import render_prompt_template
 
 logger = logging.getLogger(__name__)
-
-# Toggle for MCP HTTP transport (parallel with compositor)
-# Set via environment variable: ADGN_USE_MCP_HTTP=1
-USE_MCP_HTTP = os.getenv("ADGN_USE_MCP_HTTP", "").lower() in ("1", "true", "yes")
 
 
 # =============================================================================
@@ -181,6 +177,10 @@ class CriticAgentEnvironment(AgentEnvironment):
             workspace_prefix="critic_workspace_",
             mount_properties=mount_properties,
         )
+
+    def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
+        """Return MCP resources to read during bootstrap: snapshot slug and scope."""
+        return [("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI), ("Scope", CRITIC_SCOPE_RESOURCE_URI)]
 
 
 # =============================================================================
@@ -317,40 +317,11 @@ async def run_critic(
 
             # Build bootstrap: different for HTTP vs in-proc mode
             if http_mode:
-                # HTTP mode: Python bootstrap script that connects to MCP HTTP server
-                bootstrap_script = f"""
-import asyncio
-import json
-from adgn.props.agent_helpers import mcp_client_from_env
-
-async def bootstrap():
-    async with mcp_client_from_env() as (session, init_result):
-        print("=== MCP Server Initialization ===")
-        print(json.dumps(init_result.model_dump(mode="json"), indent=2))
-
-        tools = await session.list_tools()
-        print("=== Available Tools ===")
-        for tool in tools:
-            print(json.dumps(tool.model_dump(mode="json"), indent=2))
-
-        # Read resources in order
-        resources = [
-            ("Snapshot Slug", "{CRITIC_SNAPSHOT_SLUG_RESOURCE_URI}"),
-            ("Scope", "{CRITIC_SCOPE_RESOURCE_URI}"),
-        ]
-        for label, uri in resources:
-            print(f"=== {{label}} ===")
-            result = await session.read_resource(uri)
-            print(json.dumps(result.model_dump(mode="json"), indent=2))
-
-asyncio.run(bootstrap())
-"""
-                logger.info("Critic bootstrap: executing docker bootstrap script for MCP initialization")
-                bootstrap_calls = [
-                    docker_exec_call_mounted(
-                        builder, comp.runtime, cmd=["python3", "-c", bootstrap_script], timeout_ms=15_000
-                    )
-                ]
+                # HTTP mode: Use agent environment's bootstrap method
+                logger.info("Critic bootstrap: using agent environment bootstrap items")
+                # Type narrowing: comp_ctx is CriticAgentEnvironment in HTTP mode
+                assert isinstance(comp_ctx, CriticAgentEnvironment), "HTTP mode requires CriticAgentEnvironment"
+                bootstrap_calls = comp_ctx.bootstrap_items(builder, comp.runtime)
             else:
                 # In-proc mode: Direct resource reads via compositor
                 snapshot_path = comp.snapshot_container_path(input_data.snapshot_slug)

@@ -21,6 +21,9 @@ from adgn.props.ids import SnapshotSlug
 
 logger = logging.getLogger(__name__)
 
+# Resource URI constant
+IMPROVEMENT_CONTEXT_RESOURCE_URI = "resource://prompt_submission/improvement_context"
+
 
 class PromptSubmission(BaseModel):
     """Submitted prompt and metadata from improvement agent."""
@@ -130,7 +133,7 @@ class PromptSubmissionServer(EnhancedFastMCP):
             return self._improvement_context
 
         self.improvement_context_resource = cast(
-            FunctionResource, self.resource("resource://prompt_submission/improvement_context")(get_improvement_context)
+            FunctionResource, self.resource(IMPROVEMENT_CONTEXT_RESOURCE_URI)(get_improvement_context)
         )
 
         def submit_prompt(input: SubmitPromptInput) -> str:

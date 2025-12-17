@@ -22,6 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import logging
+import os
 from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING
@@ -42,10 +43,19 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
     from fastmcp.server.auth import AuthProvider
 
+    from adgn.agent.bootstrap import TypedBootstrapBuilder
+    from adgn.mcp._shared.mounted import Mounted
     from adgn.mcp.compositor.server import Compositor
+    from adgn.mcp.exec.docker.server import ContainerExecServer
+    from adgn.openai_utils.model import FunctionCallItem
     from adgn.props.db.temp_user_manager import TempUserManager
 
 logger = logging.getLogger(__name__)
+
+# Toggle for MCP HTTP transport (shared across all agents)
+# Set via environment variable: ADGN_USE_MCP_HTTP=1
+# Default: False (use in-proc MCP unless explicitly enabled)
+USE_MCP_HTTP = os.getenv("ADGN_USE_MCP_HTTP", "").lower() in ("1", "true", "yes")
 
 
 async def build_props_handlers(
@@ -94,7 +104,8 @@ class AgentEnvironment:
        - MCP server URL/token in env vars
     5. Cleans up in reverse order on exit
 
-    Subclasses configure the agent-specific parts by passing factories to __init__.
+    Subclasses configure the agent-specific parts by passing factories to __init__
+    and optionally overriding bootstrap_mcp_resources() and bootstrap_items().
 
     Example subclass:
         class CriticAgentEnvironment(AgentEnvironment):
@@ -107,6 +118,12 @@ class AgentEnvironment:
                     snapshot_slugs=[snapshot_slug],
                     workspace_prefix="critic_workspace_",
                 )
+
+            def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
+                return [
+                    ("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI),
+                    ("Scope", CRITIC_SCOPE_RESOURCE_URI),
+                ]
 
     Usage:
         async with CriticAgentEnvironment(...) as compositor:
@@ -124,7 +141,9 @@ class AgentEnvironment:
         *,
         snapshot_slugs: Sequence[SnapshotSlug] = (),
         workspace_prefix: str = "agent_workspace_",
+        workspace_root: Path | None = None,
         mount_properties: bool = False,
+        http_mode: bool = USE_MCP_HTTP,
     ):
         """Create agent environment.
 
@@ -138,8 +157,10 @@ class AgentEnvironment:
                 Example: lambda auth: create_critic_server(run_id, snapshot_slug, auth=auth)
             hydrator: Snapshot hydrator for loading specimen code
             snapshot_slugs: Snapshots to hydrate and mount at /snapshots/<slug>/
-            workspace_prefix: Prefix for temporary workspace directory (default: "agent_workspace_")
+            workspace_prefix: Prefix for temporary workspace directory (only used if workspace_root is None)
+            workspace_root: Pre-existing workspace directory to use (if None, creates temporary directory)
             mount_properties: Whether to mount property definitions at /props (default: False)
+            http_mode: Whether to use HTTP mode for MCP server (default: USE_MCP_HTTP env var)
         """
         self._docker_client = docker_client
         self._user_manager_factory = user_manager_factory
@@ -147,12 +168,44 @@ class AgentEnvironment:
         self._hydrator = hydrator
         self._snapshot_slugs = snapshot_slugs
         self._workspace_prefix = workspace_prefix
+        self._workspace_root = workspace_root
         self._mount_properties = mount_properties
+        self._http_mode = http_mode
 
         # Managed resources (created in __aenter__, cleaned up in __aexit__)
         self._workspace_tmpdir: tempfile.TemporaryDirectory[str] | None = None
         self._user_manager: TempUserManager | None = None
         self._http_compositor: PropertiesDockerCompositorHTTP | None = None
+        self._compositor: Compositor | None = None
+
+    def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
+        """Return list of (label, URI) tuples for MCP resources to read during bootstrap.
+
+        Subclasses override this to specify which resources should be read from the
+        MCP server during bootstrap (HTTP mode only).
+
+        Returns:
+            List of (label, URI) pairs - e.g., [("Snapshot Slug", "resource://critic/snapshot-slug")]
+        """
+        return []
+
+    def bootstrap_items(self, builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer]) -> list:
+        """Build bootstrap items (function calls) for agent initialization.
+
+        Default implementation uses make_mcp_http_bootstrap_calls with bootstrap_mcp_resources().
+        Subclasses can override to customize bootstrap behavior.
+
+        Args:
+            builder: Bootstrap builder for generating typed tool calls
+            runtime: Mounted runtime server (comp.runtime)
+
+        Returns:
+            List of FunctionCallItems to inject before agent sampling
+        """
+        resources = self.bootstrap_mcp_resources()
+        if resources:
+            return make_mcp_http_bootstrap_calls(builder, runtime, resources)
+        return []
 
     async def __aenter__(self) -> PropertiesDockerCompositor:
         """Start agent environment: workspace, user, HTTP server, container.
@@ -160,9 +213,14 @@ class AgentEnvironment:
         Returns:
             PropertiesDockerCompositor with docker_exec tool available
         """
-        # Create temporary workspace directory
-        self._workspace_tmpdir = tempfile.TemporaryDirectory(prefix=self._workspace_prefix)
-        workspace_path = Path(self._workspace_tmpdir.__enter__())
+        # Use provided workspace_root or create temporary workspace directory
+        if self._workspace_root is not None:
+            workspace_path = self._workspace_root
+            logger.info(f"Using existing workspace: {workspace_path}")
+        else:
+            self._workspace_tmpdir = tempfile.TemporaryDirectory(prefix=self._workspace_prefix)
+            workspace_path = Path(self._workspace_tmpdir.__enter__())
+            logger.info(f"Created temporary workspace: {workspace_path}")
 
         # Create temporary database user with scoped access
         self._user_manager = self._user_manager_factory()
@@ -187,6 +245,7 @@ class AgentEnvironment:
         )
 
         compositor = await self._http_compositor.__aenter__()
+        self._compositor = compositor
 
         logger.info(f"Started agent environment with {len(self._snapshot_slugs)} snapshot(s)")
 
@@ -209,3 +268,102 @@ class AgentEnvironment:
             if self._workspace_tmpdir is not None:
                 self._workspace_tmpdir.__exit__(None, None, None)
                 self._workspace_tmpdir = None
+
+
+# =============================================================================
+# MCP-over-HTTP Bootstrap Helpers
+# =============================================================================
+
+
+def make_mcp_http_bootstrap_script(resources: Sequence[tuple[str, str]]) -> str:
+    """Generate Python bootstrap script for MCP-over-HTTP.
+
+    Args:
+        resources: List of (label, uri) tuples to read during bootstrap
+
+    Returns:
+        Python script as string that connects to MCP server, lists tools, and reads resources
+
+    Example:
+        script = make_mcp_http_bootstrap_script([
+            ("Snapshot Slug", "resource://critic/snapshot-slug"),
+            ("Scope", "resource://critic/scope"),
+        ])
+    """
+    # Build resources list literal for the script
+    resources_repr = "[\n"
+    for label, uri in resources:
+        resources_repr += f'            ("{label}", "{uri}"),\n'
+    resources_repr += "        ]"
+
+    return f"""
+import asyncio
+import json
+from adgn.props.agent_helpers import mcp_client_from_env
+
+async def bootstrap():
+    async with mcp_client_from_env() as (session, init_result):
+        print("=== MCP Server Initialization ===")
+        print(json.dumps(init_result.model_dump(mode="json"), indent=2))
+
+        tools = await session.list_tools()
+        print("=== Available Tools ===")
+        for tool in tools:
+            print(json.dumps(tool.model_dump(mode="json"), indent=2))
+
+        # Read resources in order
+        resources = {resources_repr}
+        for label, uri in resources:
+            print(f"=== {{label}} ===")
+            result = await session.read_resource(uri)
+            print(json.dumps(result.model_dump(mode="json"), indent=2))
+
+asyncio.run(bootstrap())
+"""
+
+
+def make_mcp_http_bootstrap_calls(
+    builder: TypedBootstrapBuilder,
+    runtime: Mounted[ContainerExecServer],
+    resources: Sequence[tuple[str, str]],
+    *,
+    timeout_ms: int = 15_000,
+) -> list[FunctionCallItem]:
+    """Build bootstrap calls for MCP-over-HTTP mode.
+
+    Shows connection instructions and runs a bootstrap script that:
+    - Connects to MCP server via HTTP
+    - Lists available tools
+    - Reads specified resources
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        runtime: Mounted runtime server (e.g., comp.runtime)
+        resources: List of (label, uri) tuples to read during bootstrap
+        timeout_ms: Script execution timeout (default: 15 seconds)
+
+    Returns:
+        List of bootstrap calls (read connection docs + exec script)
+
+    Example:
+        from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call
+
+        builder = TypedBootstrapBuilder.for_server(runtime.server)
+        bootstrap_calls = make_mcp_http_bootstrap_calls(
+            builder, comp.runtime,
+            resources=[
+                ("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI),
+                ("Scope", CRITIC_SCOPE_RESOURCE_URI),
+            ]
+        )
+    """
+    from adgn.agent.bootstrap import docker_exec_call_mounted, read_package_file_call
+
+    bootstrap_script = make_mcp_http_bootstrap_script(resources)
+
+    return [
+        # Show MCP-over-HTTP connection instructions first
+        read_package_file_call(builder, runtime, "adgn.props.prompts", "mcp_http_connection.md"),
+        # Then run the bootstrap script that demonstrates the connection
+        docker_exec_call_mounted(builder, runtime, cmd=["python3", "-c", bootstrap_script], timeout_ms=timeout_ms),
+    ]

@@ -129,15 +129,27 @@ adgn-properties db recreate  # Drops schema, runs migrations, creates RLS/views
 
 **Implementation:**
 ```python
-from adgn.props.prompt_optimize.user_manager import PromptOptimizerUserManager
+from adgn.props.prompt_optimize.prompt_optimizer import PromptOptimizerAgentEnvironment
 
-# Inside PromptOptimizerCompositor.__aenter__:
-user_manager = PromptOptimizerUserManager(admin_config, run_id)
-temp_creds = await user_manager.__aenter__()
-# Pass temp_creds to Docker container environment (PG* vars)
-
-# On compositor exit, user manager cleans up:
-await user_manager.__aexit__(...)
+# AgentEnvironment pattern (like critic/grader):
+agent_env = PromptOptimizerAgentEnvironment(
+    workspace_root=workspace_path,
+    docker_client=docker_client,
+    hydrator=hydrator,
+    prompt_optimization_run_id=run_id,
+    critic_client=critic_client,
+    grader_client=grader_client,
+    db_config=db_config,
+    optimizer_state=PromptOptimizerState(),
+    target_metric=TargetMetric.WHOLE_REPO,
+    budget_limit=100.0,
+    snapshot_slugs=train_slugs,
+)
+async with agent_env as compositor:
+    # Temp user created automatically
+    # HTTP MCP server with prompt_eval tools running
+    # Container has PG* env vars and MCP_SERVER_URL/TOKEN
+    ...
 ```
 
 **Other examples:**

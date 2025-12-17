@@ -28,6 +28,7 @@ import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
+from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
 from pydantic import Field
 from sqlalchemy import func
@@ -47,7 +48,7 @@ from adgn.mcp.resources.server import ResourcesServer
 from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
-from adgn.props.agent_setup import build_props_handlers
+from adgn.props.agent_setup import USE_MCP_HTTP, AgentEnvironment, build_props_handlers, make_mcp_http_bootstrap_calls
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.critic import run_critic as execute_critic_run
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
@@ -95,6 +96,9 @@ _AGENT_STUCK_ADVICE = (
 
 # Validation function name (SSOT for 'valid' split aggregate access in whole-repo mode)
 _VALIDATION_FUNCTION_NAME = "get_validation_run_aggregates()"
+
+# Resource URI constants
+PROMPT_OPTIMIZATION_RUN_ID_RESOURCE_URI = "resource://prompt_eval/prompt_optimization_run_id"
 
 # Split-based access restriction messages
 _VALID_TEST_FULL_SNAPSHOT_ONLY = (
@@ -306,18 +310,262 @@ def make_po_bootstrap_calls(
 
 
 # ============================================================================
-# MCP Compositor for Prompt Optimization
+# Prompt Optimizer Agent Environment
+# ============================================================================
+
+
+class PromptOptimizerAgentEnvironment(AgentEnvironment):
+    """Agent environment for prompt optimizer with prompt_eval MCP server.
+
+    Provides complete environment for prompt optimizer agents:
+    - Temporary database user with TRAIN-split-only access (prompt_optimizer_agent_{run_id})
+    - HTTP MCP server with prompt evaluation tools (upsert_prompt, run_critic_on_example, run_grader)
+    - Docker container with docker_exec
+    - Train snapshots mounted at /snapshots/<slug>/
+    - Workspace mounted read-write at /workspace/ for prompt files
+
+    Agent workflow:
+    1. Writes prompt files to /workspace/
+    2. Calls upsert_prompt to save to database
+    3. Runs critic/grader via run_critic_on_example/run_grader tools
+    4. Queries database for metrics and results
+    5. Iterates on prompt improvements
+
+    Usage:
+        async with PromptOptimizerAgentEnvironment(
+            workspace_root=Path("/workspace"),
+            docker_client=docker_client,
+            hydrator=hydrator,
+            prompt_optimization_run_id=uuid4(),
+            critic_client=critic_client,
+            grader_client=grader_client,
+            db_config=config,
+            optimizer_state=state,
+            target_metric=TargetMetric.WHOLE_REPO,
+            budget_limit=1.0,
+            snapshot_slugs=[...],
+        ) as compositor:
+            # Run prompt optimizer agent
+            ...
+    """
+
+    # Exposed for accessing server tools/resources programmatically
+    prompt_eval_server: EnhancedFastMCP
+    optimizer_state: PromptOptimizerState
+
+    def __init__(
+        self,
+        workspace_root: Path,
+        docker_client: aiodocker.Docker,
+        hydrator: SnapshotHydrator,
+        prompt_optimization_run_id: UUID,
+        critic_client: OpenAIModelProto,
+        grader_client: OpenAIModelProto,
+        db_config: DatabaseConfig,
+        optimizer_state: PromptOptimizerState,
+        target_metric: TargetMetric,
+        budget_limit: float,
+        snapshot_slugs: Sequence[SnapshotSlug] = (),
+        verbose: bool = False,
+    ):
+        """Create prompt optimizer agent environment.
+
+        Args:
+            workspace_root: Path to workspace directory (mounted read-write at /workspace/)
+            docker_client: Async Docker client
+            hydrator: Snapshot hydrator
+            prompt_optimization_run_id: UUID of the optimization run (for RLS scoping)
+            critic_client: OpenAI client for running critic evaluations
+            grader_client: OpenAI client for running grader evaluations
+            db_config: Database configuration (passed via DI)
+            optimizer_state: Shared state for tracking optimizer success/failure
+            target_metric: Optimization mode (whole-repo vs targeted validation)
+            budget_limit: Dollar budget limit for optimization
+            snapshot_slugs: Train snapshots to hydrate and mount
+            verbose: Verbose output flag
+        """
+        # Store parameters for server factory and external access
+        self._workspace_root = workspace_root
+        self._prompt_optimization_run_id = prompt_optimization_run_id
+        self._critic_client = critic_client
+        self._grader_client = grader_client
+        self._db_config = db_config
+        self.optimizer_state = optimizer_state  # Exposed for abort checking
+        self._target_metric = target_metric
+        self._budget_limit = budget_limit
+        self._verbose = verbose
+
+        def make_user_manager() -> PromptOptimizerUserManager:
+            """Create temporary prompt optimizer user with RLS scoping."""
+            return PromptOptimizerUserManager(db_config.admin, prompt_optimization_run_id)
+
+        def make_mcp_server(auth: AuthProvider) -> EnhancedFastMCP:
+            """Create prompt eval server (auth provided by HTTP server)."""
+            server = PromptEvalServer(
+                critic_client=critic_client,
+                grader_client=grader_client,
+                docker_client=docker_client,
+                hydrator=hydrator,
+                db_config=db_config,
+                optimizer_state=optimizer_state,
+                target_metric=target_metric,
+                prompt_optimization_run_id=prompt_optimization_run_id,
+                workspace_root=workspace_root,
+                budget_limit=budget_limit,
+                verbose=verbose,
+            )
+            # Store reference for programmatic access (bootstrap introspection)
+            self.prompt_eval_server = server
+            return server
+
+        super().__init__(
+            docker_client=docker_client,
+            user_manager_factory=make_user_manager,
+            mcp_server_factory=make_mcp_server,
+            hydrator=hydrator,
+            snapshot_slugs=snapshot_slugs,
+            workspace_root=workspace_root,  # Use provided workspace (not temporary)
+            mount_properties=False,
+            # http_mode defaults to USE_MCP_HTTP from agent_setup
+        )
+
+    def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
+        """Return list of (label, URI) tuples for MCP resources to read during bootstrap.
+
+        Returns:
+            List of (label, URI) pairs for prompt optimizer resources
+        """
+        return [("Optimization Run ID", PROMPT_OPTIMIZATION_RUN_ID_RESOURCE_URI)]
+
+    def bootstrap_items(self, builder: "TypedBootstrapBuilder", runtime: "Mounted[ContainerExecServer]") -> list:
+        """Build bootstrap items for prompt optimizer initialization.
+
+        Includes comprehensive context for optimization:
+        - Optimization run ID resource (via MCP-over-HTTP bootstrap script)
+        - System overview (dataset structure, evaluation flow)
+        - Database view definitions (aggregated metrics, pareto frontier)
+        - Critic template structure
+        - Database query examples (conditional on target_metric)
+        - Prompt engineering research
+
+        Args:
+            builder: Bootstrap builder for generating typed tool calls
+            runtime: Mounted runtime server (comp.runtime)
+
+        Returns:
+            List of FunctionCallItems to inject before agent sampling
+        """
+        return [
+            # MCP-over-HTTP bootstrap (lists tools, reads resources)
+            *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
+            # System overview (snapshots, database, critic architecture, evaluation flow)
+            *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
+            # Database view definitions (show schema for aggregated recall views)
+            docker_exec_call_mounted(
+                builder,
+                runtime,
+                cmd=[
+                    "psql",
+                    "-c",
+                    "\\d+ aggregated_recall_by_prompt",
+                    "-c",
+                    "\\d+ aggregated_recall_by_example",
+                    "-c",
+                    "\\d+ occurrence_statistics",
+                    "-c",
+                    "\\d+ occurrence_credits",
+                    "-c",
+                    "\\d+ pareto_frontier_by_example",
+                ],
+                timeout_ms=5000,
+            ),
+            # Critic template structure
+            *_read_package_files(builder, runtime, "adgn.props.critic", ["prompts/critic_system.j2.md"]),
+            # Database query examples (base queries always included)
+            *_read_package_files(
+                builder,
+                runtime,
+                "adgn.props.examples",
+                [
+                    "working_with_examples.py",  # Example schema (composite key pattern)
+                    "analyzing_critic_failures.py",  # Critic runs, grader results, execution traces
+                    "query_top_prompts.py",
+                    "query_train_examples.py",
+                    "query_run_status.py",
+                    "query_execution_traces.py",
+                    "query_pareto_frontier.py",  # Which prompts win on which examples
+                ]
+                + (
+                    # Target-metric-specific query files
+                    ["query_train_vs_valid_performance_whole_repo.py", "query_full_snapshot_train_examples.py"]
+                    if self._target_metric == TargetMetric.WHOLE_REPO
+                    else ["query_train_vs_valid_performance_targeted.py"]
+                ),
+            ),
+            # Prompt engineering research (best practices and patterns)
+            *_read_package_files(
+                builder,
+                runtime,
+                "adgn.props.prompt_optimize.research",
+                ["meta_prompting.md", "anthropic_best_practices.md", "automatic_optimization.md"],
+            ),
+        ]
+
+
+# ============================================================================
+# Legacy MCP Compositor (DEPRECATED - use PromptOptimizerAgentEnvironment)
 # ============================================================================
 
 
 class PromptOptimizerCompositor(PropertiesDockerCompositor):
     """Compositor with prompt optimizer servers and temporary database user management.
 
-    TODO: Migrate to HTTP mode with AgentEnvironment abstraction (like critic/grader)
-    - Create PromptOptimizerAgentEnvironment extending AgentEnvironment
-    - Move user management and compositor setup to base class
-    - Consider HTTP transport for PromptEvalServer (currently in-proc only)
-    - Would simplify lifecycle management and improve consistency
+    **DEPRECATED:** Use `PromptOptimizerAgentEnvironment` instead.
+
+    This class uses the old in-proc MCP pattern and custom compositor lifecycle.
+    The new `PromptOptimizerAgentEnvironment` follows the same pattern as critic/grader
+    with HTTP-based MCP and standardized `AgentEnvironment` lifecycle management.
+
+    Migration guide:
+    ```python
+    # OLD (deprecated):
+    async with PromptOptimizerCompositor(
+        workspace_root=session_dir,
+        docker_client=docker_client,
+        critic_client=critic_client,
+        grader_client=grader_client,
+        hydrator=hydrator,
+        target_metric=target_metric,
+        prompt_optimization_run_id=run_id,
+        db_config=config,
+        budget_limit=budget,
+        verbose=verbose,
+        snapshot_slugs=train_slugs,
+        network_mode=PROPS_NETWORK_NAME,
+    ) as comp:
+        # Access: comp.runtime, comp.prompt_eval (Mounted)
+        ...
+
+    # NEW (recommended):
+    agent_env = PromptOptimizerAgentEnvironment(
+        workspace_root=session_dir,
+        docker_client=docker_client,
+        hydrator=hydrator,
+        prompt_optimization_run_id=run_id,
+        critic_client=critic_client,
+        grader_client=grader_client,
+        db_config=config,
+        optimizer_state=PromptOptimizerState(),
+        target_metric=target_metric,
+        budget_limit=budget,
+        snapshot_slugs=train_slugs,
+        verbose=verbose,
+    )
+    async with agent_env as comp:
+        # Access: comp.runtime, agent_env.prompt_eval_server, agent_env.optimizer_state
+        # MCP server is HTTP-based (accessed via MCP client, not direct mount)
+        ...
+    ```
 
     Inherits from PropertiesDockerCompositor, which provides:
     - runtime: Docker exec server (mounted by parent class)
@@ -736,8 +984,7 @@ class PromptEvalServer(EnhancedFastMCP):
             return prompt_optimization_run_id
 
         self.optimization_run_id_resource = cast(
-            FunctionResource,
-            self.resource("resource://prompt_eval/prompt_optimization_run_id")(get_prompt_optimization_run_id),
+            FunctionResource, self.resource(PROMPT_OPTIMIZATION_RUN_ID_RESOURCE_URI)(get_prompt_optimization_run_id)
         )
 
         # Register tools - names derived from function names
@@ -861,6 +1108,7 @@ class PromptEvalServer(EnhancedFastMCP):
                     extra_handlers=(),
                     verbose=self._verbose,
                     max_turns=payload.max_turns,
+                    http_mode=USE_MCP_HTTP,  # Respect ADGN_USE_MCP_HTTP env var
                 )
             except CriticExecutionError as e:
                 raise ToolError(
@@ -1136,27 +1384,28 @@ async def run_prompt_optimizer(
 
     logger.info(f"Created PromptOptimizationRun: {prompt_optimization_run_id}")
 
-    # Create compositor with Docker runtime, prompt eval server, and temporary user
+    # Create agent environment with prompt eval HTTP MCP server and temporary user
     # workspace_root (session_dir) will be mounted as /workspace (rw mode for agent to write prompts)
-    # Compositor internally creates a temporary database user with TRAIN-split-only access
-    # Compositor also handles snapshot hydration and mounting automatically
-    async with PromptOptimizerCompositor(
+    # AgentEnvironment creates temporary database user with TRAIN-split-only access
+    # AgentEnvironment handles snapshot hydration, HTTP server, and container lifecycle
+    agent_env = PromptOptimizerAgentEnvironment(
         workspace_root=session_dir,
         docker_client=docker_client,
+        hydrator=hydrator,
+        prompt_optimization_run_id=prompt_optimization_run_id,
         critic_client=critic_client,
         grader_client=grader_client,
-        hydrator=hydrator,
+        db_config=config,
+        optimizer_state=PromptOptimizerState(),
         target_metric=target_metric,
-        prompt_optimization_run_id=prompt_optimization_run_id,
-        db_config=config,  # Full database config (handles both user creation and container access)
         budget_limit=budget,
+        snapshot_slugs=train_slugs,  # AgentEnvironment will hydrate and mount these automatically
         verbose=verbose,
-        snapshot_slugs=train_slugs,  # Compositor will hydrate and mount these automatically
-        network_mode=PROPS_NETWORK_NAME,  # Join postgres network for database access
-    ) as comp:
-        # Servers already mounted by PromptOptimizerCompositor:
+    )
+    async with agent_env as comp:
+        # comp is a PropertiesDockerCompositor with:
         # - comp.runtime (Docker exec server)
-        # - comp.prompt_eval (Prompt evaluation server)
+        # - HTTP MCP server with prompt_eval tools (accessed via MCP client)
 
         # TODO: Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it here
         # The prompt eval server (and grader/critic tools) should be able to auto-detect when they're
@@ -1178,20 +1427,15 @@ Iterate to find an optimal prompt for a code reviewer/critic LLM agent.
 Prioritize recall.
 """
 
-        # Use the prompt_eval server reference for introspection
-        builder = TypedBootstrapBuilder.for_server(comp.prompt_eval.server)
-        bootstrap_calls = make_po_bootstrap_calls(
-            builder,
-            resources=comp.resources,
-            runtime=comp.runtime,
-            prompt_eval=comp.prompt_eval,
-            target_metric=target_metric,
-        )
+        # Build bootstrap calls using agent environment's bootstrap method
+        builder = TypedBootstrapBuilder.for_server(agent_env.prompt_eval_server)
+        logger.info("Prompt optimizer bootstrap: using agent environment bootstrap items")
+        bootstrap_calls = agent_env.bootstrap_items(builder, comp.runtime)
         bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
 
         def _optimizer_should_abort() -> bool:
             """Check if optimizer reported failure."""
-            return comp.optimizer_state.error is not None
+            return agent_env.optimizer_state.error is not None
 
         handlers: list = [
             bootstrap,

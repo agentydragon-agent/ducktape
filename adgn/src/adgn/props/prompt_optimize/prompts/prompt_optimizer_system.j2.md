@@ -133,10 +133,12 @@ See `system_overview.md` for complete database schema. Key points for optimizati
 
 **Access pattern:**
 ```python
-from adgn.props.agent_helpers import setup_agent_database
+from adgn.props.db.session import init_db
 from adgn.props.db import get_session
 
-setup_agent_database()
+# One-time initialization (reads PG* env vars set by compositor)
+init_db()
+
 with get_session() as session:
     # Your queries here (SQLAlchemy ORM or raw SQL)
 ```
@@ -379,6 +381,16 @@ Use this ID to query database tables and track all work in this optimization ses
 
 **Find the prompt that achieves the highest validation recall.**
 
+**IMPORTANT: You are expected to ACTIVELY RUN EXPERIMENTS using your budget.** This means:
+- Writing prompt files using `docker_exec`
+- Calling `upsert_prompt` to save them
+- Running `run_critic_on_example` to test prompts on training/validation data
+- Calling `run_grader` to compute metrics
+- Querying the database to analyze results
+- Iterating based on what you learn
+
+**Do not just propose experiments or write analysis - actually execute them.** Your budget (${budget_limit:.2f}) is meant to be spent on running critic/grader evaluations. Design experiments, run them, analyze results, and iterate.
+
 **Recommended workflow:**
 
 1. **Understand the subjective standards (REQUIRED FIRST STEP):**
@@ -386,9 +398,9 @@ Use this ID to query database tables and track all work in this optimization ses
    - Read ground truth: What true positives should be flagged? What false positives should NOT be flagged?
    - Study the labeled data to internalize the subjective preferences
    - Example queries:
-     - TPs: `SELECT id, category, rationale FROM true_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train') LIMIT 50`
-     - FPs: `SELECT id, category, rationale FROM false_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train')`
-   - Look for patterns: What categories of issues matter? What patterns should be ignored? What's the language and reasoning style?
+     - TPs: `SELECT id, rationale FROM true_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train') LIMIT 50`
+     - FPs: `SELECT id, rationale FROM false_positives WHERE snapshot_slug IN (SELECT slug FROM snapshots WHERE split='train')`
+   - Look for patterns: What types of issues matter (from rationales)? What patterns should be ignored? What's the language and reasoning style?
 
 2. **Baseline assessment:**
    - Query current best validation recall using `get_validation_run_aggregates()` function (see example in `query_top_prompts.py`)
