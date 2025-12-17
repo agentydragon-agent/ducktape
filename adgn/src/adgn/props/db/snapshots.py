@@ -27,6 +27,22 @@ class DBLineRange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class DBLocationAnchor(BaseModel):
+    """Database representation of a location anchor for reported issues.
+
+    Matches the libsonnet ground truth format:
+    - file: required file path
+    - start_line: optional line number (1-based)
+    - end_line: optional end line (inclusive)
+    """
+
+    file: str = Field(description="File path (relative to snapshot root)")
+    start_line: int | None = Field(default=None, ge=1, description="Optional start line (1-based)")
+    end_line: int | None = Field(default=None, ge=1, description="Optional end line (inclusive)")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 class DBTruePositiveOccurrence(BaseModel):
     """Database representation of a true positive occurrence."""
 
@@ -114,9 +130,12 @@ class DBReportedIssue(BaseModel):
 
 
 class DBCriticSubmitPayload(BaseModel):
-    """Database representation of critic submit payload."""
+    """Database representation of critic submit payload.
 
-    issues: list[DBReportedIssue] = Field(description="Issues found")
+    Issues are stored in normalized reported_issues table, not here.
+    Access via critic_run.reported_issues ORM relationship.
+    """
+
     notes_md: str | None = Field(default=None, description="Optional Markdown notes")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -154,9 +173,21 @@ class DBCriticContextLengthExceeded(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class DBCriticReportedFailure(BaseModel):
+    """Database representation of critic explicitly reporting it cannot complete."""
+
+    tag: Literal["reported_failure"] = "reported_failure"
+    reason: str = Field(description="Reason provided by the critic for inability to complete")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 DBCriticOutput = Annotated[
-    DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded,
-    Field(discriminator="tag", description="Critic output: success, max turns exceeded, or context length exceeded"),
+    DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded | DBCriticReportedFailure,
+    Field(
+        discriminator="tag",
+        description="Critic output: success, max turns exceeded, context length exceeded, or reported failure",
+    ),
 ]
 """Discriminated union of critic outcomes for database persistence."""
 

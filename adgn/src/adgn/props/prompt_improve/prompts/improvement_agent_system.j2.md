@@ -50,7 +50,7 @@ they should achieve higher recall than the current prompt achieved.
 ### Your Assigned Examples
 
 Read `resource://prompt_submission/improvement_context` to see which training examples you're working with:
-- Contains: `examples` (list of snapshot_slug, files_hash pairs) and `current_prompt_sha256`
+- Contains: `examples` (list of snapshot_slug, scope_hash pairs) and `current_prompt_sha256`
 - Use these example identifiers to query the database for critic runs, grader results, and execution traces
 
 ### Database
@@ -58,7 +58,7 @@ Read `resource://prompt_submission/improvement_context` to see which training ex
 You have full access to training data via PostgreSQL:
 - Scoped to the examples listed in `improvement_context` resource
 - Can query: `critic_runs`, `grader_runs`, `events`, `true_positives`, `false_positives`, `critiques`, `examples`
-- Use the (snapshot_slug, files_hash) pairs from the resource to filter queries
+- Use the (snapshot_slug, scope_hash) pairs from the resource to filter queries
 - See `system_overview.md` for schema details and common pitfalls (especially the composite key pattern for `examples`)
 
 ### Snapshot Code
@@ -69,7 +69,7 @@ You have full access to training data via PostgreSQL:
 
 ## Workflow
 
-1. **Read your assigned examples**: Check `resource://prompt_submission/improvement_context` to see which (snapshot_slug, files_hash) pairs you're improving
+1. **Read your assigned examples**: Check `resource://prompt_submission/improvement_context` to see which (snapshot_slug, scope_hash) pairs you're improving
 2. **Understand the subjective standards**: Query ground truth tables (`true_positives`, `false_positives`) using the guidance in `system_overview.md`
 3. **Survey**: Query database for overview of examples and failure patterns using the example identifiers
 4. **Analyze**: Investigate specific failures (read traces, inspect code)

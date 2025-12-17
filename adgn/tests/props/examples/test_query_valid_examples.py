@@ -4,7 +4,7 @@ from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 
 
-def test_query_valid_examples_with_synced_data(synced_test_db, mock_agent_setup, capsys):
+def test_query_valid_examples_with_synced_data(synced_test_fixtures, mock_agent_setup, capsys):
     """Test that query_valid_examples produces reasonable output with valid snapshots."""
     from adgn.props.examples.query_valid_examples import main  # noqa: PLC0415
 

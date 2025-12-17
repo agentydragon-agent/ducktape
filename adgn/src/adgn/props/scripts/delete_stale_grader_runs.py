@@ -21,9 +21,11 @@ from sqlalchemy import and_, func, select
 
 from adgn.agent.events import UserText
 from adgn.props.db import get_session, init_db
+from adgn.props.db.examples import Example
 from adgn.props.db.models import CriticRun, Event, GraderRun, Snapshot as DBSnapshot
 from adgn.props.grader.models import FalsePositiveID, KnownFalsePositive, Rationale, TruePositiveID, TruePositiveIssue
 from adgn.props.ids import SnapshotSlug
+from adgn.props.scope_utils import resolve_scope_files
 
 
 def parse_canonical_issues_from_transcript(user_text: str) -> dict[str, Any] | None:
@@ -99,7 +101,7 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
 
     stale_run_ids = []
     by_snapshot: dict[SnapshotSlug, dict[str, int]] = defaultdict(lambda: {"total": 0, "stale": 0})
-    current_canonical_cache: dict[tuple[SnapshotSlug, frozenset[str]], dict[str, Any]] = {}
+    current_canonical_cache: dict[tuple[SnapshotSlug, str], dict[str, Any]] = {}
 
     with get_session() as session:
         # Subquery to find the first user_text event for each transcript
@@ -110,11 +112,22 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
             .subquery()
         )
 
-        # Main query: join GraderRun with Event and CriticRun
+        # Main query: join GraderRun with Event, CriticRun, and Example
         query = (
-            select(GraderRun.id, GraderRun.snapshot_slug, GraderRun.transcript_id, Event.payload, CriticRun.files)
+            select(
+                GraderRun.id,
+                GraderRun.snapshot_slug,
+                GraderRun.transcript_id,
+                Event.payload,
+                CriticRun.scope_hash,
+                Example.scope,
+            )
             .join(Event, Event.transcript_id == GraderRun.transcript_id)
-            .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
+            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
+            .join(
+                Example,
+                (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.scope_hash == CriticRun.scope_hash),
+            )
             .join(
                 min_seq_subq,
                 and_(min_seq_subq.c.transcript_id == Event.transcript_id, min_seq_subq.c.min_seq == Event.sequence_num),
@@ -123,7 +136,7 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
             .order_by(GraderRun.created_at.desc())
         )
 
-        for run_id, snapshot_slug, _transcript_id, payload, critic_files in session.execute(query):
+        for run_id, snapshot_slug, _transcript_id, payload, scope_hash, scope_spec in session.execute(query):
             by_snapshot[snapshot_slug]["total"] += 1
 
             # Extract text from the payload (EventType union - should be UserText for user_text events)
@@ -135,7 +148,8 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
             if transcript_canonical_json is None:
                 continue
 
-            targeted_files = {Path(f) for f in critic_files}
+            # Resolve scope specification to file set
+            targeted_files = resolve_scope_files(snapshot_slug, scope_spec)
 
             transcript_tps = TypeAdapter(list[TruePositiveIssue]).validate_python(
                 transcript_canonical_json["true_positives"]
@@ -153,7 +167,8 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
                 "false_positives": TypeAdapter(list[KnownFalsePositive]).dump_python(transcript_fps, mode="json"),
             }
 
-            cache_key = (snapshot_slug, frozenset(critic_files))
+            # Cache by snapshot+scope_hash (matches database schema)
+            cache_key = (snapshot_slug, scope_hash)
             if cache_key not in current_canonical_cache:
                 current_canonical_cache[cache_key] = load_current_canonical_issues_from_db(
                     snapshot_slug, targeted_files

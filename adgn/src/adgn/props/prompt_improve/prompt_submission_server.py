@@ -33,14 +33,13 @@ class PromptSubmission(BaseModel):
 class ExampleInfo(BaseModel):
     """Information about an example for few-shot prompt improvement.
 
-    TODO: This is ugly - files_hash None represents whole-snapshot examples,
-    but we're mixing the database representation (None for whole-snapshot) with
-    the agent-facing model. Should either use a discriminated union or a separate
-    model for whole-snapshot vs file-set examples.
+    Note: scope_hash is always non-null now (even for whole-snapshot examples,
+    which have a computed hash from AllFilesScope). The composite PK is
+    (snapshot_slug, scope_hash).
     """
 
     snapshot_slug: SnapshotSlug
-    files_hash: str | None  # None = whole-snapshot example
+    scope_hash: str
 
 
 class ImprovementContext(BaseModel):
@@ -86,7 +85,7 @@ class PromptSubmissionServer(EnhancedFastMCP):
 
     Example:
         improvement_ctx = ImprovementContext(
-            examples=[ExampleInfo(snapshot_slug="...", files_hash="...")],
+            examples=[ExampleInfo(snapshot_slug="...", scope_hash="...")],
             current_prompt_sha256="abc123"
         )
 
@@ -122,7 +121,7 @@ class PromptSubmissionServer(EnhancedFastMCP):
             """Few-shot examples for prompt improvement.
 
             Contains:
-            - examples: List of (snapshot_slug, files_hash) pairs
+            - examples: List of (snapshot_slug, scope_hash) pairs
             - current_prompt_sha256: SHA256 of baseline prompt being improved (if available)
 
             Query the database to find associated critiques, grader runs, and execution traces

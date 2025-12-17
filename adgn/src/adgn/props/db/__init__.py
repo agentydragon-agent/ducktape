@@ -11,7 +11,7 @@ Provides SQLAlchemy models and session management for storing:
 from adgn.props.db.models import (
     Base,
     CriticRun,
-    Critique,
+    CriticRunStatus,
     Event,
     FalsePositive,
     GraderRun,
@@ -25,7 +25,7 @@ from adgn.props.db.sync import SyncStats, sync_issues_to_db, sync_snapshots_to_d
 __all__ = [
     "Base",
     "CriticRun",
-    "Critique",
+    "CriticRunStatus",
     "Event",
     "FalsePositive",
     "GraderRun",

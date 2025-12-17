@@ -32,7 +32,6 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
 from adgn.props.agent_setup import build_props_handlers
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.scoped_user_manager import ImprovementUserManager
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 from adgn.props.prompt_improve.prompt_submission_server import (
@@ -42,6 +41,7 @@ from adgn.props.prompt_improve.prompt_submission_server import (
     PromptSubmissionServer,
 )
 from adgn.props.prompt_improve.token_budget_handler import TokenBudgetHandler
+from adgn.props.prompt_improve.user_manager import ImprovementUserManager
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.snapshot_paths import snapshot_container_path
 
@@ -138,7 +138,7 @@ def make_improvement_bootstrap_calls(
 async def run_improvement_agent(
     examples: list[
         tuple[SnapshotSlug, str | None]
-    ],  # [(snapshot_slug, files_hash), ...] - files_hash is None for whole-snapshot
+    ],  # [(snapshot_slug, scope_hash), ...] - scope_hash is None for whole-snapshot
     current_prompt: str,
     token_budget: int,
     model: str,
@@ -155,7 +155,7 @@ async def run_improvement_agent(
     Runs agent with token budget enforcement and prompt submission MCP server.
 
     Args:
-        examples: List of (snapshot_slug, files_hash) tuples to analyze
+        examples: List of (snapshot_slug, scope_hash) tuples to analyze
         current_prompt: Baseline prompt being improved
         token_budget: Maximum tokens (e.g., 200_000)
         model: LLM model for improvement agent (e.g., "o1-mini")
@@ -198,8 +198,21 @@ async def run_improvement_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
+    # Filter out examples with None scope_hash (should not happen, but type-safe)
+    valid_examples: list[tuple[SnapshotSlug, str]] = [(slug, h) for slug, h in examples if h is not None]
+    if len(valid_examples) != len(examples):
+        logger.warning(f"Filtered out {len(examples) - len(valid_examples)} examples with None scope_hash")
+    if not valid_examples:
+        raise ValueError("No valid examples after filtering None scope_hash values")
+
+    # TODO: Migrate to HTTP mode with AgentEnvironment abstraction (like critic/grader)
+    # - Create ImprovementAgentEnvironment extending AgentEnvironment
+    # - Move user management and compositor setup to base class
+    # - Would simplify lifecycle management and improve consistency with other agents
+    # - Consider HTTP transport for any submit/finalization tools
+
     # 1. Create scoped database user with RLS policies
-    async with ImprovementUserManager(db_config.admin, run_id, examples) as creds:
+    async with ImprovementUserManager(db_config.admin, run_id, valid_examples) as creds:
         # Container-to-container database access with scoped user credentials
         agent_db_container = db_config.for_container_user(creds)
 
@@ -238,9 +251,9 @@ async def run_improvement_agent(
                 db_conn=agent_db_container,  # Scoped database access
                 network_mode=PROPS_NETWORK_NAME,  # For database access
             ) as comp:
-                # Build improvement context with example information
+                # Build improvement context with example information (use valid_examples with non-None scope_hash)
                 improvement_ctx = ImprovementContext(
-                    examples=[ExampleInfo(snapshot_slug=slug, files_hash=fhash) for slug, fhash in examples],
+                    examples=[ExampleInfo(snapshot_slug=slug, scope_hash=fhash) for slug, fhash in valid_examples],
                     current_prompt_sha256=hashlib.sha256(current_prompt.encode()).hexdigest(),
                 )
 
@@ -338,7 +351,7 @@ async def run_improvement_agent(
                 # TODO: Store improvement result in database (similar to CriticRun/GraderRun tables)
                 # Consider adding an ImprovementRun table with:
                 # - run_id (UUID, PK)
-                # - examples (JSONB: list of (snapshot_slug, files_hash) tuples)
+                # - examples (JSONB: list of (snapshot_slug, scope_hash) tuples)
                 # - current_prompt_sha256 (TEXT)
                 # - outcome_kind (TEXT: success/exhausted/unexpected_termination)
                 # - submission (JSONB: prompt_text, rationale, if submitted)

@@ -375,7 +375,10 @@ class _FailInput(OpenAIStrictModeBaseModel):
 @pytest.fixture
 def failing_server() -> EnhancedFastMCP:
     """EnhancedFastMCP server with a tool that returns an error payload."""
-    mcp = EnhancedFastMCP("editor")
+    # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
+    # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
+    # would call pkg_version("mcp") which triggers filesystem operations that timeout.
+    mcp = EnhancedFastMCP("editor", version="test")
 
     @mcp.flat_model()
     def fail(input: _FailInput) -> dict[str, Any]:

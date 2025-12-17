@@ -206,8 +206,8 @@ from adgn.props.db import get_session
 from adgn.props.db.models import CriticRun, GraderRun, Critique
 
 with get_session() as session:
-    # Get all critic runs for a specimen
-    runs = session.query(CriticRun).filter_by(specimen_slug="ducktape/2025-11-20-00").all()
+    # Get all critic runs for a snapshot
+    runs = session.query(CriticRun).filter_by(snapshot_slug="ducktape/2025-11-20-00").all()
 
     # Get grader runs with metrics
     graders = session.query(GraderRun).all()

@@ -20,7 +20,7 @@ from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from adgn.mcp.ui.server import SendMessageInput
 from adgn.openai_utils.model import ResponsesRequest, ResponsesResult
-from adgn.props.critic.critic import CriticSubmitServer, UpsertIssueInput
+from adgn.props.critic.submit_server import CriticSubmitServer, UpsertIssueInput
 from adgn.props.grader.grader import GraderSubmitServer
 from adgn.props.grader.models import GradeSubmitInput
 from tests.support.assertions import assert_and_extract, assert_last_call
@@ -221,9 +221,11 @@ class CriticSubmitUpsertIssueCall:
     description: str
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        upsert_tool = self.critic_submit.server.upsert_issue_tool
+        assert upsert_tool is not None, "upsert_issue_tool not available (incremental_tools not enabled)"
         return factory.make_mcp_tool_call(
             self.critic_submit.prefix,
-            self.critic_submit.tool_name(self.critic_submit.server.upsert_issue_tool),
+            self.critic_submit.tool_name(upsert_tool),
             UpsertIssueInput(issue_id=self.issue_id, description=self.description),
         )
 

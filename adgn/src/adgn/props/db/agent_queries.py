@@ -38,29 +38,26 @@ WHERE e1.transcript_id = '<transcript_id>'
   AND (e2.payload->'result'->>'isError')::bool = true;"""
 
 SQL_CRITIQUE_FOR_SPECIMEN = """SELECT
-    c.id,
-    c.payload,
-    c.created_at,
+    cr.id as critic_run_id,
+    cr.completion_summary,
+    cr.created_at,
     cr.prompt_sha256,
     cr.model,
-    cr.files
-FROM critiques c
-LEFT JOIN critic_runs cr ON c.id = cr.critique_id
-WHERE c.snapshot_slug = '<snapshot_slug>'
-ORDER BY c.created_at DESC
+    cr.scope_hash
+FROM critic_runs cr
+WHERE cr.snapshot_slug = '<snapshot_slug>' AND cr.status = 'completed'
+ORDER BY cr.created_at DESC
 LIMIT 5;"""
 
 SQL_LINK_GRADER_TO_PROMPT = """SELECT
     g.id as grader_run_id,
     g.snapshot_slug,
     g.output->'grade'->>'recall' as recall,
-    c.id as critique_id,
     cr.id as critic_run_id,
     cr.prompt_sha256,
     p.prompt_text
 FROM grader_runs g
-JOIN critiques c ON g.critique_id = c.id
-JOIN critic_runs cr ON c.id = cr.critique_id
+JOIN critic_runs cr ON g.critic_run_id = cr.id
 JOIN prompts p ON cr.prompt_sha256 = p.prompt_sha256
 WHERE g.snapshot_slug = '<snapshot_slug>'
 LIMIT 1;"""

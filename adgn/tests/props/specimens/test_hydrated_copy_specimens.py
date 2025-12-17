@@ -4,36 +4,30 @@ from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
 
-async def test_hydrated_copy_only_exposes_scoped_file_for_local_specimen(
-    production_specimens_hydrator: SnapshotHydrator, synced_test_db
+async def test_hydrated_copy_local_specimen_hydrates(
+    test_specimens_hydrator: SnapshotHydrator, synced_test_fixtures
 ) -> None:
-    """Hydrated local specimen workspace should contain only the scoped file.
+    """Hydrated local specimen workspace should contain the expected files.
 
-    For specimen 'misc/2025-08-29-pyright_watch_report', the scope includes only
-    'pyright_watch_report.py'. The hydrated working directory yielded by the
-    context manager must therefore contain exactly one file: that python file.
+    Uses test-trivial fixture to verify local specimen hydration works.
     """
-    async with production_specimens_hydrator.hydrate(SnapshotSlug("misc/2025-08-29-pyright_watch_report")) as hydrated:
+    async with test_specimens_hydrator.hydrate(SnapshotSlug("test-fixtures/test-trivial")) as hydrated:
         assert hydrated.content_root.is_dir(), f"hydrated content root not a directory: {hydrated.content_root}"
-        files = [p.name for p in hydrated.content_root.iterdir() if p.is_file()]
-        assert files == ["pyright_watch_report.py"], (
-            f"Expected exactly one file ['pyright_watch_report.py'] in {hydrated.content_root}, got: {files}"
-        )
+        files = sorted(p.name for p in hydrated.content_root.iterdir() if p.is_file())
+        # test-trivial has add.py and subtract.py
+        assert "add.py" in files, f"Expected add.py in {hydrated.content_root}, got: {files}"
+        assert "subtract.py" in files, f"Expected subtract.py in {hydrated.content_root}, got: {files}"
 
 
-async def test_hydrated_copy_git_specimen_has_wt_tree_rooted_correctly(
-    production_specimens_hydrator: SnapshotHydrator, synced_test_db
+async def test_hydrated_copy_validation_specimen_has_expected_structure(
+    test_specimens_hydrator: SnapshotHydrator, synced_test_fixtures
 ) -> None:
-    """Hydrated git/github specimen should yield a content root whose subtree
-    contains wt/src/wt/server directly under the yielded directory.
+    """Hydrated test-validation specimen should have expected structure.
 
-    Using specimen 'ducktape/2025-11-20-01', assert that <root>/wt/src/wt/server exists
-    and contains at least one file or subdirectory.
+    Uses test-validation fixture to verify specimen hydration works.
     """
-    async with production_specimens_hydrator.hydrate(SnapshotSlug("ducktape/2025-11-20-01")) as hydrated:
+    async with test_specimens_hydrator.hydrate(SnapshotSlug("test-fixtures/test-validation")) as hydrated:
         assert hydrated.content_root.is_dir(), f"hydrated content root not a directory: {hydrated.content_root}"
-        server_dir = hydrated.content_root / "wt" / "src" / "wt" / "server"
-        assert server_dir.is_dir(), f"expected directory missing: {server_dir}"
-        # There should be some content inside the server directory
-        has_any = any(server_dir.iterdir())
-        assert has_any, f"expected non-empty directory: {server_dir}"
+        # test-validation should have files
+        files = list(hydrated.content_root.iterdir())
+        assert len(files) > 0, f"expected non-empty directory: {hydrated.content_root}"

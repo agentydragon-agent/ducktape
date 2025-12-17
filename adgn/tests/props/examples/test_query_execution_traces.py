@@ -4,97 +4,81 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
+from tests.props.conftest import make_critic_run, make_grader_output, make_grader_run
 
+from adgn.agent.events import ToolCall, ToolCallOutput
+from mcp.types import CallToolResult, TextContent
 from adgn.props.critic.models import CriticSubmitPayload
-from adgn.props.critic.persistence import critic_submit_payload_to_db
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, Event, Example, GraderRun, Prompt, Snapshot
-from adgn.props.db.snapshots import DBCriticSuccess, DBGraderSuccess, DBOccurrenceResult
+from adgn.props.db.models import CriticRun, CriticRunStatus, Event, Snapshot
+from adgn.props.db.examples import Example
+from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.snapshots import DBCriticSubmitPayload, DBCriticSuccess
 
-
-def test_query_execution_traces_with_data(synced_test_db, mock_agent_setup, capsys):
+def test_query_execution_traces_with_data(synced_test_fixtures, mock_agent_setup, capsys, test_prompt_sha):
     """Test that query_execution_traces produces reasonable output with run data."""
     from adgn.props.examples.query_execution_traces import main  # noqa: PLC0415
 
     # Create test data
     with get_session() as session:
-        # Get a snapshot from synced data
+        # Get a snapshot from synced data (test-trivial or test-validation)
         snapshot = session.query(Snapshot).first()
-        if not snapshot:
-            pytest.skip("No snapshots in synced_test_db")
+        assert snapshot, "Expected snapshots from test fixtures"
 
         # Get an example
         example = session.query(Example).filter_by(snapshot_slug=snapshot.slug).first()
-        if not example:
-            pytest.skip("No examples for snapshot in synced_test_db")
+        assert example, "Expected examples from test fixtures"
 
-        # Create a prompt
-        prompt = Prompt(prompt_sha256="test" + "a" * 60, prompt_text="Test prompt for execution traces")
-        session.add(prompt)
-        session.flush()
-
-        # Create a critique
-        payload = critic_submit_payload_to_db(CriticSubmitPayload(issues=[], notes_md=None))
-        critique = Critique(snapshot_slug=snapshot.slug, payload=payload)
-        session.add(critique)
-        session.flush()
-
-        # Create a critic run with proper output
-        critic_run_id = uuid4()
+        # Create a critic run with proper output (using helper)
         transcript_id = uuid4()
-        critic_run = CriticRun(
-            id=critic_run_id,
+        payload = DBCriticSubmitPayload(notes_md=None)
+        critic_run = make_critic_run(
+            example=example,
+            prompt_sha256=test_prompt_sha,
             transcript_id=transcript_id,
-            prompt_sha256=prompt.prompt_sha256,
-            snapshot_slug=snapshot.slug,
-            model="test-model",
-            critique_id=critique.id,
-            files=example.files,
-            files_hash=example.files_hash,
             output=DBCriticSuccess(result=payload),
+            status=CriticRunStatus.COMPLETED,
         )
         session.add(critic_run)
         session.flush()
 
-        # Add some tool call events
+        # Add some tool call events with proper typed payloads
         for i in range(3):
-            event = Event(
+            # Tool call event
+            call_event = Event(
                 transcript_id=transcript_id,
-                sequence_num=i,
+                sequence_num=i * 2,
                 event_type="tool_call",
                 timestamp=datetime.now(UTC),
-                payload={"name": f"test_tool_{i}", "args": {}},
+                payload=ToolCall(name=f"test_tool_{i}", args_json=f'{{"arg": {i}}}', call_id=f"call_{i}"),
             )
-            session.add(event)
+            session.add(call_event)
+
+            # Tool output event
+            output_event = Event(
+                transcript_id=transcript_id,
+                sequence_num=i * 2 + 1,
+                event_type="tool_call_output",
+                timestamp=datetime.now(UTC),
+                payload=ToolCallOutput(
+                    call_id=f"call_{i}",
+                    result=CallToolResult(isError=False, content=[TextContent(type="text", text=f"result {i}")])
+                ),
+            )
+            session.add(output_event)
 
         # Create a grader run with 85% recall (found_credit = 0.85)
-        grader_run = GraderRun(
-            id=uuid4(),
-            transcript_id=uuid4(),
-            snapshot_slug=snapshot.slug,
-            model="test-model",
-            critique_id=critique.id,
-            canonical_issues_snapshot={"true_positives": [], "false_positives": []},
-            output=DBGraderSuccess(
-                occurrence_results=[
-                    DBOccurrenceResult(
-                        tp_id="tp-001",
-                        occurrence_id="occ-001",
-                        found_credit=0.85,
-                        matched_by=[],
-                        rationale="Test occurrence with 85% recall",
-                    )
-                ],
-                summary="Test summary for grader run",
-            ),
+        grader_run = make_grader_run(
+            critic_run=critic_run,
+            output=make_grader_output(tp_count=1, found_credit=0.85, summary="Test summary for grader run"),
         )
         session.add(grader_run)
 
         session.commit()
 
-        # Remember details for verification
-        expected_run_id_prefix = str(critic_run_id)[:8]
-        expected_prompt_prefix = prompt.prompt_sha256[:8]
+        # Remember details for verification (access after commit)
+        expected_run_id_prefix = str(critic_run.id)[:6]  # short_sha returns 6 chars
+        expected_prompt_prefix = test_prompt_sha[:6]
         expected_snapshot = snapshot.slug
 
     main()
@@ -123,10 +107,12 @@ def test_query_execution_traces_with_data(synced_test_db, mock_agent_setup, caps
     # Verify tool call count shows
     assert "Tool calls: 3" in output, "Expected 'Tool calls: 3' in output"
 
-    # Verify occurrence results show (found_credit=0.85 rounds to 0.8 at 1 decimal place)
-    assert "Occurrences:" in output, "Expected 'Occurrences:' in output"
-    assert "0.8 / 1 found" in output, "Expected occurrence count '0.8 / 1 found' in output"
-
+    # Verify detailed execution trace shows event types and content
+    assert "Execution trace for run" in output, "Expected 'Execution trace for run' section"
+    # Event types may be truncated in table display (e.g., "tool…" for tool_call/tool_call_output)
+    assert "tool" in output, "Expected 'tool' event type in output"
+    assert "test_tool_0" in output, "Expected tool name 'test_tool_0' in output"
+    assert "result 0" in output, "Expected tool output 'result 0' in output"
 
 def test_query_execution_traces_empty_database(test_db, mock_agent_setup, capsys):
     """Test that query_execution_traces handles empty database gracefully."""

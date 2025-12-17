@@ -30,6 +30,7 @@ from fastmcp.exceptions import ToolError
 from fastmcp.resources import FunctionResource
 from fastmcp.tools import FunctionTool
 from pydantic import Field
+from sqlalchemy import func
 
 from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted, read_package_file_call
@@ -50,23 +51,30 @@ from adgn.props.agent_setup import build_props_handlers
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.critic import run_critic as execute_critic_run
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
-from adgn.props.critic.models import CriticContextLengthExceeded, CriticInput, CriticMaxTurnsExceeded
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig, get_database_config
-from adgn.props.db.models import CriticRun, Example, GraderRun as DBGraderRun, PromptOptimizationRun, Snapshot
-from adgn.props.db.prompt_optimizer_user_manager import PromptOptimizerUserManager
+from adgn.props.db.examples import Example
+from adgn.props.db.models import (
+    CriticRun,
+    CriticRunStatus,
+    GraderRun as DBGraderRun,
+    GraderRunStatus,
+    GradingDecision,
+    PromptOptimizationRun,
+    Snapshot,
+)
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.snapshots import DBGraderSuccess
 from adgn.props.db.temp_user_manager import TempUserCredentials
 from adgn.props.display import short_uuid
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
-from adgn.props.files_hash import hash_file_set
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
-from adgn.props.grader.grader import grade_critique_by_id
+from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import CriticScopeSpec, ExplicitFileScope
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope, ScopeKind
 from adgn.props.prompt_optimize.budget_handler import BudgetEnforcementHandler
+from adgn.props.prompt_optimize.user_manager import PromptOptimizerUserManager
 from adgn.props.prompts.util import render_prompt_template
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 from adgn.props.splits import Split
@@ -90,7 +98,7 @@ _VALIDATION_FUNCTION_NAME = "get_validation_run_aggregates()"
 
 # Split-based access restriction messages
 _VALID_TEST_FULL_SNAPSHOT_ONLY = (
-    "'valid' split only allows full-snapshot evaluations (files_hash must be None). "
+    "'valid' split only allows full-snapshot evaluations (scope_hash must be None). "
     "Run critic on whole-snapshot examples to measure terminal metric."
 )
 
@@ -133,73 +141,79 @@ class ReportFailureInput(OpenAIStrictModeBaseModel):
 def _trace_query_advice(
     *,
     snapshot_slug: str | None = None,
-    critique_id: str | None = None,
-    run_id: str | None = None,
-    transcript_id: str | None = None,
+    critic_run_id: UUID | None = None,
+    run_id: UUID | None = None,
+    transcript_id: UUID | None = None,
+    is_grader: bool = False,
 ) -> str:
     """Generate advice for querying execution traces.
 
     Args:
         snapshot_slug: For critic runs (when run_id not available yet)
-        critique_id: For grader runs (when run_id not available yet)
+        critic_run_id: For grader runs (link to critic_run_id)
         run_id: Critic run ID or grader run ID (preferred when available)
         transcript_id: Transcript ID (optional, adds to query examples)
+        is_grader: True if this is grader context, False for critic context
 
     At least one identifying parameter must be provided.
     """
-    if run_id or transcript_id:
+    # Convert UUIDs to strings for SQL query examples
+    run_id_str = str(run_id) if run_id else None
+    critic_run_id_str = str(critic_run_id) if critic_run_id else None
+    transcript_id_str = str(transcript_id) if transcript_id else None
+    if run_id_str or transcript_id_str:
         # We have specific IDs - provide concrete query examples
-        if critique_id:
+        if is_grader:
             # Grader context
-            base_msg = f"Grader run ID: {run_id or '(query grader_runs by critique_id)'}"
-            if transcript_id:
-                base_msg += f"\nTranscript ID: {transcript_id}"
+            base_msg = f"Grader run ID: {run_id_str or '(query grader_runs by critic_run_id)'}"
+            if transcript_id_str:
+                base_msg += f"\nTranscript ID: {transcript_id_str}"
 
             examples = [
                 "\nQuery examples:",
                 "-- Get grader run details:",
-                f"SELECT * FROM grader_runs WHERE id = '{run_id}';"
-                if run_id
-                else f"SELECT * FROM grader_runs WHERE critique_id = '{critique_id}';",
+                f"SELECT * FROM grader_runs WHERE id = '{run_id_str}';"
+                if run_id_str
+                else f"SELECT * FROM grader_runs WHERE critic_run_id = '{critic_run_id_str}';",
             ]
-            if transcript_id:
+            if transcript_id_str:
                 examples.extend(
                     [
                         "\n-- Get execution trace (tool calls, reasoning, etc.):",
-                        f"SELECT event_type, payload FROM events WHERE transcript_id = '{transcript_id}' ORDER BY sequence_num;",
+                        f"SELECT event_type, payload FROM events WHERE transcript_id = '{transcript_id_str}' ORDER BY sequence_num;",
                         "\n-- Get reasoning summaries only:",
-                        f"SELECT payload FROM events WHERE transcript_id = '{transcript_id}' AND event_type = 'reasoning' ORDER BY sequence_num;",
+                        f"SELECT payload FROM events WHERE transcript_id = '{transcript_id_str}' AND event_type = 'reasoning' ORDER BY sequence_num;",
                     ]
                 )
             return base_msg + "\n" + "\n".join(examples)
         # Critic context
-        base_msg = f"Critic run ID: {run_id or '(query critic_runs by snapshot_slug)'}"
-        if transcript_id:
-            base_msg += f"\nTranscript ID: {transcript_id}"
+        base_msg = f"Critic run ID: {run_id_str or '(query critic_runs by snapshot_slug)'}"
+        if transcript_id_str:
+            base_msg += f"\nTranscript ID: {transcript_id_str}"
 
         examples = [
             "\nQuery examples:",
             "-- Get critic run details:",
-            f"SELECT * FROM critic_runs WHERE id = '{run_id}';"
-            if run_id
+            f"SELECT * FROM critic_runs WHERE id = '{run_id_str}';"
+            if run_id_str
             else f"SELECT * FROM critic_runs WHERE snapshot_slug = '{snapshot_slug}';",
         ]
-        if transcript_id:
+        if transcript_id_str:
             examples.extend(
                 [
                     "\n-- Get execution trace (tool calls, reasoning, etc.):",
-                    f"SELECT event_type, payload FROM events WHERE transcript_id = '{transcript_id}' ORDER BY sequence_num;",
+                    f"SELECT event_type, payload FROM events WHERE transcript_id = '{transcript_id_str}' ORDER BY sequence_num;",
                     "\n-- Get reasoning summaries only:",
-                    f"SELECT payload FROM events WHERE transcript_id = '{transcript_id}' AND event_type = 'reasoning' ORDER BY sequence_num;",
+                    f"SELECT payload FROM events WHERE transcript_id = '{transcript_id_str}' AND event_type = 'reasoning' ORDER BY sequence_num;",
                 ]
             )
         return base_msg + "\n" + "\n".join(examples)
 
-    # Fallback: only have snapshot_slug or critique_id (should rarely happen)
+    # Fallback: only have snapshot_slug or critic_run_id (should rarely happen)
     if snapshot_slug is not None:
         return f"Query critic_runs table WHERE snapshot_slug='{snapshot_slug}' to get run IDs and transcript IDs."
-    if critique_id is not None:
-        return f"Query grader_runs table WHERE critique_id='{critique_id}' to get run IDs and transcript IDs."
+    if critic_run_id_str is not None:
+        return f"Query grader_runs table WHERE critic_run_id='{critic_run_id_str}' to get run IDs and transcript IDs."
 
     raise ValueError("At least one identifying parameter must be provided")
 
@@ -249,6 +263,8 @@ def make_po_bootstrap_calls(
                 "\\d+ occurrence_statistics",
                 "-c",
                 "\\d+ occurrence_credits",
+                "-c",
+                "\\d+ pareto_frontier_by_example",
             ],
             timeout_ms=5000,
         ),
@@ -270,6 +286,7 @@ def make_po_bootstrap_calls(
                 "query_train_examples.py",
                 "query_run_status.py",
                 "query_execution_traces.py",
+                "query_pareto_frontier.py",  # Which prompts win on which examples
             ]
             + (
                 # Target-metric-specific query files
@@ -295,6 +312,12 @@ def make_po_bootstrap_calls(
 
 class PromptOptimizerCompositor(PropertiesDockerCompositor):
     """Compositor with prompt optimizer servers and temporary database user management.
+
+    TODO: Migrate to HTTP mode with AgentEnvironment abstraction (like critic/grader)
+    - Create PromptOptimizerAgentEnvironment extending AgentEnvironment
+    - Move user management and compositor setup to base class
+    - Consider HTTP transport for PromptEvalServer (currently in-proc only)
+    - Would simplify lifecycle management and improve consistency
 
     Inherits from PropertiesDockerCompositor, which provides:
     - runtime: Docker exec server (mounted by parent class)
@@ -517,29 +540,34 @@ class UpsertPromptOutput(OpenAIStrictModeBaseModel):
 
 
 class RunCriticOnExampleInput(OpenAIStrictModeBaseModel):
-    """Run critic on a snapshot with specified file scope.
+    """Run critic on a specific training example.
 
-    Returns critic_run_id and critique_id for subsequent grading.
+    Returns critic_run_id for subsequent grading.
 
     Mode-specific restrictions (enforced by RLS + MCP):
-    - Whole-Repo Mode: VALID split requires entire_snapshot scope
-    - Targeted Mode: VALID split allows both entire_snapshot and specific_files scopes
-    - TRAIN split: Both scopes allowed in all modes
+    - Whole-Repo Mode: VALID split requires scope_hash for entire-snapshot examples only
+    - Targeted Mode: VALID split allows scope_hash for both per-file and entire-snapshot examples
+    - TRAIN split: All example scope_hash values allowed in all modes
+
+    Query the examples table to find valid (snapshot_slug, scope_hash) pairs:
+    SELECT snapshot_slug, scope_hash, scope FROM examples WHERE snapshot_slug='...'
     """
 
     snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    scope: CriticScopeSpec = Field(
-        description="File scope specification: entire_snapshot or specific_files with file list"
+    scope_hash: str = Field(
+        description="Example scope hash (64-char hex string) - identifies which files to review. "
+        "Query examples table to find valid scope_hash values for a snapshot."
     )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt (from upsert_prompt)")
     max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
 
 
 class RunCriticOutput(OpenAIStrictModeBaseModel):
-    """Output for run_critic tool - DB IDs for critic run and generated critique."""
+    """Output for run_critic tool - DB ID for critic run."""
 
-    critic_run_id: UUID = Field(description="critic_runs.id - Query critic_runs table for output, costs, model.")
-    critique_id: UUID = Field(description="critiques.id - Pass to run_grader to grade against ground truth.")
+    critic_run_id: UUID = Field(
+        description="critic_runs.id - Query critic_runs table for output, costs, model. Pass to run_grader to grade against ground truth."
+    )
     # cumulative_cost_usd: float = Field(
     #     description="Total cumulative cost (USD) for all critic/grader runs in this optimization session so far."
     # )
@@ -551,7 +579,7 @@ class RunGraderInput(OpenAIStrictModeBaseModel):
     Note: model is NOT included - the server is bound to a specific client/model at build time.
     """
 
-    critique_id: UUID = Field(description="critiques.id - The critique to grade (from run_critic output)")
+    critic_run_id: UUID = Field(description="critic_runs.id - The critic run to grade (from run_critic output)")
     max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
 
 
@@ -577,8 +605,8 @@ class PromptEvalServer(EnhancedFastMCP):
 
     Provides MCP tools for triggering critic and grader runs:
     - upsert_prompt(file_path) -> prompt_sha256
-    - run_critic_on_example(snapshot_slug, scope, prompt_sha256) -> critic_run_id, critique_id
-    - run_grader(critique_id) -> grader_run_id
+    - run_critic_on_example(snapshot_slug, scope, prompt_sha256) -> critic_run_id
+    - run_grader(critic_run_id) -> grader_run_id
 
     Tools return only DB IDs. Agent queries database for results, metrics, costs.
 
@@ -757,9 +785,9 @@ class PromptEvalServer(EnhancedFastMCP):
             - VALID split: only entire_snapshot scope allowed (no per-file examples)
             - TEST split: completely off-limits
 
-            The scope can be constructed from pre-defined examples or used directly.
+            Look up the example by (snapshot_slug, scope_hash) and extract its scope.
             """
-            # Load and validate snapshot
+            # Load and validate snapshot and example
             with get_session() as session:
                 db_snapshot = session.query(Snapshot).filter_by(slug=payload.snapshot_slug).one_or_none()
                 if not db_snapshot:
@@ -774,61 +802,60 @@ class PromptEvalServer(EnhancedFastMCP):
                         f"Snapshot {payload.snapshot_slug} is in 'test' split."
                     )
 
-                # Check if scope is specific_files (per-file example)
-                is_specific_files = isinstance(payload.scope, ExplicitFileScope)
+                # Look up example by (snapshot_slug, scope_hash)
+                example = (
+                    session.query(Example)
+                    .filter_by(snapshot_slug=payload.snapshot_slug, scope_hash=payload.scope_hash)
+                    .one_or_none()
+                )
+
+                if not example:
+                    # List available examples for this snapshot
+                    available = session.query(Example).filter_by(snapshot_slug=payload.snapshot_slug).all()
+                    example_list = "\n".join(
+                        f"  - scope_hash={ex.scope_hash[:16]}... scope={ex.scope}" for ex in available[:10]
+                    )
+                    if len(available) > 10:
+                        example_list += f"\n  ... and {len(available) - 10} more"
+
+                    raise ToolError(
+                        f"No example found with scope_hash={payload.scope_hash} in snapshot {payload.snapshot_slug}.\n"
+                        f"Available examples ({len(available)} total):\n{example_list}\n\n"
+                        f"Query the examples table to find valid (snapshot_slug, scope_hash) pairs:\n"
+                        f"SELECT snapshot_slug, scope_hash, scope FROM examples WHERE snapshot_slug='{payload.snapshot_slug}';"
+                    )
+
+                # Get scope from example
+                scope = example.scope
+
+                # Check if this is a per-file example (ExplicitFileScope) or whole-snapshot (AllFilesScope)
+                is_per_file = isinstance(scope, ExplicitFileScope)
 
                 # Check VALID scope restrictions based on target metric mode
-                if (
-                    db_snapshot.split == Split.VALID
-                    and is_specific_files
-                    and self._target_metric == TargetMetric.WHOLE_REPO
-                ):
+                if db_snapshot.split == Split.VALID and is_per_file and self._target_metric == TargetMetric.WHOLE_REPO:
                     # Whole-repo mode: only allow full-snapshot evaluations
                     raise ToolError(
-                        "valid split in whole-repo mode requires entire_snapshot scope. "
-                        "You requested specific_files. Use entire_snapshot instead."
+                        f"valid split in whole-repo mode requires entire-snapshot examples only. "
+                        f"You requested scope_hash={payload.scope_hash} which is a per-file example. "
+                        f"Query for whole-snapshot examples: "
+                        f"SELECT scope_hash FROM examples WHERE snapshot_slug='{payload.snapshot_slug}' "
+                        f"AND (scope->>'kind')='entire_snapshot';"
                     )
-                # Targeted mode: allow specific_files (no error)
+                # Targeted mode: allow both per-file and whole-snapshot (no error)
 
-                # Validate that specific_files scope corresponds to a valid example
-                if is_specific_files:
-                    assert isinstance(payload.scope, ExplicitFileScope)
-                    requested_files = sorted(payload.scope.files)
-                    files_hash = hash_file_set(requested_files)
-
-                    # Check if example exists
-                    example = (
-                        session.query(Example)
-                        .filter_by(snapshot_slug=payload.snapshot_slug, files_hash=files_hash)
-                        .one_or_none()
-                    )
-
-                    if not example:
-                        # List available examples for this snapshot
-                        available = session.query(Example).filter_by(snapshot_slug=payload.snapshot_slug).all()
-                        example_list = "\n".join(f"  - {ex.files}" for ex in available[:10])
-                        if len(available) > 10:
-                            example_list += f"\n  ... and {len(available) - 10} more"
-
-                        raise ToolError(
-                            f"No example found for files {requested_files} in snapshot {payload.snapshot_slug}.\n"
-                            f"Available examples ({len(available)} total):\n{example_list}\n\n"
-                            f"Query the examples table to find valid file combinations:\n"
-                            f"SELECT files FROM examples WHERE snapshot_slug='{payload.snapshot_slug}';"
-                        )
-
-                # Use provided scope directly
+                # Create CriticInput with the scope from the example
                 critic_input = CriticInput(
-                    snapshot_slug=payload.snapshot_slug, files=payload.scope, prompt_sha256=payload.prompt_sha256
+                    snapshot_slug=payload.snapshot_slug, scope=scope, prompt_sha256=payload.prompt_sha256
                 )
 
             # Execute critic run (compositor handles snapshot hydration internally)
             try:
-                (critic_output, critic_run_id, critique_id) = await execute_critic_run(
+                (critic_run_id, status) = await execute_critic_run(
                     input_data=critic_input,
                     client=self._critic_client,
                     docker_client=self._docker_client,
                     hydrator=self._hydrator,
+                    db_config=self._db_config,
                     prompt_optimization_run_id=self._prompt_optimization_run_id,
                     mount_properties=False,
                     extra_handlers=(),
@@ -850,31 +877,24 @@ class PromptEvalServer(EnhancedFastMCP):
             # Get transcript_id for detailed error messages
             with get_session() as session:
                 critic_run = session.get(CriticRun, critic_run_id)
-                transcript_id = str(critic_run.transcript_id) if critic_run else None
+                transcript_id = critic_run.transcript_id if critic_run else None
 
-            # Check output type to provide specific error messages
-            if isinstance(critic_output, CriticMaxTurnsExceeded):
+            # Check status to provide specific error messages
+            if status == CriticRunStatus.MAX_TURNS_EXCEEDED:
                 raise ToolError(
                     f"Critic agent exceeded maximum turns ({payload.max_turns}).\n\n"
                     f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(run_id=str(critic_run_id), transcript_id=transcript_id)}"
+                    f"{_trace_query_advice(run_id=critic_run_id, transcript_id=transcript_id)}"
                 )
-            if isinstance(critic_output, CriticContextLengthExceeded):
+            if status == CriticRunStatus.CONTEXT_LENGTH_EXCEEDED:
                 raise ToolError(
-                    f"Critic agent exceeded context length: {critic_output.error_message}\n\n"
+                    f"Critic agent exceeded context length.\n\n"
                     f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(run_id=str(critic_run_id), transcript_id=transcript_id)}"
+                    f"{_trace_query_advice(run_id=critic_run_id, transcript_id=transcript_id)}"
                 )
 
-            # At this point critic_output must be CriticSuccess
-            if critique_id is None:
-                # This should never happen with CriticSuccess, but check anyway
-                raise ToolError(
-                    f"Internal error: Critic reported success but no critique was created. "
-                    f"Query critic_runs with id={critic_run_id}."
-                )
-
-            return RunCriticOutput(critic_run_id=critic_run_id, critique_id=critique_id)
+            # At this point status must be COMPLETED
+            return RunCriticOutput(critic_run_id=critic_run_id)
 
         self.run_critic_on_example_tool = self.flat_model()(run_critic_on_example)
 
@@ -889,12 +909,12 @@ class PromptEvalServer(EnhancedFastMCP):
 
             Returns grader_run_id and instructions for querying metrics.
             """
-            # Execute GraderRun by critique_id (fetches critique from DB, saves grader run to DB)
+            # Execute GraderRun by critic_run_id (fetches critic run from DB, saves grader run to DB)
             with get_session() as session:
                 try:
-                    grader_run_id = await grade_critique_by_id(
+                    grader_run_id = await grade_critic_run_by_id(
                         session=session,
-                        critique_id=payload.critique_id,
+                        critic_run_id=payload.critic_run_id,
                         client=self._grader_client,
                         docker_client=self._docker_client,
                         hydrator=self._hydrator,
@@ -908,59 +928,70 @@ class PromptEvalServer(EnhancedFastMCP):
                     # (grader run is created in DB even if execution fails)
                     grader_run = (
                         session.query(DBGraderRun)
-                        .filter_by(critique_id=payload.critique_id)
+                        .filter_by(critic_run_id=payload.critic_run_id)
                         .order_by(DBGraderRun.created_at.desc())
                         .first()
                     )
-                    grader_run_id_str = str(grader_run.id) if grader_run else None
-                    transcript_id_str = str(grader_run.transcript_id) if grader_run else None
 
                     if isinstance(e, GraderDidNotSubmitError):
                         raise ToolError(
                             f"Grader agent did not call submit(): {e}\n\n"
                             f"{_AGENT_STUCK_ADVICE}\n"
-                            f"{_trace_query_advice(critique_id=str(payload.critique_id), run_id=grader_run_id_str, transcript_id=transcript_id_str)}"
+                            f"{_trace_query_advice(critic_run_id=payload.critic_run_id, run_id=grader_run.id if grader_run else None, transcript_id=grader_run.transcript_id if grader_run else None, is_grader=True)}"
                         ) from e
                     # MaxTurnsExceededError
                     raise ToolError(
                         f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
                         f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{_trace_query_advice(critique_id=str(payload.critique_id), run_id=grader_run_id_str, transcript_id=transcript_id_str)}"
+                        f"{_trace_query_advice(critic_run_id=payload.critic_run_id, run_id=grader_run.id if grader_run else None, transcript_id=grader_run.transcript_id if grader_run else None, is_grader=True)}"
                     ) from e
 
                 # Verify grader run succeeded
                 grader_run = session.get(DBGraderRun, grader_run_id)
                 if not grader_run:
                     raise ToolError(f"Grader run {grader_run_id} not found in database")
-                if not grader_run.output:
-                    raise ToolError(f"Grader run {grader_run_id} has no output")
-                if not isinstance(grader_run.output, DBGraderSuccess):
+                if grader_run.status != GraderRunStatus.COMPLETED:
                     raise ToolError(
-                        f"Grader run {grader_run_id} exceeded max turns (no recall available)\n\n"
+                        f"Grader run {grader_run_id} did not complete successfully (status={grader_run.status.value})\n\n"
                         f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{_trace_query_advice(critique_id=str(payload.critique_id), run_id=str(grader_run_id), transcript_id=str(grader_run.transcript_id))}"
+                        f"{_trace_query_advice(critic_run_id=payload.critic_run_id, run_id=grader_run_id, transcript_id=grader_run.transcript_id, is_grader=True)}"
                     )
 
                 # Determine split and whether this is a full-snapshot run
                 split = grader_run.snapshot_obj.split
-                critique = grader_run.critique_obj
-                critic_run = critique.critic_run
+                critic_run = grader_run.critic_run_obj
                 if not critic_run:
-                    raise ToolError(f"Critique {critique.id} has no associated critic run")
+                    raise ToolError(f"Grader run {grader_run_id} has no associated critic run")
 
-                # Find matching example to check is_whole_snapshot
+                # Find matching example to check scope kind
                 example = (
                     session.query(Example)
-                    .filter_by(snapshot_slug=critic_run.snapshot_slug, files_hash=critic_run.files_hash)
-                    .one_or_none()
+                    .filter_by(snapshot_slug=critic_run.snapshot_slug, scope_hash=critic_run.scope_hash)
+                    .one()  # Raise if not found - this is a data integrity error
                 )
 
-                is_whole_snapshot = example.is_whole_snapshot if example else False
+                scope_kind = (
+                    ScopeKind.ENTIRE_SNAPSHOT if isinstance(example.scope, AllFilesScope) else ScopeKind.SPECIFIC_FILES
+                )
 
-                # Compute immediate feedback from this grader run
-                occurrence_results = grader_run.output.occurrence_results
-                total_credit = sum(occ.found_credit for occ in occurrence_results)
-                max_credit = len(occurrence_results)
+                # Compute immediate feedback from this grader run (direct query to grading_decisions)
+                # Pattern 1: Total credit (recall numerator)
+                total_credit = (
+                    session.query(func.sum(GradingDecision.credit))
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
+                    .scalar()
+                    or 0.0
+                )
+
+                # Pattern 2: Occurrence count (recall denominator)
+                max_credit = (
+                    session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingDecision.target_tp_id.isnot(None))
+                    .distinct()
+                    .count()
+                )
 
                 # Build message with immediate feedback and query advice
                 immediate_feedback = (
@@ -969,21 +1000,29 @@ class PromptEvalServer(EnhancedFastMCP):
                 )
 
                 # Add query advice based on split, example type, and optimization mode
-                if split == Split.VALID and is_whole_snapshot and self._target_metric == TargetMetric.WHOLE_REPO:
+                if (
+                    split == Split.VALID
+                    and scope_kind == ScopeKind.ENTIRE_SNAPSHOT
+                    and self._target_metric == TargetMetric.WHOLE_REPO
+                ):
                     # VALID full-snapshot in whole-repo mode: use validation function
                     query_advice = (
                         f"{_FUNCTION_BASED_METRICS_ADVICE} "
                         f"Example: SELECT * FROM {_VALIDATION_FUNCTION_NAME} WHERE grader_run_id = '{grader_run_id}'; "
                         f"For full details, query: SELECT output FROM grader_runs WHERE id = '{grader_run_id}';"
                     )
-                elif split == Split.VALID and is_whole_snapshot and self._target_metric == TargetMetric.TARGETED:
+                elif (
+                    split == Split.VALID
+                    and scope_kind == ScopeKind.ENTIRE_SNAPSHOT
+                    and self._target_metric == TargetMetric.TARGETED
+                ):
                     # VALID full-snapshot in targeted mode: use aggregate views
                     query_advice = (
                         f"{_VIEW_BASED_METRICS_ADVICE} "
                         "IMPORTANT: Check n_examples >= 5 before trusting metrics (small samples have high variance). "
                         "Use UCB/LCB bounds to quantify uncertainty. "
                         f"Example: SELECT recall, n_examples, ucb, lcb FROM aggregated_recall_by_prompt "
-                        f"WHERE prompt_sha256='...' AND split='valid' AND is_whole_snapshot=true; "
+                        f"WHERE prompt_sha256='...' AND split='valid' AND scope_kind='{ScopeKind.ENTIRE_SNAPSHOT}'; "
                         f"For full details, query: SELECT output FROM grader_runs WHERE id = '{grader_run_id}';"
                     )
                 else:

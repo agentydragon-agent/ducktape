@@ -10,30 +10,17 @@ Connection details are in environment variables:
 
 ## Using Python MCP SDK (Required)
 
+**Complete working example:**
+
 ```python
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-import os
-
-async with streamablehttp_client(
-    os.getenv('MCP_SERVER_URL'),
-    headers={"Authorization": f"Bearer {os.getenv('MCP_SERVER_TOKEN')}"}
-) as (read, write, _), \
-           ClientSession(read, write) as session:
-    # 1. Initialize - get server info and instructions
-    init_result = await session.initialize()
-    print(init_result.instructions)
-
-    # 2. List available tools - inspect their schemas
-    tools = await session.list_tools()
-    for tool in tools:
-        print(f"\nTool: {tool.name}")
-        print(f"Description: {tool.description}")
-        print(f"Input Schema: {tool.inputSchema}")
-
-    # 3. Call tools as needed
-    result = await session.call_tool("tool_name", arguments={...})
+{% include 'examples/mcp_http_client_example.py' %}
 ```
+
+Key steps:
+1. Use `streamablehttp_client()` with bearer token auth
+2. Call `session.initialize()` to get server instructions
+3. Call `session.list_tools()` to inspect tool schemas
+4. Call `session.call_tool(name, arguments)` to invoke tools
 
 ## Important
 

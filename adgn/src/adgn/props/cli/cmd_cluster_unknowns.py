@@ -21,6 +21,7 @@ from adgn.props.clustering.cluster_agent import run_clustering_agent
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
 from adgn.props.db.config import get_database_config
+from adgn.props.display import ellipticize
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 
 logger = logging.getLogger(__name__)
@@ -236,9 +237,7 @@ def cmd_show(run_id: Annotated[int, Argument(help="Clustering run ID to display"
                     target = "?"
 
                 # Truncate rationale for display
-                rationale = (
-                    assignment.rationale[:60] + "..." if len(assignment.rationale) > 60 else assignment.rationale
-                )
+                rationale = ellipticize(assignment.rationale, 60)
 
                 assignment_table.add_row(str(assignment.id), assignment.unknown_id, target, rationale)
 

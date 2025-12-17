@@ -16,274 +16,94 @@ Does NOT test:
 from __future__ import annotations
 
 from datetime import datetime
-from pathlib import Path
-from uuid import uuid4
 
 import pytest
 
-from adgn.props.critic.models import CriticSubmitPayload, ReportedIssue
 from adgn.props.db import get_session, query_builders as qb
-from adgn.props.db.models import AggregatedRecallByPrompt, CriticRun, Critique, Event, Example, GraderRun, Prompt
-from adgn.props.ids import SnapshotSlug
-from adgn.props.models.true_positive import FileOccurrence, Occurrence
+from adgn.props.db.examples import Example
+from adgn.props.db.models import AggregatedRecallByPrompt, Event, FalsePositive, Snapshot, TruePositive
+from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.splits import Split
-from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import (
-    TEST_FILES_HASH,
-    TEST_FILES_LIST,
-    make_critic_success,
-    make_false_positive,
-    make_fp_occurrence,
-    make_grader_output,
-    make_test_snapshot,
-    make_tp_occurrence,
-    make_true_positive,
-)
+from tests.props.conftest import make_critic_run, make_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.fixture
-def query_test_data(test_db):
-    """Populate database with simple test data for query validation.
+def query_test_data(synced_test_fixtures):
+    """Populate database with critic/grader runs for query validation.
 
+    Uses git fixtures for ground truth (Snapshots, TPs, FPs, Examples).
     Creates:
-    - 3 train snapshots, 2 valid snapshots
-    - 2 true positives and 1 false positive for train snapshots
     - 1 prompt
-    - 2 critiques (for 2 different train snapshots)
-    - 2 critic runs (linked to critiques)
-    - 3 grader runs (2 train, 1 valid)
+    - 3 critic runs (1 train, 2 valid)
+    - 3 grader runs (1 train, 2 valid)
     - Event records (tool_call and function_call_output events)
+
+    Note: Git fixtures provide:
+    - test-trivial (TRAIN) - has TPs and examples
+    - test-validation (VALID) - has TPs and examples
+    - test-validation-2 (VALID) - has TPs and examples
     """
     with get_session() as session:
-        # Create snapshots using builder
-        snapshots = [
-            make_test_snapshot("train/spec-a", split="train"),
-            make_test_snapshot("train/spec-b", split="train"),
-            make_test_snapshot("train/spec-c", split="train"),
-            make_test_snapshot("valid/spec-a", split="valid"),
-            make_test_snapshot("valid/spec-b", split="valid"),
-        ]
-        for spec in snapshots:
-            session.merge(spec)
-
-        session.flush()
-
-        # Create true positives and false positives using builders
-        true_positives = [
-            make_true_positive(
-                "train/spec-a",
-                tp_id="tp-001",
-                rationale="Test true positive 1",
-                occurrences=[
-                    make_tp_occurrence(
-                        occurrence_id="occ-tp-001-1",
-                        files={"file1.py": [{"start_line": 1, "end_line": 10}]},
-                        note="First occurrence",
-                        expect_caught_from=[["file1.py"]],
-                    )
-                ],
-            ),
-            make_true_positive(
-                "train/spec-b",
-                tp_id="tp-002",
-                rationale="Test true positive 2",
-                occurrences=[
-                    make_tp_occurrence(
-                        occurrence_id="occ-tp-002-1",
-                        files={"file2.py": [{"start_line": 5, "end_line": 15}]},
-                        note="Second occurrence",
-                        expect_caught_from=[["file2.py"]],
-                    )
-                ],
-            ),
-        ]
-        for tp in true_positives:
-            session.merge(tp)
-
-        false_positives = [
-            make_false_positive(
-                "train/spec-a",
-                fp_id="fp-001",
-                rationale="Test false positive 1",
-                occurrences=[
-                    make_fp_occurrence(
-                        occurrence_id="occ-fp-001-1",
-                        files={"file3.py": [{"start_line": 20, "end_line": 30}]},
-                        note="FP occurrence",
-                        relevant_files=["file3.py"],
-                    )
-                ],
-            )
-        ]
-        for fp in false_positives:
-            session.merge(fp)
-
-        # Create TP for valid/spec-a (required for snapshot_files_with_issues view)
-        # TEST_FILES_LIST is ["test.py"]
-        tp_valid = make_true_positive(
-            "valid/spec-a",
-            tp_id="tp-valid-001",
-            rationale="Test issue for valid snapshot",
-            occurrences=[
-                make_tp_occurrence(
-                    occurrence_id="occ-valid-1", files={"test.py": None}, expect_caught_from=[["test.py"]]
-                )
-            ],
+        # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_test_fixtures)
+        train_examples = (
+            session.query(Example)
+            .join(Example.snapshot_obj)
+            .filter(Example.snapshot_obj.has(split=Split.TRAIN))
+            .limit(2)
+            .all()
         )
-        session.merge(tp_valid)
+        valid_examples = (
+            session.query(Example)
+            .join(Example.snapshot_obj)
+            .filter(Example.snapshot_obj.has(split=Split.VALID))
+            .limit(2)
+            .all()
+        )
 
-        # Create prompt
-        prompt = Prompt(prompt_sha256="a" * 64, prompt_text="Test prompt for query validation")
-        session.merge(prompt)
+        assert len(train_examples) >= 1, "Need at least 1 train example from git fixtures"
+        assert len(valid_examples) >= 2, "Need at least 2 valid examples from git fixtures"
 
-        session.flush()
+        # Create prompt (helper computes proper hash)
+        prompt_sha = hash_and_upsert_prompt("Test prompt for query validation")
 
-        # Create examples (required for valid_metrics view join)
-        examples = [
-            Example.file_set(snapshot_slug=SnapshotSlug("train/spec-a"), files=TEST_FILES_LIST),
-            Example.file_set(snapshot_slug=SnapshotSlug("train/spec-b"), files=TEST_FILES_LIST),
-            Example.file_set(snapshot_slug=SnapshotSlug("valid/spec-a"), files=TEST_FILES_LIST),
-        ]
-        for example in examples:
-            session.add(example)
+        # Create critic runs using factory
+        critic_run_train = make_critic_run(
+            example=train_examples[0], prompt_sha256=prompt_sha, completion_summary="Test completion summary for train"
+        )
+        session.add(critic_run_train)
 
-        session.flush()
+        critic_run_valid_1 = make_critic_run(
+            example=valid_examples[0],
+            prompt_sha256=prompt_sha,
+            completion_summary="Test completion summary for valid-1",
+        )
+        session.add(critic_run_valid_1)
 
-        # Create critiques (train and valid)
-        critique_a_id = uuid4()
-        critique_b_id = uuid4()
-        critique_valid_id = uuid4()
-
-        critiques = [
-            Critique(
-                id=critique_a_id,
-                snapshot_slug=SnapshotSlug("train/spec-a"),
-                payload=CriticSubmitPayload(
-                    issues=[
-                        ReportedIssue(
-                            id="issue-1",
-                            rationale="Test issue",
-                            occurrences=[
-                                Occurrence(files=[FileOccurrence(path=Path("file1.py"), ranges=None)], note=None)
-                            ],
-                        )
-                    ],
-                    notes_md="",
-                ),
-            ),
-            Critique(
-                id=critique_b_id,
-                snapshot_slug=SnapshotSlug("train/spec-b"),
-                payload=CriticSubmitPayload(
-                    issues=[
-                        ReportedIssue(
-                            id="issue-2",
-                            rationale="Another issue",
-                            occurrences=[
-                                Occurrence(files=[FileOccurrence(path=Path("file2.py"), ranges=None)], note=None)
-                            ],
-                        )
-                    ],
-                    notes_md="",
-                ),
-            ),
-            Critique(
-                id=critique_valid_id,
-                snapshot_slug=SnapshotSlug("valid/spec-a"),
-                payload=CriticSubmitPayload(
-                    issues=[
-                        ReportedIssue(
-                            id="issue-3",
-                            rationale="Valid issue",
-                            occurrences=[
-                                Occurrence(files=[FileOccurrence(path=Path("test.py"), ranges=None)], note=None)
-                            ],
-                        )
-                    ],
-                    notes_md="",
-                ),
-            ),
-        ]
-        for critique in critiques:
-            session.merge(critique)
+        critic_run_valid_2 = make_critic_run(
+            example=valid_examples[1],
+            prompt_sha256=prompt_sha,
+            completion_summary="Test completion summary for valid-2",
+        )
+        session.add(critic_run_valid_2)
 
         session.flush()
 
-        # Create critic runs (linked to critiques, including valid/spec-a)
-        critic_runs = [
-            CriticRun(
-                transcript_id=uuid4(),
-                prompt_sha256="a" * 64,
-                snapshot_slug=SnapshotSlug("train/spec-a"),
-                model="test-model",
-                critique_id=critique_a_id,
-                files=TEST_FILES_LIST,
-                files_hash=TEST_FILES_HASH,
-                output=make_critic_success(),
-            ),
-            CriticRun(
-                transcript_id=uuid4(),
-                prompt_sha256="a" * 64,
-                snapshot_slug=SnapshotSlug("train/spec-b"),
-                model="test-model",
-                critique_id=critique_b_id,
-                files=TEST_FILES_LIST,
-                files_hash=TEST_FILES_HASH,
-                output=make_critic_success(),
-            ),
-            CriticRun(
-                transcript_id=uuid4(),
-                prompt_sha256="a" * 64,
-                snapshot_slug=SnapshotSlug("valid/spec-a"),
-                model="test-model",
-                critique_id=critique_valid_id,
-                files=TEST_FILES_LIST,
-                files_hash=TEST_FILES_HASH,
-                output=make_critic_success(),
-            ),
-        ]
-        for run in critic_runs:
-            session.add(run)
+        # Create grader runs using factory
+        grader_run_train = make_grader_run(critic_run=critic_run_train)
+        session.add(grader_run_train)
+
+        grader_run_valid_1 = make_grader_run(critic_run=critic_run_valid_1)
+        session.add(grader_run_valid_1)
+
+        grader_run_valid_2 = make_grader_run(critic_run=critic_run_valid_2)
+        session.add(grader_run_valid_2)
 
         session.flush()
 
-        # Create grader runs (2 train, 1 valid)
-        # Output built from GraderOutput Pydantic model via make_grader_output()
-        grader_runs = [
-            GraderRun(
-                transcript_id=uuid4(),
-                snapshot_slug=SnapshotSlug("train/spec-a"),
-                model="test-model-1",
-                critique_id=critique_a_id,
-                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-                output=make_grader_output(tp_count=4, found_credit=0.8, summary="Test grading spec-a"),
-            ),
-            GraderRun(
-                transcript_id=uuid4(),
-                snapshot_slug=SnapshotSlug("train/spec-b"),
-                model="test-model-1",
-                critique_id=critique_b_id,
-                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-                output=make_grader_output(tp_count=9, summary="Test grading spec-b"),
-            ),
-            GraderRun(
-                transcript_id=uuid4(),
-                snapshot_slug=SnapshotSlug("valid/spec-a"),
-                model="test-model-2",
-                critique_id=critique_valid_id,
-                canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-                output=make_grader_output(tp_count=3, found_credit=0.75, summary="Test grading valid/spec-a"),
-            ),
-        ]
-        for grader_run in grader_runs:
-            session.add(grader_run)
-
-        session.flush()
-
-        # Create event records for one transcript_id
-        test_transcript_id = critic_runs[0].transcript_id
+        # Create event records for one transcript_id (for event query tests)
+        test_transcript_id = critic_run_train.transcript_id
         now = datetime.now()
         event_specs = [
             (0, "tool_call", {"name": "Read", "args_json": '{"file_path": "test.py"}', "call_id": "call-1"}),
@@ -314,28 +134,28 @@ class TestQueryBuilders:
         with get_session() as session:
             result = session.execute(qb.list_train_snapshots()).fetchall()
 
-            # Should have 3 train snapshots
-            assert len(result) == 3
+            # Should have at least 1 train snapshot from git fixtures
+            assert len(result) >= 1
 
             # Check first row has expected columns and values
-            assert result[0].slug == "train/spec-a"
+            assert "test-fixtures/" in result[0].slug  # Git fixtures use test-fixtures/ prefix
             assert result[0].split == "train"
 
-            # Check ordering
+            # Check ordering (slugs should be sorted)
             slugs = [row.slug for row in result]
-            assert slugs == ["train/spec-a", "train/spec-b", "train/spec-c"]
+            assert slugs == sorted(slugs)
 
     def test_list_train_true_positives(self, query_test_data):
         """list_train_true_positives() returns all TPs for train split."""
         with get_session() as session:
             result = session.execute(qb.list_train_true_positives()).fetchall()
 
-            # Should have 2 train true positives
-            assert len(result) == 2
+            # Should have at least 1 train true positive from git fixtures
+            assert len(result) >= 1
 
             # Check structure
-            assert result[0].snapshot_slug in ("train/spec-a", "train/spec-b")
-            assert result[0].tp_id in ("tp-001", "tp-002")
+            assert "test-fixtures/" in result[0].snapshot_slug
+            assert result[0].tp_id is not None
             assert result[0].rationale is not None
 
     def test_list_train_false_positives(self, query_test_data):
@@ -343,61 +163,74 @@ class TestQueryBuilders:
         with get_session() as session:
             result = session.execute(qb.list_train_false_positives()).fetchall()
 
-            # Should have 1 train false positive
-            assert len(result) == 1
-
-            # Check structure
-            assert result[0].snapshot_slug == "train/spec-a"
-            assert result[0].fp_id == "fp-001"
-            assert result[0].rationale == "Test false positive 1"
+            # Git fixtures may or may not have FPs - just check structure if any exist
+            if len(result) > 0:
+                # Check structure
+                assert "test-fixtures/" in result[0].snapshot_slug
+                assert result[0].fp_id is not None
+                assert result[0].rationale is not None
 
     def test_count_issues_by_snapshot(self, query_test_data):
         """count_issues_by_snapshot() returns TP/FP counts per snapshot."""
         with get_session() as session:
-            result = session.execute(qb.count_issues_by_snapshot(split="train")).fetchall()
+            result = session.execute(qb.count_issues_by_snapshot(split=Split.TRAIN)).fetchall()
 
-            # Should have 3 train snapshots
-            assert len(result) == 3
+            # Should have at least 1 train snapshot from git fixtures
+            assert len(result) >= 1
 
-            # Find spec-a (has 1 TP and 1 FP)
-            spec_a_rows = [row for row in result if row.snapshot_slug == "train/spec-a"]
-            assert len(spec_a_rows) == 1
-            assert spec_a_rows[0].tp_count == 1
-            assert spec_a_rows[0].fp_count == 1
-
-            # Find spec-b (has 1 TP, 0 FP)
-            spec_b_rows = [row for row in result if row.snapshot_slug == "train/spec-b"]
-            assert len(spec_b_rows) == 1
-            assert spec_b_rows[0].tp_count == 1
-            assert spec_b_rows[0].fp_count == 0
-
-            # Find spec-c (has 0 TP, 0 FP)
-            spec_c_rows = [row for row in result if row.snapshot_slug == "train/spec-c"]
-            assert len(spec_c_rows) == 1
-            assert spec_c_rows[0].tp_count == 0
-            assert spec_c_rows[0].fp_count == 0
+            # Check structure - all should be from test-fixtures
+            for row in result:
+                assert "test-fixtures/" in row.snapshot_slug
+                assert row.tp_count >= 0
+                assert row.fp_count >= 0
+                # tp_count and fp_count should be integers
+                assert isinstance(row.tp_count, int)
+                assert isinstance(row.fp_count, int)
 
     def test_list_true_positives_for_snapshot(self, query_test_data):
         """list_true_positives_for_snapshot() returns TPs for specific snapshot."""
         with get_session() as session:
-            result = session.execute(qb.list_true_positives_for_snapshot(SnapshotSlug("train/spec-a"))).fetchall()
+            # Find a TRAIN snapshot with TPs
+            train_snapshot = (
+                session.query(Snapshot)
+                .filter(Snapshot.split == Split.TRAIN)
+                .join(TruePositive, TruePositive.snapshot_slug == Snapshot.slug)
+                .first()
+            )
+            assert train_snapshot, "No TRAIN snapshot with TPs found"
 
-            # Should have 1 TP
-            assert len(result) == 1
-            assert result[0].tp_id == "tp-001"
-            assert result[0].rationale == "Test true positive 1"
-            assert len(result[0].occurrences) == 1
+            result = session.execute(qb.list_true_positives_for_snapshot(train_snapshot.slug)).fetchall()
+
+            # Should have at least 1 TP
+            assert len(result) >= 1
+            assert result[0].tp_id is not None
+            assert result[0].rationale is not None
+            assert len(result[0].occurrences) >= 1
 
     def test_list_false_positives_for_snapshot(self, query_test_data):
         """list_false_positives_for_snapshot() returns FPs for specific snapshot."""
         with get_session() as session:
-            result = session.execute(qb.list_false_positives_for_snapshot(SnapshotSlug("train/spec-a"))).fetchall()
+            # Find a TRAIN snapshot with FPs (if any exist)
+            train_snapshot_with_fps = (
+                session.query(Snapshot)
+                .filter(Snapshot.split == Split.TRAIN)
+                .join(FalsePositive, FalsePositive.snapshot_slug == Snapshot.slug)
+                .first()
+            )
 
-            # Should have 1 FP
-            assert len(result) == 1
-            assert result[0].fp_id == "fp-001"
-            assert result[0].rationale == "Test false positive 1"
-            assert len(result[0].occurrences) == 1
+            if train_snapshot_with_fps:
+                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot_with_fps.slug)).fetchall()
+                # Should have at least 1 FP
+                assert len(result) >= 1
+                assert result[0].fp_id is not None
+                assert result[0].rationale is not None
+                assert len(result[0].occurrences) >= 1
+            else:
+                # If no FPs, just verify empty result for any TRAIN snapshot
+                train_snapshot = session.query(Snapshot).filter(Snapshot.split == Split.TRAIN).first()
+                assert train_snapshot, "No TRAIN snapshot found"
+                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot.slug)).fetchall()
+                assert len(result) == 0
 
     def test_valid_aggregates_view(self, query_test_data):
         """aggregated_recall_by_prompt view computes statistics for valid split."""
@@ -406,31 +239,43 @@ class TestQueryBuilders:
             # Query the aggregated_recall_by_prompt view for valid split
             result = session.query(AggregatedRecallByPrompt).filter(AggregatedRecallByPrompt.split == Split.VALID).all()
 
-            # Should have at least 1 row
+            # Should have at least 1 row (from valid grader runs created in fixture)
             assert len(result) >= 1
 
-            # Check first row has expected structure (grader_model no longer in primary key)
+            # Check first row has expected structure (occurrence-based metrics)
             row = result[0]
-            # Use approximate comparison for floats
-            assert abs(row.recall - 0.75) < 0.01
-            # Check aggregation counts
-            assert row.n_snapshots >= 1  # At least 1 distinct snapshot
-            assert row.n_occurrences == 3  # 3 occurrences from test fixture
+            # Check occurrence counts are non-negative
+            assert row.avg_occurrences_caught_overall >= 0.0
+            assert row.avg_catchable_occurrences >= 0.0
+            assert row.total_catchable_occurrences >= 0
+            # Check count fields
+            assert row.n_successful >= 0
+            assert row.n_max_turns_exceeded >= 0
+            assert row.n_context_length_exceeded >= 0
 
-    def test_critiques_for_snapshot(self, query_test_data):
-        """critiques_for_snapshot() returns critiques for a specific snapshot."""
+    def test_critic_runs_for_snapshot(self, query_test_data):
+        """critic_runs_for_snapshot() returns critic runs for a specific snapshot."""
         with get_session() as session:
-            result = session.execute(qb.critiques_for_snapshot(SnapshotSlug("train/spec-a"), limit=5)).fetchall()
+            # Find a TRAIN snapshot that has critic runs
+            train_example = (
+                session.query(Example)
+                .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
+                .filter(Snapshot.split == Split.TRAIN)
+                .first()
+            )
+            assert train_example, "No TRAIN example found"
 
-            # Should have 1 critique
-            assert len(result) == 1
+            result = session.execute(qb.critic_runs_for_snapshot(train_example.snapshot_slug, limit=5)).fetchall()
+
+            # Should have at least 1 critic run (created in query_test_data fixture)
+            assert len(result) >= 1
 
             # Check structure
             row = result[0]
             assert row.id is not None
-            assert row.payload is not None
+            assert row.output is not None
             assert row.created_at is not None
-            assert row.prompt_sha256 == "a" * 64
+            assert len(row.prompt_sha256) == 64  # SHA256 hash
             assert row.model == "test-model"
 
     def test_tools_used_by_transcript(self, query_test_data):

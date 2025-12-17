@@ -62,9 +62,32 @@ class FakeOpenAIModel(OpenAIModelProto):
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
         if not isinstance(req, ResponsesRequest):
             raise TypeError("responses_create expects a ResponsesRequest instance")
-        idx = min(self.calls, len(self._outputs) - 1) if self._outputs else 0
+        if self.calls >= len(self._outputs):
+            # Show last 2 messages from the request to help debug what agent was trying to do
+            last_messages = []
+            # req.input is list[InputItem] | str, where InputItem is a union of Pydantic message types
+            if isinstance(req.input, list):
+                for item in req.input[-2:]:
+                    # item is InputItem (Pydantic model)
+                    item_dict = item.model_dump()
+                    role = item_dict.get("role", str(type(item).__name__))
+                    content = str(item_dict)
+
+                    # Truncate long content
+                    if len(content) > 500:
+                        content = content[:500] + "..."
+                    last_messages.append(f"  {role}: {content}")
+            elif isinstance(req.input, str):
+                last_messages.append(f"  (string input): {req.input[:500]}")
+
+            msg_preview = "\n".join(last_messages) if last_messages else "(no messages)"
+            raise RuntimeError(
+                f"Mock exhausted: {self.calls} calls made but only {len(self._outputs)} responses provided. "
+                f"Add more mock responses or reduce max_turns.\n\nLast 2 messages in request:\n{msg_preview}"
+            )
+        result = self._outputs[self.calls]
         self.calls += 1
-        return self._outputs[idx]
+        return result
 
 
 class OpenAIClient(Protocol):

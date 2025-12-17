@@ -4,23 +4,26 @@ This script demonstrates how to query critic runs, execution traces, and grader
 results for YOUR ASSIGNED TRAINING EXAMPLES (scoped via RLS policies).
 
 Key patterns:
-- Query critic runs for your specific examples (by snapshot_slug, files_hash)
-- Access grader results (recall, precision, false negatives)
+- Query critic runs for your specific examples (by snapshot_slug, scope_hash)
+- Access grader results (occurrence credits, false negatives)
 - Inspect execution traces (tool calls, commands, results)
 - Identify what the critic did vs what it should have done
 
 Note: You only have access to the training examples assigned to you in the
-improvement context. Query by (snapshot_slug, files_hash) pairs.
+improvement context. Query by (snapshot_slug, scope_hash) pairs.
 """
 
-from pydantic import TypeAdapter
+from typing import Any
 
-from adgn.agent.events import ToolCall, ToolCallOutput
-from adgn.mcp.exec.models import ExecInput
+from rich.console import Console
+
+from sqlalchemy import func
+
 from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Event, GraderRun
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.models import CriticRun, GradingDecision, GraderRun, GraderRunStatus
+from adgn.props.display import ColumnDef, print_table_with_footer, short_sha
+from adgn.props.examples.query_execution_traces import format_event_detail
 
 # Example keys (replace with your assigned examples from improvement context)
 example_to_analyze = ("ducktape/2025-12-04-00", "2218c0dacb6594985f72b9c78880aea341de110ce28a1924054399aebc24da23")
@@ -29,53 +32,52 @@ example_to_analyze = ("ducktape/2025-12-04-00", "2218c0dacb6594985f72b9c78880aea
 def main():
     """Analyze critic failures on a specific training example."""
     setup_agent_database()
+    console = Console()
 
-    snapshot_slug, files_hash = example_to_analyze
+    snapshot_slug, scope_hash = example_to_analyze
 
     with get_session() as session:
         # Query critic runs for this specific example
         critic_runs = (
             session.query(CriticRun)
-            .filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash)
+            .filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash)
             .order_by(CriticRun.created_at.desc())
             .limit(5)
             .all()
         )
 
         if not critic_runs:
-            print(f"No critic runs found for {snapshot_slug} / {files_hash[:16]}...")
+            print(f"No critic runs found for {snapshot_slug} / {short_sha(scope_hash)}...")
             return
 
         print(f"=== Found {len(critic_runs)} critic runs for example ===\n")
         print(f"Snapshot: {snapshot_slug}")
-        print(f"Files hash: {files_hash[:16]}...")
+        print(f"Scope hash: {short_sha(scope_hash)}...")
         print()
 
         # Analyze the most recent run
         critic_run = critic_runs[0]
         print(f"Analyzing run: {critic_run.transcript_id}")
-        print(f"Prompt: {critic_run.prompt_sha256[:12]}...")
+        print(f"Prompt: {short_sha(critic_run.prompt_sha256)}...")
         print(f"Model: {critic_run.model}")
         print()
 
         # Check run status
         print("=== Run Status ===\n")
-        if critic_run.critique_id is None:
-            print("Status: INCOMPLETE (no critique submitted)")
-            print("Possible reasons: max turns exceeded, context length exceeded, error")
-            print()
+        if critic_run.status != "completed":
+            print(f"Status: {critic_run.status.upper()}")
             print("This run did NOT complete successfully. The critic may have:")
             print("- Run out of turns (hit max_turns limit)")
             print("- Exceeded context length (too many tokens)")
             print("- Encountered an error")
             print()
             return
-        print("Status: SUCCESS (critique submitted)")
-        print(f"Critique ID: {critic_run.critique_id}")
+        print("Status: COMPLETED")
+        print(f"Critic Run ID: {critic_run.id}")
         print()
 
         # Get grader result for this critic run
-        grader_run = session.query(GraderRun).filter_by(critique_id=critic_run.critique_id).first()
+        grader_run = session.query(GraderRun).filter_by(critic_run_id=critic_run.id).first()
 
         if not grader_run:
             print("No grader result found for this critic run (may not have been graded yet)")
@@ -83,109 +85,105 @@ def main():
 
         # Show grader results
         print("=== Grader Results ===\n")
-        if isinstance(grader_run.output, DBGraderSuccess):
-            grade = grader_run.output
-            # Print absolute numbers instead of percentage
-            if grade.occurrence_results:
-                total_credit = sum(o.found_credit for o in grade.occurrence_results)
-                n_occurrences = len(grade.occurrence_results)
-                print(f"Occurrences: {total_credit:.1f} / {n_occurrences} found")
-            else:
-                print("Occurrences: 0 / 0 found")
+        if grader_run.status == GraderRunStatus.COMPLETED:
+            # Query grading decisions directly
+            # TODO: Deduplicate recall calculation into db/grading.py helper function
 
-            # Count coverage entries
-            tp_count = len(grade.canonical_tp_coverage)
-            fp_count = len(grade.canonical_fp_coverage)
-            novel_count = len(grade.novel_critique_issues)
+            # Total credit (recall numerator)
+            total_credit = (
+                session.query(func.sum(GradingDecision.credit))
+                .filter_by(grader_run_id=grader_run.id)
+                .filter(GradingDecision.target_tp_id.isnot(None))
+                .scalar()
+                or 0.0
+            )
 
-            print(f"TP Coverage Entries: {tp_count}")
-            print(f"FP Coverage Entries: {fp_count}")
-            print(f"Novel Issues: {novel_count}")
+            # Occurrence count (recall denominator)
+            n_occurrences = (
+                session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
+                .filter_by(grader_run_id=grader_run.id)
+                .filter(GradingDecision.target_tp_id.isnot(None))
+                .distinct()
+                .count()
+            )
+
+            print(f"Occurrences: {total_credit:.1f} / {n_occurrences} found")
+
+            # Count unique TPs
+            unique_tps = (
+                session.query(GradingDecision.target_tp_id)
+                .filter_by(grader_run_id=grader_run.id)
+                .filter(GradingDecision.target_tp_id.isnot(None))
+                .distinct()
+                .count()
+            )
+
+            # Count unknowns (decisions with no TP match)
+            novel_count = (
+                session.query(GradingDecision)
+                .filter_by(grader_run_id=grader_run.id)
+                .filter(GradingDecision.target_tp_id.is_(None))
+                .count()
+            )
+
+            print(f"Unique TPs: {unique_tps}")
+            print(f"Unknown Issues: {novel_count}")
             print()
 
-            # Show missed issues (TPs with zero recall credit)
-            missed = [entry for entry in grade.canonical_tp_coverage if entry.recall_credit == 0.0]
-            if missed:
-                print(f"=== Missed Issues ({len(missed)} TPs with zero recall credit) ===\n")
-                for entry in missed[:3]:
-                    print(f"  - {entry.canonical_id}")
-                    if entry.matched_inputs:
+            # Show missed issues (occurrences with zero found_credit)
+            missed_decisions = (
+                session.query(GradingDecision)
+                .filter_by(grader_run_id=grader_run.id)
+                .filter(GradingDecision.target_tp_id.isnot(None))
+                .filter(GradingDecision.credit == 0.0)
+                .limit(3)
+                .all()
+            )
+
+            if missed_decisions:
+                print(f"=== Missed Occurrences ({len(missed_decisions)} with zero credit shown) ===\n")
+                for decision in missed_decisions:
+                    print(f"  - {decision.target_tp_id} (occurrence {decision.target_tp_occurrence_id})")
+                    if decision.input_issue_id:
                         print("    (Partially matched but zero credit)")
                     else:
                         print("    (Not matched at all)")
                     print()
         else:
-            print("Grader run failed or incomplete")
+            print(f"Grader run status: {grader_run.status.value}")
+            print("Grader run did not complete successfully")
             return
 
         # Show execution trace
-        print("=== Execution Trace (Tool Calls) ===\n")
-        events = (
-            session.query(Event)
-            .filter(Event.transcript_id == critic_run.transcript_id)
-            .order_by(Event.sequence_num)
-            .limit(10)
-            .all()
-        )
+        console.print("\n[bold]=== Execution Trace (Events) ===[/bold]\n")
 
-        if events:
-            for evt in events:
-                payload = evt.payload
+        # Format events using the same logic as query_execution_traces
+        formatted_events = [
+            (event_type, content)
+            for e in critic_run.events[:100]
+            if (detail := format_event_detail(e)) is not None
+            for event_type, content in [detail]
+        ]
 
-                # Event payload is a typed Pydantic model (EventType discriminated union)
-                # Access typed attributes instead of using .get()
-                if isinstance(payload, ToolCall):
-                    print(f"  [{evt.sequence_num}] CALL {payload.name}")
+        if formatted_events:
+            event_rows = [(i, event_type, content) for i, (event_type, content) in enumerate(formatted_events, 1)]
 
-                    # Show interesting command args from docker_exec calls
-                    if payload.args_json and "docker_exec" in payload.name:
-                        # Use Pydantic TypeAdapter to parse docker_exec arguments
-                        exec_input = TypeAdapter(ExecInput).validate_json(payload.args_json)
-                        # Show truncated command
-                        cmd_parts = exec_input.cmd[:5]
-                        if len(exec_input.cmd) > 5:
-                            cmd_parts.append("...")
-                        print(f"       Command: {' '.join(cmd_parts)}")
+            event_columns: list[ColumnDef[Any, Any]] = [
+                ColumnDef("#", lambda r: r[0], str, justify="right", width=3),
+                ColumnDef("Type", lambda r: r[1], width=12),
+                ColumnDef("Content", lambda r: r[2], width=80),
+            ]
 
-                elif isinstance(payload, ToolCallOutput):
-                    result = payload.result
-                    if result.isError:
-                        print(f"  [{evt.sequence_num}] ERROR")
-                    else:
-                        print(f"  [{evt.sequence_num}] OK")
-
-            total_events = session.query(Event).filter(Event.transcript_id == critic_run.transcript_id).count()
-            if len(events) < total_events:
-                print(f"  ... ({total_events - len(events)} more events)")
+            print_table_with_footer(
+                console,
+                event_rows,
+                event_columns,
+                show_header=True,
+                total_count=len(critic_run.events),
+                item_name="events",
+            )
         else:
-            print("  No execution trace found")
-
-        # Show reasoning summaries (if any)
-        reasoning_events = (
-            session.query(Event)
-            .filter(Event.transcript_id == critic_run.transcript_id, Event.event_type == "reasoning")
-            .order_by(Event.sequence_num)
-            .all()
-        )
-
-        if reasoning_events:
-            print("\n=== Reasoning Summaries ===\n")
-            for evt in reasoning_events[:5]:  # Show first 5 reasoning events
-                payload = evt.payload
-                # Payload is a ReasoningItem with typed 'summary' attribute
-                if hasattr(payload, "summary") and payload.summary:
-                    print(f"  [{evt.sequence_num}] Reasoning:")
-                    for item in payload.summary:
-                        # Each item is a ReasoningSummaryItem with 'text' attribute
-                        text = item.text if hasattr(item, "text") else str(item)
-                        # Truncate long summaries
-                        if len(text) > 100:
-                            text = text[:100] + "..."
-                        print(f"    - {text}")
-                    print()
-
-            if len(reasoning_events) > 5:
-                print(f"  ... ({len(reasoning_events) - 5} more reasoning events)")
+            console.print("  No execution trace available")
 
 
 if __name__ == "__main__":

@@ -5,10 +5,10 @@ from unittest.mock import patch
 import pytest
 
 from adgn.props.db import get_session
-from adgn.props.db.models import Example, Snapshot
+from adgn.props.db.models import Snapshot
+from adgn.props.db.examples import Example
 
-
-def test_working_with_examples_with_synced_data(synced_test_db, mock_agent_setup, capsys):
+def test_working_with_examples_with_synced_data(synced_test_fixtures, mock_agent_setup, capsys):
     """Test that working_with_examples handles examples correctly."""
     from adgn.props.examples.working_with_examples import main
 
@@ -22,11 +22,11 @@ def test_working_with_examples_with_synced_data(synced_test_db, mock_agent_setup
             .all()
         )
 
-        if not train_examples:
-            pytest.skip("No train examples in synced_test_db")
+        # synced_test_fixtures includes test-trivial (train split) which always has examples
+        assert train_examples, "Expected train examples from test-trivial fixture"
 
         # Remember example details for verification
-        example_keys = [(ex.snapshot_slug, ex.files_hash) for ex in train_examples]
+        example_keys = [(ex.snapshot_slug, ex.scope_hash) for ex in train_examples]
 
     # Mock the hardcoded example keys in the script to use our test data
     with patch("adgn.props.examples.working_with_examples.examples", example_keys):
@@ -41,10 +41,10 @@ def test_working_with_examples_with_synced_data(synced_test_db, mock_agent_setup
 
     # Should show found examples (not "not found")
     assert "✓ " in output
-    assert "Files (" in output
+    # Check for scope representation (either kind='entire_snapshot' or kind='specific_files' files=[...])
+    assert "kind=" in output
     assert "Critic runs:" in output
     assert "Grader runs:" in output
-
 
 def test_working_with_examples_missing_examples(test_db, mock_agent_setup, capsys):
     """Test that working_with_examples handles missing examples gracefully."""

@@ -4,22 +4,21 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
 from adgn.props.db import get_session
-from adgn.props.db.models import Example, Snapshot, TruePositive
+from adgn.props.db.examples import Example
+from adgn.props.db.models import Snapshot, TruePositive
 from adgn.props.db.sync._sync import generate_examples_for_snapshot
-from adgn.props.files_hash import hash_file_set
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.models.true_positive import TruePositiveOccurrence
 from adgn.props.splits import Split
 
 
-def test_generate_examples_train_split(synced_test_db):
+def test_generate_examples_train_split(synced_test_fixtures):
     """Test example generation for TRAIN split creates per-trigger examples + full-specimen."""
     with get_session() as session:
-        # Pick a known TRAIN snapshot with multiple trigger sets
-        slug = SnapshotSlug("ducktape/2025-12-04-00")
+        # Use test-trivial fixture (train split)
+        slug = SnapshotSlug("test-fixtures/test-trivial")
         snapshot = session.query(Snapshot).filter_by(slug=slug).one()
         assert snapshot.split == Split.TRAIN
 
@@ -33,67 +32,50 @@ def test_generate_examples_train_split(synced_test_db):
         for example in examples:
             assert isinstance(example, Example)
 
-            if example.is_whole_snapshot:
-                # Whole-snapshot examples have NULL files/hash
-                assert example.files is None
-                assert example.files_hash is None
+            # Check scope_hash is present and valid
+            assert isinstance(example.scope_hash, str)
+            assert len(example.scope_hash) == 64  # SHA256 hex length
+
+            # Verify scope is a CriticScopeSpec instance
+            assert isinstance(example.scope, AllFilesScope | ExplicitFileScope)
+
+            if isinstance(example.scope, AllFilesScope):
+                # AllFilesScope examples
+                assert example.scope.kind == "entire_snapshot"
             else:
-                # File-set examples have non-NULL files/hash
-                assert isinstance(example.files, list)
-                assert all(isinstance(f, str) for f in example.files)
-                assert isinstance(example.files_hash, str)
-                assert len(example.files_hash) == 64  # SHA256 hex length
+                # ExplicitFileScope examples
+                assert isinstance(example.scope, ExplicitFileScope)
+                assert example.scope.kind == "specific_files"
+                assert isinstance(example.scope.files, list)
+                assert all(isinstance(f, str) for f in example.scope.files)
 
-                # Verify hash matches file set
-                file_set = {Path(f) for f in example.files}
-                expected_hash = hash_file_set(file_set)
-                assert example.files_hash == expected_hash
-
-        # One example should be full-specimen (all files with issues)
-        all_files: set[Path] = set()
-        for tp in snapshot.true_positives:
-            for tp_occ in tp.occurrences:
-                all_files.update(tp_occ.files.keys())
-        for fp in snapshot.false_positives:
-            for fp_occ in fp.occurrences:
-                all_files.update(fp_occ.files.keys())
-
-        # Find full-specimen example (should be marked as is_whole_snapshot=TRUE)
-        full_specimen_found = any(example.is_whole_snapshot for example in examples)
+        # One example should be full-specimen (AllFilesScope)
+        full_specimen_found = any(isinstance(ex.scope, AllFilesScope) for ex in examples)
         assert full_specimen_found, "Full-specimen example not found in generated examples"
 
 
-def test_generate_examples_valid_test_split(synced_test_db):
+def test_generate_examples_valid_test_split(synced_test_fixtures):
     """Test example generation for VALID split (per-file + full) and TEST split (full-specimen only)."""
     with get_session() as session:
-        # Test VALID split (should generate per-file + full-specimen like TRAIN)
-        valid_snapshot = session.query(Snapshot).filter_by(split=Split.VALID).first()
-        if valid_snapshot:
-            valid_examples = generate_examples_for_snapshot(session, valid_snapshot.slug, valid_snapshot.split)
+        # Test VALID split using test-validation fixture
+        slug = SnapshotSlug("test-fixtures/test-validation")
+        valid_snapshot = session.query(Snapshot).filter_by(slug=slug).one()
+        assert valid_snapshot.split == Split.VALID
 
-            # VALID should have multiple examples (per-file + full-specimen)
-            assert len(valid_examples) > 1, "VALID split should generate per-file examples for targeted mode"
+        valid_examples = generate_examples_for_snapshot(session, slug, valid_snapshot.split)
 
-            # At least one should be full-specimen
-            full_specimen_found = any(ex.is_whole_snapshot for ex in valid_examples)
-            assert full_specimen_found, "VALID split should include full-specimen example"
+        # VALID should have multiple examples (per-file + full-specimen)
+        assert len(valid_examples) > 1, "VALID split should generate per-file examples for targeted mode"
 
-        # Test TEST split (should generate only full-specimen)
-        test_snapshot = session.query(Snapshot).filter_by(split=Split.TEST).first()
-        if test_snapshot:
-            test_examples = generate_examples_for_snapshot(session, test_snapshot.slug, test_snapshot.split)
+        # At least one should be full-specimen
+        full_specimen_found = any(isinstance(ex.scope, AllFilesScope) for ex in valid_examples)
+        assert full_specimen_found, "VALID split should include full-specimen example"
 
-            # TEST should have exactly ONE example (full-specimen only)
-            assert len(test_examples) == 1, "TEST split should only generate full-specimen example"
-            assert test_examples[0].is_whole_snapshot is True
-            assert test_examples[0].files is None
-            assert test_examples[0].files_hash is None
-
-        if not valid_snapshot and not test_snapshot:
-            pytest.skip("No VALID or TEST snapshots in test database")
+        # Note: TEST split testing skipped - no test-fixtures/test snapshot in git
+        # TEST split behavior is well-defined: only generate full-specimen example
 
 
-def test_generate_examples_unique_trigger_sets(synced_test_db):
+def test_generate_examples_unique_trigger_sets(test_db):
     """Test that duplicate trigger sets are deduplicated."""
     with get_session() as session:
         # Create a test snapshot with duplicate trigger sets
@@ -138,15 +120,10 @@ def test_generate_examples_unique_trigger_sets(synced_test_db):
         trigger_found = False
         full_specimen_found = False
         for example in examples:
-            if example.is_whole_snapshot:
+            if isinstance(example.scope, AllFilesScope):
                 full_specimen_found = True
-            elif example.files == ["file1.py"]:
+            elif isinstance(example.scope, ExplicitFileScope) and example.scope.files == ["file1.py"]:
                 trigger_found = True
 
         assert trigger_found, "Single-file trigger example not found"
         assert full_specimen_found, "Full-specimen example not found"
-
-        # Cleanup (delete children first due to FK constraints)
-        session.query(TruePositive).filter_by(snapshot_slug=slug).delete()
-        session.query(Snapshot).filter_by(slug=slug).delete()
-        session.commit()

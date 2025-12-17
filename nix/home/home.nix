@@ -842,6 +842,9 @@ in {
       # Force proper terminal and enable true color support
       set -g default-terminal "tmux-256color"
       set -ag terminal-overrides ",xterm-256color:RGB"
+
+      # Enable hyperlink support (OSC 8) for clickable links in terminal
+      set -as terminal-features ',*:hyperlinks'
     '';
   };
 

@@ -47,20 +47,29 @@ class FullSyncResult:
     model_metadata_stats: ModelMetadataSyncStats
 
 
-def sync_all() -> FullSyncResult:
+def sync_all(skip_specimens: bool = False) -> FullSyncResult:
     """Sync snapshots, issues, examples, detector prompts, and model metadata in a single operation.
 
     All sync operations happen within a single database session for consistency.
 
+    Args:
+        skip_specimens: If True, skip syncing all data from specimens repository
+                       (snapshots, issues, examples)
+
     Returns:
         Combined results from all sync operations
     """
-    base_path = get_specimens_base_path()
-
     with get_session() as session:
-        snapshot_stats = sync_snapshots_to_db(session, base_path)
-        issue_stats = sync_issues_to_db(session, base_path)
-        example_stats = sync_examples_to_db(session, base_path)
+        if skip_specimens:
+            # Skip all specimen data sync
+            snapshot_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+            example_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
+        else:
+            base_path = get_specimens_base_path()
+            snapshot_stats = sync_snapshots_to_db(session, base_path)
+            issue_stats = sync_issues_to_db(session, base_path)
+            example_stats = sync_examples_to_db(session, base_path)
 
         # Sync critic system prompts
         detector_prompts = [
@@ -92,11 +101,14 @@ def ensure_databases_exist(config: DatabaseConfig) -> None:
     ensure_database_exists(config, config.admin.database, drop_existing=False)
 
 
-def recreate_database_and_sync() -> FullSyncResult:
+def recreate_database_and_sync(skip_specimens: bool = False) -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
     Drops all tables/views/policies, creates fresh schema, and syncs all data
     (snapshots, issues, examples, detector prompts, and model metadata).
+
+    Args:
+        skip_specimens: If True, skip syncing all data from specimens repository
 
     Returns:
         Combined results from all sync operations
@@ -105,17 +117,22 @@ def recreate_database_and_sync() -> FullSyncResult:
     recreate_database()
 
     # Sync all data sources into fresh database
-    return sync_all()
+    return sync_all(skip_specimens=skip_specimens)
 
 
 @async_run
-async def cmd_sync() -> None:
+async def cmd_sync(
+    skip_specimens: bool = typer.Option(False, "--skip-specimens", help="Skip syncing from specimens repository"),
+) -> None:
     """Sync snapshots, issues, examples, detector prompts, and model metadata from source to DB."""
     console = Console()
 
     # Sync all data sources
-    console.print("Syncing data from filesystem...")
-    result = sync_all()
+    if skip_specimens:
+        console.print("Syncing data (skipping specimens repository)...")
+    else:
+        console.print("Syncing data from filesystem...")
+    result = sync_all(skip_specimens=skip_specimens)
 
     # Data sync table
     table = Table(show_header=False, box=None, padding=(0, 2))
@@ -134,7 +151,10 @@ async def cmd_sync() -> None:
 
 
 @async_run
-async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")) -> None:
+async def cmd_db_recreate(
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
+    skip_specimens: bool = typer.Option(False, "--skip-specimens", help="Skip syncing from specimens repository"),
+) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
 
     This command will:
@@ -163,7 +183,9 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     # Connect and recreate (includes full sync)
     console = Console()
     console.print("Recreating database schema...")
-    result = recreate_database_and_sync()
+    if skip_specimens:
+        console.print("(Skipping specimens repository sync)")
+    result = recreate_database_and_sync(skip_specimens=skip_specimens)
     console.print("✓ Database recreated:")
 
     # Data sync table

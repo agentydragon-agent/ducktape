@@ -8,10 +8,13 @@ from pathlib import Path
 from fastmcp.exceptions import ToolError
 import pytest
 import pytest_asyncio
+from sqlalchemy.orm import joinedload
 
-from adgn.props.critic.models import ReportedIssue
+from adgn.props.critic.persistence import convert_reported_occurrence_orm_to_mcp
 from adgn.props.db import get_session
-from adgn.props.db.models import Critique, Snapshot
+from adgn.props.db.examples import Example
+from adgn.props.db.models import CriticRun, CriticRunStatus, ReportedIssue, Snapshot, TruePositive
+from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.grader.grader import (
     GRADER_CANONICAL_TPS_RESOURCE_URI,
     GRADER_CRITIQUE_ISSUES_RESOURCE_URI,
@@ -33,9 +36,9 @@ from adgn.props.grader.models import (
     UnknownIssue,
 )
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.true_positive import FileOccurrence, LineRange, Occurrence
+from adgn.props.models.critic_scopes import CriticScopeSpec, ExplicitFileScope
 from adgn.props.rationale import Rationale
-from tests.props.conftest import make_critique, make_test_snapshot, make_tp_occurrence, make_true_positive
+from tests.props.conftest import make_critic_run, make_tp_occurrence
 
 # =============================================================================
 # Test Fixtures
@@ -43,75 +46,112 @@ from tests.props.conftest import make_critique, make_test_snapshot, make_tp_occu
 
 
 @pytest.fixture
-def test_snapshot_with_tps(test_db):
-    """Create snapshot with 3 TPs (4 total occurrences) for testing."""
+def test_snapshot_with_tps(synced_test_fixtures):
+    """Create snapshot with 3 TPs (4 total occurrences) for testing.
+
+    Uses test-trivial git fixture but adds synthetic TPs with known IDs
+    for validation testing.
+    """
     with get_session() as session:
-        # Snapshot with 3 TPs
-        snapshot = make_test_snapshot("test/validation")
-        session.add(snapshot)
+        # Get test-trivial snapshot from git fixtures
+        snapshot = session.query(Snapshot).filter_by(slug="test-fixtures/test-trivial").one()
+
+        # Clear existing TPs from git fixture (we need specific structure for validation tests)
+        session.query(TruePositive).filter_by(snapshot_slug=snapshot.slug).delete()
 
         # TP 1: Single occurrence in file1.py
-        tp1 = make_true_positive(
-            "test/validation",
+        tp1 = TruePositive(
+            snapshot_slug=snapshot.slug,
             tp_id="tp-001",
             rationale="Dead code in file1",
             occurrences=[
-                make_tp_occurrence(occurrence_id="occ-001", files={"file1.py": None}, expect_caught_from=[["file1.py"]])
+                make_tp_occurrence(
+                    occurrence_id="occ-001",
+                    files={Path("file1.py"): None},
+                    expect_caught_from={frozenset([Path("file1.py")])},
+                )
             ],
         )
         session.add(tp1)
 
         # TP 2: Two occurrences in file2.py and file3.py (duplication pattern)
-        tp2 = make_true_positive(
-            "test/validation",
+        tp2 = TruePositive(
+            snapshot_slug=snapshot.slug,
             tp_id="tp-002",
             rationale="Duplicated logic across files",
             occurrences=[
                 make_tp_occurrence(
                     occurrence_id="occ-002-a",
-                    files={"file2.py": None},
-                    expect_caught_from=[["file2.py"], ["file3.py"]],  # Either file triggers detection
+                    files={Path("file2.py"): None},
+                    expect_caught_from={
+                        frozenset([Path("file2.py")]),
+                        frozenset([Path("file3.py")]),
+                    },  # Either file triggers detection
                 ),
                 make_tp_occurrence(
                     occurrence_id="occ-002-b",
-                    files={"file3.py": None},
-                    expect_caught_from=[["file2.py"], ["file3.py"]],  # Either file triggers detection
+                    files={Path("file3.py"): None},
+                    expect_caught_from={
+                        frozenset([Path("file2.py")]),
+                        frozenset([Path("file3.py")]),
+                    },  # Either file triggers detection
                 ),
             ],
         )
         session.add(tp2)
 
         # TP 3: Single occurrence in file4.py
-        tp3 = make_true_positive(
-            "test/validation",
+        tp3 = TruePositive(
+            snapshot_slug=snapshot.slug,
             tp_id="tp-003",
             rationale="Type error in file4",
             occurrences=[
-                make_tp_occurrence(occurrence_id="occ-003", files={"file4.py": None}, expect_caught_from=[["file4.py"]])
+                make_tp_occurrence(
+                    occurrence_id="occ-003",
+                    files={Path("file4.py"): None},
+                    expect_caught_from={frozenset([Path("file4.py")])},
+                )
             ],
         )
         session.add(tp3)
 
         session.commit()
 
-    return "test/validation"
+        # Get slug before exiting session context
+        return snapshot.slug
 
 
 @pytest.fixture
-def critique_with_3_issues(test_db, test_snapshot_with_tps):
-    """Create critique with 3 reported issues."""
+def critic_run_with_3_issues(synced_test_fixtures, test_snapshot_with_tps, all_files_scope):
+    """Create critic run with 3 reported issues in normalized tables."""
     with get_session() as session:
-        critique = make_critique(
-            test_snapshot_with_tps,
-            issues=[
-                ReportedIssue(id="input-001", rationale=Rationale("Found dead code"), occurrences=[]),
-                ReportedIssue(id="input-002", rationale=Rationale("Found duplication"), occurrences=[]),
-                ReportedIssue(id="input-003", rationale=Rationale("Found type error"), occurrences=[]),
-            ],
+        # Get or create Example (git fixtures may have already created it)
+        example = Example.from_scope(test_snapshot_with_tps, all_files_scope)
+        existing = (
+            session.query(Example).filter_by(snapshot_slug=example.snapshot_slug, scope_hash=example.scope_hash).first()
         )
-        session.add(critique)
+        if existing:
+            example = existing
+        else:
+            session.add(example)
+            session.flush()
+
+        prompt_sha256 = hash_and_upsert_prompt("test prompt for validation test")
+
+        # Create critic run with empty JSONB (normalized tables are source of truth)
+        critic_run = make_critic_run(example=example, prompt_sha256=prompt_sha256, status=CriticRunStatus.COMPLETED)
+        session.add(critic_run)
+        session.flush()  # Get critic_run.id
+
+        # Create issues in normalized tables
+        issues_orm = [
+            ReportedIssue(critic_run_id=critic_run.id, issue_id="input-001", rationale="Found dead code"),
+            ReportedIssue(critic_run_id=critic_run.id, issue_id="input-002", rationale="Found duplication"),
+            ReportedIssue(critic_run_id=critic_run.id, issue_id="input-003", rationale="Found type error"),
+        ]
+        session.add_all(issues_orm)
         session.commit()
-        return critique.id
+        return critic_run.id
 
 
 # =============================================================================
@@ -119,24 +159,32 @@ def critique_with_3_issues(test_db, test_snapshot_with_tps):
 # =============================================================================
 
 
-def _make_grader_submit_server(snapshot_slug: str, critique_id, reviewed_files: set[Path] | None) -> GraderSubmitServer:
+def _make_grader_submit_server(snapshot_slug: str, critic_run_id, scope: CriticScopeSpec) -> GraderSubmitServer:
     """Helper to create GraderSubmitServer with specified file scope.
 
     Args:
         snapshot_slug: Snapshot slug
-        critique_id: Critique ID
-        reviewed_files: Files in scope (None = all files)
+        critic_run_id: CriticRun ID
+        scope: Critic scope (ExplicitFileScope | AllFilesScope)
 
     Returns:
         GraderSubmitServer instance
     """
     with get_session() as session:
-        snapshot_orm = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-        critique = session.query(Critique).get(critique_id)
-        assert critique is not None, f"Critique {critique_id} not found"
-
-        # Eagerly load payload to avoid DetachedInstanceError
-        critique_payload = critique.payload
+        # Eagerly load relationships to avoid DetachedInstanceError
+        snapshot_orm = (
+            session.query(Snapshot)
+            .filter_by(slug=snapshot_slug)
+            .options(joinedload(Snapshot.true_positives), joinedload(Snapshot.false_positives))
+            .one()
+        )
+        critic_run = (
+            session.query(CriticRun)
+            .options(joinedload(CriticRun.reported_issues).joinedload(ReportedIssue.occurrences))
+            .get(critic_run_id)
+        )
+        assert critic_run is not None, f"CriticRun {critic_run_id} not found"
+        assert critic_run.status == CriticRunStatus.COMPLETED, "Expected completed critic run"
 
         # Load ground truth data for resources
         canonical_tps = [
@@ -153,48 +201,36 @@ def _make_grader_submit_server(snapshot_slug: str, critique_id, reviewed_files: 
             for fp in snapshot_orm.false_positives
         ]
 
+        # Build critique_typed directly from ORM reported issues
         critique_typed = [
             CritiqueInputIssue(
-                id=InputIssueID(issue.id),
+                id=InputIssueID(issue.issue_id),
                 rationale=Rationale(issue.rationale),
-                occurrences=[
-                    Occurrence(
-                        files=[
-                            FileOccurrence(
-                                path=Path(fo.path),
-                                ranges=(
-                                    [LineRange(start_line=r.start_line, end_line=r.end_line) for r in fo.ranges]
-                                    if fo.ranges
-                                    else None
-                                ),
-                            )
-                            for fo in occ.files
-                        ],
-                        note=occ.note,
-                    )
-                    for occ in issue.occurrences
-                ],
+                occurrences=[convert_reported_occurrence_orm_to_mcp(occ) for occ in issue.occurrences],
             )
-            for issue in critique_payload.issues
+            for issue in critic_run.reported_issues
         ]
 
     inputs = GradeInputs(
         snapshot_slug=SnapshotSlug(snapshot_slug),
-        critique=critique_payload,
         canonical_tps=canonical_tps,
         critique_typed=critique_typed,
         canonical_fps=canonical_fps,
-        reviewed_files=reviewed_files,
+        scope=scope,
     )
 
     state = GradeSubmitState()
-    return GraderSubmitServer(state, inputs, auth=None)
+    # Generate a test grader_run_id (required for submit server)
+    from uuid import uuid4
+
+    grader_run_id = uuid4()
+    return GraderSubmitServer(state, inputs, grader_run_id, auth=None)
 
 
 @pytest_asyncio.fixture
-async def grader_all_files(test_db, test_snapshot_with_tps, critique_with_3_issues):
+async def grader_all_files(synced_test_fixtures, test_snapshot_with_tps, critic_run_with_3_issues, all_files_scope):
     """Create GraderSubmitServer with all files in scope (4 expected occurrences)."""
-    return _make_grader_submit_server(test_snapshot_with_tps, critique_with_3_issues, reviewed_files=None)
+    return _make_grader_submit_server(test_snapshot_with_tps, critic_run_with_3_issues, scope=all_files_scope)
 
 
 async def test_submit_refuses_missing_one_occurrence(grader_all_files):
@@ -307,10 +343,12 @@ async def test_submit_accepts_all_occurrences_graded(grader_all_files):
 
 
 @pytest_asyncio.fixture
-async def grader_file1_only(test_db, test_snapshot_with_tps, critique_with_3_issues):
+async def grader_file1_only(synced_test_fixtures, test_snapshot_with_tps, critic_run_with_3_issues):
     """Create GraderSubmitServer with only file1.py in scope (1 expected occurrence)."""
     # Only file1.py reviewed = only tp-001/occ-001 is catchable
-    return _make_grader_submit_server(test_snapshot_with_tps, critique_with_3_issues, reviewed_files={Path("file1.py")})
+    return _make_grader_submit_server(
+        test_snapshot_with_tps, critic_run_with_3_issues, scope=ExplicitFileScope(files=["file1.py"])
+    )
 
 
 async def test_submit_scoped_validation_accepts_only_catchable(grader_file1_only):
@@ -514,7 +552,7 @@ async def test_grader_resources_return_data(grader_all_files):
 
     # Verify snapshot_slug is string
     assert isinstance(snapshot_slug, str)
-    assert snapshot_slug == "test/validation"
+    assert snapshot_slug == "test-fixtures/test-trivial"
 
     # Verify canonical_tps is list
     assert isinstance(canonical_tps, list)

@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator
 
-from fastmcp.server.auth import StaticTokenVerifier
+from fastmcp.server.auth import AuthProvider
 import httpx
 import pytest
 
@@ -18,10 +18,9 @@ from adgn.mcp.testing.simple_servers import build_simple_tools
 from adgn.props.http_compositor import ServerHandle, launch_mcp_http_server
 
 
-def _create_test_server(token: str) -> FlatModelMixin:
+def _create_test_server(auth: AuthProvider) -> FlatModelMixin:
     """Create a minimal FlatModelMixin server with auth for testing."""
-    auth = StaticTokenVerifier(tokens={token: {"client_id": "test", "scopes": []}})
-    server = FlatModelMixin("test_server", auth=auth, instructions="Test server for HTTP launcher tests.")
+    server = FlatModelMixin("test_server", auth=auth)
     build_simple_tools(server)
     return server
 

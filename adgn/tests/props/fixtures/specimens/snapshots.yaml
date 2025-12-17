@@ -11,3 +11,17 @@ test-fixtures/test-validation:
     root: code
   split: valid
   bundle: null
+
+test-fixtures/test-validation-2:
+  source:
+    vcs: local
+    root: code
+  split: valid
+  bundle: null
+
+test-fixtures/test-split-test:
+  source:
+    vcs: local
+    root: code
+  split: test
+  bundle: null

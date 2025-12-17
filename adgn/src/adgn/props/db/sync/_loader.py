@@ -2,7 +2,7 @@
 
 ⚠️⚠️⚠️ PRIVATE MODULE - DO NOT IMPORT OUTSIDE db/sync/ ⚠️⚠️⚠️
 
-This module is part of the sync machinery. It evaluates jsonnet files and returns
+This module is part of the sync machinery. It loads YAML issue files and returns
 Pydantic models for database insertion.
 
 For runtime issue loading, use ORM models:
@@ -22,8 +22,8 @@ import yaml
 
 from ...ids import split_snapshot_slug
 from ...models.snapshot import Snapshot, SnapshotSlug
-from ._jsonnet import evaluate_snapshot_issues
 from ._models import FalsePositive, TruePositive
+from ._yaml import load_yaml_issues
 
 logger = logging.getLogger(__name__)
 
@@ -74,10 +74,7 @@ class FilesystemLoader:
         return snapshots
 
     def load_issues_for_snapshot(self, slug: SnapshotSlug) -> tuple[list[TruePositive], list[FalsePositive]]:
-        """Evaluate specimens/{slug}/issues/*.libsonnet → Issue/FP objects.
-
-        Uses batch evaluation from _jsonnet.evaluate_snapshot_issues() which handles
-        TP/FP splitting based on occurrence structure.
+        """Load specimens/{slug}/issues/*.yaml → Issue/FP objects.
 
         Args:
             slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
@@ -86,8 +83,8 @@ class FilesystemLoader:
             Tuple of (issues, false_positives) with validated Pydantic models
 
         Raises:
-            FileNotFoundError: If snapshot directory doesn't exist
-            RuntimeError: If Jsonnet evaluation fails
+            FileNotFoundError: If snapshot directory doesn't exist or no issue files found
+            RuntimeError: If YAML loading fails
             ValueError: If validation fails
         """
         # Convert slug to path: "ducktape/2025-11-26-00" → "specimens/ducktape/2025-11-26-00"
@@ -96,8 +93,21 @@ class FilesystemLoader:
         if not snapshot_dir.is_dir():
             raise FileNotFoundError(f"Snapshot directory not found: {snapshot_dir}")
 
-        # Batch-evaluate all issues (returns dicts with IDs already injected)
-        raw_tps, raw_fps = evaluate_snapshot_issues(snapshot_dir, self.specimens_dir)
+        issues_dir = snapshot_dir / "issues"
+        if not issues_dir.is_dir():
+            raise FileNotFoundError(f"Issues directory not found: {issues_dir}")
+
+        # Check for YAML files
+        has_yaml = any(issues_dir.glob("*.yaml"))
+
+        if not has_yaml:
+            raise FileNotFoundError(f"No .yaml files found in {issues_dir}")
+
+        # Load YAML issues
+        logger.debug(f"Loading YAML issues from {issues_dir}")
+        all_raw_tps, all_raw_fps = load_yaml_issues(snapshot_dir, slug)
+
+        logger.info(f"Loaded {len(all_raw_tps)} TPs + {len(all_raw_fps)} FPs for {slug}")
 
         # Convert to Pydantic models with proper instantiation
         return (
@@ -108,13 +118,13 @@ class FilesystemLoader:
                     rationale=issue_dict["rationale"],
                     occurrences=issue_dict["occurrences"],
                 )
-                for issue_id, issue_dict in raw_tps.items()
+                for issue_id, issue_dict in all_raw_tps.items()
             ],
             [
                 FalsePositive(
                     fp_id=fp_id, snapshot_slug=slug, rationale=fp_dict["rationale"], occurrences=fp_dict["occurrences"]
                 )
-                for fp_id, fp_dict in raw_fps.items()
+                for fp_id, fp_dict in all_raw_fps.items()
             ],
         )
 
@@ -127,8 +137,8 @@ class FilesystemLoader:
         Used during sync for validation and data quality checks.
 
         Args:
-            true_positives: List of true positive issues (Pydantic, from Jsonnet)
-            false_positives: List of false positive issues (Pydantic, from Jsonnet)
+            true_positives: List of true positive issues (Pydantic, from YAML)
+            false_positives: List of false positive issues (Pydantic, from YAML)
 
         Returns:
             Set of all file paths referenced in any occurrence

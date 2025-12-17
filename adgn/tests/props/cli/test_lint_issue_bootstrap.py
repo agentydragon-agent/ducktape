@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Generator
-import contextlib
 from pathlib import Path
 import shutil
 import uuid
@@ -113,7 +112,3 @@ async def test_lint_issue_bootstrap_small_files(
         return False
 
     assert any(_is_final(m) for m in messages)
-
-    # Cleanup workspace to avoid clutter under $HOME
-    with contextlib.suppress(Exception):
-        shutil.rmtree(content_root, ignore_errors=True)

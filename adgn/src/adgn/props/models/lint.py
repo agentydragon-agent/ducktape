@@ -96,25 +96,3 @@ def extract_corrections(findings: list[IssueLintFindingRecord]) -> defaultdict[s
         if isinstance(f := fr.finding, AnchorIncorrect):
             corrections[f.correction.file].append(f.correction.range)
     return corrections
-
-
-# ChecklistItem (commented out — checklist handling is currently disabled)
-# class ChecklistItem(BaseModel):
-#     """Hierarchical checklist for the agent's performed checks.
-#
-#     May be per-property or general. Answer should be "YES"/"NO" when binary; free strings allowed when necessary.
-#     """
-#
-#     item: str = Field(..., description="Checklist question or assertion")
-#     subitems: list["ChecklistItem"] = Field(
-#         default_factory=list, description="Nested checks under this item"
-#     )
-#     log: str = Field(default="", description="Short log of evidence or steps taken")
-#     answer: bool | str = Field(
-#         ...,
-#         description="Answer; use boolean for binary (true/false); free text allowed when needed",
-#     )
-# checklist: list[ChecklistItem] | None = Field(
-#     default=None,
-#     description="Root checklist items (tree) summarizing checks performed (per-property or general)",
-# )

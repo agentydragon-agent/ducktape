@@ -32,8 +32,7 @@ from sqlalchemy.orm import Session
 
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
 from adgn.props.db.config import get_database_config
-from adgn.props.db.models import GraderRun
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision, ReportedIssue
 from adgn.props.ids import SnapshotSlug
 
 
@@ -156,11 +155,19 @@ def list_unassigned(session: Session, snapshot_slug: SnapshotSlug) -> None:
     This demonstrates how to join with reference tables (grader_runs) to find
     unknowns that need clustering.
     """
-    # Get all grader runs for this snapshot
-    grader_runs = session.execute(select(GraderRun).where(GraderRun.snapshot_slug == snapshot_slug)).scalars().all()
+    # Get all completed grader runs for this snapshot
+    grader_runs = (
+        session.execute(
+            select(GraderRun).where(
+                GraderRun.snapshot_slug == snapshot_slug, GraderRun.status == GraderRunStatus.COMPLETED
+            )
+        )
+        .scalars()
+        .all()
+    )
 
     if not grader_runs:
-        print(f"No grader runs found for snapshot {snapshot_slug}")
+        print(f"No completed grader runs found for snapshot {snapshot_slug}")
         return
 
     print(f"Checking {len(grader_runs)} grader run(s) for unassigned unknowns...")
@@ -169,17 +176,24 @@ def list_unassigned(session: Session, snapshot_slug: SnapshotSlug) -> None:
     total_unassigned = 0
 
     for gr in grader_runs:
-        # Extract unknowns from grader output (only for success outputs)
-        if not isinstance(gr.output, DBGraderSuccess):
-            continue
-        unknowns = gr.output.unknowns
-        if not unknowns:
+        # Query grading decisions with no TP match (unknowns)
+        unknown_decisions = (
+            session.execute(
+                select(GradingDecision).where(
+                    GradingDecision.grader_run_id == gr.id, GradingDecision.target_tp_id.is_(None)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+        if not unknown_decisions:
             continue
 
         # Check which ones are unassigned
         unassigned = []
-        for unknown in unknowns:
-            unknown_id = unknown.id
+        for decision in unknown_decisions:
+            unknown_id = decision.input_issue_id
             if not unknown_id:
                 continue
 
@@ -193,17 +207,24 @@ def list_unassigned(session: Session, snapshot_slug: SnapshotSlug) -> None:
             ).scalar_one_or_none()
 
             if existing is None:
-                unassigned.append(unknown)
+                # Load reported issue to get rationale
+                reported_issue = session.execute(
+                    select(ReportedIssue).where(
+                        ReportedIssue.critic_run_id == gr.critic_run_id, ReportedIssue.issue_id == unknown_id
+                    )
+                ).scalar_one_or_none()
+
+                unassigned.append((decision, reported_issue))
 
         if unassigned:
             print(f"Grader run {gr.id}:")
-            print(f"  Total unknowns: {len(unknowns)}")
+            print(f"  Total unknowns: {len(unknown_decisions)}")
             print(f"  Unassigned: {len(unassigned)}")
             print()
-            for unknown in unassigned[:3]:  # Show first 3
-                print(f"  - {unknown.id}")
-                if unknown.rationale:
-                    print(f"    {unknown.rationale[:80]}...")
+            for decision, reported_issue in unassigned[:3]:  # Show first 3
+                print(f"  - {decision.input_issue_id}")
+                if reported_issue and reported_issue.rationale:
+                    print(f"    {reported_issue.rationale[:80]}...")
             if len(unassigned) > 3:
                 print(f"  ... and {len(unassigned) - 3} more")
             print()

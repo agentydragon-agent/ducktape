@@ -4,15 +4,17 @@ This script demonstrates how to work with Example objects, which have a
 composite primary key instead of a single 'id' field.
 
 Key schema details:
-- Example has composite primary key: (snapshot_slug, files_hash)
-- No 'id' or 'key' attribute - use the tuple (snapshot_slug, files_hash) as identifier
-- Access via: example.snapshot_slug, example.files_hash, example.files
-- Query pattern: session.query(Example).filter_by(snapshot_slug=..., files_hash=...)
+- Example has composite primary key: (snapshot_slug, scope_hash)
+- No 'id' or 'key' attribute - use the tuple (snapshot_slug, scope_hash) as identifier
+- Access via: example.snapshot_slug, example.scope_hash, example.scope
+- Query pattern: session.query(Example).filter_by(snapshot_slug=..., scope_hash=...)
 """
 
 from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Example, GraderRun, Snapshot
+from adgn.props.db.examples import Example
+from adgn.props.db.models import CriticRun, GraderRun, Snapshot
+from adgn.props.display import short_sha
 
 # Example keys to query (can be patched in tests)
 examples = [
@@ -31,23 +33,22 @@ def main():
         print("Querying example details:")
         print()
 
-        for snapshot_slug, files_hash in examples:
-            # Query the Example object
+        for snapshot_slug, scope_hash in examples:
             example = session.query(Example).filter_by(
-                snapshot_slug=snapshot_slug, files_hash=files_hash
+                snapshot_slug=snapshot_slug, scope_hash=scope_hash
             ).first()
 
-            if not example:
-                print(f"❌ Example not found: {snapshot_slug} / {files_hash[:16]}...")
+            if example is None:
+                print(f"❌ Example not found: {snapshot_slug} / {short_sha(scope_hash)}...")
+                print()
                 continue
 
-            print(f"✓ {snapshot_slug} / {files_hash[:16]}...")
-            print(f"  Files ({len(example.files)}): {', '.join(example.files[:3])}")
+            print(f"✓ {snapshot_slug} / {short_sha(scope_hash)}... | {example.scope}")
 
             # Count associated critic runs
             critic_count = (
                 session.query(CriticRun)
-                .filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash)
+                .filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash)
                 .count()
             )
             print(f"  Critic runs: {critic_count}")
@@ -55,10 +56,10 @@ def main():
             # Count associated grader runs
             grader_count = (
                 session.query(GraderRun)
-                .join(CriticRun, GraderRun.critique_id == CriticRun.critique_id)
+                .join(CriticRun, GraderRun.critic_run_id == CriticRun.id)
                 .filter(
                     CriticRun.snapshot_slug == snapshot_slug,
-                    CriticRun.files_hash == files_hash,
+                    CriticRun.scope_hash == scope_hash,
                 )
                 .count()
             )

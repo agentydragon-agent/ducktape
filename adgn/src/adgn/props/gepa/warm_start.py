@@ -1,24 +1,103 @@
-"""Build GEPA checkpoint from historical database evaluations for warm-start."""
+"""Build GEPA checkpoint from historical database evaluations for warm-start.
+
+Critical Invariant: Deterministic Valset Ordering
+==================================================
+
+GEPA checkpoints store validation scores keyed by integer indices (0, 1, 2, ...), where
+each index corresponds to a position in the valset list. When loading a checkpoint, we
+MUST pass the exact same valset in the exact same order, otherwise scores point to wrong examples.
+
+Enforcing Deterministic Order
+------------------------------
+
+Two-level ordering ensures stability:
+
+1. **Snapshot level:** Query with `order_by(Snapshot.slug)` (PostgreSQL order is otherwise arbitrary)
+2. **Scope level:** Relationship uses `order_by="CriticScopeDB.id"` for consistent per-snapshot ordering
+
+This produces a stable sequence across runs, critical for warm-start correctness.
+
+Index Mapping Strategy
+----------------------
+
+Build reverse index from valset to enable historical run lookup:
+  valset_idx_by_key[(snapshot_slug, scope_hash)] = list_index
+
+Historical runs store (snapshot_slug, scope_hash) but not full Example objects.
+We map these keys to current valset indices to populate the sparse score matrix.
+
+See build_historical_gepa_state() implementation for complete warm-start logic.
+"""
 
 from __future__ import annotations
 
 from collections import defaultdict
 import logging
 
-from sqlalchemy import cast
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import text
 
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun as DBCriticRun, GraderRun as DBGraderRun, Prompt, Snapshot
-from adgn.props.gepa.fitness import compute_fitness
-from adgn.props.gepa.models import SnapshotInput
+from adgn.props.db.examples import Example
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
 
 
-def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, grader_model: str) -> dict | None:
+def _compute_pareto_frontier_from_sql(
+    session,
+    critic_model: str,
+    split: str,
+    valset_idx_by_key: dict[tuple[SnapshotSlug, str], int],
+    sha_to_prog_idx: dict[str, int],
+) -> tuple[dict[int, float], dict[int, set[int]]]:
+    """Query Pareto frontier from pareto_frontier_by_example view.
+
+    Args:
+        session: Database session
+        critic_model: Model name to filter
+        split: Split to filter (e.g., "valid")
+        valset_idx_by_key: Maps (snapshot_slug, scope_hash) to validation dataset index
+        sha_to_prog_idx: Maps prompt_sha256 to program index in checkpoint
+
+    Returns:
+        (pareto_front_valset, program_at_pareto_front_valset) tuple where:
+        - pareto_front_valset: Maps val_idx -> best_score
+        - program_at_pareto_front_valset: Maps val_idx -> set of program indices achieving best score
+    """
+    pareto_data = session.execute(
+        text("""
+            SELECT
+                snapshot_slug,
+                scope_hash,
+                best_recall,
+                winning_prompt_shas
+            FROM pareto_frontier_by_example
+            WHERE split = :split AND critic_model = :critic_model
+        """),
+        {"split": split, "critic_model": critic_model},
+    ).fetchall()
+
+    pareto_front_valset: dict[int, float] = {}
+    program_at_pareto_front_valset: dict[int, set[int]] = defaultdict(set)
+
+    for snapshot_slug, scope_hash, best_recall, winning_prompt_shas in pareto_data:
+        # Map (snapshot_slug, scope_hash) to valset index
+        val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))
+        if val_idx is None:
+            # Example not in current valset (e.g., split changed)
+            continue
+
+        pareto_front_valset[val_idx] = best_recall
+
+        # Map winning prompt SHAs to program indices
+        # All winning prompts must be in historical set (integrity check)
+        program_at_pareto_front_valset[val_idx] = {sha_to_prog_idx[sha] for sha in winning_prompt_shas}
+
+    return pareto_front_valset, program_at_pareto_front_valset
+
+
+def build_historical_gepa_state(valset: list[Example], critic_model: str, grader_model: str) -> dict | None:
     """Build GEPAState dict from historical critic+grader runs in database.
 
     Reconstructs:
@@ -31,19 +110,20 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
     GEPA stores validation scores keyed by integer indices (DataIds), which are
     implicit list positions: valset[0] → DataId 0, valset[1] → DataId 1, etc.
 
-    Historical runs in the database store (snapshot_slug, files_hash) but not
-    the full SnapshotInput objects. We must map these to current valset indices:
+    Historical runs in the database store (snapshot_slug, scope_hash) but not
+    the full Example objects. We must map these to current valset indices:
 
-        1. Build index: (slug, files_hash) → valset_idx
-        2. Match historical runs via their (snapshot_slug, files_hash)
+        1. Build index: (slug, scope_hash) → valset_idx
+        2. Match historical runs via their (snapshot_slug, scope_hash)
         3. Store scores keyed by valset_idx: {0: 0.85, 2: 0.90, ...}
 
     This requires valset to have deterministic ordering (see load_datasets()).
 
     Args:
-        valset: Validation dataset (list of SnapshotInput) - MUST be in stable order
+        valset: Validation dataset (list of Example objects) - MUST be in stable order
         critic_model: Model name to filter critic runs
-        grader_model: Model name to filter grader runs
+        grader_model: Unused (kept for API compatibility). Recall scores are aggregated
+                      across all grading runs regardless of grader model.
 
     Returns:
         Dict suitable for pickle.dump as gepa_state.bin, or None if no historical data
@@ -52,38 +132,38 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
         Sets total_num_evals=0 so budget applies to this run only,
         not counting historical evaluations.
     """
-    # Build valset index: (snapshot_slug, files_hash) -> validation dataset index
+    # Build valset index: (snapshot_slug, scope_hash) -> validation dataset index
     # This maps database keys to GEPA DataIds (list indices)
-    # files_hash is precomputed during sync (from resolved files), None for whole-snapshot examples
-    valset_idx_by_key: dict[tuple[SnapshotSlug, str | None], int] = {
-        (snapshot_input.slug, snapshot_input.files_hash): idx for idx, snapshot_input in enumerate(valset)
+    # scope_hash is precomputed during sync (from resolved scope)
+    valset_idx_by_key: dict[tuple[SnapshotSlug, str], int] = {
+        (example.snapshot_slug, example.scope_hash): idx for idx, example in enumerate(valset)
     }
 
     with get_session() as session:
-        # Query all historical runs with completed grader results on validation set
-        # NOTE: Must filter out both SQL NULL and JSON null (stored as JSONB 'null')
-        # The .isnot(None) check only handles SQL NULL, not JSON null values
-        historical_runs = (
-            session.query(
-                Prompt.prompt_text,
-                Prompt.prompt_sha256,
-                DBCriticRun.snapshot_slug,
-                DBCriticRun.files_hash,
-                DBGraderRun.output,
-            )
-            .join(Prompt, DBCriticRun.prompt_sha256 == Prompt.prompt_sha256)
-            .join(DBGraderRun, DBCriticRun.critique_id == DBGraderRun.critique_id)
-            .join(Snapshot, DBCriticRun.snapshot_slug == Snapshot.slug)
-            .filter(
-                Snapshot.split == Split.VALID,  # Only validation set
-                DBCriticRun.model == critic_model,
-                DBGraderRun.model == grader_model,
-                DBCriticRun.critique_id.isnot(None),
-                DBGraderRun.output.isnot(None),  # Excludes SQL NULL
-                DBGraderRun.output != cast(None, JSONB),  # Excludes JSON null
-            )
-            .all()
-        )
+        # Query per-run recalls from occurrence_run_credits view
+        # This view computes recall as: SUM(avg_credit) / NULLIF(COUNT(*), 0)
+        # which is equivalent to compute_fitness() but computed in SQL
+        historical_runs = session.execute(
+            text("""
+                WITH per_run_recalls AS (
+                    SELECT
+                        orc.snapshot_slug,
+                        orc.scope_hash,
+                        orc.prompt_sha256,
+                        p.prompt_text,
+                        SUM(orc.avg_credit) / NULLIF(COUNT(*), 0) AS recall
+                    FROM occurrence_run_credits orc
+                    JOIN prompts p ON orc.prompt_sha256 = p.prompt_sha256
+                    WHERE orc.split = :split
+                      AND orc.critic_model = :critic_model
+                    GROUP BY orc.snapshot_slug, orc.scope_hash, orc.prompt_sha256,
+                             orc.critic_run_id, p.prompt_text
+                )
+                SELECT prompt_text, prompt_sha256, snapshot_slug, scope_hash, recall
+                FROM per_run_recalls
+            """),
+            {"split": Split.VALID, "critic_model": critic_model},
+        ).fetchall()
 
         logger.info(f"Loaded {len(historical_runs)} historical validation evaluations from database")
 
@@ -91,30 +171,21 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
         prompt_to_scores: dict[str, dict[int, float]] = defaultdict(dict)
         unique_prompts: dict[str, str] = {}  # sha256 -> text
         skipped_unknown_examples = 0
-        skipped_no_grader_output = 0
 
-        for prompt_text, prompt_sha, snapshot_slug, files_hash, grader_output in historical_runs:
-            # Skip rows without grader output (shouldn't happen due to filter, but defensive)
-            if grader_output is None:
-                skipped_no_grader_output += 1
-                continue
-
+        for prompt_text, prompt_sha, snapshot_slug, scope_hash, recall in historical_runs:
+            # recall is computed by SQL view (per-run recall)
             unique_prompts[prompt_sha] = prompt_text
 
-            # Map (snapshot_slug, files_hash) to validation dataset index (GEPA DataId)
-            val_idx = valset_idx_by_key.get((snapshot_slug, files_hash))
+            # Map (snapshot_slug, scope_hash) to validation dataset index (GEPA DataId)
+            val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))
             if val_idx is None:
                 # Training example not in current validation set (e.g., split changed or scope changed)
                 skipped_unknown_examples += 1
                 continue
 
             # Store score keyed by valset index (will become DataId in GEPA checkpoint)
-            prompt_to_scores[prompt_sha][val_idx] = compute_fitness(grader_output)
+            prompt_to_scores[prompt_sha][val_idx] = recall
 
-        if skipped_no_grader_output > 0:
-            logger.warning(
-                f"Skipped {skipped_no_grader_output} evaluations with missing grader output (incomplete runs)"
-            )
         if skipped_unknown_examples > 0:
             logger.warning(
                 f"Skipped {skipped_unknown_examples} evaluations from training examples not in current validation set"
@@ -125,37 +196,22 @@ def build_historical_gepa_state(valset: list[SnapshotInput], critic_model: str, 
 
         logger.info(f"Found {len(prompt_to_scores)} unique prompts with validation scores")
 
-    if not prompt_to_scores:
-        logger.warning("No historical validation scores found - starting from empty state")
-        return None
+        if not prompt_to_scores:
+            logger.warning("No historical validation scores found - starting from empty state")
+            return None
 
-    # Build program_candidates in a consistent order (sorted by SHA for determinism)
-    sorted_shas = sorted(prompt_to_scores.keys())
-    program_candidates = [{"system_prompt": unique_prompts[sha]} for sha in sorted_shas]
-    prog_candidate_val_subscores = [prompt_to_scores[sha] for sha in sorted_shas]
+        # Build program_candidates in a consistent order (sorted by SHA for determinism)
+        sorted_shas = sorted(prompt_to_scores.keys())
+        program_candidates = [{"system_prompt": unique_prompts[sha]} for sha in sorted_shas]
+        prog_candidate_val_subscores = [prompt_to_scores[sha] for sha in sorted_shas]
 
-    # Compute Pareto frontier
-    pareto_front_valset: dict[int, float] = {}
-    program_at_pareto_front_valset: dict[int, set[int]] = defaultdict(set)
+        # Build mapping from SHA to program index (for Pareto frontier lookup)
+        sha_to_prog_idx = {sha: idx for idx, sha in enumerate(sorted_shas)}
 
-    for val_idx in range(len(valset)):
-        best_score = float("-inf")
-        best_programs: set[int] = set()
-
-        for prog_idx, scores in enumerate(prog_candidate_val_subscores):
-            score = scores.get(val_idx)
-            if score is None:
-                continue
-
-            if score > best_score:
-                best_score = score
-                best_programs = {prog_idx}
-            elif score == best_score:
-                best_programs.add(prog_idx)
-
-        if best_programs:
-            pareto_front_valset[val_idx] = best_score
-            program_at_pareto_front_valset[val_idx] = best_programs
+        # Compute Pareto frontier from SQL view
+        pareto_front_valset, program_at_pareto_front_valset = _compute_pareto_frontier_from_sql(
+            session, critic_model, Split.VALID, valset_idx_by_key, sha_to_prog_idx
+        )
 
     logger.info(
         f"Built Pareto frontier: {len(pareto_front_valset)} validation examples with best scores, "

@@ -51,7 +51,6 @@ dependencies = [
   "pathspec",
   "anyio>=4.4",
   "mcp[cli]>=1.13.1",
-  "jsonnet>=0.20.0",
   "jsonschema>=4.0",
   "requests>=2.32.5",
   "aiolimiter>=1.1.0",

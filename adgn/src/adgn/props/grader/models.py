@@ -14,7 +14,8 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, model_validator
 
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
-from adgn.props.ids import BaseIssueID, InputIssueID, SnapshotSlug
+from adgn.props.ids import BaseIssueID, InputIssueID
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
 from adgn.props.models.true_positive import (
     FalsePositiveOccurrence,
     Occurrence,
@@ -25,7 +26,7 @@ from adgn.props.models.true_positive import (
 from adgn.props.rationale import Rationale
 
 if TYPE_CHECKING:
-    from adgn.props.db.models import DBCriticSubmitPayload, Snapshot
+    from adgn.props.db.models import Snapshot
 
 
 # =============================================================================
@@ -68,56 +69,58 @@ class GradeValidationContext:
 
     @classmethod
     def from_specimen_and_critique(
-        cls, snapshot_orm: Snapshot, critique: DBCriticSubmitPayload, *, reviewed_files: set[Path] | None = None
+        cls, snapshot_orm: Snapshot, critique_typed: list[CritiqueInputIssue], *, scope: CriticScopeSpec
     ) -> GradeValidationContext:
-        """Build validation context from ORM Snapshot and critique.
+        """Build validation context from ORM Snapshot and critique issues.
 
         Args:
             snapshot_orm: ORM Snapshot from database (has TPs/FPs)
-            critique: Critic's submitted payload (DB persistence model)
-            reviewed_files: Optional set of files that were reviewed by the critic.
-                If provided, only include TPs/FPs that are catchable/relevant from those files.
-                If None, include all TPs/FPs.
+            critique_typed: Typed critique issues (from ORM or MCP)
+            scope: Critic scope specification (AllFilesScope | ExplicitFileScope).
+                Resolved inline to determine which TPs/FPs are catchable/relevant.
         """
         expected_occurrences: set[tuple[str, str]] = set()
 
-        # Filter TPs/FPs by scope if reviewed_files provided
-        if reviewed_files:
-            # Only include TPs where at least one occurrence is catchable from reviewed files
-            allowed_tp_ids = {
-                TruePositiveID(tp.tp_id)
-                for tp in snapshot_orm.true_positives
-                if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
-            }
-            # Build expected occurrences set (filtered by catchability)
-            for tp in snapshot_orm.true_positives:
-                tp_id_str = str(tp.tp_id)
-                if TruePositiveID(tp_id_str) not in allowed_tp_ids:
-                    continue
-                for occ in tp.occurrences:
-                    if should_catch_occurrence(occ, reviewed_files):
-                        expected_occurrences.add((tp_id_str, occ.occurrence_id))
-
-            # Only include FPs where at least one occurrence is relevant to reviewed files
-            allowed_fp_ids = {
-                FalsePositiveID(fp.fp_id)
-                for fp in snapshot_orm.false_positives
-                if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
-            }
+        # Resolve scope to file set for TP/FP filtering
+        if isinstance(scope, AllFilesScope):
+            # Load all files with issues from snapshot
+            reviewed_files = snapshot_orm.files_with_issues()
+            if not reviewed_files:
+                raise ValueError(
+                    f"Snapshot '{snapshot_orm.slug}' has no files with ground truth issues. Cannot use AllFilesScope."
+                )
         else:
-            # No filtering: include all TPs/FPs
-            allowed_tp_ids = {TruePositiveID(tp.tp_id) for tp in snapshot_orm.true_positives}
-            allowed_fp_ids = {FalsePositiveID(fp.fp_id) for fp in snapshot_orm.false_positives}
-            # Build expected occurrences set (all occurrences)
-            for tp in snapshot_orm.true_positives:
-                tp_id_str = str(tp.tp_id)
-                for occ in tp.occurrences:
+            # Type narrowing: must be ExplicitFileScope
+            assert isinstance(scope, ExplicitFileScope)
+            reviewed_files = {Path(f) for f in scope.files}
+
+        # Filter TPs/FPs by resolved scope (reviewed_files is always set after resolution)
+        # Only include TPs where at least one occurrence is catchable from reviewed files
+        allowed_tp_ids = {
+            TruePositiveID(tp.tp_id)
+            for tp in snapshot_orm.true_positives
+            if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+        }
+        # Build expected occurrences set (filtered by catchability)
+        for tp in snapshot_orm.true_positives:
+            tp_id_str = str(tp.tp_id)
+            if TruePositiveID(tp_id_str) not in allowed_tp_ids:
+                continue
+            for occ in tp.occurrences:
+                if should_catch_occurrence(occ, reviewed_files):
                     expected_occurrences.add((tp_id_str, occ.occurrence_id))
+
+        # Only include FPs where at least one occurrence is relevant to reviewed files
+        allowed_fp_ids = {
+            FalsePositiveID(fp.fp_id)
+            for fp in snapshot_orm.false_positives
+            if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
+        }
 
         return cls(
             allowed_tp_ids=allowed_tp_ids,
             allowed_fp_ids=allowed_fp_ids,
-            allowed_input_ids={InputIssueID(issue.id) for issue in critique.issues},
+            allowed_input_ids={issue.id for issue in critique_typed},
             expected_occurrences=expected_occurrences,
         )
 
@@ -128,10 +131,9 @@ class GradeValidationContext:
 
 
 class GraderInput(BaseModel):
-    """Input for a grader run (critique + specimen → metrics)."""
+    """Input for a grader run (critic run + specimen → metrics)."""
 
-    snapshot_slug: SnapshotSlug = Field(description="Snapshot being graded")
-    critique_id: UUID = Field(description="Database ID of critique to grade")
+    critic_run_id: UUID = Field(description="Database ID of critic run to grade")
     prompt_optimization_run_id: UUID | None = Field(
         default=None, description="Optional link to prompt optimization session"
     )

@@ -10,6 +10,7 @@ import canonicaljson
 from sqlalchemy import select
 
 from adgn.props.db import get_session
+from adgn.props.db.examples import Example
 from adgn.props.db.models import (
     CanonicalIssuesSnapshot,
     CriticRun,
@@ -26,6 +27,7 @@ from adgn.props.db.snapshots import (
 )
 from adgn.props.grader.persistence import convert_files_dict_to_db
 from adgn.props.ids import SnapshotSlug
+from adgn.props.scope_utils import resolve_scope_files
 
 
 def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
@@ -124,17 +126,21 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
     total = 0
     stale = 0
     by_snapshot: dict[SnapshotSlug, dict[str, int]] = defaultdict(lambda: {"total": 0, "stale": 0})
-    current_canonical_cache: dict[tuple[SnapshotSlug, frozenset[str]], dict[str, Any]] = {}
+    current_canonical_cache: dict[tuple[SnapshotSlug, str], dict[str, Any]] = {}
 
     with get_session() as session:
-        # Query GraderRun with CriticRun for files (no Event join needed)
+        # Query GraderRun with CriticRun and Example for scope (no Event join needed)
         query = (
-            select(GraderRun.snapshot_slug, GraderRun.canonical_issues_snapshot, CriticRun.files)
-            .join(CriticRun, CriticRun.critique_id == GraderRun.critique_id)
+            select(GraderRun.snapshot_slug, GraderRun.canonical_issues_snapshot, CriticRun.scope_hash, Example.scope)
+            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
+            .join(
+                Example,
+                (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.scope_hash == CriticRun.scope_hash),
+            )
             .order_by(GraderRun.created_at.desc())
         )
 
-        for snapshot_slug, stored_snapshot, critic_files in session.execute(query):
+        for snapshot_slug, stored_snapshot, scope_hash, scope_spec in session.execute(query):
             total += 1
             by_snapshot[snapshot_slug]["total"] += 1
 
@@ -142,7 +148,8 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
             # This assertion documents the database invariant
             assert stored_snapshot is not None, f"Grader run {snapshot_slug} missing canonical_issues_snapshot"
 
-            targeted_files = {Path(f) for f in critic_files}
+            # Resolve scope specification to file set
+            targeted_files = resolve_scope_files(snapshot_slug, scope_spec)
 
             # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
             catchable_stored_tps = filter_catchable_db_tps(stored_snapshot.true_positives, targeted_files)
@@ -154,8 +161,8 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 
-            # Load current canonical issues (cached by snapshot+files)
-            cache_key = (snapshot_slug, frozenset(critic_files))
+            # Load current canonical issues (cached by snapshot+scope_hash)
+            cache_key = (snapshot_slug, scope_hash)
             if cache_key not in current_canonical_cache:
                 current_canonical_cache[cache_key] = load_current_canonical_issues_from_db(
                     snapshot_slug, targeted_files

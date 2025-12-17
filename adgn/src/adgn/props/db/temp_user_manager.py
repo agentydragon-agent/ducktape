@@ -9,6 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import logging
+import re
 import secrets
 
 from sqlalchemy import text
@@ -17,6 +18,28 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from adgn.props.db.config import DbConnectionConfig
 
 logger = logging.getLogger(__name__)
+
+
+def quote_ident(identifier: str) -> str:
+    """Quote a PostgreSQL identifier for safe use in SQL.
+
+    Args:
+        identifier: The identifier to quote (username, table name, etc.)
+
+    Returns:
+        Quoted identifier safe for SQL injection
+
+    Raises:
+        ValueError: If identifier contains characters outside [a-zA-Z0-9_-]
+    """
+    if not re.match(r"^[a-zA-Z0-9_-]+$", identifier):
+        raise ValueError(
+            f"Identifier contains invalid characters: {identifier!r}. "
+            f"Only alphanumeric, underscore, and hyphen allowed."
+        )
+    # Escape any existing double quotes by doubling them
+    escaped = identifier.replace('"', '""')
+    return f'"{escaped}"'
 
 
 @dataclass(frozen=True)
@@ -108,8 +131,9 @@ class TempUserManager(ABC):
 
         Example:
             async with self.admin_engine.begin() as conn:
-                await conn.execute(text(f"GRANT SELECT ON TABLE foo TO {username}"))
-                await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {username}"))
+                quoted_username = quote_ident(username)
+                await conn.execute(text(f"GRANT SELECT ON TABLE foo TO {quoted_username}"))
+                await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
         """
 
     async def revoke_permissions(self, username: str) -> None:
@@ -125,9 +149,10 @@ class TempUserManager(ABC):
             return
 
         async with self.admin_engine.begin() as conn:
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {username}"))
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {username}"))
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {username}"))
+            quoted_username = quote_ident(username)
+            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {quoted_username}"))
+            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {quoted_username}"))
+            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {quoted_username}"))
 
     async def __aenter__(self) -> TempUserCredentials:
         """Create user and grant permissions, return credentials."""
@@ -184,7 +209,8 @@ class TempUserManager(ABC):
             if not role_exists:
                 # Create role with password (escape single quotes)
                 escaped_password = password.replace("'", "''")
-                await conn.execute(text(f"CREATE ROLE {username} WITH LOGIN PASSWORD '{escaped_password}'"))
+                quoted_username = quote_ident(username)
+                await conn.execute(text(f"CREATE ROLE {quoted_username} WITH LOGIN PASSWORD '{escaped_password}'"))
                 logger.debug(f"Created role: {username}")
             else:
                 logger.debug(f"Role {username} already exists")
@@ -221,6 +247,7 @@ class TempUserManager(ABC):
         """
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
-            await conn.execute(text(f"DROP ROLE IF EXISTS {username}"))
+            quoted_username = quote_ident(username)
+            await conn.execute(text(f"DROP ROLE IF EXISTS {quoted_username}"))
 
         logger.debug(f"Dropped user: {username}")

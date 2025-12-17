@@ -36,9 +36,10 @@ class _CapturingServer(LowLevelServer):
         on_session_created: Callable[[ServerSession], None] | None = None,
         on_session_created_async: (Callable[[ServerSession], Awaitable[None]] | None) = None,
         experimental_capabilities: dict[str, dict[str, Any]] | None = None,
+        version: str | None = None,
         **kw,
     ):
-        super().__init__(fastmcp, *a, **kw)
+        super().__init__(fastmcp, *a, version=version, **kw)
         self._on_session_created = on_session_created
         self._on_session_created_async = on_session_created_async
         self._experimental_capabilities = experimental_capabilities or {}
@@ -133,9 +134,10 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
         lifespan: Callable[[FastMCP], AbstractAsyncContextManager[object]] | None = None,
         experimental_capabilities: dict[str, dict[str, object]] | None = None,
         auth: AuthProvider | None = None,
+        version: str | None = None,
     ) -> None:
         # NotificationsMixin sets up _sessions, _pending_uris, _pending_list_changed
-        super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth)
+        super().__init__(name=name, instructions=instructions, lifespan=lifespan, auth=auth, version=version)
         self._experimental_capabilities = experimental_capabilities or {}
 
         # Replace the low-level server with a capturing variant and re-register handlers
@@ -157,6 +159,7 @@ class EnhancedFastMCP(OpenAIStrictModeMixin, FlatModelMixin, NotificationsMixin,
             on_session_created_async=_on_created,
             lifespan=self._mcp_server.lifespan,
             experimental_capabilities=self._experimental_capabilities,
+            version=version,
         )
         # Replace low-level server with our capturing variant
         self._mcp_server = capturing_server

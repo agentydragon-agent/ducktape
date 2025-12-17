@@ -20,11 +20,13 @@ from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.cli.shared import filter_files
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput, CriticSuccess
+from adgn.props.critic.models import CriticInput
 from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Snapshot
+from adgn.props.db.config import DatabaseConfig, get_database_config
+from adgn.props.db.models import CriticRun, CriticRunStatus, Snapshot
 from adgn.props.db.prompts import load_and_upsert_detector_prompt
+from adgn.props.db.snapshots import DBCriticSubmitPayload
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.critic_scopes import AllFilesScope
@@ -148,6 +150,7 @@ async def run_detector_on_specimen(
     *,
     client: OpenAIModelProto,
     docker_client: aiodocker.Docker,
+    db_config: DatabaseConfig,
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> tuple[str, str, bool]:
@@ -158,10 +161,11 @@ async def run_detector_on_specimen(
     """
     prompt_sha256 = load_and_upsert_detector_prompt(detector_filename)
     await run_critic(
-        input_data=CriticInput(snapshot_slug=snapshot_slug, files=AllFilesScope(), prompt_sha256=prompt_sha256),
+        input_data=CriticInput(snapshot_slug=snapshot_slug, scope=AllFilesScope(), prompt_sha256=prompt_sha256),
         client=client,
         docker_client=docker_client,
         hydrator=hydrator,
+        db_config=db_config,
         prompt_optimization_run_id=None,
         mount_properties=False,
         verbose=verbose,
@@ -175,6 +179,7 @@ async def run_missing_evaluations(
     *,
     client: OpenAIModelProto,
     docker_client: aiodocker.Docker,
+    db_config: DatabaseConfig,
     verbose: bool,
     hydrator: SnapshotHydrator,
 ) -> int:
@@ -191,7 +196,13 @@ async def run_missing_evaluations(
 
     tasks = [
         run_detector_on_specimen(
-            detector, snapshot, client=client, docker_client=docker_client, verbose=verbose, hydrator=hydrator
+            detector,
+            snapshot,
+            client=client,
+            docker_client=docker_client,
+            db_config=db_config,
+            verbose=verbose,
+            hydrator=hydrator,
         )
         for detector, snapshot in missing_pairs
     ]
@@ -208,7 +219,13 @@ async def run_missing_evaluations(
 
 
 async def run_detector_coverage(
-    *, run_missing: bool, model: str, verbose: bool, docker_client: aiodocker.Docker, hydrator: SnapshotHydrator
+    *,
+    run_missing: bool,
+    model: str,
+    verbose: bool,
+    docker_client: aiodocker.Docker,
+    db_config: DatabaseConfig,
+    hydrator: SnapshotHydrator,
 ) -> None:
     """Main entry point for detector-coverage command."""
     console = Console()
@@ -242,7 +259,12 @@ async def run_detector_coverage(
         if missing_pairs:
             client = build_client(model)
             successes = await run_missing_evaluations(
-                missing_pairs, client=client, docker_client=docker_client, verbose=verbose, hydrator=hydrator
+                missing_pairs,
+                client=client,
+                docker_client=docker_client,
+                db_config=db_config,
+                verbose=verbose,
+                hydrator=hydrator,
             )
 
             if successes > 0:
@@ -280,6 +302,7 @@ async def cmd_run_detector(
 ) -> None:
     """Run detector (always structured mode)."""
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         # Load current file content and upsert to DB (auto-sync)
         prompt_sha256 = load_and_upsert_detector_prompt(filename)
@@ -287,11 +310,12 @@ async def cmd_run_detector(
         # Execute critic (fetches system+user prompts internally via prompt_sha256)
         async with hydrator.hydrate(snapshot) as hydrated:
             files_spec = filter_files(hydrated.all_discovered_files, files)
-        critic_output, run_id, critique_id = await run_critic(
-            input_data=CriticInput(snapshot_slug=snapshot, files=files_spec, prompt_sha256=prompt_sha256),
+        critic_run_id, status = await run_critic(
+            input_data=CriticInput(snapshot_slug=snapshot, scope=files_spec, prompt_sha256=prompt_sha256),
             client=build_client(model),
             docker_client=docker_client,
             hydrator=hydrator,
+            db_config=db_config,
             prompt_optimization_run_id=None,
             mount_properties=False,
             verbose=verbose,
@@ -299,11 +323,15 @@ async def cmd_run_detector(
         )
 
         # Output structured critique
-        if isinstance(critic_output, CriticSuccess):
-            Console().print(render_to_rich(critic_output.result))
-            typer.echo(f"\nRun: {run_id} | Critique: {critique_id}")
+        if status == CriticRunStatus.COMPLETED:
+            with get_session() as session:
+                critic_run = session.get(CriticRun, critic_run_id)
+                if critic_run and critic_run.status == CriticRunStatus.COMPLETED:
+                    payload = DBCriticSubmitPayload(notes_md=critic_run.completion_summary)
+                    Console().print(render_to_rich(payload))
+                    typer.echo(f"\nRun: {critic_run_id}")
         else:
-            typer.echo(f"Critic exceeded max turns limit. Run: {run_id}", err=True)
+            typer.echo(f"Critic exceeded max turns limit. Run: {critic_run_id}", err=True)
     finally:
         await docker_client.close()
 
@@ -321,9 +349,15 @@ async def cmd_detector_coverage(
     Use --run-missing to automatically evaluate all missing (detector, snapshot) pairs.
     """
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         await run_detector_coverage(
-            run_missing=run_missing, model=model, verbose=verbose, docker_client=docker_client, hydrator=hydrator
+            run_missing=run_missing,
+            model=model,
+            verbose=verbose,
+            docker_client=docker_client,
+            db_config=db_config,
+            hydrator=hydrator,
         )
     finally:
         await docker_client.close()

@@ -10,6 +10,7 @@ between test execution and template injection.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import datetime
 from uuid import UUID
 
@@ -18,11 +19,10 @@ from sqlalchemy import Select, bindparam, cast, func, literal, select, text, typ
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
+from adgn.props.db.examples import Example
 from adgn.props.db.models import (
     CriticRun,
-    Critique,
     Event,
-    Example,
     FalsePositive,
     GraderRun,
     OccurrenceCredit,
@@ -33,27 +33,6 @@ from adgn.props.db.models import (
 )
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
-
-
-def _exclude_jsonb_null(column):
-    """Helper to exclude JSON null values from JSONB columns.
-
-    PydanticColumn stores Python None as JSON null ('null'::jsonb), not SQL NULL.
-    SQLAlchemy's .isnot(None) only excludes SQL NULL, so JSON null rows pass through
-    and crash when deserialized to Python None.
-
-    Usage:
-        .where(GraderRun.output.isnot(None))  # Excludes SQL NULL
-        .where(_exclude_jsonb_null(GraderRun.output))  # Excludes JSON null
-
-    Args:
-        column: SQLAlchemy column expression (e.g., GraderRun.output)
-
-    Returns:
-        SQLAlchemy binary expression: column != cast('null', JSONB)
-    """
-    # Cast 'null' string to JSONB type and compare
-    return column != cast(literal("null"), postgresql.JSONB)
 
 
 class SplitPerformanceStats(BaseModel):
@@ -73,10 +52,9 @@ class PromptPerformanceRow(BaseModel):
 
     prompt_sha256: str
     created_at: datetime
-    prompt_length: int
-    # Map from (split, is_whole_snapshot) to statistics
-    # Keys: (Split.VALID, True), (Split.VALID, False), (Split.TRAIN, True), (Split.TRAIN, False)
-    stats: dict[tuple[Split, bool], SplitPerformanceStats]
+    # Map from (split, scope_kind) to statistics
+    # Keys: (Split.VALID, 'entire_snapshot'), (Split.VALID, 'specific_files'), etc.
+    stats: dict[tuple[Split, str], SplitPerformanceStats]
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -125,7 +103,7 @@ def list_train_snapshots() -> Select:
     Returns:
         Query selecting (slug, split) from train snapshots, ordered by slug
     """
-    return select(Snapshot.slug, Snapshot.split).where(Snapshot.split == "train").order_by(Snapshot.slug)
+    return select(Snapshot.slug, Snapshot.split).where(Snapshot.split == Split.TRAIN).order_by(Snapshot.slug)
 
 
 # TODO: Consider removing - no usages found anywhere
@@ -189,8 +167,8 @@ def list_train_true_positives() -> Select:
     """
     return (
         select(TruePositive.snapshot_slug, TruePositive.tp_id, TruePositive.rationale)
-        .join(Snapshot, TruePositive.snapshot_slug == Snapshot.slug)
-        .where(Snapshot.split == "train")
+        .join(TruePositive.snapshot_obj)
+        .where(Snapshot.split == Split.TRAIN)
         .order_by(TruePositive.snapshot_slug, TruePositive.tp_id)
     )
 
@@ -204,8 +182,8 @@ def list_train_false_positives() -> Select:
     """
     return (
         select(FalsePositive.snapshot_slug, FalsePositive.fp_id, FalsePositive.rationale)
-        .join(Snapshot, FalsePositive.snapshot_slug == Snapshot.slug)
-        .where(Snapshot.split == "train")
+        .join(FalsePositive.snapshot_obj)
+        .where(Snapshot.split == Split.TRAIN)
         .order_by(FalsePositive.snapshot_slug, FalsePositive.fp_id)
     )
 
@@ -313,33 +291,33 @@ def snapshot_files_with_issues_select() -> Select:
 
 
 # ============================================================================
-# Critique queries
+# Critic run queries
 # ============================================================================
 
 
 # TODO: Consider removing - no usages found (only parameterized version compiled)
-def critiques_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Select:
-    """Get recent critiques for a specific snapshot.
+def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Select:
+    """Get recent critic runs for a specific snapshot.
 
     Args:
         snapshot_slug: Snapshot to query
         limit: Maximum number of results (default 5)
 
     Returns:
-        Query selecting critique details with related run info
+        Query selecting critic run details (output contains reported issues)
     """
     return (
         select(
-            Critique.id,
-            Critique.payload,
-            Critique.created_at,
+            CriticRun.id,
+            CriticRun.status,
+            CriticRun.created_at,
             CriticRun.prompt_sha256,
             CriticRun.model,
-            CriticRun.files,
+            CriticRun.scope_hash,
         )
-        .outerjoin(CriticRun, Critique.id == CriticRun.critique_id)
-        .where(Critique.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
-        .order_by(Critique.created_at.desc())
+        .join(CriticRun.snapshot_obj)
+        .where(Snapshot.slug == snapshot_slug)  # type: ignore[arg-type]
+        .order_by(CriticRun.created_at.desc())
         .limit(limit)
     )
 
@@ -426,12 +404,12 @@ def failed_tools_by_transcript(transcript_id: UUID) -> Select:
 
 
 # TODO: Consider removing - compiled but never rendered in template
-def critiques_for_snapshot_parameterized() -> Select:
-    """Get critiques for a snapshot (parameterized with :snapshot_slug placeholder).
+def critic_runs_for_snapshot_parameterized() -> Select:
+    """Get critic runs for a snapshot (parameterized with :snapshot_slug placeholder).
 
     Agents fill in :snapshot_slug at runtime.
     """
-    return critiques_for_snapshot(bindparam("snapshot_slug"), limit=5)  # type: ignore[arg-type]
+    return critic_runs_for_snapshot(bindparam("snapshot_slug"), limit=5)  # type: ignore[arg-type]
 
 
 # TODO: Consider removing - compiled but never rendered in template
@@ -529,26 +507,14 @@ def po_run_costs_parameterized() -> Select:
 
 
 # TODO: Consider removing - compiled but never rendered in template
-def blocked_valid_critiques() -> Select:
-    """Example query that returns 0 rows due to RLS (valid split blocked).
-
-    Returns:
-        Query attempting to select critiques for valid split snapshots
-    """
-    return select(Critique.id, Critique.payload).where(
-        Critique.snapshot_slug.in_(select(Snapshot.slug).where(Snapshot.split == "valid"))
-    )
-
-
-# TODO: Consider removing - compiled but never rendered in template
 def blocked_valid_grader_runs() -> Select:
     """Example query that returns 0 rows due to RLS (valid split blocked).
 
     Returns:
         Query attempting to select grader runs for valid split snapshots
     """
-    return select(GraderRun.id, GraderRun.output).where(
-        GraderRun.snapshot_slug.in_(select(Snapshot.slug).where(Snapshot.split == "valid"))
+    return select(GraderRun.id, GraderRun.status).where(
+        GraderRun.snapshot_slug.in_(select(Snapshot.slug).where(Snapshot.split == Split.VALID))
     )
 
 
@@ -561,7 +527,7 @@ def blocked_valid_events() -> Select:
     """
     valid_transcripts = (
         select(CriticRun.transcript_id)
-        .where(CriticRun.snapshot_slug.in_(select(Snapshot.slug).where(Snapshot.split == "valid")))
+        .where(CriticRun.snapshot_slug.in_(select(Snapshot.slug).where(Snapshot.split == Split.VALID)))
         .scalar_subquery()
     )
 
@@ -578,13 +544,13 @@ def list_train_scopes() -> Select:
     """List all examples for train split snapshots.
 
     Returns:
-        Query selecting (snapshot_slug, files_hash, files) for train snapshots
+        Query selecting (snapshot_slug, scope_hash) for train snapshots
     """
     return (
-        select(Example.snapshot_slug, Example.files_hash, Example.files)
+        select(Example.snapshot_slug, Example.scope_hash)
         .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
-        .where(Snapshot.split == "train")
-        .order_by(Example.snapshot_slug, Example.files_hash)
+        .where(Snapshot.split == Split.TRAIN)
+        .order_by(Example.snapshot_slug, Example.scope_hash)
     )
 
 
@@ -618,7 +584,8 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
     """
     # Use text() for the complex CTE-based query
     # Data source: occurrence_credits view (includes failures with zero credit)
-    query_text = text("""
+    query_text = text(
+        """
         WITH per_example_recall AS (
             -- Compute recall per (prompt, example) - same math as aggregated_recall_by_prompt view
             -- First: average credits per occurrence across runs
@@ -626,9 +593,9 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
             SELECT
                 prompt_sha256,
                 split,
-                is_whole_snapshot,
+                scope_kind,
                 snapshot_slug,
-                files_hash,
+                scope_hash,
                 SUM(avg_credit) / NULLIF(COUNT(*), 0) as recall,
                 COUNT(DISTINCT critic_run_id) as n_critic_runs,
                 COUNT(DISTINCT CASE
@@ -643,9 +610,9 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 SELECT
                     prompt_sha256,
                     split,
-                    is_whole_snapshot,
+                    scope_kind,
                     snapshot_slug,
-                    files_hash,
+                    scope_hash,
                     tp_id,
                     occurrence_id,
                     critic_run_id,
@@ -654,23 +621,23 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                     AVG(found_credit) as avg_credit
                 FROM occurrence_credits
                 WHERE split = 'train' OR split = 'valid'
-                GROUP BY prompt_sha256, split, is_whole_snapshot, snapshot_slug, files_hash,
+                GROUP BY prompt_sha256, split, scope_kind, snapshot_slug, scope_hash,
                          tp_id, occurrence_id, critic_run_id, grader_run_id, grader_rationale
             ) occurrence_avg
-            GROUP BY prompt_sha256, split, is_whole_snapshot, snapshot_slug, files_hash
+            GROUP BY prompt_sha256, split, scope_kind, snapshot_slug, scope_hash
         ),
         split_stats AS (
-            -- Aggregate statistics per (prompt, split, is_whole_snapshot)
+            -- Aggregate statistics per (prompt, split, scope_kind)
             SELECT
                 prompt_sha256,
                 split,
-                is_whole_snapshot,
-                AVG(recall) * 100 as mean_recall,
+                scope_kind,
+                AVG(recall) as mean_recall,
                 -- Lower confidence bound: mean - 1.0 * (stddev / sqrt(n))
                 -- NULL if n < 2 (can't compute stddev with single sample)
                 CASE
                     WHEN COUNT(*) >= 2 THEN
-                        AVG(recall) * 100 - 1.0 * (STDDEV_SAMP(recall) * 100 / SQRT(COUNT(*)))
+                        AVG(recall) - 1.0 * (STDDEV_SAMP(recall) / SQRT(COUNT(*)))
                     ELSE NULL
                 END as recall_lcb,
                 COUNT(*) as total_count,
@@ -683,128 +650,58 @@ def query_prompt_performance_stats(session: Session, limit: int = 50) -> list[Pr
                 -- Context count: total runs that exceeded context
                 SUM(n_context) as context_count
             FROM per_example_recall
-            GROUP BY prompt_sha256, split, is_whole_snapshot
-        ),
-        prompt_info AS (
-            -- Get prompt metadata
-            SELECT
-                prompt_sha256,
-                created_at,
-                LENGTH(prompt_text) as prompt_length
-            FROM prompts
+            GROUP BY prompt_sha256, split, scope_kind
         )
         SELECT
             p.prompt_sha256,
             p.created_at,
-            p.prompt_length,
-            vw.mean_recall as valid_whole_recall,
-            vw.recall_lcb as valid_whole_lcb,
-            vw.success_count as valid_whole_success,
-            vw.total_count as valid_whole_total,
-            vw.zero_count as valid_whole_zero_count,
-            vw.stuck_count as valid_whole_stuck_count,
-            vw.context_count as valid_whole_context_count,
-            vp.mean_recall as valid_partial_recall,
-            vp.recall_lcb as valid_partial_lcb,
-            vp.success_count as valid_partial_success,
-            vp.total_count as valid_partial_total,
-            vp.zero_count as valid_partial_zero_count,
-            vp.stuck_count as valid_partial_stuck_count,
-            vp.context_count as valid_partial_context_count,
-            tw.mean_recall as train_whole_recall,
-            tw.recall_lcb as train_whole_lcb,
-            tw.success_count as train_whole_success,
-            tw.total_count as train_whole_total,
-            tw.zero_count as train_whole_zero_count,
-            tw.stuck_count as train_whole_stuck_count,
-            tw.context_count as train_whole_context_count,
-            tp.mean_recall as train_partial_recall,
-            tp.recall_lcb as train_partial_lcb,
-            tp.success_count as train_partial_success,
-            tp.total_count as train_partial_total,
-            tp.zero_count as train_partial_zero_count,
-            tp.stuck_count as train_partial_stuck_count,
-            tp.context_count as train_partial_context_count
-        FROM prompt_info p
-        LEFT JOIN split_stats vw ON vw.prompt_sha256 = p.prompt_sha256 AND vw.split = 'valid' AND vw.is_whole_snapshot = TRUE
-        LEFT JOIN split_stats vp ON vp.prompt_sha256 = p.prompt_sha256 AND vp.split = 'valid' AND vp.is_whole_snapshot = FALSE
-        LEFT JOIN split_stats tw ON tw.prompt_sha256 = p.prompt_sha256 AND tw.split = 'train' AND tw.is_whole_snapshot = TRUE
-        LEFT JOIN split_stats tp ON tp.prompt_sha256 = p.prompt_sha256 AND tp.split = 'train' AND tp.is_whole_snapshot = FALSE
+            s.split,
+            s.scope_kind,
+            s.mean_recall,
+            s.recall_lcb,
+            s.success_count,
+            s.total_count,
+            s.zero_count,
+            s.stuck_count,
+            s.context_count
+        FROM prompts p
+        LEFT JOIN split_stats s ON s.prompt_sha256 = p.prompt_sha256
         ORDER BY
-            vw.recall_lcb DESC NULLS LAST,  -- Primary: valid whole LCB (descending)
-            vp.recall_lcb DESC NULLS LAST,  -- Secondary: valid partial LCB (descending)
-            tw.recall_lcb DESC NULLS LAST,  -- Tertiary: train whole LCB (descending)
-            tp.recall_lcb DESC NULLS LAST,  -- Quaternary: train partial LCB (descending)
-            p.created_at DESC               -- Quinary: creation time (tiebreaker)
+            p.created_at DESC
         LIMIT :limit
-    """)
+    """
+    )
 
     results = session.execute(query_text, {"limit": limit}).fetchall()
 
-    # Convert to Pydantic models
-    rows = []
+    # Group results by prompt_sha256 and build stats dictionaries
+    prompt_data: dict[str, dict] = {}
+    prompt_stats: dict[str, dict[tuple[Split, str], SplitPerformanceStats]] = defaultdict(dict)
+
     for row in results:
-        # Build stats dictionary with (split, is_whole_snapshot) keys
-        stats_dict: dict[tuple[Split, bool], SplitPerformanceStats] = {}
+        # Store prompt metadata (same for all rows of same prompt)
+        if row.prompt_sha256 not in prompt_data:
+            prompt_data[row.prompt_sha256] = {"created_at": row.created_at}
 
-        # Valid whole-snapshot stats
-        if row.valid_whole_recall is not None:
-            stats_dict[(Split.VALID, True)] = SplitPerformanceStats(
-                mean_recall=row.valid_whole_recall,
-                lcb=row.valid_whole_lcb,
-                success_count=row.valid_whole_success,
-                total_count=row.valid_whole_total,
-                zero_count=row.valid_whole_zero_count or 0,
-                stuck_count=row.valid_whole_stuck_count or 0,
-                context_count=row.valid_whole_context_count or 0,
+        # Add stats for this (split, scope_kind) combination if available
+        if row.split is not None and row.scope_kind is not None and row.mean_recall is not None:
+            prompt_stats[row.prompt_sha256][(Split(row.split), row.scope_kind)] = SplitPerformanceStats(
+                mean_recall=row.mean_recall,
+                lcb=row.recall_lcb,
+                success_count=row.success_count,
+                total_count=row.total_count,
+                zero_count=row.zero_count or 0,
+                stuck_count=row.stuck_count or 0,
+                context_count=row.context_count or 0,
             )
 
-        # Valid partial stats
-        if row.valid_partial_recall is not None:
-            stats_dict[(Split.VALID, False)] = SplitPerformanceStats(
-                mean_recall=row.valid_partial_recall,
-                lcb=row.valid_partial_lcb,
-                success_count=row.valid_partial_success,
-                total_count=row.valid_partial_total,
-                zero_count=row.valid_partial_zero_count or 0,
-                stuck_count=row.valid_partial_stuck_count or 0,
-                context_count=row.valid_partial_context_count or 0,
-            )
-
-        # Train whole-snapshot stats
-        if row.train_whole_recall is not None:
-            stats_dict[(Split.TRAIN, True)] = SplitPerformanceStats(
-                mean_recall=row.train_whole_recall,
-                lcb=row.train_whole_lcb,
-                success_count=row.train_whole_success,
-                total_count=row.train_whole_total,
-                zero_count=row.train_whole_zero_count or 0,
-                stuck_count=row.train_whole_stuck_count or 0,
-                context_count=row.train_whole_context_count or 0,
-            )
-
-        # Train partial stats
-        if row.train_partial_recall is not None:
-            stats_dict[(Split.TRAIN, False)] = SplitPerformanceStats(
-                mean_recall=row.train_partial_recall,
-                lcb=row.train_partial_lcb,
-                success_count=row.train_partial_success,
-                total_count=row.train_partial_total,
-                zero_count=row.train_partial_zero_count or 0,
-                stuck_count=row.train_partial_stuck_count or 0,
-                context_count=row.train_partial_context_count or 0,
-            )
-
-        rows.append(
-            PromptPerformanceRow(
-                prompt_sha256=row.prompt_sha256,
-                created_at=row.created_at,
-                prompt_length=row.prompt_length,
-                stats=stats_dict,
-            )
+    # Convert to Pydantic models
+    return [
+        PromptPerformanceRow(
+            prompt_sha256=prompt_sha256, created_at=data["created_at"], stats=prompt_stats[prompt_sha256]
         )
-
-    return rows
+        for prompt_sha256, data in prompt_data.items()
+    ]
 
 
 # ============================================================================
@@ -816,7 +713,7 @@ class RecallByExampleRow(BaseModel):
     """Single row from recall-by-example query."""
 
     snapshot_slug: SnapshotSlug
-    files_hash: str | None
+    scope_hash: str
     prompt_sha256: str
     recall: float
 
@@ -830,7 +727,7 @@ def query_recall_by_example(
     """Query occurrence-weighted recall grouped by (example, prompt).
 
     Computes AVG(found_credit) from occurrence_credits view, grouped by
-    (snapshot_slug, files_hash, prompt_sha256).
+    (snapshot_slug, scope_hash, prompt_sha256).
 
     This is the canonical way to compute recall for cross-run aggregation.
     Single-run recall can be computed inline from occurrence_results.
@@ -842,7 +739,7 @@ def query_recall_by_example(
         snapshot_slugs: Optional list of snapshot slugs to filter
 
     Returns:
-        List of RecallByExampleRow (snapshot, files_hash, prompt, recall)
+        List of RecallByExampleRow (snapshot, scope_hash, prompt, recall)
 
     Example:
         # Get recall for all train examples with a specific prompt
@@ -856,9 +753,9 @@ def query_recall_by_example(
     """
     query = session.query(
         OccurrenceCredit.snapshot_slug,
-        OccurrenceCredit.files_hash,
+        OccurrenceCredit.scope_hash,
         OccurrenceCredit.prompt_sha256,
-        func.avg(OccurrenceCredit.found_credit).label("recall"),
+        func.avg(OccurrenceCredit.found_credit).label("avg_credit_per_occurrence"),
     )
 
     if split is not None:
@@ -868,15 +765,15 @@ def query_recall_by_example(
     if snapshot_slugs is not None:
         query = query.filter(OccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
 
-    query = query.group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.files_hash, OccurrenceCredit.prompt_sha256)
+    query = query.group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.scope_hash, OccurrenceCredit.prompt_sha256)
 
     results = query.all()
     return [
         RecallByExampleRow(
-            snapshot_slug=SnapshotSlug(r.snapshot_slug),
-            files_hash=r.files_hash,
+            snapshot_slug=r.snapshot_slug,
+            scope_hash=r.scope_hash,
             prompt_sha256=r.prompt_sha256,
-            recall=r.recall,
+            recall=r.avg_credit_per_occurrence,
         )
         for r in results
     ]
@@ -891,11 +788,12 @@ def query_recall_by_example(
 # Example 1: Query aggregated_recall_by_prompt view
 #   from adgn.props.db.models import AggregatedRecallByPrompt
 #   from adgn.props.splits import Split
+#   from adgn.props.models.critic_scopes import ScopeKind
 #
 #   result = session.query(AggregatedRecallByPrompt).filter(
 #       AggregatedRecallByPrompt.split == Split.TRAIN,
 #       AggregatedRecallByPrompt.critic_model == "gpt-4o",
-#       AggregatedRecallByPrompt.is_whole_snapshot == False,
+#       AggregatedRecallByPrompt.scope_kind == ScopeKind.SPECIFIC_FILES,
 #   ).first()
 #
 #   if result:

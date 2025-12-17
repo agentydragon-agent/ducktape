@@ -100,31 +100,45 @@ The prompt optimizer supports two terminal metric modes that control validation 
 ### Core Tables
 
 **`examples`:**
-- **Composite primary key:** `(snapshot_slug, files_hash)`
+- **Composite primary key:** `(snapshot_slug, scope_hash)`
 - **No `.id` or `.key` attribute** - use the tuple to identify examples
-- Attributes: `snapshot_slug`, `files_hash`, `files` (list of file paths)
+- Attributes: `snapshot_slug`, `scope_hash`, `scope` (discriminated union: AllFilesScope | ExplicitFileScope)
 - Split information comes from the related `Snapshot` (via `snapshot_obj.split`)
-- Query pattern: `.filter_by(snapshot_slug=slug, files_hash=hash)`
+- Query pattern: `.filter_by(snapshot_slug=slug, scope_hash=hash)`
 
 **`prompts`:**
 - `prompt_sha256` (primary key) - content-addressed by SHA256 hash
 - `prompt_text` - full prompt content
 
 **`critic_runs`:**
-- Links to: `prompt_sha256`, `snapshot_slug`, `critique_id`, `transcript_id`
-- `output` - discriminated union: `DBCriticSuccess | DBCriticMaxTurnsExceeded | ...`
-- `files`, `files_hash` - which files were reviewed
+- Links to: `prompt_sha256`, `snapshot_slug`, `scope_hash`, `transcript_id`
+- `status` - 'in_progress', 'completed', 'max_turns_exceeded', 'context_length_exceeded'
+- `completion_summary` - Markdown summary from agent (when status='completed')
+- `output` - discriminated union: `DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded`
+- `scope_hash` - references Example via composite FK (snapshot_slug, scope_hash)
+- Relationships: `reported_issues` (one-to-many), `grader_runs` (one-to-many)
 
-**`critiques`:**
-- `id` (primary key)
-- `snapshot_slug` - which snapshot was reviewed
-- `payload` - the issues found (`DBCriticSubmitPayload`)
+**`reported_issues`:**
+- Critic findings stored explicitly (composite PK: `critic_run_id`, `issue_id`)
+- RLS-scoped to agent run via `current_critic_run_id()`
+
+**`reported_issue_occurrences`:**
+- Code locations for reported issues (single-file or multi-file)
+- Foreign key to composite PK of `reported_issues`
 
 **`grader_runs`:**
-- Links to: `critique_id`, `snapshot_slug`, `transcript_id`
+- Links to: `critic_run_id`, `snapshot_slug`, `transcript_id`
+- `status` - 'in_progress', 'completed', 'max_turns_exceeded'
 - `output` - discriminated union: `DBGraderSuccess | DBGraderMaxTurnsExceeded`
 - When successful, `output.occurrence_results` contains per-occurrence credits (found_credit 0.0-1.0 for each TP occurrence)
 - For aggregate recall metrics, query database views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example`
+- Relationships: `decisions` (one-to-many), `critic_run_obj` (many-to-one)
+
+**`grading_decisions`:**
+- Grader decisions linking input issues to ground truth occurrences
+- Discriminated by NULL (TP match / FP match / no-match)
+- SQL trigger enforces credit sum ≤1.0 per occurrence
+- RLS-scoped to agent run via `current_grader_run_id()`
 
 **`events`:**
 - Tool call traces from agent execution
@@ -144,16 +158,22 @@ The prompt optimizer supports two terminal metric modes that control validation 
 **What the critic sees:**
 - Source code mounted at `/workspace` (read-only)
 - System prompt with task description
-- MCP tools for code analysis
+- MCP tools for issue submission (mode-dependent - see below)
 
 **What the critic DOES NOT see:**
 - Ground truth issues (TPs/FPs)
 - Expected output or "answers"
 - Grader feedback or metrics
 
-**Critic's task:** Review code, report issues (upsert_issue + add_occurrence), and call submit when done
+**Critic's task:** Review code, report issues, and call submit when done
 
-**Output:** A `Critique` object with a list of reported issues (only if submit was called)
+**Two implementation modes:**
+1. **HTTP mode (SQL workflow)**: Critic writes directly to PostgreSQL (`reported_issues` and `reported_issue_occurrences` tables via psql), then calls `critic_submit` for finalization. Uses temp database credentials with RLS scoping.
+2. **In-proc mode (incremental MCP)**: Critic calls MCP tools (`upsert_issue`, `add_occurrence`, `submit`) which write to database on critic's behalf.
+
+**Current default:** In-proc mode (incremental MCP). HTTP mode (SQL workflow) is being validated.
+
+**Output:** Reported issues stored in database, indexed by `critic_run_id`
 
 ### 2. Grader Run
 
@@ -174,10 +194,19 @@ The prompt optimizer supports two terminal metric modes that control validation 
 ### 3. Metrics
 
 **Terminal Metric (what we ultimately optimize for):**
-- **Full-snapshot runs on VALIDATION split**
-- Total number of issues caught when critic reviews ALL files in a validation snapshot
-- Expressed as recall: issues found / total issues (0.0-1.0)
-- This tests comprehensive whole-codebase review ability on held-out data
+
+The terminal metric depends on the optimization mode (see "Optimization Modes" section above):
+
+- **Whole-Repo Mode**: Full-snapshot runs on VALIDATION split only
+  - Total number of issues caught when critic reviews ALL files in a validation snapshot
+  - Expressed as recall: issues found / total issues (0.0-1.0)
+  - Tests comprehensive whole-codebase review ability on held-out data
+  - Query: `WHERE split='valid' AND scope_kind='entire_snapshot'`
+
+- **Targeted Mode**: All validation runs (both per-file and full-snapshot)
+  - Includes both targeted file reviews and full-snapshot reviews on VALIDATION split
+  - Allows faster iteration but with risk of overfitting to validation patterns
+  - Query: `WHERE split='valid'` (includes all scope_kind values)
 
 **Training Metrics (for hill-climbing during optimization):**
 - Per-file and multi-file examples on TRAIN split
@@ -188,7 +217,7 @@ The prompt optimizer supports two terminal metric modes that control validation 
 **Computation:**
 - Single-run recall: `sum(occ.found_credit for occ in occurrence_results) / len(occurrence_results)`
 - Cross-run aggregates: Query `aggregated_recall_by_prompt` or `aggregated_recall_by_example` views
-- Terminal metric: Query view with `WHERE split='valid' AND is_whole_snapshot=true`
+- Terminal metric query varies by mode (see above)
 
 **Weighting by occurrence (not by example):**
 - Cross-run recall: For each occurrence, average its found_credit across runs; then sum those averages and divide by occurrence count
@@ -206,37 +235,14 @@ The prompt optimizer supports two terminal metric modes that control validation 
 - `S%` = percentage of runs that hit max_turns without submitting
 - `C%` = percentage of runs that exceeded context limits
 
-## Critic Agent Architecture
+## Agent Database Access
 
-### Container Environment
-
-**Mounted paths:**
-- `/workspace` - snapshot source code (read-only)
-- `/tmp` - writable scratch space
-
-**No network access** - isolated evaluation environment
-
-**MCP Tools available:**
-- `docker_exec` - run commands in container (rg, ruff, mypy, vulture, etc.)
-- `critic_submit_upsert_issue` - create/update issue header
-- `critic_submit_add_occurrence` - add code location for an issue
-- `critic_submit_add_occurrence_files` - add multi-file occurrence
-- `critic_submit_cancel_issue` - remove an issue
-- `critic_submit_submit` - finalize critique
-
-### Key Constraints
-
-**Critic cannot see:**
-- Ground truth issues
-- Other critiques or grader feedback
-- The database or any stored results
-
-**Critic only sees:**
-- The source code to review
-- Its own system prompt
-- Tool output from analysis commands
-
-**This is intentional:** We're testing if the critic can identify issues from code alone, just like a human reviewer would.
+Critic and grader agents use direct PostgreSQL access (not MCP):
+- Temporary database users created per-run with RLS scoping
+- Username pattern encodes run_id (e.g., `critic_agent_{uuid}`)
+- RLS functions extract scope from username and filter table access
+- Soft deletes only (no DELETE privilege)
+- Agent-specific system prompts contain SQL examples and workflow details
 
 ## Data Access Patterns
 
@@ -277,7 +283,7 @@ reasoning_events = session.query(Event).filter_by(
 # Can run critic on validation whole-snapshot only
 result = await run_critic_on_example(
     snapshot_slug="ducktape/2025-11-26-01",  # valid split
-    files_hash=None,  # whole-snapshot required (RLS blocks per-file)
+    scope_hash=None,  # whole-snapshot required (RLS blocks per-file)
     prompt_sha256=prompt_hash,
     max_turns=30
 )
@@ -301,7 +307,7 @@ examples = session.query(Example).join(Snapshot).filter(Snapshot.split == "valid
 # Can run both per-file and whole-snapshot evaluations
 result = await run_critic_on_example(
     snapshot_slug="ducktape/2025-11-26-01",
-    files_hash=example.files_hash,  # per-file allowed
+    scope_hash=example.scope_hash,  # per-file allowed
     prompt_sha256=prompt_hash,
     max_turns=30
 )
@@ -322,7 +328,7 @@ results = session.execute(text("""
 ### 1. Example Identity
 
 ❌ **Wrong:** `example.id` or `example.key` (doesn't exist)
-✅ **Right:** `(example.snapshot_slug, example.files_hash)`
+✅ **Right:** `(example.snapshot_slug, example.scope_hash)`
 
 ### 2. Output Access
 

@@ -57,7 +57,7 @@ The reflection LLM sees the full discriminated union (success, max_turns_exceede
 
 ## Key Types
 
-- `SnapshotInput`: Input for evaluation (slug, target_files, known_true_positives, known_false_positives)
+- `Example`: Training example from database (snapshot_slug, scope, scope_hash) - ORM model from `db/examples.py`
 - `CriticTrajectory`: Execution trace (transcript_id, events, critique_payload or None if max_turns)
 - `CriticOutput`: Evaluation result (critic_output discriminated union, grader_output or None, critique_id or None)
 - `ReflectionExample`: Feedback for reflection LLM (current_text, score, trajectory, critic_output, grader_output or None)

@@ -6,15 +6,22 @@ as a single unit. Multiple scopes per snapshot allow more granular training sign
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
-# Sentinel value for "all files with issues" (for backwards compatibility)
-ALL_FILES_WITH_ISSUES: Literal["all"] = "all"
-"""Sentinel value: scope critic to all files with ground truth TP/FP issues."""
+
+class ScopeKind(StrEnum):
+    """Discriminator values for CriticScopeSpec union.
+
+    These are the 'kind' field values in the JSONB scope column.
+    """
+
+    ENTIRE_SNAPSHOT = "entire_snapshot"
+    SPECIFIC_FILES = "specific_files"
 
 
 class ExplicitFileScope(OpenAIStrictModeBaseModel):
@@ -61,4 +68,4 @@ class CriticScope(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-__all__ = ["ALL_FILES_WITH_ISSUES", "AllFilesScope", "CriticScope", "CriticScopeSpec", "ExplicitFileScope"]
+__all__ = ["AllFilesScope", "CriticScope", "CriticScopeSpec", "ExplicitFileScope", "ScopeKind"]

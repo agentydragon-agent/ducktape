@@ -114,6 +114,19 @@ async def mcp_client_from_env() -> AsyncGenerator[tuple[ClientSession, object], 
 
             # Read a resource
             resource = await session.read_resource("resource://server/name")
+
+            # IMPORTANT: Serializing tool results
+            # CallToolResult objects are NOT JSON-serializable. To serialize:
+            #
+            # ❌ WRONG:
+            # data = {"result": result}
+            # json.dumps(data)  # TypeError: Object of type CallToolResult is not JSON serializable
+            #
+            # ✅ CORRECT - extract fields or use model_dump():
+            # data = {"is_error": result.isError, "content": result.content}
+            # json.dumps(data)  # Works!
+            #
+            # Or: data = result.model_dump(mode="json"); json.dumps(data)
     """
     url = os.environ["MCP_SERVER_URL"]
     token = os.environ["MCP_SERVER_TOKEN"]

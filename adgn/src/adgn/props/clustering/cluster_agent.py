@@ -20,7 +20,7 @@ from uuid import UUID, uuid4
 import aiodocker
 from fastmcp.client import Client
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, create_engine, select
+from sqlalchemy import Engine, create_engine, func, select
 from sqlalchemy.orm import Session
 
 from adgn.agent.agent import Agent
@@ -32,12 +32,11 @@ from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import FunctionCallItem
 from adgn.props.agent_setup import build_props_handlers
+from adgn.props.clustering.user_manager import ClusteringUserManager
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
-from adgn.props.db.clustering_user_manager import ClusteringUserManager
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.models import GraderRun
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 
@@ -118,12 +117,19 @@ class ClusteringCompletionHandler(BaseHandler):
 
             snapshot_slug = run.snapshot_slug
 
-            # Get total unknowns from grader runs
-            result = session.execute(select(GraderRun).where(GraderRun.snapshot_slug == snapshot_slug))
-            grader_runs = result.scalars().all()
-
-            total_unknowns = sum(
-                len(gr.output.unknowns) if isinstance(gr.output, DBGraderSuccess) else 0 for gr in grader_runs
+            # Count total unknowns from completed grader runs (decisions with no TP match)
+            total_unknowns = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(GradingDecision)
+                    .join(GraderRun)
+                    .where(
+                        GraderRun.snapshot_slug == snapshot_slug,
+                        GraderRun.status == GraderRunStatus.COMPLETED,
+                        GradingDecision.target_tp_id.is_(None),
+                    )
+                )
+                or 0
             )
 
             if total_unknowns == 0:
@@ -254,6 +260,12 @@ async def run_clustering_agent(
     )
     logger.info(f"Output directory: {output_dir}")
 
+    # TODO: Migrate to HTTP mode with AgentEnvironment abstraction (like critic/grader)
+    # - Create ClusteringAgentEnvironment extending AgentEnvironment
+    # - Move user management and compositor setup to base class
+    # - Would simplify lifecycle management and improve consistency with other agents
+    # - Consider adding submit/finalization tool via HTTP transport
+
     # 2. Create scoped database user with RLS policies
     async with ClusteringUserManager(db_config.admin, run_id) as creds:
         # Container-to-container database access with scoped user credentials
@@ -359,12 +371,19 @@ def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcom
 
             snapshot_slug = run.snapshot_slug
 
-            # Count total unknowns
-            result = session.execute(select(GraderRun).where(GraderRun.snapshot_slug == snapshot_slug))
-            grader_runs = result.scalars().all()
-
-            total_unknowns = sum(
-                len(gr.output.unknowns) if isinstance(gr.output, DBGraderSuccess) else 0 for gr in grader_runs
+            # Count total unknowns from completed grader runs (decisions with no TP match)
+            total_unknowns = (
+                session.scalar(
+                    select(func.count())
+                    .select_from(GradingDecision)
+                    .join(GraderRun)
+                    .where(
+                        GraderRun.snapshot_slug == snapshot_slug,
+                        GraderRun.status == GraderRunStatus.COMPLETED,
+                        GradingDecision.target_tp_id.is_(None),
+                    )
+                )
+                or 0
             )
 
             if total_unknowns == 0:

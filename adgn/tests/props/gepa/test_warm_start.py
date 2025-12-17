@@ -2,175 +2,109 @@
 
 from __future__ import annotations
 
-from uuid import uuid4
-
 import pytest
 
-from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, GraderRun, Prompt, Snapshot
-from adgn.props.files_hash import hash_file_set
-from adgn.props.gepa.models import SnapshotInput
+from adgn.props.db.examples import Example
+from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
-from adgn.props.models.snapshot import LocalSource
-from adgn.props.splits import Split
-from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import make_grader_output
+from tests.props.conftest import get_example, make_critic_and_grader_run, make_grader_output
 
 
 @pytest.fixture
-def standard_valset() -> list[SnapshotInput]:
-    """Standard two-snapshot validation set for most tests."""
-    return [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=ExplicitFileScope(files=["hash1"]),
-            files_hash=hash_file_set(["hash1"]),
-        ),
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-2"),
-            target_files=ExplicitFileScope(files=["hash2"]),
-            files_hash=hash_file_set(["hash2"]),
-        ),
-    ]
+def standard_valset(synced_test_fixtures, sample_subtract_py_scope, calculator_py_scope) -> list[Example]:
+    """Standard two-snapshot validation set for most tests.
+
+    Contains specific VALID examples:
+    - test-validation/sample_subtract.py (index 0)
+    - test-validation-2/calculator.py (index 1)
+    """
+    with get_session() as session:
+        example1 = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
+        example2 = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
+        session.expunge_all()
+        return [example1, example2]
 
 
 @pytest.fixture
-def db_with_historical_runs(test_db):
-    """Fixture providing database with historical critic + grader runs."""
-    # test_db fixture already initializes and recreates the database
+def validation_subtract_valset(synced_test_fixtures, sample_subtract_py_scope) -> list[Example]:
+    """Valset containing test-validation/sample_subtract.py (matches db_with_historical_runs example1)."""
+    with get_session() as session:
+        example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
+        session.expunge(example)
+        return [example]
 
-    # Compute proper file hashes for test data
-    hash1 = hash_file_set(["hash1"])
-    hash2 = hash_file_set(["hash2"])
-    hash3 = hash_file_set(["hash3"])
-    hash_train = hash_file_set(["hash_train"])
+
+@pytest.fixture
+def validation_calculator_valset(synced_test_fixtures, calculator_py_scope) -> list[Example]:
+    """Valset containing test-validation-2/calculator.py (matches db_with_historical_runs example2)."""
+    with get_session() as session:
+        example = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
+        session.expunge(example)
+        return [example]
+
+
+@pytest.fixture
+def train_add_valset(synced_test_fixtures, add_py_scope) -> list[Example]:
+    """Valset containing test-trivial/add.py (TRAIN split, has runs in db_with_historical_runs)."""
+    with get_session() as session:
+        example = get_example(session, SnapshotSlug("test-fixtures/test-trivial"), add_py_scope)
+        session.expunge(example)
+        return [example]
+
+
+@pytest.fixture
+def db_with_historical_runs(synced_test_fixtures, sample_subtract_py_scope, calculator_py_scope, add_py_scope):
+    """Fixture providing database with historical critic + grader runs.
+
+    Creates runs for specific VALID and TRAIN examples:
+    - test-validation/sample_subtract.py (VALID) - 2 prompts
+    - test-validation-2/calculator.py (VALID) - 1 prompt
+    - test-trivial/add.py (TRAIN) - 1 prompt
+    """
+    # Create prompts (helper computes proper hashes)
+    prompt_a_sha = hash_and_upsert_prompt("You are a code critic (version A).")
+    prompt_b_sha = hash_and_upsert_prompt("You are a code critic (version B).")
 
     with get_session() as session:
-        # Create snapshots
-        source = LocalSource(vcs="local", root=".")
-        snap_valid_1 = Snapshot(slug=SnapshotSlug("test/valid-1"), split=Split.VALID, source=source)
-        snap_valid_2 = Snapshot(slug=SnapshotSlug("test/valid-2"), split=Split.VALID, source=source)
-        snap_train = Snapshot(slug=SnapshotSlug("test/train-1"), split=Split.TRAIN, source=source)
-        session.add_all([snap_valid_1, snap_valid_2, snap_train])
+        # Get specific VALID examples
+        example1 = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
+        example2 = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
 
-        # Create prompts
-        prompt_a = Prompt(
-            prompt_sha256="aaaa" * 16,  # 64 hex chars
-            prompt_text="You are a code critic (version A).",
-        )
-        prompt_b = Prompt(prompt_sha256="bbbb" * 16, prompt_text="You are a code critic (version B).")
-        session.add_all([prompt_a, prompt_b])
+        # Get specific TRAIN example for exclusion test
+        train_example = get_example(session, SnapshotSlug("test-fixtures/test-trivial"), add_py_scope)
 
-        # Create critiques (with snapshot_slug required)
-        empty_payload = CriticSubmitPayload(issues=[], notes_md=None)
-        critique_1 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
-        critique_2 = Critique(id=uuid4(), snapshot_slug=snap_valid_2.slug, payload=empty_payload)
-        critique_3 = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
-        critique_incomplete = Critique(id=uuid4(), snapshot_slug=snap_valid_1.slug, payload=empty_payload)
-        critique_train = Critique(id=uuid4(), snapshot_slug=snap_train.slug, payload=empty_payload)
-        session.add_all([critique_1, critique_2, critique_3, critique_incomplete, critique_train])
-
-        session.commit()
-
-        # Create critic runs
-        critic_run_1 = CriticRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=critique_1.id,
-            prompt_sha256=prompt_a.prompt_sha256,
-            files_hash=hash1,
-            files=[],
-            output={},
+        # Create critic + grader runs using convenience factory
+        # example1 (test-validation/subtract.py) - evaluated with both prompts
+        make_critic_and_grader_run(
+            example=example1,
+            prompt_sha256=prompt_a_sha,
+            grader_output=make_grader_output(tp_count=1, found_credit=0.8),
+            session=session,
         )
-        critic_run_2 = CriticRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_2.slug,
-            model="test-model",
-            critique_id=critique_2.id,
-            prompt_sha256=prompt_a.prompt_sha256,
-            files_hash=hash2,
-            files=[],
-            output={},
+        make_critic_and_grader_run(
+            example=example1,
+            prompt_sha256=prompt_b_sha,
+            grader_output=make_grader_output(tp_count=1, found_credit=0.9),
+            session=session,
         )
-        critic_run_3 = CriticRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=critique_3.id,
-            prompt_sha256=prompt_b.prompt_sha256,
-            files_hash=hash1,
-            files=[],
-            output={},
+        # example2 (test-validation-2/calculator.py) - evaluated with prompt_a only
+        make_critic_and_grader_run(
+            example=example2,
+            prompt_sha256=prompt_a_sha,
+            grader_output=make_grader_output(tp_count=1, found_credit=0.6),
+            session=session,
         )
-        # Incomplete run (no critique_id)
-        critic_run_incomplete = CriticRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=None,  # Incomplete
-            prompt_sha256=prompt_a.prompt_sha256,
-            files_hash=hash3,
-            files=[],
-            output={},
+        # train_example (test-trivial/add.py) - evaluated but in TRAIN split
+        make_critic_and_grader_run(
+            example=train_example,
+            prompt_sha256=prompt_a_sha,
+            grader_output=make_grader_output(tp_count=1, found_credit=0.5),
+            session=session,
         )
-        # Run on training set (should be excluded)
-        critic_run_train = CriticRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_train.slug,
-            model="test-model",
-            critique_id=critique_train.id,
-            prompt_sha256=prompt_a.prompt_sha256,
-            files_hash=hash_train,
-            files=[],
-            output={},
-        )
-        session.add_all([critic_run_1, critic_run_2, critic_run_3, critic_run_incomplete, critic_run_train])
 
         session.commit()
-
-        # Create grader runs
-        grader_run_1 = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=critique_1.id,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=make_grader_output(tp_count=1, found_credit=0.8),
-        )
-        grader_run_2 = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_2.slug,
-            model="test-model",
-            critique_id=critique_2.id,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=make_grader_output(tp_count=1, found_credit=0.6),
-        )
-        grader_run_3 = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=critique_3.id,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=make_grader_output(tp_count=1, found_credit=0.9),
-        )
-        # Grader run with JSON null output (simulates incomplete/failed grader)
-        grader_run_null = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=snap_valid_1.slug,
-            model="test-model",
-            critique_id=critique_incomplete.id,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=None,  # This gets stored as JSON null in JSONB
-        )
-        session.add_all([grader_run_1, grader_run_2, grader_run_3, grader_run_null])
-
-        session.commit()
-
-    # test_db fixture handles cleanup
 
 
 def test_build_historical_state_basic(db_with_historical_runs, standard_valset):
@@ -234,123 +168,72 @@ def test_json_null_filtering(db_with_historical_runs, standard_valset):
     assert total_scores == 3
 
 
-def test_empty_database(test_db):
+def test_empty_database(validation_subtract_valset):
     """Test warm-start with no historical data returns None."""
-    # test_db fixture already initializes and recreates database
-
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=ExplicitFileScope(files=["hash1"]),
-            files_hash=hash_file_set(["hash1"]),
-        )
-    ]
-
-    state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
-
+    # No db_with_historical_runs fixture, so database has no runs
+    state = build_historical_gepa_state(
+        valset=validation_subtract_valset, critic_model="test-model", grader_model="test-model"
+    )
     assert state is None
 
 
-def test_model_filtering(db_with_historical_runs):
+def test_model_filtering(db_with_historical_runs, validation_subtract_valset):
     """Test that only runs matching specified models are included."""
-    # Database already initialized by test_db fixture
-
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=ExplicitFileScope(files=["hash1"]),
-            files_hash=hash_file_set(["hash1"]),
-        )
-    ]
-
-    # Query with non-matching model
-    state = build_historical_gepa_state(valset=valset, critic_model="wrong-model", grader_model="test-model")
-
-    assert state is None  # No matching runs
-
-
-def test_split_filtering(db_with_historical_runs):
-    """Test that only validation split runs are included (not training)."""
-    # Database already initialized by test_db fixture
-
-    # Query with training example (should find nothing)
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/train-1"),
-            target_files=ExplicitFileScope(files=["hash_train"]),
-            files_hash=hash_file_set(["hash_train"]),
-        )
-    ]
-
-    state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
-
-    # Training split should be excluded from validation set queries
+    # db_with_historical_runs creates runs with critic_model="test-model"
+    # Querying with wrong model should return None
+    state = build_historical_gepa_state(
+        valset=validation_subtract_valset, critic_model="wrong-model", grader_model="test-model"
+    )
     assert state is None
 
 
-def test_unknown_examples_skipped(db_with_historical_runs):
+def test_split_filtering(db_with_historical_runs, train_add_valset):
+    """Test that only validation split runs are included (not training)."""
+    # db_with_historical_runs creates runs for test-trivial/add.py (TRAIN split)
+    # But build_historical_gepa_state only loads VALID split runs
+    state = build_historical_gepa_state(valset=train_add_valset, critic_model="test-model", grader_model="test-model")
+    assert state is None  # TRAIN split examples excluded from warm-start
+
+
+def test_unknown_examples_skipped(db_with_historical_runs, validation_subtract_valset):
     """Test that examples not in current valset are skipped with warning."""
-    # Database already initialized by test_db fixture
-
-    # Valset that doesn't include valid-2 (but database has runs for it)
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=ExplicitFileScope(files=["hash1"]),
-            files_hash=hash_file_set(["hash1"]),
-        )
-    ]
-
-    state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
+    # db_with_historical_runs has runs for:
+    #  - test-validation/sample_subtract.py (IN valset)
+    #  - test-validation-2/calculator.py (NOT in valset)
+    # Only the first should contribute to warm-start state
+    state = build_historical_gepa_state(
+        valset=validation_subtract_valset, critic_model="test-model", grader_model="test-model"
+    )
 
     assert state is not None
-
-    # Should have scores only for valid-1, not valid-2
-    total_scores = sum(len(scores) for scores in state["prog_candidate_val_subscores"])
-    assert total_scores == 2  # 2 prompts evaluated on valid-1
-
-    # All scores should be keyed by index 0 (valid-1)
+    assert len(state["program_candidates"]) == 2  # prompt_a and prompt_b
+    # Should have scores for only one example (index 0)
     for scores in state["prog_candidate_val_subscores"]:
-        assert set(scores) == {0}
+        assert set(scores.keys()) == {0}
 
 
-def test_files_hash_matching(db_with_historical_runs):
-    """Test that (snapshot_slug, files_hash) tuple matching works correctly."""
-    # Database already initialized by test_db fixture
+def test_scope_hash_matching(db_with_historical_runs, validation_calculator_valset):
+    """Test that (snapshot_slug, scope_hash) tuple matching works correctly."""
+    # db_with_historical_runs has runs for test-validation-2/calculator.py
+    # Querying with this exact example should find matches
+    state = build_historical_gepa_state(
+        valset=validation_calculator_valset, critic_model="test-model", grader_model="test-model"
+    )
 
-    # Valset with same snapshot but different files_hash (should not match)
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=ExplicitFileScope(files=["hash_different"]),
-            files_hash=hash_file_set(["hash_different"]),
-        )
-    ]
-
-    state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
-
-    # No matches because files_hash doesn't match
-    assert state is None
+    assert state is not None
+    assert len(state["program_candidates"]) == 1  # Only prompt_a evaluated example2
+    assert state["prog_candidate_val_subscores"][0][0] == 0.6  # example2's recall
 
 
-def test_critic_scope_spec_all(db_with_historical_runs):
+def test_critic_scope_spec_all(db_with_historical_runs, synced_test_fixtures, all_files_scope):
     """Test that CriticScopeSpec 'all' is handled correctly in index mapping."""
-    # Database already initialized by test_db fixture
+    with get_session() as session:
+        all_files_example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), all_files_scope)
+        session.expunge(all_files_example)
+        valset = [all_files_example]
 
-    # Create valset with "all" scope - use a distinct hash that won't match explicit file hashes
-    valset = [
-        SnapshotInput(
-            slug=SnapshotSlug("test/valid-1"),
-            target_files=AllFilesScope(),
-            files_hash=hash_file_set(["all_files_sentinel"]),  # Different from "hash1"
-        )
-    ]
-
-    # This should not match database runs (which have specific file hashes like "hash1")
     state = build_historical_gepa_state(valset=valset, critic_model="test-model", grader_model="test-model")
-
-    # No matches because "all_files_sentinel" hashes differently than "hash1"
-    assert state is None
+    assert state is None  # No matches because AllFilesScope hashes differently from db_with_historical_runs
 
 
 def test_deterministic_ordering(db_with_historical_runs, standard_valset):

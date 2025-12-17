@@ -7,22 +7,20 @@ Verifies that:
 """
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
-from tests.props.clustering.conftest import make_test_snapshot
+from tests.props.conftest import make_clustering_run
 
+from adgn.props.clustering.user_manager import ClusteringUserManager
+from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownCluster
-from adgn.props.db.clustering_user_manager import ClusteringUserManager
 from adgn.props.db.models import Snapshot
 
 
-def test_migration_applied(test_db):
+def test_migration_applied(admin_engine):
     """Verify clustering schema was created in test database."""
-    config = test_db
-    engine = create_engine(config.admin_url())
-
-    with engine.connect() as conn:
+    with admin_engine.connect() as conn:
         # Check if RLS helper function exists
         result = conn.execute(text("SELECT proname FROM pg_proc WHERE proname = 'current_clustering_run_id'"))
         function_exists = result.scalar() is not None
@@ -38,98 +36,58 @@ def test_migration_applied(test_db):
         missing_tables = set(required_tables) - found_tables
         assert not missing_tables, f"Missing tables: {', '.join(sorted(missing_tables))}"
 
-    engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_rls_isolation_between_runs(test_db):
+async def test_rls_isolation_between_runs(clustering_user_engine_factory, test_snapshot):
     """Test that clustering agents can only see/modify their own run's data."""
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot and two clustering runs
-    with Session(admin_engine) as session:
-        # Create test snapshot
-        snapshot = make_test_snapshot("test/clustering-rls", "abc123")
-        session.add(snapshot)
-        session.flush()
-
-        # Create two clustering runs
-        run1 = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
-        run2 = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create two clustering runs
+    with get_session() as session:
+        run1 = make_clustering_run(test_snapshot)
+        run2 = make_clustering_run(test_snapshot)
         session.add_all([run1, run2])
         session.flush()
-
         run1_id = run1.id
         run2_id = run2.id
-        snapshot_slug = snapshot.slug
-
         session.commit()
 
     # Test: Each user can only see their own run
-    async with ClusteringUserManager(config.admin, run1_id) as user1_creds:
-        user1_config = config.admin.with_user(user1_creds)
-        async with ClusteringUserManager(config.admin, run2_id) as user2_creds:
-            user2_config = config.admin.with_user(user2_creds)
-            # User 1 sees only run 1
-            user1_engine = create_engine(user1_config.url())
-            with Session(user1_engine) as user1_session:
-                # Quick debug check
-                result = user1_session.execute(text("SELECT current_user, current_clustering_run_id()"))
-                row = result.fetchone()
-                assert row is not None, "Expected row from current_user/current_clustering_run_id() query"
-                if row[1] is None:
-                    raise RuntimeError(
-                        f"current_clustering_run_id() returned NULL for user {row[0]}, expected {run1_id}"
-                    )
+    async with (
+        clustering_user_engine_factory(run1_id) as user1_engine,
+        clustering_user_engine_factory(run2_id) as user2_engine,
+    ):
+        # User 1 sees only run 1
+        with Session(user1_engine) as user1_session:
+            # Quick debug check
+            result = user1_session.execute(text("SELECT current_user, current_clustering_run_id()"))
+            row = result.fetchone()
+            assert row is not None, "Expected row from current_user/current_clustering_run_id() query"
+            if row[1] is None:
+                raise RuntimeError(f"current_clustering_run_id() returned NULL for user {row[0]}, expected {run1_id}")
 
-                visible_runs = user1_session.query(ClusteringRun).all()
-                assert len(visible_runs) == 1
-                assert visible_runs[0].id == run1_id
+            visible_runs = user1_session.query(ClusteringRun).all()
+            assert len(visible_runs) == 1
+            assert visible_runs[0].id == run1_id
 
-            # User 2 sees only run 2
-            user2_engine = create_engine(user2_config.url())
-            with Session(user2_engine) as user2_session:
-                visible_runs = user2_session.query(ClusteringRun).all()
-                assert len(visible_runs) == 1
-                assert visible_runs[0].id == run2_id
-
-            user1_engine.dispose()
-            user2_engine.dispose()
-
-    # Cleanup
-    with Session(admin_engine) as session:
-        session.query(ClusteringRun).filter(ClusteringRun.id.in_([run1_id, run2_id])).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()
+        # User 2 sees only run 2
+        with Session(user2_engine) as user2_session:
+            visible_runs = user2_session.query(ClusteringRun).all()
+            assert len(visible_runs) == 1
+            assert visible_runs[0].id == run2_id
 
 
 @pytest.mark.asyncio
-async def test_rls_isolation_clusters_and_assignments(test_db):
+async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_factory, test_snapshot):
     """Test that users can only see/modify clusters and assignments for their own run."""
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot and two clustering runs with clusters
-    with Session(admin_engine) as session:
-        # Create test snapshot
-        snapshot = make_test_snapshot("test/clustering-rls-detailed", "def456")
-        session.add(snapshot)
-        session.flush()
-
-        # Create two clustering runs
-        run1 = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
-        run2 = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create two clustering runs with clusters
+    with get_session() as session:
+        run1 = make_clustering_run(test_snapshot)
+        run2 = make_clustering_run(test_snapshot)
         session.add_all([run1, run2])
         session.flush()
-
         run1_id = run1.id
         run2_id = run2.id
-        snapshot_slug = snapshot.slug
 
-        # Create clusters for each run (admin creates these to setup test state)
+        # Create clusters for each run
         cluster1 = UnknownCluster(
             clustering_run_id=run1_id, cluster_name="run1-cluster", description="Cluster for run 1"
         )
@@ -137,119 +95,70 @@ async def test_rls_isolation_clusters_and_assignments(test_db):
             clustering_run_id=run2_id, cluster_name="run2-cluster", description="Cluster for run 2"
         )
         session.add_all([cluster1, cluster2])
-        session.flush()
-
         session.commit()
 
     # Test: Each user can only see/modify their own run's clusters
-    async with ClusteringUserManager(config.admin, run1_id) as user1_creds:
-        user1_config = config.admin.with_user(user1_creds)
-        async with ClusteringUserManager(config.admin, run2_id) as user2_creds:
-            user2_config = config.admin.with_user(user2_creds)
-            # User 1 sees only run 1's clusters
-            user1_engine = create_engine(user1_config.url())
-            with Session(user1_engine) as user1_session:
-                clusters = user1_session.query(UnknownCluster).all()
-                assert len(clusters) == 1
-                assert clusters[0].cluster_name == "run1-cluster"
-                assert clusters[0].clustering_run_id == run1_id
+    async with (
+        clustering_user_engine_factory(run1_id) as user1_engine,
+        clustering_user_engine_factory(run2_id) as user2_engine,
+    ):
+        # User 1 sees only run 1's clusters
+        with Session(user1_engine) as user1_session:
+            clusters = user1_session.query(UnknownCluster).all()
+            assert len(clusters) == 1
+            assert clusters[0].cluster_name == "run1-cluster"
+            assert clusters[0].clustering_run_id == run1_id
 
-            # User 2 sees only run 2's clusters
-            user2_engine = create_engine(user2_config.url())
-            with Session(user2_engine) as user2_session:
-                clusters = user2_session.query(UnknownCluster).all()
-                assert len(clusters) == 1
-                assert clusters[0].cluster_name == "run2-cluster"
-                assert clusters[0].clustering_run_id == run2_id
-
-            user1_engine.dispose()
-            user2_engine.dispose()
-
-    # Cleanup
-    with Session(admin_engine) as session:
-        session.query(UnknownCluster).filter(UnknownCluster.clustering_run_id.in_([run1_id, run2_id])).delete()
-        session.query(ClusteringRun).filter(ClusteringRun.id.in_([run1_id, run2_id])).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()
+        # User 2 sees only run 2's clusters
+        with Session(user2_engine) as user2_session:
+            clusters = user2_session.query(UnknownCluster).all()
+            assert len(clusters) == 1
+            assert clusters[0].cluster_name == "run2-cluster"
+            assert clusters[0].clustering_run_id == run2_id
 
 
 @pytest.mark.asyncio
-async def test_rls_read_only_access_to_reference_tables(test_db):
+async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_factory, test_snapshot):
     """Test that clustering agents have read-only access to snapshots and ground truth."""
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot and clustering run
-    with Session(admin_engine) as session:
-        # Create test snapshot
-        snapshot = make_test_snapshot("test/clustering-readonly", "ghi789")
-        session.add(snapshot)
-        session.flush()
-
-        # Create clustering run
-        run = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create clustering run
+    with get_session() as session:
+        run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
         run_id = run.id
-        snapshot_slug = snapshot.slug
-
         session.commit()
 
     # Test: User can read snapshots but not modify
-    async with ClusteringUserManager(config.admin, run_id) as creds:
-        user_config = config.admin.with_user(creds)
-        user_engine = create_engine(user_config.url())
-
+    async with clustering_user_engine_factory(run_id) as user_engine:
         with Session(user_engine) as user_session:
             # Can read snapshot
             snapshots = user_session.query(Snapshot).all()
-            assert any(s.slug == snapshot_slug for s in snapshots)
+            assert any(s.slug == test_snapshot for s in snapshots)
 
             # Cannot delete snapshot (read-only)
             def try_delete():
-                user_session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
+                user_session.query(Snapshot).filter_by(slug=test_snapshot).delete()
                 user_session.commit()
 
             with pytest.raises(ProgrammingError, match=r"(?i)(permission denied|read-only)"):
                 try_delete()
 
-        user_engine.dispose()
-
-    # Cleanup
-    with Session(admin_engine) as session:
-        session.query(ClusteringRun).filter_by(id=run_id).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_scoped_user_cleanup(test_db):
+async def test_scoped_user_cleanup(test_db, test_snapshot, admin_engine):
     """Test that scoped users are properly cleaned up after context exit."""
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot and clustering run
-    with Session(admin_engine) as session:
-        snapshot = make_test_snapshot("test/cleanup", "cleanup123")
-        session.add(snapshot)
-        session.flush()
-
-        run = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create clustering run
+    with get_session() as session:
+        run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
         run_id = run.id
-        snapshot_slug = snapshot.slug
-
         session.commit()
 
     username = f"clustering_run_{run_id}_agent"
 
     # Create and exit scoped user
-    async with ClusteringUserManager(config.admin, run_id):
+    async with ClusteringUserManager(test_db.admin, run_id):
         # Verify user exists during context
         with Session(admin_engine) as session:
             result = session.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})
@@ -259,11 +168,3 @@ async def test_scoped_user_cleanup(test_db):
     with Session(admin_engine) as session:
         result = session.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})
         assert result.scalar() is None
-
-    # Cleanup
-    with Session(admin_engine) as session:
-        session.query(ClusteringRun).filter_by(id=run_id).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()

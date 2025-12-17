@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
@@ -13,21 +12,6 @@ from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.grader.models import GradeMetrics, GradeSubmitInput
 from adgn.props.models.true_positive import LineRange, Occurrence
 from adgn.props.prompts.schemas import build_input_schemas_json
-
-
-def _load_mcp_http_instructions() -> str:
-    """Load MCP HTTP connection instructions from markdown file.
-
-    Generic instructions for agents running in Docker containers that need to connect
-    to an MCP server on the host via HTTP transport.
-    Based on design doc: src/adgn/props/docs/plans/mcp_over_docker_network.md
-    """
-    prompts_pkg = files("adgn.props.prompts")
-    md_file = prompts_pkg / "mcp_http_connection.md"
-    return md_file.read_text()
-
-
-MCP_HTTP_CONNECTION_INSTRUCTIONS = _load_mcp_http_instructions()
 
 
 def _compact_json_filter(value: Any, max_width: int = 100) -> str:

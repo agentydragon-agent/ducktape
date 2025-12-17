@@ -129,7 +129,7 @@ adgn-properties db recreate  # Drops schema, runs migrations, creates RLS/views
 
 **Implementation:**
 ```python
-from adgn.props.db.prompt_optimizer_user_manager import PromptOptimizerUserManager
+from adgn.props.prompt_optimize.user_manager import PromptOptimizerUserManager
 
 # Inside PromptOptimizerCompositor.__aenter__:
 user_manager = PromptOptimizerUserManager(admin_config, run_id)
@@ -242,15 +242,7 @@ for issue in critique.payload.issues:  # Access DB model fields directly
     # ... work with fields
 ```
 
-**Exception - when MCP structure is actually needed:**
-```python
-# Only convert to MCP when you need MCP-specific behavior
-# (e.g., for GEPA reflection that expects specific types)
-from adgn.props.critic.persistence import critic_submit_payload_from_db
-
-critique_mcp = critic_submit_payload_from_db(critique_payload_db)
-# Use critique_mcp for MCP-specific operations
-```
+**Note:** There is no DB → MCP conversion function. If you need MCP-specific types, construct them directly from the DB model fields as shown above.
 
 ### Key Benefits
 1. **Database independence**: Schema changes don't require protocol changes
@@ -270,3 +262,22 @@ When you encounter code using MCP models in database operations:
 5. Update code to convert TO DB when writing
 6. Update code to use DB model directly when reading (inline access)
 7. Only add DB → MCP conversion if truly needed for business logic
+
+## Testing
+
+**For comprehensive testing conventions and patterns, see:**
+
+@../../../tests/props/CLAUDE.md
+
+Key principles:
+- Git fixtures are the single source of truth (no synthetic ORM models)
+- Use `synced_test_fixtures` pytest fixture for all test data
+- Use factory functions (`make_critic_run`, `make_grader_run`) with required parameters
+- Query Examples from database (don't create them manually)
+- Use canonical prompts and scope fixtures for consistency
+
+Available test fixtures:
+- `test-fixtures/test-trivial` (TRAIN) - 4 files, 4 TPs
+- `test-fixtures/test-validation` (VALID) - 1 file, 1 TP
+- `test-fixtures/test-validation-2` (VALID) - 1 file, 1 TP
+- `test-fixtures/test-split-test` (TEST) - 1 file, 1 TP

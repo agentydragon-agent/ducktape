@@ -3,6 +3,7 @@
 This module lives in the critic layer because it needs to know about both:
 - MCP I/O models (critic.models.CriticSubmitPayload, ReportedIssue, Occurrence)
 - Database persistence models (db.snapshots.DBCriticSubmitPayload, etc.)
+- ORM models (db.models.ReportedIssueOccurrence)
 
 The database layer should not depend on MCP I/O types to avoid coupling
 database migrations to protocol changes.
@@ -10,21 +11,28 @@ database migrations to protocol changes.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from pathlib import Path
+
+# Avoid circular import - only use for type checking
+from typing import TYPE_CHECKING
 
 from adgn.props.critic.models import (
     CriticContextLengthExceeded,
     CriticMaxTurnsExceeded,
     CriticOutput,
+    CriticReportedFailure,
     CriticSubmitPayload,
     CriticSuccess,
     Occurrence,
     ReportedIssue,
 )
+from adgn.props.db.models import ReportedIssue as ORMReportedIssue
 from adgn.props.db.snapshots import (
     DBCriticContextLengthExceeded,
     DBCriticMaxTurnsExceeded,
     DBCriticOutput,
+    DBCriticReportedFailure,
     DBCriticSubmitPayload,
     DBCriticSuccess,
     DBFileOccurrence,
@@ -32,19 +40,15 @@ from adgn.props.db.snapshots import (
     DBOccurrence,
     DBReportedIssue,
 )
-from adgn.props.ids import BaseIssueID
 from adgn.props.models.true_positive import FileOccurrence, LineRange
-from adgn.props.rationale import Rationale
+
+if TYPE_CHECKING:
+    from adgn.props.db.models import ReportedIssueOccurrence
 
 
 def _convert_line_range_to_db(lr: LineRange) -> DBLineRange:
     """Convert MCP LineRange to DB representation."""
     return DBLineRange(start_line=lr.start_line, end_line=lr.end_line)
-
-
-def _convert_line_range_from_db(db_lr: DBLineRange) -> LineRange:
-    """Convert DB LineRange to MCP representation."""
-    return LineRange(start_line=db_lr.start_line, end_line=db_lr.end_line)
 
 
 def _convert_file_occurrence_to_db(fo: FileOccurrence) -> DBFileOccurrence:
@@ -54,21 +58,9 @@ def _convert_file_occurrence_to_db(fo: FileOccurrence) -> DBFileOccurrence:
     )
 
 
-def _convert_file_occurrence_from_db(db_fo: DBFileOccurrence) -> FileOccurrence:
-    """Convert DB FileOccurrence to MCP representation."""
-    return FileOccurrence(
-        path=Path(db_fo.path), ranges=[_convert_line_range_from_db(lr) for lr in db_fo.ranges] if db_fo.ranges else None
-    )
-
-
 def _convert_occurrence_to_db(occ: Occurrence) -> DBOccurrence:
     """Convert MCP Occurrence to DB representation."""
     return DBOccurrence(files=[_convert_file_occurrence_to_db(fo) for fo in occ.files], note=occ.note)
-
-
-def _convert_occurrence_from_db(db_occ: DBOccurrence) -> Occurrence:
-    """Convert DB Occurrence to MCP representation."""
-    return Occurrence(files=[_convert_file_occurrence_from_db(fo) for fo in db_occ.files], note=db_occ.note)
 
 
 def reported_issue_to_db(issue: ReportedIssue) -> DBReportedIssue:
@@ -80,35 +72,123 @@ def reported_issue_to_db(issue: ReportedIssue) -> DBReportedIssue:
     )
 
 
-def reported_issue_from_db(db_issue: DBReportedIssue) -> ReportedIssue:
-    """Convert DB ReportedIssue to MCP representation."""
-    return ReportedIssue(
-        id=BaseIssueID(db_issue.id),
-        rationale=Rationale(db_issue.rationale),
-        occurrences=[_convert_occurrence_from_db(occ) for occ in db_issue.occurrences],
-    )
-
-
 def critic_submit_payload_to_db(payload: CriticSubmitPayload) -> DBCriticSubmitPayload:
-    """Convert MCP CriticSubmitPayload to DB representation."""
-    return DBCriticSubmitPayload(
-        issues=[reported_issue_to_db(issue) for issue in payload.issues], notes_md=payload.notes_md
-    )
+    """Convert MCP CriticSubmitPayload to DB representation.
 
-
-def critic_submit_payload_from_db(db_payload: DBCriticSubmitPayload) -> CriticSubmitPayload:
-    """Convert DB CriticSubmitPayload to MCP representation."""
-    return CriticSubmitPayload(
-        issues=[reported_issue_from_db(issue) for issue in db_payload.issues], notes_md=db_payload.notes_md
-    )
+    Note: Issues are NOT stored in DB payload (they go to normalized tables).
+    This only converts the notes_md field.
+    """
+    return DBCriticSubmitPayload(notes_md=payload.notes_md)
 
 
 def critic_output_to_db(output: CriticOutput) -> DBCriticOutput:
     """Convert MCP CriticOutput (discriminated union) to DB representation."""
     if isinstance(output, CriticSuccess):
-        return DBCriticSuccess(tag="success", result=critic_submit_payload_to_db(output.result))
+        return DBCriticSuccess(result=critic_submit_payload_to_db(output.result))
     if isinstance(output, CriticMaxTurnsExceeded):
-        return DBCriticMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
+        return DBCriticMaxTurnsExceeded(max_turns=output.max_turns)
     if isinstance(output, CriticContextLengthExceeded):
-        return DBCriticContextLengthExceeded(tag="context_length_exceeded", error_message=output.error_message)
+        return DBCriticContextLengthExceeded(error_message=output.error_message)
+    if isinstance(output, CriticReportedFailure):
+        return DBCriticReportedFailure(reason=output.reason)
     raise TypeError(f"Unexpected CriticOutput variant: {type(output)}")
+
+
+# =============================================================================
+# ORM to Domain/DB Conversions
+# =============================================================================
+
+
+def convert_reported_occurrence_orm_to_mcp(occ: ReportedIssueOccurrence) -> Occurrence:
+    """Convert ORM ReportedIssueOccurrence to MCP Occurrence.
+
+    Groups locations by file to create FileOccurrence objects with consolidated ranges.
+    Used in submit_server.py get_critique tool.
+    """
+    locations_by_file = defaultdict(list)
+    for loc in occ.locations:
+        if loc.start_line is not None:
+            locations_by_file[Path(loc.file)].append(LineRange(start_line=loc.start_line, end_line=loc.end_line))
+
+    return Occurrence(
+        files=[
+            FileOccurrence(path=file_path, ranges=ranges if ranges else None)
+            for file_path, ranges in locations_by_file.items()
+        ],
+        note=None,
+    )
+
+
+def convert_reported_issue_orm_to_mcp(issue: ORMReportedIssue) -> ReportedIssue:
+    """Convert ORM ReportedIssue to MCP representation.
+
+    Args:
+        issue: The ORM ReportedIssue model (with occurrences relationship loaded)
+
+    Returns:
+        MCP representation of the reported issue with converted occurrences
+    """
+    from adgn.props.ids import InputIssueID
+    from adgn.props.rationale import Rationale
+
+    return ReportedIssue(
+        id=InputIssueID(issue.issue_id),
+        rationale=Rationale(issue.rationale),
+        occurrences=[convert_reported_occurrence_orm_to_mcp(occ) for occ in issue.occurrences],
+    )
+
+
+def convert_reported_occurrence_orm_to_db(occ: ReportedIssueOccurrence) -> DBOccurrence:
+    """Convert ORM ReportedIssueOccurrence to DB DBOccurrence.
+
+    Groups locations by file to create DBFileOccurrence objects with consolidated ranges.
+    Used when constructing critic success output from reported issues.
+    """
+    locations_by_file = defaultdict(list)
+    for loc in occ.locations:
+        if loc.start_line is not None:
+            locations_by_file[loc.file].append(DBLineRange(start_line=loc.start_line, end_line=loc.end_line))
+
+    return DBOccurrence(
+        files=[
+            DBFileOccurrence(path=file_path, ranges=ranges if ranges else None)
+            for file_path, ranges in locations_by_file.items()
+        ],
+        note=None,
+    )
+
+
+def convert_reported_issue_orm_to_db(
+    issue: ORMReportedIssue, occurrences: list[ReportedIssueOccurrence]
+) -> DBReportedIssue:
+    """Convert ORM ReportedIssue to DB representation.
+
+    Args:
+        issue: The ORM ReportedIssue model
+        occurrences: List of ORM ReportedIssueOccurrence models for this issue
+
+    Returns:
+        DB representation of the reported issue with converted occurrences
+    """
+    return DBReportedIssue(
+        id=issue.issue_id,
+        rationale=issue.rationale,
+        occurrences=[convert_reported_occurrence_orm_to_db(occ) for occ in occurrences],
+    )
+
+
+def load_critic_submit_payload_mcp(session, critic_run_id, notes_md: str | None = None) -> CriticSubmitPayload:
+    """Load CriticSubmitPayload (MCP type) from database for a given critic run.
+
+    Args:
+        session: SQLAlchemy session
+        critic_run_id: UUID of the critic run
+        notes_md: Optional notes in markdown (typically from critic_run.completion_summary)
+
+    Returns:
+        MCP CriticSubmitPayload reconstructed from normalized tables
+    """
+    reported_issues = session.query(ORMReportedIssue).filter_by(critic_run_id=critic_run_id).all()
+    return CriticSubmitPayload(
+        issues=[convert_reported_issue_orm_to_mcp(issue) for issue in reported_issues], notes_md=notes_md
+    )

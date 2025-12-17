@@ -3,10 +3,10 @@
 import pytest
 
 from adgn.props.db import get_session
-from adgn.props.db.models import Example, Snapshot
+from adgn.props.db.models import Snapshot
+from adgn.props.db.examples import Example
 
-
-def test_query_full_snapshot_train_examples_with_synced_data(synced_test_db, mock_agent_setup, capsys):
+def test_query_full_snapshot_train_examples_with_synced_data(synced_test_fixtures, mock_agent_setup, capsys):
     """Test that query_full_snapshot_train_examples produces reasonable output with train examples."""
     from adgn.props.examples.query_full_snapshot_train_examples import main  # noqa: PLC0415
 
@@ -19,19 +19,20 @@ def test_query_full_snapshot_train_examples_with_synced_data(synced_test_db, moc
             .all()
         )
 
-        if not train_examples:
-            pytest.skip("No train examples in synced_test_db")
+        # synced_test_fixtures includes test-trivial (train split) which always has examples
+        assert train_examples, "Expected train examples from test-trivial fixture"
 
-        # Find full-snapshot examples using is_whole_snapshot flag
-        full_snapshot_examples = [ex for ex in train_examples if ex.is_whole_snapshot]
+        # Find full-snapshot examples using AllFilesScope type check
+        from adgn.props.models.critic_scopes import AllFilesScope
+        full_snapshot_examples = [ex for ex in train_examples if isinstance(ex.scope, AllFilesScope)]
 
-        if not full_snapshot_examples:
-            pytest.skip("No whole-snapshot examples in synced_test_db")
+        # sync_all() generates full-snapshot examples for all snapshots
+        assert full_snapshot_examples, "Expected full-snapshot examples from test-trivial fixture"
 
         # Remember first full-snapshot example details for verification
         first_example = full_snapshot_examples[0]
         expected_snapshot = first_example.snapshot_slug
-        # Whole-snapshot examples have files=NULL and files_hash=NULL, so we check snapshot slug only
+        # Whole-snapshot examples use AllFilesScope, so we check snapshot slug and scope_hash
 
     main()
 
@@ -39,9 +40,8 @@ def test_query_full_snapshot_train_examples_with_synced_data(synced_test_db, moc
     captured = capsys.readouterr()
     output = captured.out
 
-    # Verify output structure
+    # Verify output structure (table uses Rich formatting, not plain text separators)
     assert "Full-Snapshot Train Examples" in output
-    assert "=" * 80 in output
     assert "Snapshot" in output
 
     # Verify specific data from fixture appears
@@ -52,9 +52,8 @@ def test_query_full_snapshot_train_examples_with_synced_data(synced_test_db, moc
         assert "Usage with run_critic_on_example:" in output
         assert "run_critic_on_example(" in output
         assert "snapshot_slug=" in output
-        # Whole-snapshot examples use files_hash=None
-        assert "files_hash=None" in output
-
+        # Whole-snapshot examples use scope_hash for AllFilesScope
+        assert "scope_hash=" in output
 
 def test_query_full_snapshot_train_examples_empty_database(test_db, mock_agent_setup, capsys):
     """Test that query_full_snapshot_train_examples handles empty database gracefully."""
@@ -68,5 +67,4 @@ def test_query_full_snapshot_train_examples_empty_database(test_db, mock_agent_s
     # Should show header with 0 examples
     assert "Full-Snapshot Train Examples (0 total)" in output
     assert "Snapshot" in output
-    assert "Files Hash" in output
-    assert "File Count" in output
+    assert "Scope Hash" in output or "scope_hash" in output

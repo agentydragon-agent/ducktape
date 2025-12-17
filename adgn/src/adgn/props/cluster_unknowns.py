@@ -17,8 +17,7 @@ from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
 from adgn.props.db import get_session
-from adgn.props.db.models import Critique, GraderRun
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision, ReportedIssue
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 
@@ -29,10 +28,10 @@ CLUSTER_SUBMIT_MOUNT_PREFIX = "cluster_submit"
 
 
 class ClusteredIssueID(BaseModel):
-    """Unique identifier for an issue within a critique (critique_id, tp_id)."""
+    """Unique identifier for an issue within a critic run (critic_run_id, tp_id)."""
 
-    critique_id: UUID
-    tp_id: str  # Issue ID string (from DB model)
+    critic_run_id: UUID
+    tp_id: str  # Issue ID string (from reported issues table)
 
     model_config = ConfigDict(frozen=True)
 
@@ -57,33 +56,39 @@ class ClusterSubmitPayload(BaseModel):
     clusters: list[ClusterSpec]
 
 
-def _extract_unknowns_from_run(db_run: GraderRun, critique: Critique) -> list[UnknownIssue]:
+def _extract_unknowns_from_run(session, db_run: GraderRun, reported_issues: list) -> list[UnknownIssue]:
     """Extract unknown issues from a single grader run.
 
-    Returns empty list if critic result is not success or if no novel issues found.
+    Returns empty list if critic result is not complete or if no novel issues found.
     """
-    # Skip grader runs where output is None (incomplete/failed runs)
-    if db_run.output is None:
+    # Skip grader runs that didn't complete successfully
+    if db_run.status != GraderRunStatus.COMPLETED:
         return []
 
-    # Skip grader runs that exceeded max turns (no novel_critique_issues)
-    if not isinstance(db_run.output, DBGraderSuccess):
+    # Query grading decisions with no TP match (unknowns)
+    unknown_decisions = (
+        session.query(GradingDecision)
+        .filter_by(grader_run_id=db_run.id)
+        .filter(GradingDecision.target_tp_id.is_(None))
+        .all()
+    )
+
+    if not unknown_decisions:
         return []
 
-    # Use DB models directly (no conversion needed)
-    critique_payload_db = critique.payload
-    critique_id = db_run.critique_id
+    # Build a map of issue_id -> ReportedIssue for quick lookup
+    issues_by_id = {issue.issue_id: issue for issue in reported_issues}
 
-    # Extract unknown issues (access nested fields directly from DB models)
+    # Extract unknown issues (build from grading decisions)
     return [
         UnknownIssue(
-            tp_id=ClusteredIssueID(critique_id=critique_id, tp_id=entry.id),
+            tp_id=ClusteredIssueID(critic_run_id=db_run.critic_run_id, tp_id=decision.input_issue_id),
             rationale=Rationale(matching_issue.rationale),
-            files={Path(fo.path) for occ in matching_issue.occurrences for fo in occ.files},
+            files={Path(loc.file) for occ in matching_issue.occurrences for loc in occ.locations},
         )
-        for entry in db_run.output.unknowns
-        if (matching_issue := next((issue for issue in critique_payload_db.issues if issue.id == entry.id), None))
-        is not None
+        for decision in unknown_decisions
+        if decision.input_issue_id is not None
+        and (matching_issue := issues_by_id.get(decision.input_issue_id)) is not None
     ]
 
 
@@ -101,7 +106,7 @@ async def _cluster_snapshot(snapshot_issues: list[UnknownIssue], out_root: Path,
             nonlocal result
             seen = {it for c in payload.clusters for it in c.issue_ids}
             all_keys = {u.tp_id for u in snapshot_issues}
-            missing = sorted(all_keys - seen, key=lambda x: (x.critique_id, x.tp_id))
+            missing = sorted(all_keys - seen, key=lambda x: (x.critic_run_id, x.tp_id))
             if missing:
                 raise ValueError(f"missing {len(missing)} issue(s) in clusters; first: {missing[:3]}")
 
@@ -156,14 +161,14 @@ async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None,
     # Load unknown issues from grader runs in database, partitioned by snapshot
     by_spec: dict[str, list[UnknownIssue]] = defaultdict(list)
     with get_session() as session:
-        results = (
-            session.query(GraderRun, Critique)
-            .join(Critique, GraderRun.critique_id == Critique.id)
-            .filter(GraderRun.output.is_not(None))
-            .all()
-        )
-        for db_run, critique in results:
-            by_spec[db_run.snapshot_slug].extend(_extract_unknowns_from_run(db_run, critique))
+        # Load grader runs and their reported issues
+        # Query grader runs that completed successfully
+        grader_runs = session.query(GraderRun).filter_by(status=GraderRunStatus.COMPLETED).all()
+
+        for db_run in grader_runs:
+            # Load reported issues for this critic run
+            reported_issues = session.query(ReportedIssue).filter_by(critic_run_id=db_run.critic_run_id).all()
+            by_spec[db_run.snapshot_slug].extend(_extract_unknowns_from_run(session, db_run, reported_issues))
 
     if not by_spec:
         raise RuntimeError("no unknown issues found in grader runs in database")

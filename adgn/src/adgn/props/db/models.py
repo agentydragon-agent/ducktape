@@ -8,17 +8,21 @@ Database schema documentation:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from datetime import datetime
+from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
 from uuid import UUID, uuid4
 
 from pydantic import BaseModel, TypeAdapter
+
+if TYPE_CHECKING:
+    from adgn.props.db.examples import Example
+
 from sqlalchemy import (
-    Boolean,
     Enum,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -30,26 +34,38 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
-from adgn.props.db.snapshots import (
-    DBCriticOutput,
-    DBCriticSubmitPayload,
-    DBGraderOutput,
-    DBKnownFalsePositive,
-    DBTruePositiveIssue,
-)
-from adgn.props.files_hash import hash_file_set
+from adgn.props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
+from adgn.props.models.critic_scopes import ScopeKind
 from adgn.props.models.snapshot import BundleFilter, Source
 from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 from adgn.props.splits import Split
 
 T = TypeVar("T", bound=BaseModel)
+
+
+class CriticRunStatus(StrEnum):
+    """Critic run status enumeration."""
+
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    MAX_TURNS_EXCEEDED = "max_turns_exceeded"
+    CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
+    REPORTED_FAILURE = "reported_failure"
+
+
+class GraderRunStatus(StrEnum):
+    """Grader run status enumeration."""
+
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    MAX_TURNS_EXCEEDED = "max_turns_exceeded"
 
 
 class PydanticColumn(TypeDecorator[T]):
@@ -126,30 +142,52 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
         return SnapshotSlug(validated)
 
 
-class SplitColumn(TypeDecorator[Split]):
-    """SQLAlchemy column type for Split enum.
+E = TypeVar("E", bound=StrEnum)
 
-    Uses PostgreSQL ENUM type with values derived from Split enum.
+
+class StrEnumColumn(TypeDecorator[E]):
+    """Generic SQLAlchemy column type for StrEnum types.
+
+    Uses PostgreSQL ENUM type with values derived from the Python enum.
+    Automatically handles conversion between Python enum and database string.
+
+    Usage:
+        class MyEnum(StrEnum):
+            FOO = "foo"
+            BAR = "bar"
+
+        # In type_annotation_map:
+        MyEnum: StrEnumColumn(MyEnum, name="my_enum_type")
+
+        # In model:
+        my_field: Mapped[MyEnum] = mapped_column()
     """
 
     impl = Enum
     cache_ok = True
 
-    def __init__(self):
+    def __init__(self, enum_class: type[E], name: str):
+        """Initialize StrEnumColumn.
+
+        Args:
+            enum_class: The StrEnum class to use
+            name: Name for the PostgreSQL enum type
+        """
+        self._enum_class = enum_class
         # Derive SQL enum values from Python enum to keep them in sync
-        super().__init__(*[e.value for e in Split], name="split_enum", create_constraint=True, native_enum=True)
+        super().__init__(*[e.value for e in enum_class], name=name, create_constraint=True, native_enum=True)
 
-    def process_bind_param(self, value: Split | str | None, dialect: Any) -> str | None:
-        """Convert Split enum to string for storage (Python → DB)."""
+    def process_bind_param(self, value: E | str | None, dialect: Any) -> str | None:
+        """Convert enum to string for storage (Python → DB)."""
         if value is None:
             return None
-        return value.value if isinstance(value, Split) else str(value)
+        return value.value if isinstance(value, self._enum_class) else str(value)
 
-    def process_result_value(self, value: str | None, dialect: Any) -> Split | None:
-        """Convert string to Split enum after loading (DB → Python)."""
+    def process_result_value(self, value: str | None, dialect: Any) -> E | None:
+        """Convert string to enum after loading (DB → Python)."""
         if value is None:
             return None
-        return Split(value)
+        return self._enum_class(value)
 
 
 class CanonicalIssuesSnapshot(BaseModel):
@@ -176,7 +214,9 @@ class Base(DeclarativeBase):
         dict[str, Any]: JSONB,
         UUID: PG_UUID(as_uuid=True),
         SnapshotSlug: SnapshotSlugColumn(),
-        Split: SplitColumn(),
+        Split: StrEnumColumn(Split, name="split_enum"),
+        CriticRunStatus: StrEnumColumn(CriticRunStatus, name="critic_run_status_enum"),
+        GraderRunStatus: StrEnumColumn(GraderRunStatus, name="grader_run_status_enum"),
     }
 
 
@@ -190,7 +230,7 @@ class Snapshot(Base):
     __tablename__ = "snapshots"
 
     slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    split: Mapped[Split] = mapped_column(SplitColumn(), nullable=False)
+    split: Mapped[Split] = mapped_column(nullable=False)
     source: Mapped[Source] = mapped_column(PydanticColumn(Source), nullable=False)
     bundle: Mapped[BundleFilter | None] = mapped_column(PydanticColumn(BundleFilter), nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -206,13 +246,16 @@ class Snapshot(Base):
         back_populates="snapshot_obj", cascade="all, delete-orphan"
     )
     # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
-    # GEPA maps SnapshotInput → DataId via list position, so examples must load in stable order
+    # GEPA maps Example → DataId via list position, so examples must load in stable order
     examples: Mapped[list[Example]] = relationship(
-        back_populates="snapshot_obj", cascade="all, delete-orphan", order_by="Example.files_hash"
+        "Example",
+        foreign_keys="[Example.snapshot_slug]",
+        back_populates="snapshot_obj",
+        cascade="all, delete-orphan",
+        order_by="Example.scope_hash",
     )
     critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
     grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
-    critiques: Mapped[list[Critique]] = relationship(back_populates="snapshot_obj")
 
     @classmethod
     def get(cls, slug: SnapshotSlug) -> Snapshot | None:
@@ -335,138 +378,6 @@ class FalsePositive(Base):
         return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
-class Example(Base):
-    """Training/evaluation examples.
-
-    Defines which file sets to evaluate against.
-    All examples (train/valid/test) are stored here.
-
-    Two kinds of examples:
-    1. Whole-snapshot: is_whole_snapshot=TRUE, files=NULL, files_hash=NULL
-       - One per snapshot (targets all files with issues)
-    2. File-set: is_whole_snapshot=FALSE, files=JSONB list, files_hash=SHA256
-       - Multiple per snapshot (targets specific file subsets)
-
-    Auto-generated from expect_caught_from data at db sync time.
-    See docs/training_strategy.md for details on example generation.
-    """
-
-    __tablename__ = "examples"
-    __table_args__ = (
-        Index("ix_examples_snapshot_slug", "snapshot_slug"),
-        Index("uq_examples_whole_snapshot", "snapshot_slug", unique=True, postgresql_where="is_whole_snapshot = TRUE"),
-        Index(
-            "uq_examples_file_set",
-            "snapshot_slug",
-            "files_hash",
-            unique=True,
-            postgresql_where="is_whole_snapshot = FALSE",
-        ),
-    )
-
-    # Primary key (surrogate)
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-
-    # Foreign keys
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), nullable=False
-    )
-
-    # Example type flag
-    is_whole_snapshot: Mapped[bool] = mapped_column(
-        Boolean,
-        nullable=False,
-        default=False,
-        server_default=func.false(),
-        comment="TRUE for whole-snapshot examples, FALSE for file-set examples",
-    )
-
-    # File-set fields (NULL for whole-snapshot examples)
-    files_hash: Mapped[str | None] = mapped_column(
-        String(64), nullable=True, comment="SHA256 hash of normalized files field (NULL for whole-snapshot)"
-    )
-    files: Mapped[list[str] | None] = mapped_column(
-        JSONB(none_as_null=True), nullable=True, comment="List of file paths to review (NULL for whole-snapshot)"
-    )
-
-    # Timestamps
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships (no back-populate from CriticRun - no FK)
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="examples")
-
-    def __post_init__(self) -> None:
-        """Validate Example invariants after construction."""
-        self.validate()
-
-    def validate(self) -> None:
-        """Validate that this Example satisfies the check constraint.
-
-        Raises:
-            ValueError: If the example violates the constraint
-        """
-        if self.is_whole_snapshot:
-            # Whole-snapshot example must have NULL files and files_hash
-            if self.files is not None:
-                raise ValueError("Whole-snapshot example must have files=None")
-            if self.files_hash is not None:
-                raise ValueError("Whole-snapshot example must have files_hash=None")
-        else:
-            # File-set example must have both files and files_hash
-            if self.files is None:
-                raise ValueError("File-set example must have files (not None)")
-            if self.files_hash is None:
-                raise ValueError("File-set example must have files_hash (not None)")
-            # Validate files are sorted
-            if self.files != sorted(self.files):
-                raise ValueError(f"File-set example files must be sorted: {self.files}")
-
-    @classmethod
-    def whole_snapshot(cls, snapshot_slug: SnapshotSlug) -> Example:
-        """Factory method for creating a whole-snapshot example.
-
-        Args:
-            snapshot_slug: The snapshot slug
-
-        Returns:
-            Example with is_whole_snapshot=TRUE, files=None, files_hash=None
-        """
-        return cls(snapshot_slug=snapshot_slug, is_whole_snapshot=True, files=None, files_hash=None)
-
-    @classmethod
-    def file_set(cls, snapshot_slug: SnapshotSlug, files: Iterable[str | Path]) -> Example:
-        """Factory method for creating a file-set example.
-
-        Encapsulates file normalization (sorting, stringification) and hash computation.
-
-        Args:
-            snapshot_slug: The snapshot slug
-            files: File paths (any iterable of str or Path objects)
-
-        Returns:
-            Example with is_whole_snapshot=FALSE, populated files and files_hash
-        """
-        # Normalize to sorted list of strings
-        files_list = sorted(str(p) for p in files)
-
-        # Compute hash
-        files_hash = hash_file_set(files_list)
-
-        return cls(snapshot_slug=snapshot_slug, is_whole_snapshot=False, files=files_list, files_hash=files_hash)
-
-    @classmethod
-    def get_for_snapshot(cls, snapshot_slug: SnapshotSlug) -> list[Example]:
-        """Get all examples for a snapshot."""
-
-        session = Session.object_session(cls)
-        if session is None:
-            raise RuntimeError("Model not bound to session")
-        return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
-
-
 class Prompt(Base):
     """Critic prompt template identified by SHA256 hash."""
 
@@ -515,49 +426,22 @@ class PromptOptimizationRun(Base):
     grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="prompt_optimization_run")
 
 
-class Critique(Base):
-    """Critique result (list of issues) for a snapshot.
-
-    May come from a critic run (via critic_runs.critique_id FK)
-    or be manually created/imported.
-
-    Payload uses DBCriticSubmitPayload (DB persistence model).
-    """
-
-    __tablename__ = "critiques"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
-    )
-    # TODO: Add critic_scope_id FK to critic_scopes table to track which scope was used
-    # for targeted reviews (not full-snapshot). This enables per-scope evaluation metrics
-    # and better attribution of critique results to specific training examples.
-    payload: Mapped[DBCriticSubmitPayload] = mapped_column(
-        PydanticColumn(DBCriticSubmitPayload),
-        nullable=False,
-        comment="Critique payload (DB model). Conversion to/from MCP model happens in critic layer.",
-    )
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critiques")
-    critic_run: Mapped[CriticRun | None] = relationship(
-        back_populates="critique_obj", foreign_keys="CriticRun.critique_id"
-    )
-    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="critique_obj")
-
-
 class CriticRun(Base):
     """Single critic run (code → candidate issues).
 
-    Links to the critique it produced (if successful).
+    Produces reported issues (stored in normalized reported_issues table).
+    Can be graded by one or more grader runs.
     """
 
     __tablename__ = "critic_runs"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "scope_hash"],
+            ["examples.snapshot_slug", "examples.scope_hash"],
+            ondelete="RESTRICT",
+            name="critic_runs_example_fk",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
     transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
@@ -566,18 +450,19 @@ class CriticRun(Base):
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
-    critique_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=True)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
-    files: Mapped[list[str]] = mapped_column(JSONB, nullable=False, comment="Files in critic scope")
-    files_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="SHA256 hash of sorted file paths for cache lookup"
+    scope_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, comment="SHA256 hash of canonical JSON scope structure (references examples table)"
     )
-    output: Mapped[DBCriticOutput | None] = mapped_column(
-        PydanticColumn(DBCriticOutput),
-        nullable=True,
-        comment="Critic output (discriminated union: success, max_turns_exceeded, or context_length_exceeded). NULL only during initial creation, always set after run completes.",
+    status: Mapped[CriticRunStatus] = mapped_column(
+        nullable=False,
+        server_default="in_progress",
+        comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
+    )
+    completion_summary: Mapped[str | None] = mapped_column(
+        String, nullable=True, comment="Markdown summary from agent when status='completed'"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -587,16 +472,27 @@ class CriticRun(Base):
     # Relationships
     prompt_obj: Mapped[Prompt] = relationship(back_populates="critic_runs")
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critic_runs")
-    critique_obj: Mapped[Critique | None] = relationship(
-        back_populates="critic_run", foreign_keys=[critique_id], post_update=True
+    example_obj: Mapped[Example] = relationship(
+        foreign_keys=[snapshot_slug, scope_hash], back_populates="critic_runs", overlaps="critic_runs,snapshot_obj"
     )
+    reported_issues: Mapped[list[ReportedIssue]] = relationship(
+        back_populates="critic_run", cascade="all, delete-orphan"
+    )
+    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="critic_run_obj")
     prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="critic_runs")
+    events: Mapped[list[Event]] = relationship(
+        foreign_keys="[Event.transcript_id]",
+        primaryjoin="CriticRun.transcript_id == foreign(Event.transcript_id)",
+        order_by="[Event.sequence_num]",
+        viewonly=True,
+    )
 
 
 class GraderRun(Base):
-    """Single grader run (critique + snapshot → metrics).
+    """Single grader run (critic_run + snapshot → metrics).
 
-    No direct prompt link; linked via critique → critic_run → prompt.
+    Grades the issues reported by a critic run against canonical ground truth.
+    No intermediate Critique - grader reads directly from reported_issues table.
 
     Tracking canonical issues:
         canonical_issues_snapshot stores the TPs+FPs used at grading time.
@@ -616,7 +512,7 @@ class GraderRun(Base):
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
     )
     model: Mapped[str] = mapped_column(String, nullable=False)
-    critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critiques.id"), nullable=False)
+    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critic_runs.id"), nullable=False)
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
@@ -625,10 +521,13 @@ class GraderRun(Base):
         nullable=False,
         comment="Snapshot of canonical TPs+FPs used at grading time",
     )
-    output: Mapped[DBGraderOutput] = mapped_column(
-        PydanticColumn(DBGraderOutput),
+    status: Mapped[GraderRunStatus] = mapped_column(
         nullable=False,
-        comment="Grader output (discriminated union: success or max_turns_exceeded)",
+        server_default="in_progress",
+        comment="Run status: in_progress, completed, or max_turns_exceeded",
+    )
+    notes_md: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="Markdown notes/summary from grader agent"
     )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -637,8 +536,137 @@ class GraderRun(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="grader_runs")
-    critique_obj: Mapped[Critique] = relationship(back_populates="grader_runs")
+    critic_run_obj: Mapped[CriticRun] = relationship(back_populates="grader_runs")
     prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="grader_runs")
+    decisions: Mapped[list[GradingDecision]] = relationship(back_populates="grader_run", cascade="all, delete-orphan")
+    events: Mapped[list[Event]] = relationship(
+        foreign_keys="[Event.transcript_id]",
+        primaryjoin="GraderRun.transcript_id == foreign(Event.transcript_id)",
+        order_by="[Event.sequence_num]",
+        viewonly=True,
+    )
+
+
+class ReportedIssue(Base):
+    """Issue reported by the critic agent during code review.
+
+    Part of the critic workflow - agent creates issue headers and links occurrences.
+    Uses compound primary key (critic_run_id, issue_id) for scoped uniqueness.
+    Agent uses hard DELETE to remove incorrect issues.
+    """
+
+    __tablename__ = "reported_issues"
+
+    critic_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("critic_runs.id", ondelete="CASCADE"), primary_key=True, nullable=False
+    )
+    issue_id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    critic_run: Mapped[CriticRun] = relationship(back_populates="reported_issues")
+    occurrences: Mapped[list[ReportedIssueOccurrence]] = relationship(
+        back_populates="reported_issue", cascade="all, delete-orphan"
+    )
+
+
+class ReportedIssueOccurrence(Base):
+    """Specific location(s) for a reported issue.
+
+    Each occurrence has 1+ locations (JSONB array).
+    Each location: {file: str, start_line?: int, end_line?: int}
+
+    Example:
+    locations = [
+        {"file": "src/foo.py", "start_line": 10, "end_line": 20},
+        {"file": "src/bar.py", "start_line": 30, "end_line": 40}
+    ]
+
+    CHECK constraint ensures locations is non-empty array.
+    """
+
+    __tablename__ = "reported_issue_occurrences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    reported_issue_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Locations array (1+ location anchors)
+    # Each location: DBLocationAnchor(file: str, start_line?: int, end_line?: int)
+    locations: Mapped[list[DBLocationAnchor]] = mapped_column(PydanticColumn(list[DBLocationAnchor]), nullable=False)
+
+    # Audit trail
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    cancelled_at: Mapped[datetime | None] = mapped_column(TIMESTAMP, nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Foreign key to composite primary key
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["critic_run_id", "reported_issue_id"],
+            ["reported_issues.critic_run_id", "reported_issues.issue_id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    reported_issue: Mapped[ReportedIssue] = relationship(back_populates="occurrences")
+
+
+class GradingDecision(Base):
+    """Grading decision linking an input issue to a ground truth occurrence (or no-match).
+
+    Unified table for TP, FP, and no-match decisions (discriminated by NULL pattern):
+    - TP match: target_tp_id + target_tp_occurrence_id are NOT NULL
+    - FP match: target_fp_id + target_fp_occurrence_id are NOT NULL
+    - No match: All targets are NULL, credit must be 0.0
+
+    Database constraints:
+    - CHECK constraint ensures input_issue_id corresponds to a reported issue in the
+      critique being graded (validates via grader_run -> critic_run -> reported_issues)
+    - SQL trigger enforces credit sum ≤1.0 per occurrence (see check_credit_sum function)
+
+    Agent uses hard DELETE to remove incorrect decisions.
+    """
+
+    __tablename__ = "grading_decisions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    grader_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("grader_runs.id", ondelete="CASCADE"), nullable=False
+    )
+    input_issue_id: Mapped[str] = mapped_column(String, nullable=False)
+
+    # Target: TP occurrence (nullable)
+    target_tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_tp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Target: FP occurrence (nullable)
+    target_fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_fp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Matching metadata
+    credit: Mapped[float] = mapped_column(nullable=False)
+    rationale: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Audit trail
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    grader_run: Mapped[GraderRun] = relationship(back_populates="decisions")
+
+    @classmethod
+    def get_active_for_run(cls, session: Session, grader_run_id: UUID) -> list[GradingDecision]:
+        """Get all decisions for a grader run.
+
+        Note: Soft-delete was removed, so all persisted decisions are active.
+        """
+        return list(
+            session.execute(select(cls).where(cls.grader_run_id == grader_run_id).order_by(cls.created_at))
+            .scalars()
+            .all()
+        )
 
 
 class ModelMetadata(Base):
@@ -716,12 +744,12 @@ class OccurrenceCredit(Base):
 
     Detailed view with one row per (grader_run, occurrence), fully denormalized for filtering/grouping:
     - Run identification (grader_run_id, transcript_id, graded_at)
-    - Snapshot/Example context (snapshot_slug, split, files_hash, is_whole_snapshot, reviewed_files)
+    - Snapshot/Example context (snapshot_slug, split, scope_hash, scope_kind, reviewed_scope)
     - Critique provenance (critique_id, critic_run_id, critic_transcript_id, prompt_sha256, prompt_text)
     - Models (critic_model, grader_model)
     - Occurrence details (tp_id, occurrence_id, found_credit, matched_by_json, grader_rationale)
 
-    The view is created by Alembic migration 20251215000002_add_occurrence_views.py.
+    The view is created by Alembic migration 20251216000000_replace_is_whole_snapshot_with_scope_kind.py.
     """
 
     __tablename__ = "occurrence_credits"
@@ -739,9 +767,9 @@ class OccurrenceCredit(Base):
 
     # Snapshot/Example context
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
-    split: Mapped[Split] = mapped_column(SplitColumn(), nullable=False)
-    files_hash: Mapped[str] = mapped_column(String, nullable=False)
-    is_whole_snapshot: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    split: Mapped[Split] = mapped_column(nullable=False)
+    scope_hash: Mapped[str] = mapped_column(String, nullable=False)
+    scope_kind: Mapped[ScopeKind] = mapped_column(String, nullable=False)
     reviewed_files: Mapped[list[str]] = mapped_column(PydanticColumn(list[str]), nullable=False)
 
     # Critique provenance
@@ -762,85 +790,193 @@ class OccurrenceCredit(Base):
     grader_rationale: Mapped[str] = mapped_column(Text, nullable=False)
 
 
+class CriticRunOccurrenceStats(Base):
+    """Per-critic-run occurrence statistics from critic_run_occurrence_stats database VIEW.
+
+    Intermediate view that aggregates occurrence metrics per critic run, across all graders:
+    - avg_occurrences_caught: Average raw occurrence count across graders for this run
+    - n_catchable_occurrences: Total occurrences that could be caught (computed once)
+    - n_grader_runs: How many graders ran on this critic run
+
+    This eliminates duplication - both aggregated_recall_by_prompt and
+    aggregated_recall_by_example SELECT from this view.
+
+    Failed critic runs (max_turns/context_length) have avg_occurrences_caught = NULL.
+
+    The view is created by migration 20251217000001_aggregate_over_graders.py
+    """
+
+    __tablename__ = "critic_run_occurrence_stats"
+    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    # Primary key
+    critic_run_id: Mapped[UUID] = mapped_column(primary_key=True)
+
+    # Identifiers
+    prompt_sha256: Mapped[str] = mapped_column(String, nullable=False)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
+    scope_hash: Mapped[str] = mapped_column(String, nullable=False)
+    split: Mapped[Split] = mapped_column(nullable=False)
+    critic_model: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[CriticRunStatus] = mapped_column(nullable=False)
+
+    # Occurrence metrics (aggregated across graders)
+    avg_occurrences_caught: Mapped[float | None] = mapped_column(nullable=True)
+    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
 class AggregatedRecallByPrompt(Base):
     """Aggregated recall by prompt from aggregated_recall_by_prompt database VIEW (not a table).
 
-    Aggregates recall metrics per (split, prompt_sha256, critic_model, grader_model, is_whole_snapshot):
-    - Averages occurrence credits across replicate runs
-    - Computes total credit, recall, and counts (occurrences, snapshots, examples, runs)
-    - Includes confidence bounds (ucb, lcb) and variance (recall_stddev) for uncertainty awareness
-    - Tracks failure modes (max_turns_exceeded, context_length_exceeded)
+    Computes occurrence-based weighted metrics per (split, prompt_sha256, critic_model, scope_kind):
+    - Aggregates over all grader models (grader_model removed from GROUP BY)
+    - Grouped by scope_kind to allow filtering by scope type (entire_snapshot vs explicit_files)
+    - Computes raw occurrence counts (not percentages) for occurrence-based weighting
+    - Tracks catchable occurrences for dataset-level recall computation
+    - Splits metrics: among_successful vs overall (includes failures as zero)
+    - Explicit failure tracking (max_turns_exceeded, context_length_exceeded, reported_failure)
+
+    OCCURRENCE-BASED WEIGHTING:
+    Examples with more occurrences contribute proportionally more to aggregate metrics.
+    Dataset-level recall: SUM(avg_occurrences_caught) / SUM(total_catchable_occurrences)
+    This is NOT average of per-example percentages.
 
     Use cases:
-    - CLI stats: "Show me recall for all prompts on VALID split"
-    - Prompt optimizer: "Which prompt has highest recall on TRAIN?" (check n_examples >= 5, use UCB/LCB)
+    - CLI stats: "Show me occurrence-weighted recall for all prompts on VALID split"
+    - Prompt optimizer: "Which prompt catches the most occurrences on TRAIN?"
+    - Scope-specific analysis: "How do prompts perform on full-snapshot vs per-file examples?"
     - Leaderboard queries
-    - Failure analysis: "Which prompts frequently get stuck?"
+    - Failure analysis: "Which prompts frequently hit max_turns or context limits?"
 
-    The view is created by Alembic migration 20251215000002_add_occurrence_views.py
-    and updated by migrations:
-    - 20251215000008_add_failure_counts_to_aggregated_views.py (failure tracking)
-    - 20251217000000_add_targeted_validation_mode.py (stats columns: n_runs, recall_stddev, ucb, lcb)
+    The view is created and updated by migration 20251220000003_add_status_to_validation_run_aggregates.py
     """
 
     __tablename__ = "aggregated_recall_by_prompt"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (matches view GROUP BY)
-    split: Mapped[Split] = mapped_column(SplitColumn(), primary_key=True)
+    # Composite primary key (matches view GROUP BY - no grader_model!)
+    split: Mapped[Split] = mapped_column(primary_key=True)
     prompt_sha256: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
-    is_whole_snapshot: Mapped[bool] = mapped_column(Boolean, primary_key=True)
+    scope_kind: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Aggregated metrics
-    total_credit: Mapped[float] = mapped_column(nullable=False)
-    n_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
-    recall: Mapped[float] = mapped_column(nullable=False)
-    n_snapshots: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_examples: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    # Stats columns (added in migration 20251217000000)
-    n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
-    recall_stddev: Mapped[float | None] = mapped_column(nullable=True)
-    ucb: Mapped[float] = mapped_column(nullable=False)
-    lcb: Mapped[float] = mapped_column(nullable=False)
-
-    # Failure tracking (added in migration 20251215000008)
+    # Count by outcome
+    n_successful: Mapped[int] = mapped_column(Integer, nullable=False)
     n_max_turns_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
     n_context_length_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_reported_failure: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Total examples and runs (added in 20251220000003)
+    n_examples: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Occurrence counts (raw counts, not percentages!)
+    avg_occurrences_caught_among_successful: Mapped[float | None] = mapped_column(nullable=True)
+    occurrences_variance_among_successful: Mapped[float | None] = mapped_column(nullable=True)
+    avg_occurrences_caught_overall: Mapped[float] = mapped_column(nullable=False)
+
+    # Catchable occurrences (for dataset-level recall)
+    avg_catchable_occurrences: Mapped[float] = mapped_column(nullable=False)
+    total_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Computed recall and confidence bounds (added in 20251220000003)
+    recall: Mapped[float | None] = mapped_column(nullable=True)
+    ucb: Mapped[float | None] = mapped_column(nullable=True)
+    lcb: Mapped[float | None] = mapped_column(nullable=True)
+
+    # Grader metadata
+    avg_grader_runs_per_critic: Mapped[float] = mapped_column(nullable=False)
+    total_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
 
 class AggregatedRecallByExample(Base):
     """Aggregated recall by example from aggregated_recall_by_example database VIEW (not a table).
 
-    Aggregates recall metrics per (split, snapshot_slug, files_hash, critic_model, grader_model):
-    - Averages occurrence credits across replicate runs
-    - Computes total credit, recall, and occurrence count
+    Computes occurrence-based weighted metrics per (split, snapshot_slug, scope_hash, critic_model):
+    - Aggregates over all grader models (grader_model removed from GROUP BY)
+    - Same semantics as aggregated_recall_by_prompt but grouped by example instead of prompt
+    - Computes raw occurrence counts (not percentages) for occurrence-based weighting
+    - Tracks catchable occurrences for dataset-level recall computation
 
     Use cases:
-    - CLI stats: "Show me per-example breakdown"
+    - CLI stats: "Show me per-example breakdown with occurrence weighting"
     - Prompt improver: "Which examples does this prompt struggle with?"
     - Training data analysis
 
-    The view is created by Alembic migration 20251215000002_add_occurrence_views.py.
+    The view is created and updated by migration 20251217000001_aggregate_over_graders.py
     """
 
     __tablename__ = "aggregated_recall_by_example"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key
-    split: Mapped[Split] = mapped_column(SplitColumn(), primary_key=True)
+    # Composite primary key (no grader_model!)
+    split: Mapped[Split] = mapped_column(primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    files_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    scope_hash: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
-    grader_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Aggregated metrics
-    total_credit: Mapped[float] = mapped_column(nullable=False)
-    n_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
-    recall: Mapped[float] = mapped_column(nullable=False)
+    # Count by outcome
+    n_successful: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_max_turns_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_context_length_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_reported_failure: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Total runs for this (example, critic_model) combination (added in 20251220000003)
+    n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Occurrence counts (raw counts, not percentages!)
+    avg_occurrences_caught_among_successful: Mapped[float | None] = mapped_column(nullable=True)
+    occurrences_variance_among_successful: Mapped[float | None] = mapped_column(nullable=True)
+    avg_occurrences_caught_overall: Mapped[float] = mapped_column(nullable=False)
+
+    # Catchable occurrences (for dataset-level recall)
+    avg_catchable_occurrences: Mapped[float] = mapped_column(nullable=False)
+    total_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Computed recall (added in 20251220000003)
+    recall: Mapped[float | None] = mapped_column(nullable=True)
+
+    # Grader metadata
+    avg_grader_runs_per_critic: Mapped[float] = mapped_column(nullable=False)
+    total_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class ParetoFrontierByExample(Base):
+    """Pareto frontier from pareto_frontier_by_example database VIEW (not a table).
+
+    For each example, shows the best recall achieved and which prompt SHAs achieved it.
+    Useful for prompt optimization to identify:
+    - Which prompts excel on specific examples (prompt specialization)
+    - Examples where no prompt performs well (improvement opportunities)
+    - Generalist vs specialist prompt patterns
+
+    Use cases:
+    - Prompt optimizer: "Which prompt SHAs win on which examples?"
+    - Ensemble analysis: Combine best prompts for different patterns
+    - Training diagnostics: "Where do all prompts struggle?"
+
+    The view is created by Alembic migration 20251220000001_add_pareto_frontier_view.py.
+    """
+
+    __tablename__ = "pareto_frontier_by_example"
+    __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
+    __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
+
+    # Composite primary key
+    split: Mapped[Split] = mapped_column(primary_key=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    scope_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    scope_kind: Mapped[str] = mapped_column(String, primary_key=True)
+    critic_model: Mapped[str] = mapped_column(String, primary_key=True)
+
+    # Pareto frontier data
+    best_recall: Mapped[float] = mapped_column(nullable=False)
+    winning_prompt_shas: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    winning_prompt_n_runs: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
 
 
 class OccurrenceStatistics(Base):
@@ -864,7 +1000,7 @@ class OccurrenceStatistics(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key
-    split: Mapped[Split] = mapped_column(SplitColumn(), primary_key=True)
+    split: Mapped[Split] = mapped_column(primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)

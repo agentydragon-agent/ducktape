@@ -1,21 +1,22 @@
 """Test that the occurrence_credits view correctly extracts fields from GraderOutput."""
 
-import hashlib
 from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import text
 
-from adgn.props.critic.models import CriticSubmitPayload
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique, Example, GraderRun, Snapshot, TruePositive
+from adgn.props.db.examples import Example
+from adgn.props.db.models import CriticRunStatus, GraderRun, Snapshot, TruePositive
 from adgn.props.grader.models import GraderSuccess, InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
-from adgn.props.grader.persistence import grader_success_to_db
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import ExplicitFileScope
 from adgn.props.models.snapshot import LocalSource
 from adgn.props.models.true_positive import TruePositiveOccurrence
 from adgn.props.rationale import Rationale
+from adgn.props.splits import Split
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
+from tests.props.conftest import make_critic_run, make_reported_issues, populate_grading_decisions
 
 
 def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
@@ -25,11 +26,10 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
     snapshot_slug = SnapshotSlug("test-view/2025-01-01-00")
     critic_transcript_id = uuid4()
     grader_transcript_id = uuid4()
-    critique_id = uuid4()
 
-    # Files for the critic run
+    # Scope for the critic run
     files = ["test/file1.py", "test/file2.py"]
-    files_hash = hashlib.sha256("\n".join(sorted(files)).encode()).hexdigest()
+    scope = ExplicitFileScope(files=files)
 
     # Create GraderSuccess with occurrence results
     grader_success = GraderSuccess(
@@ -45,12 +45,9 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         summary=Rationale("Test grading summary"),
     )
 
-    # Convert to DB format
-    grader_output_db = grader_success_to_db(grader_success)
-
     with get_session() as session:
         # Insert snapshot
-        snapshot = Snapshot(slug=snapshot_slug, split="valid", source=LocalSource(vcs="local", root="."))
+        snapshot = Snapshot(slug=snapshot_slug, split=Split.VALID, source=LocalSource(vcs="local", root="."))
         session.add(snapshot)
 
         # Insert TruePositive records (required for snapshot_files_with_issues view)
@@ -85,37 +82,40 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         session.add(tp2)
 
         # Insert example (required for occurrence_credits view join)
-        example = Example.file_set(snapshot_slug=snapshot_slug, files=files)
+        example = Example.from_scope(snapshot_slug, scope)
         session.add(example)
+        session.flush()
 
-        # Insert critique (required FK for grader_run)
-        critique_payload = CriticSubmitPayload(issues=[], notes_md=None)
-        critique = Critique(id=critique_id, snapshot_slug=snapshot_slug, payload=critique_payload)
-        session.add(critique)
-
-        # Insert critic run (required for view join)
-        critic_run = CriticRun(
+        # Insert critic run (required for view join) using fixture factory
+        critic_run = make_critic_run(
+            example=example,
             transcript_id=critic_transcript_id,
             prompt_sha256=test_prompt_sha,
-            snapshot_slug=snapshot_slug,
-            model="test-critic-model",
-            critique_id=critique_id,
-            files=files,
-            files_hash=files_hash,
-            output={},
+            status=CriticRunStatus.COMPLETED,
         )
         session.add(critic_run)
+        session.flush()
+
+        # Create reported issues first (required for grading decisions FK)
+        issue_ids = ["input-test-001"]  # From the match in occurrence_results
+        make_reported_issues(critic_run_id=critic_run.id, issue_ids=issue_ids, session=session)
 
         # Insert grader run with output
         grader_run = GraderRun(
             transcript_id=grader_transcript_id,
             snapshot_slug=snapshot_slug,
-            critique_id=critique_id,
+            critic_run_id=critic_run.id,
             model="test-grader-model",
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-            output=grader_output_db,
         )
         session.add(grader_run)
+        session.flush()  # Ensure grader_run.id is available
+
+        # Populate grading_decisions table from MCP occurrence_results
+        populate_grading_decisions(
+            grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
+        )
+
         session.commit()
 
         # Query the occurrence_credits view - verify the run appears with occurrence results

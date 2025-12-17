@@ -50,8 +50,7 @@ from gepa.core.result import GEPAResult
 from gepa.strategies.instruction_proposal import InstructionProposalSignature
 import litellm
 from pydantic import BaseModel
-from sqlalchemy import cast, func
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import func
 
 from adgn.agent.events import REFLECTION_EVENT_TYPES, EventType
 from adgn.openai_utils.model import OpenAIModelProto
@@ -59,20 +58,20 @@ from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.datapoints import get_examples_for_split
+from adgn.props.db.examples import Example, get_examples_for_split
 from adgn.props.db.models import (
     CriticRun as DBCriticRun,
-    Critique,
-    DBCriticSubmitPayload,
+    CriticRunStatus,
     Event,
     GraderRun as DBGraderRun,
+    GraderRunStatus,
+    GradingDecision,
 )
 from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.snapshots import DBCriticOutput, DBGraderOutput
-from adgn.props.gepa.fitness import compute_fitness
-from adgn.props.gepa.models import SnapshotInput
+from adgn.props.db.snapshots import DBCriticSubmitPayload
+from adgn.props.display import short_sha
 from adgn.props.gepa.warm_start import build_historical_gepa_state
-from adgn.props.grader.grader import grade_critique_by_id
+from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
@@ -128,15 +127,13 @@ class CriticTrajectory:
 class CriticOutput:
     """Output from a critic evaluation for GEPA.
 
-    Includes the critic's DB output (success or max_turns_exceeded) and grader output if available.
-
-    TODO: Rename this class to avoid confusion with critic.models.CriticOutput
-    (the MCP I/O discriminated union). Perhaps GEPACriticOutput or CriticEvaluationOutput.
+    Stores status enums instead of JSONB output unions.
+    Semantic data (issues, grading decisions) lives in normalized tables.
     """
 
-    critic_output: DBCriticOutput
-    grader_output: DBGraderOutput | None
-    critique_id: UUID | None
+    critic_status: CriticRunStatus
+    grader_status: GraderRunStatus | None
+    critic_run_id: UUID
 
 
 @dataclass
@@ -152,16 +149,16 @@ class ReflectionExample(BaseModel):
     """Example for GEPA's reflection dataset.
 
     Includes both successful critiques and max_turns_exceeded cases.
-    - critic_output: discriminated union (success or max_turns_exceeded)
-    - grader_output: present only when critic succeeded (None for max_turns_exceeded)
+    Status enums indicate whether critic/grader succeeded.
+    grader_status is None when critic exceeded max turns.
     """
 
     component_name: str
     current_text: str
     score: float
     trajectory: CriticTrajectory
-    critic_output: DBCriticOutput
-    grader_output: DBGraderOutput | None
+    critic_status: CriticRunStatus
+    grader_status: GraderRunStatus | None
 
 
 # =============================================================================
@@ -169,7 +166,7 @@ class ReflectionExample(BaseModel):
 # =============================================================================
 
 
-class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutput]):
+class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
     """GEPA adapter for the props critic.
 
     Implements the GEPAAdapter protocol to allow GEPA to optimize
@@ -177,15 +174,14 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
     DataInst Type and Checkpointing:
     --------------------------------
-    DataInst = SnapshotInput (snapshot_slug + target_files)
+    DataInst = Example (snapshot_slug + scope + scope_hash)
 
-    GEPA's ListDataLoader maps SnapshotInput → integer DataId via list position.
+    GEPA's ListDataLoader maps Example → integer DataId via list position.
     Checkpoints store scores keyed by these integers: {0: 0.85, 2: 0.90, ...}
 
     For warm-start to work, load_datasets() MUST return datasets in deterministic
     order across all runs. This is enforced via:
-    - Snapshot queries: order_by(Snapshot.slug)
-    - Example relationship: order_by="Example.files_hash"
+    - get_examples_for_split() orders by (snapshot_slug, scope_hash)
 
     See warm_start.py for checkpoint reconstruction from historical database runs.
     """
@@ -220,43 +216,74 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             self.propose_new_texts = None
 
     def _make_evaluation_result(
-        self, transcript_id: UUID, critique_id: UUID | None, grader_output: DBGraderOutput | None, capture_traces: bool
+        self, transcript_id: UUID, critic_run_id: UUID, grader_run_id: UUID | None, capture_traces: bool
     ) -> EvaluationResult:
         """Build EvaluationResult by fetching critic output and trajectory from database.
 
         Args:
             transcript_id: Transcript UUID identifying the critic run
-            critique_id: Critique UUID or None if critic ran out of turns
-            grader_output: DBGraderOutput or None if no grader run
+            critic_run_id: Critic run UUID
+            grader_run_id: Grader run UUID or None if no grader run
             capture_traces: Whether to fetch and build trajectory
 
         Returns:
             EvaluationResult with computed score and optional trajectory
         """
-        # Fetch critic output from database
+        # Fetch critic status from database
         with get_session() as session:
             critic_run = session.query(DBCriticRun).filter_by(transcript_id=transcript_id).one()
-            critic_output = critic_run.output
-            assert critic_output is not None
+            critic_status = critic_run.status
 
         # Build trajectory if requested
         trajectory: CriticTrajectory | None = None
         if capture_traces:
             critique_payload_db: DBCriticSubmitPayload | None = None
-            if critique_id is not None:
-                with get_session() as session:
-                    critique = session.get(Critique, critique_id)
-                    assert critique is not None, f"Critique {critique_id} not found"
-                    critique_payload_db = critique.payload
+            # Load payload (only notes_md; issues are in normalized tables)
+            if critic_status == CriticRunStatus.COMPLETED:
+                with get_session() as payload_session:
+                    run = payload_session.get(DBCriticRun, critic_run_id)
+                    critique_payload_db = DBCriticSubmitPayload(notes_md=run.completion_summary) if run else None
 
             filtered_events = _filter_reflection_events(transcript_id)
             trajectory = CriticTrajectory(
                 transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
             )
 
+        # Fetch grader status if grader ran
+        grader_status: GraderRunStatus | None = None
+        if grader_run_id is not None:
+            with get_session() as session:
+                grader_run = session.get(DBGraderRun, grader_run_id)
+                grader_status = grader_run.status if grader_run else None
+
+        # Compute single-run recall (fitness score)
+        # Query grading_decisions table directly for occurrence-level credits
+        # TODO: Deduplicate recall calculation into db/grading.py helper function
+        if grader_run_id is None:
+            score = 0.0
+        else:
+            with get_session() as session:
+                # Pattern 1: Total credit (recall numerator)
+                total_credit = (
+                    session.query(func.sum(GradingDecision.credit))
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
+                    .scalar()
+                    or 0.0
+                )
+                # Pattern 2: Occurrence count (recall denominator)
+                occurrence_count = (
+                    session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingDecision.target_tp_id.isnot(None))
+                    .distinct()
+                    .count()
+                )
+                score = total_credit / occurrence_count if occurrence_count > 0 else 0.0
+
         return EvaluationResult(
-            output=self._build_critic_output(critic_output, grader_output, critique_id),
-            score=compute_fitness(grader_output),
+            output=CriticOutput(critic_status=critic_status, grader_status=grader_status, critic_run_id=critic_run_id),
+            score=score,
             trajectory=trajectory,
         )
 
@@ -361,29 +388,13 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         self.propose_new_texts = propose_new_texts
 
-    @staticmethod
-    def _build_critic_output(
-        critic_output: DBCriticOutput, grader_output: DBGraderOutput | None, critique_id: UUID | None
-    ) -> CriticOutput:
-        """Build CriticOutput from critic DB output, grader output, and critique ID.
-
-        Args:
-            critic_output: DBCriticOutput (database persistence model discriminated union)
-            grader_output: DBGraderOutput (database persistence model), or None if critic ran out of turns
-            critique_id: Critique UUID, or None if critic ran out of turns
-
-        Returns:
-            CriticOutput with critic and grader data
-        """
-        return CriticOutput(critic_output=critic_output, grader_output=grader_output, critique_id=critique_id)
-
     def evaluate(
-        self, batch: list[SnapshotInput], candidate: dict[str, str], capture_traces: bool = False
+        self, batch: list[Example], candidate: dict[str, str], capture_traces: bool = False
     ) -> gepa.EvaluationBatch[CriticTrajectory, CriticOutput]:
         """Evaluate a prompt candidate on a batch of specimens.
 
         Args:
-            batch: List of SnapshotInput to evaluate
+            batch: List of Example to evaluate
             candidate: {"system_prompt": "..."} - the prompt to evaluate
             capture_traces: Whether to capture execution traces
 
@@ -431,7 +442,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
     async def _evaluate_one_specimen(
         self,
-        specimen_input: SnapshotInput,
+        specimen_input: Example,
         prompt_sha256: str,
         capture_traces: bool,
         semaphore: asyncio.Semaphore,
@@ -445,26 +456,26 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             return await self._evaluate_one_specimen_impl(specimen_input, prompt_sha256, capture_traces, docker_client)
 
     async def _evaluate_one_specimen_impl(
-        self, specimen_input: SnapshotInput, prompt_sha256: str, capture_traces: bool, docker_client: aiodocker.Docker
+        self, specimen_input: Example, prompt_sha256: str, capture_traces: bool, docker_client: aiodocker.Docker
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
-        slug = specimen_input.slug
+        slug = specimen_input.snapshot_slug
 
-        # Run critic - use specimen's target_files for consistent cache keys
+        # Run critic - use specimen's scope for consistent cache keys
         # Compositor handles snapshot hydration internally
         critic_input = CriticInput(
             snapshot_slug=slug,
-            files=specimen_input.target_files,  # Use target_files for cache consistency
+            scope=specimen_input.scope,  # Use scope for cache consistency
             prompt_sha256=prompt_sha256,
         )
 
-        _critic_output, critic_run_id, critique_id = await run_critic(
+        critic_run_id, status = await run_critic(
             input_data=critic_input,
             client=self.critic_client,
             docker_client=docker_client,
             hydrator=self.hydrator,
+            db_config=self.db_config,
             prompt_optimization_run_id=None,
-            mount_properties=True,
             verbose=self.verbose,
             max_turns=100,
         )
@@ -476,12 +487,11 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             transcript_id = critic_run.transcript_id
 
         # Grade if critic succeeded
-        grader_output: DBGraderOutput | None = None
-        if critique_id is not None:
+        if status == CriticRunStatus.COMPLETED:
             with get_session() as session:
-                grader_run_id = await grade_critique_by_id(
+                grader_run_id = await grade_critic_run_by_id(
                     session,
-                    critique_id,
+                    critic_run_id,
                     self.grader_client,
                     docker_client,
                     self.hydrator,
@@ -489,46 +499,27 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                     verbose=self.verbose,
                     max_turns=200,
                 )
-                grader_run = session.get(DBGraderRun, grader_run_id)
-                assert grader_run is not None, f"GraderRun {grader_run_id} not found"
-                grader_output = grader_run.output
+                # No need to load grader_run - _make_evaluation_result queries grading_decisions directly
 
-        return self._make_evaluation_result(transcript_id, critique_id, grader_output, capture_traces)
-
-    def _reconstruct_from_cache(
-        self, transcript_id: UUID, critique_id: UUID | None, grader_output: DBGraderOutput | None, capture_traces: bool
-    ) -> EvaluationResult:
-        """Reconstruct an EvaluationResult from cached database runs.
-
-        Args:
-            transcript_id: Transcript UUID from critic run
-            critique_id: Critique UUID from critic run, or None if critic ran out of turns
-            grader_output: DBGraderOutput (extracted inside session at call site), or None if no grader run
-            capture_traces: Whether to fetch events for trajectory
-
-        Returns:
-            EvaluationResult with output, score, and optional trajectory
-        """
-        return self._make_evaluation_result(transcript_id, critique_id, grader_output, capture_traces)
+        # Pass grader_run_id (or None if critic failed) for score calculation
+        return self._make_evaluation_result(
+            transcript_id, critic_run_id, grader_run_id if status == CriticRunStatus.COMPLETED else None, capture_traces
+        )
 
     async def _evaluate_async(
-        self,
-        batch: list[SnapshotInput],
-        candidate: dict[str, str],
-        capture_traces: bool,
-        docker_client: aiodocker.Docker,
+        self, batch: list[Example], candidate: dict[str, str], capture_traces: bool, docker_client: aiodocker.Docker
     ) -> list[EvaluationResult]:
         """Async implementation with database-backed caching.
 
         Three phases:
-        1. Check cache: Query for existing (prompt_sha256, snapshot_slug, files_hash)
+        1. Check cache: Query for existing (prompt_sha256, snapshot_slug, scope_hash)
         2. Evaluate uncached: Run critic+grader only for cache misses
         3. Reorder results: Return in original batch order
 
         Semaphore ensures max_parallelism concurrent critic/grader runs.
 
         Args:
-            batch: List of SnapshotInput to evaluate
+            batch: List of Example to evaluate
             candidate: Prompt candidate dictionary
             capture_traces: Whether to capture execution traces
             docker_client: Docker client created in this event loop
@@ -541,7 +532,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
         # Phase 1: Check DB for each input (single query with LEFT JOIN)
         cached_results: dict[int, EvaluationResult] = {}  # batch_idx -> result found in DB
-        uncached_inputs: list[tuple[int, SnapshotInput]] = []  # (batch_idx, input)
+        uncached_inputs: list[tuple[int, Example]] = []  # (batch_idx, input)
 
         with get_session() as session:
             # Single query: fetch critic runs with optional grader runs via LEFT JOIN
@@ -549,35 +540,32 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
                 session.query(DBCriticRun, DBGraderRun)
                 .outerjoin(
                     DBGraderRun,
-                    (DBCriticRun.critique_id == DBGraderRun.critique_id)
+                    (DBCriticRun.id == DBGraderRun.critic_run_id)
                     & (DBGraderRun.model == self.grader_client.model)
-                    & DBGraderRun.output.isnot(None)
-                    & (DBGraderRun.output != cast(None, JSONB)),
+                    & (DBGraderRun.status == GraderRunStatus.COMPLETED),
                 )
                 .filter(
                     DBCriticRun.prompt_sha256 == prompt_sha256,
                     DBCriticRun.model == self.critic_client.model,
-                    DBCriticRun.output.isnot(None),
+                    DBCriticRun.status == CriticRunStatus.COMPLETED,
                 )
                 .all()
             )
 
-            # Index results by (snapshot_slug, files_hash)
-            # files_hash is None for whole-snapshot examples
-            cache_by_key: dict[tuple[SnapshotSlug, str | None], tuple[DBCriticRun, DBGraderRun | None]] = {
-                (critic.snapshot_slug, critic.files_hash): (critic, grader) for critic, grader in cache_rows
+            # Index results by (snapshot_slug, scope_hash)
+            cache_by_key: dict[tuple[SnapshotSlug, str], tuple[DBCriticRun, DBGraderRun | None]] = {
+                (critic.snapshot_slug, critic.scope_hash): (critic, grader) for critic, grader in cache_rows
             }
 
             # Process each specimen using indexed results
             for idx, specimen_input in enumerate(batch):
-                files_hash = specimen_input.files_hash
-                files_hash_short = files_hash[:8] if files_hash else "whole"
-                cache_key = (specimen_input.slug, files_hash)
+                scope_hash = specimen_input.scope_hash
+                cache_key = (specimen_input.snapshot_slug, scope_hash)
 
                 cache_hit = cache_by_key.get(cache_key)
                 if not cache_hit:
                     logger.info(
-                        f"Cache MISS: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash_short}...)"
+                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
                     )
                     uncached_inputs.append((idx, specimen_input))
                     continue
@@ -586,28 +574,25 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 
                 # Extract critic data
                 transcript_id = critic_run.transcript_id
-                critic_output = critic_run.output
-                critique_id = critic_run.critique_id
-                assert critic_output is not None
+                critic_run_id = critic_run.id
 
                 # Check if grader run is required but missing
-                grader_output: DBGraderOutput | None = None
-                if critique_id is not None:
+                grader_run_id: UUID | None = None
+                if critic_run.status == CriticRunStatus.COMPLETED:
                     if not grader_run:
                         logger.info(
-                            f"Cache MISS (no grader): {specimen_input.slug} (prompt={prompt_sha256[:8]}..., "
-                            f"files_hash={files_hash_short}...)"
+                            f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
                         )
                         uncached_inputs.append((idx, specimen_input))
                         continue
-                    grader_output = grader_run.output
+                    grader_run_id = grader_run.id
 
                 # Cache hit
                 logger.info(
-                    f"Cache HIT: {specimen_input.slug} (prompt={prompt_sha256[:8]}..., files_hash={files_hash_short}...)"
+                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
                 )
-                cached_results[idx] = self._reconstruct_from_cache(
-                    transcript_id, critique_id, grader_output, capture_traces
+                cached_results[idx] = self._make_evaluation_result(
+                    transcript_id, critic_run_id, grader_run_id, capture_traces
                 )
 
         # Phase 2: Evaluate uncached inputs in parallel
@@ -678,14 +663,14 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
             eval_batch.outputs, eval_batch.scores, eval_batch.trajectories, strict=True
         ):
             # Include both successful critiques and max_turns_exceeded cases
-            # grader_output is None when critic exceeded max turns
+            # grader_status is None when critic exceeded max turns
             example = ReflectionExample(
                 component_name="system_prompt",
                 current_text=candidate["system_prompt"],
                 score=score,
                 trajectory=trajectory,
-                critic_output=output.critic_output,
-                grader_output=output.grader_output,
+                critic_status=output.critic_status,
+                grader_status=output.grader_status,
             )
 
             examples.append(example.model_dump())
@@ -698,7 +683,7 @@ class CriticAdapter(gepa.GEPAAdapter[SnapshotInput, CriticTrajectory, CriticOutp
 # =============================================================================
 
 
-async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
+async def load_datasets() -> tuple[list[Example], list[Example]]:
     """Load train and validation datasets for GEPA from database.
 
     Uses the shared datapoints module for consistent filtering logic across
@@ -708,12 +693,12 @@ async def load_datasets() -> tuple[list[SnapshotInput], list[SnapshotInput]]:
     Validation set: Only full-specimen scopes to measure terminal goal (comprehensive review)
 
     Returns:
-        (trainset, valset) tuple of SnapshotInput lists
+        (trainset, valset) tuple of Example lists
 
     Raises:
         ValueError: If any snapshot has no critic scopes
     """
-    logger.info("Loading training examples from critic_scopes database")
+    logger.info("Loading training examples from examples table")
 
     with get_session() as session:
         # Use shared datapoints module for consistent filtering logic
@@ -740,17 +725,17 @@ def _log_run_statistics(critic_model: str, grader_model: str) -> None:
     with get_session() as session:
         # Count critic run statuses using SQL aggregation
         critic_status_counts = (
-            session.query(DBCriticRun.output["tag"].astext, func.count(DBCriticRun.id))
-            .filter(DBCriticRun.model == critic_model, DBCriticRun.output.isnot(None))
-            .group_by(DBCriticRun.output["tag"].astext)
+            session.query(DBCriticRun.status, func.count(DBCriticRun.id))
+            .filter(DBCriticRun.model == critic_model)
+            .group_by(DBCriticRun.status)
             .all()
         )
 
         # Count grader run statuses using SQL aggregation
         grader_status_counts = (
-            session.query(DBGraderRun.output["tag"].astext, func.count(DBGraderRun.id))
-            .filter(DBGraderRun.model == grader_model, DBGraderRun.output.isnot(None))
-            .group_by(DBGraderRun.output["tag"].astext)
+            session.query(DBGraderRun.status, func.count(DBGraderRun.id))
+            .filter(DBGraderRun.model == grader_model)
+            .group_by(DBGraderRun.status)
             .all()
         )
 
@@ -759,8 +744,7 @@ def _log_run_statistics(critic_model: str, grader_model: str) -> None:
     if total_critic > 0:
         logger.info(f"Critic run statistics (model={critic_model}, total={total_critic}):")
         for status, count in sorted(critic_status_counts):
-            pct = count / total_critic
-            logger.info(f"  {status}: {count} ({pct:.1%})")
+            logger.info(f"  {status}: {count} ({count / total_critic:.1%})")
     else:
         logger.info("No critic runs found")
 
@@ -769,8 +753,7 @@ def _log_run_statistics(critic_model: str, grader_model: str) -> None:
     if total_grader > 0:
         logger.info(f"Grader run statistics (model={grader_model}, total={total_grader}):")
         for status, count in sorted(grader_status_counts):
-            pct = count / total_grader
-            logger.info(f"  {status}: {count} ({pct:.1%})")
+            logger.info(f"  {status}: {count} ({count / total_grader:.1%})")
     else:
         logger.info("No grader runs found")
 

@@ -50,6 +50,13 @@ Observation (to investigate)
   - Would need mechanism to render package resources as templates at agent startup
   - Low priority - agents can read from package resources as-is
 
+- Consider SQL schema inspection instead of hand-maintained table docs
+  - Current: system_overview.md manually documents table schemas
+  - Alternative: Show agents SQL schema directly via psql inspection (e.g., `\d reported_issues`)
+  - Could add SQL comments to tables/columns as documentation source of truth
+  - Would eliminate sync burden between migrations and docs
+  - Evaluate after Phase 2 implementation is complete
+
 ## Migration TODOs
 
 - Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc (lint_issue.py)

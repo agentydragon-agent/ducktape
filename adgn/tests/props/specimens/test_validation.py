@@ -12,7 +12,7 @@ from adgn.props.db.models import Snapshot
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.models.snapshot import LocalSource
 
-# Note: synced_test_db fixture is provided in tests/props/conftest.py
+# Note: synced_test_db fixture (production specimens) is provided in tests/props/conftest.py
 
 
 async def test_specimen_issues_and_false_positives_load(

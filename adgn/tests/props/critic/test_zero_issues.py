@@ -9,11 +9,9 @@ from __future__ import annotations
 import pytest
 
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput, CriticSuccess
+from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Critique
-from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.models.critic_scopes import ExplicitFileScope
+from adgn.props.db.models import CriticRun, CriticRunStatus
 from tests.support.responses import ResponsesFactory
 
 # Trivial clean Python code that should have zero issues
@@ -43,51 +41,6 @@ if __name__ == "__main__":
     main()
 '''
 
-# Simple max-recall system prompt that shouldn't find issues in trivial clean code
-SIMPLE_MAX_RECALL_PROMPT = """# Clean Code Critic
-
-Find code quality issues, design smells, and violations of best practices.
-
-## What to Flag
-- Unused imports, variables, functions
-- Type annotation issues (missing, incorrect, inconsistent)
-- Error handling problems (bare except, swallowed exceptions)
-- Code duplication
-- Overly complex functions
-- Missing docstrings for public functions
-- Security issues (hardcoded secrets, SQL injection risks)
-
-## Method
-1. Read files as needed
-2. Look for violations
-3. Report each issue via critic_submit tools
-4. Call submit(issues=N) when done (N=0 if no issues found)
-
-Focus on concrete, actionable findings with specific line numbers.
-"""
-
-
-# Note: Using test_trivial_specimen fixture from conftest.py
-# which loads from tests/props/fixtures/specimens/test-trivial/
-
-
-@pytest.fixture
-def critic_test_db_setup(test_trivial_snapshot_record):
-    """Set up database records for critic testing: Snapshot + prompt.
-
-    Depends on test_trivial_snapshot_record to ensure snapshot record exists.
-
-    Returns:
-        tuple[str, str]: (snapshot_slug, prompt_sha256)
-    """
-    # test_trivial_snapshot_record already created the snapshot record
-    slug = test_trivial_snapshot_record
-
-    # Upsert prompt using proper helper
-    prompt_sha256 = hash_and_upsert_prompt(SIMPLE_MAX_RECALL_PROMPT)
-
-    return slug, prompt_sha256
-
 
 def _make_critic_response_sequence() -> list:
     """Create response sequence for critic that finds zero issues and calls submit(issues_count=0)."""
@@ -95,106 +48,109 @@ def _make_critic_response_sequence() -> list:
 
     return [
         # 1. Read the Python file
-        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000, tool_name="docker_exec")),
+        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000)),
         # 2. Call submit with zero issues
-        factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
+        factory.make(
+            factory.tool_call("critic_submit_submit", {"issues_count": 0, "summary": "Reviewed code, no issues found"})
+        ),
     ]
 
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_zero_issues_submits_successfully(
-    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client, test_specimens_hydrator
+    synced_test_fixtures,
+    test_trivial_specimen,
+    make_openai_client,
+    test_snapshot,
+    test_prompt_sha,
+    subtract_file_scope,
+    async_docker_client,
+    test_specimens_hydrator,
 ):
     """Test that critic successfully calls submit(issues=0) when finding no issues.
 
     This is a regression test for the infinite loop bug where RequireAnyTool()
     forced the agent to call dummy tools instead of completing with submit(issues=0).
     """
-    slug, prompt_sha256 = critic_test_db_setup
-
     # Create fake OpenAI client with expected tool call sequence
     client = make_openai_client(_make_critic_response_sequence())
 
     # Run critic
-    input_data = CriticInput(
-        snapshot_slug=slug, files=ExplicitFileScope(files=["subtract.py"]), prompt_sha256=prompt_sha256
-    )
+    input_data = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
 
     # This should complete successfully without infinite loop
-    output, critic_run_id, critique_id = await run_critic(
+    critic_run_id, status = await run_critic(
         input_data=input_data,
         client=client,
         hydrator=test_specimens_hydrator,
+        db_config=synced_test_fixtures,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
         max_turns=100,
     )
 
-    # Verify output
-    assert isinstance(output, CriticSuccess), "Critic should succeed"
-    assert output.result is not None
-    assert len(output.result.issues) == 0, "Should find zero issues in trivial clean code"
+    # Verify status
+    assert status == CriticRunStatus.COMPLETED, "Critic should succeed"
     assert critic_run_id is not None
-    assert critique_id is not None
 
     # Verify database records
     with get_session() as session:
         run = session.get(CriticRun, critic_run_id)
         assert run is not None
-        assert run.snapshot_slug == slug
-        assert run.critique_id == critique_id
-
-        critique = session.get(Critique, critique_id)
-        assert critique is not None
-        payload = critique.payload
-        assert payload.issues == []
-        assert len(payload.issues) == 0
+        assert run.snapshot_slug == test_snapshot
+        assert run.status == CriticRunStatus.COMPLETED
+        # Check issues in normalized tables (not JSONB)
+        assert len(run.reported_issues) == 0
 
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    test_trivial_specimen, make_openai_client, critic_test_db_setup, async_docker_client, test_specimens_hydrator
+    synced_test_fixtures,
+    test_trivial_specimen,
+    make_openai_client,
+    test_snapshot,
+    test_prompt_sha,
+    subtract_file_scope,
+    async_docker_client,
+    test_specimens_hydrator,
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
     Before the fix, RequireAnyTool() would force dummy docker_exec calls indefinitely.
     After the fix, the agent calls submit(issues=0) and the loop terminates via GateUntil.
     """
-    slug, prompt_sha256 = critic_test_db_setup
-
     # Create response sequence with LIMITED docker_exec calls
     # If the bug exists, this will fail because agent keeps calling docker_exec
     factory = ResponsesFactory("gpt-5-nano")
     responses = [
-        factory.make(factory.docker_exec(["ls", "/workspace"], timeout_ms=5000, tool_name="docker_exec")),
-        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000, tool_name="docker_exec")),
+        factory.make(factory.docker_exec(["ls", "/workspace"], timeout_ms=5000)),
+        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000)),
         # After reading file, should call submit(issues_count=0), NOT more docker_exec
-        factory.make(factory.tool_call("critic_submit_submit", {"issues_count": 0})),
+        factory.make(
+            factory.tool_call("critic_submit_submit", {"issues_count": 0, "summary": "Reviewed code, no issues found"})
+        ),
     ]
 
     client = make_openai_client(responses)
 
-    input_data = CriticInput(
-        snapshot_slug=slug, files=ExplicitFileScope(files=["subtract.py"]), prompt_sha256=prompt_sha256
-    )
+    input_data = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
 
     # This should complete in 3 turns, not loop infinitely
-    output, _, _ = await run_critic(
+    _, status = await run_critic(
         input_data=input_data,
         client=client,
         hydrator=test_specimens_hydrator,
+        db_config=synced_test_fixtures,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
         max_turns=100,
     )
 
-    assert isinstance(output, CriticSuccess), "Critic should succeed"
-    assert output.result is not None
-    assert len(output.result.issues) == 0
+    assert status == CriticRunStatus.COMPLETED, "Critic should succeed"
 
     # Verify we used exactly the expected number of responses (no infinite loop)
     # The fake client will raise if more responses are requested

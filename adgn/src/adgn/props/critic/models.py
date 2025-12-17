@@ -32,11 +32,13 @@ type ResolvedFileScope = set[Path]
 class CriticInput(BaseModel):
     """Input for a critic run (codebase → candidate issues).
 
-    Internal format used by critic execution (after MCP tool converts from CriticFilesInput).
+    Internal format used by critic execution.
     """
 
     snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    files: CriticScopeSpec = Field(description="Files to review")
+    scope: CriticScopeSpec = Field(
+        description="Critic scope specification: either AllFilesScope (review entire snapshot) or ExplicitFileScope (review specific files)"
+    )
     prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")
 
     model_config = ConfigDict(extra="forbid")
@@ -104,8 +106,20 @@ class CriticContextLengthExceeded(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class CriticReportedFailure(BaseModel):
+    """Critic explicitly reported it cannot complete."""
+
+    tag: Literal["reported_failure"] = "reported_failure"
+    reason: str = Field(description="Reason provided by the critic for inability to complete")
+
+    model_config = ConfigDict(frozen=True)
+
+
 CriticOutput = Annotated[
-    CriticSuccess | CriticMaxTurnsExceeded | CriticContextLengthExceeded,
-    Field(discriminator="tag", description="Critic output: success, max turns exceeded, or context length exceeded"),
+    CriticSuccess | CriticMaxTurnsExceeded | CriticContextLengthExceeded | CriticReportedFailure,
+    Field(
+        discriminator="tag",
+        description="Critic output: success, max turns exceeded, context length exceeded, or reported failure",
+    ),
 ]
-"""Discriminated union of critic outcomes: success, max_turns_exceeded, or context_length_exceeded."""
+"""Discriminated union of critic outcomes."""

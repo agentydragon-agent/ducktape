@@ -13,24 +13,23 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from hamcrest import assert_that, equal_to, has_length, has_properties, instance_of, not_none
+from hamcrest import assert_that, equal_to, has_length, has_properties, not_none
 import pytest
 
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
-from adgn.props.critic.critic import (
+from adgn.props.critic.submit_server import (
+    SUBMIT_PREFIX as CRITIC_SUBMIT_PREFIX,
     AddOccurrenceInput,
-    CriticCompositor,
-    CriticSubmitServer,
-    SubmitInput,
+    CriticSubmitInput,
     UpsertIssueInput,
 )
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, Example, GraderRun, TruePositive
-from adgn.props.db.snapshots import DBGraderSuccess
+from adgn.props.db.examples import Example
+from adgn.props.db.models import CriticRun, GraderRun, GradingDecision, TruePositive
 from adgn.props.db.sync import sync_examples_to_db, sync_issues_to_db, sync_snapshots_to_db
 from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
-from adgn.props.grader.grader import GraderCompositor, GraderSubmitServer
+from adgn.props.grader.grader import GraderSubmitServer
 from adgn.props.grader.models import (
     CanonicalTPCoverage,
     GradeSubmitInput,
@@ -38,8 +37,9 @@ from adgn.props.grader.models import (
     TPCoverageEntry,
     TruePositiveID,
 )
+from adgn.props.grader.submit_server import SUBMIT_PREFIX as GRADER_SUBMIT_PREFIX
 from adgn.props.ids import InputIssueID, SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
+from adgn.props.models.critic_scopes import ExplicitFileScope
 from adgn.props.prompt_optimize.prompt_optimizer import (
     PromptEvalServer,
     PromptOptimizerCompositor,
@@ -111,7 +111,7 @@ def test_specimen(test_db, test_specimens_hydrator):
         print(f"\nDEBUG: Found {len(examples)} examples total")
         for ex in examples:
             print(
-                f"  Example: slug={ex.snapshot_slug}, files={ex.files}, hash={ex.files_hash[:16] if ex.files_hash else 'None'}"
+                f"  Example: slug={ex.snapshot_slug}, scope={ex.scope}, hash={ex.scope_hash[:16] if ex.scope_hash else 'None'}"
             )
 
     return test_db
@@ -129,6 +129,11 @@ def po_agent_steps():
     """
     # Test files for the train example (matches test-issue.libsonnet expectCaughtFrom)
     test_files = ["subtract.py"]
+    test_scope = ExplicitFileScope(files=test_files)
+
+    # Compute scope_hash from scopes (use Example.from_scope to compute hash)
+    test_scope_hash = Example.from_scope(TEST_TRAIN_SLUG, test_scope).scope_hash
+    valid_all_files_scope_hash = Example.from_all_files(TEST_VALID_SLUG).scope_hash
 
     # Mutable container to capture state across steps (prompt_sha256 needed in Step 6)
     state: dict[str, str] = {}
@@ -140,10 +145,7 @@ def po_agent_steps():
             PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
             PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
             RunCriticOnExampleInput(
-                snapshot_slug=TEST_TRAIN_SLUG,
-                scope=ExplicitFileScope(files=test_files),
-                prompt_sha256=out.prompt_sha256,
-                max_turns=10,
+                snapshot_slug=TEST_TRAIN_SLUG, scope_hash=test_scope_hash, prompt_sha256=out.prompt_sha256, max_turns=10
             ),
         )
 
@@ -180,7 +182,7 @@ def po_agent_steps():
             make_next=lambda out: (
                 PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
                 PromptEvalServer.RUN_GRADER_TOOL,
-                RunGraderInput(critique_id=out.critique_id, max_turns=10),
+                RunGraderInput(critic_run_id=out.critic_run_id, max_turns=10),
             ),
         ),
         # Step 6: Run critic on validation snapshot (whole-snapshot with AllFilesScope)
@@ -195,7 +197,7 @@ def po_agent_steps():
                 PromptEvalServer.RUN_CRITIC_ON_EXAMPLE_TOOL,
                 RunCriticOnExampleInput(
                     snapshot_slug=TEST_VALID_SLUG,
-                    scope=AllFilesScope(),  # Whole-snapshot (required for validation)
+                    scope_hash=valid_all_files_scope_hash,  # Whole-snapshot (required for validation)
                     prompt_sha256=state["prompt_sha256"],  # Reuse same prompt from Step 4
                     max_turns=10,
                 ),
@@ -210,7 +212,7 @@ def po_agent_steps():
             make_next=lambda out: (
                 PromptOptimizerCompositor.PROMPT_EVAL_PREFIX,
                 PromptEvalServer.RUN_GRADER_TOOL,
-                RunGraderInput(critique_id=out.critique_id, max_turns=10),
+                RunGraderInput(critic_run_id=out.critic_run_id, max_turns=10),
             ),
         ),
         # Step 8: Query validation results via get_validation_run_aggregates()
@@ -247,27 +249,21 @@ def critic_agent_steps():
     MakeCall (no assertions) rather than CheckThenCall. The test framework can't catch
     exceptions raised deep in async agent execution chains.
     """
-    # Import here to get constants
-
-    prefix = CriticCompositor.SUBMIT_PREFIX
-
     return [
         MakeCall(
-            prefix,
-            CriticSubmitServer.UPSERT_ISSUE_TOOL_NAME,
-            UpsertIssueInput(issue_id="test-issue", description="Test issue"),
+            CRITIC_SUBMIT_PREFIX, "upsert_issue", UpsertIssueInput(issue_id="test-issue", description="Test issue")
         ),
         CheckThenCall(
-            build_mcp_function(prefix, CriticSubmitServer.UPSERT_ISSUE_TOOL_NAME),
-            prefix,
-            CriticSubmitServer.ADD_OCCURRENCE_TOOL_NAME,
+            build_mcp_function(CRITIC_SUBMIT_PREFIX, "upsert_issue"),
+            CRITIC_SUBMIT_PREFIX,
+            "add_occurrence",
             AddOccurrenceInput(issue_id="test-issue", file="subtract.py", ranges=[[10, 15]]),
         ),
         CheckThenCall(
-            build_mcp_function(prefix, CriticSubmitServer.ADD_OCCURRENCE_TOOL_NAME),
-            prefix,
-            CriticSubmitServer.SUBMIT_TOOL_NAME,
-            SubmitInput(issues_count=1),
+            build_mcp_function(CRITIC_SUBMIT_PREFIX, "add_occurrence"),
+            CRITIC_SUBMIT_PREFIX,
+            "submit",
+            CriticSubmitInput(issues_count=1, summary="Test summary"),
         ),
     ]
 
@@ -297,7 +293,7 @@ def grader_agent_steps():
         novel_critique_issues=[],  # No novel issues
         summary=Rationale("Good coverage of canonical issues."),
     )
-    return [MakeCall(GraderCompositor.SUBMIT_PREFIX, GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME, grade_input)]
+    return [MakeCall(GRADER_SUBMIT_PREFIX, GraderSubmitServer.SUBMIT_RESULT_TOOL_NAME, grade_input)]
 
 
 class SimpleMockClient(OpenAIModelProto):
@@ -387,41 +383,39 @@ async def test_full_workflow_po_agent_critic_grader(
     train_critic_runs = get_critic_runs_for_slug(TEST_TRAIN_SLUG)
     assert_that(train_critic_runs, has_length(1), "Expected exactly one train critic run")
     train_critic_run = train_critic_runs[0]
-    assert_that(train_critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
+    assert_that(train_critic_run, has_properties(model=equal_to("fake-model"), id=not_none()))
 
     # Verify validation critique run
     valid_critic_runs = get_critic_runs_for_slug(TEST_VALID_SLUG)
     assert_that(valid_critic_runs, has_length(1), "Expected exactly one validation critic run")
     valid_critic_run = valid_critic_runs[0]
-    assert_that(valid_critic_run, has_properties(model=equal_to("fake-model"), critique_id=not_none()))
+    assert_that(valid_critic_run, has_properties(model=equal_to("fake-model"), id=not_none()))
 
     # Verify train grader run
     train_grader_runs = get_grader_runs_for_slug(TEST_TRAIN_SLUG)
     assert_that(train_grader_runs, has_length(1), "Expected exactly one train grader run")
     train_grader_run = train_grader_runs[0]
     assert_that(
-        train_grader_run,
-        has_properties(critique_id=equal_to(train_critic_run.critique_id), model=equal_to("fake-model")),
+        train_grader_run, has_properties(critic_run_id=equal_to(train_critic_run.id), model=equal_to("fake-model"))
     )
-    assert_that(train_grader_run.output, instance_of(DBGraderSuccess))
-    assert isinstance(train_grader_run.output, DBGraderSuccess)
-    # Check all found_credit values are 0.8 (from mock grader output)
-    assert_that(train_grader_run.output.occurrence_results, has_length(1))
-    assert_that(train_grader_run.output.occurrence_results[0].found_credit, equal_to(0.8))
+    # Verify grading decisions (check credit values)
+    with get_session() as session:
+        decisions = session.query(GradingDecision).filter_by(grader_run_id=train_grader_run.id).all()
+        assert_that(decisions, has_length(1), "Expected exactly one grading decision")
+        assert_that(decisions[0].credit, equal_to(0.8), "Expected credit=0.8 from mock grader")
 
     # Verify validation grader run
     valid_grader_runs = get_grader_runs_for_slug(TEST_VALID_SLUG)
     assert_that(valid_grader_runs, has_length(1), "Expected exactly one validation grader run")
     valid_grader_run = valid_grader_runs[0]
     assert_that(
-        valid_grader_run,
-        has_properties(critique_id=equal_to(valid_critic_run.critique_id), model=equal_to("fake-model")),
+        valid_grader_run, has_properties(critic_run_id=equal_to(valid_critic_run.id), model=equal_to("fake-model"))
     )
-    assert_that(valid_grader_run.output, instance_of(DBGraderSuccess))
-    assert isinstance(valid_grader_run.output, DBGraderSuccess)
-    # Check all found_credit values are 0.8 (from mock grader output)
-    assert_that(valid_grader_run.output.occurrence_results, has_length(1))
-    assert_that(valid_grader_run.output.occurrence_results[0].found_credit, equal_to(0.8))
+    # Verify grading decisions (check credit values)
+    with get_session() as session:
+        decisions = session.query(GradingDecision).filter_by(grader_run_id=valid_grader_run.id).all()
+        assert_that(decisions, has_length(1), "Expected exactly one grading decision")
+        assert_that(decisions[0].credit, equal_to(0.8), "Expected credit=0.8 from mock grader")
 
 
 @pytest.fixture

@@ -122,7 +122,7 @@ Let data guide your next move. Common patterns:
 {% elif target_metric == "targeted" %}
   - Valid split: Can use both specific_files and entire_snapshot (targeted mode allows per-file validation)
 {% endif %}
-- `run_grader`: Grade critique against ground truth, returns recall metrics (requires `critique_id`, `max_turns`)
+- `run_grader`: Grade critique against ground truth, returns recall metrics (requires `critic_run_id`, `max_turns`)
 
 **Execution:**
 - `docker_exec`: Execute commands in container (file operations, Python scripts, custom analyses)
@@ -162,8 +162,8 @@ with get_session() as session:
 - **'test' split:** Completely off-limits (no access at all)
 
 **Evaluation workflow:**
-1. **Run critic** on snapshot: `run_critic_on_example(snapshot_slug, scope, prompt_sha256, max_turns)` → returns `critique_id`
-2. **Run grader** on critique: `run_grader(critique_id, max_turns)` → returns `grader_run_id` and query instructions
+1. **Run critic** on snapshot: `run_critic_on_example(snapshot_slug, scope, prompt_sha256, max_turns)` → returns `critic_run_id`
+2. **Run grader** on critic run: `run_grader(critic_run_id, max_turns)` → returns `grader_run_id` and query instructions
 3. **Query metrics** using the method indicated in the grader response message
 
 {% if target_metric == "whole-repo" %}
@@ -274,8 +274,14 @@ The database provides pre-aggregated views for analyzing critic performance:
 - `aggregated_recall_by_example` - recall metrics per example
 - `occurrence_statistics` - per-occurrence statistics across all runs
 - `occurrence_credits` - per-occurrence credits for each run
+- `pareto_frontier_by_example` - for each example, shows best recall achieved and which prompt SHAs achieved it (useful for identifying prompt specialization patterns and finding which prompts excel on specific examples)
 
 View schemas (columns, types, indexes) were provided during bootstrap via `\d+` commands. Use `docker_exec` with `psql` to query these views directly.
+
+See `query_pareto_frontier.py` for example queries showing how to use the Pareto frontier view to find:
+- Which prompts win on multiple examples (generalist prompts)
+- Examples where no prompt performs well (opportunities for improvement)
+- Prompt specialization patterns (e.g., prompt A wins on file X, prompt B wins on file Y)
 
 ### Run Status Handling
 
@@ -288,7 +294,7 @@ Both critic and grader have turn limits to prevent infinite loops.
 **Query status:** See `query_run_status.py` for patterns.
 
 **Implications:**
-- **Critic max_turns_exceeded:** No critique produced, `critique_id = NULL`, recall treated as 0.0
+- **Critic max_turns_exceeded:** No critique produced, no grader run possible, recall treated as 0.0
 - **Grader max_turns_exceeded:** Rare, rerun with higher limit if occurs
 
 **High stuck rate (S% > 10%):** Suggests prompt causes looping, redundant work, or inefficient file reading. Check execution traces for patterns.
@@ -303,9 +309,9 @@ from adgn.props.db.models import Example, Snapshot
 from sqlalchemy import func
 
 with get_session() as session:
-    train_count = session.query(func.count(Example.files_hash)).join(Snapshot).filter(Snapshot.split == 'train').scalar()
-    valid_count = session.query(func.count(Example.files_hash)).join(Snapshot).filter(Snapshot.split == 'valid').scalar()
-    test_count = session.query(func.count(Example.files_hash)).join(Snapshot).filter(Snapshot.split == 'test').scalar()
+    train_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'train').scalar()
+    valid_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'valid').scalar()
+    test_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'test').scalar()
 ```
 
 **Expected characteristics:**

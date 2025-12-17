@@ -11,8 +11,8 @@ from adgn.props.rationale import Rationale
 def test_cluster_spec_aggregates_files() -> None:
     """Test that ClusterSpec correctly aggregates files from issues."""
     # Create test issues with different files
-    issue1_id = ClusteredIssueID(critique_id=uuid4(), tp_id=BaseIssueID("issue1"))
-    issue2_id = ClusteredIssueID(critique_id=uuid4(), tp_id=BaseIssueID("issue2"))
+    issue1_id = ClusteredIssueID(critic_run_id=uuid4(), tp_id=BaseIssueID("issue1"))
+    issue2_id = ClusteredIssueID(critic_run_id=uuid4(), tp_id=BaseIssueID("issue2"))
 
     issue1 = UnknownIssue(
         tp_id=issue1_id, rationale=Rationale("Test issue 1"), files={Path("src/foo.py"), Path("src/bar.py")}
@@ -38,7 +38,7 @@ def test_cluster_spec_aggregates_files() -> None:
 
 def test_cluster_spec_serialization() -> None:
     """Test that ClusterSpec serializes Path objects correctly to JSON."""
-    issue_id = ClusteredIssueID(critique_id=uuid4(), tp_id=BaseIssueID("test-issue"))
+    issue_id = ClusteredIssueID(critic_run_id=uuid4(), tp_id=BaseIssueID("test-issue"))
     cluster = ClusterSpec(
         name="test-cluster", issue_ids=[issue_id], primary_files={Path("src/foo.py"), Path("src/bar.py")}
     )
@@ -53,7 +53,7 @@ def test_cluster_spec_serialization() -> None:
 
 def test_cluster_spec_empty_files() -> None:
     """Test that ClusterSpec handles empty file sets correctly."""
-    issue_id = ClusteredIssueID(critique_id=uuid4(), tp_id=BaseIssueID("test-issue"))
+    issue_id = ClusteredIssueID(critic_run_id=uuid4(), tp_id=BaseIssueID("test-issue"))
     cluster = ClusterSpec(name="test-cluster", issue_ids=[issue_id], primary_files=set())
 
     # Verify empty set is handled

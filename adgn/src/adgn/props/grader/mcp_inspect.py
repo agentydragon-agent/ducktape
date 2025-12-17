@@ -68,6 +68,25 @@ async def main():
             print(f"Result content: {result.content}")
             # result.content contains the tool's return value
 
+        # IMPORTANT: If you need to serialize results (e.g., for json.dumps()):
+        # CallToolResult objects are NOT JSON-serializable. Extract data first:
+        #
+        # # ❌ WRONG - will raise "TypeError: Object of type CallToolResult is not JSON serializable"
+        # data = {"result": result}
+        # json.dumps(data)  # FAILS!
+        #
+        # # ✅ CORRECT - extract fields you need:
+        # data = {
+        #     "is_error": result.isError,
+        #     "content": result.content,  # Already JSON-serializable
+        #     "structured_content": result.structuredContent,  # If present
+        # }
+        # json.dumps(data)  # Works!
+        #
+        # # Alternative: Use model_dump() to convert to dict:
+        # data = result.model_dump(mode="json")
+        # json.dumps(data)  # Also works!
+
         # Session will be closed automatically when exiting the context manager
 
 

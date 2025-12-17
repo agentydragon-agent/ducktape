@@ -16,23 +16,23 @@ class TestCriticModels:
     """Tests for critic input/output models."""
 
     def test_critic_input_valid(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
-        """CriticInput should accept valid snapshot_slug, files, and prompt hash."""
-        files_spec = ExplicitFileScope(files=["src/main.py"])
-        critic_input = CriticInput(snapshot_slug=mock_snapshot_slug, files=files_spec, prompt_sha256=mock_prompt_sha256)
+        """CriticInput should accept valid snapshot_slug, scope, and prompt hash."""
+        scope_spec = ExplicitFileScope(files=["src/main.py"])
+        critic_input = CriticInput(snapshot_slug=mock_snapshot_slug, scope=scope_spec, prompt_sha256=mock_prompt_sha256)
 
         assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to(files_spec))
+        assert_that(critic_input.scope, equal_to(scope_spec))
         assert_that(critic_input.prompt_sha256, equal_to(mock_prompt_sha256))
 
     def test_critic_input_with_sentinel(self, mock_snapshot_slug: SnapshotSlug, mock_prompt_sha256: str):
         """CriticInput should accept AllFilesScope sentinel."""
         all_files_spec = AllFilesScope()
         critic_input = CriticInput(
-            snapshot_slug=mock_snapshot_slug, files=all_files_spec, prompt_sha256=mock_prompt_sha256
+            snapshot_slug=mock_snapshot_slug, scope=all_files_spec, prompt_sha256=mock_prompt_sha256
         )
 
         assert_that(critic_input.snapshot_slug, equal_to(mock_snapshot_slug))
-        assert_that(critic_input.files, equal_to(all_files_spec))
+        assert_that(critic_input.scope, equal_to(all_files_spec))
 
     def test_critic_success_variant(self):
         """CriticSuccess should wrap successful critique result."""

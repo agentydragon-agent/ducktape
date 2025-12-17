@@ -2,8 +2,8 @@
 
 ⚠️⚠️⚠️ DO NOT IMPORT PRIVATE MODULES FROM THIS PACKAGE ⚠️⚠️⚠️
 
-This package contains the ONLY code that evaluates jsonnet files. It exists
-solely to support the one-time sync operation: disk → database.
+This package contains the sync machinery to load YAML issue files from disk
+and populate the database. Supports one-time sync operation: disk → database.
 
 After sync completes, ALL code must load issues from the database using ORM models.
 
@@ -13,7 +13,7 @@ Public API:
 - sync_model_metadata() / sync_model_metadata_with_session(session)
 - SyncStats (dataclass)
 
-Everything else (_jsonnet.py, _loader.py, _sync.py) is private sync machinery.
+Everything else (_loader.py, _yaml.py, _sync.py) is private sync machinery.
 DO NOT import from these modules outside this package.
 """
 

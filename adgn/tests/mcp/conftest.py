@@ -68,7 +68,10 @@ async def typed_resources_client(resources_server, resources_client):
 @pytest.fixture
 def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
     """Origin server with subscription recorder attached."""
-    m = EnhancedFastMCP("origin")
+    # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
+    # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
+    # would call pkg_version("mcp") which triggers filesystem operations that timeout.
+    m = EnhancedFastMCP("origin", version="test")
     recorder = install_subscription_recorder(m)
 
     @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")

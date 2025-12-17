@@ -8,13 +8,11 @@ Tests the full orchestrator without running an actual LLM agent:
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-from uuid import UUID, uuid4
-
 import pytest
 from sqlalchemy import select
-from tests.props.conftest import make_grader_output
+from tests.props.conftest import make_clustering_run, make_critic_run, make_grader_run
 
+from adgn.agent.loop_control import Abort, NoAction
 from adgn.props.clustering.cluster_agent import (
     ClusteringCompletionHandler,
     OutcomeIncomplete,
@@ -23,80 +21,35 @@ from adgn.props.clustering.cluster_agent import (
 )
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
-from adgn.props.db.models import Critique, GraderRun, Snapshot
-from adgn.props.db.snapshots import DBCriticSubmitPayload
-from adgn.props.splits import Split
-
-
-def make_test_snapshot(slug: str, commit: str) -> Snapshot:
-    """Helper to create a test snapshot with standard git source."""
-    return Snapshot(
-        slug=slug, split=Split.TRAIN, source={"vcs": "git", "url": "https://example.com/repo.git", "commit": commit}
-    )
-
-
-def make_test_critique(snapshot_slug: str) -> Critique:
-    """Helper to create a test critique with empty issues list."""
-    return Critique(snapshot_slug=snapshot_slug, payload=DBCriticSubmitPayload(issues=[]))
-
-
-def make_test_grader_run(snapshot_slug: str, critique_id: UUID, unknowns: list[dict]) -> GraderRun:
-    """Helper to create a test grader run with unknowns.
-
-    Args:
-        snapshot_slug: Snapshot slug for the grader run
-        critique_id: Critique ID being graded
-        unknowns: List of unknown issue dicts with 'id' and 'rationale' keys
-    """
-    # Extract just the IDs for the fixture
-    unknown_ids = [u["id"] for u in unknowns]
-
-    return GraderRun(
-        id=uuid4(),
-        snapshot_slug=snapshot_slug,
-        transcript_id=uuid4(),
-        model="test-model",
-        critique_id=critique_id,
-        canonical_issues_snapshot={"true_positives": [], "false_positives": []},
-        output=make_grader_output(tp_count=0, unknowns=unknown_ids),
-        created_at=datetime.now(UTC),
-        updated_at=datetime.now(UTC),
-    )
+from adgn.props.db.examples import Example
+from adgn.props.db.prompts import hash_and_upsert_prompt
 
 
 @pytest.mark.asyncio
-async def test_completion_handler_detects_all_assigned(test_db):
+async def test_completion_handler_detects_all_assigned(synced_test_fixtures, test_db):
     """Test ClusteringCompletionHandler detects when all unknowns are assigned."""
-    config = test_db
 
-    # Setup: Create snapshot, clustering run, grader runs with unknowns
+    # Setup: Use git fixture example, create clustering run, grader runs with unknowns
+    test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
+
     with get_session() as session:
-        snapshot = make_test_snapshot("test/completion", "abc123")
-        session.add(snapshot)
-        session.flush()
-        snapshot_slug = snapshot.slug
+        # Query example from git fixtures
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        assert example is not None, "test-trivial example not found in git fixtures"
+        snapshot_slug = example.snapshot_slug
 
-        run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
+        run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
         run_id = run.id
 
-        # Create critique (needed for grader_run FK)
-        critique = make_test_critique(snapshot_slug)
-        session.add(critique)
+        # Create critic run (needed for grader_run FK)
+        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        session.add(critic_run)
         session.flush()
-        critique_id = critique.id
 
         # Create grader run with 3 unknowns
-        grader_run = make_test_grader_run(
-            snapshot_slug,
-            critique_id,
-            unknowns=[
-                {"id": "unknown-1", "rationale": "Issue 1"},
-                {"id": "unknown-2", "rationale": "Issue 2"},
-                {"id": "unknown-3", "rationale": "Issue 3"},
-            ],
-        )
+        grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
@@ -107,9 +60,9 @@ async def test_completion_handler_detects_all_assigned(test_db):
         session.flush()
 
     # Test: Handler should return NoAction when not all assigned
-    handler = ClusteringCompletionHandler(run_id, config)
+    handler = ClusteringCompletionHandler(run_id, test_db)
     decision = handler.on_before_sample()
-    assert decision.__class__.__name__ == "NoAction"
+    assert isinstance(decision, NoAction)
 
     # Assign 2 unknowns
     with get_session() as session:
@@ -129,7 +82,7 @@ async def test_completion_handler_detects_all_assigned(test_db):
 
     # Handler should still return NoAction (1 unknown remaining)
     decision = handler.on_before_sample()
-    assert decision.__class__.__name__ == "NoAction"
+    assert isinstance(decision, NoAction)
 
     # Assign the last unknown
     with get_session() as session:
@@ -148,68 +101,78 @@ async def test_completion_handler_detects_all_assigned(test_db):
 
     # Handler should now return Abort (all assigned)
     decision = handler.on_before_sample()
-    assert decision.__class__.__name__ == "Abort"
+    assert isinstance(decision, Abort)
 
     # No cleanup needed - test_db fixture drops entire database
 
 
 @pytest.mark.asyncio
-async def test_completion_handler_no_unknowns(test_db):
+async def test_completion_handler_no_unknowns(synced_test_fixtures, test_db):
     """Test ClusteringCompletionHandler aborts immediately when no unknowns exist."""
-    config = test_db
 
-    # Setup: Create snapshot and run with NO grader runs (no unknowns)
+    # Setup: Use git fixture, create run with NO grader runs (no unknowns)
     with get_session() as session:
-        snapshot = make_test_snapshot("test/no-unknowns", "def456")
-        session.add(snapshot)
-        session.flush()
-        snapshot_slug = snapshot.slug
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        assert example is not None, "Test fixture example not found"
+        snapshot_slug = example.snapshot_slug
 
-        run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
+        run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
         run_id = run.id
 
     # Test: Handler should return Abort immediately (no unknowns to cluster)
-    handler = ClusteringCompletionHandler(run_id, config)
+    handler = ClusteringCompletionHandler(run_id, test_db)
     decision = handler.on_before_sample()
-    assert decision.__class__.__name__ == "Abort"
+    assert isinstance(decision, Abort)
 
     # No cleanup needed - test_db fixture drops entire database
 
 
 @pytest.mark.asyncio
-async def test_compute_outcome_success(test_db):
+async def test_compute_outcome_success(synced_test_fixtures, test_db):
     """Test _compute_outcome returns OutcomeSuccess when all unknowns assigned."""
-    config = test_db
 
     # Setup: Create complete clustering run
-    with get_session() as session:
-        snapshot = make_test_snapshot("test/outcome-success", "ghi789")
-        session.add(snapshot)
-        session.flush()
-        snapshot_slug = snapshot.slug
+    test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
 
-        run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
+    with get_session() as session:
+        # Query example from git fixtures
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        assert example is not None, "test-trivial example not found in git fixtures"
+        snapshot_slug = example.snapshot_slug
+
+        run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
         run_id = run.id
 
-        # Create critique (needed for grader_run FK)
-        critique = make_test_critique(snapshot_slug)
-        session.add(critique)
+        # Create critic run (needed for grader_run FK)
+        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        session.add(critic_run)
         session.flush()
-        critique_id = critique.id
 
         # Create grader run with 2 unknowns
-        grader_run = make_test_grader_run(
-            snapshot_slug,
-            critique_id,
-            unknowns=[{"id": "unknown-a", "rationale": "Issue A"}, {"id": "unknown-b", "rationale": "Issue B"}],
-        )
+        grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
+
+        # Create unknown grading decisions (no TP match)
+        from adgn.props.db.models import GradingDecision
+
+        for unknown_id in ["unknown-a", "unknown-b"]:
+            decision = GradingDecision(
+                grader_run_id=grader_run_id,
+                input_issue_id=unknown_id,
+                target_tp_id=None,
+                target_tp_occurrence_id=None,
+                target_fp_id=None,
+                target_fp_occurrence_id=None,
+                credit=0.0,
+                rationale="Unknown issue (no TP match)",
+            )
+            session.add(decision)
 
         # Create cluster
         cluster = UnknownCluster(clustering_run_id=run_id, cluster_name="test-cluster", description="Test cluster")
@@ -229,7 +192,7 @@ async def test_compute_outcome_success(test_db):
             session.add(assignment)
 
     # Test: Compute outcome
-    outcome = _compute_outcome(run_id, config)
+    outcome = _compute_outcome(run_id, test_db)
 
     assert isinstance(outcome, OutcomeSuccess)
     assert outcome.total_unknowns == 2
@@ -247,38 +210,30 @@ async def test_compute_outcome_success(test_db):
 
 
 @pytest.mark.asyncio
-async def test_compute_outcome_incomplete(test_db):
+async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
     """Test _compute_outcome returns OutcomeIncomplete when unknowns remain."""
-    config = test_db
 
     # Setup: Create partial clustering run
-    with get_session() as session:
-        snapshot = make_test_snapshot("test/outcome-incomplete", "jkl012")
-        session.add(snapshot)
-        session.flush()
-        snapshot_slug = snapshot.slug
+    test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
 
-        run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
+    with get_session() as session:
+        # Query example from git fixtures
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        assert example is not None, "test-trivial example not found in git fixtures"
+        snapshot_slug = example.snapshot_slug
+
+        run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
         run_id = run.id
 
-        # Create critique (needed for grader_run FK)
-        critique = make_test_critique(snapshot_slug)
-        session.add(critique)
+        # Create critic run (needed for grader_run FK)
+        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        session.add(critic_run)
         session.flush()
-        critique_id = critique.id
 
         # Create grader run with 3 unknowns
-        grader_run = make_test_grader_run(
-            snapshot_slug,
-            critique_id,
-            unknowns=[
-                {"id": "unknown-x", "rationale": "Issue X"},
-                {"id": "unknown-y", "rationale": "Issue Y"},
-                {"id": "unknown-z", "rationale": "Issue Z"},
-            ],
-        )
+        grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
@@ -301,7 +256,7 @@ async def test_compute_outcome_incomplete(test_db):
         session.add(assignment)
 
     # Test: Compute outcome (2 unknowns remaining)
-    outcome = _compute_outcome(run_id, config)
+    outcome = _compute_outcome(run_id, test_db)
 
     assert isinstance(outcome, OutcomeIncomplete)
     assert outcome.remaining_unknowns == 2
@@ -318,39 +273,30 @@ async def test_compute_outcome_incomplete(test_db):
 
 
 @pytest.mark.asyncio
-async def test_compute_outcome_with_mapped_to_existing(test_db):
+async def test_compute_outcome_with_mapped_to_existing(synced_test_fixtures, test_db):
     """Test _compute_outcome counts mapped_to_existing correctly."""
-    config = test_db
 
     # Setup: Create clustering run with mixed assignments
-    with get_session() as session:
-        snapshot = make_test_snapshot("test/outcome-mapped", "mno345")
-        session.add(snapshot)
-        session.flush()
-        snapshot_slug = snapshot.slug
+    test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
 
-        run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
+    with get_session() as session:
+        # Query example from git fixtures
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        assert example is not None, "test-trivial example not found in git fixtures"
+        snapshot_slug = example.snapshot_slug
+
+        run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
         run_id = run.id
 
-        # Create critique (needed for grader_run FK)
-        critique = make_test_critique(snapshot_slug)
-        session.add(critique)
+        # Create critic run (needed for grader_run FK)
+        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        session.add(critic_run)
         session.flush()
-        critique_id = critique.id
 
         # Create grader run with 4 unknowns
-        grader_run = make_test_grader_run(
-            snapshot_slug,
-            critique_id,
-            unknowns=[
-                {"id": "unknown-1", "rationale": "Issue 1"},
-                {"id": "unknown-2", "rationale": "Issue 2"},
-                {"id": "unknown-3", "rationale": "Issue 3"},
-                {"id": "unknown-4", "rationale": "Issue 4"},
-            ],
-        )
+        grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
@@ -399,7 +345,7 @@ async def test_compute_outcome_with_mapped_to_existing(test_db):
             )
         )
     # Test: Compute outcome
-    outcome = _compute_outcome(run_id, config)
+    outcome = _compute_outcome(run_id, test_db)
 
     assert isinstance(outcome, OutcomeSuccess)
     assert outcome.total_unknowns == 4

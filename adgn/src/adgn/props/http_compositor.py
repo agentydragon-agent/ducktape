@@ -12,11 +12,13 @@ import secrets
 from typing import TYPE_CHECKING, cast
 
 from fastmcp import FastMCP
+from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 import uvicorn
 
 from adgn.mcp._shared.container_session import BindMount
 from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor, get_docker_network_gateway_async
 from adgn.props.hydration import SnapshotHydrator
+from adgn.props.ids import SnapshotSlug
 from adgn.util.net import pick_free_port, wait_for_port
 
 if TYPE_CHECKING:
@@ -38,7 +40,7 @@ class ServerHandle:
 
 @asynccontextmanager
 async def launch_mcp_http_server(
-    server_factory: Callable[[str], FastMCP],
+    server_factory: Callable[[AuthProvider], FastMCP],
     *,
     host: str = "0.0.0.0",
     container_host: str,
@@ -50,7 +52,7 @@ async def launch_mcp_http_server(
 
     Args:
         server_factory: Factory function that creates a FastMCP server.
-            Called with (token: str) to allow server to configure auth.
+            Called with (auth: AuthProvider) - server should NOT configure auth itself.
         host: Host to bind to (default 0.0.0.0 for Docker accessibility).
         container_host: Hostname that containers use to reach the host (required).
             For host.docker.internal-based setups, use "host.docker.internal".
@@ -75,8 +77,10 @@ async def launch_mcp_http_server(
                 ...
     """
     token = secrets.token_hex(32)
+    # StaticTokenVerifier requires token metadata with at least client_id
+    auth = StaticTokenVerifier({token: {"client_id": "mcp_agent", "scopes": []}})
     port = pick_free_port(host="127.0.0.1")
-    server = server_factory(token)
+    server = server_factory(auth)
     app = server.http_app(transport="streamable-http")
     config = uvicorn.Config(app=app, host=host, port=port, log_level="warning", access_log=False)
     uv_server = uvicorn.Server(config)
@@ -119,19 +123,21 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
 
     HTTP mode has fixed configuration:
     - network_mode: PROPS_NETWORK_NAME (container must reach host)
-    - workspace_mode: "rw" (agent needs write access)
-    - ephemeral: False (persistent container)
+    - workspace_mode: "rw" (always read-write for agent work)
+    - ephemeral: False (always persistent container)
     - db_conn: Required (agent needs database access)
+    - hydrator: Required (no default)
     - container_host: Auto-computed from network gateway IP
 
     Example:
+        hydrator = SnapshotHydrator.from_env()
         async with PropertiesDockerCompositorHTTP(
             workspace_root=Path("/workspace"),
             docker_client=docker_client,
             server_factory=lambda token: create_grader_server(token),
             db_conn=db_config,
-            mount_properties=False,
-            extra_binds=None,
+            hydrator=hydrator,
+            snapshot_slugs=["ducktape/2025-11-26-00"],
         ) as comp:
             # comp is a PropertiesDockerCompositor with HTTP server running
             # Container has MCP_SERVER_URL and MCP_SERVER_TOKEN in environment
@@ -145,9 +151,11 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         self,
         workspace_root: Path,
         docker_client: aiodocker.Docker,
-        server_factory: Callable[[str], FastMCP],
+        server_factory: Callable[[AuthProvider], FastMCP],
         db_conn: DbConnectionConfig,
+        hydrator: SnapshotHydrator,
         *,
+        snapshot_slugs: Sequence[SnapshotSlug] = (),
         mount_properties: bool = False,
         extra_binds: Sequence[BindMount] = (),
     ) -> None:
@@ -156,8 +164,10 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         Args:
             workspace_root: Path to workspace directory to mount in container
             docker_client: Async Docker client (managed by caller)
-            server_factory: Factory function that takes a bearer token and returns FastMCP server
+            server_factory: Factory function that takes an AuthProvider and returns FastMCP server
             db_conn: Database connection config (required for HTTP mode)
+            hydrator: Snapshot hydrator (required - no default)
+            snapshot_slugs: Snapshots to hydrate and mount (default: none)
             mount_properties: Whether to mount property definitions at /props (default: False)
             extra_binds: Additional bind mounts (default empty tuple)
         """
@@ -165,15 +175,17 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         self._server_factory = server_factory
         self._exit_stack: AsyncExitStack | None = None
 
-        # Initialize parent with fixed HTTP mode configuration
+        # Initialize parent with HTTP mode configuration
+        # HTTP mode is always: persistent (not ephemeral), RW workspace
         super().__init__(
             workspace_root,
             docker_client,
             mount_properties=mount_properties,
-            hydrator=SnapshotHydrator.from_env(),
+            hydrator=hydrator,
+            snapshot_slugs=snapshot_slugs,
             db_conn=db_conn,
             extra_binds=extra_binds,
-            workspace_mode="rw",  # HTTP mode always writable
+            workspace_mode="rw",  # HTTP mode always RW
             network_mode=PROPS_NETWORK_NAME,  # Must allow container→host communication
             extra_env=None,  # Will be set in __aenter__ after server starts
             ephemeral=False,  # HTTP mode always persistent

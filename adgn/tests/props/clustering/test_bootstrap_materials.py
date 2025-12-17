@@ -11,12 +11,12 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
-from tests.props.clustering.conftest import make_test_snapshot
+from tests.props.conftest import make_clustering_run
 
 from adgn.props.clustering.example_queries import get_current_run_id, list_clusters
-from adgn.props.db.clustering_models import ClusteringRun, UnknownCluster
-from adgn.props.db.clustering_user_manager import ClusteringUserManager
-from adgn.props.db.models import Snapshot
+from adgn.props.clustering.user_manager import ClusteringUserManager
+from adgn.props.db import get_session
+from adgn.props.db.clustering_models import UnknownCluster
 
 
 def test_schema_docs_exists():
@@ -49,30 +49,18 @@ def test_example_queries_exists():
 
 
 @pytest.mark.asyncio
-async def test_run_id_extraction(test_db):
+async def test_run_id_extraction(clustering_user_engine_factory, test_snapshot):
     """Test that current_clustering_run_id() correctly extracts run_id from username."""
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot and clustering run
-    with Session(admin_engine) as session:
-        snapshot = make_test_snapshot("test/bootstrap", "abc123")
-        session.add(snapshot)
-        session.flush()
-
-        run = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create clustering run
+    with get_session() as session:
+        run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
-
         run_id = run.id
-        snapshot_slug = snapshot.slug
         session.commit()
 
     # Test: Verify run_id extraction works
-    async with ClusteringUserManager(config.admin, run_id) as creds:
-        user_config = config.admin.with_user(creds)
-        user_engine = create_engine(user_config.url())
-
+    async with clustering_user_engine_factory(run_id) as user_engine:
         with Session(user_engine) as user_session:
             # Call the SQL function directly
             result = user_session.execute(text("SELECT current_clustering_run_id()"))
@@ -86,37 +74,16 @@ async def test_run_id_extraction(test_db):
             expected_username = f"clustering_run_{run_id}_agent"
             assert username == expected_username, f"Expected {expected_username}, got {username}"
 
-        user_engine.dispose()
-
-    # Cleanup
-
-    with Session(admin_engine) as session:
-        session.query(ClusteringRun).filter_by(id=run_id).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()
-
 
 @pytest.mark.asyncio
-async def test_example_query_list_clusters(test_db):
+async def test_example_query_list_clusters(test_db, test_snapshot):
     """Test that example query functions work with RLS-scoped user."""
-
-    config = test_db  # Use test database config from fixture
-    admin_engine = create_engine(config.admin_url())
-
-    # Setup: Create test snapshot, run, and cluster
-    with Session(admin_engine) as session:
-        snapshot = make_test_snapshot("test/query-example", "def456")
-        session.add(snapshot)
-        session.flush()
-
-        run = ClusteringRun(snapshot_slug=snapshot.slug, status="in_progress")
+    # Setup: Create run and cluster
+    with get_session() as session:
+        run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
-
         run_id = run.id
-        snapshot_slug = snapshot.slug
 
         # Create a cluster
         cluster = UnknownCluster(
@@ -126,8 +93,8 @@ async def test_example_query_list_clusters(test_db):
         session.commit()
 
     # Test: Use example query function as clustering user
-    async with ClusteringUserManager(config.admin, run_id) as creds:
-        user_config = config.admin.with_user(creds)
+    async with ClusteringUserManager(test_db.admin, run_id) as creds:
+        user_config = test_db.admin.with_user(creds)
         user_engine = create_engine(user_config.url())
 
         with Session(user_engine) as user_session:
@@ -143,12 +110,3 @@ async def test_example_query_list_clusters(test_db):
                 pytest.fail(f"list_clusters() raised: {e}")
 
         user_engine.dispose()
-
-    # Cleanup
-    with Session(admin_engine) as session:
-        session.query(UnknownCluster).filter_by(clustering_run_id=run_id).delete()
-        session.query(ClusteringRun).filter_by(id=run_id).delete()
-        session.query(Snapshot).filter_by(slug=snapshot_slug).delete()
-        session.commit()
-
-    admin_engine.dispose()

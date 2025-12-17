@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import statistics
-from typing import cast
+from typing import Any, cast
 
 import plotext as plt  # type: ignore[import-untyped]
 from rich import box
@@ -17,22 +17,24 @@ from sqlalchemy import func
 import typer
 
 from adgn.props.db import get_session
-from adgn.props.db.datapoints import count_available_examples_by_scope_all, count_available_examples_for_split
+from adgn.props.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
 from adgn.props.db.models import (
     AggregatedRecallByExample,
     AggregatedRecallByPrompt,
     CriticRun,
-    Critique,
+    CriticRunStatus,
     Event,
     GraderRun,
+    GraderRunStatus,
     OccurrenceCredit,
     OccurrenceStatistics,
     Snapshot,
 )
 from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats, query_recall_by_example
-from adgn.props.display import SHORT_SHA_LENGTH, short_sha
+from adgn.props.display import SHORT_SHA_LENGTH, ColumnDef, build_table_from_schema, short_sha
 from adgn.props.grader.staleness import check_staleness
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.critic_scopes import ScopeKind
 from adgn.props.splits import Split
 
 # Stats subcommand group
@@ -62,6 +64,39 @@ def fmt_model(model: str, max_length: int = 12) -> str:
 def fmt_hash(hash_value: str | None) -> str:
     """Format hash as short SHA prefix or dash if None."""
     return short_sha(hash_value) if hash_value else "—"
+
+
+# Common dimension columns (used by prompt and example stats)
+_DIMENSION_COLUMNS: list[ColumnDef[Any, Any]] = [
+    ColumnDef("Split", lambda r: r.split.value, width=6),
+    ColumnDef("Critic", lambda r: r.critic_model, fmt_model, width=12),
+]
+
+# Common occurrence-based columns (used by prompt and example stats)
+_OCCURRENCE_COLUMNS: list[ColumnDef[Any, Any]] = [
+    ColumnDef(
+        "Recall %",
+        lambda r: (
+            r.avg_occurrences_caught_overall / r.avg_catchable_occurrences if r.avg_catchable_occurrences > 0 else 0.0
+        ),
+        fmt_pct,
+        justify="right",
+        width=9,
+    ),
+    ColumnDef(
+        "Caught",
+        lambda r: r.avg_occurrences_caught_overall,
+        lambda v: fmt_float(v, decimals=1),
+        justify="right",
+        width=7,
+    ),
+    ColumnDef(
+        "Catchable", lambda r: r.avg_catchable_occurrences, lambda v: fmt_float(v, decimals=1), justify="right", width=9
+    ),
+    ColumnDef("✓", lambda r: r.n_successful, str, justify="right", width=4),
+    ColumnDef("S", lambda r: r.n_max_turns_exceeded, str, justify="right", width=3),
+    ColumnDef("C", lambda r: r.n_context_length_exceeded, str, justify="right", width=3),
+]
 
 
 # Stats table column legend (shared between CLI and examples)
@@ -151,13 +186,13 @@ def format_split_stats(stats: SplitPerformanceStats | None, fully_computed: bool
     if stats is None:
         return FormattedSplitStats("—", "—", "—", "—", "—", "—")
 
-    recall_str = f"{stats.mean_recall:.0f}%"
+    recall_str = f"{stats.mean_recall:.0%}"
     if fully_computed:
         recall_str = f"[green]{recall_str}[/green]"
 
     return FormattedSplitStats(
         recall=recall_str,
-        lcb=f"{stats.lcb:.0f}%" if stats.lcb is not None else "—",
+        lcb=f"{stats.lcb:.0%}" if stats.lcb is not None else "—",
         n=str(stats.total_count),  # Just the count of examples evaluated
         zero=str(stats.zero_count),
         stuck=str(stats.stuck_count),
@@ -324,7 +359,6 @@ class PromptStats:
     """Statistics for a single prompt across all splits."""
 
     prompt_sha256: str
-    prompt_length: int
     created_at: datetime
     splits: dict[Split, SplitStats]
     valid_best_count: int = 0  # Number of valid samples where this prompt is best (or tied)
@@ -343,8 +377,8 @@ def _display_split_analysis(
     Args:
         console: Rich console for output
         split_name: Name of the split (e.g., "Training", "Validation")
-        sample_results: Dict mapping (snapshot_slug, files_hash) -> {prompt_sha: recall_pct}
-        tp_counts_per_sample: Dict mapping (snapshot_slug, files_hash) -> TP count
+        sample_results: Dict mapping (snapshot_slug, scope_hash) -> {prompt_sha: recall_pct}
+        tp_counts_per_sample: Dict mapping (snapshot_slug, scope_hash) -> TP count
         total_available: Total number of examples available in this split
         show_all_prompts: If True, show all prompts instead of top 15
     """
@@ -463,13 +497,14 @@ def _add_split_columns(table: Table, split_name: str, color: str, total_examples
 def cmd_stats_prompt(
     split: Split | None = None,
     critic_model: str | None = None,
-    whole_snapshot_only: bool = False,
+    scope_kind: ScopeKind | None = None,
     top: int | None = typer.Option(None, help="Show top N results by recall"),
     bottom: int | None = typer.Option(None, help="Show bottom N results by recall"),
 ) -> None:
     """Query aggregated recall metrics by prompt.
 
-    Shows recall metrics aggregated by (split, prompt_sha256, critic_model, scope).
+    Shows recall metrics aggregated by (split, prompt_sha256, critic_model, scope_kind).
+    Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
     console = Console()
@@ -485,21 +520,36 @@ def cmd_stats_prompt(
             base_query = base_query.filter(AggregatedRecallByPrompt.split == split)
         if critic_model:
             base_query = base_query.filter(AggregatedRecallByPrompt.critic_model == critic_model)
-        if whole_snapshot_only:
-            base_query = base_query.filter(AggregatedRecallByPrompt.is_whole_snapshot)
+        if scope_kind:
+            base_query = base_query.filter(AggregatedRecallByPrompt.scope_kind == scope_kind)
 
         # Fetch top and/or bottom results
         sections_to_show: list[tuple[str, list[AggregatedRecallByPrompt]]] = []
 
         if top is not None:
+            # Order by computed recall: avg_occurrences_caught_overall / avg_catchable_occurrences
             top_results: list[AggregatedRecallByPrompt] = (
-                base_query.order_by(AggregatedRecallByPrompt.recall.desc()).limit(top).all()
+                base_query.order_by(
+                    (
+                        AggregatedRecallByPrompt.avg_occurrences_caught_overall
+                        / func.nullif(AggregatedRecallByPrompt.avg_catchable_occurrences, 0)
+                    ).desc()
+                )
+                .limit(top)
+                .all()
             )
             sections_to_show.append((f"Top {top} by Recall", top_results))
 
         if bottom is not None:
             bottom_results: list[AggregatedRecallByPrompt] = (
-                base_query.order_by(AggregatedRecallByPrompt.recall.asc()).limit(bottom).all()
+                base_query.order_by(
+                    (
+                        AggregatedRecallByPrompt.avg_occurrences_caught_overall
+                        / func.nullif(AggregatedRecallByPrompt.avg_catchable_occurrences, 0)
+                    ).asc()
+                )
+                .limit(bottom)
+                .all()
             )
             sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
 
@@ -508,31 +558,15 @@ def cmd_stats_prompt(
             console.print(
                 f"\n[bold]Aggregated Recall by Prompt: {section_title}[/bold] ({len(prompt_results)} results)\n"
             )
-            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
-            table.add_column("Prompt", width=SHORT_SHA_LENGTH)
-            table.add_column("Split", width=6)
-            table.add_column("Critic Model", width=15)
-            table.add_column("Scope", width=5)
-            table.add_column("Recall %", justify="right", width=9)
-            table.add_column("Credit", justify="right", width=7)
-            table.add_column("N Occ", justify="right", width=6)
-            table.add_column("N Snap", justify="right", width=7)
-            table.add_column("N Ex", justify="right", width=5)
 
-            for r_prompt in prompt_results:
-                scope_str = "whole" if r_prompt.is_whole_snapshot else "part"
-                table.add_row(
-                    short_sha(r_prompt.prompt_sha256),
-                    r_prompt.split.value,
-                    r_prompt.critic_model,
-                    scope_str,
-                    fmt_pct(r_prompt.recall),
-                    fmt_float(r_prompt.total_credit, decimals=1),
-                    str(r_prompt.n_occurrences),
-                    str(r_prompt.n_snapshots),
-                    str(r_prompt.n_examples),
-                )
+            columns: list[ColumnDef[Any, Any]] = [
+                ColumnDef("Prompt", lambda r: r.prompt_sha256, short_sha, width=SHORT_SHA_LENGTH),
+                ColumnDef("Scope", lambda r: r.scope_kind, width=15),
+                *_DIMENSION_COLUMNS,
+                *_OCCURRENCE_COLUMNS,
+            ]
 
+            table = build_table_from_schema(prompt_results, columns)
             console.print(table)
 
 
@@ -540,13 +574,13 @@ def cmd_stats_prompt(
 def cmd_stats_example(
     split: Split | None = None,
     critic_model: str | None = None,
-    grader_model: str | None = None,
     top: int | None = typer.Option(None, help="Show top N results by recall"),
     bottom: int | None = typer.Option(None, help="Show bottom N results by recall"),
 ) -> None:
     """Query aggregated recall metrics by example.
 
-    Shows recall metrics aggregated by (split, snapshot_slug, files_hash, critic_model, grader_model).
+    Shows recall metrics aggregated by (split, snapshot_slug, scope_hash, critic_model).
+    Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
     console = Console()
@@ -562,8 +596,6 @@ def cmd_stats_example(
             base_query = base_query.filter(AggregatedRecallByExample.split == split)
         if critic_model:
             base_query = base_query.filter(AggregatedRecallByExample.critic_model == critic_model)
-        if grader_model:
-            base_query = base_query.filter(AggregatedRecallByExample.grader_model == grader_model)
 
         # Fetch top and/or bottom results
         sections_to_show: list[tuple[str, list[AggregatedRecallByExample]]] = []
@@ -571,14 +603,28 @@ def cmd_stats_example(
         if top is not None:
             top_results = cast(
                 list[AggregatedRecallByExample],
-                base_query.order_by(AggregatedRecallByExample.recall.desc()).limit(top).all(),
+                base_query.order_by(
+                    (
+                        AggregatedRecallByExample.avg_occurrences_caught_overall
+                        / func.nullif(AggregatedRecallByExample.avg_catchable_occurrences, 0)
+                    ).desc()
+                )
+                .limit(top)
+                .all(),
             )
             sections_to_show.append((f"Top {top} by Recall", top_results))
 
         if bottom is not None:
             bottom_results = cast(
                 list[AggregatedRecallByExample],
-                base_query.order_by(AggregatedRecallByExample.recall.asc()).limit(bottom).all(),
+                base_query.order_by(
+                    (
+                        AggregatedRecallByExample.avg_occurrences_caught_overall
+                        / func.nullif(AggregatedRecallByExample.avg_catchable_occurrences, 0)
+                    ).asc()
+                )
+                .limit(bottom)
+                .all(),
             )
             sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
 
@@ -587,28 +633,15 @@ def cmd_stats_example(
             console.print(
                 f"\n[bold]Aggregated Recall by Example: {section_title}[/bold] ({len(example_results)} results)\n"
             )
-            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
-            table.add_column("Snapshot", width=25)
-            table.add_column("Files Hash", width=12)
-            table.add_column("Split", width=6)
-            table.add_column("Critic", width=12)
-            table.add_column("Grader", width=12)
-            table.add_column("Recall %", justify="right", width=9)
-            table.add_column("Credit", justify="right", width=7)
-            table.add_column("N Occ", justify="right", width=6)
 
-            for r_example in example_results:
-                table.add_row(
-                    r_example.snapshot_slug,
-                    fmt_hash(r_example.files_hash),
-                    r_example.split.value,
-                    fmt_model(r_example.critic_model),
-                    fmt_model(r_example.grader_model),
-                    fmt_pct(r_example.recall),
-                    fmt_float(r_example.total_credit, decimals=1),
-                    str(r_example.n_occurrences),
-                )
+            columns: list[ColumnDef[Any, Any]] = [
+                ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=25),
+                ColumnDef("Scope", lambda r: r.scope_hash, fmt_hash, width=10),
+                *_DIMENSION_COLUMNS,
+                *_OCCURRENCE_COLUMNS,
+            ]
 
+            table = build_table_from_schema(example_results, columns)
             console.print(table)
 
 
@@ -663,34 +696,24 @@ def cmd_stats_occurrence(
             console.print(
                 f"\n[bold]Occurrence Statistics: {section_title}[/bold] ({len(occurrence_results)} results)\n"
             )
-            table = Table(show_header=True, header_style="bold cyan", box=box.SIMPLE)
-            table.add_column("TP ID", width=20)
-            table.add_column("Occ ID", width=15)
-            table.add_column("Split", width=6)
-            table.add_column("Critic", width=12)
-            table.add_column("Grader", width=12)
-            table.add_column("Mean", justify="right", width=6)
-            table.add_column("σ", justify="right", width=6)
-            table.add_column("Min", justify="right", width=5)
-            table.add_column("Max", justify="right", width=5)
-            table.add_column("N Runs", justify="right", width=6)
-            table.add_column("Catch%", justify="right", width=7)
 
-            for r_occ in occurrence_results:
-                table.add_row(
-                    r_occ.tp_id[:20],
-                    r_occ.occurrence_id[:15],
-                    r_occ.split.value,
-                    fmt_model(r_occ.critic_model),
-                    fmt_model(r_occ.grader_model),
-                    fmt_float(r_occ.mean_credit, decimals=2),
-                    fmt_float(r_occ.stddev_credit, decimals=2),
-                    fmt_float(r_occ.min_credit, decimals=2),
-                    fmt_float(r_occ.max_credit, decimals=2),
-                    str(r_occ.n_runs),
-                    fmt_pct(r_occ.full_catch_rate),
-                )
+            columns: list[ColumnDef[Any, Any]] = [
+                ColumnDef("TP ID", lambda r: r.tp_id[:20], width=20),
+                ColumnDef("Occ ID", lambda r: r.occurrence_id[:15], width=15),
+                ColumnDef("Split", lambda r: r.split.value, width=6),
+                ColumnDef("Critic", lambda r: r.critic_model, fmt_model, width=12),
+                ColumnDef("Grader", lambda r: r.grader_model, fmt_model, width=12),
+                ColumnDef(
+                    "Mean", lambda r: r.mean_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=6
+                ),
+                ColumnDef("σ", lambda r: r.stddev_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=6),
+                ColumnDef("Min", lambda r: r.min_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=5),
+                ColumnDef("Max", lambda r: r.max_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=5),
+                ColumnDef("N Runs", lambda r: r.n_runs, str, justify="right", width=6),
+                ColumnDef("Catch%", lambda r: r.full_catch_rate, fmt_pct, justify="right", width=7),
+            ]
 
+            table = build_table_from_schema(occurrence_results, columns)
             console.print(table)
 
 
@@ -718,8 +741,8 @@ def cmd_stats(ctx: typer.Context) -> None:
 
     # Track run statuses by type
     status_counts: dict[str, defaultdict[str | None, int]] = {"Critic": defaultdict(int), "Grader": defaultdict(int)}
-    # Track example counts by (split, is_whole_snapshot)
-    example_counts: dict[tuple[Split, bool], int] = {}
+    # Track example counts by (split, scope_kind)
+    example_counts: dict[tuple[Split, ScopeKind], int] = {}
 
     with get_session() as session:
         # Compute total available training examples per split using shared logic
@@ -749,23 +772,23 @@ def cmd_stats(ctx: typer.Context) -> None:
             results = query_recall_by_example(session, split=split)
 
             for recall_row in results:
-                sample_key = (recall_row.snapshot_slug, recall_row.files_hash)
+                sample_key = (recall_row.snapshot_slug, recall_row.scope_hash)
                 sample_results_by_split[split][sample_key][recall_row.prompt_sha256] = recall_row.recall
 
             # Get TP counts per sample (constant per example, not per prompt/run)
             tp_count_results = (
                 session.query(
                     OccurrenceCredit.snapshot_slug,
-                    OccurrenceCredit.files_hash,
+                    OccurrenceCredit.scope_hash,
                     func.count(func.distinct(OccurrenceCredit.occurrence_id)).label("n_occurrences"),
                 )
                 .filter(OccurrenceCredit.split == split)
-                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.files_hash)
+                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.scope_hash)
                 .all()
             )
 
             for result in tp_count_results:
-                sample_key = (result.snapshot_slug, result.files_hash)
+                sample_key = (result.snapshot_slug, result.scope_hash)
                 tp_counts_per_sample[split][sample_key] = result.n_occurrences
 
         # For each split and sample, find which prompt(s) achieved max recall
@@ -785,22 +808,21 @@ def cmd_stats(ctx: typer.Context) -> None:
         # Count run statuses using SQL aggregation
         # Filter to same scope as per-prompt stats: TRAIN + VALID (all examples)
         critic_status_rows = (
-            session.query(CriticRun.output["tag"].astext, func.count(CriticRun.id))
+            session.query(CriticRun.status, func.count(CriticRun.id))
             .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
-            .filter(CriticRun.output.isnot(None), (Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
-            .group_by(CriticRun.output["tag"].astext)
+            .filter((Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
+            .group_by(CriticRun.status)
             .all()
         )
         for status, count in critic_status_rows:
             status_counts["Critic"][status] = count
 
         grader_status_rows = (
-            session.query(GraderRun.output["tag"].astext, func.count(GraderRun.id))
-            .join(Critique, Critique.id == GraderRun.critique_id)
-            .join(CriticRun, CriticRun.critique_id == Critique.id)
+            session.query(GraderRun.status, func.count(GraderRun.id))
+            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
             .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
-            .filter(GraderRun.output.isnot(None), (Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
-            .group_by(GraderRun.output["tag"].astext)
+            .filter((Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
+            .group_by(GraderRun.status)
             .all()
         )
         for status, count in grader_status_rows:
@@ -816,62 +838,43 @@ def cmd_stats(ctx: typer.Context) -> None:
     table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 0))
     table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
     table.add_column("Age", justify="right", width=4)
-    table.add_column("Chars", justify="right", width=6)
-    # Add Valid (whole and partial), Train Whole, and Train Partial split columns using helper
-    _add_split_columns(table, "Val-W", "cyan", example_counts[(Split.VALID, True)])
-    _add_split_columns(table, "Val-P", "blue", example_counts[(Split.VALID, False)])
-    _add_split_columns(table, "Tr-W", "yellow", example_counts[(Split.TRAIN, True)])
-    _add_split_columns(table, "Tr-P", "magenta", example_counts[(Split.TRAIN, False)])
+
+    # Define canonical split/scope ordering with colors
+    split_scope_config = [
+        ((Split.VALID, ScopeKind.ENTIRE_SNAPSHOT), "cyan"),
+        ((Split.VALID, ScopeKind.SPECIFIC_FILES), "blue"),
+        ((Split.TRAIN, ScopeKind.ENTIRE_SNAPSHOT), "yellow"),
+        ((Split.TRAIN, ScopeKind.SPECIFIC_FILES), "magenta"),
+    ]
+
+    # Helper to compute label from split and scope kind
+    def make_label(split: Split, scope_kind: ScopeKind) -> str:
+        split_abbrev = {"valid": "Val", "train": "Tr", "test": "Test"}[split.value]
+        scope_abbrev = {"entire_snapshot": "W", "specific_files": "P"}[scope_kind.value]
+        return f"{split_abbrev}-{scope_abbrev}"
+
+    # Add split columns using canonical order
+    for key, color in split_scope_config:
+        label = make_label(key[0], key[1])
+        _add_split_columns(table, label, color, example_counts[key])
 
     for row in prompt_perf_rows:
         sha_short = short_sha(row.prompt_sha256)
         age_str = format_age(row.created_at)
 
-        # Format length as "11k" for > 1000, otherwise just the number
-        length_str = f"{row.prompt_length // 1000}k" if row.prompt_length >= 1000 else str(row.prompt_length)
-
-        # Get stats from dict using (split, is_whole_snapshot) keys
-        valid_whole = row.stats.get((Split.VALID, True))
-        valid_partial = row.stats.get((Split.VALID, False))
-        train_whole = row.stats.get((Split.TRAIN, True))
-        train_partial = row.stats.get((Split.TRAIN, False))
-
-        # Format valid whole stats (green if fully computed)
-        fully_computed_valid_whole = (
-            valid_whole is not None and valid_whole.success_count == example_counts[(Split.VALID, True)]
-        )
-        valid_whole_stats = format_split_stats(valid_whole, fully_computed=fully_computed_valid_whole)
-
-        # Format valid partial stats (green if fully computed)
-        fully_computed_valid_partial = (
-            valid_partial is not None and valid_partial.success_count == example_counts[(Split.VALID, False)]
-        )
-        valid_partial_stats = format_split_stats(valid_partial, fully_computed=fully_computed_valid_partial)
-
-        # Format train whole-snapshot stats (green if fully computed)
-        fully_computed_train_whole = (
-            train_whole is not None and train_whole.success_count == example_counts[(Split.TRAIN, True)]
-        )
-        train_whole_stats = format_split_stats(train_whole, fully_computed=fully_computed_train_whole)
-
-        # Format train partial stats (green if fully computed)
-        fully_computed_train_partial = (
-            train_partial is not None and train_partial.success_count == example_counts[(Split.TRAIN, False)]
-        )
-        train_partial_stats = format_split_stats(train_partial, fully_computed=fully_computed_train_partial)
+        # Format stats for all split/scope combinations using canonical order
+        formatted_stats = []
+        for key, _color in split_scope_config:
+            stats = row.stats.get(key)
+            # Use ScopeKind enum directly for dict lookup
+            fully_computed = stats is not None and stats.success_count == example_counts[key]
+            formatted_stats.append(format_split_stats(stats, fully_computed=fully_computed))
 
         table.add_row(
             sha_short,
             age_str,
-            length_str,
-            # Valid whole stats (canonical ordering via as_row_fields)
-            *valid_whole_stats.as_row_fields(),
-            # Valid partial stats (same canonical ordering)
-            *valid_partial_stats.as_row_fields(),
-            # Train whole stats (same canonical ordering)
-            *train_whole_stats.as_row_fields(),
-            # Train partial stats (same canonical ordering)
-            *train_partial_stats.as_row_fields(),
+            # Unpack all formatted stats in canonical order
+            *[field for stats in formatted_stats for field in stats.as_row_fields()],
         )
 
     console.print(table)
@@ -885,14 +888,15 @@ def cmd_stats(ctx: typer.Context) -> None:
     for split in [Split.VALID, Split.TRAIN]:
         console.print(
             f"    {split.value.capitalize()}: {total_samples_by_split[split]} total "
-            f"(whole: {example_counts[(split, True)]}, partial: {example_counts[(split, False)]})"
+            f"(whole: {example_counts[(split, ScopeKind.ENTIRE_SNAPSHOT)]}, "
+            f"partial: {example_counts[(split, ScopeKind.SPECIFIC_FILES)]})"
         )
     console.print(f"    Test: {total_samples_by_split[Split.TEST]}")
 
     # Find best prompt by valid whole-snapshot recall (terminal metric)
     valid_whole_prompts = []
     for row in prompt_perf_rows:
-        stats = row.stats.get((Split.VALID, True))
+        stats = row.stats.get((Split.VALID, ScopeKind.ENTIRE_SNAPSHOT))
         if stats is not None:
             valid_whole_prompts.append((row, stats))
 
@@ -901,7 +905,7 @@ def cmd_stats(ctx: typer.Context) -> None:
         best_row, best_valid_stats = best
         console.print(
             f"\n[bold green]Best prompt (valid whole-snapshot):[/bold green] "
-            f"{short_sha(best_row.prompt_sha256)} with {best_valid_stats.mean_recall:.1f}% recall "
+            f"{short_sha(best_row.prompt_sha256)} with {best_valid_stats.mean_recall:.1%} recall "
             f"({best_valid_stats.success_count}/{best_valid_stats.total_count} runs)"
         )
 
@@ -983,7 +987,7 @@ def cmd_stats(ctx: typer.Context) -> None:
             session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
             .join(CriticRun, CriticRun.transcript_id == Event.transcript_id)
             .where(Event.event_type == "tool_call")
-            .where(CriticRun.critique_id.isnot(None))  # Only successful runs
+            .where(CriticRun.status == CriticRunStatus.COMPLETED)  # Only successful runs
             .group_by(Event.transcript_id)
             .all()
         )
@@ -993,7 +997,7 @@ def cmd_stats(ctx: typer.Context) -> None:
             session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
             .join(GraderRun, GraderRun.transcript_id == Event.transcript_id)
             .where(Event.event_type == "tool_call")
-            .where(GraderRun.output.isnot(None))  # Only successful runs
+            .where(GraderRun.status == GraderRunStatus.COMPLETED)  # Only successful runs
             .group_by(Event.transcript_id)
             .all()
         )
@@ -1030,18 +1034,23 @@ def cmd_stats(ctx: typer.Context) -> None:
 
         if stale_runs > 0:
             console.print("\n[bold]Stale runs by snapshot:[/bold]")
-            table = Table(box=box.SIMPLE, show_header=True)
-            table.add_column("Snapshot", style="cyan")
-            table.add_column("Total", justify="right")
-            table.add_column("Stale", justify="right")
-            table.add_column("Stale %", justify="right")
 
-            for slug in sorted(by_snapshot.keys()):
-                snapshot_stats = by_snapshot[slug]
-                if snapshot_stats["stale"] > 0:
-                    pct = (
-                        (snapshot_stats["stale"] / snapshot_stats["total"] * 100) if snapshot_stats["total"] > 0 else 0
-                    )
-                    table.add_row(str(slug), str(snapshot_stats["total"]), str(snapshot_stats["stale"]), f"{pct:.1f}%")
+            # Filter to snapshots with stale runs and prepare data
+            stale_snapshot_data = [
+                (slug, by_snapshot[slug]) for slug in sorted(by_snapshot.keys()) if by_snapshot[slug]["stale"] > 0
+            ]
 
+            columns: list[ColumnDef[Any, Any]] = [
+                ColumnDef("Snapshot", lambda r: str(r[0]), style="cyan"),
+                ColumnDef("Total", lambda r: r[1]["total"], str, justify="right"),
+                ColumnDef("Stale", lambda r: r[1]["stale"], str, justify="right"),
+                ColumnDef(
+                    "Stale %",
+                    lambda r: (r[1]["stale"] / r[1]["total"] * 100) if r[1]["total"] > 0 else 0,
+                    lambda v: f"{v:.1f}%",
+                    justify="right",
+                ),
+            ]
+
+            table = build_table_from_schema(stale_snapshot_data, columns)
             console.print(table)
