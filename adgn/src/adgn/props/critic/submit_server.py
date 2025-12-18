@@ -28,7 +28,6 @@ from adgn.props.db.snapshots import DBLocationAnchor
 from adgn.props.ids import BaseIssueID, SnapshotSlug
 from adgn.props.models.critic_scopes import CriticScopeSpec
 from adgn.props.models.true_positive import LineRange
-from adgn.props.snapshot_paths import snapshot_container_path
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +140,7 @@ class CriticSubmitServer(EnhancedFastMCP):
         critic_run_id: UUID,
         snapshot_slug: SnapshotSlug,
         scope: CriticScopeSpec,
-        snapshot_mount_path: Path | None = None,
+        snapshot_hydrated_path: Path,
         auth: AuthProvider | None = None,
         incremental_tools: bool = False,
     ):
@@ -149,9 +148,9 @@ class CriticSubmitServer(EnhancedFastMCP):
 
         Args:
             critic_run_id: UUID of the critic run to finalize
-            snapshot_slug: Snapshot slug (for computing mount path and validating files)
+            snapshot_slug: Snapshot slug (for resource URIs)
             scope: Scope specification (files to review)
-            snapshot_mount_path: Override mount path for testing (default: compute from slug)
+            snapshot_hydrated_path: Actual hydrated host path for file validation (required)
             auth: Auth provider for HTTP mode (optional)
             incremental_tools: If True, expose upsert_issue/add_occurrence/etc tools that write to PostgreSQL.
                               If False, agent must write SQL directly (only submit/report_failure exposed).
@@ -160,7 +159,7 @@ class CriticSubmitServer(EnhancedFastMCP):
         self._critic_run_id = critic_run_id
         self._snapshot_slug = snapshot_slug
         self._scope = scope
-        self._snapshot_mount_path = snapshot_mount_path or snapshot_container_path(snapshot_slug)
+        self._snapshot_mount_path = snapshot_hydrated_path
 
         # Register resources
         def get_snapshot_slug() -> str:
@@ -518,18 +517,20 @@ def make_critic_submit_server(
         critic_run_id: UUID of the critic run to finalize
         snapshot_slug: Snapshot slug (for computing mount path and validating files)
         scope: Scope specification (files to review)
-        snapshot_mount_path: Override mount path for testing (default: compute from slug)
+        snapshot_mount_path: Hydrated snapshot path (required - must be provided after hydration)
         auth: Auth provider for HTTP mode (optional)
         incremental_tools: If True, expose upsert_issue/add_occurrence/etc tools
 
     Returns:
         Configured CriticSubmitServer instance
     """
+    # Type narrowing: snapshot_mount_path is required (obtained after hydration)
+    assert snapshot_mount_path is not None, "snapshot_mount_path must be provided after hydration"
     return CriticSubmitServer(
         critic_run_id=critic_run_id,
         snapshot_slug=snapshot_slug,
         scope=scope,
-        snapshot_mount_path=snapshot_mount_path,
+        snapshot_hydrated_path=snapshot_mount_path,
         auth=auth,
         incremental_tools=incremental_tools,
     )

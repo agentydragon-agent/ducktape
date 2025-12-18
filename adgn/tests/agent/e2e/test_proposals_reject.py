@@ -6,7 +6,6 @@ import pytest
 
 from adgn.mcp._shared.constants import POLICY_PROPOSER_MOUNT_PREFIX
 from adgn.mcp.approval_policy.engine import CreateProposalArgs
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import MakeCall, UiEndTurnCall
 
 # Skip if Playwright is not installed
@@ -31,9 +30,7 @@ async def test_policy_proposal_reject_updates_ui(
             UiEndTurnCall(),
         ]
     )
-    mock_client = make_mock(runner.handle_request_async)
-
-    s = run_server(lambda model: mock_client)
+    s = run_server(lambda model: runner)
 
     e2e_page.goto(s.base_url)
     e2e_page.create_agent_via_ui()

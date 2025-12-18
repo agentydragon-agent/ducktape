@@ -16,15 +16,24 @@ Does NOT test:
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import uuid4
 
 import pytest
 
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.examples import Example
-from adgn.props.db.models import AggregatedRecallByPrompt, Event, FalsePositive, Snapshot, TruePositive
+from adgn.props.db.models import (
+    AggregatedRecallByPrompt,
+    CriticRun,
+    CriticRunStatus,
+    Event,
+    FalsePositive,
+    Snapshot,
+    TruePositive,
+)
 from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.splits import Split
-from tests.props.conftest import make_critic_run, make_grader_run
+from tests.props.conftest import make_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -47,17 +56,18 @@ def query_test_data(synced_test_fixtures):
     """
     with get_session() as session:
         # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_test_fixtures)
+        # Use explicit join and select columns to avoid lazy loading issues
         train_examples = (
             session.query(Example)
-            .join(Example.snapshot_obj)
-            .filter(Example.snapshot_obj.has(split=Split.TRAIN))
+            .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
+            .filter(Snapshot.split == Split.TRAIN)
             .limit(2)
             .all()
         )
         valid_examples = (
             session.query(Example)
-            .join(Example.snapshot_obj)
-            .filter(Example.snapshot_obj.has(split=Split.VALID))
+            .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
+            .filter(Snapshot.split == Split.VALID)
             .limit(2)
             .all()
         )
@@ -65,25 +75,47 @@ def query_test_data(synced_test_fixtures):
         assert len(train_examples) >= 1, "Need at least 1 train example from git fixtures"
         assert len(valid_examples) >= 2, "Need at least 2 valid examples from git fixtures"
 
+        # Extract values while session is open (avoid DetachedInstanceError)
+        train_0_slug = train_examples[0].snapshot_slug
+        train_0_hash = train_examples[0].scope_hash
+        valid_0_slug = valid_examples[0].snapshot_slug
+        valid_0_hash = valid_examples[0].scope_hash
+        valid_1_slug = valid_examples[1].snapshot_slug
+        valid_1_hash = valid_examples[1].scope_hash
+
         # Create prompt (helper computes proper hash)
         prompt_sha = hash_and_upsert_prompt("Test prompt for query validation")
 
-        # Create critic runs using factory
-        critic_run_train = make_critic_run(
-            example=train_examples[0], prompt_sha256=prompt_sha, completion_summary="Test completion summary for train"
+        # Create critic runs directly with extracted values (avoid passing detached Example objects)
+        critic_run_train = CriticRun(
+            transcript_id=uuid4(),
+            prompt_sha256=prompt_sha,
+            snapshot_slug=train_0_slug,
+            scope_hash=train_0_hash,
+            model="test-model",
+            status=CriticRunStatus.COMPLETED,
+            completion_summary="Test completion summary for train",
         )
         session.add(critic_run_train)
 
-        critic_run_valid_1 = make_critic_run(
-            example=valid_examples[0],
+        critic_run_valid_1 = CriticRun(
+            transcript_id=uuid4(),
             prompt_sha256=prompt_sha,
+            snapshot_slug=valid_0_slug,
+            scope_hash=valid_0_hash,
+            model="test-model",
+            status=CriticRunStatus.COMPLETED,
             completion_summary="Test completion summary for valid-1",
         )
         session.add(critic_run_valid_1)
 
-        critic_run_valid_2 = make_critic_run(
-            example=valid_examples[1],
+        critic_run_valid_2 = CriticRun(
+            transcript_id=uuid4(),
             prompt_sha256=prompt_sha,
+            snapshot_slug=valid_1_slug,
+            scope_hash=valid_1_hash,
+            model="test-model",
+            status=CriticRunStatus.COMPLETED,
             completion_summary="Test completion summary for valid-2",
         )
         session.add(critic_run_valid_2)
@@ -273,7 +305,7 @@ class TestQueryBuilders:
             # Check structure
             row = result[0]
             assert row.id is not None
-            assert row.output is not None
+            assert row.status is not None  # CriticRunStatus enum value
             assert row.created_at is not None
             assert len(row.prompt_sha256) == 64  # SHA256 hash
             assert row.model == "test-model"

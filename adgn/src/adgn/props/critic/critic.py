@@ -16,7 +16,6 @@ TODO: Do not install adgn package into critic container - snapshots contain past
 from collections.abc import Sequence
 import logging
 from pathlib import Path
-import tempfile
 from uuid import UUID, uuid4
 
 import aiodocker
@@ -25,7 +24,7 @@ from fastmcp.server.auth import AuthProvider
 import typer
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted
+from adgn.agent.bootstrap import TypedBootstrapBuilder
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
@@ -39,7 +38,6 @@ from adgn.props.critic.models import CriticInput, CriticScopeSpec, ResolvedFileS
 from adgn.props.critic.submit_server import (
     CRITIC_SCOPE_RESOURCE_URI,
     CRITIC_SNAPSHOT_SLUG_RESOURCE_URI,
-    SUBMIT_PREFIX,
     CriticSubmitServer,
 )
 from adgn.props.critic.user_manager import CriticUserManager
@@ -47,13 +45,9 @@ from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
 from adgn.props.db.models import CriticRun as DBCriticRun, CriticRunStatus, Prompt, Snapshot
-
-# DB output types no longer used - status is in enum column, semantic data in normalized tables
 from adgn.props.display import short_uuid
-from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.lint_issue import make_bootstrap_calls_for_inspection
 from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.prompts.util import render_prompt_template
 
@@ -153,26 +147,20 @@ class CriticAgentEnvironment(AgentEnvironment):
             db_config: Database configuration (passed via DI)
             mount_properties: Whether to mount property definitions at /props
         """
+        # Store params needed by _make_mcp_server
+        self._critic_run_id = critic_run_id
+        self._snapshot_slug = snapshot_slug
+        self._scope = scope
 
         def make_user_manager() -> CriticUserManager:
             """Create temporary critic user with RLS scoping."""
             return CriticUserManager(db_config.admin, critic_run_id)
 
-        def make_mcp_server(auth: AuthProvider) -> EnhancedFastMCP:
-            """Create critic submit server (auth provided by HTTP server)."""
-            return CriticSubmitServer(
-                critic_run_id=critic_run_id,
-                snapshot_slug=snapshot_slug,
-                scope=scope,
-                auth=auth,
-                incremental_tools=False,  # Agent writes SQL directly
-            )
-
         super().__init__(
             docker_client=docker_client,
             user_manager_factory=make_user_manager,
-            mcp_server_factory=make_mcp_server,
             hydrator=hydrator,
+            db_config=db_config,
             snapshot_slugs=[snapshot_slug],
             workspace_prefix="critic_workspace_",
             mount_properties=mount_properties,
@@ -181,6 +169,28 @@ class CriticAgentEnvironment(AgentEnvironment):
     def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
         """Return MCP resources to read during bootstrap: snapshot slug and scope."""
         return [("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI), ("Scope", CRITIC_SCOPE_RESOURCE_URI)]
+
+    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
+        """Create critic submit server with hydrated snapshot path.
+
+        Called by PropertiesDockerCompositorHTTP after hydration completes.
+        Accesses self._hydrated_paths populated by base class.
+
+        Args:
+            auth: Auth provider for HTTP authentication
+
+        Returns:
+            CriticSubmitServer configured with actual hydrated host path
+        """
+        hydrated_path = self._hydrated_paths[self._snapshot_slug]
+        return CriticSubmitServer(
+            critic_run_id=self._critic_run_id,
+            snapshot_slug=self._snapshot_slug,
+            scope=self._scope,
+            snapshot_hydrated_path=hydrated_path,
+            auth=auth,
+            incremental_tools=False,  # Agent writes SQL directly
+        )
 
 
 # =============================================================================
@@ -201,16 +211,17 @@ async def run_critic(
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
     max_turns: int,
-    http_mode: bool = False,
 ) -> tuple[UUID, CriticRunStatus]:
     """Execute critic agent to produce candidate issues and persist to DB.
 
-    Sets up critic submit server, Docker exec MCP, and standard handlers (bootstrap,
-    database events, AbortIf). Runs agent until submit_result or error is called.
+    Sets up critic submit server via MCP-over-HTTP, Docker exec MCP, and standard handlers
+    (bootstrap, database events, AbortIf). Runs agent until submit_result or error is called.
 
-    Args:
-        http_mode: If True, critic_submit is exposed via HTTP (managed by CriticAgentEnvironment).
-            If False, critic_submit is mounted in compositor (which handles snapshot hydration).
+    Uses CriticAgentEnvironment which manages:
+    - Temporary database user with RLS scoping
+    - HTTP MCP server with critic_submit tool
+    - Docker container with docker_exec
+    - Hydrated snapshot mounted at /snapshots/<slug>/
 
     Returns:
         Tuple of (critic_run_id, status)
@@ -259,202 +270,134 @@ async def run_critic(
         # Print IDs early to console for easy retrieval if run is interrupted
         typer.echo(f"[critic] transcript_id={short_uuid(transcript_id)} run_id={short_uuid(run_id)}", err=True)
 
-    # Choose compositor based on http_mode
-    # HTTP mode: use CriticAgentEnvironment (manages user, HTTP server, and container)
-    #            Network: PROPS_NETWORK_NAME, snapshots mounted at /snapshots/<slug>/
-    #            Server: incremental_tools=False (agent writes SQL directly, only submit/report_failure)
-    # In-proc mode: use PropertiesDockerCompositor (runtime + critic_submit mounted in-proc)
-    #               Network: "none" (isolated, no network access needed)
-    #               Creates temp workspace and hydrates snapshot internally
-    #               Server: incremental_tools=True (MCP tools write to PostgreSQL)
-    comp_ctx: CriticAgentEnvironment | PropertiesDockerCompositor
-    workspace_tmpdir = None  # Only for in-proc mode
-    critic_submit_server: EnhancedFastMCP | None = None
+    # Use CriticAgentEnvironment which manages:
+    # - Temporary database user with RLS scoping
+    # - HTTP MCP server with critic_submit tool
+    # - Docker container with docker_exec
+    # - Hydrated snapshot mounted at /snapshots/<slug>/
+    comp_ctx = CriticAgentEnvironment(
+        snapshot_slug=input_data.snapshot_slug,
+        docker_client=docker_client,
+        hydrator=hydrator,
+        critic_run_id=run_id,
+        scope=input_data.scope,
+        db_config=db_config,
+        mount_properties=mount_properties,
+    )
 
-    try:
-        if http_mode:
-            # HTTP mode: Use CriticAgentEnvironment (manages user, HTTP server, container)
-            comp_ctx = CriticAgentEnvironment(
-                snapshot_slug=input_data.snapshot_slug,
-                docker_client=docker_client,
-                hydrator=hydrator,
-                critic_run_id=run_id,
-                scope=input_data.scope,
-                db_config=db_config,
-                mount_properties=mount_properties,
+    async with comp_ctx as comp:
+        # Set up handlers
+        builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
+
+        # Use agent environment's bootstrap method
+        logger.info("Critic bootstrap: using agent environment bootstrap items")
+        bootstrap_calls = comp_ctx.bootstrap_items(builder, comp.runtime)
+
+        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+
+        def _ready_state() -> bool:
+            with get_session() as session:
+                critic_run = session.get(DBCriticRun, run_id)
+                return critic_run is not None and critic_run.status in (
+                    CriticRunStatus.COMPLETED,
+                    CriticRunStatus.REPORTED_FAILURE,
+                )
+
+        handlers: list = [
+            bootstrap,
+            *await build_props_handlers(
+                transcript_id=transcript_id,
+                verbose_prefix=f"[CRITIC {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
+                if verbose
+                else None,
+                compositor=comp,
+                max_lines=max_lines,
+            ),
+            RedirectOnTextMessageHandler(
+                reminder_message=(
+                    "You are a code review critic agent. The critique has not yet been submitted "
+                    "(critique_submit tool has not been called), so your task is unfinished. "
+                    "Use the provided MCP tools to mark all issues and occurrences you want to report, "
+                    "then either submit the critique or report failure if you encounter unrecoverable problems. "
+                    "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
+                    "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
+                )
+            ),
+            AbortIf(should_abort=_ready_state),
+            *extra_handlers,
+            MaxTurnsHandler(max_turns=max_turns),
+        ]
+
+        # Build combined dynamic instructions by rendering the template
+        async def _build_critic_instructions() -> str:
+            """Build critic system instructions by rendering critic_system.j2.md template.
+
+            The template has two placeholders:
+            1. {{ compositor_instructions }} - MCP wiring: servers, tools, resources
+            2. {{ optimized_prompt }} - The prompt being tested/optimized
+            """
+            compositor_instructions = comp.render_agent_dynamic_instructions()
+            return render_prompt_template(
+                "critic/prompts/critic_system.j2.md",
+                compositor_instructions=compositor_instructions,
+                optimized_prompt=optimized_prompt,
             )
-        else:
-            # In-proc mode: Create temp workspace manually
-            workspace_tmpdir = tempfile.TemporaryDirectory(prefix="critic_inproc_workspace_")
-            workspace_path = Path(workspace_tmpdir.__enter__())
 
-            # Create unified critic submit server with incremental tools (writes to PostgreSQL)
-            critic_submit_server = CriticSubmitServer(
-                critic_run_id=run_id,
-                snapshot_slug=input_data.snapshot_slug,
-                scope=input_data.scope,
-                incremental_tools=True,
+        # Run critic agent
+        # Note: resources and compositor_meta are auto-mounted by base Compositor
+        async with Client(comp) as mcp_client:
+            agent = await Agent.create(
+                mcp_client=mcp_client,
+                client=client,
+                handlers=handlers,
+                parallel_tool_calls=True,
+                tool_policy=AllowAnyToolOrTextMessage(),
+                reasoning_summary=ReasoningSummary.detailed,
+                dynamic_instructions=_build_critic_instructions,
             )
-
-            comp_ctx = PropertiesDockerCompositor(
-                workspace_path,
-                docker_client,
-                hydrator=hydrator,
-                snapshot_slugs=[input_data.snapshot_slug],
-                workspace_mode="rw",
-                ephemeral=False,  # Critic needs persistent workspace
-                mount_properties=mount_properties,
-                network_mode="none",  # Isolated, no network access
-            )
-
-        async with comp_ctx as comp:
-            # Mount critic submit server in in-proc mode
-            if not http_mode and critic_submit_server is not None:
-                critic_submit_mount = await comp.mount_inproc(SUBMIT_PREFIX, critic_submit_server, pinned=True)
-
-            # Set up handlers
-            builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-
-            # Build bootstrap: different for HTTP vs in-proc mode
-            if http_mode:
-                # HTTP mode: Use agent environment's bootstrap method
-                logger.info("Critic bootstrap: using agent environment bootstrap items")
-                # Type narrowing: comp_ctx is CriticAgentEnvironment in HTTP mode
-                assert isinstance(comp_ctx, CriticAgentEnvironment), "HTTP mode requires CriticAgentEnvironment"
-                bootstrap_calls = comp_ctx.bootstrap_items(builder, comp.runtime)
+            status: CriticRunStatus
+            try:
+                await agent.run()
+            except MaxTurnsExceededError:
+                # Agent ran out of turns
+                # NOTE: max_turns_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
+                logger.warning(
+                    f"Critic hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
+                    f"transcript_id={short_uuid(transcript_id)}"
+                )
+                status = CriticRunStatus.MAX_TURNS_EXCEEDED
+            except Exception as e:
+                # Check if this is a context length exceeded error
+                # TODO: Check specifically for openai.BadRequestError with code='context_length_exceeded'
+                # instead of string matching - more robust for different API providers
+                error_str = str(e).lower()
+                if "context_length_exceeded" in error_str or "context window" in error_str:
+                    # NOTE: context_length_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
+                    logger.warning(
+                        f"Critic hit context length limit for {input_data.snapshot_slug}, "
+                        f"transcript_id={short_uuid(transcript_id)}: {e}"
+                    )
+                    status = CriticRunStatus.CONTEXT_LENGTH_EXCEEDED
+                else:
+                    # Re-raise other exceptions
+                    raise
             else:
-                # In-proc mode: Direct resource reads via compositor
-                snapshot_path = comp.snapshot_container_path(input_data.snapshot_slug)
-                bootstrap_calls = [
-                    *make_bootstrap_calls_for_inspection(comp, builder),
-                    # Show snapshot directory structure
-                    docker_exec_call_mounted(builder, comp.runtime, cmd=["ls", "-la", str(snapshot_path)]),
-                    # Read snapshot slug from critic_submit server resource
-                    builder.read_resource(
-                        comp.resources,
-                        server=critic_submit_mount.prefix,
-                        uri=CRITIC_SNAPSHOT_SLUG_RESOURCE_URI,
-                        max_bytes=256,
-                    ),
-                    # Read file scope from critic_submit server resource
-                    builder.read_resource(
-                        comp.resources,
-                        server=critic_submit_mount.prefix,
-                        uri=CRITIC_SCOPE_RESOURCE_URI,
-                        max_bytes=65536,
-                    ),
-                ]
-
-            bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
-
-            def _ready_state() -> bool:
-                # Both HTTP and in-proc modes now write to database (unified server with incremental_tools)
+                # Agent completed normally - check database
                 with get_session() as session:
                     critic_run = session.get(DBCriticRun, run_id)
-                    return critic_run is not None and critic_run.status in (
-                        CriticRunStatus.COMPLETED,
-                        CriticRunStatus.REPORTED_FAILURE,
-                    )
+                    if critic_run is None:
+                        raise CriticExecutionError("Critic run not found in database")
 
-            handlers: list = [
-                bootstrap,
-                *await build_props_handlers(
-                    transcript_id=transcript_id,
-                    verbose_prefix=f"[CRITIC {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
-                    if verbose
-                    else None,
-                    compositor=comp,
-                    max_lines=max_lines,
-                ),
-                RedirectOnTextMessageHandler(
-                    reminder_message=(
-                        "You are a code review critic agent. The critique has not yet been submitted "
-                        "(critique_submit tool has not been called), so your task is unfinished. "
-                        "Use the provided MCP tools to mark all issues and occurrences you want to report, "
-                        "then either submit the critique or report failure if you encounter unrecoverable problems. "
-                        "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
-                        "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
-                    )
-                ),
-                AbortIf(should_abort=_ready_state),
-                *extra_handlers,
-                MaxTurnsHandler(max_turns=max_turns),
-            ]
-
-            # Build combined dynamic instructions by rendering the template
-            async def _build_critic_instructions() -> str:
-                """Build critic system instructions by rendering critic_system.j2.md template.
-
-                The template has two placeholders:
-                1. {{ compositor_instructions }} - MCP wiring: servers, tools, resources
-                2. {{ optimized_prompt }} - The prompt being tested/optimized
-                """
-                compositor_instructions = comp.render_agent_dynamic_instructions()
-                return render_prompt_template(
-                    "critic/prompts/critic_system.j2.md",
-                    compositor_instructions=compositor_instructions,
-                    optimized_prompt=optimized_prompt,
-                )
-
-            # Run critic agent
-            # Note: resources and compositor_meta are auto-mounted by base Compositor
-            async with Client(comp) as mcp_client:
-                agent = await Agent.create(
-                    mcp_client=mcp_client,
-                    client=client,
-                    handlers=handlers,
-                    parallel_tool_calls=True,
-                    tool_policy=AllowAnyToolOrTextMessage(),
-                    reasoning_summary=ReasoningSummary.detailed,
-                    dynamic_instructions=_build_critic_instructions,
-                )
-                status: CriticRunStatus
-                try:
-                    await agent.run()
-                except MaxTurnsExceededError:
-                    # Agent ran out of turns
-                    # NOTE: max_turns_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
-                    logger.warning(
-                        f"Critic hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
-                        f"transcript_id={short_uuid(transcript_id)}"
-                    )
-                    status = CriticRunStatus.MAX_TURNS_EXCEEDED
-                except Exception as e:
-                    # Check if this is a context length exceeded error
-                    # TODO: Check specifically for openai.BadRequestError with code='context_length_exceeded'
-                    # instead of string matching - more robust for different API providers
-                    error_str = str(e).lower()
-                    if "context_length_exceeded" in error_str or "context window" in error_str:
-                        # NOTE: context_length_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
-                        logger.warning(
-                            f"Critic hit context length limit for {input_data.snapshot_slug}, "
-                            f"transcript_id={short_uuid(transcript_id)}: {e}"
+                    if critic_run.status == CriticRunStatus.REPORTED_FAILURE:
+                        raise CriticExecutionError(
+                            f"Critic reported failure: {critic_run.completion_summary or 'No message'}"
                         )
-                        status = CriticRunStatus.CONTEXT_LENGTH_EXCEEDED
-                    else:
-                        # Re-raise other exceptions
-                        raise
-                else:
-                    # Agent completed normally - check database for both HTTP and in-proc modes
-                    with get_session() as session:
-                        critic_run = session.get(DBCriticRun, run_id)
-                        if critic_run is None:
-                            raise CriticExecutionError("Critic run not found in database")
 
-                        if critic_run.status == CriticRunStatus.REPORTED_FAILURE:
-                            raise CriticExecutionError(
-                                f"Critic reported failure: {critic_run.completion_summary or 'No message'}"
-                            )
+                    if critic_run.status != CriticRunStatus.COMPLETED:
+                        raise CriticDidNotSubmitError("Critic did not submit")
 
-                        if critic_run.status != CriticRunStatus.COMPLETED:
-                            raise CriticDidNotSubmitError("Critic did not submit")
-
-                        status = CriticRunStatus.COMPLETED
-    # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
-    finally:
-        # Cleanup in-proc mode resources (HTTP mode cleanup handled by CriticAgentEnvironment)
-        if not http_mode and workspace_tmpdir:
-            workspace_tmpdir.__exit__(None, None, None)
+                    status = CriticRunStatus.COMPLETED
+    # CriticAgentEnvironment.__aexit__ cleans up HTTP server, container, and temp user
 
     # Phase 2: Update run with status
     with get_session() as session:

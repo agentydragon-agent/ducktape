@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import EchoCall, UiEndTurnCall
 
 # Skip if Playwright is not installed
@@ -32,7 +31,7 @@ def test_approvals_delivery_and_user_approve(e2e_page, run_server, responses_fac
 
     runner = make_step_runner(steps=[EchoCall("hello"), UiEndTurnCall()])
 
-    s = run_server(lambda model: make_mock(runner.handle_request_async))
+    s = run_server(lambda model: runner)
 
     e2e_page.goto(s.base_url)
     e2e_page.create_agent_via_ui()

@@ -27,7 +27,7 @@ from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import SystemMessage
-from tests.llm.support.openai_mock import make_mock
+from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import AssistantMessage, MakeCall
 
 # Test tool name constant
@@ -167,13 +167,13 @@ async def test_agent_compositor_flat_tools_request_schema(
     # Mount only server_a for phase 1 and capture Mounted object
     mounted_a = await compositor.mount_inproc("server_a", server_a)
 
-    mock_phase1 = make_step_runner(
+    runner_phase1 = make_step_runner(
         steps=[
             MakeCall(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )
-    client_phase1 = make_mock(mock_phase1.handle_request_async)
+    client_phase1 = CapturingOpenAIModel(runner_phase1)
 
     system_prompt = "You are a helpful assistant. Calculate 10 + 20."
 
@@ -203,13 +203,13 @@ async def test_agent_compositor_flat_tools_request_schema(
     # Mount server_b for phase 2 (server_a already mounted)
     await compositor.mount_inproc("server_b", server_b)
 
-    mock_phase2 = make_step_runner(
+    runner_phase2 = make_step_runner(
         steps=[
             MakeCall(mounted_a.prefix, TOOL_A_NAME, ToolAInput(param_x=10, param_y=20)),
             AssistantMessage("The result is 30."),
         ]
     )
-    client_phase2 = make_mock(mock_phase2.handle_request_async)
+    client_phase2 = CapturingOpenAIModel(runner_phase2)
 
     # Use compositor_client fixture for phase 2
     agent = await Agent.create(

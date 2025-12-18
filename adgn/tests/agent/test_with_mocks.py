@@ -7,7 +7,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import BoundOpenAIModel, OpenAIModelProto, UserMessage
 from tests.agent.test_matchers import assert_function_call_output_structured
-from tests.llm.support.openai_mock import LIVE, make_mock
+from tests.llm.support.openai_mock import LIVE
 from tests.support.steps import AssistantMessage, EchoCall
 
 
@@ -23,7 +23,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     client: OpenAIModelProto
     if client_mode is not LIVE:
         runner = make_step_runner(steps=[EchoCall("hi"), AssistantMessage("done")])
-        client = make_mock(runner.handle_request_async)
+        client = runner  # _StepRunner implements OpenAIModelProto directly
     else:
         client = BoundOpenAIModel(client=live_openai, model=responses_factory.model)
 

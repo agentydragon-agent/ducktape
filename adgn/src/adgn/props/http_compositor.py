@@ -9,14 +9,21 @@ from dataclasses import dataclass
 import logging
 from pathlib import Path
 import secrets
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 from fastmcp import FastMCP
 from fastmcp.server.auth import AuthProvider, StaticTokenVerifier
 import uvicorn
 
 from adgn.mcp._shared.container_session import BindMount
-from adgn.props.docker_env import PROPS_NETWORK_NAME, PropertiesDockerCompositor, get_docker_network_gateway_async
+from adgn.mcp.compositor.server import Compositor
+from adgn.props.docker_env import (
+    DOCKER_MOUNT_PREFIX,
+    PROPS_NETWORK_NAME,
+    PropertiesDockerCompositor,
+    ensure_critic_image_async,
+    get_docker_network_gateway_async,
+)
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.util.net import pick_free_port, wait_for_port
@@ -151,7 +158,7 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         self,
         workspace_root: Path,
         docker_client: aiodocker.Docker,
-        server_factory: Callable[[AuthProvider], FastMCP],
+        agent_environment,  # AgentEnvironment with _make_mcp_server method
         db_conn: DbConnectionConfig,
         hydrator: SnapshotHydrator,
         *,
@@ -164,15 +171,15 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         Args:
             workspace_root: Path to workspace directory to mount in container
             docker_client: Async Docker client (managed by caller)
-            server_factory: Factory function that takes an AuthProvider and returns FastMCP server
+            agent_environment: AgentEnvironment instance (provides _make_mcp_server method)
             db_conn: Database connection config (required for HTTP mode)
             hydrator: Snapshot hydrator (required - no default)
             snapshot_slugs: Snapshots to hydrate and mount (default: none)
             mount_properties: Whether to mount property definitions at /props (default: False)
             extra_binds: Additional bind mounts (default empty tuple)
         """
-        # Store server factory for __aenter__ (gateway IP will be computed there)
-        self._server_factory = server_factory
+        # Store agent environment for __aenter__ (will call _make_mcp_server method)
+        self._agent_environment = agent_environment
         self._exit_stack: AsyncExitStack | None = None
 
         # Initialize parent with HTTP mode configuration
@@ -192,27 +199,80 @@ class PropertiesDockerCompositorHTTP(PropertiesDockerCompositor):
         )
 
     async def __aenter__(self) -> PropertiesDockerCompositor:
-        """Start HTTP server, then start compositor with server URL/token in environment."""
+        """Start HTTP server, then start compositor with server URL/token in environment.
+
+        Manually orchestrates the following order:
+        1. Mount resources/compositor_meta (grandparent)
+        2. Hydrate snapshots (populate _hydrated_paths)
+        3. Start MCP HTTP server (needs hydrated paths)
+        4. Set container environment with MCP server URL/token
+        5. Create Docker exec server (uses environment)
+        """
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
 
         # Compute gateway IP for the props network (async)
         container_host = await get_docker_network_gateway_async(self._docker_client, PROPS_NETWORK_NAME)
 
-        # Start HTTP server first
+        # Step 1: Mount resources and compositor_meta (call grandparent)
+        await Compositor.__aenter__(self)
+
+        # Step 2: Hydrate snapshots (copied from PropertiesDockerCompositor)
+        if self._hydrator and self._snapshot_slugs:
+            self._snapshot_stack = AsyncExitStack()
+            await self._snapshot_stack.__aenter__()
+
+            extra_snapshot_binds: list[BindMount] = []
+            for slug in self._snapshot_slugs:
+                hydrated = await self._snapshot_stack.enter_async_context(self._hydrator.hydrate(slug))
+                bind = BindMount(
+                    host_path=hydrated.content_root.resolve(),
+                    container_path=self.snapshot_container_path(slug),
+                    mode="ro",
+                )
+                extra_snapshot_binds.append(bind)
+                self._hydrated_paths[slug] = bind.host_path
+                logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as {bind.container_path})")
+
+            self._extra_binds = [*self._extra_binds, *extra_snapshot_binds]
+            logger.info(f"Mounted {len(extra_snapshot_binds)} snapshots (read-only)")
+
+        # Step 3: Copy hydrated paths to agent environment and start MCP server
+        self._agent_environment._hydrated_paths = self._hydrated_paths
         server_handle = await self._exit_stack.enter_async_context(
-            launch_mcp_http_server(self._server_factory, container_host=container_host)
+            launch_mcp_http_server(
+                lambda auth: self._agent_environment._make_mcp_server(auth), container_host=container_host
+            )
         )
 
-        # Inject MCP server URL and token into container environment
+        # Step 4: Set container environment with MCP server credentials
         self._extra_env = {"MCP_SERVER_URL": server_handle.url, "MCP_SERVER_TOKEN": server_handle.token}
 
-        # Now start the parent compositor (which will use the extra_env)
-        return cast(PropertiesDockerCompositor, await super().__aenter__())
+        # Step 5: Create Docker exec server (copied from PropertiesDockerCompositor)
+        image_id = await ensure_critic_image_async(self._docker_client)
+        docker_server = self._create_docker_server(image_id)
+        self.runtime = await self.mount_inproc(DOCKER_MOUNT_PREFIX, docker_server, pinned=True)
+
+        return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
         """Clean up compositor and HTTP server (reverse order)."""
+        logger.info("HTTP_COMP_DEBUG: starting __aexit__")
+        # Clean up exit stack (HTTP server)
         if self._exit_stack:
+            logger.info("HTTP_COMP_DEBUG: cleaning up exit stack (HTTP server)")
             await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
             self._exit_stack = None
-        await super().__aexit__(exc_type, exc_val, exc_tb)
+            logger.info("HTTP_COMP_DEBUG: exit stack cleaned up")
+
+        # Clean up hydrated snapshots (if we did hydration)
+        if self._snapshot_stack is not None:
+            logger.info("HTTP_COMP_DEBUG: cleaning up snapshot stack")
+            await self._snapshot_stack.__aexit__(exc_type, exc_val, exc_tb)
+            self._snapshot_stack = None
+            logger.info("HTTP_COMP_DEBUG: snapshot stack cleaned up")
+
+        # Clean up grandparent (Compositor)
+        logger.info("HTTP_COMP_DEBUG: calling Compositor.__aexit__")
+        await Compositor.__aexit__(self, exc_type, exc_val, exc_tb)
+        logger.info("HTTP_COMP_DEBUG: Compositor.__aexit__ complete")

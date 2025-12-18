@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import UiEndTurnCall, UiSendMessageCall
 
 pytestmark = pytest.mark.usefixtures()
@@ -32,7 +31,7 @@ def test_ui_create_chat_and_restore(e2e_page, run_server, responses_factory, mak
     )
 
     # Start server instance A
-    s1 = run_server(lambda model: make_mock(runner.handle_request_async))
+    s1 = run_server(lambda model: runner)
 
     # 1) Open UI and create agent via the UI
     e2e_page.goto(s1.base_url)
@@ -54,7 +53,7 @@ def test_ui_create_chat_and_restore(e2e_page, run_server, responses_factory, mak
     s1.stop()
 
     # Start server instance B (same DB)
-    s2 = run_server(lambda model: make_mock(runner.handle_request_async))
+    s2 = run_server(lambda model: runner)
 
     # 4) Re-open UI on the same agent id, wait for WS connected (dot), verify hydration
     e2e_page.goto_agent(s2.base_url, agent_id)

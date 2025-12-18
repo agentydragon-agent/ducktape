@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+import contextlib
 from dataclasses import dataclass
 from importlib import resources
 import logging
@@ -30,7 +31,9 @@ from adgn.cli_utils import async_run
 from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
+from adgn.props.bootstrap_capture import BootstrapCaptured, CapturingClient, format_bootstrap_output
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.cmd_agent_helper import app as agent_helper_app
 from adgn.props.cli.cmd_analyze_exec import cmd_analyze_exec
 from adgn.props.cli.cmd_classify_noops import cmd_classify_noops
 from adgn.props.cli.cmd_cluster_unknowns import app as cluster_unknowns_app
@@ -108,6 +111,7 @@ app = TyperDI(help="adgn-properties — properties tooling", add_completion=Fals
 app.add_typer(db_app, name="db")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(cluster_unknowns_app, name="cluster-unknowns")
+app.add_typer(agent_helper_app, name="agent-helper")
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top
@@ -330,6 +334,7 @@ async def prompt_optimize(
 ) -> None:
     """Run a Prompt Engineering agent to optimize a critic system prompt using prompt_eval MCP with $ budget."""
     docker_client = aiodocker.Docker()
+    db_config = get_database_config()
     try:
         await run_prompt_optimizer(
             budget=budget,
@@ -340,6 +345,7 @@ async def prompt_optimize(
             grader_client=build_client(grader_model),
             docker_client=docker_client,
             target_metric=target_metric,
+            db_config=db_config,
             verbose=verbose,
         )
     finally:
@@ -533,6 +539,7 @@ async def prompt_improve_cmd(
 
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    openai_client = build_client(model)
     try:
         result = await run_improvement_agent(
             examples=example_keys,
@@ -542,6 +549,7 @@ async def prompt_improve_cmd(
             hydrator=hydrator,
             docker_client=docker_client,
             db_config=db_config,
+            client=openai_client,
             output_dir=out_dir,
             verbose=verbose,
         )
@@ -928,7 +936,9 @@ async def cmd_run(
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    dry_run: bool = typer.Option(False, help="Compose prompt only; save to /tmp and exit"),
+    dry_run: bool = typer.Option(
+        False, help="Capture first API request (tools, instructions, inputs) and print JSON; don't call LLM"
+    ),
     max_lines: int = opt.OPT_MAX_LINES,
     hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
@@ -976,12 +986,30 @@ async def cmd_run(
             # Clean up temp workspace
             shutil.rmtree(workspace_tmpdir, ignore_errors=True)
 
+        # Build client - CapturingClient for dry_run, real client otherwise
         if dry_run:
-            prompt_dir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-            prompt_dir.mkdir(parents=True, exist_ok=True)
-            prompt_path = prompt_dir / f"codex_prompt_{snapshot}.md"
-            prompt_path.write_text(prompt, encoding="utf-8")
-            typer.echo(f"Prompt saved to: {prompt_path}")
+            capturing_client = CapturingClient()
+            with contextlib.suppress(BootstrapCaptured):
+                await run_critic(
+                    input_data=CriticInput(
+                        snapshot_slug=snapshot, scope=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
+                    ),
+                    client=capturing_client,
+                    hydrator=hydrator,
+                    db_config=db_config,
+                    prompt_optimization_run_id=None,
+                    docker_client=docker_client,
+                    mount_properties=True,
+                    verbose=False,
+                    max_lines=max_lines,
+                    max_turns=1,
+                )
+
+            if capturing_client.captured is None:
+                typer.echo("[ERROR] No request captured - agent exited before first API call", err=True)
+                raise typer.Exit(1)
+
+            typer.echo(format_bootstrap_output(capturing_client.captured))
             return
 
         # Run critic with DB persistence

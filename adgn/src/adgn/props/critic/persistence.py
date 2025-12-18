@@ -40,7 +40,9 @@ from adgn.props.db.snapshots import (
     DBOccurrence,
     DBReportedIssue,
 )
+from adgn.props.ids import InputIssueID
 from adgn.props.models.true_positive import FileOccurrence, LineRange
+from adgn.props.rationale import Rationale
 
 if TYPE_CHECKING:
     from adgn.props.db.models import ReportedIssueOccurrence
@@ -128,9 +130,6 @@ def convert_reported_issue_orm_to_mcp(issue: ORMReportedIssue) -> ReportedIssue:
     Returns:
         MCP representation of the reported issue with converted occurrences
     """
-    from adgn.props.ids import InputIssueID
-    from adgn.props.rationale import Rationale
-
     return ReportedIssue(
         id=InputIssueID(issue.issue_id),
         rationale=Rationale(issue.rationale),

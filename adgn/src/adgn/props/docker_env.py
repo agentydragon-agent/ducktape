@@ -104,6 +104,7 @@ class PropertiesDockerCompositor(Compositor):
         self._hydrator = hydrator
         self._snapshot_slugs = snapshot_slugs
         self._snapshot_stack: AsyncExitStack | None = None
+        self._hydrated_paths: dict[SnapshotSlug, Path] = {}
 
     async def __aenter__(self):
         """Start compositor and mount Docker runtime server.
@@ -130,6 +131,9 @@ class PropertiesDockerCompositor(Compositor):
                     mode="ro",
                 )
                 extra_snapshot_binds.append(bind)
+
+                # Store hydrated host path for MCP servers to access
+                self._hydrated_paths[slug] = bind.host_path
                 logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as {bind.container_path})")
 
             # Merge snapshot binds with user-provided extra_binds

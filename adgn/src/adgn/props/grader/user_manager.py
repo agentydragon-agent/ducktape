@@ -60,55 +60,23 @@ class GraderUserManager(TempUserManager):
         return f"grader_agent_{self.run_id}"
 
     async def grant_permissions(self, username: str) -> None:
-        """Grant grader-specific permissions.
+        """Grant grader-specific permissions via template role inheritance.
 
-        Permissions:
+        The grader_agent_template role (created in migration) has:
         - SELECT on ground truth tables (true_positives, false_positives)
-        - SELECT on critic input tables (critic_runs, reported_issues, reported_issue_occurrences)
+        - SELECT on critic input tables (critic_runs, reported_issues, reported_issue_occurrences, snapshots, grader_runs)
         - SELECT on grading_credit_sums view (needed by check_credit_sum trigger)
         - INSERT, SELECT, UPDATE, DELETE on grading_decisions
-        - Schema usage
-        - Sequence usage for SERIAL columns
+        - Schema usage and sequence usage
 
         RLS policies (created in migration) automatically filter grading_decisions to the user's run_id.
-        Hard deletes enabled for decision revision workflow.
         """
-        # Ground truth tables (read-only)
-        ground_truth_tables = ["true_positives", "false_positives"]
-
-        # Input tables (read-only) - critic output stored directly in critic_runs
-        input_tables = ["critic_runs", "reported_issues", "reported_issue_occurrences"]
-
-        # Views (read-only) - used by triggers for validation
-        views = ["grading_credit_sums"]
-
-        # Grader workflow tables (full DML: read-write with DELETE)
-        grader_tables = ["grading_decisions"]
-
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)
+            await conn.execute(text(f"GRANT grader_agent_template TO {quoted_username}"))
 
-            # Grant schema access
-            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
+        logger.debug(f"Granted grader_agent_template to {username}")
 
-            # Grant SELECT on ground truth tables
-            for table in ground_truth_tables:
-                await conn.execute(text(f"GRANT SELECT ON TABLE {table} TO {quoted_username}"))
-
-            # Grant SELECT on input tables
-            for table in input_tables:
-                await conn.execute(text(f"GRANT SELECT ON TABLE {table} TO {quoted_username}"))
-
-            # Grant SELECT on views
-            for view in views:
-                await conn.execute(text(f"GRANT SELECT ON {view} TO {quoted_username}"))
-
-            # Grant full DML (including DELETE) on grader tables
-            for table in grader_tables:
-                await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {table} TO {quoted_username}"))
-
-            # Grant USAGE on sequences (needed for SERIAL columns in grading_decisions)
-            await conn.execute(text(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {quoted_username}"))
-
-        logger.debug(f"Granted grader permissions to {username} (full DML, read ground truth + critiques + views)")
+    async def revoke_permissions(self, username: str) -> None:
+        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""

@@ -30,6 +30,10 @@ if TYPE_CHECKING:
     from adgn.mcp._shared.mounted import Mounted
     from adgn.mcp.exec.docker.server import ContainerExecServer
 
+# Default timeout for bootstrap docker exec calls (1 second).
+# Bootstrap commands should complete quickly - failing fast reveals issues.
+DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS = 1000
+
 
 def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel] | None, type]]:
     """Extract tool Input/Output models from FastMCP server (no session needed).
@@ -238,102 +242,52 @@ class TypedBootstrapBuilder:
 
 def docker_exec_call(
     builder: TypedBootstrapBuilder,
-    mount_prefix: MCPMountPrefix,
-    exec_server: FastMCP,
-    cmd: list[str],
-    *,
-    timeout_ms: int = 10_000,
-) -> FunctionCallItem:
-    """Bootstrap helper for docker exec.
-
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        mount_prefix: Server mount prefix (already validated, where exec server is mounted)
-        exec_server: FastMCP server instance with exec tool
-        cmd: Command to execute
-        timeout_ms: Execution timeout in milliseconds
-
-    Raises:
-        RuntimeError: If exec server has no exec-compatible tools or has multiple
-    """
-    # Introspect server to find the exec tool (tool that accepts ExecInput)
-    models = introspect_server_models(exec_server)
-
-    exec_tools = [
-        name for name, (input_type, _) in models.items() if input_type is not None and issubclass(input_type, ExecInput)
-    ]
-
-    if not exec_tools:
-        raise RuntimeError("No exec tool found on server (expected tool accepting ExecInput)")
-    if len(exec_tools) > 1:
-        raise RuntimeError(f"Multiple exec tools found: {exec_tools} (expected exactly one)")
-
-    exec_tool_name = exec_tools[0]
-
-    return builder.call(
-        mount_prefix, exec_tool_name, ExecInput(cmd=cmd, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
-    )
-
-
-def docker_exec_call_mounted(
-    builder: TypedBootstrapBuilder,
     runtime: Mounted[ContainerExecServer],
     cmd: Sequence[str | Path],
     *,
-    timeout_ms: int = 10_000,
+    timeout_ms: int | None = None,
 ) -> FunctionCallItem:
-    """Bootstrap helper for docker exec using Mounted server.
+    """Bootstrap helper for docker exec.
+
+    Uses DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS (1 second) by default.
+    Bootstrap commands should complete quickly; failing fast reveals issues.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
         runtime: Mounted runtime server (e.g., comp.runtime)
         cmd: Command to execute (accepts str or Path elements)
-        timeout_ms: Execution timeout in milliseconds
-
-    Raises:
-        RuntimeError: If exec server has no exec-compatible tools or has multiple
+        timeout_ms: Optional timeout override (default: DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS)
 
     Example:
-        call = docker_exec_call_mounted(builder, comp.runtime, ["ls", "-la", Path("/workspace")])
+        call = docker_exec_call(builder, comp.runtime, ["ls", "-la", Path("/workspace")])
+        # With custom timeout for slower commands
+        call = docker_exec_call(builder, comp.runtime, ["psql", "-c", "..."], timeout_ms=5000)
     """
-    # Introspect server to find the exec tool (tool that accepts ExecInput)
-    models = introspect_server_models(runtime.server)
-
-    exec_tools = [
-        name for name, (input_type, _) in models.items() if input_type is not None and issubclass(input_type, ExecInput)
-    ]
-
-    if not exec_tools:
-        raise RuntimeError("No exec tool found on server (expected tool accepting ExecInput)")
-    if len(exec_tools) > 1:
-        raise RuntimeError(f"Multiple exec tools found: {exec_tools} (expected exactly one)")
-
-    exec_tool_name = exec_tools[0]
-
     # Convert Path elements to str for ExecInput
     cmd_str = [str(item) for item in cmd]
 
     return builder.call(
-        runtime.prefix, exec_tool_name, ExecInput(cmd=cmd_str, cwd=None, env=None, user=None, timeout_ms=timeout_ms)
+        runtime.prefix,
+        runtime.server.exec_tool.name,
+        ExecInput(
+            cmd=cmd_str, cwd=None, env=None, user=None, timeout_ms=timeout_ms or DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS
+        ),
     )
 
 
 def read_package_file_call(
-    builder: TypedBootstrapBuilder,
-    runtime: Mounted[ContainerExecServer],
-    package: str,
-    file_path: str,
-    *,
-    timeout_ms: int = 10_000,
+    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], package: str, file_path: str
 ) -> FunctionCallItem:
     """Bootstrap helper for reading a file from a Python package using importlib.resources.
+
+    Uses DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS as the timeout (1 second).
+    Bootstrap commands should complete quickly; failing fast reveals issues.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
         runtime: Mounted runtime server (e.g., comp.runtime)
         package: Python package name (e.g., 'adgn.props.critic')
         file_path: Path to file within package (e.g., 'prompts/critic_system.j2.md')
-        timeout_ms: Execution timeout in milliseconds
 
     Example:
         call = read_package_file_call(
@@ -344,7 +298,7 @@ def read_package_file_call(
     python_code = (
         f"from importlib import resources; print(resources.files('{package}').joinpath('{file_path}').read_text())"
     )
-    return docker_exec_call_mounted(builder, runtime, ["python", "-c", python_code], timeout_ms=timeout_ms)
+    return docker_exec_call(builder, runtime, ["python", "-c", python_code])
 
 
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)

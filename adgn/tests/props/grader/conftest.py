@@ -112,13 +112,19 @@ def zero_issues_critic_input(test_snapshot, test_prompt_sha, subtract_file_scope
 
 @pytest.fixture
 def zero_issues_critic_responses(make_openai_client):
-    """Mock critic client for zero-issues scenario."""
+    """Mock critic client for zero-issues scenario (HTTP mode).
+
+    Uses CLI helper: adgn-properties agent-helper critic submit
+    """
     factory = ResponsesFactory("gpt-5-nano")
     responses = [
-        factory.make(factory.docker_exec(["cat", "/workspace/subtract.py"], timeout_ms=5000)),
+        # Use CLI helper to submit zero issues
         factory.make(
-            factory.tool_call("critic_submit_submit", {"issues_count": 0, "summary": "Reviewed code, no issues found"})
-        ),
+            factory.docker_exec(
+                ["adgn-properties", "agent-helper", "critic", "submit", "0", "Reviewed code, no issues found"],
+                timeout_ms=15000,
+            )
+        )
     ]
     return make_openai_client(responses)
 

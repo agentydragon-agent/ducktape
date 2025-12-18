@@ -10,10 +10,9 @@ Key schema details:
 - Query pattern: session.query(Example).filter_by(snapshot_slug=..., scope_hash=...)
 """
 
-from adgn.props.agent_helpers import setup_agent_database
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun, GraderRun, Snapshot
+from adgn.props.db.models import CriticRun, GraderRun
 from adgn.props.display import short_sha
 
 # Example keys to query (can be patched in tests)
@@ -25,9 +24,6 @@ examples = [
 
 def main():
     """Query details for specific examples."""
-    # One-time setup (reads PG* env vars)
-    setup_agent_database()
-
     with get_session() as session:
 
         print("Querying example details:")

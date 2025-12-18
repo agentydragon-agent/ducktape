@@ -1,30 +1,33 @@
 """Database session management.
 
-This module uses process-global state (_engine, _SessionLocal) for the database connection.
+Uses SQLAlchemy's scoped_session for thread-local session management with lazy
+engine initialization.
 
 Usage pattern:
-    # Connect to database (once per process, or in test fixture)
-    init_db()  # Defaults to production config from component env vars
-
-    # Anywhere in code
+    # Just use get_session() - database auto-initializes on first use:
     with get_session() as session:
         session.add(obj)
         # Commits on successful exit, rolls back on exception
 
-    # One-time setup: recreate database from scratch
-    init_db()
-    recreate_database()
+    # For tests that need explicit control:
+    dispose_db()          # Reset state
+    init_db(test_config)  # Initialize with specific config
+    recreate_database()   # Drop all + create schema
 
 Limitations:
     - Cannot have multiple database connections in the same process
-    - Call init_db() only once per process (tests can call multiple times to switch DBs)
     - Safe with pytest-xdist using --dist=loadscope (module-level isolation)
-    - Not thread-safe during init_db() (don't call concurrently)
+
+Thread safety:
+    - scoped_session provides thread-local sessions automatically
+    - Engine initialization uses a lock for one-time setup
+    - Multiple threads can call get_session() concurrently
 
 Design rationale:
+    - Auto-init: No explicit setup required for normal use
     - Connection pooling: Single engine = efficient connection reuse
     - Simplicity: No dependency injection, works well for evaluation harness use case
-    - Test-friendly: Module-scoped fixtures work correctly with loadscope
+    - Test-friendly: dispose_db() + init_db(config) for test isolation
 """
 
 from __future__ import annotations
@@ -33,39 +36,104 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 import logging
 from pathlib import Path
+import threading
 
 from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, scoped_session, sessionmaker
 
 from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.models import Base
 
 logger = logging.getLogger(__name__)
 
+# Module-level state
 _engine = None
-_SessionLocal = None
+_session_factory = scoped_session(sessionmaker())
+_init_lock = threading.Lock()
+
+
+def _get_engine(config: DatabaseConfig | None = None):
+    """Get or create the database engine (lazy initialization).
+
+    Thread-safe: uses a lock to ensure only one initialization happens.
+    """
+    global _engine  # noqa: PLW0603
+
+    if _engine is not None:
+        return _engine
+
+    with _init_lock:
+        # Double-check after acquiring lock
+        if _engine is not None:
+            return _engine
+
+        if config is None:
+            config = get_database_config()
+
+        url = config.admin_url()
+        logger.info(f"Connecting to database: {config.admin.host}:{config.admin.port}/{config.admin.database}")
+
+        # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
+        _engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
+
+        # Bind the scoped session factory to the engine
+        _session_factory.configure(bind=_engine)
+
+        # Verify connection immediately
+        _check_connection_internal(timeout_secs=2)
+
+        return _engine
+
+
+def _check_connection_internal(timeout_secs: int = 2) -> None:
+    """Internal connection check (assumes _engine is set)."""
+    if _engine is None:
+        raise RuntimeError("Database engine not initialized - call init_db() first")
+    logger.debug(f"Validating database connection (timeout: {timeout_secs}s)...")
+    test_engine = create_engine(
+        _engine.url.render_as_string(hide_password=False), echo=False, connect_args={"connect_timeout": timeout_secs}
+    )
+    try:
+        with test_engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        logger.debug("Database connection validated")
+    finally:
+        test_engine.dispose()
 
 
 def dispose_db() -> None:
     """Dispose of the current database connection.
 
     This is needed when switching databases (e.g., between test databases).
-    After calling this, init_db() can be called again.
+    After calling this, the next get_session() call will reinitialize.
     """
-    global _engine, _SessionLocal  # noqa: PLW0603
+    global _engine  # noqa: PLW0603
 
-    if _engine is not None:
-        _engine.dispose()
-        _engine = None
-        _SessionLocal = None
+    with _init_lock:
+        _session_factory.remove()
+        if _engine is not None:
+            _engine.dispose()
+            _engine = None
+
+
+def is_db_initialized() -> bool:
+    """Check if database connection is already established."""
+    return _engine is not None
 
 
 def init_db(config: DatabaseConfig | None = None) -> None:
-    """Connect to database and verify connection (fail fast).
+    """Explicitly initialize database connection (for tests).
+
+    For normal use, prefer get_session() which auto-initializes.
+    Use this when you need to:
+    - Initialize with a specific config (e.g., test database)
+    - Control when initialization happens
+
+    Thread-safe: only one initialization can happen at a time.
 
     Args:
         config: Database configuration (defaults to production config from env vars)
@@ -73,32 +141,13 @@ def init_db(config: DatabaseConfig | None = None) -> None:
     Raises:
         ValueError: If config is None and required env vars not set (run from devenv shell)
         sqlalchemy.exc.OperationalError: If cannot connect to database within timeout
-        RuntimeError: If database already initialized (should only be called once)
+        RuntimeError: If database already initialized (call dispose_db() first)
     """
-    global _engine, _SessionLocal  # noqa: PLW0603
-
-    # Enforce single initialization - if already initialized, this is a bug
-    if _engine is not None:
-        raise RuntimeError(
-            "Database already initialized. init_db() should only be called once. "
-            "If you need to switch databases (e.g., in tests), you must explicitly "
-            "reinitialize by disposing the engine first or restructuring the code."
-        )
-
-    if config is None:
-        config = get_database_config()
-
-    url = config.admin_url()
-    logger.info(f"Connecting to database: {config.admin.host}:{config.admin.port}/{config.admin.database}")
-    # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
-    # pool_size: number of connections kept open
-    # max_overflow: additional connections beyond pool_size
-    # Total concurrent connections: pool_size + max_overflow = 32
-    _engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
-    _SessionLocal = sessionmaker(bind=_engine, autocommit=False, autoflush=False)
-
-    # Verify connection immediately
-    check_connection(timeout_secs=2)
+    with _init_lock:
+        if _engine is not None:
+            raise RuntimeError("Database already initialized. Call dispose_db() first to switch databases.")
+    # Release lock before potentially slow operation
+    _get_engine(config)
 
 
 def check_connection(timeout_secs: int = 2) -> None:
@@ -113,19 +162,7 @@ def check_connection(timeout_secs: int = 2) -> None:
     """
     if _engine is None:
         raise RuntimeError("Database not initialized. Call init_db() first.")
-
-    logger.debug(f"Validating database connection (timeout: {timeout_secs}s)...")
-    # Create a temporary engine with connection timeout for quick validation
-    # Use render_as_string to properly preserve credentials
-    test_engine = create_engine(
-        _engine.url.render_as_string(hide_password=False), echo=False, connect_args={"connect_timeout": timeout_secs}
-    )
-    try:
-        with test_engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        logger.debug("Database connection validated")
-    finally:
-        test_engine.dispose()
+    _check_connection_internal(timeout_secs)
 
 
 def recreate_database() -> None:
@@ -244,18 +281,22 @@ def _create_schema() -> None:
 def get_session() -> Iterator[Session]:
     """Get a database session (context manager).
 
+    Auto-initializes database on first use (reads config from PG* env vars).
+    Uses scoped_session for thread-local session management.
+
     Example:
         with get_session() as session:
             session.add(obj)
             session.commit()
 
     Raises:
-        RuntimeError: If database not initialized (call init_db() first)
+        ValueError: If required env vars not set (run from devenv shell)
+        sqlalchemy.exc.OperationalError: If cannot connect to database
     """
-    if _SessionLocal is None:
-        raise RuntimeError("Database not initialized. Call init_db() first.")
+    # Ensure engine is initialized (lazy, thread-safe)
+    _get_engine()
 
-    session = _SessionLocal()
+    session = _session_factory()
     try:
         yield session
         session.commit()
@@ -263,4 +304,4 @@ def get_session() -> Iterator[Session]:
         session.rollback()
         raise
     finally:
-        session.close()
+        _session_factory.remove()

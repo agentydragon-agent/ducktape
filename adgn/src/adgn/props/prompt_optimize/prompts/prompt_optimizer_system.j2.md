@@ -107,22 +107,40 @@ Let data guide your next move. Common patterns:
 
 ### Core Tools (MCP)
 
+**Recommended: Use the Pydantic-typed helper wrappers** from `adgn.props.prompt_optimize.helpers` module (example provided in bootstrap). These helpers provide:
+- Type-safe input/output via Pydantic models
+- Clean error handling with structured error messages
+- Easier to use than raw MCP tool calls
+
 **Prompt management:**
-- `upsert_prompt`: Save prompt text to database, returns SHA256 hash for referencing
+- `upsert_prompt(file_path: str) -> UpsertPromptOutput`: Save prompt text to database, returns SHA256 hash
+  ```python
+  from adgn.props.prompt_optimize.helpers import upsert_prompt
+  output = await upsert_prompt("/workspace/my_prompt.txt")
+  prompt_sha = output.prompt_sha256
+  ```
 
 **Evaluation:**
-- `run_critic_on_example`: Run critic on snapshot with specified file scope
-  - Parameters: `snapshot_slug`, `scope` (discriminated union), `prompt_sha256`, `max_turns`
-  - Scope types:
-    - `{"kind": "specific_files", "files": ["path/to/file.py", ...]}` - review specific files
-    - `{"kind": "entire_snapshot"}` - review all files in snapshot
-  - Train split: Can use both specific_files (per-file examples) and entire_snapshot (whole-snapshot)
-{% if target_metric == "whole-repo" %}
-  - Valid split: Can ONLY use entire_snapshot (whole-snapshot required in whole-repo mode)
-{% elif target_metric == "targeted" %}
-  - Valid split: Can use both specific_files and entire_snapshot (targeted mode allows per-file validation)
-{% endif %}
-- `run_grader`: Grade critique against ground truth, returns recall metrics (requires `critic_run_id`, `max_turns`)
+- `run_critic(snapshot_slug, scope_hash, prompt_sha256, max_turns) -> RunCriticOutput`: Run critic on an example
+  ```python
+  from adgn.props.prompt_optimize.helpers import run_critic
+  critic_output = await run_critic(
+      snapshot_slug="test-fixtures/test-trivial",
+      scope_hash=example.scope_hash,  # From examples table
+      prompt_sha256=prompt_sha,
+      max_turns=15
+  )
+  critic_run_id = critic_output.critic_run_id
+  ```
+
+- `run_grader(critic_run_id, max_turns) -> RunGraderOutput`: Grade critique against ground truth
+  ```python
+  from adgn.props.prompt_optimize.helpers import run_grader
+  grader_output = await run_grader(str(critic_run_id), max_turns=200)
+  grader_run_id = grader_output.grader_run_id
+  ```
+
+**Parallel evaluation example:** See `prompt_optimizer_helpers_example.py` (provided in bootstrap) for how to run critic+grader on multiple examples in parallel using `asyncio.gather()`.
 
 **Execution:**
 - `docker_exec`: Execute commands in container (file operations, Python scripts, custom analyses)
@@ -187,16 +205,15 @@ with get_session() as session:
 
 ### Example Scripts (Loaded in Bootstrap)
 
-Reference patterns from `adgn.props.examples` module:
-- `query_top_prompts.py` - Top validation performers
-- `query_train_examples.py` - List training examples
-- `query_run_status.py` - Check success vs max_turns_exceeded
-- `query_execution_traces.py` - Link runs to prompts, examine tool call sequences
+Reference patterns from `adgn.props.prompt_optimize.examples` module:
+- `listing.py` - List training/validation examples by split and scope
+- `runs.py` - Run status (success vs max_turns_exceeded), execution traces, failure analysis
+- `pareto.py` - Pareto frontier analysis of prompt performance
+- `evaluation_pipeline.py` - Async run_critic/run_grader usage patterns
 {% if target_metric == "whole-repo" %}
-- `query_full_snapshot_train_examples.py` - **Critical:** Query hardest train examples (same distribution as validation)
-- `query_train_vs_valid_performance_whole_repo.py` - Detect overfitting (compare train vs valid recall using `get_validation_run_aggregates()`)
+- `prompt_metrics_whole_repo.py` - **Critical:** Query metrics via `get_validation_run_aggregates()` SECURITY DEFINER function
 {% elif target_metric == "targeted" %}
-- `query_train_vs_valid_performance_targeted.py` - Detect overfitting (compare train vs valid recall with sample size checks)
+- `prompt_metrics_targeted.py` - Query metrics via views with sample size checks (n_examples >= 5)
 {% endif %}
 
 **Usage:** Study these patterns, then write your own custom analysis scripts in `/workspace/` to test hypotheses, compute custom metrics, visualize trends. Use `docker_exec` to run them.
@@ -293,7 +310,7 @@ Both critic and grader have turn limits to prevent infinite loops.
 - `"success"`: Completed normally
 - `"max_turns_exceeded"`: Hit turn limit before calling `submit()`
 
-**Query status:** See `query_run_status.py` for patterns.
+**Query status:** See `runs.py` for patterns.
 
 **Implications:**
 - **Critic max_turns_exceeded:** No critique produced, no grader run possible, recall treated as 0.0
@@ -303,18 +320,7 @@ Both critic and grader have turn limits to prevent infinite loops.
 
 ### Dataset Scale
 
-Query the database to understand dataset size:
-
-```python
-from adgn.props.db import get_session
-from adgn.props.db.models import Example, Snapshot
-from sqlalchemy import func
-
-with get_session() as session:
-    train_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'train').scalar()
-    valid_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'valid').scalar()
-    test_count = session.query(func.count(Example.scope_hash)).join(Snapshot).filter(Snapshot.split == 'test').scalar()
-```
+Query the database to understand dataset size - see `query_dataset_scale.py` in bootstrap.
 
 **Expected characteristics:**
 - Train: Many examples (mixed difficulty - single-file, multi-file, full-snapshot)

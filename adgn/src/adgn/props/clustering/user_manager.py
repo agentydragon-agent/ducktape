@@ -54,62 +54,23 @@ class ClusteringUserManager(TempUserManager):
         return f"clustering_run_{self.run_id}_agent"
 
     async def grant_permissions(self, username: str) -> None:
-        """Grant clustering-specific permissions.
+        """Grant clustering-specific permissions via template role inheritance.
 
-        Permissions:
+        The clustering_agent_template role (created in migration) has:
         - Read-write on clustering tables (clustering_runs, unknown_clusters, unknown_assignments)
         - Read-only on reference tables (snapshots, TPs, FPs, grader_runs, critic_runs,
           reported_issues, reported_issue_occurrences, grading_decisions, examples, prompts)
-        - Read-only on aggregate views (for optional metrics queries)
-        - Schema usage
+        - Read-only on aggregate views
+        - Schema usage and sequence usage
 
         RLS policies (created in setup.py) automatically filter access to the user's run_id.
         """
-        # Clustering tables (read-write)
-        clustering_tables = ["clustering_runs", "unknown_clusters", "unknown_assignments"]
-
-        # Reference tables (read-only)
-        reference_tables = [
-            "snapshots",
-            "true_positives",
-            "false_positives",
-            "grader_runs",
-            "critic_runs",
-            "reported_issues",
-            "reported_issue_occurrences",
-            "grading_decisions",
-            "examples",
-            "prompts",
-        ]
-
-        # Aggregate views (read-only, optional for metrics queries)
-        aggregate_views = [
-            "occurrence_credits",
-            "occurrence_run_credits",
-            "aggregated_recall_by_prompt",
-            "aggregated_recall_by_example",
-        ]
-
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)
+            await conn.execute(text(f"GRANT clustering_agent_template TO {quoted_username}"))
 
-            # Grant schema access
-            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
+        logger.debug(f"Granted clustering_agent_template to {username}")
 
-            # Grant read-write on clustering tables
-            for table in clustering_tables:
-                await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE {table} TO {quoted_username}"))
-
-            # Grant read-only on reference tables
-            for table in reference_tables:
-                await conn.execute(text(f"GRANT SELECT ON TABLE {table} TO {quoted_username}"))
-
-            # Grant read-only on aggregate views
-            for view in aggregate_views:
-                await conn.execute(text(f"GRANT SELECT ON {view} TO {quoted_username}"))
-
-            # Grant USAGE on sequences (needed for SERIAL columns in clustering tables)
-            await conn.execute(text(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {quoted_username}"))
-
-        logger.debug(f"Granted clustering permissions to {username}")
+    async def revoke_permissions(self, username: str) -> None:
+        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""

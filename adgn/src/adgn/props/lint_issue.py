@@ -20,7 +20,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call_mounted
+from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.handler import AbortIf, BaseHandler, SequenceHandler
 from adgn.agent.loop_control import InjectItems, RequireAnyTool
@@ -236,7 +236,7 @@ def make_linter_bootstrap_calls(
     dirs = sorted({str(Path(p).parent) for p in files})
     if dirs:
         calls.append(
-            docker_exec_call_mounted(
+            docker_exec_call(
                 builder, compositor.runtime, cmd=["ls", "-la", *[compositor.working_dir / d for d in dirs]]
             )
         )
@@ -266,9 +266,7 @@ def make_linter_bootstrap_calls(
 
     # Create numbered line calls for all collected paths
     calls.extend(
-        docker_exec_call_mounted(
-            builder, compositor.runtime, cmd=["nl", "-ba", "-w1", "-s", " ", path], timeout_ms=10_000
-        )
+        docker_exec_call(builder, compositor.runtime, cmd=["nl", "-ba", "-w1", "-s", " ", path])
         for path in paths_to_number
     )
 
@@ -290,7 +288,7 @@ def make_bootstrap_calls_for_inspection(
             server=compositor.runtime.prefix,
             uri=compositor.runtime.server.container_info_resource.uri,
         ),
-        docker_exec_call_mounted(builder, compositor.runtime, cmd=["ls", "-la", compositor.working_dir]),
+        docker_exec_call(builder, compositor.runtime, cmd=["ls", "-la", compositor.working_dir]),
     ]
 
 

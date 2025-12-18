@@ -10,7 +10,7 @@ from adgn.agent.loop_control import RequireAnyTool
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.resources.server import ResourcesReadArgs
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, UserMessage
-from tests.llm.support.openai_mock import make_mock
+from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import AssistantMessage, MakeCall
 
 
@@ -38,7 +38,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
             AssistantMessage("ok"),
         ]
     )
-    client = make_mock(runner.handle_request_async)
+    client = CapturingOpenAIModel(runner)
     agent = await Agent.create(
         mcp_client=compositor_client,
         client=client,

@@ -16,13 +16,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from adgn.mcp._shared.resources import add_resource_prefix
 from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
 from adgn.mcp._shared.urls import ANY_URL
+from adgn.mcp.compositor.mount import MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.resources.types import ListSubscriptionSummary, ResourceEntry, SubscriptionsIndex, SubscriptionSummary
 from adgn.mcp.snapshots import RunningServerEntry
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 if TYPE_CHECKING:
-    from adgn.mcp.compositor.server import Compositor, MountEvent
+    from adgn.mcp.compositor.server import Compositor
 
 ## ResourceEntry moved to adgn.mcp.resources.types to avoid cycles
 
@@ -698,10 +699,7 @@ class ResourcesServer(EnhancedFastMCP):
 
         # Register lifecycle listeners
         async def _on_mount_change(name: str, action: MountEvent) -> None:
-            # Import at runtime to avoid circular import
-            from adgn.mcp.compositor.server import MountEvent as MountEventEnum
-
-            if action is not MountEventEnum.UNMOUNTED:
+            if action is not MountEvent.UNMOUNTED:
                 return
             # Server is being unmounted. Do not attempt remote unsubscriptions; the
             # Compositor tears down underlying sessions. Update local records only.

@@ -2,15 +2,14 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from adgn.props.db import get_session
-from adgn.props.db.models import Snapshot
 from adgn.props.db.examples import Example
+from adgn.props.db.models import Snapshot
+from adgn.props.examples.working_with_examples import main
 
-def test_working_with_examples_with_synced_data(synced_test_fixtures, mock_agent_setup, capsys):
+
+def test_working_with_examples_with_synced_data(synced_test_fixtures, capsys):
     """Test that working_with_examples handles examples correctly."""
-    from adgn.props.examples.working_with_examples import main
 
     # Get some train examples to query
     with get_session() as session:
@@ -46,10 +45,9 @@ def test_working_with_examples_with_synced_data(synced_test_fixtures, mock_agent
     assert "Critic runs:" in output
     assert "Grader runs:" in output
 
-def test_working_with_examples_missing_examples(test_db, mock_agent_setup, capsys):
-    """Test that working_with_examples handles missing examples gracefully."""
-    from adgn.props.examples.working_with_examples import main
 
+def test_working_with_examples_missing_examples(test_db, capsys):
+    """Test that working_with_examples handles missing examples gracefully."""
     # Use fake example keys that don't exist
     fake_examples = [
         ("nonexistent/2025-01-01-00", "0" * 64),

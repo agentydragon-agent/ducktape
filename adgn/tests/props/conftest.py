@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator, Callable, Generator
 import hashlib
 import inspect
+import os
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -60,6 +61,16 @@ from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 from tests.llm.support.openai_mock import FakeOpenAIModel
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add custom pytest command-line options."""
+    parser.addoption(
+        "--keep-db",
+        action="store_true",
+        default=False,
+        help="Preserve test database on failure for debugging (does not drop test database after test)",
+    )
 
 
 @pytest.fixture
@@ -647,6 +658,39 @@ def populate_grading_decisions(
             session.add(decision)
 
 
+def make_unknown_grading_decisions(
+    *, grader_run_id: UUID, unknown_ids: list[str], session: Session, rationale_prefix: str = "Unknown issue"
+) -> None:
+    """Create GradingDecision rows marking input issues as unknowns.
+
+    Deterministic factory - creates one no-match decision per unknown_id.
+    All target fields are NULL (indicating no TP/FP match).
+
+    Precondition: ReportedIssue rows must already exist for all unknown_ids.
+
+    Args:
+        grader_run_id: Grader run to associate decisions with
+        unknown_ids: List of input issue IDs to mark as unknowns
+        session: Database session (uses provided session, not get_session())
+        rationale_prefix: Prefix for rationale text (default: "Unknown issue")
+
+    Raises:
+        IntegrityError: If referenced input_issue_id doesn't exist (CHECK constraint)
+    """
+    for unknown_id in unknown_ids:
+        decision = GradingDecision(
+            grader_run_id=grader_run_id,
+            input_issue_id=unknown_id,
+            target_tp_id=None,
+            target_tp_occurrence_id=None,
+            target_fp_id=None,
+            target_fp_occurrence_id=None,
+            credit=0.0,
+            rationale=f"{rationale_prefix} {unknown_id}",
+        )
+        session.add(decision)
+
+
 def make_critic_and_grader_run(
     *, example: Example, prompt_sha256: str, grader_output: DBGraderOutput, session: Session
 ) -> tuple[CriticRun, GraderRun]:
@@ -984,7 +1028,15 @@ def test_db(
 
     yield test_config  # Test runs here with access to config
 
-    # Cleanup: drop the test database
+    # Cleanup: drop the test database (unless --keep-db option or KEEP_TEST_DB env var is set)
+    keep_db = request.config.getoption("--keep-db") or os.environ.get("KEEP_TEST_DB") == "1"
+    if keep_db:
+        print(f"\n\n=== KEEPING TEST DATABASE: {db_name} ===")
+        print(f"Database config: {test_config}")
+        print(f"Connect with: direnv exec adgn psql -d {db_name}")
+        postgres_engine.dispose()
+        return
+
     with postgres_engine.connect() as conn:
         # Terminate connections to the test database
         conn.execute(

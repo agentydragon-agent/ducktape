@@ -13,7 +13,6 @@ from adgn.mcp._shared.resources import read_text_json_typed
 from adgn.mcp.approval_policy.engine import CallDecision, PendingCallsResponse
 from adgn.openai_utils.model import SystemMessage
 from tests.agent.testdata.approval_policy import make_policy
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, EchoCall
 
 
@@ -29,15 +28,14 @@ async def test_approval_system_wired_and_blocks_on_ask(
     )
 
     # Model tries to call the tool once (needs approval) then finishes with text
-    mock = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
-    client = make_mock(mock.handle_request_async)
+    runner = make_step_runner(steps=[EchoCall("test"), AssistantMessage("done")])
 
     # Use make_policy_gateway_compositor with custom policy engine
     servers = dict(echo_spec)
     async with make_policy_gateway_compositor(servers, policy_engine=engine) as comp, Client(comp) as mcp_client:
         agent = await Agent.create(
             mcp_client=mcp_client,
-            client=client,
+            client=runner,
             handlers=[FinishOnTextMessageHandler(), BaseHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),
         )

@@ -7,7 +7,7 @@ import pytest
 
 from adgn.agent.runtime.container import build_container
 from adgn.openai_utils.model import InputTextPart
-from tests.llm.support.openai_mock import make_mock
+from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import ApprovalPolicyAdminSetPolicyCall, AssistantMessage
 
 
@@ -30,7 +30,7 @@ async def test_notifications_handler_in_container_inserts_system_message(
             AssistantMessage("done"),
         ]
     )
-    client = make_mock(runner.handle_request_async)
+    client = CapturingOpenAIModel(runner)
     # Build container headless (no UI) with allow-all policy
     container = await build_container(
         agent_id="notif-e2e",

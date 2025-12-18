@@ -14,6 +14,7 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 
 - @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
 - @docs/prompt_optimizer_context.md — Context specifically for prompt optimization tasks
+- @docs/agent_infrastructure.md — Infrastructure strategy, helper patterns, bootstrap layering
 - @README.md — Package overview, conventions, workflow
 
 **Specimen authoring (in specimens repo):**

@@ -7,26 +7,120 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+import json
+import logging
 from pathlib import Path
 from typing import Protocol, TypeVar
 
-from pydantic import BaseModel, ConfigDict
+from mcp import types as mcp_types
+from pydantic import BaseModel, ConfigDict, TypeAdapter
 
+from adgn.mcp._shared.calltool import extract_structured_content
 from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
 from adgn.mcp._shared.mounted import Mounted
+from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
-from adgn.mcp.exec.models import BaseExecResult, Exited
+from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from adgn.mcp.ui.server import SendMessageInput
-from adgn.openai_utils.model import ResponsesRequest, ResponsesResult
+from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
 from adgn.props.critic.submit_server import CriticSubmitServer, UpsertIssueInput
-from adgn.props.grader.grader import GraderSubmitServer
-from adgn.props.grader.models import GradeSubmitInput
+from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
 from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
 
+logger = logging.getLogger(__name__)
+
 T = TypeVar("T", bound=BaseModel)
+
+
+def _is_runtime_exec_tool(tool_name: str) -> bool:
+    """Check if tool_name is a runtime exec tool (e.g., runtime_exec)."""
+    try:
+        prefix, tool = parse_tool_name(tool_name)
+        return prefix == DOCKER_MOUNT_PREFIX and tool == "exec"
+    except ValueError:
+        return False
+
+
+def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
+    """Assert all runtime exec calls in the request completed with exit code 0.
+
+    Bootstrap commands run BEFORE the test's step sequence. If any bootstrap command
+    failed or timed out, the test should fail immediately with clear diagnostics.
+
+    This function:
+    1. Builds a map of call_id -> tool_name from FunctionCallItem entries
+    2. Finds FunctionCallOutputItem entries for runtime_exec calls (via parse_tool_name)
+    3. Parses outputs as BaseExecResult and validates exit status
+
+    Raises:
+        AssertionError: If any runtime exec command failed or timed out, with details
+            about which command failed and why.
+    """
+    # Build call_id -> tool_name map from FunctionCallItem entries
+    call_id_to_tool: dict[str, str] = {}
+    for item in req.input:
+        if isinstance(item, FunctionCallItem):
+            call_id_to_tool[item.call_id] = item.name
+
+    failures: list[str] = []
+
+    for item in req.input:
+        if not isinstance(item, FunctionCallOutputItem):
+            continue
+
+        call_id = item.call_id
+        tool_name = call_id_to_tool.get(call_id)
+
+        # Only check runtime exec calls (tool name: runtime_exec)
+        if tool_name is None or not _is_runtime_exec_tool(tool_name):
+            continue
+
+        output_str = item.output
+        if output_str is None:
+            failures.append(f"Runtime exec call has no output (tool={tool_name}, call_id={call_id})")
+            continue
+
+        # Parse as CallToolResult and then as BaseExecResult
+        try:
+            result_dict = json.loads(output_str)
+            result = TypeAdapter(mcp_types.CallToolResult).validate_python(result_dict)
+            exec_result = extract_structured_content(result, BaseExecResult)
+        except (json.JSONDecodeError, ValueError, TypeError) as e:
+            # If it's a runtime exec call but can't be parsed, that's suspicious
+            failures.append(
+                f"Failed to parse runtime exec result (tool={tool_name}, call_id={call_id}):\n"
+                f"  parse error: {e}\n"
+                f"  raw output: {output_str[:500]!r}"
+            )
+            continue
+
+        # Check exit status - dump full model on failure for diagnostics
+        if isinstance(exec_result.exit, TimedOut):
+            failures.append(
+                f"Bootstrap command TIMED OUT (tool={tool_name}, call_id={call_id}):\n"
+                f"  {exec_result.model_dump_json(indent=2)}"
+            )
+        elif isinstance(exec_result.exit, Exited):
+            if exec_result.exit.exit_code != 0:
+                failures.append(
+                    f"Bootstrap command FAILED with exit_code={exec_result.exit.exit_code} "
+                    f"(tool={tool_name}, call_id={call_id}):\n"
+                    f"  {exec_result.model_dump_json(indent=2)}"
+                )
+        elif isinstance(exec_result.exit, Killed):
+            failures.append(
+                f"Bootstrap command was KILLED (tool={tool_name}, call_id={call_id}):\n"
+                f"  {exec_result.model_dump_json(indent=2)}"
+            )
+
+    if failures:
+        raise AssertionError(
+            f"Bootstrap runtime exec commands failed ({len(failures)} failures):\n\n" + "\n\n".join(failures)
+        )
+
 
 # Test constants (not re-exported - use server class constants directly)
 FAIL_TEST_TOOL_NAME = "fail"  # Used in test fixtures
@@ -48,6 +142,23 @@ class Step(Protocol):
 
 
 @dataclass
+class AssertBootstrapSuccess:
+    """Assert all bootstrap docker exec commands succeeded.
+
+    Use as the FIRST step in any test that uses bootstrap. Validates that all
+    docker exec commands in the transcript completed with exit code 0.
+
+    This step does not consume a mock response - it only validates the bootstrap
+    phase completed successfully before the step sequence begins.
+    """
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        assert_bootstrap_exec_success(req)
+        # Return a minimal assistant message to continue the conversation
+        return factory.make_assistant_message("Bootstrap validated successfully")
+
+
+@dataclass
 class MakeCall:
     """Initial turn: make a tool call."""
 
@@ -57,6 +168,19 @@ class MakeCall:
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         return factory.make_mcp_tool_call(self.server, self.tool, self.args)
+
+
+@dataclass
+class MakeCallWithBootstrapValidation(MakeCall):
+    """Initial turn: validate bootstrap succeeded, then make a tool call.
+
+    Use this instead of MakeCall when the test has bootstrap docker exec commands
+    that should be validated before the first agent tool call.
+    """
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        assert_bootstrap_exec_success(req)
+        return super().execute(req, factory)
 
 
 @dataclass
@@ -133,7 +257,11 @@ class AssertDockerExecThenFinish:
 
         # Assert exit code is 0
         if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
-            raise AssertionError(f"Expected exit code 0, got {output.exit}")
+            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
+            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+            raise AssertionError(
+                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
+            )
 
         # Assert stdout contains expected text
         stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
@@ -141,6 +269,42 @@ class AssertDockerExecThenFinish:
             raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
 
         return factory.make_assistant_message(self.message)
+
+
+@dataclass
+class AssertDockerExecThenCall:
+    """Assert docker exec succeeded and stdout contains expected text, then make another call.
+
+    Use when you need to chain docker exec calls with validation between them.
+    Fails if:
+    - Previous call was not docker_exec
+    - Exit code is not 0
+    - stdout doesn't contain expected_output
+    """
+
+    expected_output: str
+    next_cmd: list[str]
+    timeout_ms: int = 30000
+    tool_name: str = "exec"
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        assert_last_call(req, "docker_exec")
+        output = assert_and_extract(req, "docker_exec", BaseExecResult)
+
+        # Assert exit code is 0
+        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
+            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
+            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+            raise AssertionError(
+                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
+            )
+
+        # Assert stdout contains expected text
+        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+        if self.expected_output not in stdout_text:
+            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
+
+        return factory.make(factory.docker_exec(self.next_cmd, timeout_ms=self.timeout_ms, tool_name=self.tool_name))
 
 
 @dataclass
@@ -171,6 +335,19 @@ class DockerExecCall:
                 tool_name=self.tool_name,
             )
         )
+
+
+@dataclass
+class DockerExecCallWithBootstrapValidation(DockerExecCall):
+    """Make a docker exec call after validating bootstrap succeeded.
+
+    Use this instead of DockerExecCall when the test has bootstrap docker exec
+    commands that should be validated before the first agent tool call.
+    """
+
+    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
+        assert_bootstrap_exec_success(req)
+        return super().execute(req, factory)
 
 
 @dataclass
@@ -227,21 +404,6 @@ class CriticSubmitUpsertIssueCall:
             self.critic_submit.prefix,
             self.critic_submit.tool_name(upsert_tool),
             UpsertIssueInput(issue_id=self.issue_id, description=self.description),
-        )
-
-
-@dataclass
-class GraderSubmitResultCall:
-    """Submit grading results via grader_submit."""
-
-    grader_submit: Mounted[GraderSubmitServer]
-    grade_input: GradeSubmitInput
-
-    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
-        return factory.make_mcp_tool_call(
-            self.grader_submit.prefix,
-            self.grader_submit.tool_name(self.grader_submit.server.submit_result_tool),
-            self.grade_input,
         )
 
 

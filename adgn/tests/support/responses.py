@@ -18,6 +18,7 @@ from adgn.openai_utils.model import (
     FunctionCallItem,
     FunctionCallOutputItem,
     InputTokensDetails,
+    OpenAIModelProto,
     OutputTokensDetails,
     ReasoningItem,
     ResponseOutItem,
@@ -156,30 +157,35 @@ class ResponsesFactory:
         return self._make_call_with_output(self.mcp_tool_call(server, tool, arguments), output)
 
 
-class _StepRunner:
-    """Internal: Generic state machine driven by declarative steps."""
+class _StepRunner(OpenAIModelProto):
+    """Step-based OpenAI mock that executes declarative test steps.
+
+    Implements OpenAIModelProto directly, so can be used as the client parameter
+    to agent functions without any wrapping.
+
+    Usage:
+        runner = make_step_runner(steps=[DockerExecCallWithBootstrapValidation(...)])
+        result = await run_critic(..., client=runner)
+    """
 
     def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
         self.factory: ResponsesFactory = factory
         self.steps: Sequence[Step] = steps
         self.turn: int = 0
+        self.model = "test-model"
 
-    def handle_request(self, req: ResponsesRequest) -> ResponsesResult:
-        """Sync entry point - checks bounds and executes current step."""
+    @property
+    def current_step_index(self) -> int:
+        """Current step index (0-based). Alias for turn for clarity."""
+        return self.turn
+
+    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
+        """Execute current step and advance. Implements OpenAIModelProto."""
         if self.turn >= len(self.steps):
             pytest.fail(f"Exceeded {len(self.steps)} expected turns (got turn {self.turn + 1})")
         result = self.steps[self.turn].execute(req, self.factory)
         self.turn += 1
         return result
-
-    async def handle_request_async(self, req: ResponsesRequest) -> ResponsesResult:
-        """Async wrapper for handle_request.
-
-        Use with make_mock() to create a mock client:
-            from tests.llm.support.openai_mock import make_mock
-            client = make_mock(runner.handle_request_async)
-        """
-        return self.handle_request(req)
 
 
 @pytest.fixture(scope="session")

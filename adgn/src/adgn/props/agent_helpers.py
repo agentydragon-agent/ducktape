@@ -1,28 +1,23 @@
 """Helpers for agents running inside the runtime container.
 
-This module provides simple access to:
-- Database ORM and query interface
-- Environment configuration from container environment
-- MCP HTTP client for connecting to networked MCP servers
+Provides MCP HTTP client via mcp_client_from_env() for connecting to MCP servers.
 
-Usage from within an agent (e.g., prompt optimizer):
+Database access: Just use get_session() directly - it auto-initializes from PG* env vars.
 
-    # Database access
-    from adgn.props.agent_helpers import setup_agent_database
+Usage:
+
+    # Database access (auto-initializes on first use)
     from adgn.props.db import get_session
-    from adgn.props.db.models import Snapshot, GraderRun
-
-    setup_agent_database()  # One-time setup (reads env, initializes connection)
+    from adgn.props.db.models import Snapshot
 
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
 
-    # MCP HTTP client access
+    # MCP HTTP client
     from adgn.props.agent_helpers import mcp_client_from_env
 
-    async with mcp_client_from_env() as session:
-        result = await session.call_tool("tool_name", {"arg": "value"})
-        resource = await session.read_resource("resource://server/name")
+    async with mcp_client_from_env() as (client, _):
+        result = await client.call_tool("tool_name", {"arg": "value"})
 """
 
 from __future__ import annotations
@@ -32,56 +27,19 @@ from contextlib import asynccontextmanager
 import logging
 import os
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
-
-from adgn.props.db.config import DatabaseConfig, get_database_config
-from adgn.props.db.session import init_db
+from fastmcp.client import Client
+from fastmcp.client.transports import StreamableHttpTransport
+from mcp.types import InitializeResult
 
 logger = logging.getLogger(__name__)
 
 
-def get_agent_database_config() -> DatabaseConfig:
-    """Get database configuration for agent running in container.
-
-    Reads from standard PostgreSQL environment variables that are passed from host to container.
-    For agents inside containers, PROPS_DB_* vars are NOT set (container_name/container_port will be None).
-
-    Returns:
-        DatabaseConfig with agent credentials and no container routing
-
-    Raises:
-        ValueError: If required PG* environment variables not set
-    """
-    # Use unified factory - agents have PROPS_DB_* vars unset, so container_name/port will be None
-    return get_database_config()
-
-
-def setup_agent_database() -> None:
-    """Initialize database connection for agent with read-only access.
-
-    Call once at agent startup to set up the connection pool.
-    After calling this, use get_session() to query the database.
-
-    Raises:
-        ValueError: If required environment variables not set
-        sqlalchemy.exc.OperationalError: If cannot connect to database
-    """
-    config = get_agent_database_config()
-    logger.info(
-        f"Initializing agent database connection: {config.admin.host}:{config.admin.port}/{config.admin.database} "
-        f"(user: {config.admin.user})"
-    )
-    init_db(config)
-    logger.info("Agent database connection initialized (read-only access)")
-
-
 @asynccontextmanager
-async def mcp_client_from_env() -> AsyncGenerator[tuple[ClientSession, object], None]:
-    """Create MCP client session from environment variables.
+async def mcp_client_from_env() -> AsyncGenerator[tuple[Client, InitializeResult], None]:
+    """Create MCP client from environment variables.
 
     Reads MCP_SERVER_URL and MCP_SERVER_TOKEN from environment,
-    creates authenticated HTTP client, and returns initialized session
+    creates authenticated HTTP client, and returns initialized client
     along with initialization result.
 
     This is used by agents running in containers that need to connect
@@ -92,8 +50,8 @@ async def mcp_client_from_env() -> AsyncGenerator[tuple[ClientSession, object], 
         MCP_SERVER_TOKEN: Bearer token for authentication
 
     Yields:
-        Tuple of (ClientSession, InitializeResult):
-        - session: Initialized client ready to call tools, read resources, etc.
+        Tuple of (Client, InitializeResult):
+        - client: Initialized fastmcp Client ready to call tools, read resources, etc.
         - init_result: Server info including capabilities, instructions, protocol version
 
     Raises:
@@ -101,40 +59,32 @@ async def mcp_client_from_env() -> AsyncGenerator[tuple[ClientSession, object], 
         Exception: If connection or initialization fails
 
     Example:
-        async with mcp_client_from_env() as (session, init_result):
+        async with mcp_client_from_env() as (client, init_result):
             # Print server instructions
             if init_result.instructions:
                 print(init_result.instructions)
 
             # List available tools
-            tools = await session.list_tools()
+            tools = await client.list_tools()
+            for tool in tools:
+                print(f"Tool: {tool.name}")
 
             # Call a tool
-            result = await session.call_tool("tool_name", {"arg": "value"})
+            result = await client.call_tool("tool_name", {"arg": "value"})
+            # fastmcp client returns CallToolResult with is_error and structured_content
 
             # Read a resource
-            resource = await session.read_resource("resource://server/name")
-
-            # IMPORTANT: Serializing tool results
-            # CallToolResult objects are NOT JSON-serializable. To serialize:
-            #
-            # ❌ WRONG:
-            # data = {"result": result}
-            # json.dumps(data)  # TypeError: Object of type CallToolResult is not JSON serializable
-            #
-            # ✅ CORRECT - extract fields or use model_dump():
-            # data = {"is_error": result.isError, "content": result.content}
-            # json.dumps(data)  # Works!
-            #
-            # Or: data = result.model_dump(mode="json"); json.dumps(data)
+            contents = await client.read_resource("resource://server/name")
+            for content in contents:
+                print(content.text if hasattr(content, 'text') else content.blob)
     """
     url = os.environ["MCP_SERVER_URL"]
     token = os.environ["MCP_SERVER_TOKEN"]
 
-    async with (
-        streamablehttp_client(url, headers={"Authorization": f"Bearer {token}"}) as (read, write, _),
-        ClientSession(read, write) as session,
-    ):
-        # Initialize session to get server info
-        init_result = await session.initialize()
-        yield session, init_result
+    transport = StreamableHttpTransport(url, headers={"Authorization": f"Bearer {token}"})
+    async with Client(transport) as client:
+        # Client auto-initializes on __aenter__, get the result
+        init_result = client.initialize_result
+        if init_result is None:
+            raise RuntimeError("Client did not initialize properly")
+        yield client, init_result

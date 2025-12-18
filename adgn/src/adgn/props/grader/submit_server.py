@@ -60,7 +60,7 @@ class GraderSubmitServer(EnhancedFastMCP):
         self._grader_run_id = grader_run_id
         self._critic_run_id = critic_run_id
 
-        def grader_submit(input: GraderSubmitInput) -> GraderSubmitResult:
+        def submit(input: GraderSubmitInput) -> GraderSubmitResult:
             """Finalize grading and validate decisions.
 
             Call this when you're done grading all input issues. This will:
@@ -80,7 +80,7 @@ class GraderSubmitServer(EnhancedFastMCP):
                 logger.exception("Grader submit failed: %s", e)
                 raise ToolError(f"Failed to submit grading: {e}")
 
-        self.submit_tool = self.flat_model()(grader_submit)
+        self.submit_tool = self.flat_model()(submit)
 
     def _submit_grading(self, summary: str) -> GraderSubmitResult:
         """Submit grading with validation."""

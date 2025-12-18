@@ -9,7 +9,6 @@ from adgn.agent.handler import FinishOnTextMessageHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.openai_utils.model import UserMessage
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage, EchoCall, Step
 
 
@@ -31,7 +30,7 @@ def make_agent_with_turn_limit(mcp_client_echo, recording_handler, make_step_run
         runner = make_step_runner(steps=steps)
         return await Agent.create(
             mcp_client=mcp_client_echo,
-            client=make_mock(runner.handle_request_async),
+            client=runner,
             handlers=[FinishOnTextMessageHandler(), recording_handler, MaxTurnsHandler(max_turns=max_turns)],
             tool_policy=RequireAnyTool(),
         )

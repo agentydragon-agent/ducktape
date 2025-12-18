@@ -513,6 +513,8 @@ async def run_session_container(
     if container_id is None:
         raise RuntimeError("No per-session container available")
 
+    logger.debug(f"Executing command in container {container_id[:12]}: {cmd!r} (timeout_ms={input.timeout_ms})")
+
     docker_client = s.docker_client
     container_instance = await docker_client.containers.get(container_id)
 
@@ -543,13 +545,16 @@ async def run_session_container(
 
     if timed_out:
         # External timeout - kill and restart container
+        logger.debug(f"Command timed out after {input.timeout_ms}ms, killing container {container_id[:12]}")
         exit_code = None
         await container_instance.kill()
         await asyncio.sleep(CONTAINER_RESTART_DELAY_SECS)
         s.container_id = await _create_and_start_container(client=docker_client, opts=opts)
+        logger.debug(f"Container restarted as {s.container_id[:12]}")
     else:
         # Command completed normally - inspect exec for exit code
         inspect_result = await exec_obj.inspect()
         exit_code = inspect_result.get("ExitCode", 0)
+        logger.debug(f"Command completed: exit_code={exit_code}, stdout={len(stdout_buf)}B, stderr={len(stderr_buf)}B")
 
     return stdout_buf, stderr_buf, exit_code, timed_out

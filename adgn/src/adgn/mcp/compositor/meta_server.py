@@ -5,11 +5,12 @@ from typing import TYPE_CHECKING, cast
 from fastmcp.resources import FunctionResource, ResourceTemplate
 
 from adgn.mcp._shared.types import MCPMountPrefix
+from adgn.mcp.compositor.mount import MountEvent
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.snapshots import ServerEntry
 
 if TYPE_CHECKING:
-    from adgn.mcp.compositor.server import Compositor, MountEvent
+    from adgn.mcp.compositor.server import Compositor
 
 
 class CompositorMetaServer(EnhancedFastMCP):
@@ -88,13 +89,10 @@ class CompositorMetaServer(EnhancedFastMCP):
 
         # Register mount change listener to emit notifications without container coupling
         async def _on_mount_change(name: str, action: MountEvent) -> None:
-            # Import at runtime to avoid circular import
-            from adgn.mcp.compositor.server import MountEvent as MountEventEnum
-
             # Always signal list-changed when mounts change
             await self.broadcast_resource_list_changed()
             # For new state availability or mount, update the per-server state resource
-            if action in (MountEventEnum.MOUNTED, MountEventEnum.STATE):
+            if action in (MountEvent.MOUNTED, MountEvent.STATE):
                 await self.broadcast_resource_updated(self.server_state_resource.uri_template.format(server=name))
 
         self._compositor.add_mount_listener(_on_mount_change)

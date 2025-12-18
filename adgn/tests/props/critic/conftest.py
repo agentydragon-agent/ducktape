@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
@@ -17,7 +18,13 @@ from adgn.props.models.critic_scopes import ExplicitFileScope
 from tests.props.conftest import get_or_create_example, make_critic_run
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator
+    from pathlib import Path
+
     from sqlalchemy.engine import Connection
+
+    from adgn.props.hydration import SnapshotHydrator
+    from adgn.props.ids import SnapshotSlug
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -143,6 +150,9 @@ def insert_occurrence(conn: Connection, issue_id: str, locations_json: str) -> N
 def submit_server(test_critic_run, test_snapshot, snapshot_mount, all_files_scope):
     """Create a critic submit server for testing.
 
+    Uses mock snapshot_mount directory for unit tests.
+    For integration tests with real hydrated snapshots, use hydrated_test_snapshot fixture.
+
     Returns:
         CriticSubmitServer instance for the test critic run
     """
@@ -150,5 +160,21 @@ def submit_server(test_critic_run, test_snapshot, snapshot_mount, all_files_scop
         critic_run_id=test_critic_run,
         snapshot_slug=test_snapshot,
         scope=all_files_scope,
-        snapshot_mount_path=snapshot_mount,
+        snapshot_hydrated_path=snapshot_mount,
     )
+
+
+@pytest_asyncio.fixture
+async def hydrated_test_snapshot(
+    test_snapshot: SnapshotSlug, test_specimens_hydrator: SnapshotHydrator
+) -> AsyncGenerator[Path, None]:
+    """Provide actually hydrated snapshot for integration testing.
+
+    Hydrates test_snapshot using test_specimens_hydrator.
+    Yields the content_root path where hydrated files are located.
+
+    Yields:
+        Path to hydrated snapshot content root
+    """
+    async with test_specimens_hydrator.hydrate(test_snapshot) as hydrated:
+        yield hydrated.content_root

@@ -1,14 +1,20 @@
-"""Helper functions for inserting grading decisions.
+"""Helper functions for inserting grading decisions and submitting gradings.
 
 These helpers simplify the grading workflow by providing typed interfaces
 for the three types of grading decisions: TP matches, FP matches, and no-matches.
 
 Database session is obtained automatically using get_session() which respects
-the grader agent's RLS-scoped credentials.
+the grader agent's RLS-scoped credentials. The grader_run_id is automatically
+set via database DEFAULT using current_grader_run_id() function.
+
+Typical workflow:
+    1. Call insert_tp_match(), insert_fp_match(), or insert_no_match() for each input issue
+    2. Call submit_grading() to finalize and mark the grading complete
 """
 
 from __future__ import annotations
 
+from adgn.props.agent_helpers import mcp_client_from_env
 from adgn.props.db import get_session
 from adgn.props.db.models import GradingDecision
 
@@ -51,6 +57,7 @@ def insert_tp_match(input_issue_id: str, tp_id: str, tp_occurrence_id: str, cred
             target_tp_occurrence_id=tp_occurrence_id,
             credit=credit,
             rationale=rationale,
+            # grader_run_id set via server_default=current_grader_run_id()
         )
         session.add(decision)
 
@@ -140,3 +147,35 @@ def delete_decision(input_issue_id: str) -> None:
         decision = session.query(GradingDecision).filter_by(input_issue_id=input_issue_id).first()
         if decision:
             session.delete(decision)
+
+
+async def submit_grading(summary: str) -> None:
+    """Call the MCP submit tool to finalize the grading.
+
+    This marks the grading as complete and validates that all input issues have been
+    graded with decisions.
+
+    Args:
+        summary: Brief summary of the grading results
+
+    Example:
+        import asyncio
+        from adgn.props.grader.decision_helpers import insert_tp_match, insert_no_match, submit_grading
+
+        # Grade the inputs
+        insert_tp_match("input-001", "tp-042", "occ-001", 1.0, "Exact match")
+        insert_no_match("input-002", "Novel architectural suggestion")
+
+        # Finalize
+        asyncio.run(submit_grading(
+            summary="Graded 2 inputs: 1 TP match, 1 novel finding"
+        ))
+
+    Note:
+        This function is async and must be called with asyncio.run() or await.
+        The MCP server will validate that all input issues have decisions.
+    """
+    async with mcp_client_from_env() as (client, _init_result):
+        result = await client.call_tool("submit", {"summary": summary})
+        if result.is_error:
+            raise RuntimeError(f"Submit failed: {result.content}")

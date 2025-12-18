@@ -58,71 +58,23 @@ class PromptOptimizerUserManager(TempUserManager):
         return f"prompt_optimizer_agent_{self.run_id}"
 
     async def grant_permissions(self, username: str) -> None:
-        """Grant prompt-optimizer-specific permissions.
+        """Grant prompt-optimizer-specific permissions via template role inheritance.
 
-        Permissions:
-        - Read-only on training data and evaluation results tables (TRAIN split only via RLS)
-        - Read-only on aggregate views (inherit RLS filtering from underlying tables)
+        The prompt_optimizer_agent_template role (created in migration) has:
+        - Read-only on training data tables (RLS filters to TRAIN split)
+        - Read-only on aggregate views
         - EXECUTE on validation aggregation function (VALID split aggregates only)
         - Schema usage
 
         RLS policies filter all tables to TRAIN split.
         Validation function provides per-run aggregate access to VALID split.
         """
-        # All tables with RLS policies for prompt optimizer users (read-only, train split only)
-        rls_filtered_tables = [
-            "snapshots",
-            "true_positives",
-            "false_positives",
-            "examples",
-            "critic_runs",
-            "grader_runs",
-            "events",
-            "prompts",
-        ]
-
-        # Views that aggregate data from RLS-filtered tables
-        # (inherit split filtering from underlying tables via RLS)
-        aggregate_views = [
-            "occurrence_credits",
-            "occurrence_run_credits",
-            "aggregated_recall_by_prompt",
-            "aggregated_recall_by_example",
-        ]
-
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)
+            await conn.execute(text(f"GRANT prompt_optimizer_agent_template TO {quoted_username}"))
 
-            # Grant schema access
-            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
-
-            # Grant read-only on all RLS-filtered tables
-            for table in rls_filtered_tables:
-                await conn.execute(text(f"GRANT SELECT ON TABLE {table} TO {quoted_username}"))
-
-            # Grant read-only on aggregate views
-            for view in aggregate_views:
-                await conn.execute(text(f"GRANT SELECT ON {view} TO {quoted_username}"))
-
-            # Grant EXECUTE on SECURITY DEFINER validation function
-            await conn.execute(text(f"GRANT EXECUTE ON FUNCTION get_validation_run_aggregates() TO {quoted_username}"))
-
-        logger.debug(f"Granted prompt optimizer permissions to {username}")
+        logger.debug(f"Granted prompt_optimizer_agent_template to {username}")
 
     async def revoke_permissions(self, username: str) -> None:
-        """Revoke prompt-optimizer-specific permissions before dropping user.
-
-        Revokes EXECUTE on validation function, then calls base implementation
-        to revoke table/sequence/schema permissions.
-        """
-        if self.admin_engine is None:
-            return
-
-        async with self.admin_engine.begin() as conn:
-            quoted_username = quote_ident(username)
-            # Revoke function privilege first (prevents "dependent objects" error on role drop)
-            await conn.execute(text(f"REVOKE ALL ON FUNCTION get_validation_run_aggregates() FROM {quoted_username}"))
-
-        # Call base implementation to revoke table/sequence/schema permissions
-        await super().revoke_permissions(username)
+        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""

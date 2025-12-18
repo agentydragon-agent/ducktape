@@ -9,12 +9,66 @@ Review the snapshot code (mounted at `/snapshots/<slug>/`) and report issues usi
 ## Workflow
 
 1. **Analyze code** using available tools (rg, ruff, mypy, vulture, etc. via docker_exec)
-2. **Report issues** by inserting rows into database tables via psql
-3. **Complete review** by calling the critic_submit tool when done
+2. **Report issues** using Python helper functions (recommended) or direct SQL
+3. **Complete review** by calling `submit_critique()` helper when done
 
-## Database Access
+## Recommended: Python Helper Functions
 
-You have **direct psql access** with credentials scoped to your critic run:
+**Prefer using Python helpers** for cleaner, typed issue reporting:
+
+```python
+import asyncio
+from adgn.props.critic.helpers import insert_issue, insert_occurrence, submit_critique
+from adgn.props.db import get_session
+
+# Report an issue
+insert_issue(
+    issue_id="dead-code-utils-cleanup",
+    rationale="Function cleanup() in utils.py is never called"
+)
+
+# Add occurrence (single file with line range)
+insert_occurrence(
+    issue_id="dead-code-utils-cleanup",
+    file="src/utils.py",
+    start_line=142,
+    end_line=158
+)
+
+# Add occurrence (single file without line range)
+insert_occurrence(
+    issue_id="unused-import-typing",
+    file="src/models.py"
+)
+
+# Add multi-file occurrence (e.g., duplication)
+from adgn.props.critic.helpers import insert_occurrence_multi
+
+insert_occurrence_multi(
+    issue_id="duplicated-enum-status",
+    locations=[
+        ("src/types.py", 20, 25),
+        ("src/persist.py", 54, 58),
+    ]
+)
+
+# Finalize review
+asyncio.run(submit_critique(
+    issues_count=2,
+    summary="Found 1 dead code issue and 1 duplication"
+))
+```
+
+**Available helpers:**
+- `insert_issue(issue_id, rationale)` - Create an issue
+- `insert_occurrence(issue_id, file, start_line=None, end_line=None)` - Single-file occurrence
+- `insert_occurrence_multi(issue_id, locations)` - Multi-file occurrence (list of tuples)
+- `delete_issue(issue_id)` - Soft delete an issue (if you need to correct)
+- `submit_critique(issues_count, summary)` - Finalize and call MCP submit (async)
+
+## Database Access (Alternative: Direct SQL)
+
+You also have **direct psql access** with credentials scoped to your critic run:
 - Tables: `reported_issues`, `reported_issue_occurrences`
 - RLS automatically filters queries to your run (via `current_critic_run_id()`)
 - Privileges: INSERT, SELECT, UPDATE (NO DELETE - use soft deletes)
@@ -79,7 +133,16 @@ Each issue_id must be unique within your review.
 
 ## Completion
 
-When done reviewing, call `critic_submit(summary="...")` with a brief summary of your findings.
+**Python helper (recommended):**
+```python
+asyncio.run(submit_critique(
+    issues_count=5,
+    summary="Found 3 dead code issues, 1 duplication, 1 unclear naming"
+))
+```
+
+**Direct MCP call (alternative):**
+Call the `critic_submit` tool via MCP with `summary="..."` and `issues_count=N`.
 
 ## Important Notes
 

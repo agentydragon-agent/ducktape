@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
-from enum import Enum, auto
+from enum import Enum, StrEnum, auto
 import logging
 from typing import Literal
 
@@ -18,6 +18,14 @@ from fastmcp.server.proxy import FastMCPProxy
 from adgn.mcp._shared.types import MCPMountPrefix
 
 logger = logging.getLogger(__name__)
+
+
+class MountEvent(StrEnum):
+    """Events emitted when mounts change state."""
+
+    MOUNTED = "mounted"
+    UNMOUNTED = "unmounted"
+    STATE = "state"
 
 
 class MountState(Enum):

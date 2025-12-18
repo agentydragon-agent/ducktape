@@ -25,7 +25,7 @@ async def main():
 
     if not url:
         print("ERROR: MCP_SERVER_URL environment variable is not set", file=sys.stderr)
-        print("Ensure ADGN_USE_MCP_HTTP=1 is set when running the grader", file=sys.stderr)
+        print("This script must be run inside the grader container environment", file=sys.stderr)
         sys.exit(1)
     if not token:
         print("ERROR: MCP_SERVER_TOKEN environment variable is not set", file=sys.stderr)

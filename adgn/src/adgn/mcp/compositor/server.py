@@ -4,7 +4,7 @@ import asyncio
 import base64
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from enum import Enum, StrEnum, auto
+from enum import Enum, auto
 import logging
 import sys
 
@@ -31,7 +31,7 @@ from adgn.agent.tool_schemas import extract_tool_input_schemas, extract_tool_sch
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.compositor.meta_server import CompositorMetaServer
-from adgn.mcp.compositor.mount import Mount
+from adgn.mcp.compositor.mount import Mount, MountEvent
 from adgn.mcp.compositor.rendering import render_compositor_instructions
 from adgn.mcp.resources.server import ResourcesServer
 from adgn.mcp.snapshots import (
@@ -83,12 +83,6 @@ class CompositorState(Enum):
     CREATED = auto()  # Constructed but not entered
     ACTIVE = auto()  # Inside async with block
     CLOSED = auto()  # Cleanup completed, terminal state
-
-
-class MountEvent(StrEnum):
-    MOUNTED = "mounted"
-    UNMOUNTED = "unmounted"
-    STATE = "state"
 
 
 class Compositor(FastMCP):

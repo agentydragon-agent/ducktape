@@ -8,9 +8,14 @@ Tests the full orchestrator without running an actual LLM agent:
 
 from __future__ import annotations
 
-import pytest
 from sqlalchemy import select
-from tests.props.conftest import make_clustering_run, make_critic_run, make_grader_run
+from tests.props.conftest import (
+    make_clustering_run,
+    make_critic_run,
+    make_grader_run,
+    make_reported_issues,
+    make_unknown_grading_decisions,
+)
 
 from adgn.agent.loop_control import Abort, NoAction
 from adgn.props.clustering.cluster_agent import (
@@ -25,7 +30,6 @@ from adgn.props.db.examples import Example
 from adgn.props.db.prompts import hash_and_upsert_prompt
 
 
-@pytest.mark.asyncio
 async def test_completion_handler_detects_all_assigned(synced_test_fixtures, test_db):
     """Test ClusteringCompletionHandler detects when all unknowns are assigned."""
 
@@ -53,6 +57,12 @@ async def test_completion_handler_detects_all_assigned(synced_test_fixtures, tes
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
+
+        # Create reported issues and mark them as unknowns via grading decisions
+        unknown_ids = ["unknown-1", "unknown-2", "unknown-3"]
+        make_reported_issues(critic_run_id=critic_run.id, issue_ids=unknown_ids, session=session)
+        make_unknown_grading_decisions(grader_run_id=grader_run.id, unknown_ids=unknown_ids, session=session)
+        session.flush()
 
         # Create cluster
         cluster = UnknownCluster(clustering_run_id=run_id, cluster_name="test-cluster", description="Test cluster")
@@ -106,7 +116,6 @@ async def test_completion_handler_detects_all_assigned(synced_test_fixtures, tes
     # No cleanup needed - test_db fixture drops entire database
 
 
-@pytest.mark.asyncio
 async def test_completion_handler_no_unknowns(synced_test_fixtures, test_db):
     """Test ClusteringCompletionHandler aborts immediately when no unknowns exist."""
 
@@ -129,7 +138,6 @@ async def test_completion_handler_no_unknowns(synced_test_fixtures, test_db):
     # No cleanup needed - test_db fixture drops entire database
 
 
-@pytest.mark.asyncio
 async def test_compute_outcome_success(synced_test_fixtures, test_db):
     """Test _compute_outcome returns OutcomeSuccess when all unknowns assigned."""
 
@@ -158,21 +166,16 @@ async def test_compute_outcome_success(synced_test_fixtures, test_db):
         session.flush()
         grader_run_id = grader_run.id
 
-        # Create unknown grading decisions (no TP match)
-        from adgn.props.db.models import GradingDecision
-
-        for unknown_id in ["unknown-a", "unknown-b"]:
-            decision = GradingDecision(
-                grader_run_id=grader_run_id,
-                input_issue_id=unknown_id,
-                target_tp_id=None,
-                target_tp_occurrence_id=None,
-                target_fp_id=None,
-                target_fp_occurrence_id=None,
-                credit=0.0,
-                rationale="Unknown issue (no TP match)",
-            )
-            session.add(decision)
+        # Create reported issues and mark them as unknowns via grading decisions
+        unknown_ids = ["unknown-a", "unknown-b"]
+        make_reported_issues(critic_run_id=critic_run.id, issue_ids=unknown_ids, session=session)
+        make_unknown_grading_decisions(
+            grader_run_id=grader_run.id,
+            unknown_ids=unknown_ids,
+            session=session,
+            rationale_prefix="Unknown issue (no TP match)",
+        )
+        session.flush()
 
         # Create cluster
         cluster = UnknownCluster(clustering_run_id=run_id, cluster_name="test-cluster", description="Test cluster")
@@ -209,7 +212,6 @@ async def test_compute_outcome_success(synced_test_fixtures, test_db):
     # No cleanup needed - test_db fixture drops entire database
 
 
-@pytest.mark.asyncio
 async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
     """Test _compute_outcome returns OutcomeIncomplete when unknowns remain."""
 
@@ -237,6 +239,12 @@ async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
+
+        # Create reported issues and mark them as unknowns via grading decisions
+        unknown_ids = ["unknown-1", "unknown-2", "unknown-3"]
+        make_reported_issues(critic_run_id=critic_run.id, issue_ids=unknown_ids, session=session)
+        make_unknown_grading_decisions(grader_run_id=grader_run.id, unknown_ids=unknown_ids, session=session)
+        session.flush()
 
         # Create cluster and assign only 1 unknown
         cluster = UnknownCluster(
@@ -272,7 +280,6 @@ async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
     # No cleanup needed - test_db fixture drops entire database
 
 
-@pytest.mark.asyncio
 async def test_compute_outcome_with_mapped_to_existing(synced_test_fixtures, test_db):
     """Test _compute_outcome counts mapped_to_existing correctly."""
 
@@ -300,6 +307,12 @@ async def test_compute_outcome_with_mapped_to_existing(synced_test_fixtures, tes
         session.add(grader_run)
         session.flush()
         grader_run_id = grader_run.id
+
+        # Create reported issues and mark them as unknowns via grading decisions
+        unknown_ids = ["unknown-1", "unknown-2", "unknown-3", "unknown-4"]
+        make_reported_issues(critic_run_id=critic_run.id, issue_ids=unknown_ids, session=session)
+        make_unknown_grading_decisions(grader_run_id=grader_run.id, unknown_ids=unknown_ids, session=session)
+        session.flush()
 
         # Create cluster
         cluster = UnknownCluster(clustering_run_id=run_id, cluster_name="new-cluster", description="New cluster")

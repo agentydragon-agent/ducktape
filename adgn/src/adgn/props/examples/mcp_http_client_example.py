@@ -17,8 +17,8 @@ from __future__ import annotations
 import asyncio
 import os
 
-from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from fastmcp.client import Client
+from fastmcp.client.transports import StreamableHttpTransport
 
 
 async def main() -> None:
@@ -30,26 +30,25 @@ async def main() -> None:
     if not server_url or not server_token:
         raise RuntimeError("MCP_SERVER_URL and MCP_SERVER_TOKEN must be set")
 
-    # Connect to MCP server via HTTP
-    async with streamablehttp_client(
-        server_url, headers={"Authorization": f"Bearer {server_token}"}
-    ) as (read, write, _), ClientSession(read, write) as session:
-        # 1. Initialize - get server info and instructions
-        init_result = await session.initialize()
+    # Connect to MCP server via HTTP using fastmcp
+    transport = StreamableHttpTransport(server_url, headers={"Authorization": f"Bearer {server_token}"})
+    async with Client(transport) as client:
+        # 1. Get initialization result - contains server info and instructions
+        init_result = client.initialize_result
         print("Server instructions:")
-        print(init_result.instructions)
+        print(init_result.instructions if init_result else "N/A")
         print()
 
         # 2. List available tools - inspect their schemas
-        tools_result = await session.list_tools()
-        print(f"Available tools: {len(tools_result.tools)}")
-        for tool in tools_result.tools:
+        tools = await client.list_tools()
+        print(f"Available tools: {len(tools)}")
+        for tool in tools:
             print(f"\nTool: {tool.name}")
             print(f"Description: {tool.description}")
             print(f"Input Schema: {tool.inputSchema}")
 
         # 3. Call tools as needed
-        # Example: result = await session.call_tool("tool_name", arguments={...})
+        # Example: result = await client.call_tool("tool_name", arguments={...})
 
 
 if __name__ == "__main__":

@@ -71,7 +71,6 @@ async def prompt_optimizer_session(
         engine.dispose()
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_cannot_see_test_split_snapshots(
     synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
 ):
@@ -92,7 +91,6 @@ async def test_prompt_optimizer_cannot_see_test_split_snapshots(
     assert len(test_snapshots) == 0, "prompt optimizer user should not see test split snapshots via RLS"
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_can_see_train_split_snapshots(
     synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
 ):
@@ -114,7 +112,6 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(
     assert train_snapshots[0].split == "train"
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
     synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
 ):
@@ -137,7 +134,6 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
     assert len(valid_tps) == 0, "prompt optimizer user should NOT see valid split true_positives via RLS"
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_can_see_train_split_false_positives(
     synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
 ):
@@ -162,7 +158,6 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
     # Not asserting specific count since test-trivial may not have FPs
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     synced_test_fixtures: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
 ):
@@ -198,7 +193,6 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     assert len(test_runs) == 0, "prompt optimizer user should not see test split critic_runs via RLS"
 
 
-@pytest.mark.asyncio
 async def test_prompt_optimizer_can_see_train_split_critic_runs(
     synced_test_fixtures: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
 ):

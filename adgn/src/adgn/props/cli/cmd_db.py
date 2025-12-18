@@ -144,10 +144,10 @@ async def cmd_sync(
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
     console.print(table)
 
-    # Detector prompts
-    console.print("\nDetector prompts:")
+    # Detector prompts (critic system prompts synced to DB)
+    console.print("\n[bold]Critic prompts (file → sha256):[/bold]")
     for detector in result.detector_prompts:
-        console.print(f"  ✓ {detector.filename} → {detector.prompt_sha256[:12]}")
+        console.print(f"  {detector.filename} → {detector.prompt_sha256}")
 
 
 @async_run

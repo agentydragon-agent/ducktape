@@ -31,7 +31,7 @@ from adgn.agent.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItem
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.client_factory import build_client
+from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
 from adgn.props.clustering.user_manager import ClusteringUserManager
 from adgn.props.db import get_session
@@ -210,22 +210,14 @@ class ClusteringAgentEnvironment(AgentEnvironment):
             """Create temporary clustering user with RLS scoping."""
             return ClusteringUserManager(db_config.admin, clustering_run_id)
 
-        def make_mcp_server(auth: AuthProvider) -> EnhancedFastMCP:
-            """No custom MCP server - clustering uses SQL directly.
-
-            Return a minimal FastMCP server to satisfy the AgentEnvironment interface.
-            """
-            return EnhancedFastMCP("clustering_stub")
-
         super().__init__(
             docker_client=docker_client,
             user_manager_factory=make_user_manager,
-            mcp_server_factory=make_mcp_server,
             hydrator=hydrator,
+            db_config=db_config,
             snapshot_slugs=[],  # Clustering doesn't need specific snapshots mounted
             workspace_prefix="clustering_workspace_",
             mount_properties=False,
-            # http_mode defaults to USE_MCP_HTTP from agent_setup
         )
 
     def bootstrap_items(self, builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer]) -> list:
@@ -252,6 +244,19 @@ class ClusteringAgentEnvironment(AgentEnvironment):
             read_package_file_call(builder, runtime, "adgn.props.clustering", "example_queries.py"),
         ]
 
+    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
+        """Create MCP server for clustering agent.
+
+        Clustering uses SQL directly, so return a minimal stub server.
+
+        Args:
+            auth: Auth provider for HTTP authentication (unused)
+
+        Returns:
+            Minimal FastMCP server stub
+        """
+        return EnhancedFastMCP("clustering_stub")
+
 
 # ============================================================================
 # Main Orchestrator
@@ -260,10 +265,10 @@ class ClusteringAgentEnvironment(AgentEnvironment):
 
 async def run_clustering_agent(
     run_id: int,
-    model: str,
     hydrator: SnapshotHydrator,
     docker_client: aiodocker.Docker,
     db_config: DatabaseConfig,
+    client: OpenAIModelProto,
     output_dir: Path | None = None,
     verbose: bool = False,
 ) -> ClusteringResult:
@@ -275,10 +280,10 @@ async def run_clustering_agent(
 
     Args:
         run_id: Clustering run ID to process
-        model: LLM model for clustering agent (e.g., "gpt-4o")
         hydrator: Snapshot hydrator (required)
         docker_client: Docker client (required)
         db_config: Database configuration (required, from CLI caller)
+        client: OpenAI client (required). Use client.model for model name.
         output_dir: Output directory for workspace/logs (defaults to temp)
         verbose: Enable verbose logging
 
@@ -291,9 +296,10 @@ async def run_clustering_agent(
     Example:
         result = await run_clustering_agent(
             run_id=42,
-            model="gpt-4o",
             hydrator=hydrator,
             docker_client=docker_client,
+            db_config=db_config,
+            client=build_client("gpt-4o"),
         )
 
         if result.outcome.kind == "success":
@@ -320,7 +326,7 @@ async def run_clustering_agent(
         session.commit()
 
     logger.info(
-        f"Starting clustering agent run {run_id} (transcript {transcript_id}): snapshot={snapshot_slug}, model={model}"
+        f"Starting clustering agent run {run_id} (transcript {transcript_id}): snapshot={snapshot_slug}, model={client.model}"
     )
     logger.info(f"Output directory: {output_dir}")
 
@@ -365,8 +371,6 @@ async def run_clustering_agent(
         system_prompt = system_prompt_path.read_text()
 
         # 5. Create and run agent
-        client = build_client(model)
-
         async with Client(comp) as mcp_client:
 
             async def get_instructions() -> str:

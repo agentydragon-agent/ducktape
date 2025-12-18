@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from adgn.props.db import get_session
-from adgn.props.db.models import GradingDecision
+from adgn.props.db.models import GradingDecision, ReportedIssue
 from adgn.props.grader.submit_server import GraderSubmitServer
 from adgn.props.grader.user_manager import GraderUserManager
 from tests.props.grader.conftest import make_test_grader_run
@@ -160,8 +160,10 @@ async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grad
         await grader_submit_server.submit_tool.run({"summary": "Incomplete grading"})
 
 
-async def test_grader_sql_multiple_decisions_fails(grader_submit_server, test_grader_run, test_db, temp_grader_engine):
-    """Test submit fails if any input issue has multiple active decisions."""
+async def test_grader_sql_multiple_decisions_allowed(
+    grader_submit_server, test_grader_run, test_db, temp_grader_engine
+):
+    """Test that multiple decisions per input issue are allowed (partial credit to multiple TPs)."""
 
     with temp_grader_engine.connect() as conn:
         # Create valid decisions for input-001 and input-002
@@ -183,7 +185,8 @@ async def test_grader_sql_multiple_decisions_fails(grader_submit_server, test_gr
             {"input_id": "input-002", "credit": 0.0, "rationale": "No match"},
         )
 
-        # Create TWO decisions for input-003 (duplicate!)
+        # Create TWO decisions for input-003 (partial matches to different TPs)
+        # This is allowed: one input can match multiple ground truth issues with partial credit
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
@@ -195,8 +198,8 @@ async def test_grader_sql_multiple_decisions_fails(grader_submit_server, test_gr
                 "input_id": "input-003",
                 "tp_id": "tp-001",
                 "occ_id": "occ-001",
-                "credit": 0.5,
-                "rationale": "First match",
+                "credit": 0.3,
+                "rationale": "Partially matches tp-001",
             },
         )
 
@@ -211,16 +214,21 @@ async def test_grader_sql_multiple_decisions_fails(grader_submit_server, test_gr
                 "input_id": "input-003",
                 "tp_id": "tp-002",
                 "occ_id": "occ-002",
-                "credit": 0.8,
-                "rationale": "Second match",
+                "credit": 0.5,
+                "rationale": "Also partially matches tp-002",
             },
         )
 
         conn.commit()
 
-    # Submit should FAIL
-    with pytest.raises(ToolError, match="Input issues with multiple active decisions: input-003"):
-        await grader_submit_server.submit_tool.run({"summary": "Duplicate decisions"})
+    # Submit should SUCCEED - multiple decisions per input are allowed
+    tool_result = await grader_submit_server.submit_tool.run({"summary": "Multiple decisions allowed"})
+
+    # Verify result
+    result = tool_result.structured_content
+    assert result["message"] == "Grading completed successfully with 4 decisions"
+    assert result["decisions_count"] == 4  # 4 total decisions (1+1+2)
+    assert result["input_issues_count"] == 3
 
 
 async def test_grader_sql_rls_isolation(
@@ -231,7 +239,21 @@ async def test_grader_sql_rls_isolation(
     other_run_id = make_test_grader_run(test_snapshot, test_grader_critic_run)
 
     # Insert decision from other run (using admin credentials)
+    # First, add the input issues to reported_issues (required by check constraint)
     with get_session() as session:
+        # Add "other-input" to the critic run's reported issues (for other grader run)
+        other_issue = ReportedIssue(
+            critic_run_id=test_grader_critic_run, issue_id="other-input", rationale="Other issue"
+        )
+        session.add(other_issue)
+
+        # Add "my-input" to the critic run's reported issues (for test_grader_run via temp creds)
+        my_issue = ReportedIssue(critic_run_id=test_grader_critic_run, issue_id="my-input", rationale="My issue")
+        session.add(my_issue)
+
+        session.flush()
+
+        # Now add the decision for other run
         decision = GradingDecision(
             grader_run_id=other_run_id, input_issue_id="other-input", credit=0.0, rationale="Other agent's decision"
         )

@@ -387,3 +387,183 @@ A well-written test should:
 - ✅ Be concise (<50 lines per test, <100 for complex scenarios)
 - ✅ Query examples rather than creating them
 - ✅ Test behavior, not implementation details
+
+## Agent Testing: Bootstrap vs Mock OpenAI Responses
+
+When testing agents with mocked OpenAI, it's critical to understand the distinction between **bootstrap calls** and **mock responses**.
+
+### Key Concept: Two Separate Phases
+
+1. **Bootstrap Phase** - Executes BEFORE any OpenAI API calls
+   - Injects `FunctionCallItem` instances into the transcript
+   - Executes them via MCP (REAL calls to Docker, database, etc.)
+   - Adds results to transcript
+   - **LLM sampling is SKIPPED during bootstrap**
+
+2. **Agent Sampling Phase** - Uses mocked OpenAI responses
+   - Starts AFTER bootstrap completes
+   - Mock responses (`ResponsesFactory`, `FakeOpenAIModel`) handle these calls
+   - The LLM sees bootstrap results in its context
+
+### Execution Flow
+
+```
+ITERATION 1 (Bootstrap - NO OpenAI Call)
+├─ Handler returns InjectItems(items=[bootstrap_call_1, bootstrap_call_2])
+├─ Append calls to transcript
+├─ SKIP LLM sampling
+└─ Execute bootstrap calls via MCP (REAL calls)
+
+ITERATION 2 (First OpenAI Call - steps[0])
+├─ Handler returns NoAction()
+├─ Build transcript for OpenAI:
+│  ├─ SystemMessage, UserMessage
+│  ├─ FunctionCallItem(bootstrap_call_1)  ← From bootstrap
+│  ├─ ToolCallOutput(bootstrap_call_1)    ← Bootstrap result
+│  └─ ...
+├─ Send to OpenAI → Mock intercepts → steps[0].execute()
+└─ Process response
+
+ITERATION 3+ (More OpenAI Calls - steps[1], steps[2], ...)
+```
+
+### ResponsesFactory (tests/support/responses.py)
+
+Builds mock OpenAI responses:
+
+```python
+factory = ResponsesFactory("gpt-5-nano")
+
+# Simple assistant message
+factory.make_assistant_message("Done processing")
+
+# Tool call response
+factory.make_tool_call("tool_name", {"arg": "value"})
+
+# MCP tool call (server_tool naming)
+factory.mcp_tool_call(MCPMountPrefix("docker"), "exec", ExecInput(cmd=["ls"]))
+
+# Docker exec convenience helper
+factory.docker_exec(["pytest", "tests/"], timeout_ms=60000)
+
+# Compose multiple items
+factory.make(
+    factory.tool_call("echo", {"text": "hi"}),
+    factory.assistant_text("Echo sent")
+)
+```
+
+### Step Classes (tests/support/steps.py)
+
+Declarative test scenarios executed by `_StepRunner`:
+
+```python
+from tests.support.steps import MakeCall, Finish, DockerExecCall, AssertDockerExecThenFinish
+
+steps = [
+    # Step 0: First OpenAI call (AFTER bootstrap)
+    DockerExecCall(["ls", "/workspace"]),
+
+    # Step 1: Second OpenAI call
+    AssertDockerExecThenFinish("expected_output", "Done"),
+]
+```
+
+**Available Steps:**
+- `MakeCall(server, tool, args)` - Make a tool call
+- `DockerExecCall(cmd, timeout_ms=30000)` - Docker exec call
+- `CheckThenCall(expected_tool, server, tool, args)` - Assert previous, call next
+- `Finish(expected_tool, message)` - Assert completion, return message
+- `AssertDockerExecThenFinish(expected_output, message)` - Assert exec stdout, finish
+- `AssistantMessage(message)` - Return message without validation
+
+### Mock Clients (tests/llm/support/openai_mock.py)
+
+```python
+from tests.llm.support.openai_mock import FakeOpenAIModel, CapturingOpenAIModel
+
+# Simple predefined responses
+responses = [factory.make_assistant_message("hi"), factory.make_assistant_message("done")]
+client = FakeOpenAIModel(responses)
+
+# With request capture
+capturing = CapturingOpenAIModel(FakeOpenAIModel(responses))
+# After test: capturing.captured contains all requests
+
+# From step runner - _StepRunner implements OpenAIModelProto directly
+runner = make_step_runner(steps=steps)
+# Use runner directly as client (no wrapping needed)
+agent = await Agent.create(..., client=runner, ...)
+# If you need request capture, wrap with CapturingOpenAIModel:
+client = CapturingOpenAIModel(runner)
+```
+
+### Common Fixture: make_openai_client
+
+```python
+async def test_agent_behavior(make_openai_client, responses_factory):
+    responses = [
+        responses_factory.docker_exec(["echo", "hello"]),
+        responses_factory.make_assistant_message("done"),
+    ]
+    client = make_openai_client(responses)
+    # Use client with agent
+```
+
+### Critical: Bootstrap Calls Are REAL
+
+Bootstrap calls execute via MCP and hit real services:
+
+```python
+# This bootstrap call runs REAL psql in Docker container
+bootstrap_calls = [
+    docker_exec_call(builder, runtime,
+        cmd=["psql", "-c", "\\d+ some_table"],
+        timeout_ms=5000,
+    ),
+]
+```
+
+If the Docker container can't reach the database, **bootstrap hangs** and the test times out before any mock is even used.
+
+### Test Pattern: Agent with Bootstrap + Mocked OpenAI
+
+```python
+async def test_agent_with_bootstrap():
+    # 1. Create bootstrap calls (REAL MCP calls)
+    builder = TypedBootstrapBuilder.for_server(runtime_server)
+    bootstrap_calls = [
+        docker_exec_call(builder, runtime, ["ls", "/workspace"]),
+    ]
+
+    # 2. Create mock responses (for OpenAI calls AFTER bootstrap)
+    factory = ResponsesFactory("gpt-5-nano")
+    steps = [
+        # Step 0 handles first OpenAI call (after bootstrap completes)
+        DockerExecCall(["pytest", "tests/"]),
+        Finish("docker_exec", "Tests passed"),
+    ]
+
+    # 3. Wire together
+    bootstrap_handler = SequenceHandler([InjectItems(items=bootstrap_calls)])
+    runner = make_step_runner(steps=steps)
+    # _StepRunner implements OpenAIModelProto directly - no wrapping needed
+
+    agent = await Agent.create(
+        handlers=[bootstrap_handler, ...],
+        client=runner,  # Use runner directly
+        ...
+    )
+
+    result = await agent.run()
+    assert runner.turn == 2  # Two OpenAI calls (steps[0] + steps[1])
+```
+
+### Debugging Test Timeouts
+
+If an agent test times out:
+
+1. **Check bootstrap calls** - Are they hitting unreachable services?
+2. **Check mock response count** - Do you have enough responses for all OpenAI calls?
+3. **Add logging** - Use `--log-cli-level=DEBUG` to see MCP calls
+4. **Run with `-n 0`** - Disable xdist to see actual error messages

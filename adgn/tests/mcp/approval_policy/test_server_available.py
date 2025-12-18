@@ -9,7 +9,6 @@ from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.openai_utils.model import UserMessage
-from tests.llm.support.openai_mock import make_mock
 from tests.support.steps import AssistantMessage
 
 
@@ -22,7 +21,6 @@ async def test_approval_policy_server_is_available(echo_spec, make_policy_gatewa
     async with make_policy_gateway_compositor(servers) as comp, Client(comp) as mcp_client:
         # Create a sequence where agent lists available tools
         runner = make_step_runner(steps=[AssistantMessage("I can see the approval tools")])
-        client = make_mock(runner.handle_request_async)
 
         # With servers attached, proceed with assertions
         # Check that policy servers are available and list flat tools
@@ -37,7 +35,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_policy_gatewa
 
         agent = await Agent.create(
             mcp_client=mcp_client,
-            client=client,
+            client=runner,
             handlers=[FinishOnTextMessageHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),
         )

@@ -58,32 +58,22 @@ class CriticUserManager(TempUserManager):
         return f"critic_agent_{self.run_id}"
 
     async def grant_permissions(self, username: str) -> None:
-        """Grant critic-specific permissions.
+        """Grant critic-specific permissions via template role inheritance.
 
-        Permissions:
+        The critic_agent_template role (created in migration) has:
         - INSERT, SELECT, UPDATE (NO DELETE) on reported_issues and reported_issue_occurrences
+        - SELECT on critic_runs (required for FK validation)
         - NO access to ground truth tables (true_positives, false_positives)
-        - Schema usage
-        - Sequence usage for SERIAL columns
+        - Schema usage and sequence usage
 
         RLS policies (created in migration) automatically filter access to the user's run_id.
-        Soft deletes only (UPDATE cancelled_at) - no DELETE privilege.
         """
-        # Critic workflow tables (read-write, NO DELETE)
-        critic_tables = ["reported_issues", "reported_issue_occurrences"]
-
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)
+            await conn.execute(text(f"GRANT critic_agent_template TO {quoted_username}"))
 
-            # Grant schema access
-            await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
+        logger.debug(f"Granted critic_agent_template to {username}")
 
-            # Grant INSERT, SELECT, UPDATE (NO DELETE) on critic tables
-            for table in critic_tables:
-                await conn.execute(text(f"GRANT SELECT, INSERT, UPDATE ON TABLE {table} TO {quoted_username}"))
-
-            # Grant USAGE on sequences (needed for SERIAL columns in reported_issue_occurrences)
-            await conn.execute(text(f"GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO {quoted_username}"))
-
-        logger.debug(f"Granted critic permissions to {username} (NO DELETE, NO ground truth access)")
+    async def revoke_permissions(self, username: str) -> None:
+        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""

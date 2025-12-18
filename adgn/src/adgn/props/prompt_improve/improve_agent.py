@@ -29,8 +29,7 @@ from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import FunctionCallItem, SystemMessage, UserMessage
+from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
 from adgn.props.agent_setup import AgentEnvironment, build_props_handlers, make_mcp_http_bootstrap_calls
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
@@ -146,28 +145,35 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         # Store parameters for server factory and external access
         self._improvement_context = improvement_context
         self._workspace_root = workspace_root
+        self._improvement_run_id = improvement_run_id
 
         def make_user_manager() -> ImprovementUserManager:
-            """Create temporary improvement user with RLS scoping."""
-            return ImprovementUserManager(db_config.admin, improvement_run_id, allowed_examples)
+            """Create temporary improvement user with RLS scoping.
 
-        def make_mcp_server(auth: AuthProvider) -> EnhancedFastMCP:
-            """Create prompt submission server (auth provided by HTTP server)."""
-            server = PromptSubmissionServer(workspace_root=workspace_root, improvement_context=improvement_context)
-            # Store reference for programmatic access (bootstrap introspection)
-            self.prompt_submission_server = server
-            return server
+            The user manager handles run registration internally.
+            """
+            return ImprovementUserManager(db_config.admin, improvement_run_id, allowed_examples)
 
         super().__init__(
             docker_client=docker_client,
             user_manager_factory=make_user_manager,
-            mcp_server_factory=make_mcp_server,
             hydrator=hydrator,
+            db_config=db_config,
             snapshot_slugs=snapshot_slugs,
             workspace_root=workspace_root,  # Use provided workspace (not temporary)
             mount_properties=False,
-            # http_mode defaults to USE_MCP_HTTP from agent_setup
         )
+
+    @property
+    def improvement_run_id(self) -> UUID:
+        """Get the improvement run ID for provenance tracking.
+
+        Use this when upserting prompts to link them to this run.
+
+        TODO: When improvement agent can run small evals, automatically link
+        prompts to the run during upsert.
+        """
+        return self._improvement_run_id
 
     def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
         """Return list of (label, URI) tuples for MCP resources to read during bootstrap.
@@ -195,6 +201,8 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         return [
             # MCP-over-HTTP bootstrap (lists tools, reads resources)
             *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
+            # Database ORM models (single source of truth for schema)
+            *_read_package_files(builder, runtime, "adgn.props.db", ["models.py"]),
             # System overview (snapshots, database, critic architecture, evaluation flow)
             *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
             # Database query examples for analyzing training data
@@ -203,12 +211,37 @@ class ImprovementAgentEnvironment(AgentEnvironment):
                 runtime,
                 "adgn.props.examples",
                 [
-                    "working_with_examples.py",  # Example schema (composite key pattern)
-                    "analyzing_critic_failures.py",  # Critic runs, grader results, execution traces
-                    "query_run_status.py",  # Check for stuck/looping behavior (max_turns_exceeded)
+                    "working_with_examples.py"  # Example schema (composite key pattern)
+                ],
+            ),
+            # Run analysis examples (critic runs, grader results, execution traces, failure analysis)
+            *_read_package_files(
+                builder,
+                runtime,
+                "adgn.props.prompt_optimize.examples",
+                [
+                    "runs.py"  # Run status, execution traces, failure analysis
                 ],
             ),
         ]
+
+    def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
+        """Create prompt submission server.
+
+        Args:
+            auth: Auth provider for HTTP authentication (unused - server doesn't use auth)
+
+        Returns:
+            PromptSubmissionServer with prompt submission tools
+        """
+        # Type narrowing: _workspace_root is guaranteed non-null (passed to __init__)
+        assert self._workspace_root is not None, "workspace_root must be set"
+        server = PromptSubmissionServer(
+            workspace_root=self._workspace_root, improvement_context=self._improvement_context
+        )
+        # Store reference for programmatic access (bootstrap introspection)
+        self.prompt_submission_server = server
+        return server
 
 
 # ============================================================================
@@ -242,6 +275,8 @@ def make_improvement_bootstrap_calls(
         prompt_submission: Mounted prompt submission server
     """
     return [
+        # Database ORM models (single source of truth for schema)
+        *_read_package_files(builder, runtime, "adgn.props.db", ["models.py"]),
         # System overview (snapshots, database, critic architecture, evaluation flow)
         *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
         # Improvement context (examples, current prompt SHA)
@@ -257,9 +292,16 @@ def make_improvement_bootstrap_calls(
             runtime,
             "adgn.props.examples",
             [
-                "working_with_examples.py",  # Example schema (composite key pattern)
-                "analyzing_critic_failures.py",  # Critic runs, grader results, execution traces
-                "query_run_status.py",  # Check for stuck/looping behavior (max_turns_exceeded)
+                "working_with_examples.py"  # Example schema (composite key pattern)
+            ],
+        ),
+        # Run analysis examples (critic runs, grader results, execution traces, failure analysis)
+        *_read_package_files(
+            builder,
+            runtime,
+            "adgn.props.prompt_optimize.examples",
+            [
+                "runs.py"  # Run status, execution traces, failure analysis
             ],
         ),
     ]
@@ -275,6 +317,7 @@ async def run_improvement_agent(
     hydrator: SnapshotHydrator,
     docker_client: aiodocker.Docker,
     db_config: DatabaseConfig,
+    client: OpenAIModelProto,
     output_dir: Path | None = None,
     verbose: bool = False,
 ) -> ImprovementResult:
@@ -292,6 +335,7 @@ async def run_improvement_agent(
         hydrator: Snapshot hydrator (required)
         docker_client: Docker client (required)
         db_config: Database configuration (required, from CLI caller)
+        client: OpenAI client (required, allows testing with mocks)
         output_dir: Output directory for workspace/logs (defaults to temp)
         verbose: Enable verbose logging
 
@@ -402,9 +446,6 @@ async def run_improvement_agent(
             current_prompt=current_prompt, examples=examples, output_dir=output_dir
         )
 
-        # Create and run agent
-        client = build_client(model)
-
         async with Client(comp) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
@@ -436,6 +477,13 @@ async def run_improvement_agent(
 
         outcome: ImprovementOutcome
         if submission is not None:
+            # Upsert submitted prompt with provenance tracking
+            from adgn.props.db.prompts import hash_and_upsert_prompt
+
+            prompt_sha = hash_and_upsert_prompt(
+                prompt_text=submission.prompt_text, improvement_run_id=agent_env.improvement_run_id
+            )
+            logger.info(f"Upserted improved prompt {prompt_sha[:12]}... with improvement_run_id={run_id}")
             outcome = OutcomeSuccess(submission=submission)
         elif token_handler.percentage_used >= 1.0:
             outcome = OutcomeExhausted()

@@ -61,6 +61,13 @@ WHERE rio.critic_run_id = (SELECT critic_run_id FROM grader_runs WHERE id = curr
 
 Use Python helper functions for cleaner decision insertion. **All helpers use SQLAlchemy ORM internally** - no need to manage connections manually!
 
+**Available helpers:**
+- `insert_tp_match(input_issue_id, tp_id, tp_occurrence_id, credit, rationale)` - Match to true positive
+- `insert_fp_match(input_issue_id, fp_id, fp_occurrence_id, rationale)` - Match to false positive
+- `insert_no_match(input_issue_id, rationale)` - No canonical match (novel finding)
+- `delete_decision(input_issue_id)` - Delete a decision (for corrections)
+- `submit_grading(summary)` - Finalize and call MCP submit (async)
+
 Here is a complete example script demonstrating the grading workflow:
 
 ```python
@@ -130,7 +137,22 @@ WHERE id = 123;
 
 ## Completion
 
-When ALL input issues have decisions, call `grader_submit(summary="...")` with a brief summary:
+When ALL input issues have decisions, finalize the grading:
+
+**Python helper (recommended):**
+```python
+import asyncio
+from adgn.props.grader.decision_helpers import submit_grading
+
+asyncio.run(submit_grading(
+    summary="Graded 10 inputs: 7 TP matches, 1 FP match, 2 novel findings"
+))
+```
+
+**Direct MCP call (alternative):**
+Call the `grader_submit` tool via MCP with `summary="..."`.
+
+**Summary should include:**
 - How many inputs were graded
 - How many matched TPs, FPs, or were novel
 - Any notable patterns

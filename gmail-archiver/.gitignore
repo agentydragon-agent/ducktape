@@ -1,0 +1,25 @@
+# Downloaded raw emails (never commit)
+examples_raw/
+
+# Python build artifacts
+dist/
+build/
+
+# Virtual environment (keep items not in parent gitignore)
+env/
+ENV/
+
+# Environment variables
+.env
+
+# IDE (keep items not in parent gitignore)
+.vscode/
+.idea/
+*.swo
+*~
+
+# OS (keep items not in parent gitignore)
+Thumbs.db
+
+# Logs
+*.log

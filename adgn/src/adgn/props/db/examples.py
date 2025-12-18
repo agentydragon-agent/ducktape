@@ -205,8 +205,7 @@ def count_available_examples_by_scope_all(session: Session, splits: list[Split])
         splits: List of splits to count examples for
 
     Returns:
-        Dict mapping (split, scope_kind) to count, where scope_kind is a ScopeKind enum value
-        (e.g., ScopeKind.ENTIRE_SNAPSHOT or ScopeKind.SPECIFIC_FILES).
+        Dict mapping (split, scope_kind) to count, ordered by split then scope_kind.
     """
     # Extract scope kind from JSONB: scope->>'kind'
     scope_kind = Example.scope["kind"].astext
@@ -216,15 +215,11 @@ def count_available_examples_by_scope_all(session: Session, splits: list[Split])
         .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
         .where(Snapshot.split.in_(splits))
         .group_by(Snapshot.split, scope_kind)
+        .order_by(Snapshot.split, scope_kind)
         .all()
     )
-    # Build dict from actual results, converting string to ScopeKind enum
-    counts: dict[tuple[Split, ScopeKind], int] = {}
-    for split, kind_str, count in results:
-        # Convert string value ('entire_snapshot', 'specific_files') to ScopeKind enum
-        kind_enum = ScopeKind(kind_str)
-        counts[(split, kind_enum)] = count
-    return counts
+    # Build ordered dict (Python 3.7+ preserves insertion order)
+    return {(split, ScopeKind(kind_str)): count for split, kind_str, count in results}
 
 
 def get_examples_for_split(session: Session, split: Split) -> list[Example]:

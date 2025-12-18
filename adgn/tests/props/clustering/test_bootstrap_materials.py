@@ -48,7 +48,6 @@ def test_example_queries_exists():
     assert "python" in first_line.lower(), "shebang should reference python"
 
 
-@pytest.mark.asyncio
 async def test_run_id_extraction(clustering_user_engine_factory, test_snapshot):
     """Test that current_clustering_run_id() correctly extracts run_id from username."""
     # Setup: Create clustering run
@@ -75,7 +74,6 @@ async def test_run_id_extraction(clustering_user_engine_factory, test_snapshot):
             assert username == expected_username, f"Expected {expected_username}, got {username}"
 
 
-@pytest.mark.asyncio
 async def test_example_query_list_clusters(test_db, test_snapshot):
     """Test that example query functions work with RLS-scoped user."""
     # Setup: Create run and cluster

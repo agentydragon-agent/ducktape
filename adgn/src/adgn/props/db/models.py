@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 
 from sqlalchemy import (
     Enum,
+    FetchedValue,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
@@ -379,7 +380,13 @@ class FalsePositive(Base):
 
 
 class Prompt(Base):
-    """Critic prompt template identified by SHA256 hash."""
+    """Critic prompt template identified by SHA256 hash.
+
+    Provenance tracking:
+    - prompt_optimization_run_id: Set when prompt is created by the prompt optimizer agent
+    - improvement_run_id: Set when prompt is created by the improvement agent
+    - Both can be NULL for manually created prompts
+    """
 
     __tablename__ = "prompts"
 
@@ -390,6 +397,9 @@ class Prompt(Base):
     prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
     )
+    improvement_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("improvement_runs.id"), nullable=True, index=True
+    )
     template_file_path: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -399,6 +409,60 @@ class Prompt(Base):
     # Relationships
     critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="prompt_obj")
     prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="prompts")
+    improvement_run: Mapped[ImprovementRun | None] = relationship(back_populates="prompts")
+
+
+class ImprovementRunStatus(StrEnum):
+    """Improvement run status enumeration."""
+
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    ABANDONED = "abandoned"
+
+
+class ImprovementRun(Base):
+    """Improvement agent session for prompt refinement.
+
+    Tracks which examples the improvement agent is allowed to access
+    via RLS policies. The allowed_examples JSONB column stores an array
+    of {snapshot_slug, scope_hash} objects.
+
+    Usage:
+        # Register run before creating temp user:
+        async with admin_engine.begin() as conn:
+            await register_improvement_run(conn, run_id, allowed_examples)
+
+        # Then create temp user via ImprovementUserManager
+        # RLS policies filter rows based on allowed_examples
+
+    Prompts created by this agent have improvement_run_id set.
+    """
+
+    __tablename__ = "improvement_runs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    started_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    allowed_examples: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, comment="Array of {snapshot_slug, scope_hash} objects defining allowed examples"
+    )
+    status: Mapped[ImprovementRunStatus] = mapped_column(
+        Enum(
+            ImprovementRunStatus,
+            name="improvement_run_status_enum",
+            create_constraint=True,
+            native_enum=True,
+            values_callable=lambda e: [member.value for member in e],  # Use lowercase values
+        ),
+        nullable=False,
+        server_default="in_progress",
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    prompts: Mapped[list[Prompt]] = relationship(back_populates="improvement_run")
 
 
 class PromptOptimizationRun(Base):
@@ -558,7 +622,11 @@ class ReportedIssue(Base):
     __tablename__ = "reported_issues"
 
     critic_run_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("critic_runs.id", ondelete="CASCADE"), primary_key=True, nullable=False
+        PG_UUID(as_uuid=True),
+        ForeignKey("critic_runs.id", ondelete="CASCADE"),
+        primary_key=True,
+        nullable=False,
+        server_default=FetchedValue(),
     )
     issue_id: Mapped[str] = mapped_column(String, primary_key=True, nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
@@ -589,7 +657,7 @@ class ReportedIssueOccurrence(Base):
     __tablename__ = "reported_issue_occurrences"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, server_default=FetchedValue())
     reported_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
     # Locations array (1+ location anchors)
@@ -634,7 +702,10 @@ class GradingDecision(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     grader_run_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("grader_runs.id", ondelete="CASCADE"), nullable=False
+        PG_UUID(as_uuid=True),
+        ForeignKey("grader_runs.id", ondelete="CASCADE"),
+        nullable=False,
+        server_default=FetchedValue(),
     )
     input_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 

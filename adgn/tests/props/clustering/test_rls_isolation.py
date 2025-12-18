@@ -37,7 +37,6 @@ def test_migration_applied(admin_engine):
         assert not missing_tables, f"Missing tables: {', '.join(sorted(missing_tables))}"
 
 
-@pytest.mark.asyncio
 async def test_rls_isolation_between_runs(clustering_user_engine_factory, test_snapshot):
     """Test that clustering agents can only see/modify their own run's data."""
     # Setup: Create two clustering runs
@@ -75,7 +74,6 @@ async def test_rls_isolation_between_runs(clustering_user_engine_factory, test_s
             assert visible_runs[0].id == run2_id
 
 
-@pytest.mark.asyncio
 async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_factory, test_snapshot):
     """Test that users can only see/modify clusters and assignments for their own run."""
     # Setup: Create two clustering runs with clusters
@@ -117,7 +115,6 @@ async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_fac
             assert clusters[0].clustering_run_id == run2_id
 
 
-@pytest.mark.asyncio
 async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_factory, test_snapshot):
     """Test that clustering agents have read-only access to snapshots and ground truth."""
     # Setup: Create clustering run
@@ -144,7 +141,6 @@ async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_f
                 try_delete()
 
 
-@pytest.mark.asyncio
 async def test_scoped_user_cleanup(test_db, test_snapshot, admin_engine):
     """Test that scoped users are properly cleaned up after context exit."""
     # Setup: Create clustering run

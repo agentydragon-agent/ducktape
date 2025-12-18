@@ -25,7 +25,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Add function and CHECK constraint to validate input_issue_id exists."""
 
-    # Create validation function
+    # Create validation function (SECURITY DEFINER to bypass RLS policies on reported_issues)
     op.execute("""
         CREATE FUNCTION validate_input_issue_exists(grader_run_id UUID, input_issue_id TEXT)
         RETURNS BOOLEAN AS $$
@@ -35,7 +35,7 @@ def upgrade() -> None:
                 JOIN grader_runs gr ON gr.critic_run_id = ri.critic_run_id
                 WHERE gr.id = $1 AND ri.issue_id = $2
             )
-        $$ LANGUAGE SQL STABLE;
+        $$ LANGUAGE SQL STABLE SECURITY DEFINER;
     """)
 
     # Add CHECK constraint

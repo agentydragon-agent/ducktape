@@ -15,9 +15,10 @@ from typer import Argument, Option
 from typer_di import Depends, TyperDI
 
 from adgn.cli_utils import async_run
+from adgn.openai_utils.client_factory import build_client
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_hydrator
-from adgn.props.clustering.cluster_agent import run_clustering_agent
+from adgn.props.clustering.cluster_agent import OutcomeSuccess, run_clustering_agent
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
 from adgn.props.db.config import get_database_config
@@ -103,13 +104,14 @@ async def cmd_run(
 
     try:
         # 3. Run clustering agent
-        console.print(f"[cyan]Starting clustering agent (model={model})...[/cyan]")
+        client = build_client(model)
+        console.print(f"[cyan]Starting clustering agent (model={client.model})...[/cyan]")
         result = await run_clustering_agent(
             run_id=run_id,
-            model=model,
             hydrator=hydrator,
             docker_client=docker_client,
             db_config=db_config,
+            client=client,
             output_dir=output_dir,
             verbose=verbose,
         )
@@ -120,7 +122,7 @@ async def cmd_run(
         console.print(f"Transcript ID: {result.transcript_id}")
         console.print(f"Output directory: {output_dir}")
 
-        if result.outcome.kind == "success":
+        if isinstance(result.outcome, OutcomeSuccess):
             console.print("\n[green]✓ Success[/green]")
             console.print(f"  Total unknowns: {result.outcome.total_unknowns}")
             console.print(f"  Clusters created: {result.outcome.clusters_created}")

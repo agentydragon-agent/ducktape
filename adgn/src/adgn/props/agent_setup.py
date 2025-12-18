@@ -22,17 +22,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 import logging
-import os
 from pathlib import Path
 import tempfile
 from typing import TYPE_CHECKING
 from uuid import UUID
 
+from adgn.agent.bootstrap import docker_exec_call, read_package_file_call
 from adgn.agent.db_event_handler import DatabaseEventHandler
 from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.handler import BaseHandler
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
-from adgn.props.db.config import get_database_config
+from adgn.props.db.config import DatabaseConfig
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.http_compositor import PropertiesDockerCompositorHTTP
 from adgn.props.hydration import SnapshotHydrator
@@ -51,11 +51,6 @@ if TYPE_CHECKING:
     from adgn.props.db.temp_user_manager import TempUserManager
 
 logger = logging.getLogger(__name__)
-
-# Toggle for MCP HTTP transport (shared across all agents)
-# Set via environment variable: ADGN_USE_MCP_HTTP=1
-# Default: False (use in-proc MCP unless explicitly enabled)
-USE_MCP_HTTP = os.getenv("ADGN_USE_MCP_HTTP", "").lower() in ("1", "true", "yes")
 
 
 async def build_props_handlers(
@@ -136,14 +131,13 @@ class AgentEnvironment:
         self,
         docker_client: aiodocker.Docker,
         user_manager_factory: Callable[[], TempUserManager],
-        mcp_server_factory: Callable[[AuthProvider], FastMCP],
         hydrator: SnapshotHydrator,
+        db_config: DatabaseConfig,
         *,
         snapshot_slugs: Sequence[SnapshotSlug] = (),
         workspace_prefix: str = "agent_workspace_",
         workspace_root: Path | None = None,
         mount_properties: bool = False,
-        http_mode: bool = USE_MCP_HTTP,
     ):
         """Create agent environment.
 
@@ -152,31 +146,28 @@ class AgentEnvironment:
             user_manager_factory: Factory that creates a TempUserManager.
                 Called during __aenter__ to create scoped DB user for this run.
                 Example: lambda: CriticUserManager(db_config.admin, run_id)
-            mcp_server_factory: Factory that takes AuthProvider and returns FastMCP server.
-                Called during __aenter__ with auth provider generated for HTTP authentication.
-                Example: lambda auth: create_critic_server(run_id, snapshot_slug, auth=auth)
             hydrator: Snapshot hydrator for loading specimen code
+            db_config: Database configuration (includes correct database name for test isolation)
             snapshot_slugs: Snapshots to hydrate and mount at /snapshots/<slug>/
             workspace_prefix: Prefix for temporary workspace directory (only used if workspace_root is None)
             workspace_root: Pre-existing workspace directory to use (if None, creates temporary directory)
             mount_properties: Whether to mount property definitions at /props (default: False)
-            http_mode: Whether to use HTTP mode for MCP server (default: USE_MCP_HTTP env var)
         """
         self._docker_client = docker_client
         self._user_manager_factory = user_manager_factory
-        self._mcp_server_factory = mcp_server_factory
         self._hydrator = hydrator
+        self._db_config = db_config
         self._snapshot_slugs = snapshot_slugs
         self._workspace_prefix = workspace_prefix
         self._workspace_root = workspace_root
         self._mount_properties = mount_properties
-        self._http_mode = http_mode
 
         # Managed resources (created in __aenter__, cleaned up in __aexit__)
         self._workspace_tmpdir: tempfile.TemporaryDirectory[str] | None = None
         self._user_manager: TempUserManager | None = None
         self._http_compositor: PropertiesDockerCompositorHTTP | None = None
         self._compositor: Compositor | None = None
+        self._hydrated_paths: dict[SnapshotSlug, Path] = {}
 
     def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
         """Return list of (label, URI) tuples for MCP resources to read during bootstrap.
@@ -207,6 +198,20 @@ class AgentEnvironment:
             return make_mcp_http_bootstrap_calls(builder, runtime, resources)
         return []
 
+    def _make_mcp_server(self, auth: AuthProvider) -> FastMCP:
+        """Create MCP server for this agent.
+
+        Subclasses override to provide agent-specific MCP servers.
+        Can access self._hydrated_paths populated after compositor __aenter__.
+
+        Args:
+            auth: Auth provider for HTTP authentication
+
+        Returns:
+            FastMCP server instance
+        """
+        raise NotImplementedError("Subclasses must implement _make_mcp_server")
+
     async def __aenter__(self) -> PropertiesDockerCompositor:
         """Start agent environment: workspace, user, HTTP server, container.
 
@@ -228,16 +233,15 @@ class AgentEnvironment:
 
         logger.info(f"Created temporary database user: {temp_creds.username}")
 
-        # Get container DB config with temp user credentials
-        db_config = get_database_config()
-        container_db = db_config.for_container_user(temp_creds)
+        # Get container DB config with temp user credentials (use injected config, not environment)
+        container_db = self._db_config.for_container_user(temp_creds)
 
         # Start HTTP MCP server + Docker container
         # (PropertiesDockerCompositorHTTP handles HTTP server lifecycle and container setup)
         self._http_compositor = PropertiesDockerCompositorHTTP(
             workspace_root=workspace_path,
             docker_client=self._docker_client,
-            server_factory=self._mcp_server_factory,
+            agent_environment=self,  # Pass self for method call
             db_conn=container_db,
             hydrator=self._hydrator,
             snapshot_slugs=self._snapshot_slugs,
@@ -246,6 +250,9 @@ class AgentEnvironment:
 
         compositor = await self._http_compositor.__aenter__()
         self._compositor = compositor
+
+        # Copy hydrated paths from compositor to self (for in-proc mode access)
+        self._hydrated_paths = compositor._hydrated_paths
 
         logger.info(f"Started agent environment with {len(self._snapshot_slugs)} snapshot(s)")
 
@@ -273,6 +280,15 @@ class AgentEnvironment:
 # =============================================================================
 # MCP-over-HTTP Bootstrap Helpers
 # =============================================================================
+
+# MCP HTTP bootstrap needs 5s timeout due to cold Python import overhead in Docker.
+# Profiled breakdown (Dec 2024):
+#   - `from mcp import ClientSession`: ~1.6s (MCP library + Pydantic models)
+#   - MCP HTTP connect + initialize: ~20ms
+#   - list_tools + read_resource calls: ~50ms total
+# The default 1s timeout fails because the MCP SDK import alone exceeds it.
+# Cannot easily optimize without pre-warming Python in the container image.
+MCP_BOOTSTRAP_TIMEOUT_MS = 5000
 
 
 def make_mcp_http_bootstrap_script(resources: Sequence[tuple[str, str]]) -> str:
@@ -302,32 +318,27 @@ import json
 from adgn.props.agent_helpers import mcp_client_from_env
 
 async def bootstrap():
-    async with mcp_client_from_env() as (session, init_result):
+    async with mcp_client_from_env() as (client, init_result):
         print("=== MCP Server Initialization ===")
         print(json.dumps(init_result.model_dump(mode="json"), indent=2))
 
-        tools = await session.list_tools()
+        tools = await client.list_tools()
         print("=== Available Tools ===")
-        for tool in tools:
-            print(json.dumps(tool.model_dump(mode="json"), indent=2))
+        print(json.dumps([t.model_dump(mode="json") for t in tools], indent=2))
 
         # Read resources in order
         resources = {resources_repr}
         for label, uri in resources:
             print(f"=== {{label}} ===")
-            result = await session.read_resource(uri)
-            print(json.dumps(result.model_dump(mode="json"), indent=2))
+            contents = await client.read_resource(uri)
+            print(json.dumps([c.model_dump(mode="json") for c in contents], indent=2))
 
 asyncio.run(bootstrap())
 """
 
 
 def make_mcp_http_bootstrap_calls(
-    builder: TypedBootstrapBuilder,
-    runtime: Mounted[ContainerExecServer],
-    resources: Sequence[tuple[str, str]],
-    *,
-    timeout_ms: int = 15_000,
+    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], resources: Sequence[tuple[str, str]]
 ) -> list[FunctionCallItem]:
     """Build bootstrap calls for MCP-over-HTTP mode.
 
@@ -336,11 +347,13 @@ def make_mcp_http_bootstrap_calls(
     - Lists available tools
     - Reads specified resources
 
+    Uses 5s timeout for the MCP bootstrap script (HTTP connect + list tools + read resources
+    takes longer than simple commands).
+
     Args:
         builder: Bootstrap builder for generating typed tool calls
         runtime: Mounted runtime server (e.g., comp.runtime)
         resources: List of (label, uri) tuples to read during bootstrap
-        timeout_ms: Script execution timeout (default: 15 seconds)
 
     Returns:
         List of bootstrap calls (read connection docs + exec script)
@@ -357,13 +370,13 @@ def make_mcp_http_bootstrap_calls(
             ]
         )
     """
-    from adgn.agent.bootstrap import docker_exec_call_mounted, read_package_file_call
-
     bootstrap_script = make_mcp_http_bootstrap_script(resources)
 
     return [
         # Show MCP-over-HTTP connection instructions first
         read_package_file_call(builder, runtime, "adgn.props.prompts", "mcp_http_connection.md"),
         # Then run the bootstrap script that demonstrates the connection
-        docker_exec_call_mounted(builder, runtime, cmd=["python3", "-c", bootstrap_script], timeout_ms=timeout_ms),
+        docker_exec_call(
+            builder, runtime, cmd=["python3", "-c", bootstrap_script], timeout_ms=MCP_BOOTSTRAP_TIMEOUT_MS
+        ),
     ]

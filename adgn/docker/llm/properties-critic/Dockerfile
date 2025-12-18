@@ -47,8 +47,9 @@ COPY pyproject.toml uv.lock ./
 RUN mkdir -p src/adgn && echo '__version__ = "0.0.0"' > src/adgn/__init__.py
 
 # Install dependencies + package (this layer is cached unless pyproject.toml/uv.lock changes)
+# Include both dev and gepa extras (gepa is needed for props.cli imports)
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
-    uv pip install --system -e .[dev]
+    uv pip install --system -e ".[dev,gepa]"
 
 # Now copy real source code (changes here won't invalidate dependency cache above)
 COPY src ./src
