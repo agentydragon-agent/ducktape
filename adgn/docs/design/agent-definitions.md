@@ -170,6 +170,19 @@ CREATE POLICY insert_own ON agent_definitions
 Repo-backed definitions have `created_by_transcript_id = NULL` and are inserted
 by the sync command (not by agents).
 
+### Transcript Access
+
+Each agent can always read its own transcript (events table):
+
+```sql
+-- Agent can read events from its own transcript
+CREATE POLICY read_own_transcript ON events
+    FOR SELECT
+    USING (transcript_id = current_transcript_id());
+```
+
+This allows agents to reflect on their own history if needed.
+
 ## Agent Access Pattern
 
 Agents do NOT get definitions auto-mounted. Instead, they use a helper to inflate
