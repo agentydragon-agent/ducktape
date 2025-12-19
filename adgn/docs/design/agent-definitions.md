@@ -542,10 +542,98 @@ response3 = send_message(transcript_id, "Summarize your findings")
 
 **State Management:**
 - Session identified by transcript_id (no separate session concept)
-- Container may be killed when idle, restarted on next send_message
-- Agent notified of restart via system message (loses /tmp, keeps conversation)
 - Conversation history persisted in events table
-- No explicit end_agent needed - resources cleaned up when parent exits or on timeout
+- No explicit end_agent needed - resources cleaned up when parent exits
+
+### Implementation: Long-Running Containers
+
+Sub-agents use long-running containers that persist between `send_message` calls:
+
+```python
+class SubAgentRegistry:
+    """Manages long-running sub-agent containers within parent process."""
+
+    def __init__(self):
+        self._agents: dict[UUID, SubAgentHandle] = {}
+        self._locks: dict[UUID, asyncio.Lock] = {}  # Prevent concurrent send_message
+
+    async def start_agent(self, definition_id: str, inherit_mounts: bool) -> UUID:
+        transcript_id = uuid4()
+
+        # Create agent_runs record
+        create_agent_run(transcript_id, definition_id, parent=current_transcript_id())
+
+        # Start container + MCP server (long-running)
+        handle = await SubAgentHandle.create(
+            transcript_id=transcript_id,
+            definition_id=definition_id,
+            inherit_mounts=inherit_mounts,
+        )
+
+        self._agents[transcript_id] = handle
+        self._locks[transcript_id] = asyncio.Lock()
+        return transcript_id
+
+    async def send_message(self, transcript_id: UUID, message: str) -> str:
+        handle = self._agents.get(transcript_id)
+        if handle is None:
+            raise ValueError(f"No agent with transcript_id {transcript_id}")
+
+        async with self._locks[transcript_id]:
+            # Check if container died, restart if needed
+            if not handle.container.is_alive():
+                await handle.restart_container()
+                handle.inject_restart_message()
+
+            # Add message and run until text response
+            return await handle.send_and_wait_for_text(message)
+
+    async def cleanup_all(self):
+        """Called when parent agent exits."""
+        for handle in self._agents.values():
+            await handle.shutdown()
+
+
+class SubAgentHandle:
+    """Handle to a single long-running sub-agent."""
+
+    def __init__(self, transcript_id: UUID, container, mcp_server, agent: Agent):
+        self.transcript_id = transcript_id
+        self.container = container
+        self.mcp_server = mcp_server
+        self.agent = agent  # Stateful, holds conversation history
+
+    async def send_and_wait_for_text(self, message: str) -> str:
+        # Add user message to agent's conversation
+        self.agent.add_message(role="user", content=message)
+
+        # Run with AbortOnTextMessage handler
+        result = await self.agent.run_until_text()
+
+        return result.text_content
+
+    def inject_restart_message(self):
+        self.agent.add_message(
+            role="system",
+            content="Your container was restarted. Any local state (files in /tmp, "
+                    "running processes, environment variables set at runtime) has been "
+                    "lost. The conversation history and mounted volumes are preserved."
+        )
+
+    async def restart_container(self):
+        # Kill old container if zombie
+        await self.container.kill()
+        # Start fresh container with same config
+        self.container = await start_container(self.config)
+```
+
+**Key properties:**
+- Container stays alive between `send_message` calls
+- Agent object is stateful, holds full conversation in memory
+- Events also persisted to DB (for recovery if parent crashes)
+- Lock prevents concurrent `send_message` to same sub-agent
+- Restart detection + system message injection
+- Parent's cleanup handler shuts down all sub-agents
 
 ### Use Cases
 
