@@ -216,21 +216,93 @@ the helper explicitly.
 - Track lineage via `parent_id`
 - Metrics queries that group by definition
 
-## Open Questions
+## Runtime Information (No Jinja2)
 
-1. **Template variables in AGENT.md**: Current `critic_system.j2.md` uses Jinja2
-   templating for `{{ compositor_instructions }}`. Keep templating or find alternative?
+Agent definitions are static - no Jinja2 templating. Dynamic runtime information
+is provided via files written by the runtime before agent starts.
 
-   Option A: Keep Jinja2, render at runtime before injecting as system prompt
-   Option B: Move dynamic content to resources/environment, keep AGENT.md static
+### Runtime-provided files
 
-2. **Binary files**: Should definitions support binary files (images, compiled tools)?
-   Current design uses gzip tar which handles binaries fine, but size limits may apply.
+The runtime writes these files to `/workspace/.runtime/` before starting the agent:
 
-3. **Definition size limits**: PostgreSQL BYTEA has no practical limit, but should we
-   cap definition size to prevent abuse? Suggest 10MB compressed as reasonable limit.
+```
+/workspace/.runtime/
+├── mcp_connection.md     # MCP server URL, token, connection instructions
+├── compositor_meta.json  # Tool schemas, server info
+└── scope.json           # Files to review, snapshot info, etc.
+```
 
-4. **Garbage collection**: Old/unused definitions accumulate. Options:
-   - Manual cleanup via admin command
-   - Automatic cleanup of definitions with no associated runs after N days
-   - Keep forever (storage is cheap)
+AGENT.md references these:
+```markdown
+## MCP Connection
+See `/workspace/.runtime/mcp_connection.md` for connection details.
+
+## Your Scope
+Check `/workspace/.runtime/scope.json` for the files you should review.
+```
+
+This eliminates all Jinja2 templating. The agent definition is fully static and
+self-contained.
+
+## Syncing Repo-Tracked Definitions
+
+Canonical agent definitions live in git at `adgn/agent_definitions/`. A sync
+command ensures they're present in the database:
+
+```bash
+# Sync all repo-tracked definitions to database
+python -m adgn.props.cli sync-agent-definitions
+
+# This:
+# 1. Walks adgn/agent_definitions/
+# 2. For each directory, computes SHA256
+# 3. Upserts to database if not present (idempotent)
+```
+
+The sync command runs:
+- On CI after merge to main
+- Manually when developing new base definitions
+- Optionally as part of `run_critic` startup (auto-sync baseline if missing)
+
+## Size Limits
+
+- **Folder size**: Soft limit ~1MB (enforced by CLI tooling)
+- **Database column**: 2MB limit on `archive` column (hard limit)
+- **Validation**: Happens at agent start time, not insert time (simpler)
+
+## Archive Format
+
+Uncompressed tar (let PostgreSQL handle compression via TOAST if beneficial):
+
+```python
+def pack_definition(definition_dir: Path) -> bytes:
+    """Create tar archive from definition directory."""
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode='w') as tar:
+        for path in definition_dir.rglob("*"):
+            if path.is_file():
+                tar.add(path, arcname=path.relative_to(definition_dir))
+    return buffer.getvalue()
+
+def unpack_definition(archive: bytes, target_dir: Path) -> None:
+    """Extract tar archive to target directory."""
+    buffer = io.BytesIO(archive)
+    with tarfile.open(fileobj=buffer, mode='r') as tar:
+        tar.extractall(target_dir)
+```
+
+## Self Definition Location
+
+The agent's own definition is unpacked to `/workspace` (the default cwd):
+
+```
+/workspace/
+├── AGENT.md              # System prompt
+├── bootstrap.sh          # Runs on startup
+├── tools/                # Agent's helper scripts
+└── .runtime/             # Runtime-provided files (written by runtime)
+    ├── mcp_connection.md
+    └── scope.json
+```
+
+Agent reads its prompt from `/workspace/AGENT.md`. Simple, no symlinks needed.
