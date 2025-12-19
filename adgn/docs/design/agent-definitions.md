@@ -21,7 +21,7 @@ Minimal conventions:
 ```
 <agent_definition>/
 ├── AGENT.md              # System prompt (required)
-├── bootstrap.sh          # Runs on agent startup (optional)
+├── init.sh               # Runs on agent startup (required, must be executable)
 └── ...                   # Any other files the agent needs
 ```
 
@@ -37,7 +37,7 @@ You are a code quality critic agent. Your job is to review code and identify iss
 Review the snapshot code and report issues using the available tools.
 
 ## Getting Started
-Run `./bootstrap.sh` for environment details and available tools.
+Run `./init.sh` for environment details and available tools.
 (Note: Runtime auto-executes this, but instruction remains for clarity)
 
 ## Workflow
@@ -48,17 +48,17 @@ Run `./bootstrap.sh` for environment details and available tools.
 ... (rest of agent-specific instructions)
 ```
 
-### bootstrap.sh
+### init.sh
 
-If present, executed automatically by the runtime before agent sampling begins
-(warm-start pattern - we don't rely on LLM following an instruction to run it).
+Required, must be executable. Executed automatically by the runtime before agent
+sampling begins (warm-start pattern - we don't rely on LLM following an instruction).
 
-Default bootstrap.sh for repo-tracked agents reads common boilerplate from the
+Default init.sh for repo-tracked agents reads common boilerplate from the
 installed adgn package:
 
 ```bash
 #!/bin/bash
-# Bootstrap script for critic agent
+# Init script for critic agent
 
 # Read MCP connection info from adgn package resources
 python3 -c "
@@ -200,12 +200,12 @@ inflate-agent --self /workspace/agents/self
 The agent runtime automatically:
 1. Unpacks agent definition to `/workspace`
 2. Sets environment variables (`AGENT_DEFINITION_ID`, `SNAPSHOT_SLUG`, `MCP_SERVER_URL`, etc.)
-3. Executes `bootstrap.sh` via docker_exec (if present)
-4. Injects bootstrap output as first assistant message (warm-start)
+3. Executes `init.sh` via docker_exec
+4. Injects init.sh output as first assistant message (warm-start)
 5. Reads `/workspace/AGENT.md` as system prompt
 6. Begins agent sampling
 
-This warm-start pattern ensures the agent sees bootstrap output without relying
+This warm-start pattern ensures the agent sees init output without relying
 on the LLM to follow an instruction to run it.
 
 Agents that need to read other definitions (e.g., optimizer reading critic) use
@@ -267,53 +267,63 @@ Agent definitions are fully static - no Jinja2 templating.
 
 1. **Common boilerplate** (MCP connection docs, tool usage patterns):
    - Stored in `adgn.props.prompts` package resources
-   - bootstrap.sh reads via `importlib.resources`
+   - init.sh reads via `importlib.resources`
    - Shared across all agents, versioned with the adgn package
 
 2. **Run-specific context** (snapshot slug, file scope, credentials):
    - Passed via environment variables (`$SNAPSHOT_SLUG`, `$SCOPE_FILES`, `$PGHOST`, etc.)
-   - bootstrap.sh prints these for the agent to see
+   - init.sh prints these for the agent to see
 
 3. **MCP server URL/token**:
    - `$MCP_SERVER_URL` and `$MCP_SERVER_TOKEN` set by runtime
-   - bootstrap.sh demonstrates connection (already the pattern today)
+   - init.sh demonstrates connection (already the pattern today)
 
 This keeps AGENT.md fully self-contained while allowing runtime-specific context.
 
-### Bootstrap output limits
+### init.sh output limits
 
-The bootstrap.sh output is injected into the conversation as the first assistant
+The init.sh output is injected into the conversation as the first assistant
 turn (warm-start). To prevent truncation:
 
-- docker_exec tool supports configurable `max_output_chars` parameter
-- Default bootstrap calls use higher limits (e.g., 50KB)
-- E2E tests verify bootstrap output is not truncated (check for TruncatedOutput model)
+- docker_exec tool has `max_output_bytes` parameter:
+  - Hard cap: 100KB (server-enforced maximum)
+  - Default: 10KB if not specified
+  - For OpenAI strict mode: parameter must be explicitly set in schema (even if to null)
+- Default init.sh calls set higher limits (e.g., 50KB) explicitly
+- E2E tests verify init.sh output is not truncated (see TODO section)
 
 ## Syncing Repo-Tracked Definitions
 
-Canonical agent definitions live in git at `adgn/agent_definitions/`. A sync
-command ensures they're present in the database:
+Canonical agent definitions live in git at `adgn/agent_definitions/`. Synced to
+database as part of the existing DB sync command:
 
 ```bash
-# Sync all repo-tracked definitions to database
-python -m adgn.props.cli sync-agent-definitions
+# Existing sync command handles agent definitions too
+python -m adgn.props.cli db sync
 
-# This:
+# This (among other things):
 # 1. Walks adgn/agent_definitions/
 # 2. For each directory, computes SHA256
 # 3. Upserts to database if not present (idempotent)
 ```
 
-The sync command runs:
+The sync runs:
 - On CI after merge to main
 - Manually when developing new base definitions
-- Optionally as part of `run_critic` startup (auto-sync baseline if missing)
+- As part of normal DB sync workflow
 
 ## Size Limits
 
 - **Folder size**: Soft limit ~1MB (enforced by CLI tooling)
 - **Database column**: 2MB limit on `archive` column (hard limit)
-- **Validation**: Happens at agent start time, not insert time (simpler)
+
+## Validation
+
+Validation happens at insert time. A valid agent definition must have:
+- `AGENT.md` file (required)
+- `init.sh` file that is executable (required)
+
+Insert fails if these requirements are not met.
 
 ## Archive Format
 
@@ -343,9 +353,14 @@ The agent's own definition is unpacked to `/workspace` (the default cwd):
 ```
 /workspace/
 ├── AGENT.md              # System prompt (complete, self-contained)
-├── bootstrap.sh          # Auto-executed on startup
+├── init.sh               # Auto-executed on startup
 └── tools/                # Agent's helper scripts (if any)
 ```
 
 Agent reads its prompt from `/workspace/AGENT.md`. Simple, no symlinks needed.
 Runtime context comes via environment variables, not files.
+
+## TODO
+
+- [ ] E2E test verifying init.sh output is not truncated (check for TruncatedOutput model in
+  first step of steps-driven OpenAI mock)
