@@ -712,8 +712,8 @@ class AgentHandle:
         # Restart container
         await self.compositor.runtime.server.start()
 
-        # Inject restart notification - triggers handlers, so DB persists it
-        self.agent.inject_message(SystemMessage.text(
+        # Insert restart notification - triggers handlers, so DB persists it
+        self.agent.insert_message(SystemMessage.text(
             "Your container was restarted. Any local state (files in /tmp, "
             "running processes, environment variables set at runtime) has been "
             "lost. The conversation history and mounted volumes are preserved."
@@ -762,17 +762,19 @@ class CaptureTextHandler(BaseHandler):
 
 **Required infrastructure extensions:**
 
-1. **Add `Agent.inject_message()` method** - inserts message AND triggers handlers:
+1. **Modify `Agent.insert_message()` to trigger handlers:**
    ```python
-   def inject_message(self, message: Message) -> None:
-       """Insert message and trigger handlers (for mid-conversation injection).
-
-       Unlike insert_message() which is for setup before run(), this method
-       notifies handlers so the message is persisted, displayed, etc.
-       """
+   def insert_message(self, message: Message) -> None:
+       """Insert message into transcript and notify handlers."""
        self._transcript.append(message)
        self._notify_handlers_for_transcript_item(message)
    ```
+
+   **Compatibility verified:** No code in the repo depends on `insert_message` NOT
+   triggering handlers. Benefits:
+   - Complete transcripts in DB (includes initial system/user messages)
+   - Simpler API (no separate method needed)
+   - Display handlers can show setup if desired
 
 2. **Add `SystemText` event type** to `events.py`:
    ```python
@@ -784,7 +786,7 @@ class CaptureTextHandler(BaseHandler):
 3. **Add `on_system_text_event` to `BaseHandler`** (currently `pass` for SystemMessage):
    ```python
    def on_system_text_event(self, evt: SystemText) -> None:
-       """Called when a system message is injected."""
+       """Called when a system message is inserted."""
        return
    ```
 
@@ -797,10 +799,6 @@ class CaptureTextHandler(BaseHandler):
        for h in self._handlers:
            h.on_system_text_event(SystemText(text=text))
    ```
-
-**Compatibility check needed:** Verify existing agent deployments don't rely on
-SystemMessage not triggering handlers. Current uses of `insert_message()` for
-setup remain unchanged (no handlers). Only `inject_message()` triggers handlers.
 
 **Usage patterns:**
 
