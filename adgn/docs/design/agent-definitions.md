@@ -81,16 +81,15 @@ boilerplate from the installed adgn package:
 #!/usr/bin/env python3
 """Init script for critic agent."""
 
-import os
 from importlib.resources import files
 
 # Read MCP connection info from adgn package resources
 print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
 
-# Read scope from environment (set by runtime)
-print("=== Review Scope ===")
-print(f"Snapshot: {os.environ.get('SNAPSHOT_SLUG', 'N/A')}")
-print(f"Files: {os.environ.get('SCOPE_FILES', 'N/A')}")
+# Scope info (snapshot slug, files) is available via MCP resources
+# The agent reads these via resources.read() during its operation
+print("=== Environment Ready ===")
+print("Use resources.read() to access snapshot_slug and scope_files")
 
 # Any agent-specific setup...
 ```
@@ -268,16 +267,16 @@ definitions from the database into their workspace:
 ### Python Helper
 
 ```python
-from adgn.props.agent_helpers import inflate_agent_definition
+from adgn.props.agent_helpers import fetch_agent_definition
 
-# Inflate a specific definition by ID
-inflate_agent_definition(definition_id="critic_a1b2c3", target_dir=Path("/workspace/agents/critic_a1b2c3"))
+# Fetch a specific definition by ID
+fetch_agent_definition(definition_id="critic_a1b2c3", target_dir=Path("/workspace/agents/critic_a1b2c3"))
 
-# Inflate the baseline critic definition
-inflate_agent_definition(definition_id="critic", target_dir=Path("/workspace/agents/critic"))
+# Fetch the baseline critic definition
+fetch_agent_definition(definition_id="critic", target_dir=Path("/workspace/agents/critic"))
 
-# Inflate own definition (uses environment variable set by runtime)
-inflate_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
+# Fetch own definition (uses environment variable set by runtime)
+fetch_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
 ```
 
 ### CLI
@@ -285,14 +284,14 @@ inflate_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
 Part of the existing `agent-helpers` subcommand:
 
 ```bash
-# Inflate by ID
-agent-helpers inflate critic_a1b2c3 /workspace/agents/critic_a1b2c3
+# Fetch by ID
+agent-helpers agent-definition fetch critic_a1b2c3 /workspace/agents/critic_a1b2c3
 
-# Inflate baseline (just use the readable ID)
-agent-helpers inflate critic /workspace/agents/critic
+# Fetch baseline (just use the readable ID)
+agent-helpers agent-definition fetch critic /workspace/agents/critic
 
-# Inflate self (uses current agent's definition from AGENT_DEFINITION_ID env var)
-agent-helpers inflate --self /workspace/agents/self
+# Fetch self (uses current agent's definition from AGENT_DEFINITION_ID env var)
+agent-helpers agent-definition fetch --self /workspace/agents/self
 ```
 
 ### Bootstrap Integration (Warm-Start)
@@ -336,8 +335,8 @@ the helper explicitly.
    - Which ones show interesting patterns worth exploring?
    - Decision is data-driven, not hardcoded to built-in definitions
 
-3. Optimizer inflates selected definition(s) for analysis:
-   $ agent-helpers inflate critic_a1b2c3 /workspace/agents/critic_a1b2c3
+3. Optimizer fetches selected definition(s) for analysis:
+   $ agent-helpers agent-definition fetch critic_a1b2c3 /workspace/agents/critic_a1b2c3
 
 4. Optimizer reads and analyzes:
    - /workspace/agents/critic_a1b2c3/AGENT.md
@@ -348,20 +347,20 @@ the helper explicitly.
    $ edit /workspace/agents/critic_new/AGENT.md
    $ edit /workspace/agents/critic_new/tools/analyze.py
 
-6. Optimizer saves new definition (INSERT via RLS):
-   $ agent-helpers save --type critic /workspace/agents/critic_new
+6. Optimizer creates new definition (INSERT via RLS):
+   $ agent-helpers agent-definition create --type critic /workspace/agents/critic_new
    # Returns: Created agent definition ID critic_d4e5f6
 
 7. Optimizer runs critic with new definition:
-   $ run-critic --definition critic_a1b2c3 --snapshot ducktape/2025-01-15
+   $ agent-helpers run-critic --definition critic_d4e5f6 --snapshot ducktape/2025-01-15
 ```
 
 ## Migration Path
 
 ### Phase 1: Schema + Helpers
 - Add `agent_definitions` table
-- Implement `inflate_agent_definition` and `save_agent_definition` helpers
-- Add CLI wrappers
+- Implement `fetch_agent_definition` and `create_agent_definition` helpers
+- Add CLI wrappers (`agent-helpers agent-definition fetch/create`)
 
 ### Phase 2: Migrate Critic
 - Convert `critic/prompts/critic_system.j2.md` to `AGENT.md` format
@@ -387,11 +386,16 @@ Agent definitions are fully static - no Jinja2 templating.
    - init reads via `importlib.resources`
    - Shared across all agents, versioned with the adgn package
 
-2. **Run-specific context** (snapshot slug, file scope, credentials):
-   - Passed via environment variables (`$SNAPSHOT_SLUG`, `$SCOPE_FILES`, `$PGHOST`, etc.)
-   - init prints these for the agent to see
+2. **Database credentials**:
+   - Passed via environment variables (`$PGHOST`, `$PGUSER`, etc.)
+   - Standard PostgreSQL environment variable pattern
 
-3. **MCP server URL/token**:
+3. **Agent-specific context** (snapshot slug, file scope):
+   - Read via MCP resources (already the pattern today)
+   - Compositor sets up these resources before agent starts
+   - init can read them via resources.read()
+
+4. **MCP server URL/token**:
    - `$MCP_SERVER_URL` and `$MCP_SERVER_TOKEN` set by runtime
    - init demonstrates connection (already the pattern today)
 
@@ -411,7 +415,7 @@ turn (warm-start). To prevent truncation:
 
 ## Syncing Repo-Tracked Definitions
 
-Canonical agent definitions live in git at `adgn/agent_definitions/`. Synced to
+Canonical agent definitions live in git at `adgn/src/adgn/props/agents/`. Synced to
 database as part of the existing DB sync command:
 
 ```bash
@@ -419,7 +423,7 @@ database as part of the existing DB sync command:
 python -m adgn.props.cli db sync
 
 # This (among other things):
-# 1. Walks adgn/agent_definitions/
+# 1. Walks adgn/src/adgn/props/agents/
 # 2. For each directory, computes SHA256
 # 3. Upserts to database if not present (idempotent)
 ```
