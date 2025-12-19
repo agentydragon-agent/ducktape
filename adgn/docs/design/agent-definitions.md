@@ -909,7 +909,7 @@ class AgentHandle:
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
     config: AgentConfig               # For restart
-    workspace: Path                   # Unpacked agent definition
+    workspace: Path                   # Unpacked agent definition (host path, mounted into container)
     _lock: asyncio.Lock               # Prevent concurrent run() calls
 
     @classmethod
