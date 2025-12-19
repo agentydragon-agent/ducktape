@@ -941,6 +941,19 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    The parent copies shared resources from its own workspace into the sub-agent's
    definition before registering it.
 
+   **Required resources by capability:**
+
+   | If sub-agent needs... | Include these resources |
+   |-----------------------|------------------------|
+   | MCP tools | `docs/mcp_http_connection.md`, `examples/mcp_use.py` |
+   | Database access | `docs/psql_usage.md` (connection info, RLS context) |
+   | Code analysis tools | `docs/available_tools.md` (rg, ruff, mypy, etc.) |
+   | Issue reporting | `docs/issue_reporting.md`, `examples/report_issue.py` |
+
+   **Critical**: Don't create sub-agents without the docs they need to use their
+   tools. A sub-agent with MCP access but no `mcp_http_connection.md` won't know
+   how to connect. Check your own `/workspace/docs/` for what to copy.
+
 2. Parent registers the definition:
    ```bash
    $ agent-helpers agent-definition create --type freeform /workspace/subagents/code-tracer
