@@ -667,29 +667,24 @@ These requirements apply to all implementation:
 - ✅ Unified `get_validation_run_aggregates()` → `migrations/versions/20251223000001_unify_validation_aggregates.py`
 - ✅ MCP connection docs → `mcp_http_connection.md` references `examples/mcp_use.py` in workspace
 
+- ✅ `CaptureTextHandler` → `adgn/src/adgn/agent/handler.py`
+
 **Remaining:**
-- `CaptureTextHandler` (needs Docker for agent loop testing)
-- `Agent.run()` return type refactor (needs Docker)
+- `Agent.run()` return type refactor (migrate callers from `result.text` to handler-based capture)
 - Drop `severity` and `category` columns from `issues` table (not present, skip)
 - Rename `transcript_id` to `agent_run_id` (29 files, defer)
 
 ### Phase 1: Foundation
 
-1. **Database schema**
-   - `agent_definitions` table (uses `agent_type` enum from Phase 0)
-   - `agent_runs` unified table (replaces separate critic_runs, grader_runs, etc.)
-   - Role lifecycle tables and functions (`agent_role_salt`, `derive_agent_password`, `create_agent_role`)
-   - `agent_base` role with RLS policies
-   - Indexes
+**Completed:**
+- ✅ `agent_definitions` table → `migrations/versions/20251223000002_add_agent_definitions_table.py`
+- ✅ `agent_runs` unified table → `migrations/versions/20251223000003_add_agent_runs_table.py`
+- ✅ Role lifecycle functions → `migrations/versions/20251223000004_add_role_lifecycle.py`
+- ✅ `agent_base` role with RLS → `migrations/versions/20251223000005_add_agent_base_role.py`
+- ✅ CLI: `agent-definition create/fetch/list` → `adgn/src/adgn/props/cli/cmd_agent_definition.py`
 
-2. **CLI: `agent-helpers agent-definition create`**
-   - Pack directory into tar archive
-   - Insert into agent_definitions table
-   - Validate structure (AGENT.md required, init executable)
-
-3. **CLI: `agent-helpers agent-definition fetch`**
-   - Extract from database
-   - Unpack to target directory
+**Remaining:**
+- Test migrations with local PostgreSQL
 
 ### Phase 2: Runtime Infrastructure
 
