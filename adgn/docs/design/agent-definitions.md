@@ -655,14 +655,14 @@ These requirements apply to all implementation:
 - ✅ `AgentType` StrEnum + TypeConfig Pydantic models → `adgn/src/adgn/props/agent_types.py`
 - ✅ `agent_type_enum` PostgreSQL type → `migrations/versions/20251223000000_add_agent_type_enum.py`
 - ✅ `WorkspaceManager` class with DI → `adgn/src/adgn/props/agent_workspace.py`
+- ✅ Unified `get_validation_run_aggregates()` → `migrations/versions/20251223000001_unify_validation_aggregates.py`
 
 **Remaining:**
 - `CaptureTextHandler` (needs Docker for agent loop testing)
 - `Agent.run()` return type refactor (needs Docker)
 - Extract MCP connection docs to package resources
-- Drop `severity` and `category` columns from `issues` table (if present)
-- Rename `transcript_id` to `agent_run_id` (if not already done)
-- Unify `get_validation_run_aggregates()` function with scope_kind filtering
+- Drop `severity` and `category` columns from `issues` table (not present, skip)
+- Rename `transcript_id` to `agent_run_id` (29 files, defer)
 
 ### Phase 1: Foundation
 
