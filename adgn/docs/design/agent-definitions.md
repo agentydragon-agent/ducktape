@@ -683,6 +683,8 @@ These refactors have no dependencies and can be merged independently:
       - TARGETED: both `entire_snapshot` and `explicit_file` rows
     - SECURITY DEFINER to bypass ground truth RLS
     - Single function serves both modes, filtering enforced server-side
+    - Tests: verify correct output for both target metrics (WHOLE_REPO sees only
+      entire_snapshot, TARGETED sees both scope kinds)
 
 ### Phase 1: Foundation
 
