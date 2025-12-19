@@ -370,29 +370,125 @@ the helper explicitly.
    $ agent-helpers run-critic --definition critic_d4e5f6 --snapshot ducktape/2025-01-15
 ```
 
-## Migration Path
+## Implementation Plan
 
-### Phase 1: Schema + Helpers
-- Add `agent_definitions` table
-- Implement `fetch_agent_definition` and `create_agent_definition` helpers
-- Add CLI wrappers (`agent-helpers agent-definition fetch/create`)
+### Phase 0: Independent Refactors (can be done anytime, in parallel)
 
-### Phase 2: Migrate Critic
-- Convert `critic/prompts/critic_system.j2.md` to `AGENT.md` format
-- Create baseline critic definition in database
-- Update `CriticAgentEnvironment` to use definition-based setup
+These refactors have no dependencies and can be merged independently:
 
-### Phase 3: Migrate Other Agents
-- Grader
-- Prompt optimizer
+1. **`AgentType` StrEnum** (Python)
+   - Define enum in `adgn.props.agent_types` module
+   - No callers yet, just defines the enum
 
-### Phase 4: Enable Evolution
-- Wire up optimizer to create new critic definitions
-- Metrics queries that group by definition
+2. **`agent_type` enum** (PostgreSQL)
+   - Add enum type without any tables using it yet
+   - Simple migration, no data changes
 
-### Phase 5: Remove Legacy
-- Drop `prompts` table (all prompt-related functionality migrated to agent definitions)
-- Remove any remaining Jinja2 prompt templating code
+3. **TypeConfig Pydantic models**
+   - Define `CriticTypeConfig`, `GraderTypeConfig`, `FreeformTypeConfig`, `PromptOptimizerTypeConfig`
+   - Define `TypeConfig` discriminated union
+   - Can be validated and tested in isolation
+
+4. **`CaptureTextHandler`**
+   - New handler that captures assistant text and aborts loop
+   - Useful beyond agent definitions (any conversational use case)
+   - Add to `adgn.props.handlers`
+
+5. **`Agent.run()` return type refactor**
+   - Change from returning `AgentResult` to returning `None`
+   - Callers already mostly ignore the return value
+   - Prepares for resumable `run()` pattern
+
+6. **`get_workspace_path(transcript_id)` helper**
+   - Simple utility: `~/.local/share/adgn/workspaces/{transcript_id}/`
+   - No dependencies
+
+7. **Extract MCP connection docs to package resources**
+   - Move `mcp_http_connection.md` to `adgn.props.prompts` resources
+   - Init scripts can start using `importlib.resources` pattern
+   - Decouples from Jinja2 templating
+
+### Phase 1: Foundation
+
+1. **Database schema**
+   - `agent_definitions` table (uses `agent_type` enum from Phase 0)
+   - `agent_runs` unified table (replaces separate critic_runs, grader_runs, etc.)
+   - Indexes and RLS policies
+
+2. **CLI: `agent-helpers agent-definition create`**
+   - Pack directory into tar archive
+   - Insert into agent_definitions table
+   - Validate structure (AGENT.md required, init executable)
+
+3. **CLI: `agent-helpers agent-definition fetch`**
+   - Extract from database
+   - Unpack to target directory
+
+### Phase 2: Runtime Infrastructure
+
+4. **`AgentHandle.create` (minimal)**
+   - Load definition, unpack to workspace
+   - Create compositor with workspace mount
+   - Run init via bootstrap handler
+   - Wire up `dynamic_instructions` from AGENT.md
+
+5. **`AgentRegistry` (minimal)**
+   - `create_agent()` - creates record, starts handle
+   - `run_agent()` - single message, returns response
+   - `_restore_agent()` - reload from database after restart
+   - `stop_agent()`, `stop_all()`
+
+### Phase 3: First Migration (Critic)
+
+6. **Sync tooling for repo-tracked definitions**
+   - Extend `db sync` to build and upload agent definitions
+   - Assemble from shared common bits if needed
+
+7. **Convert critic to AGENT.md format**
+   - Extract from `critic_system.j2.md`
+   - Create init script
+   - Test definition creation + fetch round-trip
+
+8. **Update `CriticAgentEnvironment`**
+   - Use AgentRegistry instead of custom setup
+   - Verify critic runs work end-to-end
+
+### Phase 4: Sub-agent Support
+
+9. **MCP tools: `create_subagent`, `run_subagent`**
+   - Wire to AgentRegistry
+   - Handle snapshot mount inheritance from parent
+
+10. **Test sub-agent spawning from critic**
+    - Manual test: critic creates freeform sub-agent
+    - Verify transcript lineage (parent_transcript_id)
+
+### Phase 5: Remaining Migrations
+
+11. **Migrate grader**
+    - Convert to AGENT.md format
+    - Update grader environment
+
+12. **Migrate prompt optimizer**
+    - Convert to AGENT.md format
+    - Add `run_critic`, `run_grader` MCP tools
+    - Separate definitions for different metrics
+
+### Phase 6: Evolution + Cleanup
+
+13. **Wire optimizer to create new definitions**
+    - Optimizer can fetch, modify, create new critic definitions
+    - Metrics queries that group by definition_id
+
+14. **Drop legacy**
+    - Remove `prompts` table
+    - Remove Jinja2 templating code
+    - Clean up old agent environment classes
+
+### MVP Checkpoint
+
+Phases 0-3 give you a working critic on the new system. That's the minimum
+viable product - everything after builds on that foundation.
 
 ## Runtime Information (No Jinja2)
 
