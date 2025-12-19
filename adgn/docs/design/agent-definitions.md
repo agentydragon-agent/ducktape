@@ -326,8 +326,9 @@ init_call = docker_exec_call(builder, runtime, ["./init"], timeout_ms=5000)
 bootstrap = SequenceHandler([InjectItems(items=[init_call])])
 ```
 
-Agent-type-specific context (e.g., `SNAPSHOT_SLUG` for critics) is set by the
-compositor that launches that agent type, not by the general runtime.
+Agent-type-specific context (e.g., snapshot slug for critics) is delivered via
+MCP resources attached by the compositor that launches that agent type, not by
+environment variables or the general runtime.
 
 This pattern ensures the agent sees init output as a tool result in its
 transcript, following the existing bootstrap pattern used by critics,
