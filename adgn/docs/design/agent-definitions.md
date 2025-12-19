@@ -556,23 +556,25 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    # Returns: Created agent definition ID freeform_abc123
    ```
 
-3. Parent spawns sub-agent via MCP tool:
+3. Parent spawns sub-agent via agent-type-specific MCP tool:
    ```python
-   result = spawn_subagent(
-       definition_id="freeform_abc123",
-       inherit_mounts=True,  # same snapshot, same /workspace access
-       # parent_transcript_id automatically set to current_transcript_id()
-   )
-   # Blocks until sub-agent completes, returns output
+   # Critic uses spawn_analysis_subagent - auto-mounts same snapshot
+   transcript_id = spawn_analysis_subagent(definition_id="freeform_abc123")
+   response = run_agent(transcript_id, "Trace the data flow from X to Y")
    ```
 
 4. Sub-agent runs with:
    - Its own transcript_id
    - `parent_transcript_id` pointing to parent
-   - Same environment (snapshot mounts, DB access)
+   - Same snapshot mount as parent (handled by `spawn_analysis_subagent`)
    - Its ad-hoc AGENT.md as system prompt
 
 5. Parent receives result and continues
+
+**Note**: Each launcher agent type has its own spawning tools that handle mounts
+appropriately. Critics use `spawn_analysis_subagent` (same snapshot). Prompt
+optimizer uses `run_critic`/`run_grader` with explicit inputs. See
+"Agent-type-specific launcher tools" below.
 
 ### Schema Support
 
