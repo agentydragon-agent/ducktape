@@ -16,24 +16,24 @@ as compressed archives with content-addressed identity and database-level access
 
 ## Provenance Model
 
-**All provenance tracking uses `transcript_id`** - the unique identifier for a specific
+**All provenance tracking uses `agent_run_id`** - the unique identifier for a specific
 agent run. This replaces:
 - Separate `critic_runs`, `grader_runs`, `prompt_optimization_runs` tables → unified `agent_runs`
-- Separate `prompt_optimization_run_id`, `improvement_run_id` columns → `created_by_transcript_id`
+- Separate `prompt_optimization_run_id`, `improvement_run_id` columns → `created_by_agent_run_id`
 
 Benefits:
 - Single consistent pattern across all tables
 - Direct link to full agent transcript for debugging
 - **One `agent_runs` table** instead of per-agent-type tables
-- Simpler RLS policies (just check `current_transcript_id()`)
-- Lineage via `parent_transcript_id` in `agent_runs`
+- Simpler RLS policies (just check `current_agent_run_id()`)
+- Lineage via `parent_agent_run_id` in `agent_runs`
 
-Tables using `created_by_transcript_id` for provenance:
+Tables using `created_by_agent_run_id` for provenance:
 - `agent_definitions` - which agent created this definition
 - `prompts` - which agent created this prompt (replaces `prompt_optimization_run_id`, `improvement_run_id`)
 - Any other artifact table
 
-For repo-backed/manual entries, `created_by_transcript_id` is NULL.
+For repo-backed/manual entries, `created_by_agent_run_id` is NULL.
 
 ## Directory Structure
 
@@ -138,12 +138,12 @@ use a single unified table with agent-type-specific columns and CHECK constraint
 
 ```sql
 CREATE TABLE agent_runs (
-    transcript_id UUID PRIMARY KEY,
+    agent_run_id UUID PRIMARY KEY,
     agent_definition_id TEXT NOT NULL REFERENCES agent_definitions(id),
     created_at TIMESTAMPTZ DEFAULT now(),
 
     -- Provenance: which agent spawned this one? (FK enforced)
-    parent_transcript_id UUID REFERENCES agent_runs(transcript_id),
+    parent_agent_run_id UUID REFERENCES agent_runs(agent_run_id),
 
     -- Common columns
     model TEXT NOT NULL,
@@ -161,19 +161,19 @@ CREATE TABLE agent_runs (
 
 -- Extract agent_type from JSONB for indexing
 CREATE INDEX idx_agent_runs_type ON agent_runs((type_config->>'agent_type'));
-CREATE INDEX idx_agent_runs_parent ON agent_runs(parent_transcript_id);
+CREATE INDEX idx_agent_runs_parent ON agent_runs(parent_agent_run_id);
 -- Partial index for critic snapshot lookups
 CREATE INDEX idx_agent_runs_snapshot ON agent_runs((type_config->>'snapshot_slug'))
     WHERE type_config->>'agent_type' = 'critic';
 ```
 
 Benefits:
-- **transcript_id is THE universal identifier** for any agent run
-- Lineage via `parent_transcript_id` - trivial to trace "who spawned who"
+- **agent_run_id is THE universal identifier** for any agent run
+- Lineage via `parent_agent_run_id` - trivial to trace "who spawned who"
 - Easy cross-agent queries
 - Type-specific constraints enforced by Pydantic models
 
-The `events` table already uses `transcript_id` as FK, so tool calls link naturally.
+The `events` table already uses `agent_run_id` as FK, so tool calls link naturally.
 
 ### Agent Definitions Schema
 
@@ -185,7 +185,7 @@ CREATE TABLE agent_definitions (
     created_at TIMESTAMPTZ DEFAULT now(),
 
     -- Provenance (set when created by an agent, NULL for repo-backed)
-    created_by_transcript_id UUID          -- transcript of agent that created this definition
+    created_by_agent_run_id UUID          -- transcript of agent that created this definition
 );
 
 -- Index for finding definitions by type
@@ -197,7 +197,7 @@ ID conventions:
 - Agent-created: auto-generated (e.g., `"critic_a1b2c3"` or UUID)
 
 Agents can INSERT directly into this table (with RLS ensuring they can only insert
-rows where `created_by_transcript_id` matches their transcript). No UPDATE allowed.
+rows where `created_by_agent_run_id` matches their transcript). No UPDATE allowed.
 
 ### Content Hashing (Optional)
 
@@ -224,7 +224,7 @@ detecting duplicate submissions.
 ### Role-Based Access
 
 Agents connect to PostgreSQL with individual credentials:
-- Username format: `agent_<transcript_id>` (e.g., `agent_550e8400-e29b-41d4-a716-446655440000`)
+- Username format: `agent_<agent_run_id>` (e.g., `agent_550e8400-e29b-41d4-a716-446655440000`)
 - One uniform role setup - privileges determined by querying the agent's config/type
 - No separate roles per agent type
 
@@ -233,14 +233,56 @@ Agents connect to PostgreSQL with individual credentials:
 CREATE FUNCTION current_agent_type() RETURNS agent_type AS $$
     SELECT (type_config->>'agent_type')::agent_type
     FROM agent_runs
-    WHERE transcript_id = current_transcript_id()
+    WHERE agent_run_id = current_agent_run_id()
 $$ LANGUAGE SQL STABLE;
 
--- Helper to get current transcript_id from session username
-CREATE FUNCTION current_transcript_id() RETURNS UUID AS $$
+-- Helper to get current agent_run_id from session username
+CREATE FUNCTION current_agent_run_id() RETURNS UUID AS $$
     SELECT substring(current_user from 'agent_(.+)')::uuid
 $$ LANGUAGE SQL STABLE;
 ```
+
+### Role Lifecycle
+
+Roles are **persistent** with deterministic passwords:
+
+```sql
+-- Salt stored in admin-only table (auto-generated if missing)
+CREATE TABLE agent_role_salt (
+    id INTEGER PRIMARY KEY DEFAULT 1 CHECK (id = 1),  -- singleton
+    salt BYTEA NOT NULL DEFAULT gen_random_bytes(32)
+);
+-- Only admin can access
+REVOKE ALL ON agent_role_salt FROM PUBLIC;
+
+-- Password derivation: hash(salt, agent_run_id)
+CREATE FUNCTION derive_agent_password(run_id UUID) RETURNS TEXT AS $$
+    SELECT encode(
+        sha256((SELECT salt FROM agent_role_salt) || run_id::text::bytea),
+        'hex'
+    )
+$$ LANGUAGE SQL STABLE SECURITY DEFINER;
+```
+
+**Role creation** (on agent creation, never dropped):
+```sql
+-- Called by runtime when creating agent
+CREATE FUNCTION create_agent_role(run_id UUID) RETURNS VOID AS $$
+DECLARE
+    username TEXT := 'agent_' || run_id::text;
+    password TEXT := derive_agent_password(run_id);
+BEGIN
+    EXECUTE format('CREATE ROLE %I LOGIN PASSWORD %L', username, password);
+    EXECUTE format('GRANT agent_base TO %I', username);  -- inherit base permissions
+END
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+Benefits:
+- **One user manager** - uniform role setup for all agent types
+- **Resume-friendly** - password is deterministic, no need to store/retrieve
+- **No cleanup** - roles persist, no race conditions on drop
+- **RLS determines access** - all agents share `agent_base` role, RLS policies differentiate by type
 
 ### Domain-Specific Tables
 
@@ -251,16 +293,13 @@ Agents write results to domain-specific tables (not to agent_runs):
 -- Issues discovered by critics
 CREATE TABLE issues (
     id UUID PRIMARY KEY,
-    transcript_id UUID NOT NULL REFERENCES agent_runs(transcript_id),
+    agent_run_id UUID NOT NULL REFERENCES agent_runs(agent_run_id),
     file_path TEXT NOT NULL,
     line_number INTEGER,
-    severity TEXT NOT NULL,
-    category TEXT NOT NULL,
     description TEXT NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now()
 );
-
--- Other critic output: critique_comments, suggested_fixes, etc.
+-- Note: No severity/category columns.
 ```
 
 **Grader tables:**
@@ -278,8 +317,8 @@ CREATE TABLE ground_truth_issues (
 -- Grader evaluations (written by graders)
 CREATE TABLE grader_evaluations (
     id UUID PRIMARY KEY,
-    transcript_id UUID NOT NULL REFERENCES agent_runs(transcript_id),  -- grader's own
-    graded_transcript_id UUID NOT NULL REFERENCES agent_runs(transcript_id),  -- critic being graded
+    agent_run_id UUID NOT NULL REFERENCES agent_runs(agent_run_id),  -- grader's own
+    graded_agent_run_id UUID NOT NULL REFERENCES agent_runs(agent_run_id),  -- critic being graded
     issue_id UUID REFERENCES issues(id),
     verdict TEXT NOT NULL,  -- 'true_positive', 'false_positive', 'missed', etc.
     reasoning TEXT,
@@ -294,15 +333,15 @@ CREATE TABLE grader_evaluations (
 -- ONLY runtime with admin creds inserts events
 -- Agents can read their own transcript (SELECT only)
 CREATE POLICY agent_read_own_events ON events
-    FOR SELECT USING (transcript_id = current_transcript_id());
+    FOR SELECT USING (agent_run_id = current_agent_run_id());
 
 -- Graders can also read transcript of the critic they're grading
 CREATE POLICY grader_read_graded_events ON events
     FOR SELECT USING (
         current_agent_type() = 'grader'
-        AND transcript_id = (
-            SELECT (type_config->>'graded_transcript_id')::uuid
-            FROM agent_runs WHERE transcript_id = current_transcript_id()
+        AND agent_run_id = (
+            SELECT (type_config->>'graded_agent_run_id')::uuid
+            FROM agent_runs WHERE agent_run_id = current_agent_run_id()
         )
     );
 
@@ -315,7 +354,7 @@ CREATE POLICY optimizer_read_all_events ON events
 ```sql
 -- All agents can read repo-synced definitions
 CREATE POLICY read_builtin_definitions ON agent_definitions
-    FOR SELECT USING (created_by_transcript_id IS NULL);
+    FOR SELECT USING (created_by_agent_run_id IS NULL);
 
 -- Prompt optimizer can read ALL definitions
 CREATE POLICY optimizer_read_all_definitions ON agent_definitions
@@ -324,18 +363,18 @@ CREATE POLICY optimizer_read_all_definitions ON agent_definitions
 -- Agents can read their own definition
 CREATE POLICY read_own_definition ON agent_definitions
     FOR SELECT USING (
-        id = (SELECT agent_definition_id FROM agent_runs WHERE transcript_id = current_transcript_id())
+        id = (SELECT agent_definition_id FROM agent_runs WHERE agent_run_id = current_agent_run_id())
     );
 
 -- Agents can read definitions they created
 CREATE POLICY read_created_definitions ON agent_definitions
-    FOR SELECT USING (created_by_transcript_id = current_transcript_id());
+    FOR SELECT USING (created_by_agent_run_id = current_agent_run_id());
 
 -- Only prompt_optimizer and critic can create new definitions
 CREATE POLICY insert_definitions ON agent_definitions
     FOR INSERT WITH CHECK (
         current_agent_type() IN ('prompt_optimizer', 'critic')
-        AND created_by_transcript_id = current_transcript_id()
+        AND created_by_agent_run_id = current_agent_run_id()
     );
 ```
 
@@ -343,15 +382,15 @@ CREATE POLICY insert_definitions ON agent_definitions
 ```sql
 -- Agents can read their own run
 CREATE POLICY read_own_run ON agent_runs
-    FOR SELECT USING (transcript_id = current_transcript_id());
+    FOR SELECT USING (agent_run_id = current_agent_run_id());
 
 -- Graders can read the run they're grading
 CREATE POLICY grader_read_graded_run ON agent_runs
     FOR SELECT USING (
         current_agent_type() = 'grader'
-        AND transcript_id = (
-            SELECT (type_config->>'graded_transcript_id')::uuid
-            FROM agent_runs WHERE transcript_id = current_transcript_id()
+        AND agent_run_id = (
+            SELECT (type_config->>'graded_agent_run_id')::uuid
+            FROM agent_runs WHERE agent_run_id = current_agent_run_id()
         )
     );
 
@@ -362,20 +401,20 @@ CREATE POLICY optimizer_read_all_runs ON agent_runs
 
 **issues table (critic output):**
 ```sql
--- Critics can insert issues with their transcript_id
+-- Critics can insert issues with their agent_run_id
 CREATE POLICY critic_insert_issues ON issues
     FOR INSERT WITH CHECK (
         current_agent_type() = 'critic'
-        AND transcript_id = current_transcript_id()
+        AND agent_run_id = current_agent_run_id()
     );
 
 -- Graders can read issues from the critic they're grading
 CREATE POLICY grader_read_issues ON issues
     FOR SELECT USING (
         current_agent_type() = 'grader'
-        AND transcript_id = (
-            SELECT (type_config->>'graded_transcript_id')::uuid
-            FROM agent_runs WHERE transcript_id = current_transcript_id()
+        AND agent_run_id = (
+            SELECT (type_config->>'graded_agent_run_id')::uuid
+            FROM agent_runs WHERE agent_run_id = current_agent_run_id()
         )
     );
 
@@ -401,7 +440,7 @@ CREATE POLICY optimizer_read_ground_truth ON ground_truth_issues
 CREATE POLICY grader_insert_evaluations ON grader_evaluations
     FOR INSERT WITH CHECK (
         current_agent_type() = 'grader'
-        AND transcript_id = current_transcript_id()
+        AND agent_run_id = current_agent_run_id()
     );
 
 -- Prompt optimizer can read all evaluations
@@ -512,7 +551,7 @@ the helper explicitly.
    # Returns: Created agent definition ID critic_d4e5f6
 
 7. Optimizer runs critic with new definition (via MCP tool):
-   transcript_id = run_critic(
+   agent_run_id = run_critic(
        definition_id="critic_d4e5f6",
        type_config=CriticTypeConfig(
            snapshot_slug="ducktape/2025-01-15",
@@ -552,8 +591,8 @@ These refactors have no dependencies and can be merged independently:
    - Callers already mostly ignore the return value
    - Prepares for resumable `run()` pattern
 
-6. **`get_workspace_path(transcript_id)` helper**
-   - Simple utility: `~/.local/share/adgn/workspaces/{transcript_id}/`
+6. **`get_workspace_path(agent_run_id)` helper**
+   - Simple utility: `~/.local/share/adgn/workspaces/{agent_run_id}/`
    - No dependencies
 
 7. **Extract MCP connection docs to package resources**
@@ -561,12 +600,22 @@ These refactors have no dependencies and can be merged independently:
    - Init scripts can start using `importlib.resources` pattern
    - Decouples from Jinja2 templating
 
+8. **Drop `severity` and `category` columns from `issues` table** (if present)
+   - These columns are not needed
+   - Simple migration: `ALTER TABLE issues DROP COLUMN severity, DROP COLUMN category;`
+
+9. **Rename `transcript_id` to `agent_run_id`** (if not already done)
+   - All tables: agent_runs, events, issues, grader_evaluations, agent_definitions
+   - Update all FK references
+
 ### Phase 1: Foundation
 
 1. **Database schema**
    - `agent_definitions` table (uses `agent_type` enum from Phase 0)
    - `agent_runs` unified table (replaces separate critic_runs, grader_runs, etc.)
-   - Indexes and RLS policies
+   - Role lifecycle tables and functions (`agent_role_salt`, `derive_agent_password`, `create_agent_role`)
+   - `agent_base` role with RLS policies
+   - Indexes
 
 2. **CLI: `agent-helpers agent-definition create`**
    - Pack directory into tar archive
@@ -614,7 +663,7 @@ These refactors have no dependencies and can be merged independently:
 
 10. **Test sub-agent spawning from critic**
     - Manual test: critic creates freeform sub-agent
-    - Verify transcript lineage (parent_transcript_id)
+    - Verify transcript lineage (parent_agent_run_id)
 
 ### Phase 5: Remaining Migrations
 
@@ -812,15 +861,15 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
 3. Parent spawns sub-agent via MCP tools:
    ```python
    # Create sub-agent (auto-mounts same snapshot as parent critic)
-   transcript_id = create_subagent(definition_id="freeform_abc123")
+   agent_run_id = create_subagent(definition_id="freeform_abc123")
    # Have a conversation
-   response = run_subagent(transcript_id, "Trace the data flow from X to Y")
-   response2 = run_subagent(transcript_id, "Now focus on error handling")
+   response = run_subagent(agent_run_id, "Trace the data flow from X to Y")
+   response2 = run_subagent(agent_run_id, "Now focus on error handling")
    ```
 
 4. Sub-agent runs with:
-   - Its own transcript_id
-   - `parent_transcript_id` pointing to parent
+   - Its own agent_run_id
+   - `parent_agent_run_id` pointing to parent
    - Same snapshot mount as parent (handled by `create_subagent`)
    - Its ad-hoc AGENT.md as system prompt
 
@@ -833,7 +882,7 @@ Prompt optimizer uses `run_critic`/`run_grader` with explicit inputs.
 
 Already handled by unified `agent_runs` table:
 - `agent_definition_id` references the ad-hoc definition (agent_type joined from there)
-- `parent_transcript_id` links to spawning agent
+- `parent_agent_run_id` links to spawning agent
 
 ### MCP Tools
 
@@ -849,15 +898,15 @@ async def create_subagent(
 ) -> UUID:
     """Create a freeform sub-agent.
 
-    Creates a new agent with its own transcript_id, sets up container and
+    Creates a new agent with its own agent_run_id, sets up container and
     environment (same snapshot mount as parent), but does NOT run any turns yet.
 
-    Returns: transcript_id (use with run_subagent)
+    Returns: agent_run_id (use with run_subagent)
     """
 
 @mcp.tool()
 async def run_subagent(
-    transcript_id: UUID,
+    agent_run_id: UUID,
     message: str,
     max_turns: Annotated[int, Field(ge=1, le=500)] = 200,
 ) -> str:
@@ -901,7 +950,7 @@ async def run_critic(
         type_config: CriticTypeConfig with snapshot_slug and scope_hash.
         max_turns: Maximum turns before stopping. Default 200, must be 1-500.
 
-    Returns: transcript_id (read results from issues table via SQL)
+    Returns: agent_run_id (read results from issues table via SQL)
     """
 
 @mcp.tool()
@@ -916,10 +965,10 @@ async def run_grader(
     Grader runs without user messages - just system prompt + bootstrap.
 
     Args:
-        type_config: GraderTypeConfig with graded_transcript_id (must be critic run).
+        type_config: GraderTypeConfig with graded_agent_run_id (must be critic run).
         max_turns: Maximum turns before stopping. Default 200, must be 1-500.
 
-    Returns: transcript_id (read results from grader_evaluations table via SQL)
+    Returns: agent_run_id (read results from grader_evaluations table via SQL)
     """
 ```
 
@@ -948,7 +997,7 @@ def validate_agent_config(config: AgentConfig) -> None:
 
     # Graders can only grade critic runs
     if isinstance(config.type_config, GraderTypeConfig):
-        run = get_agent_run(config.type_config.graded_transcript_id)
+        run = get_agent_run(config.type_config.graded_agent_run_id)
         if run.agent_type != AgentType.CRITIC:
             raise ValueError(
                 f"Grader can only grade critic runs, got {run.agent_type}"
@@ -961,25 +1010,25 @@ container lifecycle, message passing, etc.
 **Critic workflow (conversational sub-agents):**
 ```python
 # Critic spawning a sub-agent for architecture analysis
-transcript_id = create_subagent(definition_id="freeform_abc123")
+agent_run_id = create_subagent(definition_id="freeform_abc123")
 
 # Have a conversation (max_turns=200 is required)
-response1 = run_subagent(transcript_id, "Trace how API requests reach the database", max_turns=200)
+response1 = run_subagent(agent_run_id, "Trace how API requests reach the database", max_turns=200)
 # Agent runs, explores code, responds with findings
 
-response2 = run_subagent(transcript_id, "Now focus on the authentication middleware", max_turns=200)
+response2 = run_subagent(agent_run_id, "Now focus on the authentication middleware", max_turns=200)
 # Continues same conversation, agent has context from previous turns
 
 # ... time passes, container gets cleaned up ...
 
-response3 = run_subagent(transcript_id, "Summarize your findings", max_turns=200)
+response3 = run_subagent(agent_run_id, "Summarize your findings", max_turns=200)
 # Container restarted, continues with preserved transcript
 ```
 
 **Prompt optimizer workflow (no conversation needed):**
 ```python
 # Run critic with specific inputs (type_config as whole Pydantic model)
-critic_transcript_id = run_critic(
+critic_agent_run_id = run_critic(
     definition_id="critic_abc123",
     type_config=CriticTypeConfig(
         snapshot_slug="ducktape/2025-01-15",
@@ -987,21 +1036,21 @@ critic_transcript_id = run_critic(
     ),
     max_turns=200,
 )
-# Returns transcript_id - read results from issues table via SQL
+# Returns agent_run_id - read results from issues table via SQL
 
 # Run grader on that critic's output
-grader_transcript_id = run_grader(
+grader_agent_run_id = run_grader(
     definition_id="grader",
     type_config=GraderTypeConfig(
-        graded_transcript_id=critic_transcript_id,
+        graded_agent_run_id=critic_agent_run_id,
     ),
     max_turns=200,
 )
-# Returns transcript_id - read results from grader_evaluations table via SQL
+# Returns agent_run_id - read results from grader_evaluations table via SQL
 ```
 
 **State Management:**
-- Session identified by transcript_id (no separate session concept)
+- Session identified by agent_run_id (no separate session concept)
 - Conversation history persisted in events table
 - No explicit end_agent needed - resources cleaned up when parent exits
 
@@ -1009,17 +1058,17 @@ grader_transcript_id = run_grader(
 
 Everything needed to restart an agent after app quits must be saved to database:
 - `agent_definition_id` - which definition to unpack
-- `parent_transcript_id` - shared across all agent types (for mount inheritance)
+- `parent_agent_run_id` - shared across all agent types (for mount inheritance)
 - Type-specific context in `type_config` JSONB:
   - Critics: `snapshot_slug`, `scope_hash`
-  - Graders: `graded_transcript_id`
+  - Graders: `graded_agent_run_id`
   - Freeform/Prompt optimizer: just the type marker (metric-specific behavior in AGENT.md)
 - Transcript events in `events` table (reconstruct conversation)
 
 **Workspace persistence:**
 
-Agent workspaces are stored at a predictable path derived from transcript_id:
-`~/.local/share/adgn/workspaces/{transcript_id}/`
+Agent workspaces are stored at a predictable path derived from agent_run_id:
+`~/.local/share/adgn/workspaces/{agent_run_id}/`
 
 This directory:
 - Is mounted as `/workspace` in the container
@@ -1033,7 +1082,7 @@ Agents can rely on `/workspace` being persistent. Any files created there
 
 On restart:
 1. Query `agent_runs` for agent's configuration
-2. Workspace already exists at `~/.local/share/adgn/workspaces/{transcript_id}/`
+2. Workspace already exists at `~/.local/share/adgn/workspaces/{agent_run_id}/`
 3. Reconstruct mounts from stored configuration
 4. Rebuild `Agent` from persisted events
 5. Restart container (workspace already mounted)
@@ -1058,7 +1107,7 @@ class CriticTypeConfig(BaseModel):
 class GraderTypeConfig(BaseModel):
     """Grader-specific configuration."""
     agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
-    graded_transcript_id: UUID  # Must be a critic run (validated)
+    graded_agent_run_id: UUID  # Must be a critic run (validated)
 
 
 class FreeformTypeConfig(BaseModel):
@@ -1092,7 +1141,7 @@ class AgentConfig:
     """
     definition_id: str
     model: str                          # Model to use (e.g., "claude-sonnet-4-20250514")
-    parent_transcript_id: UUID | None   # FK to agent_runs, explicit None or UUID
+    parent_agent_run_id: UUID | None   # FK to agent_runs, explicit None or UUID
     type_config: TypeConfig             # Pydantic model, stored as JSONB
 
     @property
@@ -1119,71 +1168,71 @@ class AgentRegistry:
         self,
         config: AgentConfig,
     ) -> UUID:
-        transcript_id = uuid4()
+        agent_run_id = uuid4()
 
         # Create agent_runs record (persists all config for restart)
-        create_agent_run(transcript_id=transcript_id, config=config)
+        create_agent_run(agent_run_id=agent_run_id, config=config)
 
         # Start container + MCP server (long-running)
         handle = await AgentHandle.create(
-            transcript_id=transcript_id,
+            agent_run_id=agent_run_id,
             config=config,
         )
 
-        self._agents[transcript_id] = handle
-        return transcript_id
+        self._agents[agent_run_id] = handle
+        return agent_run_id
 
-    async def ensure_agent(self, transcript_id: UUID) -> AgentHandle:
+    async def ensure_agent(self, agent_run_id: UUID) -> AgentHandle:
         """Get agent handle, restoring from database if needed (app restart)."""
-        handle = self._agents.get(transcript_id)
+        handle = self._agents.get(agent_run_id)
         if handle is None:
-            handle = await self._restore_agent(transcript_id)
-            self._agents[transcript_id] = handle
+            handle = await self._restore_agent(agent_run_id)
+            self._agents[agent_run_id] = handle
         return handle
 
-    async def run_to_completion(self, transcript_id: UUID, max_turns: int) -> None:
+    async def run_to_completion(self, agent_run_id: UUID, max_turns: int) -> None:
         """Run agent without user message until it finishes (or max_turns).
 
         For critics/graders that just need system prompt + bootstrap.
         Agent finishes when it produces final output (or hits max_turns).
         """
-        handle = await self.ensure_agent(transcript_id)
+        handle = await self.ensure_agent(agent_run_id)
         await handle.run_to_completion(max_turns=max_turns)
 
-    async def run_agent(self, transcript_id: UUID, message: str, max_turns: int) -> str:
+    async def run_agent(self, agent_run_id: UUID, message: str, max_turns: int) -> str:
         """Send message and run until text response. For conversational use."""
-        handle = await self.ensure_agent(transcript_id)
+        handle = await self.ensure_agent(agent_run_id)
         return await handle.run(message, max_turns=max_turns)
 
-    async def _restore_agent(self, transcript_id: UUID) -> AgentHandle:
+    async def _restore_agent(self, agent_run_id: UUID) -> AgentHandle:
         """Restore agent state from database after app restart."""
-        run = get_agent_run(transcript_id)
+        run = get_agent_run(agent_run_id)
         if run is None:
-            raise ValueError(f"No agent with transcript_id {transcript_id}")
+            raise ValueError(f"No agent with agent_run_id {agent_run_id}")
 
         # Reconstruct config from database
         config = AgentConfig(
             definition_id=run.agent_definition_id,
             model=run.model,
-            parent_transcript_id=run.parent_transcript_id,
+            parent_agent_run_id=run.parent_agent_run_id,
             type_config=run.type_config,  # Pydantic model from JSONB
         )
 
         # Create handle (unpacks definition, starts container)
         handle = await AgentHandle.create(
-            transcript_id=transcript_id,
+            agent_run_id=agent_run_id,
             config=config,
         )
 
         # Restore conversation history from events table
-        events = get_events_for_transcript(transcript_id)
+        events = get_events_for_transcript(agent_run_id)
         handle.agent.restore_from_events(events)
 
         return handle
 
-    async def stop_agent(self, transcript_id: UUID):
+    async def stop_agent(self, agent_run_id: UUID):
         """Stop a specific agent's container (preserves workspace)."""
-        handle = self._agents.pop(transcript_id, None)
+        handle = self._agents.pop(agent_run_id, None)
         if handle:
             await handle.shutdown()
 
@@ -1199,7 +1248,7 @@ class AgentHandle:
     """Handle to a single long-running agent.
 
     State held per agent:
-    - transcript_id: unique identifier, also PK in agent_runs table
+    - agent_run_id: unique identifier, also PK in agent_runs table
     - agent: the Agent instance (owns transcript in _transcript)
     - compositor: manages container + MCP server lifecycle
     - config: for restart (definition_id, mounts, model, etc.)
@@ -1215,19 +1264,19 @@ class AgentHandle:
     if the process dies - can reconstruct Agent from DB events).
     """
 
-    transcript_id: UUID
+    agent_run_id: UUID
     agent: Agent                      # Agent instance (owns transcript)
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
     config: AgentConfig               # For restart
     workspace: Path                   # Persistent workspace (host path, mounted as /workspace in container)
-                                      # Path is deterministic: ~/.local/share/adgn/workspaces/{transcript_id}/
+                                      # Path is deterministic: ~/.local/share/adgn/workspaces/{agent_run_id}/
     _lock: asyncio.Lock               # Prevent concurrent run() calls
 
     @classmethod
     async def create(
         cls,
-        transcript_id: UUID,
+        agent_run_id: UUID,
         config: AgentConfig,
         model_client: OpenAIModelProto,
     ) -> "AgentHandle":
@@ -1235,7 +1284,7 @@ class AgentHandle:
         definition = load_definition(config.definition_id)
 
         # 2. Unpack to persistent workspace (survives container restarts)
-        workspace = get_workspace_path(transcript_id)  # ~/.local/share/adgn/workspaces/{transcript_id}/
+        workspace = get_workspace_path(agent_run_id)  # ~/.local/share/adgn/workspaces/{agent_run_id}/
         if not workspace.exists():
             workspace.mkdir(parents=True)
             unpack_definition(definition.archive, workspace)
@@ -1256,7 +1305,7 @@ class AgentHandle:
         bootstrap = SequenceHandler([InjectItems(items=[init_call])])
 
         # 5. Create handlers
-        db_handler = DatabaseEventHandler(transcript_id=transcript_id)
+        db_handler = DatabaseEventHandler(agent_run_id=agent_run_id)
         text_capture = CaptureTextHandler()  # Captures text, aborts loop
 
         # 6. Create Agent with handlers
@@ -1276,7 +1325,7 @@ class AgentHandle:
         # Note: init output is now in transcript as tool result from bootstrap
 
         return cls(
-            transcript_id=transcript_id,
+            agent_run_id=agent_run_id,
             agent=agent,
             compositor=compositor,
             text_capture_handler=text_capture,
@@ -1325,7 +1374,7 @@ class AgentHandle:
         """
         if not self.workspace.exists():
             raise RuntimeError(
-                f"Workspace {self.workspace} disappeared for agent {self.transcript_id}. "
+                f"Workspace {self.workspace} disappeared for agent {self.agent_run_id}. "
                 "Cannot recover - agent state is corrupted."
             )
 
@@ -1423,7 +1472,7 @@ class CaptureTextHandler(BaseHandler):
 registry = AgentRegistry()
 critic_id = await registry.create_agent(AgentConfig(
     definition_id="critic_abc123",
-    parent_transcript_id=optimizer_transcript_id,  # Spawned by optimizer
+    parent_agent_run_id=optimizer_agent_run_id,  # Spawned by optimizer
     type_config=CriticTypeConfig(
         snapshot_slug="ducktape/2025-01-15",
         scope_hash="abc123",
@@ -1435,7 +1484,7 @@ result = await registry.run_agent(critic_id, "Begin review")
 # Critic spawning sub-agent for task decomposition
 sub_id = await registry.create_agent(AgentConfig(
     definition_id="freeform_abc123",
-    parent_transcript_id=current_transcript_id(),  # Inherits snapshot mount
+    parent_agent_run_id=current_agent_run_id(),  # Inherits snapshot mount
     type_config=FreeformTypeConfig(),
 ))
 response = await registry.run_agent(sub_id, "Trace the auth flow...")
@@ -1444,9 +1493,9 @@ response = await registry.run_agent(sub_id, "Trace the auth flow...")
 registry = AgentRegistry()
 agent_id = await registry.create_agent(AgentConfig(
     definition_id="grader",
-    parent_transcript_id=None,  # Top-level invocation from CLI
+    parent_agent_run_id=None,  # Top-level invocation from CLI
     type_config=GraderTypeConfig(
-        graded_transcript_id=some_critic_transcript,
+        graded_agent_run_id=some_critic_transcript,
     ),
 ))
 ```
