@@ -92,12 +92,12 @@ CREATE TABLE agent_definitions (
     id SERIAL PRIMARY KEY,
     agent_type TEXT NOT NULL,              -- 'critic', 'grader', 'prompt_optimizer', etc.
     definition_sha256 TEXT NOT NULL,       -- SHA256 of uncompressed content (for dedup)
-    archive BYTEA NOT NULL,                -- gzip-compressed tar archive
-    parent_id INTEGER REFERENCES agent_definitions(id),  -- lineage tracking
+    archive BYTEA NOT NULL,                -- uncompressed tar archive
     created_at TIMESTAMPTZ DEFAULT now(),
 
-    -- Provenance
+    -- Provenance (one of these set depending on how definition was created)
     prompt_optimization_run_id UUID REFERENCES prompt_optimization_runs(id),
+    created_by_transcript_id UUID,         -- transcript of agent that created this definition
 
     UNIQUE(definition_sha256)              -- content-addressed deduplication
 );
@@ -105,6 +105,12 @@ CREATE TABLE agent_definitions (
 -- Index for finding latest variants of a type
 CREATE INDEX idx_agent_definitions_type_id ON agent_definitions(agent_type, id DESC);
 ```
+
+Lineage is tracked via provenance columns:
+- `prompt_optimization_run_id`: set when created by prompt optimizer
+- `created_by_transcript_id`: transcript of the agent that created this definition
+
+For baseline definitions (from git), both are NULL.
 
 ### Content Addressing
 
@@ -256,7 +262,6 @@ the helper explicitly.
 
 ### Phase 4: Enable Evolution
 - Wire up optimizer to create new critic definitions
-- Track lineage via `parent_id`
 - Metrics queries that group by definition
 
 ## Runtime Information (No Jinja2)
