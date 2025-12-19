@@ -633,28 +633,33 @@ async def run_critic(
     definition_id: str,
     snapshot_slug: str,
     scope_hash: str,
-) -> str:
+    max_turns: int = 200,
+) -> UUID:
     """Run a critic agent with specified inputs.
 
-    Creates critic, sets up snapshot mount, runs to completion.
-    Prompt optimizer doesn't need ongoing conversation with critics.
+    Creates critic, sets up snapshot mount, runs to completion (or max_turns).
 
-    Returns: Critic's output (structured critique)
+    Args:
+        max_turns: Maximum number of turns before stopping. Default 200.
+
+    Returns: transcript_id (read results from agent_runs table)
     """
 
 @mcp.tool()
 async def run_grader(
     definition_id: str,
-    graded_transcript_id: str,
-) -> str:
+    graded_transcript_id: UUID,
+    max_turns: int = 200,
+) -> UUID:
     """Run a grader agent on a specific transcript.
 
-    Creates grader, provides transcript to grade, runs to completion.
+    Creates grader, provides transcript to grade, runs to completion (or max_turns).
 
-    Validation:
-    - graded_transcript_id must be a critic-type run (rejects other agent types)
+    Args:
+        graded_transcript_id: Must be a critic-type run (validated)
+        max_turns: Maximum number of turns before stopping. Default 200.
 
-    Returns: Grader's output (score + reasoning)
+    Returns: transcript_id (read results from agent_runs table)
     """
 ```
 
@@ -711,12 +716,13 @@ response3 = run_subagent(transcript_id, "Summarize your findings")
 **Prompt optimizer workflow (no conversation needed):**
 ```python
 # Run critic with specific inputs
-output = run_critic(
+critic_transcript_id = run_critic(
     definition_id="critic_abc123",
     snapshot_slug="ducktape/2025-01-15",
     scope_hash="abc123",
+    max_turns=200,
 )
-# Returns structured critique, no ongoing conversation
+# Returns transcript_id - read results from agent_runs table via SQL
 ```
 
 **State Management:**
@@ -728,10 +734,11 @@ output = run_critic(
 
 Everything needed to restart an agent after app quits must be saved to database:
 - `agent_definition_id` - which definition to unpack
-- Agent-type-specific context stored in `agent_runs`:
-  - Critics: `snapshot_slug` (where to mount snapshot)
+- `parent_transcript_id` - shared across all agent types (for mount inheritance)
+- Type-specific context in `type_config` JSONB:
+  - Critics: `snapshot_slug`, `scope_hash`
   - Graders: `graded_transcript_id`
-  - Freeform sub-agents: `parent_transcript_id` (inherit mounts from parent's config)
+  - Freeform/Prompt optimizer: just the type marker
 - Transcript events in `events` table (reconstruct conversation)
 
 On restart:
