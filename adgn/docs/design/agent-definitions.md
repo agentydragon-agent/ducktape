@@ -480,23 +480,75 @@ Already handled by unified `agent_runs` table:
 - `parent_transcript_id` links to spawning agent
 - `agent_definition_id` references the ad-hoc definition
 
-### MCP Tool
+### MCP Tools (Conversational Interface)
+
+Rather than one-shot spawning, sub-agents support continuous conversation:
 
 ```python
 @mcp.tool()
-async def spawn_subagent(
+async def start_agent(
     definition_id: str,
     inherit_mounts: bool = True,
-    max_turns: int = 20,
 ) -> str:
-    """Spawn a sub-agent and wait for its result.
+    """Start a sub-agent session.
 
-    The sub-agent runs with your transcript as parent and inherits your
-    environment (mounted snapshots, database access).
+    Creates a new agent with its own transcript_id, sets up container and
+    environment, but does NOT run any turns yet.
 
-    Returns the sub-agent's output as a string.
+    Returns: session_id (use with send_message)
+    """
+
+@mcp.tool()
+async def send_message(
+    session_id: str,
+    message: str,
+) -> str:
+    """Send a message to a running sub-agent session.
+
+    Adds the message to the conversation, then runs the agent until it
+    produces a text response. Aborts and returns when agent sends text.
+
+    Returns: The agent's text response
+
+    Errors:
+    - If session is already rolling out (concurrent send_message not allowed)
+    - If session doesn't exist or has ended
+    """
+
+@mcp.tool()
+async def end_agent(
+    session_id: str,
+) -> str:
+    """End a sub-agent session and clean up resources.
+
+    Returns: Final session summary (transcript_id, turn count, etc.)
     """
 ```
+
+**Workflow:**
+```python
+# Start a sub-agent for architecture analysis
+session = start_agent(definition_id="freeform_abc123")
+
+# Have a conversation
+response1 = send_message(session, "Trace how API requests reach the database")
+# Agent runs, explores code, responds with findings
+
+response2 = send_message(session, "Now focus on the authentication middleware")
+# Continues same conversation, agent has context from previous turns
+
+response3 = send_message(session, "Summarize your findings")
+# Agent synthesizes
+
+# Clean up
+end_agent(session)
+```
+
+**State Management:**
+- Session state stored in memory (parent agent process)
+- Each session has: transcript_id, container handle, conversation history
+- Concurrent send_message calls to same session are rejected
+- Sessions auto-cleanup on parent agent exit
 
 ### Use Cases
 
