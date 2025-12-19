@@ -180,7 +180,7 @@ The `events` table already uses `transcript_id` as FK, so tool calls link natura
 ```sql
 CREATE TABLE agent_definitions (
     id TEXT PRIMARY KEY,                   -- readable: 'critic', 'grader', or auto-generated
-    agent_type TEXT NOT NULL,              -- 'critic', 'grader', 'prompt_optimizer', etc.
+    agent_type agent_type NOT NULL,        -- enum: critic, grader, prompt_optimizer, freeform
     archive BYTEA NOT NULL,                -- uncompressed tar archive
     created_at TIMESTAMPTZ DEFAULT now(),
 
@@ -668,8 +668,16 @@ def validate_agent_config(config: AgentConfig) -> None:
     Type-specific required fields are enforced by the Pydantic models.
     This function validates cross-reference constraints.
     """
+    # Validate definition type matches config type
+    definition = get_agent_definition(config.definition_id)
+    if definition.agent_type != config.agent_type:
+        raise ValueError(
+            f"Definition {config.definition_id} is type {definition.agent_type}, "
+            f"but config specifies {config.agent_type}"
+        )
+
+    # Graders can only grade critic runs
     if isinstance(config.type_config, GraderTypeConfig):
-        # Graders can only grade critic runs
         run = get_agent_run(config.type_config.graded_transcript_id)
         if run.agent_type != AgentType.CRITIC:
             raise ValueError(
