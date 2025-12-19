@@ -938,21 +938,20 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    ```
 
    Sub-agent definitions are self-contained packets just like built-in agents.
-   The parent copies shared resources from its own workspace into the sub-agent's
-   definition before registering it.
 
-   **Required resources by capability:**
+   **Critical**: The sub-agent will run in an environment that expects specific
+   behaviors - submitting output in certain ways, using tools correctly, etc.
+   The sub-agent must understand these expectations or it will fail.
 
-   | If sub-agent needs... | Include these resources |
-   |-----------------------|------------------------|
-   | MCP tools | `docs/mcp_http_connection.md`, `examples/mcp_use.py` |
-   | Database access | `docs/psql_usage.md` (connection info, RLS context) |
-   | Code analysis tools | `docs/available_tools.md` (rg, ruff, mypy, etc.) |
-   | Issue reporting | `docs/issue_reporting.md`, `examples/report_issue.py` |
+   Ensure sub-agents know how to:
+   - **Connect to MCP** (if using MCP tools) - server URL, auth, client API
+   - **Submit results** (if expected to produce output) - where and how to save
+   - **Use database** (if has DB access) - connection, RLS constraints, schemas
+   - **Report issues** (if that's its job) - format, required fields, submission
 
-   **Critical**: Don't create sub-agents without the docs they need to use their
-   tools. A sub-agent with MCP access but no `mcp_http_connection.md` won't know
-   how to connect. Check your own `/workspace/docs/` for what to copy.
+   You can provide this knowledge by copying your docs/examples, writing it
+   directly in AGENT.md, or however works best. The built-in docs are just one
+   way - reword, restructure, or write fresh instructions as needed.
 
 2. Parent registers the definition:
    ```bash
