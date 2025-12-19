@@ -37,14 +37,23 @@ For repo-backed/manual entries, `created_by_agent_run_id` is NULL.
 
 ## Directory Structure
 
-Minimal conventions:
+Agent definitions are self-contained packets. Components cross-reference each other
+naturally - docs reference examples, init prints required reading, etc.
 
 ```
 <agent_definition>/
 ├── AGENT.md              # System prompt (required)
-├── init               # Runs on agent startup (required, must be executable)
-└── ...                   # Any other files the agent needs
+├── init                  # Runs on agent startup (required, must be executable)
+├── docs/                 # Reference documentation
+│   └── mcp_http_connection.md  # "see examples/mcp_use.py"
+├── examples/             # Runnable code samples
+│   └── mcp_use.py        # MCP client example agent can read/run
+└── tools/                # Executable tools agent can invoke
 ```
+
+Built-in agent definitions are compiled from source files at build time. Shared
+resources (like `mcp_use.py`) are copied into each definition's archive from a
+single source in the git repo.
 
 ### AGENT.md
 
@@ -74,22 +83,22 @@ Run `./init` for environment details and available tools.
 Required, must be executable. Executed automatically by the runtime before agent
 sampling begins (warm-start pattern - we don't rely on LLM following an instruction).
 
-Default init for repo-tracked agents is written in Python and reads common
-boilerplate from the installed adgn package:
+Init reads required documentation from the agent's own workspace:
 
 ```python
 #!/usr/bin/env python3
 """Init script for critic agent."""
+from pathlib import Path
 
-from importlib.resources import files
+workspace = Path("/workspace")
 
-# Read MCP connection info from adgn package resources
-print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
+# Print required reading - MCP connection docs
+print(workspace.joinpath("docs/mcp_http_connection.md").read_text())
 
 # Scope info (snapshot slug, files) is available via MCP resources
-# The agent reads these via resources.read() during its operation
 print("=== Environment Ready ===")
 print("Use resources.read() to access snapshot_slug and scope_files")
+print("For MCP client example, see: examples/mcp_use.py")
 
 # Any agent-specific setup...
 ```
@@ -99,9 +108,9 @@ Exit non-zero to abort agent startup.
 ### Other files
 
 No restrictions. Common patterns:
+- `docs/` - reference documentation (init prints required reading)
+- `examples/` - runnable code samples (docs reference these)
 - `tools/` - executable scripts the agent can invoke
-- `context/` - reference documentation
-- `examples/` - worked examples for few-shot guidance
 
 ## Agent Types
 
@@ -656,7 +665,7 @@ These requirements apply to all implementation:
 - ✅ `agent_type_enum` PostgreSQL type → `migrations/versions/20251223000000_add_agent_type_enum.py`
 - ✅ `WorkspaceManager` class with DI → `adgn/src/adgn/props/agent_workspace.py`
 - ✅ Unified `get_validation_run_aggregates()` → `migrations/versions/20251223000001_unify_validation_aggregates.py`
-- ✅ MCP connection docs → inlined example in `mcp_http_connection.md`, readable via `importlib.resources`
+- ✅ MCP connection docs → `mcp_http_connection.md` references `examples/mcp_use.py` in workspace
 
 **Remaining:**
 - `CaptureTextHandler` (needs Docker for agent loop testing)
@@ -918,17 +927,17 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    """Init script for code tracer sub-agent."""
    from importlib.resources import files
 
-   # Read MCP connection info from adgn package resources
+   # Ad-hoc sub-agents use importlib.resources since they don't have
+   # pre-packaged docs like built-in agents do
    print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
    print("=== Code Tracer Ready ===")
    EOF
    $ chmod +x /workspace/subagents/code-tracer/init
    ```
 
-   **Important**: Sub-agent definitions must include environment instructions so
-   the sub-agent knows how to use MCP-over-HTTP, available tools, etc. The init
-   script should print the common MCP connection documentation from the adgn
-   package.
+   **Note**: Ad-hoc sub-agents created at runtime use `importlib.resources` to
+   read shared boilerplate from the installed adgn package. Built-in agents have
+   all docs/examples pre-packaged in their workspace instead.
 
 2. Parent registers the definition:
    ```bash
