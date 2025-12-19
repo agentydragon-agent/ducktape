@@ -1089,6 +1089,53 @@ class OccurrenceStatistics(Base):
 
 
 # ============================================================================
+# Agent Definition Tables
+# ============================================================================
+
+
+class AgentDefinition(Base):
+    """Agent definition archive stored in database.
+
+    Contains AGENT.md, init script, tools, examples, and docs packed as tar.
+    Definitions can be repo-backed (readable names) or agent-created (auto-generated IDs).
+    """
+
+    __tablename__ = "agent_definitions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    agent_type: Mapped[str] = mapped_column(String, nullable=False)  # agent_type_enum value
+    archive: Mapped[bytes] = mapped_column(postgresql.BYTEA, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+
+    # Relationships
+    agent_runs: Mapped[list[AgentRun]] = relationship(back_populates="agent_definition")
+
+
+class AgentRun(Base):
+    """Unified agent run record (replaces separate critic_runs, grader_runs, etc.).
+
+    Each run references an agent definition and stores type-specific config as JSONB.
+    Parent-child relationships track sub-agent spawning.
+    """
+
+    __tablename__ = "agent_runs"
+
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    agent_definition_id: Mapped[str] = mapped_column(String, ForeignKey("agent_definitions.id"), nullable=False)
+    parent_agent_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True
+    )
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    type_config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs")
+    parent: Mapped[AgentRun | None] = relationship("AgentRun", remote_side=[agent_run_id], backref="children")
+
+
+# ============================================================================
 # DDL Event Listeners for Views
 # ============================================================================
 

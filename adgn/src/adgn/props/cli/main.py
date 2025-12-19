@@ -33,6 +33,7 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.bootstrap_capture import BootstrapCaptured, CapturingClient, format_bootstrap_output
 from adgn.props.cli import common_options as opt
+from adgn.props.cli.cmd_agent_definition import app as agent_definition_app
 from adgn.props.cli.cmd_agent_helper import app as agent_helper_app
 from adgn.props.cli.cmd_analyze_exec import cmd_analyze_exec
 from adgn.props.cli.cmd_classify_noops import cmd_classify_noops
@@ -112,6 +113,7 @@ app.add_typer(db_app, name="db")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(cluster_unknowns_app, name="cluster-unknowns")
 app.add_typer(agent_helper_app, name="agent-helper")
+app.add_typer(agent_definition_app, name="agent-definition")
 
 # Configure logging via shared callback (default: WARNING level for props)
 # Then add database initialization on top
