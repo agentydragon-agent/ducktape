@@ -89,42 +89,33 @@ No restrictions. Common patterns:
 
 ```sql
 CREATE TABLE agent_definitions (
-    id SERIAL PRIMARY KEY,
+    id TEXT PRIMARY KEY,                   -- readable: 'critic', 'grader', or auto-generated
     agent_type TEXT NOT NULL,              -- 'critic', 'grader', 'prompt_optimizer', etc.
-    definition_sha256 TEXT NOT NULL,       -- SHA256 of uncompressed content (for dedup)
     archive BYTEA NOT NULL,                -- uncompressed tar archive
     created_at TIMESTAMPTZ DEFAULT now(),
 
-    -- Provenance (one of these set depending on how definition was created)
-    prompt_optimization_run_id UUID REFERENCES prompt_optimization_runs(id),
-    created_by_transcript_id UUID,         -- transcript of agent that created this definition
-
-    UNIQUE(definition_sha256)              -- content-addressed deduplication
+    -- Provenance (set when created by an agent, NULL for repo-backed)
+    created_by_transcript_id UUID          -- transcript of agent that created this definition
 );
 
--- Index for finding latest variants of a type
-CREATE INDEX idx_agent_definitions_type_id ON agent_definitions(agent_type, id DESC);
+-- Index for finding definitions by type
+CREATE INDEX idx_agent_definitions_type ON agent_definitions(agent_type);
 ```
 
-Lineage is tracked via provenance columns:
-- `prompt_optimization_run_id`: set when created by prompt optimizer
-- `created_by_transcript_id`: transcript of the agent that created this definition
+ID conventions:
+- Repo-backed: readable names like `"critic"`, `"grader"`, `"prompt_optimizer"`
+- Agent-created: auto-generated (e.g., `"critic_a1b2c3"` or UUID)
 
-For baseline definitions (from git), both are NULL.
+Agents can INSERT directly into this table (with RLS ensuring they can only insert
+rows where `created_by_transcript_id` matches their transcript). No UPDATE allowed.
 
-### Content Addressing
+### Content Hashing (Optional)
 
-The `definition_sha256` is computed from a deterministic serialization:
+For deduplication or integrity checks, compute SHA256 of the definition:
 
 ```python
 def compute_definition_hash(definition_dir: Path) -> str:
-    """Compute SHA256 of agent definition directory.
-
-    Process:
-    1. List all files recursively, sorted by path
-    2. For each file: hash(relative_path + file_mode + file_content)
-    3. Hash the concatenation of all file hashes
-    """
+    """Compute SHA256 of agent definition directory."""
     hasher = hashlib.sha256()
     for path in sorted(definition_dir.rglob("*")):
         if path.is_file():
@@ -135,38 +126,29 @@ def compute_definition_hash(definition_dir: Path) -> str:
     return hasher.hexdigest()
 ```
 
-Identical definitions (by content) share the same `definition_sha256`, enabling
-deduplication and fast equality checks.
+This can be used to generate auto-IDs (e.g., `"critic_" + sha[:8]`) or for
+detecting duplicate submissions.
 
 ## Access Control
 
 ### RLS Policies
 
-Agent definitions use the same RLS pattern as other props tables. Example policy
-for prompt optimizer accessing critic definitions:
-
 ```sql
--- Prompt optimizer can read critic definitions from its optimization run
-CREATE POLICY optimizer_read_critic ON agent_definitions
+-- All agents can read all definitions (no secrets in agent definitions)
+CREATE POLICY read_all ON agent_definitions
     FOR SELECT
-    USING (
-        agent_type = 'critic'
-        AND prompt_optimization_run_id = current_optimization_run_id()
-    );
+    USING (true);
 
--- Prompt optimizer can insert new critic definitions
-CREATE POLICY optimizer_insert_critic ON agent_definitions
+-- Agents can only INSERT with their own transcript_id
+CREATE POLICY insert_own ON agent_definitions
     FOR INSERT
-    WITH CHECK (
-        agent_type = 'critic'
-        AND prompt_optimization_run_id = current_optimization_run_id()
-    );
+    WITH CHECK (created_by_transcript_id = current_transcript_id());
+
+-- No UPDATE or DELETE allowed
 ```
 
-### Baseline Definitions
-
-Canonical repo-tracked definitions (the "base" versions) are inserted with
-`prompt_optimization_run_id = NULL` and readable by all agents that need them.
+Repo-backed definitions have `created_by_transcript_id = NULL` and are inserted
+by the sync command (not by agents).
 
 ## Agent Access Pattern
 
