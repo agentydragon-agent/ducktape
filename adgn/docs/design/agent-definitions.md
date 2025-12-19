@@ -14,6 +14,26 @@ as compressed archives with content-addressed identity and database-level access
 3. **Single source of truth**: Definitions stored in PostgreSQL, inflated to workspace on demand
 4. **Access control**: Database RLS controls which definitions an agent can read/write
 
+## Provenance Model
+
+**All provenance tracking uses `transcript_id`** - the unique identifier for a specific
+agent run. This replaces separate `prompt_optimization_run_id`, `prompt_improvement_run_id`,
+etc. columns throughout the codebase.
+
+Benefits:
+- Single consistent pattern across all tables
+- Direct link to full agent transcript for debugging
+- No need for separate "run" tables per agent type
+- Simpler RLS policies (just check `current_transcript_id()`)
+
+Tables affected by this unification:
+- `agent_definitions.created_by_transcript_id`
+- `critic_runs.created_by_transcript_id` (replaces `prompt_optimization_run_id`)
+- `prompts.created_by_transcript_id` (replaces `prompt_optimization_run_id`, `improvement_run_id`)
+- Any other table tracking "which agent created this"
+
+For repo-backed/manual entries, `created_by_transcript_id` is NULL.
+
 ## Directory Structure
 
 Minimal conventions:
@@ -161,10 +181,10 @@ definitions from the database into their workspace:
 from adgn.props.agent_helpers import inflate_agent_definition
 
 # Inflate a specific definition by ID
-inflate_agent_definition(agent_id=47, target_dir=Path("/workspace/agents/critic/47"))
+inflate_agent_definition(definition_id="critic_a1b2c3", target_dir=Path("/workspace/agents/critic_a1b2c3"))
 
 # Inflate the baseline critic definition
-inflate_agent_definition(agent_type="critic", baseline=True, target_dir=Path("/workspace/agents/critic/base"))
+inflate_agent_definition(definition_id="critic", target_dir=Path("/workspace/agents/critic"))
 
 # Inflate own definition (uses environment variable set by runtime)
 inflate_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
@@ -174,10 +194,10 @@ inflate_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
 
 ```bash
 # Inflate by ID
-inflate-agent 47 /workspace/agents/critic/47
+inflate-agent critic_a1b2c3 /workspace/agents/critic_a1b2c3
 
-# Inflate baseline
-inflate-agent --type critic --baseline /workspace/agents/critic/base
+# Inflate baseline (just use the readable ID)
+inflate-agent critic /workspace/agents/critic
 
 # Inflate self
 inflate-agent --self /workspace/agents/self
@@ -203,27 +223,27 @@ the helper explicitly.
 
 ```
 1. Optimizer starts with access to:
-   - Its own definition at /agents/self/
-   - Critic definition IDs it can read (via RLS)
+   - Its own definition unpacked at /workspace
+   - All agent definitions readable via database
 
 2. Optimizer inflates current best critic:
-   $ inflate-agent 47 /workspace/agents/critic/47
+   $ inflate-agent critic /workspace/agents/critic
 
 3. Optimizer reads and analyzes:
-   - /workspace/agents/critic/47/AGENT.md
-   - /workspace/agents/critic/47/tools/...
+   - /workspace/agents/critic/AGENT.md
+   - /workspace/agents/critic/tools/...
 
 4. Optimizer creates modified version:
-   $ cp -r /workspace/agents/critic/47 /workspace/agents/critic/new
-   $ edit /workspace/agents/critic/new/AGENT.md
-   $ edit /workspace/agents/critic/new/tools/analyze.py
+   $ cp -r /workspace/agents/critic /workspace/agents/critic_new
+   $ edit /workspace/agents/critic_new/AGENT.md
+   $ edit /workspace/agents/critic_new/tools/analyze.py
 
-5. Optimizer saves new definition:
-   $ save-agent-definition --type critic --parent 47 /workspace/agents/critic/new
-   # Returns: Created agent definition ID 48
+5. Optimizer saves new definition (INSERT via RLS):
+   $ save-agent-definition --type critic /workspace/agents/critic_new
+   # Returns: Created agent definition ID critic_a1b2c3
 
 6. Optimizer runs critic with new definition:
-   $ run-critic --definition 48 --snapshot ducktape/2025-01-15
+   $ run-critic --definition critic_a1b2c3 --snapshot ducktape/2025-01-15
 ```
 
 ## Migration Path
