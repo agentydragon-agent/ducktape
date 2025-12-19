@@ -437,6 +437,11 @@ Runtime context comes via environment variables, not files.
 
 - [ ] E2E test verifying init output is not truncated (check for TruncatedOutput model in
   first step of steps-driven OpenAI mock)
+- [ ] Refactor `Agent.run()` to return `None` instead of `AgentResult`
+  - All result capture should be done via handlers (e.g., `CaptureTextHandler`)
+  - Cleaner separation: agent loop just runs, handlers capture what they need
+  - Remove `assistant_text_chunks` accumulation from Agent class
+  - Existing code using `result.text` migrates to handler-based capture
 
 ## Future: Sub-Agent Spawning
 
