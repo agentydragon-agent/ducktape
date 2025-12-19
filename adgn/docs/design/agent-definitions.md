@@ -498,17 +498,29 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
 
 ### Workflow
 
-1. Parent agent creates ad-hoc agent definition:
-   ```python
-   # Create minimal definition with just AGENT.md
-   save_agent_definition(
-       agent_type="freeform",  # or "subagent"
-       content={"AGENT.md": "You are a code tracer. Analyze how data flows from X to Y..."},
-   )
-   # Returns: definition_id = "freeform_abc123"
+1. Parent agent creates ad-hoc agent definition directory:
+   ```bash
+   $ mkdir /workspace/subagents/code-tracer
+   $ cat > /workspace/subagents/code-tracer/AGENT.md << 'EOF'
+   You are a code tracer. Analyze how data flows from X to Y.
+
+   ## Your Task
+   Trace the data flow and report your findings.
+   EOF
+   $ cat > /workspace/subagents/code-tracer/init << 'EOF'
+   #!/bin/bash
+   echo "Code tracer ready"
+   EOF
+   $ chmod +x /workspace/subagents/code-tracer/init
    ```
 
-2. Parent spawns sub-agent via MCP tool:
+2. Parent registers the definition:
+   ```bash
+   $ agent-helpers agent-definition create --type freeform /workspace/subagents/code-tracer
+   # Returns: Created agent definition ID freeform_abc123
+   ```
+
+3. Parent spawns sub-agent via MCP tool:
    ```python
    result = spawn_subagent(
        definition_id="freeform_abc123",
@@ -518,13 +530,13 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    # Blocks until sub-agent completes, returns output
    ```
 
-3. Sub-agent runs with:
+4. Sub-agent runs with:
    - Its own transcript_id
    - `parent_transcript_id` pointing to parent
    - Same environment (snapshot mounts, DB access)
    - Its ad-hoc AGENT.md as system prompt
 
-4. Parent receives result and continues
+5. Parent receives result and continues
 
 ### Schema Support
 
