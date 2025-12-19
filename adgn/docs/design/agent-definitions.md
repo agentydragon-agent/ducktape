@@ -556,25 +556,25 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
    # Returns: Created agent definition ID freeform_abc123
    ```
 
-3. Parent spawns sub-agent via agent-type-specific MCP tool:
+3. Parent spawns sub-agent via MCP tools:
    ```python
-   # Critic uses spawn_analysis_subagent - auto-mounts same snapshot
-   transcript_id = spawn_analysis_subagent(definition_id="freeform_abc123")
-   response = run_agent(transcript_id, "Trace the data flow from X to Y")
+   # Create sub-agent (auto-mounts same snapshot as parent critic)
+   transcript_id = create_subagent(definition_id="freeform_abc123")
+   # Have a conversation
+   response = run_subagent(transcript_id, "Trace the data flow from X to Y")
+   response2 = run_subagent(transcript_id, "Now focus on error handling")
    ```
 
 4. Sub-agent runs with:
    - Its own transcript_id
    - `parent_transcript_id` pointing to parent
-   - Same snapshot mount as parent (handled by `spawn_analysis_subagent`)
+   - Same snapshot mount as parent (handled by `create_subagent`)
    - Its ad-hoc AGENT.md as system prompt
 
 5. Parent receives result and continues
 
-**Note**: Each launcher agent type has its own spawning tools that handle mounts
-appropriately. Critics use `spawn_analysis_subagent` (same snapshot). Prompt
-optimizer uses `run_critic`/`run_grader` with explicit inputs. See
-"Agent-type-specific launcher tools" below.
+**Note**: Critics use `create_subagent`/`run_subagent` (same snapshot mount).
+Prompt optimizer uses `run_critic`/`run_grader` with explicit inputs.
 
 ### Schema Support
 
@@ -582,68 +582,52 @@ Already handled by unified `agent_runs` table:
 - `agent_definition_id` references the ad-hoc definition (agent_type joined from there)
 - `parent_transcript_id` links to spawning agent
 
-### MCP Tools (Conversational Interface)
+### MCP Tools
 
-Rather than one-shot spawning, sub-agents support continuous conversation:
+**Critic's tools for sub-agents (freeform, text I/O):**
+
+Critics create agent definitions via CLI (`agent-helpers agent-definition create`),
+then use these MCP tools to spawn and converse with sub-agents:
 
 ```python
 @mcp.tool()
-async def create_agent(
+async def create_subagent(
     definition_id: str,
 ) -> str:
-    """Create a sub-agent session.
+    """Create a freeform sub-agent.
 
     Creates a new agent with its own transcript_id, sets up container and
-    environment, but does NOT run any turns yet.
+    environment (same snapshot mount as parent), but does NOT run any turns yet.
 
-    Returns: transcript_id (use with run_agent)
+    Returns: transcript_id (use with run_subagent)
     """
 
 @mcp.tool()
-async def run_agent(
+async def run_subagent(
     transcript_id: str,
     message: str,
 ) -> str:
-    """Send a message to a sub-agent and run until response.
+    """Send a message to a sub-agent and get response.
 
-    Adds the message to the conversation, then runs the agent until it
-    produces a text response. Aborts and returns when agent sends text.
+    Adds the message to the conversation, runs the agent until it
+    produces a text response.
 
     If the container was previously killed (e.g., parent was idle), it will
-    be restarted and the agent receives a system message:
-    "Your container was restarted. Any local state (files in /tmp, running
-    processes, environment variables set at runtime) has been lost. The
-    conversation history and mounted volumes are preserved."
+    be restarted and the agent receives a system message about the restart.
 
     Returns: The agent's text response
 
     Errors:
-    - If agent is already rolling out (concurrent run_agent not allowed)
+    - If agent is already running (concurrent calls not allowed)
     - If transcript doesn't exist
     """
 ```
 
-**Agent-type-specific launcher tools:**
+**Prompt optimizer's tools:**
 
-The generic `create_agent`/`run_agent` tools are the low-level building blocks.
-Each launcher agent type has specialized MCP tools that wrap these with
-appropriate inputs:
+The prompt optimizer has specialized tools for running critics and graders:
 
 ```python
-# Critic agent's tool for spawning sub-agents (freeform analysis tasks)
-@mcp.tool()
-async def spawn_analysis_subagent(definition_id: str) -> str:
-    """Spawn a sub-agent for code analysis.
-
-    The sub-agent gets:
-    - Same snapshot mount as parent (read-only)
-    - Unpacked agent definition directory
-    - NO other state transferred
-
-    Returns: transcript_id
-    """
-
-# Prompt optimizer's tool for running critics
 @mcp.tool()
 async def run_critic(
     definition_id: str,
@@ -658,7 +642,6 @@ async def run_critic(
     Returns: Critic's output (structured critique)
     """
 
-# Prompt optimizer's tool for running graders
 @mcp.tool()
 async def run_grader(
     definition_id: str,
@@ -704,24 +687,24 @@ def validate_agent_config(config: AgentConfig) -> None:
             )
 ```
 
-These heterogeneous launcher tools are backed by shared backend code
-(AgentRegistry) that handles container lifecycle, message passing, etc.
+These tools are backed by shared backend code (AgentRegistry) that handles
+container lifecycle, message passing, etc.
 
-**Workflow:**
+**Critic workflow (conversational sub-agents):**
 ```python
 # Critic spawning a sub-agent for architecture analysis
-transcript_id = spawn_analysis_subagent(definition_id="freeform_abc123")
+transcript_id = create_subagent(definition_id="freeform_abc123")
 
 # Have a conversation
-response1 = run_agent(transcript_id, "Trace how API requests reach the database")
+response1 = run_subagent(transcript_id, "Trace how API requests reach the database")
 # Agent runs, explores code, responds with findings
 
-response2 = run_agent(transcript_id, "Now focus on the authentication middleware")
+response2 = run_subagent(transcript_id, "Now focus on the authentication middleware")
 # Continues same conversation, agent has context from previous turns
 
 # ... time passes, container gets cleaned up ...
 
-response3 = run_agent(transcript_id, "Summarize your findings")
+response3 = run_subagent(transcript_id, "Summarize your findings")
 # Container restarted, agent gets system message about restart, then continues
 ```
 
