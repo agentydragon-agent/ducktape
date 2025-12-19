@@ -103,6 +103,32 @@ No restrictions. Common patterns:
 - `context/` - reference documentation
 - `examples/` - worked examples for few-shot guidance
 
+## Agent Types
+
+Agent types are defined as enums in both Python and PostgreSQL:
+
+```python
+from enum import StrEnum
+
+class AgentType(StrEnum):
+    """Types of agents in the system."""
+    CRITIC = "critic"
+    GRADER = "grader"
+    PROMPT_OPTIMIZER = "prompt_optimizer"
+    FREEFORM = "freeform"  # Ad-hoc sub-agents
+```
+
+```sql
+CREATE TYPE agent_type AS ENUM (
+    'critic',
+    'grader',
+    'prompt_optimizer',
+    'freeform'
+);
+```
+
+All code must use these enum values, never raw strings.
+
 ## Storage
 
 ### Unified Agent Runs Table
@@ -113,7 +139,7 @@ use a single unified table with agent-type-specific columns and CHECK constraint
 ```sql
 CREATE TABLE agent_runs (
     transcript_id UUID PRIMARY KEY,
-    agent_type TEXT NOT NULL,                    -- 'critic', 'grader', 'prompt_optimizer'
+    agent_type agent_type NOT NULL,
     agent_definition_id TEXT REFERENCES agent_definitions(id),
     status TEXT NOT NULL DEFAULT 'running',
     created_at TIMESTAMPTZ DEFAULT now(),
@@ -136,10 +162,10 @@ CREATE TABLE agent_runs (
 
     -- CHECK constraints for column presence by agent_type
     CONSTRAINT critic_columns CHECK (
-        agent_type != 'critic' OR (snapshot_slug IS NOT NULL AND scope_hash IS NOT NULL)
+        agent_type != 'critic'::agent_type OR (snapshot_slug IS NOT NULL AND scope_hash IS NOT NULL)
     ),
     CONSTRAINT grader_columns CHECK (
-        agent_type != 'grader' OR graded_transcript_id IS NOT NULL
+        agent_type != 'grader'::agent_type OR graded_transcript_id IS NOT NULL
     )
 );
 
@@ -640,31 +666,23 @@ async def run_grader(
 
 **Validation rules:**
 
-Agent-type-specific constraints enforced at creation time:
+Most constraints are enforced by the type system (discriminated union). Only
+cross-reference validation remains:
 
 ```python
 def validate_agent_config(config: AgentConfig) -> None:
-    """Validate agent configuration before creation."""
+    """Validate agent configuration before creation.
 
-    if config.agent_type == "grader":
+    Type-specific required fields are enforced by the config dataclasses.
+    This function validates cross-reference constraints.
+    """
+    if isinstance(config, GraderConfig):
         # Graders can only grade critic runs
-        if config.graded_transcript_id is None:
-            raise ValueError("Grader requires graded_transcript_id")
         run = get_agent_run(config.graded_transcript_id)
-        if run.agent_type != "critic":
+        if run.agent_type != AgentType.CRITIC:
             raise ValueError(
                 f"Grader can only grade critic runs, got {run.agent_type}"
             )
-
-    if config.agent_type == "critic":
-        # Critics require snapshot context
-        if config.snapshot_slug is None or config.scope_hash is None:
-            raise ValueError("Critic requires snapshot_slug and scope_hash")
-
-    # Freeform sub-agents must have a parent
-    if config.agent_type == "freeform":
-        if config.parent_transcript_id is None:
-            raise ValueError("Freeform sub-agents require parent_transcript_id")
 ```
 
 These heterogeneous launcher tools are backed by shared backend code
@@ -728,15 +746,54 @@ agents spawning sub-agents, CLI, etc. Not sub-agent specific.
 
 ```python
 @dataclass
-class AgentConfig:
-    """Configuration for an agent - everything needed to restart it."""
+class CriticConfig:
+    """Configuration for a critic agent."""
     definition_id: str
-    agent_type: str
-    parent_transcript_id: UUID | None = None
-    # Agent-type-specific config (persisted to agent_runs)
-    snapshot_slug: str | None = None        # For critics
-    scope_hash: str | None = None           # For critics
-    graded_transcript_id: UUID | None = None  # For graders
+    snapshot_slug: str
+    scope_hash: str
+    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
+
+    @property
+    def agent_type(self) -> AgentType:
+        return AgentType.CRITIC
+
+
+@dataclass
+class GraderConfig:
+    """Configuration for a grader agent."""
+    definition_id: str
+    graded_transcript_id: UUID  # Must be a critic run (validated)
+    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
+
+    @property
+    def agent_type(self) -> AgentType:
+        return AgentType.GRADER
+
+
+@dataclass
+class FreeformConfig:
+    """Configuration for a freeform sub-agent."""
+    definition_id: str
+    parent_transcript_id: UUID  # Required - inherits mounts from parent
+
+    @property
+    def agent_type(self) -> AgentType:
+        return AgentType.FREEFORM
+
+
+@dataclass
+class PromptOptimizerConfig:
+    """Configuration for the prompt optimizer agent."""
+    definition_id: str
+    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
+
+    @property
+    def agent_type(self) -> AgentType:
+        return AgentType.PROMPT_OPTIMIZER
+
+
+# Discriminated union of all agent configs
+AgentConfig = CriticConfig | GraderConfig | FreeformConfig | PromptOptimizerConfig
 
 
 class AgentRegistry:
@@ -999,33 +1056,30 @@ class CaptureTextHandler(BaseHandler):
 **Usage patterns:**
 
 ```python
-# Prompt optimizer running critics (one-shot, no conversation)
+# Prompt optimizer running critics (spawned by optimizer)
 registry = AgentRegistry()
-critic_id = await registry.create_agent(AgentConfig(
+critic_id = await registry.create_agent(CriticConfig(
     definition_id="critic_abc123",
-    agent_type="critic",
-    parent_transcript_id=my_transcript,
     snapshot_slug="ducktape/2025-01-15",
     scope_hash="abc123",
+    parent_transcript_id=optimizer_transcript_id,  # Spawned by optimizer
 ))
 result = await registry.run_agent(critic_id, "Begin review")
 # Critic runs to completion, returns structured output
 
 # Critic spawning sub-agent for task decomposition
-sub_id = await registry.create_agent(AgentConfig(
+sub_id = await registry.create_agent(FreeformConfig(
     definition_id="freeform_abc123",
-    agent_type="freeform",
-    parent_transcript_id=current_transcript_id(),
-    # Inherits snapshot mount from parent's config
+    parent_transcript_id=current_transcript_id(),  # Inherits snapshot mount from parent
 ))
 response = await registry.run_agent(sub_id, "Trace the auth flow...")
 
-# CLI running any agent
+# CLI running grader (top-level, no parent)
 registry = AgentRegistry()
-agent_id = await registry.create_agent(AgentConfig(
+agent_id = await registry.create_agent(GraderConfig(
     definition_id="grader",
-    agent_type="grader",
-    graded_transcript_id=some_transcript,
+    graded_transcript_id=some_critic_transcript,
+    parent_transcript_id=None,  # Top-level invocation from CLI
 ))
 ```
 
