@@ -32,35 +32,32 @@ def parse_anthem_reimbursement(email: Email) -> AnthemReimbursement:
     text = email.get_text()
 
     # Extract structured data using regex
-    patient = re.search(r"Patient name:\s*([A-Z]+)", text)
-    care_date_match = re.search(r"Date of care:\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2})", text)
-    amount_pay = re.search(r"Amount you pay:\s*\$([0-9,]+\.[0-9]{2})", text)
-    deposited = re.search(r"Amount we deposited:\s*\$([0-9,]+\.[0-9]{2})", text)
-    claim_num = re.search(r"Claim number:\s*Ending in\s*(\d+)", text)
+    patient_name = m.group(1) if (m := re.search(r"Patient name:\s*([A-Z]+)", text)) else None
+    claim_number_suffix = m.group(1) if (m := re.search(r"Claim number:\s*Ending in\s*(\d+)", text)) else None
 
     # Parse care date (MM/DD/YY format)
     care_dt = None
-    if care_date_match:
+    if m := re.search(r"Date of care:\s*([0-9]{1,2}/[0-9]{1,2}/[0-9]{2})", text):
         with contextlib.suppress(ValueError):
-            care_dt = datetime.strptime(care_date_match.group(1), "%m/%d/%y")
+            care_dt = datetime.strptime(m.group(1), "%m/%d/%y")
 
     # Parse amounts (remove commas from numbers like "8,676.65")
     amount_you_pay_decimal = None
-    if amount_pay:
+    if m := re.search(r"Amount you pay:\s*\$([0-9,]+\.[0-9]{2})", text):
         with contextlib.suppress(ValueError, TypeError):
-            amount_you_pay_decimal = Decimal(amount_pay.group(1).replace(",", ""))
+            amount_you_pay_decimal = Decimal(m.group(1).replace(",", ""))
 
     amount_deposited_decimal = None
-    if deposited:
+    if m := re.search(r"Amount we deposited:\s*\$([0-9,]+\.[0-9]{2})", text):
         with contextlib.suppress(ValueError, TypeError):
-            amount_deposited_decimal = Decimal(deposited.group(1).replace(",", ""))
+            amount_deposited_decimal = Decimal(m.group(1).replace(",", ""))
 
     return AnthemReimbursement(
-        patient_name=patient.group(1) if patient else None,
+        patient_name=patient_name,
         care_date=care_dt,
         amount_you_pay=amount_you_pay_decimal,
         amount_deposited=amount_deposited_decimal,
-        claim_number_suffix=claim_num.group(1) if claim_num else None,
+        claim_number_suffix=claim_number_suffix,
         email_date=email_dt,
     )
 

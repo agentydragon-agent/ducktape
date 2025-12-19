@@ -30,7 +30,9 @@ from .planners import (
     AnthemReimbursementPlanner,
     AnthropicReceiptPlanner,
     DbsaEventPlanner,
+    DoorDashPlanner,
     OneMedicalPlanner,
+    SprucePlanner,
     SquarePlanner,
     UspsPlanner,
 )
@@ -38,7 +40,6 @@ from .planners import (
 app = typer.Typer(help="Archive old Gmail emails based on extracted dates")
 app.add_typer(filters_app, name="filters")
 app.add_typer(labels_app, name="labels")
-console = Console()
 
 
 def print_error(console: Console, message: str) -> None:
@@ -52,6 +53,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     Adds 'gmail-archiver/inbox-auto-cleaned' label and removes from inbox.
     Only processes emails that are currently in the inbox.
     """
+    console = Console()
     client = get_client(token_file)
 
     console.print("[bold]Gmail Email Archiver[/bold] - Inbox Auto-Cleaner")
@@ -63,12 +65,14 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     planners = [
         AliExpressPlanner(),
         AnthropicReceiptPlanner(),
+        DoorDashPlanner(),
         UspsPlanner(),
         DbsaEventPlanner(extractor),
         AnthemEobPlanner(),
         AnthemReimbursementPlanner(),
         SquarePlanner(),
         OneMedicalPlanner(),
+        SprucePlanner(),
     ]
 
     plans = []
@@ -86,11 +90,21 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
         console.print(msg)
     console.print()
 
-    display_plan(combined, inbox, console, dry_run=dry_run, group_by_category=True)
+    display_plan(combined, inbox, console, dry_run=dry_run)
 
     # Use batched execution like cli/filters.py does
     if not dry_run and combined.count_operations() > 0:
         console.print("Executing label operations...")
+
+        # Collect all labels that need to be added and ensure they exist
+        all_labels_to_add: set[str] = set()
+        for sig in combined.group_by_signature():
+            all_labels_to_add.update(sig.labels_to_add)
+
+        # Create labels and build name->id mapping
+        label_ids: dict[str, str] = {}
+        for label_name in all_labels_to_add:
+            label_ids[label_name] = client.get_or_create_label(label_name)
 
         # Execute each unique action signature in batches
         total_processed = 0
@@ -99,7 +113,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
             for batch in itertools.batched(msg_ids, batch_size):
                 body: dict = {"ids": list(batch)}
                 if sig.labels_to_add:
-                    body["addLabelIds"] = list(sig.labels_to_add)
+                    body["addLabelIds"] = [label_ids[lbl] for lbl in sig.labels_to_add]
                 if sig.labels_to_remove:
                     body["removeLabelIds"] = list(sig.labels_to_remove)
 
@@ -136,6 +150,7 @@ def download_matching(
         gmail-archiver download-matching "from:example.com" -o ./example_emails
         gmail-archiver download-matching "is:unread" --max-results 10
     """
+    console = Console()
     console.print(f"[bold]Searching for emails:[/bold] {query}\n")
 
     client = get_client(token_file)
@@ -188,7 +203,7 @@ def download_matching(
     sample_metadata = client.get_messages_metadata_batch(all_message_ids[:sample_size], batch_size=sample_size)
 
     for idx, msg in enumerate(sample_metadata, start=1):
-        sample_table.add_row(str(idx), msg["from"][:30], msg["subject"][:50], msg["date"][:20])
+        sample_table.add_row(str(idx), msg.sender[:30], msg.subject[:50], (msg.date_header or "")[:20])
 
     console.print(sample_table)
     if len(all_message_ids) > sample_size:
@@ -287,6 +302,7 @@ def download_email(
         gmail-archiver download-email https://mail.google.com/mail/u/0/#inbox/FMfcgzQcqtXwNDFwNDZXFhFgVnXRzQjw
         gmail-archiver download-email 19b1c55967d81057 -o my_email.eml
     """
+    console = Console()
     extracted_id = id_or_link
     if id_or_link.startswith("http"):
         extracted_id = parse_gmail_link(id_or_link)
@@ -358,6 +374,7 @@ def classify_event(
     Example:
         gmail-archiver classify-event inbox/19b18706c1c9ae8f.eml
     """
+    console = Console()
     console.print(f"Reading {eml_file}...")
 
     # Read raw bytes from .eml file

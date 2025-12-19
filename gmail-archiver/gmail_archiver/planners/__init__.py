@@ -5,7 +5,9 @@ from gmail_archiver.planners.anthem_eob import AnthemEobPlanner
 from gmail_archiver.planners.anthem_reimbursement import AnthemReimbursementPlanner
 from gmail_archiver.planners.anthropic import AnthropicReceiptPlanner
 from gmail_archiver.planners.dbsa import DbsaEventPlanner
+from gmail_archiver.planners.doordash import DoorDashPlanner
 from gmail_archiver.planners.one_medical import OneMedicalPlanner
+from gmail_archiver.planners.spruce import SprucePlanner
 from gmail_archiver.planners.square import SquarePlanner
 from gmail_archiver.planners.usps import UspsPlanner
 
@@ -15,7 +17,9 @@ __all__ = [
     "AnthemReimbursementPlanner",
     "AnthropicReceiptPlanner",
     "DbsaEventPlanner",
+    "DoorDashPlanner",
     "OneMedicalPlanner",
+    "SprucePlanner",
     "SquarePlanner",
     "UspsPlanner",
 ]

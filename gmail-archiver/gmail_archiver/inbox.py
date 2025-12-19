@@ -1,5 +1,6 @@
 """Inbox interface with caching for Gmail operations."""
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from rich.console import Console
@@ -54,7 +55,7 @@ class GmailInbox:
         uncached_ids = [mid for mid in message_ids if mid not in self._full_cache]
 
         if self.show_progress and uncached_ids:
-            self.self.console.print(f"[dim]Fetching {len(uncached_ids)} messages (batch size {batch_size})...[/dim]")
+            self.console.print(f"[dim]Fetching {len(uncached_ids)} messages (batch size {batch_size})...[/dim]")
 
         if uncached_ids:
             fetched = self.client.get_messages_batch(uncached_ids, batch_size=batch_size)
@@ -99,15 +100,27 @@ class GmailInbox:
                 pass
         return result
 
-    def get_metadata(self, message_id: str) -> GmailMessageWithHeaders | None:
-        """Get message metadata for display.
+    def get_message(self, message_id: str) -> Email | GmailMessageWithHeaders:
+        """Get message from cache for display.
 
-        Can return metadata from either cache (metadata or full).
-        Used by display_plan() to look up subject, date, etc.
+        Returns from whichever cache has it (full or metadata).
+        Raises KeyError if not found.
         """
+        if message_id in self._full_cache:
+            return self._full_cache[message_id]
         if message_id in self._metadata_cache:
             return self._metadata_cache[message_id]
-        # If we have full email, we could derive metadata, but for now
-        # just check metadata cache first
-        # TODO: Could create GmailMessageWithHeaders from Email if needed
-        return None
+        raise KeyError(f"Message {message_id} not found in inbox cache")
+
+    def ensure_metadata_cached(self, message_ids: Iterable[str], batch_size: int = 50) -> None:
+        """Ensure message metadata is in cache, batch-fetching any missing ones."""
+        missing = [mid for mid in message_ids if mid not in self._full_cache and mid not in self._metadata_cache]
+        if not missing:
+            return
+
+        if self.show_progress:
+            self.console.print(f"[dim]Fetching {len(missing)} messages for display...[/dim]")
+
+        fetched = self.client.get_messages_metadata_batch(missing, batch_size=batch_size)
+        for msg in fetched:
+            self._metadata_cache[msg.id] = msg

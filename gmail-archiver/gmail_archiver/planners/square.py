@@ -45,33 +45,25 @@ def parse_square(email: Email) -> SquareReceipt:
     # Extract structured data using regex
     # Pattern: "You paid $27.78 with your Visa ending in 6915 to Bean Scene Cafe on Mar 16 2023 at 10:26 AM."
     # Captures datetime up to period or end of string
-    payment_pattern = re.search(
-        r"You paid \$([0-9,]+\.[0-9]{2}) with your (\w+) ending in (\d{4}) to (.+?) on ([^.]+?)(?:\.|$)", text
-    )
-
     amount_decimal = None
     card_type = None
     card_last4 = None
     merchant_name = None
     transaction_dt = None
 
-    if payment_pattern:
-        # Extract amount
+    if m := re.search(
+        r"You paid \$([0-9,]+\.[0-9]{2}) with your (\w+) ending in (\d{4}) to (.+?) on ([^.]+?)(?:\.|$)", text
+    ):
         with contextlib.suppress(ValueError, TypeError):
-            amount_decimal = Decimal(payment_pattern.group(1).replace(",", ""))
+            amount_decimal = Decimal(m.group(1).replace(",", ""))
 
-        # Extract card details
-        card_type = payment_pattern.group(2)
-        card_last4 = payment_pattern.group(3)
+        card_type = m.group(2)
+        card_last4 = m.group(3)
+        merchant_name = m.group(4)
 
-        # Extract merchant name
-        merchant_name = payment_pattern.group(4)
-
-        # Extract transaction datetime (try to parse, fail silently if format doesn't match)
-        # Expected format: "Mar 16 2023 at 10:26 AM"
-        datetime_str = payment_pattern.group(5).strip()
+        # Parse transaction datetime - expected format: "Mar 16 2023 at 10:26 AM"
         with contextlib.suppress(ValueError):
-            transaction_dt = datetime.strptime(datetime_str, "%b %d %Y at %I:%M %p")
+            transaction_dt = datetime.strptime(m.group(5).strip(), "%b %d %Y at %I:%M %p")
 
     return SquareReceipt(
         merchant_name=merchant_name,

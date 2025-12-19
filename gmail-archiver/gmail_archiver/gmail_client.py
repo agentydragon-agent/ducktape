@@ -117,57 +117,27 @@ class GmailClient:
             except ValueError:
                 return []  # Label doesn't exist
 
-        message_ids = []
-        page_token = None
-
-        while True:
-            query_params = {
-                "userId": "me",
-                "labelIds": label_ids,
-                "maxResults": 100,  # API max per page
-            }
-            if page_token:
-                query_params["pageToken"] = page_token
-
-            results = self.service.users().messages().list(**query_params).execute()
-            messages = results.get("messages", [])
-            message_ids.extend([msg["id"] for msg in messages])
-
-            # Check if we've hit the user's max_results limit
-            if max_results and len(message_ids) >= max_results:
-                return message_ids[:max_results]
-
-            # Check for next page
-            page_token = results.get("nextPageToken")
-            if not page_token:
-                break
-
-        return message_ids
+        return self._list_messages({"labelIds": label_ids}, max_results)
 
     def list_messages_by_query(self, query: str, max_results: int | None = None) -> list[str]:
+        return self._list_messages({"q": query}, max_results)
+
+    def _list_messages(self, extra_params: dict, max_results: int | None = None) -> list[str]:
         message_ids = []
         page_token = None
 
         while True:
-            query_params = {
-                "userId": "me",
-                "q": query,
-                "maxResults": 100,  # API max per page
-            }
+            query_params = {"userId": "me", "maxResults": 100, **extra_params}
             if page_token:
                 query_params["pageToken"] = page_token
 
             results = self.service.users().messages().list(**query_params).execute()
-            messages = results.get("messages", [])
-            message_ids.extend([msg["id"] for msg in messages])
+            message_ids.extend(msg["id"] for msg in results.get("messages", []))
 
-            # Check if we've hit the user's max_results limit
             if max_results and len(message_ids) >= max_results:
                 return message_ids[:max_results]
 
-            # Check for next page
-            page_token = results.get("nextPageToken")
-            if not page_token:
+            if not (page_token := results.get("nextPageToken")):
                 break
 
         return message_ids

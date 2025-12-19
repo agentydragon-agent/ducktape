@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from gmail_archiver.gmail_api_models import SystemLabel
+from gmail_archiver.models import Email
 from gmail_archiver.plan import Plan, PlannedAction
 
 if TYPE_CHECKING:
@@ -32,11 +33,11 @@ def gmail_link(message_id: str) -> str:
     return f"[link={url}]{message_id}[/link]"
 
 
-def _collect_display_columns(plan: Plan) -> list[tuple[str, str]]:
-    """Collect display columns from all Displayable custom_data in plan."""
+def _collect_display_columns_for_actions(actions: list[PlannedAction]) -> list[tuple[str, str]]:
+    """Collect display columns from Displayable custom_data in actions."""
     seen_keys: set[str] = set()
     columns: list[tuple[str, str]] = []
-    for planned_action in plan.actions.values():
+    for planned_action in actions:
         data = planned_action.action.custom_data
         if isinstance(data, Displayable):
             for key, label in data.display_columns():
@@ -46,52 +47,42 @@ def _collect_display_columns(plan: Plan) -> list[tuple[str, str]]:
     return columns
 
 
-def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: bool, group_by_category: bool = False):
+def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: bool):
     if not plan.actions:
         console.print("[yellow]No actions planned[/yellow]")
         return
 
-    # Build table
-    table = Table(title="Inbox Cleanup - Action Plan")
-    table.add_column("Action", style="cyan")
-    table.add_column("Gmail Link", style="blue", no_wrap=True)
-    table.add_column("Date", style="magenta")
-    table.add_column("Subject", style="green")
+    # Ensure all messages are cached (batch-fetch any missing)
+    inbox.ensure_metadata_cached(plan.actions.keys())
 
-    # Collect custom columns from Displayable models
-    custom_columns = _collect_display_columns(plan)
+    # Group by planner
+    by_planner: dict[str, list[tuple[str, PlannedAction]]] = {}
+    for message_id, planned_action in plan.actions.items():
+        planner_name = planned_action.planner_name or "Unknown"
+        if planner_name not in by_planner:
+            by_planner[planner_name] = []
+        by_planner[planner_name].append((message_id, planned_action))
 
-    # Add custom columns
-    for _key, label in custom_columns:
-        table.add_column(label, style="yellow")
+    # Display separate table per planner
+    for planner_name, items in by_planner.items():
+        # Collect custom columns for this planner's actions
+        custom_columns = _collect_display_columns_for_actions([pa for _, pa in items])
 
-    # Group by planner if requested
-    if group_by_category and plan.planner_name is None:
-        # Merged plan - group by planner
-        by_planner: dict[str, list[tuple[str, PlannedAction]]] = {}
-        for message_id, planned_action in plan.actions.items():
-            planner_name = planned_action.planner_name
-            if planner_name not in by_planner:
-                by_planner[planner_name] = []
-            by_planner[planner_name].append((message_id, planned_action))
+        # Build table for this planner
+        table = Table(title=planner_name)
+        table.add_column("Action", style="cyan")
+        table.add_column("Gmail Link", style="blue", no_wrap=True)
+        table.add_column("Date", style="magenta")
+        table.add_column("Subject", style="green")
 
-        # Display grouped
-        for planner_name, items in by_planner.items():
-            # Add planner header row
-            table.add_row(f"[bold]{planner_name}[/bold]", "", "", "", *[""] * len(custom_columns))
+        for _key, label in custom_columns:
+            table.add_column(label, style="yellow")
 
-            # Add items for this planner
-            for message_id, planned_action in items:
-                _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
-
-            # Add blank separator row
-            table.add_row("", "", "", "", *[""] * len(custom_columns))
-    else:
-        # Single planner or no grouping - just list all
-        for message_id, planned_action in plan.actions.items():
+        for message_id, planned_action in items:
             _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
 
-    console.print(table)
+        console.print(table)
+        console.print()
 
 
 def _add_table_row(
@@ -102,13 +93,11 @@ def _add_table_row(
     dry_run: bool,
     custom_columns: list[tuple[str, str]],
 ):
-    # Look up message metadata from inbox cache
-    metadata = inbox.get_metadata(message_id)
-    if not metadata:
-        raise RuntimeError(f"Missing metadata for message {message_id} - not found in inbox cache")
+    # Get message from inbox cache
+    message = inbox.get_message(message_id)
+    action = planned_action.action
 
     # Compute action icon
-    action = planned_action.action
     has_ops = action.labels_to_add or action.labels_to_remove
     removes_inbox = SystemLabel.INBOX in action.labels_to_remove
 
@@ -122,9 +111,12 @@ def _add_table_row(
     # Format Gmail link (just show message ID)
     link = message_id[:16]
 
-    # Format date and subject from metadata
-    date_str = (metadata.date_header or "")[:20]
-    subject = (metadata.subject or "")[:40]
+    # Format date and subject from message
+    if isinstance(message, Email):
+        date_str = (str(message.date) if message.date else "")[:20]
+    else:
+        date_str = (message.date_header or "")[:20]
+    subject = (message.subject or "")[:40]
 
     # Format custom data values using protocol
     custom_values = []
