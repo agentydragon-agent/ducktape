@@ -839,9 +839,36 @@ class AgentRegistry:
     async def run_agent(self, transcript_id: UUID, message: str) -> str:
         handle = self._agents.get(transcript_id)
         if handle is None:
-            raise ValueError(f"No agent with transcript_id {transcript_id}")
+            # Try to restore from database (app restart scenario)
+            handle = await self._restore_agent(transcript_id)
+            self._agents[transcript_id] = handle
 
         return await handle.run(message)
+
+    async def _restore_agent(self, transcript_id: UUID) -> AgentHandle:
+        """Restore agent state from database after app restart."""
+        run = get_agent_run(transcript_id)
+        if run is None:
+            raise ValueError(f"No agent with transcript_id {transcript_id}")
+
+        # Reconstruct config from database
+        config = AgentConfig(
+            definition_id=run.agent_definition_id,
+            parent_transcript_id=run.parent_transcript_id,
+            type_config=run.type_config,  # Pydantic model from JSONB
+        )
+
+        # Create handle (unpacks definition, starts container)
+        handle = await AgentHandle.create(
+            transcript_id=transcript_id,
+            config=config,
+        )
+
+        # Restore conversation history from events table
+        events = get_events_for_transcript(transcript_id)
+        handle.agent.restore_from_events(events)
+
+        return handle
 
     async def cleanup(self, transcript_id: UUID):
         """Cleanup a specific agent."""
