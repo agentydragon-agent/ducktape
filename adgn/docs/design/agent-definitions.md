@@ -636,32 +636,36 @@ These properties MUST be maintained by the implementation:
 
 These refactors have no dependencies and can be merged independently:
 
-1. **`AgentType` StrEnum** (Python)
+1. ✅ **`AgentType` StrEnum** (Python)
    - Define enum in `adgn.props.agent_types` module
    - No callers yet, just defines the enum
+   - **Done:** `adgn/src/adgn/props/agent_types.py` + tests
 
-2. **`agent_type` enum** (PostgreSQL)
+2. ✅ **`agent_type` enum** (PostgreSQL)
    - Add enum type without any tables using it yet
    - Simple migration, no data changes
+   - **Done:** `migrations/versions/20251223000000_add_agent_type_enum.py`
 
-3. **TypeConfig Pydantic models**
+3. ✅ **TypeConfig Pydantic models**
    - Define `CriticTypeConfig`, `GraderTypeConfig`, `FreeformTypeConfig`, `PromptOptimizerTypeConfig`
    - Define `TypeConfig` discriminated union
    - Can be validated and tested in isolation
+   - **Done:** `adgn/src/adgn/props/agent_types.py` + tests
 
-4. **`CaptureTextHandler`**
+4. **`CaptureTextHandler`** (needs Docker for testing)
    - New handler that captures assistant text and aborts loop
    - Useful beyond agent definitions (any conversational use case)
    - Add to `adgn.props.handlers`
 
-5. **`Agent.run()` return type refactor**
+5. **`Agent.run()` return type refactor** (needs Docker for testing)
    - Change from returning `AgentResult` to returning `None`
    - Callers already mostly ignore the return value
    - Prepares for resumable `run()` pattern
 
-6. **`get_workspace_path(agent_run_id)` helper**
+6. ✅ **`get_workspace_path(agent_run_id)` helper**
    - Simple utility: `~/.local/share/adgn/workspaces/{agent_run_id}/`
    - No dependencies
+   - **Done:** `adgn/src/adgn/props/agent_workspace.py` + tests
 
 7. **Extract MCP connection docs to package resources**
    - Move `mcp_http_connection.md` to `adgn.props.prompts` resources
