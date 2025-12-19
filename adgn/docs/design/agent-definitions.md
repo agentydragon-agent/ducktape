@@ -329,24 +329,30 @@ the helper explicitly.
 1. Optimizer starts with access to:
    - Its own definition unpacked at /workspace
    - All agent definitions readable via database
+   - Evaluation results showing which definitions perform well
 
-2. Optimizer inflates current best critic:
-   $ inflate-agent critic /workspace/agents/critic
+2. Optimizer queries evaluation data to identify promising definitions:
+   - Which critic definitions have high scores?
+   - Which ones show interesting patterns worth exploring?
+   - Decision is data-driven, not hardcoded to built-in definitions
 
-3. Optimizer reads and analyzes:
-   - /workspace/agents/critic/AGENT.md
-   - /workspace/agents/critic/tools/...
+3. Optimizer inflates selected definition(s) for analysis:
+   $ agent-helpers inflate critic_a1b2c3 /workspace/agents/critic_a1b2c3
 
-4. Optimizer creates modified version:
-   $ cp -r /workspace/agents/critic /workspace/agents/critic_new
+4. Optimizer reads and analyzes:
+   - /workspace/agents/critic_a1b2c3/AGENT.md
+   - /workspace/agents/critic_a1b2c3/tools/...
+
+5. Optimizer creates modified version:
+   $ cp -r /workspace/agents/critic_a1b2c3 /workspace/agents/critic_new
    $ edit /workspace/agents/critic_new/AGENT.md
    $ edit /workspace/agents/critic_new/tools/analyze.py
 
-5. Optimizer saves new definition (INSERT via RLS):
-   $ save-agent-definition --type critic /workspace/agents/critic_new
-   # Returns: Created agent definition ID critic_a1b2c3
+6. Optimizer saves new definition (INSERT via RLS):
+   $ agent-helpers save --type critic /workspace/agents/critic_new
+   # Returns: Created agent definition ID critic_d4e5f6
 
-6. Optimizer runs critic with new definition:
+7. Optimizer runs critic with new definition:
    $ run-critic --definition critic_a1b2c3 --snapshot ducktape/2025-01-15
 ```
 
