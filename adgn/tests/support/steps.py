@@ -17,7 +17,6 @@ from pydantic import BaseModel, ConfigDict, TypeAdapter
 
 from adgn.mcp._shared.calltool import extract_structured_content
 from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
-from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
@@ -25,7 +24,6 @@ from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from adgn.mcp.ui.server import SendMessageInput
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
-from adgn.props.critic.submit_server import CriticSubmitServer, UpsertIssueInput
 from adgn.props.docker_env import DOCKER_MOUNT_PREFIX
 from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
@@ -387,24 +385,6 @@ class EchoCall:
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         return factory.make_mcp_tool_call(ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput(text=self.text))
-
-
-@dataclass
-class CriticSubmitUpsertIssueCall:
-    """Submit issue via critic_submit."""
-
-    critic_submit: Mounted[CriticSubmitServer]
-    issue_id: str
-    description: str
-
-    def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
-        upsert_tool = self.critic_submit.server.upsert_issue_tool
-        assert upsert_tool is not None, "upsert_issue_tool not available (incremental_tools not enabled)"
-        return factory.make_mcp_tool_call(
-            self.critic_submit.prefix,
-            self.critic_submit.tool_name(upsert_tool),
-            UpsertIssueInput(issue_id=self.issue_id, description=self.description),
-        )
 
 
 @dataclass

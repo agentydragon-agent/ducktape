@@ -4,9 +4,7 @@ from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
 
-async def test_hydrated_copy_local_specimen_hydrates(
-    test_specimens_hydrator: SnapshotHydrator, synced_test_fixtures
-) -> None:
+async def test_hydrated_copy_local_specimen_hydrates(test_specimens_hydrator: SnapshotHydrator, synced_test_db) -> None:
     """Hydrated local specimen workspace should contain the expected files.
 
     Uses test-trivial fixture to verify local specimen hydration works.
@@ -20,7 +18,7 @@ async def test_hydrated_copy_local_specimen_hydrates(
 
 
 async def test_hydrated_copy_validation_specimen_has_expected_structure(
-    test_specimens_hydrator: SnapshotHydrator, synced_test_fixtures
+    test_specimens_hydrator: SnapshotHydrator, synced_test_db
 ) -> None:
     """Hydrated test-validation specimen should have expected structure.
 

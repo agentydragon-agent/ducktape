@@ -74,7 +74,7 @@ def _make_improvement_steps() -> list[Step]:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_prompt_improve_e2e_success(
-    synced_test_fixtures, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
+    synced_test_db, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
 ):
     """Test improvement agent successfully submits improved prompt.
 
@@ -103,7 +103,7 @@ async def test_prompt_improve_e2e_success(
         model="gpt-5-nano",
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         client=runner,
     )
 
@@ -136,7 +136,7 @@ async def test_prompt_improve_e2e_success(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_prompt_improve_e2e_multiple_examples(
-    synced_test_fixtures, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
+    synced_test_db, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
 ):
     """Test improvement agent with multiple training examples.
 
@@ -163,7 +163,7 @@ async def test_prompt_improve_e2e_multiple_examples(
         model="gpt-5-nano",
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         client=runner,
     )
 

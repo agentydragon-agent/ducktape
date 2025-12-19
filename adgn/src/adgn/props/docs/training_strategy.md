@@ -162,7 +162,8 @@ Generates training examples:
 
 See:
 - `models/training_example.py` - TrainingExample model and filtering logic
-- `db/models.py` - ORM models (Snapshot, Example, TruePositive, FalsePositive)
+- `db/models.py` - ORM models (Snapshot, TruePositive, FalsePositive, CriticRun, GraderRun, etc.)
+- `db/examples.py` - Example ORM model (separate file due to import order)
 - `db/sync/_sync.py` - `generate_examples_for_snapshot()` - auto-generates examples from `expect_caught_from` data
 - `db/datapoints.py` - `get_examples_for_split()` - loads examples for GEPA/training
 - `gepa/gepa_adapter.py` - GEPA integration (loads training examples from database via ORM)

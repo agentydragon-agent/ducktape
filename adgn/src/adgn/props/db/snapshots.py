@@ -317,8 +317,17 @@ class DBGraderMaxTurnsExceeded(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class DBGraderReportedFailure(BaseModel):
+    """Database representation of grader explicitly reporting it cannot complete."""
+
+    tag: Literal["reported_failure"] = "reported_failure"
+    reason: str = Field(description="Reason provided by the grader for inability to complete")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
 DBGraderOutput = Annotated[
-    DBGraderSuccess | DBGraderMaxTurnsExceeded,
-    Field(discriminator="tag", description="Grader output: either success or max turns exceeded"),
+    DBGraderSuccess | DBGraderMaxTurnsExceeded | DBGraderReportedFailure,
+    Field(discriminator="tag", description="Grader output: success, max turns exceeded, or reported failure"),
 ]
 """Discriminated union of grader outcomes for database persistence."""

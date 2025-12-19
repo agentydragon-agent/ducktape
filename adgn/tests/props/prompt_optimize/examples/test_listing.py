@@ -17,7 +17,7 @@ from adgn.props.prompt_optimize.examples.listing import (
 )
 
 
-def test_list_train_examples_with_synced_data(synced_test_fixtures, capsys):
+def test_list_train_examples_with_synced_data(synced_test_db, capsys):
     """Test that list_train_examples produces reasonable output with train examples."""
 
     with get_session() as session:
@@ -53,7 +53,7 @@ def test_list_train_examples_empty_database(test_db, capsys):
     assert "first 10 of 0" in output or "(first 10 of 0)" in output
 
 
-def test_list_valid_snapshots_with_synced_data(synced_test_fixtures, capsys):
+def test_list_valid_snapshots_with_synced_data(synced_test_db, capsys):
     """Test that list_valid_snapshots produces reasonable output with valid snapshots."""
     with get_session() as session:
         valid_snapshots = session.query(Snapshot).filter(Snapshot.split == "valid").all()
@@ -81,7 +81,7 @@ def test_list_valid_snapshots_empty_database(test_db, capsys):
     assert "0 total" in output or "(0 total)" in output
 
 
-def test_list_full_snapshot_train_examples_with_synced_data(synced_test_fixtures, capsys):
+def test_list_full_snapshot_train_examples_with_synced_data(synced_test_db, capsys):
     """Test that list_full_snapshot_train_examples produces reasonable output."""
     with get_session() as session:
         train_examples = (
@@ -122,7 +122,7 @@ def test_list_full_snapshot_train_examples_empty_database(test_db, capsys):
     assert "Full-Snapshot Train Examples (0 total)" in output
 
 
-def test_show_dataset_scale_with_synced_data(synced_test_fixtures, capsys):
+def test_show_dataset_scale_with_synced_data(synced_test_db, capsys):
     """Test that show_dataset_scale produces reasonable output with test fixtures."""
     show_dataset_scale()
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import logging
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -30,6 +31,8 @@ from tests.llm.support.openai_mock import LIVE, make_mock
 
 if TYPE_CHECKING:
     from tests.support.steps import Step
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture(scope="session")
@@ -166,6 +169,12 @@ class _StepRunner(OpenAIModelProto):
     Usage:
         runner = make_step_runner(steps=[DockerExecCallWithBootstrapValidation(...)])
         result = await run_critic(..., client=runner)
+
+    Debug logging:
+        To see step execution with timestamps (for timeout tuning):
+            pytest --log-cli-level=DEBUG tests/path/to/test.py
+
+        Timestamps are included by default via pyproject.toml log_cli_format.
     """
 
     def __init__(self, factory: ResponsesFactory, steps: Sequence[Step]) -> None:
@@ -183,7 +192,10 @@ class _StepRunner(OpenAIModelProto):
         """Execute current step and advance. Implements OpenAIModelProto."""
         if self.turn >= len(self.steps):
             pytest.fail(f"Exceeded {len(self.steps)} expected turns (got turn {self.turn + 1})")
-        result = self.steps[self.turn].execute(req, self.factory)
+        step = self.steps[self.turn]
+        step_type = type(step).__name__
+        logger.debug("Step %d/%d (%s)", self.turn + 1, len(self.steps), step_type)
+        result = step.execute(req, self.factory)
         self.turn += 1
         return result
 

@@ -13,7 +13,7 @@ from tests.props.conftest import get_example, make_critic_and_grader_run, make_g
 
 
 @pytest.fixture
-def standard_valset(synced_test_fixtures, sample_subtract_py_scope, calculator_py_scope) -> list[Example]:
+def standard_valset(synced_test_db, sample_subtract_py_scope, calculator_py_scope) -> list[Example]:
     """Standard two-snapshot validation set for most tests.
 
     Contains specific VALID examples:
@@ -28,7 +28,7 @@ def standard_valset(synced_test_fixtures, sample_subtract_py_scope, calculator_p
 
 
 @pytest.fixture
-def validation_subtract_valset(synced_test_fixtures, sample_subtract_py_scope) -> list[Example]:
+def validation_subtract_valset(synced_test_db, sample_subtract_py_scope) -> list[Example]:
     """Valset containing test-validation/sample_subtract.py (matches db_with_historical_runs example1)."""
     with get_session() as session:
         example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
@@ -37,7 +37,7 @@ def validation_subtract_valset(synced_test_fixtures, sample_subtract_py_scope) -
 
 
 @pytest.fixture
-def validation_calculator_valset(synced_test_fixtures, calculator_py_scope) -> list[Example]:
+def validation_calculator_valset(synced_test_db, calculator_py_scope) -> list[Example]:
     """Valset containing test-validation-2/calculator.py (matches db_with_historical_runs example2)."""
     with get_session() as session:
         example = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
@@ -46,7 +46,7 @@ def validation_calculator_valset(synced_test_fixtures, calculator_py_scope) -> l
 
 
 @pytest.fixture
-def train_add_valset(synced_test_fixtures, add_py_scope) -> list[Example]:
+def train_add_valset(synced_test_db, add_py_scope) -> list[Example]:
     """Valset containing test-trivial/add.py (TRAIN split, has runs in db_with_historical_runs)."""
     with get_session() as session:
         example = get_example(session, SnapshotSlug("test-fixtures/test-trivial"), add_py_scope)
@@ -55,7 +55,7 @@ def train_add_valset(synced_test_fixtures, add_py_scope) -> list[Example]:
 
 
 @pytest.fixture
-def db_with_historical_runs(synced_test_fixtures, sample_subtract_py_scope, calculator_py_scope, add_py_scope):
+def db_with_historical_runs(synced_test_db, sample_subtract_py_scope, calculator_py_scope, add_py_scope):
     """Fixture providing database with historical critic + grader runs.
 
     Creates runs for specific VALID and TRAIN examples:
@@ -225,7 +225,7 @@ def test_scope_hash_matching(db_with_historical_runs, validation_calculator_vals
     assert state["prog_candidate_val_subscores"][0][0] == 0.6  # example2's recall
 
 
-def test_critic_scope_spec_all(db_with_historical_runs, synced_test_fixtures, all_files_scope):
+def test_critic_scope_spec_all(db_with_historical_runs, synced_test_db, all_files_scope):
     """Test that CriticScopeSpec 'all' is handled correctly in index mapping."""
     with get_session() as session:
         all_files_example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), all_files_scope)

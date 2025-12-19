@@ -25,7 +25,7 @@ from adgn.props.db.examples import Example
 from adgn.props.db.prompts import hash_and_upsert_prompt
 
 
-def _setup_clustering_run_with_unknowns(synced_test_fixtures) -> tuple[int, UUID, list[str]]:
+def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[int, UUID, list[str]]:
     """Create a clustering run with grader run containing unknowns.
 
     Returns:
@@ -112,7 +112,7 @@ def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_cluster(
-    synced_test_fixtures, make_step_runner, async_docker_client, test_specimens_hydrator
+    synced_test_db, make_step_runner, async_docker_client, test_specimens_hydrator
 ):
     """Test clustering agent assigns unknowns to a new cluster using CLI helpers.
 
@@ -122,7 +122,7 @@ async def test_clustering_http_mode_assign_to_cluster(
     - Mocked OpenAI responses
     """
     # Setup: Create clustering run with unknowns
-    clustering_run_id, grader_run_id, unknown_ids = _setup_clustering_run_with_unknowns(synced_test_fixtures)
+    clustering_run_id, grader_run_id, unknown_ids = _setup_clustering_run_with_unknowns(synced_test_db)
 
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     steps = _make_clustering_steps(grader_run_id, unknown_ids)
@@ -133,7 +133,7 @@ async def test_clustering_http_mode_assign_to_cluster(
         run_id=clustering_run_id,
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         client=runner,
     )
 
@@ -204,7 +204,7 @@ def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: lis
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_existing(
-    synced_test_fixtures, make_step_runner, async_docker_client, test_specimens_hydrator
+    synced_test_db, make_step_runner, async_docker_client, test_specimens_hydrator
 ):
     """Test clustering agent maps unknowns to existing TP/FP using CLI helpers.
 
@@ -212,7 +212,7 @@ async def test_clustering_http_mode_assign_to_existing(
     new clusters.
     """
     # Setup: Create clustering run with unknowns
-    clustering_run_id, grader_run_id, unknown_ids = _setup_clustering_run_with_unknowns(synced_test_fixtures)
+    clustering_run_id, grader_run_id, unknown_ids = _setup_clustering_run_with_unknowns(synced_test_db)
 
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     steps = _make_clustering_steps_with_tp_mapping(grader_run_id, unknown_ids)
@@ -223,7 +223,7 @@ async def test_clustering_http_mode_assign_to_existing(
         run_id=clustering_run_id,
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         client=runner,
     )
 

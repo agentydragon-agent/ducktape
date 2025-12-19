@@ -10,7 +10,8 @@ from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.splits import Split
 
-# Note: synced_test_db fixture is provided in tests/props/conftest.py
+# Note: synced_test_db fixture syncs TEST fixtures (minimal data)
+# Use synced_production_db for tests that need production specimens
 
 
 def test_specimen_has_valid_split(synced_test_db):
@@ -47,7 +48,7 @@ def test_split_distribution(synced_test_db):
         # assert_that(test_count, greater_than_or_equal_to(1))
 
 
-async def test_all_specimens_in_splits_can_load(synced_test_db, production_specimens_hydrator):
+async def test_all_specimens_in_splits_can_load(synced_production_db, production_specimens_hydrator):
     """Verify every specimen can be loaded without errors."""
     # Get all slugs from database
     with get_session() as session:
@@ -64,7 +65,7 @@ async def test_all_specimens_in_splits_can_load(synced_test_db, production_speci
                 assert_that(len(snapshot.true_positives), greater_than_or_equal_to(1))
 
 
-async def test_split_issue_counts(synced_test_db, production_specimens_hydrator):
+async def test_split_issue_counts(synced_production_db, production_specimens_hydrator):
     """Verify issue counts meet minimum constraints (slow test, uses database).
 
     Constraint: Valid and Test must each have at least 60 issues.

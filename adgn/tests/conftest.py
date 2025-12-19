@@ -489,7 +489,8 @@ def make_buffered_client():
 
     @asynccontextmanager
     async def _open(servers: McpServerSpecs):
-        async with Compositor() as comp:
+        # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
+        async with Compositor(version="1.0.0-test") as comp:
             await _mount_servers(comp, servers)
             buf = NotificationsBuffer(compositor=comp)
             async with Client(comp, message_handler=buf.handler) as sess:

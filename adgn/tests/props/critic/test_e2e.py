@@ -51,7 +51,7 @@ def _make_critic_steps_zero_issues_minimal() -> list[Step]:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_http_mode_zero_issues(
-    synced_test_fixtures,
+    synced_test_db,
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
@@ -78,7 +78,7 @@ async def test_critic_http_mode_zero_issues(
         input_data=input_data,
         client=runner,
         hydrator=test_specimens_hydrator,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
@@ -102,7 +102,7 @@ async def test_critic_http_mode_zero_issues(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_does_not_infinite_loop_on_zero_issues(
-    synced_test_fixtures,
+    synced_test_db,
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
@@ -128,7 +128,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
         input_data=input_data,
         client=runner,
         hydrator=test_specimens_hydrator,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,
@@ -143,7 +143,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_http_bootstrap_connection(
-    synced_test_fixtures,
+    synced_test_db,
     test_trivial_specimen,
     test_snapshot,
     subtract_file_scope,
@@ -165,7 +165,7 @@ async def test_critic_http_bootstrap_connection(
         hydrator=test_specimens_hydrator,
         critic_run_id=critic_run_id,
         scope=subtract_file_scope,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         mount_properties=False,
     )
 
@@ -272,7 +272,7 @@ def _make_critic_steps_with_issues() -> list[Step]:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_critic_http_mode_submit_with_issues(
-    synced_test_fixtures,
+    synced_test_db,
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
@@ -297,7 +297,7 @@ async def test_critic_http_mode_submit_with_issues(
         input_data=input_data,
         client=runner,
         hydrator=test_specimens_hydrator,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         prompt_optimization_run_id=None,
         docker_client=async_docker_client,
         mount_properties=False,

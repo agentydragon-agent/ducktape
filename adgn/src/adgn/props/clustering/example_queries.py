@@ -27,11 +27,11 @@ from __future__ import annotations
 import sys
 from uuid import UUID
 
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
+from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
-from adgn.props.db.config import get_database_config
 from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision, ReportedIssue
 from adgn.props.ids import SnapshotSlug
 
@@ -277,13 +277,9 @@ def main() -> None:
 
     command = sys.argv[1]
 
-    # Connect to database
-    config = get_database_config()
-    # Note: This connects with admin credentials from environment (PG* vars)
-    # When running as a scoped agent, those vars will be set to scoped user credentials
-    engine = create_engine(config.admin.url())
-
-    with Session(engine) as session:
+    # Connect to database using get_session() which auto-initializes from PG* env vars.
+    # When running as a scoped agent, those vars will be set to scoped user credentials.
+    with get_session() as session:
         if command == "show-run-info":
             show_run_info(session)
 
@@ -313,8 +309,6 @@ def main() -> None:
             print(f"Unknown command: {command}")
             print(__doc__)
             sys.exit(1)
-
-    engine.dispose()
 
 
 if __name__ == "__main__":

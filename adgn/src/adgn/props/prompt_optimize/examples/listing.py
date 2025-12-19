@@ -3,13 +3,29 @@
 This module demonstrates how to query the database for examples and snapshots,
 with filtering by split (TRAIN/VALID/TEST) and scope kind (full-snapshot vs per-file).
 
-Functions:
-- list_train_examples(): Show training examples for critic evaluation
-- list_valid_snapshots(): Show validation snapshots (examples table may be RLS-blocked)
-- list_full_snapshot_train_examples(): Show full-snapshot training examples
-- show_dataset_scale(): Count examples by split and scope kind
+IMPORTANT: These functions PRINT output to console - they don't return values.
+For programmatic access, use direct database queries (see examples in function bodies).
 
-Note: In whole-repo mode, the examples table is RLS-blocked for VALID/TEST splits.
+Available display functions (call without arguments, they print to console):
+- list_train_examples() - Show training examples for critic evaluation
+- list_valid_snapshots() - Show validation snapshots (examples table may be RLS-blocked)
+- list_full_snapshot_train_examples() - Show full-snapshot training examples
+- show_dataset_scale() - Count examples by split and scope kind
+
+Note: There is NO `list_examples()` function. Use the specific functions above.
+For programmatic access, query the database directly:
+```python
+from adgn.props.db import get_session
+from adgn.props.db.examples import Example
+from adgn.props.db.models import Snapshot
+from adgn.props.splits import Split
+
+with get_session() as session:
+    # Query train examples
+    examples = session.query(Example).join(Snapshot).filter(Snapshot.split == Split.TRAIN).all()
+```
+
+In whole-repo mode, the examples table is RLS-blocked for VALID/TEST splits.
 Use list_valid_snapshots() instead.
 """
 

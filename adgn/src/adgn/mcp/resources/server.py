@@ -334,8 +334,10 @@ class ResourcesServer(EnhancedFastMCP):
         self._subs: dict[tuple[str, str], SubscriptionRecord] = {}
         self._list_subscribed_servers: set[str] = set()
 
+        # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
         super().__init__(
             RESOURCES_SERVER_NAME,
+            version="1.0.0",
             instructions=(
                 "Resources aggregator for accessing MCP resources across all mounted servers.\n\n"
                 "**Access model:** Resources are identified by (server, URI) pairs. Each resource belongs to "

@@ -15,7 +15,7 @@ from adgn.props.prompt_optimize.examples.pareto import (
 from tests.props.conftest import make_critic_and_grader_run, make_grader_output
 
 
-def test_show_winning_prompts_orm_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_show_winning_prompts_orm_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that show_winning_prompts_orm produces output with training data."""
 
     with get_session() as session:
@@ -54,7 +54,7 @@ def test_show_winning_prompts_orm_empty(test_db, capsys):
     assert "examples by best recall" in output
 
 
-def test_show_prompts_by_wins_sql_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_show_prompts_by_wins_sql_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that show_prompts_by_wins_sql produces output with validation data."""
     with get_session() as session:
         all_valid_examples = (
@@ -92,7 +92,7 @@ def test_show_prompts_by_wins_sql_empty(test_db, capsys):
     assert "prompts by validation examples won" in output
 
 
-def test_show_difficult_examples_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_show_difficult_examples_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that show_difficult_examples produces output with training data."""
     with get_session() as session:
         all_train_examples = (

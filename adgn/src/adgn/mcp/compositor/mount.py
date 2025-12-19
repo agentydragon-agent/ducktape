@@ -190,9 +190,15 @@ class Mount:
             child_client = Client(server, message_handler=handler)
             await stack.enter_async_context(child_client)
 
-            # Create proxy
-            proxy = FastMCP.as_proxy(server)
-            # Ensure proxy uses the persistent child client session
+            # Create proxy with persistent child client
+            # NOTE: We must set client_factory BEFORE proxy construction because
+            # FastMCPProxy passes client_factory to its managers at construction time.
+            # Setting proxy.client_factory after construction would not update the
+            # already-instantiated ProxyToolManager, ProxyResourceManager, etc.
+            from fastmcp.server.proxy import FastMCPProxy
+
+            proxy = FastMCPProxy(client_factory=lambda: child_client)
+            # Also set on proxy for any code that reads it directly
             proxy.client_factory = lambda: child_client
 
             # Verify initialize result is accessible

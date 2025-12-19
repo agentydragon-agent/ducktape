@@ -21,17 +21,18 @@ import aiodocker
 from fastmcp.client import Client
 from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, Field
-from sqlalchemy import Engine, create_engine, func, select
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call
-from adgn.agent.handler import BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
+from adgn.agent.events import AssistantText
+from adgn.agent.handler import BaseHandler, SequenceHandler
 from adgn.agent.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.model import OpenAIModelProto
+from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
 from adgn.props.clustering.user_manager import ClusteringUserManager
 from adgn.props.db import get_session
@@ -81,35 +82,33 @@ class ClusteringResult(BaseModel):
 # ============================================================================
 
 
-class ClusteringCompletionHandler(BaseHandler):
-    """Check completion every turn and abort when all unknowns are assigned.
+class ClusteringHandler(BaseHandler):
+    """Combined completion check and text redirect handler for clustering agent.
 
-    Queries the database EVERY turn to check if all unknowns have been assigned.
-    When complete, returns Abort to terminate the agent successfully.
+    On each turn:
+    1. Check if all unknowns are assigned → Abort if done
+    2. If agent sent text instead of tool calls → inject reminder with progress/examples
 
-    NO progress messages are injected - the agent can query progress itself if needed.
+    Queries the database once per turn to get current progress.
     """
 
-    def __init__(self, run_id: int, db_config: DatabaseConfig):
-        """Initialize completion handler.
+    def __init__(self, run_id: int):
+        """Initialize handler.
 
         Args:
             run_id: Clustering run ID to monitor
-            db_config: Database configuration for queries
         """
         self._run_id = run_id
-        self._db_config = db_config
-        self._engine: Engine | None = None
+        self._text_detected = False
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        """Mark that assistant text was detected."""
+        self._text_detected = True
 
     def on_before_sample(self) -> LoopDecision:
-        """Check completion before each sampling turn."""
-        # Initialize engine on first use
-        if self._engine is None:
-            self._engine = create_engine(self._db_config.admin_url())
-
-        # Query for remaining unknowns
-        with Session(self._engine) as session:
-            # Count total unknowns from all grader runs for this snapshot
+        """Check completion and redirect text messages."""
+        with get_session() as session:
+            # Get run info
             run = session.get(ClusteringRun, self._run_id)
             if not run:
                 logger.warning(f"Clustering run {self._run_id} not found")
@@ -117,7 +116,7 @@ class ClusteringCompletionHandler(BaseHandler):
 
             snapshot_slug = run.snapshot_slug
 
-            # Count total unknowns from completed grader runs (decisions with no TP match)
+            # Count total unknowns (grading decisions with no TP match)
             total_unknowns = (
                 session.scalar(
                     select(func.count())
@@ -136,28 +135,81 @@ class ClusteringCompletionHandler(BaseHandler):
                 logger.info("No unknowns found for this snapshot")
                 return Abort()
 
-            # Count assigned unknowns (active, non-cancelled assignments)
-            result = session.execute(
+            # Get assigned unknowns
+            assigned_result = session.execute(
                 select(UnknownAssignment).where(
                     UnknownAssignment.clustering_run_id == self._run_id, UnknownAssignment.cancelled_at.is_(None)
                 )
             )
-            assigned_count = len(result.scalars().all())
-
+            assigned_keys = {(a.grader_run_id, a.unknown_id) for a in assigned_result.scalars().all()}
+            assigned_count = len(assigned_keys)
             remaining = total_unknowns - assigned_count
 
-            logger.debug(f"Completion check: {assigned_count}/{total_unknowns} assigned, {remaining} remaining")
+            logger.info(
+                f"Completion check: {assigned_count}/{total_unknowns} assigned, "
+                f"{remaining} remaining (run_id={self._run_id})"
+            )
 
+            # Check completion
             if remaining == 0:
                 logger.info("All unknowns assigned - terminating successfully")
                 return Abort()
 
+            # Check for text redirect
+            if self._text_detected:
+                self._text_detected = False
+                message = self._build_reminder(session, snapshot_slug, assigned_keys, remaining, total_unknowns)
+                return InjectItems(items=[UserMessage.text(message)])
+
         return NoAction()
 
-    def __del__(self):
-        """Clean up database engine."""
-        if self._engine is not None:
-            self._engine.dispose()
+    def _build_reminder(
+        self, session: Session, snapshot_slug: str, assigned_keys: set[tuple[UUID, str]], remaining: int, total: int
+    ) -> str:
+        """Build reminder message with progress and example IDs."""
+        # Get example unassigned unknowns (just IDs)
+        unassigned_decisions = (
+            session.execute(
+                select(GradingDecision)
+                .join(GraderRun)
+                .where(
+                    GraderRun.snapshot_slug == snapshot_slug,
+                    GraderRun.status == GraderRunStatus.COMPLETED,
+                    GradingDecision.target_tp_id.is_(None),
+                )
+                .limit(10)
+            )
+            .scalars()
+            .all()
+        )
+
+        # Filter to unassigned and take first 5
+        example_ids: list[str] = []
+        for d in unassigned_decisions:
+            if (d.grader_run_id, d.input_issue_id) in assigned_keys:
+                continue
+            if len(example_ids) >= 5:
+                break
+            example_ids.append(f"grading_decision.id={d.id} (input_issue_id={d.input_issue_id!r})")
+
+        lines = [
+            f"You have work remaining: {remaining}/{total} unknowns still need assignment.",
+            "",
+            "Do NOT send text messages. Instead, use tool calls to:",
+            "1. Query the database for unknowns (via docker_exec with psql)",
+            "2. Inspect code at /workspace to understand the issues",
+            "3. Create clusters or map unknowns to existing TPs/FPs via SQL",
+            "",
+            "You will be automatically stopped when all unknowns are assigned.",
+        ]
+
+        if example_ids:
+            lines.append("")
+            lines.append(f"Example unassigned unknowns ({len(example_ids)} of {remaining}):")
+            for eid in example_ids:
+                lines.append(f"  - {eid}")
+
+        return "\n".join(lines)
 
 
 # ============================================================================
@@ -236,12 +288,17 @@ class ClusteringAgentEnvironment(AgentEnvironment):
             List of FunctionCallItems to inject before agent sampling
         """
         return [
-            # System overview
-            read_package_file_call(builder, runtime, "adgn.props.docs", "system_overview.md"),
-            # Clustering schema (tables, RLS, constraints, query examples)
-            read_package_file_call(builder, runtime, "adgn.props.clustering", "schema_docs.md"),
-            # Example SQL query scripts (auto-detect run_id)
-            read_package_file_call(builder, runtime, "adgn.props.clustering", "example_queries.py"),
+            # All package file reads (single call for efficiency)
+            read_package_files_call(
+                builder,
+                runtime,
+                [
+                    # System overview
+                    ("adgn.props.docs", ["system_overview.md"]),
+                    # Clustering schema (tables, RLS, constraints, query examples)
+                    ("adgn.props.clustering", ["schema_docs.md", "example_queries.py"]),
+                ],
+            )
         ]
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
@@ -337,8 +394,6 @@ async def run_clustering_agent(
 
     async with agent_env as comp:
         # 3. Set up handlers
-        completion_handler = ClusteringCompletionHandler(run_id, db_config)
-
         # Bootstrap calls (inject schema docs and example scripts)
         builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
         bootstrap_calls = agent_env.bootstrap_items(builder, comp.runtime)
@@ -352,18 +407,7 @@ async def run_clustering_agent(
         handlers = [
             bootstrap,
             *props_handlers,
-            completion_handler,  # Check completion every turn
-            RedirectOnTextMessageHandler(
-                reminder_message=(
-                    "You are a clustering agent working on grouping unknown issues. "
-                    "Your task is not complete. Continue analyzing unknowns and recording "
-                    "decisions in the database using SQL (via docker_exec with psql) or "
-                    "the provided example_queries.py scripts. Do not send text messages - "
-                    "execute tool calls to query the database, inspect code at /workspace, "
-                    "and record clustering decisions via SQL INSERT/UPDATE statements. "
-                    "The agent will automatically stop when all unknowns are assigned."
-                )
-            ),
+            ClusteringHandler(run_id),  # Completion check + text redirect with progress
         ]
 
         # 4. System prompt (static file, no template rendering)

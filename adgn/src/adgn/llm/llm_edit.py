@@ -21,6 +21,7 @@ import typer
 
 from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
+from adgn.agent.handler import AbortIf
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.agent.transcript_handler import TranscriptHandler
 from adgn.mcp.compositor.server import Compositor
@@ -50,7 +51,8 @@ async def _execute(
 
     # Folded context: per-agent MCP lifetime + agent lifetime
     async with Compositor() as comp:
-        await comp.mount_inproc(EDITOR_MOUNT_PREFIX, EditorServer(target_path))
+        editor_server = EditorServer(target_path)
+        await comp.mount_inproc(EDITOR_MOUNT_PREFIX, editor_server)
 
         # Create a per-run transcript directory (aligned with Agent defaults)
         run_dir = Path.cwd() / "logs" / "agent" / "llm_edit"
@@ -63,7 +65,11 @@ async def _execute(
                 client=client,
                 reasoning_effort=reasoning_effort,
                 reasoning_summary=reasoning_summary,
-                handlers=[DisplayEventsHandler(), TranscriptHandler(events_path=run_dir / "events.jsonl")],
+                handlers=[
+                    DisplayEventsHandler(),
+                    TranscriptHandler(events_path=run_dir / "events.jsonl"),
+                    AbortIf(lambda: editor_server.is_done),
+                ],
                 dynamic_instructions=comp.render_agent_dynamic_instructions,
                 tool_policy=RequireAnyTool(),
             )

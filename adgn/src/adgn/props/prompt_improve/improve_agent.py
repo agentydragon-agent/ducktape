@@ -23,13 +23,13 @@ from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, Field
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_file_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
 from adgn.agent.handler import AbortIf, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.props.agent_setup import AgentEnvironment, build_props_handlers, make_mcp_http_bootstrap_calls
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
@@ -201,26 +201,17 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         return [
             # MCP-over-HTTP bootstrap (lists tools, reads resources)
             *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
-            # Database ORM models (single source of truth for schema)
-            *_read_package_files(builder, runtime, "adgn.props.db", ["models.py"]),
-            # System overview (snapshots, database, critic architecture, evaluation flow)
-            *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
-            # Database query examples for analyzing training data
-            *_read_package_files(
+            # All package file reads (single call for efficiency)
+            read_package_files_call(
                 builder,
                 runtime,
-                "adgn.props.examples",
                 [
-                    "working_with_examples.py"  # Example schema (composite key pattern)
-                ],
-            ),
-            # Run analysis examples (critic runs, grader results, execution traces, failure analysis)
-            *_read_package_files(
-                builder,
-                runtime,
-                "adgn.props.prompt_optimize.examples",
-                [
-                    "runs.py"  # Run status, execution traces, failure analysis
+                    # Database ORM models (single source of truth for schema)
+                    ("adgn.props.db", ["models.py"]),
+                    # System overview (snapshots, database, critic architecture, evaluation flow)
+                    ("adgn.props.docs", ["system_overview.md"]),
+                    # Shared examples (database queries, run analysis)
+                    ("adgn.props.examples", ["working_with_examples.py", "runs.py"]),
                 ],
             ),
         ]
@@ -242,69 +233,6 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         # Store reference for programmatic access (bootstrap introspection)
         self.prompt_submission_server = server
         return server
-
-
-# ============================================================================
-# Bootstrap Helpers
-# ============================================================================
-
-
-def _read_package_files(
-    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], package: str, files: list[str]
-) -> list[FunctionCallItem]:
-    """Helper to generate multiple read_package_file_call invocations."""
-    return [read_package_file_call(builder, runtime, package, f) for f in files]
-
-
-def make_improvement_bootstrap_calls(
-    builder: TypedBootstrapBuilder,
-    resources: Mounted,
-    runtime: Mounted[ContainerExecServer],
-    prompt_submission: Mounted,
-) -> list[FunctionCallItem]:
-    """Build bootstrap calls: improvement context and database query examples.
-
-    Provides:
-    - Improvement context resource (example info, current prompt SHA)
-    - SQL query examples for analyzing critic runs, grader results, execution traces
-
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        resources: Mounted resources server (comp.resources)
-        runtime: Mounted runtime server for reading package files
-        prompt_submission: Mounted prompt submission server
-    """
-    return [
-        # Database ORM models (single source of truth for schema)
-        *_read_package_files(builder, runtime, "adgn.props.db", ["models.py"]),
-        # System overview (snapshots, database, critic architecture, evaluation flow)
-        *_read_package_files(builder, runtime, "adgn.props.docs", ["system_overview.md"]),
-        # Improvement context (examples, current prompt SHA)
-        builder.read_resource(
-            resources,
-            server=prompt_submission.prefix,
-            uri=prompt_submission.server.improvement_context_resource.uri,
-            max_bytes=4096,
-        ),
-        # Database query examples for analyzing training data
-        *_read_package_files(
-            builder,
-            runtime,
-            "adgn.props.examples",
-            [
-                "working_with_examples.py"  # Example schema (composite key pattern)
-            ],
-        ),
-        # Run analysis examples (critic runs, grader results, execution traces, failure analysis)
-        *_read_package_files(
-            builder,
-            runtime,
-            "adgn.props.prompt_optimize.examples",
-            [
-                "runs.py"  # Run status, execution traces, failure analysis
-            ],
-        ),
-    ]
 
 
 async def run_improvement_agent(

@@ -42,26 +42,26 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest_asyncio.fixture
-async def prompt_optimizer_creds(synced_test_fixtures: DatabaseConfig) -> AsyncGenerator[TempUserCredentials, None]:
+async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerator[TempUserCredentials, None]:
     """Create prompt optimizer temporary user credentials.
 
     Returns:
         credentials for use in RLS tests
     """
     run_id = uuid4()
-    async with PromptOptimizerUserManager(synced_test_fixtures.admin, run_id) as creds:
+    async with PromptOptimizerUserManager(synced_test_db.admin, run_id) as creds:
         yield creds
 
 
 @pytest_asyncio.fixture
 async def prompt_optimizer_session(
-    prompt_optimizer_creds: TempUserCredentials, synced_test_fixtures: DatabaseConfig
+    prompt_optimizer_creds: TempUserCredentials, synced_test_db: DatabaseConfig
 ) -> AsyncGenerator[Session, None]:
     """Create database session as prompt optimizer temp user.
 
     Yields session with RLS policies active for prompt optimizer role.
     """
-    user_config = synced_test_fixtures.admin.with_user(prompt_optimizer_creds)
+    user_config = synced_test_db.admin.with_user(prompt_optimizer_creds)
     engine = create_engine(user_config.url())
 
     try:
@@ -72,7 +72,7 @@ async def prompt_optimizer_session(
 
 
 async def test_prompt_optimizer_cannot_see_test_split_snapshots(
-    synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users cannot see TEST split snapshots (RLS policy blocks).
 
@@ -92,7 +92,7 @@ async def test_prompt_optimizer_cannot_see_test_split_snapshots(
 
 
 async def test_prompt_optimizer_can_see_train_split_snapshots(
-    synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users can see TRAIN split snapshots (RLS policy allows).
 
@@ -113,7 +113,7 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
-    synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users CANNOT see valid split true positives (RLS policy blocks).
 
@@ -135,7 +135,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
 
 
 async def test_prompt_optimizer_can_see_train_split_false_positives(
-    synced_test_fixtures: DatabaseConfig, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users can see TRAIN split false positives (RLS policy allows).
 
@@ -159,7 +159,7 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
 
 
 async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
-    synced_test_fixtures: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users cannot see TEST split critic runs (RLS policy blocks).
 
@@ -194,7 +194,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
 
 
 async def test_prompt_optimizer_can_see_train_split_critic_runs(
-    synced_test_fixtures: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
+    synced_test_db: DatabaseConfig, test_prompt_sha: str, prompt_optimizer_session: Session
 ):
     """Prompt optimizer users can see TRAIN split critic runs (RLS policy allows).
 

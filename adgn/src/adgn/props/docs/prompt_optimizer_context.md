@@ -133,7 +133,7 @@ TrainingExample(
 
 **What feedback you get:**
 
-**Execution Traces (SQL workflow - being adopted):**
+**Execution Traces (SQL workflow):**
 ```
 CALL docker_run_command({"command": "ruff check src/"})
   → src/foo.py:42: E501 Line too long...
@@ -141,8 +141,6 @@ SQL INSERT INTO reported_issues (critic_run_id, issue_id, rationale) VALUES (...
 SQL INSERT INTO reported_issue_occurrences (critic_run_id, reported_issue_id, locations) VALUES (...)
 CALL critic_submit({"issues_count": 1, "summary": "..."})
 ```
-
-Note: Current default still uses incremental MCP tools (`upsert_issue`, `add_occurrence`), but SQL workflow is the future.
 
 **Grader Analysis:**
 ```

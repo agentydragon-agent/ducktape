@@ -80,7 +80,7 @@ The prompt optimizer supports two terminal metric modes that control validation 
 - **Philosophy:** Black-box validation - agent only sees aggregate recall, no filenames
 - **Trade-off:** More realistic generalization test, but harder to debug failures
 - **Validation examples:** Only full-snapshot (comprehensive review)
-- **Query method:** `get_validation_run_aggregates()` SECURITY DEFINER function (returns per-run results)
+- **Query method:** SQL `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL SECURITY DEFINER function, NOT Python)
 - **Data access:** Examples table is RLS-blocked for VALID split (no filenames visible)
 - **Use case:** Final evaluation, measuring true generalization without risk of overfitting
 
@@ -97,11 +97,19 @@ The prompt optimizer supports two terminal metric modes that control validation 
 
 ## Database Schema
 
+**Import patterns:**
+```python
+from adgn.props.db import get_session
+from adgn.props.db.models import Snapshot, CriticRun, GraderRun, TruePositive, FalsePositive
+from adgn.props.db.examples import Example  # Note: Example is in examples.py, not models.py
+```
+
 ### Core Tables
 
 **`examples`:**
 - **Composite primary key:** `(snapshot_slug, scope_hash)`
 - **No `.id` or `.key` attribute** - use the tuple to identify examples
+- **Import:** `from adgn.props.db.examples import Example` (NOT from `models.py`)
 - Attributes: `snapshot_slug`, `scope_hash`, `scope` (discriminated union: AllFilesScope | ExplicitFileScope)
 - Split information comes from the related `Snapshot` (via `snapshot_obj.split`)
 - Query pattern: `.filter_by(snapshot_slug=slug, scope_hash=hash)`
@@ -167,11 +175,7 @@ The prompt optimizer supports two terminal metric modes that control validation 
 
 **Critic's task:** Review code, report issues, and call submit when done
 
-**Two implementation modes:**
-1. **HTTP mode (SQL workflow)**: Critic writes directly to PostgreSQL (`reported_issues` and `reported_issue_occurrences` tables via psql), then calls `critic_submit` for finalization. Uses temp database credentials with RLS scoping.
-2. **In-proc mode (incremental MCP)**: Critic calls MCP tools (`upsert_issue`, `add_occurrence`, `submit`) which write to database on critic's behalf.
-
-**Current default:** In-proc mode (incremental MCP). HTTP mode (SQL workflow) is being validated.
+**SQL workflow**: Critic writes directly to PostgreSQL (`reported_issues` and `reported_issue_occurrences` tables via psql), then calls `critic_submit` for finalization. Uses temp database credentials with RLS scoping.
 
 **Output:** Reported issues stored in database, indexed by `critic_run_id`
 
@@ -239,10 +243,21 @@ The terminal metric depends on the optimization mode (see "Optimization Modes" s
 
 Critic and grader agents use direct PostgreSQL access (not MCP):
 - Temporary database users created per-run with RLS scoping
-- Username pattern encodes run_id (e.g., `critic_agent_{uuid}`)
+- Username pattern encodes run_id (e.g., `critic_agent_{uuid}`, `grader_agent_{uuid}`)
 - RLS functions extract scope from username and filter table access
 - Soft deletes only (no DELETE privilege)
 - Agent-specific system prompts contain SQL examples and workflow details
+
+### Critic Agent RLS Access
+- **Write:** `reported_issues`, `reported_issue_occurrences` (filtered by `current_critic_run_id()`)
+- **Read:** `examples` (only the example being reviewed, matching `snapshot_slug` and `scope_hash`)
+- **No access to:** Ground truth (TPs, FPs), grader data
+
+### Grader Agent RLS Access
+- **Read (critic data):** `reported_issues`, `reported_issue_occurrences` for the critic_run being graded
+- **Read (ground truth):** `true_positives`, `false_positives` for the snapshot being graded
+- **Write:** `grading_decisions` (filtered by `current_grader_run_id()`)
+- **Access determined by:** `grader_runs.critic_run_id` and `grader_runs.snapshot_slug` for the current grader run
 
 ## Data Access Patterns
 
@@ -288,7 +303,8 @@ result = await run_critic_on_example(
     max_turns=30
 )
 
-# Query aggregate metrics via SECURITY DEFINER function
+# Query aggregate metrics via PostgreSQL SECURITY DEFINER function (NOT Python!)
+# get_validation_run_aggregates() is a SQL function, not a Python function
 from sqlalchemy import text
 results = session.execute(text("""
     SELECT * FROM get_validation_run_aggregates()

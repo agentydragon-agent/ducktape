@@ -39,7 +39,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
 @pytest.fixture
-def query_test_data(synced_test_fixtures):
+def query_test_data(synced_test_db):
     """Populate database with critic/grader runs for query validation.
 
     Uses git fixtures for ground truth (Snapshots, TPs, FPs, Examples).
@@ -55,7 +55,7 @@ def query_test_data(synced_test_fixtures):
     - test-validation-2 (VALID) - has TPs and examples
     """
     with get_session() as session:
-        # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_test_fixtures)
+        # Query git fixture examples (snapshots/TPs/FPs already loaded by synced_test_db)
         # Use explicit join and select columns to avoid lazy loading issues
         train_examples = (
             session.query(Example)

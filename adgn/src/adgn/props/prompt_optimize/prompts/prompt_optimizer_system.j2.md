@@ -47,7 +47,7 @@ Training and validation have fundamentally different characteristics:
 - Intentionally tests comprehensive review ability
 - Small validation set (~4 examples) means high variance
 
-**Implication:** Before testing on validation, test your prompt on full-snapshot train examples (`query_full_snapshot_train_examples.py`). These match the validation distribution and provide diagnostic signal without burning validation budget.
+**Implication:** Before testing on validation, test your prompt on full-snapshot train examples (see `listing.py` for querying examples by scope). These match the validation distribution and provide diagnostic signal without burning validation budget.
 
 ### Overfitting Detection
 
@@ -93,7 +93,7 @@ Training and validation have fundamentally different characteristics:
 
 Let data guide your next move. Common patterns:
 
-- **Zero recall:** Prompt broken - diagnose via execution traces (`query_execution_traces.py`), pivot approach
+- **Zero recall:** Prompt broken - diagnose via execution traces (`runs.py`), pivot approach
 - **High variance:** Denoise (more samples) or simplify (more deterministic instructions)
 - **Train-valid gap:** Overfit - test on full-snapshot train, simplify rules
 - **Low sample size (n < 5):** Don't trust estimates, run more evaluations
@@ -171,7 +171,7 @@ with get_session() as session:
   - **Whole-Repo Mode specific:**
     - CANNOT see examples table rows (examples table is train-only via RLS in whole-repo mode)
     - Can run whole-snapshot evaluations: `run_critic_on_example(snapshot_slug='...', scope={"kind": "entire_snapshot"}, ...)`
-    - Can query per-run aggregates via `get_validation_run_aggregates()` function (returns per-run results, not pre-aggregated stats)
+    - Can query per-run aggregates via SQL: `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL function, NOT Python)
 {% elif target_metric == "targeted" %}
   - **Targeted Mode specific:**
     - CAN see examples table rows (filenames only - query `examples` table for validation examples)
@@ -188,8 +188,8 @@ with get_session() as session:
 
 {% if target_metric == "whole-repo" %}
 **Validation metrics (Whole-Repo Mode):**
-- Use `get_validation_run_aggregates()` SECURITY DEFINER function
-- Returns per-run results (not pre-aggregated) - you must aggregate manually
+- Use SQL: `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL function, NOT Python)
+- Returns per-run results (not pre-aggregated) - you must aggregate manually in SQL
 - Examples table is NOT accessible (RLS blocked) - you cannot see which files were tested
 
 **Key constraint:** Validation structure is hidden (black-box). You can only see aggregate recall numbers.
@@ -211,7 +211,7 @@ Reference patterns from `adgn.props.prompt_optimize.examples` module:
 - `pareto.py` - Pareto frontier analysis of prompt performance
 - `evaluation_pipeline.py` - Async run_critic/run_grader usage patterns
 {% if target_metric == "whole-repo" %}
-- `prompt_metrics_whole_repo.py` - **Critical:** Query metrics via `get_validation_run_aggregates()` SECURITY DEFINER function
+- `prompt_metrics_whole_repo.py` - **Critical:** Shows SQL patterns for `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL function)
 {% elif target_metric == "targeted" %}
 - `prompt_metrics_targeted.py` - Query metrics via views with sample size checks (n_examples >= 5)
 {% endif %}
@@ -297,7 +297,7 @@ The database provides pre-aggregated views for analyzing critic performance:
 
 View schemas (columns, types, indexes) were provided during bootstrap via `\d+` commands. Use `docker_exec` with `psql` to query these views directly.
 
-See `query_pareto_frontier.py` for example queries showing how to use the Pareto frontier view to find:
+See `pareto.py` for example queries showing how to use the Pareto frontier view to find:
 - Which prompts win on multiple examples (generalist prompts)
 - Examples where no prompt performs well (opportunities for improvement)
 - Prompt specialization patterns (e.g., prompt A wins on file X, prompt B wins on file Y)
@@ -320,7 +320,7 @@ Both critic and grader have turn limits to prevent infinite loops.
 
 ### Dataset Scale
 
-Query the database to understand dataset size - see `query_dataset_scale.py` in bootstrap.
+Query the database to understand dataset size - see `listing.py` in bootstrap.
 
 **Expected characteristics:**
 - Train: Many examples (mixed difficulty - single-file, multi-file, full-snapshot)
@@ -409,7 +409,7 @@ Use this ID to query database tables and track all work in this optimization ses
    - Look for patterns: What types of issues matter (from rationales)? What patterns should be ignored? What's the language and reasoning style?
 
 2. **Baseline assessment:**
-   - Query current best validation recall using `get_validation_run_aggregates()` function (see example in `query_top_prompts.py`)
+   - Query current best validation recall using SQL: `SELECT * FROM get_validation_run_aggregates()` (see `prompt_metrics_whole_repo.py` for examples)
    - Read high-performing prompts from database
    - That's your baseline - beat it
 
@@ -422,18 +422,18 @@ Use this ID to query database tables and track all work in this optimization ses
    - Write prompt iteration to `/workspace/prompt-v{N}.md` (use `docker_exec` with heredoc)
    - Call `upsert_prompt(file_path)` to save and get SHA256 hash
    - Test on small train sample (5-20 examples)
-   - Read execution traces from `events` table (`query_execution_traces.py`)
+   - Read execution traces from `events` table (`runs.py`)
    - Diagnose failures, iterate rapidly
 
 5. **Generalization check:**
-   - Test on full-snapshot train examples (`query_full_snapshot_train_examples.py`)
+   - Test on full-snapshot train examples (see `listing.py` for querying by scope)
    - These match validation distribution - critical diagnostic step
    - If recall collapses, prompt overfits to easy examples
 
 6. **Validation checkpoint:**
    - Query validation snapshots: `SELECT slug FROM snapshots WHERE split='valid' ORDER BY slug`
    - For each validation snapshot: call `run_critic_on_example(snapshot_slug=slug, scope={"kind": "entire_snapshot"}, ...)` then `run_grader`
-   - Query aggregate metrics using `get_validation_run_aggregates()` function
+   - Query aggregate metrics via SQL: `SELECT * FROM get_validation_run_aggregates()`
    - Compare to baseline
 
 7. **Continuous improvement:**

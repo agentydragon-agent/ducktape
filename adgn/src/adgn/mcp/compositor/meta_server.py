@@ -31,8 +31,10 @@ class CompositorMetaServer(EnhancedFastMCP):
         Args:
             compositor: Compositor instance to expose metadata for
         """
+        # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
         super().__init__(
             name="Compositor Meta Server",
+            version="1.0.0",
             instructions=(
                 "Compositor metadata server exposing state and configuration of all mounted MCP servers.\n\n"
                 "**What it provides:**\n"

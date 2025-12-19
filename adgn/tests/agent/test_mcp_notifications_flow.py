@@ -6,7 +6,8 @@ from pydantic import BaseModel, ConfigDict
 import pytest
 
 from adgn.agent.agent import Agent
-from adgn.agent.loop_control import RequireAnyTool
+from adgn.agent.handler import FinishOnTextMessageHandler
+from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.agent.notifications.handler import NotificationsHandler
 from adgn.mcp._shared.naming import build_mcp_function
 from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
@@ -16,6 +17,7 @@ from adgn.mcp.stubs.typed_stubs import ToolStub
 
 # Note: build_mcp_function still needed for ToolStub construction (line 66) and direct call_tool (line 159)
 from adgn.openai_utils.model import InputTextPart, ResponsesRequest, ResponsesResult, UserMessage
+from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.llm.support.openai_mock import make_mock
 from tests.support.responses import ResponsesFactory
 
@@ -35,8 +37,8 @@ class NotifyPolicyOutput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PrimeInput(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+class PrimeInput(OpenAIStrictModeBaseModel):
+    """Empty input for prime tool."""
 
 
 class _NotifierServer(EnhancedFastMCP):
@@ -46,7 +48,8 @@ class _NotifierServer(EnhancedFastMCP):
     """
 
     def __init__(self) -> None:
-        super().__init__(name="notifier", instructions="Test notifier server")
+        # Pass explicit version to avoid importlib.metadata.version() call which hangs under pytest-xdist
+        super().__init__(name="notifier", instructions="Test notifier server", version="1.0.0-test")
 
         @self.flat_model()
         async def notify_policy(input: NotifyPolicyInput, context: Context) -> NotifyPolicyOutput:
@@ -75,18 +78,19 @@ def _has_notification_with_substring(req: ResponsesRequest, substring: str) -> b
 
 
 async def _make_agent_with_notifications(mcp_client, buf, client):
-    """Helper to create agent with NotificationsHandler wired."""
+    """Helper to create agent with NotificationsHandler wired.
+
+    Uses AllowAnyToolOrTextMessage policy with FinishOnTextMessageHandler
+    so that the agent loop terminates when the model sends a text-only response.
+    """
     return await Agent.create(
-        mcp_client=mcp_client, handlers=[NotificationsHandler(buf.poll)], client=client, tool_policy=RequireAnyTool()
+        mcp_client=mcp_client,
+        handlers=[NotificationsHandler(buf.poll), FinishOnTextMessageHandler()],
+        client=client,
+        tool_policy=AllowAnyToolOrTextMessage(),
     )
 
 
-@pytest.mark.skip(
-    reason="Hangs under pytest-xdist due to importlib.metadata.version('mcp') calling os.stat() "
-    "during FastMCP server initialization. Likely race condition in metadata caching. "
-    "Also previously had issues with Pydantic serialization in CapturingOpenAIModel (now fixed). "
-    "See: tests/llm/support/openai_mock.py for serialization fix."
-)
 async def test_notifications_pre_sampling_out_of_band(
     server: FastMCP, responses_factory: ResponsesFactory, make_buffered_client
 ) -> None:
@@ -150,9 +154,11 @@ async def test_notifications_within_turn_from_tool(
 
 async def test_notifications_broadcast_outside_tool(responses_factory: ResponsesFactory, make_buffered_client):
     # Server that can broadcast notifications outside a tool
-    server = EnhancedFastMCP(name="notifier", instructions="Notifier test")
+    # Pass explicit version to avoid importlib.metadata.version() call which hangs under pytest-xdist
+    server = EnhancedFastMCP(name="notifier", instructions="Notifier test", version="1.0.0-test")
 
-    @server.tool()
+    # Use flat_model() for EnhancedFastMCP strict mode compatibility
+    @server.flat_model()
     async def prime(input: PrimeInput) -> SimpleOk:
         return SimpleOk()
 

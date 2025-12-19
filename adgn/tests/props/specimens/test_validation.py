@@ -12,11 +12,12 @@ from adgn.props.db.models import Snapshot
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.models.snapshot import LocalSource
 
-# Note: synced_test_db fixture (production specimens) is provided in tests/props/conftest.py
+# Note: synced_test_db syncs TEST fixtures (minimal data)
+# Use synced_production_db for tests that need production specimens
 
 
 async def test_specimen_issues_and_false_positives_load(
-    production_specimens_hydrator: SnapshotHydrator, synced_test_db
+    production_specimens_hydrator: SnapshotHydrator, synced_production_db
 ) -> None:
     """Test that all specimen issues and false positives load without errors."""
     # Get all specimens from synced database
@@ -61,7 +62,9 @@ async def test_specimen_issues_and_false_positives_load(
         pytest.fail("\n\n".join(failures))
 
 
-async def test_specimen_references_are_valid(production_specimens_hydrator: SnapshotHydrator, synced_test_db) -> None:
+async def test_specimen_references_are_valid(
+    production_specimens_hydrator: SnapshotHydrator, synced_production_db
+) -> None:
     """Validate that all file references and line ranges in issues are valid.
 
     For each specimen:

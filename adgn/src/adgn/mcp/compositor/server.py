@@ -146,8 +146,11 @@ class Compositor(FastMCP):
     resources: Mounted[ResourcesServer]
     compositor_meta: Mounted[CompositorMetaServer]
 
-    def __init__(self, name: str = "compositor", *, instructions: str | None = None) -> None:
-        super().__init__(name=name, instructions=instructions)
+    def __init__(
+        self, name: str = "compositor", *, instructions: str | None = None, version: str | None = None
+    ) -> None:
+        # Pass explicit version to avoid importlib.metadata.version() lookup which can hang under pytest-xdist
+        super().__init__(name=name, instructions=instructions, version=version)
 
         # State machine (replaces _context_manager_entered/_context_manager_exited)
         self._state = CompositorState.CREATED

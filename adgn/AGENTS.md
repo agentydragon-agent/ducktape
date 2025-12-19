@@ -30,6 +30,7 @@ See `README.md` for a shorter overview.
   - Inside `adgn/`: `pytest tests`
   - From repo root: `direnv exec adgn pytest adgn/tests`
 - Single test: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
+- **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
 - Lint/format: `ruff format .`, `ruff check . --fix`
 - Type check: `mypy --config-file pyproject.toml`
 - Pre-commit: `pre-commit install`, `pre-commit run -a`

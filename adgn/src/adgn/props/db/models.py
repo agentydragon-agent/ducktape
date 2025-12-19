@@ -67,6 +67,7 @@ class GraderRunStatus(StrEnum):
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     MAX_TURNS_EXCEEDED = "max_turns_exceeded"
+    REPORTED_FAILURE = "reported_failure"
 
 
 class PydanticColumn(TypeDecorator[T]):
@@ -588,7 +589,7 @@ class GraderRun(Base):
     status: Mapped[GraderRunStatus] = mapped_column(
         nullable=False,
         server_default="in_progress",
-        comment="Run status: in_progress, completed, or max_turns_exceeded",
+        comment="Run status: in_progress, completed, max_turns_exceeded, or reported_failure",
     )
     notes_md: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="Markdown notes/summary from grader agent"

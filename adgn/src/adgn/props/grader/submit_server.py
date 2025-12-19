@@ -40,13 +40,20 @@ class GraderSubmitResult(BaseModel):
     input_issues_count: int
 
 
+class ReportFailureInput(OpenAIStrictModeBaseModel):
+    """Input for report_failure tool."""
+
+    message: str
+
+
 class GraderSubmitServer(EnhancedFastMCP):
     """MCP server for grader submit operations.
 
-    Provides the grader_submit tool that validates and finalizes a grader run.
+    Provides grader_submit and report_failure tools.
     """
 
     submit_tool: FunctionTool
+    report_failure_tool: FunctionTool
 
     def __init__(self, *, grader_run_id: UUID, critic_run_id: UUID, auth: AuthProvider | None = None):
         """Initialize grader submit server.
@@ -82,6 +89,18 @@ class GraderSubmitServer(EnhancedFastMCP):
 
         self.submit_tool = self.flat_model()(submit)
 
+        def report_failure(input: ReportFailureInput) -> None:
+            """Report that grading could not be completed.
+
+            Call this when you encounter blocking issues that prevent grading completion
+            (e.g., malformed critic output, missing data, access issues).
+
+            This marks the run as failed and stores the error message.
+            """
+            self._report_failure(input.message)
+
+        self.report_failure_tool = self.flat_model()(report_failure)
+
     def _submit_grading(self, summary: str) -> GraderSubmitResult:
         """Submit grading with validation."""
         with get_session() as session:
@@ -89,6 +108,13 @@ class GraderSubmitServer(EnhancedFastMCP):
             grader_run = session.get(GraderRun, self._grader_run_id)
             if grader_run is None:
                 raise ToolError(f"Grader run {self._grader_run_id} not found")
+
+            # Check if run is already in a terminal state
+            if grader_run.status == GraderRunStatus.COMPLETED:
+                raise ToolError(f"Grader run {self._grader_run_id} already completed")
+
+            if grader_run.status == GraderRunStatus.REPORTED_FAILURE:
+                raise ToolError(f"Grader run {self._grader_run_id} already reported failure")
 
             # Load reported issues from normalized table
             reported_issues = session.query(ReportedIssue).filter_by(critic_run_id=self._critic_run_id).all()
@@ -133,3 +159,22 @@ class GraderSubmitServer(EnhancedFastMCP):
                 decisions_count=len(decisions),
                 input_issues_count=len(input_issue_ids),
             )
+
+    def _report_failure(self, message: str) -> None:
+        """Report that grading could not be completed."""
+        with get_session() as session:
+            grader_run = session.get(GraderRun, self._grader_run_id)
+            if grader_run is None:
+                raise ToolError(f"Grader run {self._grader_run_id} not found")
+
+            if grader_run.status == GraderRunStatus.COMPLETED:
+                raise ToolError(f"Grader run {self._grader_run_id} already completed")
+
+            if grader_run.status == GraderRunStatus.REPORTED_FAILURE:
+                raise ToolError(f"Grader run {self._grader_run_id} already reported failure")
+
+            grader_run.status = GraderRunStatus.REPORTED_FAILURE
+            grader_run.notes_md = message
+            session.commit()
+
+            logger.info("Grader run %s reported failure: %s", self._grader_run_id, message)

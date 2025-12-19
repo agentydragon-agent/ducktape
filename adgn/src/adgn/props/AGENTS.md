@@ -227,35 +227,32 @@ Database persistence models should NOT use MCP I/O protocol types directly. Usin
 - Purpose: Bridge between MCP and DB models
 - Live in the application layer (critic/grader), not the database layer
 - Conversion patterns:
-  - **TO DB (when writing)**: `critic_submit_payload_to_db()`, `grader_output_to_db()`
-  - **FROM DB (when reading)**: Usually NOT needed - use DB model directly
+  - **TO DB (when writing)**: `grader_output_to_db()`
+  - **FROM DB (when reading)**: `load_critic_submit_payload_mcp()` for critic runs
   - Only convert DB → MCP when you need MCP-specific behavior
 
 ### Usage Patterns
 
-**When writing to database:**
+**When reading critic data from database:**
 ```python
-# Convert MCP model to DB model before saving
-from adgn.props.critic.persistence import critic_submit_payload_to_db
+# Use load_critic_submit_payload_mcp to reconstruct MCP types from normalized tables
+from adgn.props.critic.persistence import load_critic_submit_payload_mcp
 
-critique = Critique(
-    snapshot_slug=slug,
-    payload=critic_submit_payload_to_db(mcp_payload)  # Convert here
-)
-session.add(critique)
+with get_session() as session:
+    payload = load_critic_submit_payload_mcp(session, critic_run_id, notes_md=summary)
+    for issue in payload.issues:
+        # ... work with MCP ReportedIssue objects
 ```
 
-**When reading from database:**
+**When reading grader data from database:**
 ```python
 # Use DB model directly (inline field access)
-critique = session.get(Critique, critique_id)
-for issue in critique.payload.issues:  # Access DB model fields directly
-    issue_id = InputIssueID(issue.id)  # Wrap string in NewType if needed
-    rationale = Rationale(issue.rationale)
-    # ... work with fields
+grader_run = session.get(GraderRun, grader_run_id)
+for result in grader_run.output.occurrence_results:
+    # Access DB model fields directly
+    tp_id = result.tp_id
+    found_credit = result.found_credit
 ```
-
-**Note:** There is no DB → MCP conversion function. If you need MCP-specific types, construct them directly from the DB model fields as shown above.
 
 ### Key Benefits
 1. **Database independence**: Schema changes don't require protocol changes

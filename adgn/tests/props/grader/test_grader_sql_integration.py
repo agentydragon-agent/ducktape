@@ -375,3 +375,72 @@ async def test_grader_sql_hard_delete_revision_workflow(
     result = tool_result.structured_content
     assert result["decisions_count"] == 3  # 3 active decisions
     assert result["input_issues_count"] == 3
+
+
+# =============================================================================
+# Report Failure Tool Tests
+# =============================================================================
+
+
+async def test_grader_report_failure_basic(grader_submit_server, test_grader_run, test_db):
+    """Test report_failure tool marks run as failed with reason."""
+    from adgn.props.db.models import GraderRun, GraderRunStatus
+
+    # Call report_failure tool
+    await grader_submit_server.report_failure_tool.run(
+        {"message": "Cannot grade: critic output is malformed and contains no parseable issues"}
+    )
+
+    # Verify database state
+    with get_session() as session:
+        grader_run = session.get(GraderRun, test_grader_run)
+        assert grader_run is not None
+        assert grader_run.status == GraderRunStatus.REPORTED_FAILURE
+        assert grader_run.notes_md == "Cannot grade: critic output is malformed and contains no parseable issues"
+
+
+async def test_grader_report_failure_prevents_subsequent_submit(
+    grader_submit_server, test_grader_run, test_db, temp_grader_engine
+):
+    """Test that submit fails after report_failure has been called."""
+    # First report failure
+    await grader_submit_server.report_failure_tool.run({"message": "Grading not possible"})
+
+    # Then try to submit - should fail because run already reported failure
+    with pytest.raises(ToolError, match="already reported failure"):
+        await grader_submit_server.submit_tool.run({"summary": "Attempting late submit"})
+
+
+async def test_grader_report_failure_after_complete_fails(
+    grader_submit_server, test_grader_run, test_db, temp_grader_engine
+):
+    """Test that report_failure fails if run is already completed."""
+    # First complete the run by adding decisions and submitting
+    with temp_grader_engine.connect() as conn:
+        for i in range(1, 4):
+            conn.execute(
+                text("""
+                    INSERT INTO grading_decisions
+                      (grader_run_id, input_issue_id, credit, rationale)
+                    VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                """),
+                {"input_id": f"input-00{i}", "credit": 0.0, "rationale": f"Decision {i}"},
+            )
+        conn.commit()
+
+    # Submit successfully
+    await grader_submit_server.submit_tool.run({"summary": "Completed grading"})
+
+    # Then try to report failure - should fail because already completed
+    with pytest.raises(ToolError, match="already completed"):
+        await grader_submit_server.report_failure_tool.run({"message": "Trying to fail after completion"})
+
+
+async def test_grader_report_failure_idempotency_fails(grader_submit_server, test_grader_run, test_db):
+    """Test that calling report_failure twice fails (not idempotent)."""
+    # First call succeeds
+    await grader_submit_server.report_failure_tool.run({"message": "First failure report"})
+
+    # Second call should fail
+    with pytest.raises(ToolError, match="already reported failure"):
+        await grader_submit_server.report_failure_tool.run({"message": "Second failure report"})

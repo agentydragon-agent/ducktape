@@ -13,7 +13,7 @@ import pytest
 from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun, CriticRunStatus, ReportedIssue
+from adgn.props.db.models import CriticRun, CriticRunStatus, GraderRunStatus, ReportedIssue
 from adgn.props.db.snapshots import DBGraderOutput, DBReportedIssue
 from adgn.props.grader.decision_helpers import insert_fp_match, insert_no_match, insert_tp_match
 from adgn.props.ids import SnapshotSlug
@@ -73,7 +73,10 @@ def make_test_critic_run(example: Example, prompt_sha256: str, num_issues: int =
 
 
 def make_test_grader_run(
-    snapshot_slug: str | SnapshotSlug, critic_run_id: UUID, output: DBGraderOutput | None = None
+    snapshot_slug: str | SnapshotSlug,
+    critic_run_id: UUID,
+    output: DBGraderOutput | None = None,
+    status: GraderRunStatus | None = None,
 ) -> UUID:
     """Create a test grader run.
 
@@ -81,6 +84,7 @@ def make_test_grader_run(
         snapshot_slug: Snapshot slug (kept for backward compatibility, but derived from critic_run)
         critic_run_id: Critic run ID
         output: Grader output dict (default: success with 0 TPs)
+        status: Run status (default: COMPLETED for compatibility)
 
     Returns:
         grader_run_id (UUID)
@@ -88,12 +92,15 @@ def make_test_grader_run(
     if output is None:
         output = make_grader_output(tp_count=0, summary="Test grader")
 
+    if status is None:
+        status = GraderRunStatus.COMPLETED
+
     with get_session() as session:
         # Fetch the critic_run to pass to factory
         critic_run = session.query(CriticRun).filter_by(id=critic_run_id).one()
 
         # Use centralized factory
-        grader_run = make_grader_run(critic_run=critic_run)
+        grader_run = make_grader_run(critic_run=critic_run, status=status)
         session.add(grader_run)
         session.commit()
         return grader_run.id
@@ -144,9 +151,9 @@ def test_grader_critic_run(test_db, test_snapshot, test_prompt_sha):
 
 @pytest.fixture
 def test_grader_run(test_db, test_snapshot, test_grader_critic_run):
-    """Create test grader run.
+    """Create test grader run in IN_PROGRESS status.
 
     Returns:
         grader_run_id (UUID)
     """
-    return make_test_grader_run(test_snapshot, test_grader_critic_run)
+    return make_test_grader_run(test_snapshot, test_grader_critic_run, status=GraderRunStatus.IN_PROGRESS)

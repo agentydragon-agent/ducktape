@@ -15,11 +15,11 @@ from adgn.props.db import get_session
 from adgn.props.db.examples import Example
 from adgn.props.db.models import CriticRun, CriticRunStatus, Event, Snapshot
 from adgn.props.ids import SnapshotSlug
-from adgn.props.prompt_optimize.examples.runs import analyze_critic_failure, show_execution_traces, show_run_status
+from adgn.props.examples.runs import analyze_critic_failure, show_execution_traces, show_run_status
 from tests.props.conftest import make_critic_run, make_grader_run
 
 
-def test_show_run_status_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_show_run_status_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that show_run_status produces reasonable output with run data."""
 
     with get_session() as session:
@@ -67,7 +67,7 @@ def test_show_run_status_empty_database(test_db, capsys):
     assert "Prompts with most max_turns_exceeded" in output
 
 
-def test_show_execution_traces_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_show_execution_traces_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that show_execution_traces produces reasonable output with run data."""
     with get_session() as session:
         snapshot = session.query(Snapshot).first()
@@ -130,10 +130,10 @@ def test_show_execution_traces_with_data(synced_test_fixtures, capsys, test_prom
     assert "Snapshot:" in output
     assert "Prompt:" in output
     assert "Status:" in output
-    assert "Tool calls:" in output
+    assert "Tools:" in output
     assert "completed" in output
-    assert "Tool calls: 3" in output
-    assert "Execution trace for run" in output
+    assert "Tools: 3" in output
+    assert "Trace for" in output
     assert "tool" in output
     assert "test_tool_0" in output
     assert "result 0" in output
@@ -149,7 +149,7 @@ def test_show_execution_traces_empty_database(test_db, capsys):
     assert "Recent critic runs" in output
 
 
-def test_analyze_critic_failure_with_data(synced_test_fixtures, capsys, test_prompt_sha):
+def test_analyze_critic_failure_with_data(synced_test_db, capsys, test_prompt_sha):
     """Test that analyze_critic_failure displays critic run data correctly."""
     slug = SnapshotSlug("test-fixtures/test-trivial")
     with get_session() as session:
@@ -179,8 +179,8 @@ def test_analyze_critic_failure_with_data(synced_test_fixtures, capsys, test_pro
     captured = capsys.readouterr()
     output = captured.out
 
-    assert "Found" in output and "critic runs for example" in output
-    assert "Snapshot:" in output
+    assert "critic runs for" in output
+    assert "Prompt:" in output
 
 
 def test_analyze_critic_failure_no_data(test_db, capsys):

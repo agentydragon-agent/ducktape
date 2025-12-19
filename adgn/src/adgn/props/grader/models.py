@@ -626,8 +626,17 @@ class GraderMaxTurnsExceeded(BaseModel):
     model_config = ConfigDict(frozen=True)
 
 
+class GraderReportedFailure(BaseModel):
+    """Grader explicitly reported that it cannot complete grading."""
+
+    tag: Literal["reported_failure"] = "reported_failure"
+    reason: str = Field(description="Reason provided by the grader for inability to complete")
+
+    model_config = ConfigDict(frozen=True)
+
+
 GraderOutput = Annotated[
-    GraderSuccess | GraderMaxTurnsExceeded,
-    Field(discriminator="tag", description="Grader output: either success with result or max turns exceeded"),
+    GraderSuccess | GraderMaxTurnsExceeded | GraderReportedFailure,
+    Field(discriminator="tag", description="Grader output: success, max turns exceeded, or reported failure"),
 ]
-"""Discriminated union of grader outcomes: success or max_turns_exceeded."""
+"""Discriminated union of grader outcomes: success, max_turns_exceeded, or reported_failure."""

@@ -160,11 +160,11 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
 
 
 @pytest.fixture
-def test_example(synced_test_fixtures: DatabaseConfig) -> Example:
+def test_example(synced_test_db: DatabaseConfig) -> Example:
     """Get a real example from synced test fixtures for testing.
 
     Returns the first available example from the test fixtures database.
-    Uses synced_test_fixtures to ensure examples are loaded.
+    Uses synced_test_db to ensure examples are loaded.
     """
     with get_session() as session:
         example = session.query(Example).first()
@@ -1076,31 +1076,112 @@ def admin_engine(test_db: DatabaseConfig) -> Generator:
 
 
 @pytest.fixture
-def test_snapshot(synced_test_fixtures) -> SnapshotSlug:
+def test_snapshot(synced_test_db: DatabaseConfig) -> SnapshotSlug:
     """Use test-fixtures/test-trivial snapshot from git fixtures.
 
-    Returns test-fixtures/test-trivial slug which is already synced by synced_test_fixtures.
+    Returns test-fixtures/test-trivial slug which is already synced by synced_test_db.
+    Uses function-scoped synced_test_db to support tests that write to the database.
 
     Returns:
         SnapshotSlug for the git fixture snapshot
     """
-    # Use git fixture snapshot (already synced via synced_test_fixtures)
+    # Use git fixture snapshot (already synced via synced_test_db)
     return SnapshotSlug("test-fixtures/test-trivial")
 
 
-@pytest.fixture
-def synced_test_db(test_db: DatabaseConfig) -> DatabaseConfig:
-    """Test database with production specimens synced.
+# =============================================================================
+# Shared syncing helper and session-scoped fixtures
+# =============================================================================
 
-    Uses production CLI sync code to sync snapshots, issues, examples,
-    detector prompts, and model metadata.
+
+def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sync test fixtures to the current database.
+
+    Shared helper used by both synced_test_db and _session_synced_db.
+    Sets ADGN_PROPS_SPECIMENS_ROOT to test fixtures path and runs sync_all().
     """
+    test_fixtures_path = Path(__file__).parent / "fixtures" / "specimens"
+    monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(test_fixtures_path))
     sync_all()
-    return test_db
+
+
+@pytest.fixture(scope="session")
+def session_monkeypatch() -> Generator[pytest.MonkeyPatch, None, None]:
+    """Session-scoped monkeypatch for environment variable overrides.
+
+    pytest doesn't provide session-scoped monkeypatch, so we create one.
+    """
+    mp = pytest.MonkeyPatch()
+    yield mp
+    mp.undo()
+
+
+@pytest.fixture(scope="session")
+def _session_synced_db(
+    request: pytest.FixtureRequest, session_monkeypatch: pytest.MonkeyPatch
+) -> Generator[DatabaseConfig, None, None]:
+    """Internal: Session-scoped synced database.
+
+    Use synced_readonly_session instead of this directly.
+    Creates a single shared database for all read-only tests in the session.
+    """
+    from adgn.props.db.config import get_database_config
+
+    # Create session-scoped test database with fixed name
+    db_name = "props_test_session_shared"
+    base_config = get_database_config()
+    ensure_database_exists(base_config, db_name, drop_existing=True)
+    test_config = base_config.with_database(db_name)
+
+    # Keep postgres engine for teardown
+    postgres_config = base_config.with_database("postgres")
+    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+
+    dispose_db()
+    init_db(test_config)
+    recreate_database()
+
+    # Sync test fixtures
+    _sync_test_fixtures(session_monkeypatch)
+
+    yield test_config
+
+    # Cleanup at end of session
+    with postgres_engine.connect() as conn:
+        conn.execute(
+            text(
+                f"""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '{db_name}'
+              AND pid <> pg_backend_pid()
+        """
+            )
+        )
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    postgres_engine.dispose()
+
+
+@pytest.fixture(scope="session")
+def synced_readonly_session(_session_synced_db: DatabaseConfig) -> Generator[Session, None, None]:
+    """Session-scoped SQLAlchemy Session for READ-ONLY tests.
+
+    Eliminates `with get_session() as session:` boilerplate for read-only tests.
+    The database is synced once per session and shared across all tests using this fixture.
+
+    WARNING: Do not commit/write via this session - use synced_test_db for write tests.
+
+    Usage:
+        def test_query_examples(synced_readonly_session: Session):
+            examples = synced_readonly_session.query(Example).all()
+            assert len(examples) > 0
+    """
+    with get_session() as session:
+        yield session
 
 
 @pytest.fixture
-def synced_test_fixtures(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> DatabaseConfig:
+def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> DatabaseConfig:
     """Test database with test fixture specimens synced (not production).
 
     Syncs test-trivial and test-validation from tests/props/fixtures/specimens/.
@@ -1108,18 +1189,26 @@ def synced_test_fixtures(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatc
 
     Uses production CLI sync code via environment override.
     """
-    # Override specimens path to point to test fixtures
-    test_fixtures_path = Path(__file__).parent / "fixtures" / "specimens"
-    monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(test_fixtures_path))
-
-    # Use production sync code with test fixtures path
-    sync_all()
-
+    _sync_test_fixtures(monkeypatch)
     return test_db
 
 
 @pytest.fixture
-def test_validation_snapshot_slug(synced_test_fixtures: DatabaseConfig) -> SnapshotSlug:
+def synced_production_db(test_db: DatabaseConfig) -> DatabaseConfig:
+    """Test database with PRODUCTION specimens synced from ADGN_PROPS_SPECIMENS_ROOT.
+
+    Uses the specimens from the external specimens repository (not test fixtures).
+    This is slower but tests against real production data.
+
+    Use this for tests that validate production specimen data (e.g., issue counts,
+    specimen references). Most tests should use synced_test_db instead.
+    """
+    sync_all()  # Uses default ADGN_PROPS_SPECIMENS_ROOT from environment
+    return test_db
+
+
+@pytest.fixture
+def test_validation_snapshot_slug(synced_test_db: DatabaseConfig) -> SnapshotSlug:
     """Return test-validation fixture snapshot slug (after syncing test fixtures).
 
     Test fixture snapshot with issues (TPs/FPs) for validation.
@@ -1157,7 +1246,7 @@ def _make_example_with_runs(
 
 
 @pytest.fixture
-def test_trivial_snapshot(synced_test_fixtures: DatabaseConfig) -> Snapshot:
+def test_trivial_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
     """Provide the test-trivial snapshot (train split).
 
     This is a real git-tracked fixture with 2 TPs in add.py and subtract.py.
@@ -1168,7 +1257,7 @@ def test_trivial_snapshot(synced_test_fixtures: DatabaseConfig) -> Snapshot:
 
 
 @pytest.fixture
-def test_validation_snapshot(synced_test_fixtures: DatabaseConfig) -> Snapshot:
+def test_validation_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
     """Provide the test-validation snapshot (valid split).
 
     This is a real git-tracked fixture with 1 TP in subtract.py.
@@ -1180,7 +1269,7 @@ def test_validation_snapshot(synced_test_fixtures: DatabaseConfig) -> Snapshot:
 
 @pytest.fixture
 def test_train_example_with_runs(
-    synced_test_fixtures: DatabaseConfig, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, test_prompt_sha: str
 ) -> tuple[Example, CriticRun, GraderRun]:
     """Provide a train example with critic and grader runs.
 
@@ -1194,7 +1283,7 @@ def test_train_example_with_runs(
 
 @pytest.fixture
 def test_valid_example_with_runs(
-    synced_test_fixtures: DatabaseConfig, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, test_prompt_sha: str
 ) -> tuple[Example, CriticRun, GraderRun]:
     """Provide a valid example with critic and grader runs.
 

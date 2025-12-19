@@ -44,8 +44,12 @@ def test_show_train_vs_valid_empty(test_db, capsys):
     assert "Train vs Validation Performance (targeted mode" in output
 
 
-def test_show_top_prompts_with_synced_data(synced_test_fixtures, capsys):
-    """Test that show_top_prompts produces reasonable output with validation runs."""
+def test_show_top_prompts_with_synced_data(synced_test_db, capsys):
+    """Test that show_top_prompts produces reasonable output with validation runs.
+
+    NOTE: This test writes to the database (creates critic/grader runs) so it must
+    use synced_test_db, not synced_test_db.
+    """
     with get_session() as session:
         # Query valid examples - use subquery to avoid detached instance issues
         # First get the keys we need

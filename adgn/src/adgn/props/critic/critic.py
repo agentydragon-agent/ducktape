@@ -24,7 +24,7 @@ from fastmcp.server.auth import AuthProvider
 import typer
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
@@ -170,6 +170,39 @@ class CriticAgentEnvironment(AgentEnvironment):
         """Return MCP resources to read during bootstrap: snapshot slug and scope."""
         return [("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI), ("Scope", CRITIC_SCOPE_RESOURCE_URI)]
 
+    def bootstrap_items(self, builder, runtime) -> list:
+        """Build bootstrap items with database schema and CLI helper documentation.
+
+        Includes:
+        - MCP HTTP bootstrap (lists tools, reads snapshot_slug and scope resources)
+        - Database ORM models (single source of truth for schema)
+        - Critic helper functions (insert_issue, insert_occurrence, submit_critique)
+
+        Args:
+            builder: TypedBootstrapBuilder for generating typed tool calls
+            runtime: Mounted runtime server (comp.runtime)
+
+        Returns:
+            List of FunctionCallItems to inject before agent sampling
+        """
+        from adgn.props.agent_setup import make_mcp_http_bootstrap_calls
+
+        return [
+            # MCP-over-HTTP bootstrap (lists tools, reads resources)
+            *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
+            # All package file reads (single call for efficiency)
+            read_package_files_call(
+                builder,
+                runtime,
+                [
+                    # Database ORM models (single source of truth for schema)
+                    ("adgn.props.db", ["models.py"]),
+                    # Critic helper functions for Python API
+                    ("adgn.props.critic", ["helpers.py"]),
+                ],
+            ),
+        ]
+
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         """Create critic submit server with hydrated snapshot path.
 
@@ -189,7 +222,6 @@ class CriticAgentEnvironment(AgentEnvironment):
             scope=self._scope,
             snapshot_hydrated_path=hydrated_path,
             auth=auth,
-            incremental_tools=False,  # Agent writes SQL directly
         )
 
 

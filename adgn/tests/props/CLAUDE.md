@@ -4,7 +4,7 @@
 
 **Git fixtures are the single source of truth for ALL test data.**
 
-Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in tests. Use the git-tracked test fixtures in `tests/props/fixtures/specimens/` and the `synced_test_fixtures` pytest fixture.
+Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Example) directly in tests. Use the git-tracked test fixtures in `tests/props/fixtures/specimens/` and the `synced_test_db` pytest fixture.
 
 ## Available Git Fixtures
 
@@ -32,12 +32,12 @@ Located in `tests/props/fixtures/specimens/`:
 
 ## Using Git Fixtures in Tests
 
-### Step 1: Depend on synced_test_fixtures
+### Step 1: Depend on synced_test_db
 
 ```python
-def test_my_feature(synced_test_fixtures: DatabaseConfig):
+def test_my_feature(synced_test_db: DatabaseConfig):
     """My test that needs fixture data."""
-    # synced_test_fixtures automatically:
+    # synced_test_db automatically:
     # 1. Creates isolated test database
     # 2. Overrides ADGN_PROPS_SPECIMENS_ROOT to tests/props/fixtures/specimens/
     # 3. Runs sync_all() to populate database
@@ -50,7 +50,7 @@ def test_my_feature(synced_test_fixtures: DatabaseConfig):
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
 
-def test_critic_on_train_example(synced_test_fixtures: DatabaseConfig, test_prompt_sha: str):
+def test_critic_on_train_example(synced_test_db: DatabaseConfig, test_prompt_sha: str):
     """Test critic on training data."""
     with get_session() as session:
         # Query the example you need
@@ -70,7 +70,7 @@ If you need to query specific scopes:
 
 ```python
 def test_single_file_scope(
-    synced_test_fixtures: DatabaseConfig,
+    synced_test_db: DatabaseConfig,
     add_py_scope: ExplicitFileScope,
     test_prompt_sha: str,
 ):
@@ -155,7 +155,7 @@ def make_grader_run(
 
 ```python
 def test_critic_finds_dead_code(
-    synced_test_fixtures: DatabaseConfig,
+    synced_test_db: DatabaseConfig,
     test_prompt_sha: str,
 ):
     """Critic should detect dead code in test fixtures."""
@@ -180,7 +180,7 @@ def test_critic_finds_dead_code(
 
 ```python
 def test_grader_computes_recall(
-    synced_test_fixtures: DatabaseConfig,
+    synced_test_db: DatabaseConfig,
     test_prompt_sha: str,
 ):
     """Grader should compute recall correctly."""
@@ -214,7 +214,7 @@ def test_grader_computes_recall(
 ### Pattern 3: Test ORM Relationships
 
 ```python
-def test_example_critic_runs_relationship(synced_test_fixtures: DatabaseConfig, test_prompt_sha: str):
+def test_example_critic_runs_relationship(synced_test_db: DatabaseConfig, test_prompt_sha: str):
     """Example.critic_runs relationship should work bidirectionally."""
     with get_session() as session:
         example = session.query(Example).filter_by(
@@ -252,7 +252,7 @@ def test_bad_example(test_db):
         session.add(snapshot)
 ```
 
-**Why wrong**: Creates data not tracked in git. Use `synced_test_fixtures` instead.
+**Why wrong**: Creates data not tracked in git. Use `synced_test_db` instead.
 
 ### ❌ Creating Synthetic TPs/FPs
 
@@ -304,7 +304,7 @@ def test_bad_critic_run(test_db):
 
 ```python
 # WRONG - Don't do this
-def test_bad_prompts(synced_test_fixtures, test_db):
+def test_bad_prompts(synced_test_db, test_db):
     prompt_sha = hash_and_upsert_prompt("review this code")
     another_sha = hash_and_upsert_prompt("find bugs here")
     # ... 14 more ad-hoc prompts
@@ -316,7 +316,7 @@ def test_bad_prompts(synced_test_fixtures, test_db):
 
 ```python
 # WRONG - Don't do this
-def test_bad_scope_usage(synced_test_fixtures):
+def test_bad_scope_usage(synced_test_db):
     scope1 = ExplicitFileScope(files=["test.py"])
     scope2 = ExplicitFileScope(files=["test.py"])  # Duplicate
     scope3 = AllFilesScope()
@@ -330,7 +330,7 @@ For tests that verify row-level security policies across splits:
 
 ```python
 @pytest.mark.asyncio
-async def test_rls_train_valid_test_isolation(synced_test_fixtures):
+async def test_rls_train_valid_test_isolation(synced_test_db):
     """Test that RLS properly isolates TRAIN/VALID/TEST splits."""
     # Use all three split fixtures
     with get_session() as session:
@@ -348,7 +348,7 @@ async def test_rls_train_valid_test_isolation(synced_test_fixtures):
 For tests that need multiple validation examples:
 
 ```python
-def test_warm_start_with_multiple_valid_snapshots(synced_test_fixtures):
+def test_warm_start_with_multiple_valid_snapshots(synced_test_db):
     """Warm-start should handle multiple validation snapshots."""
     valset = [
         Example.from_scope("test-fixtures/test-validation", ExplicitFileScope(files=["subtract.py"])),
@@ -369,7 +369,7 @@ def test_warm_start_with_multiple_valid_snapshots(synced_test_fixtures):
 
 When migrating existing tests to use git fixtures:
 
-1. ✅ Replace `make_test_snapshot()` calls with `synced_test_fixtures` + queries
+1. ✅ Replace `make_test_snapshot()` calls with `synced_test_db` + queries
 2. ✅ Replace `make_true_positive()` calls with git issue files
 3. ✅ Replace `make_example()` calls with queries (Examples auto-created)
 4. ✅ Update `make_critic_run()` calls to include required `example` parameter
@@ -380,7 +380,7 @@ When migrating existing tests to use git fixtures:
 ## Success Metrics
 
 A well-written test should:
-- ✅ Use `synced_test_fixtures` for data (no synthetic ORM models)
+- ✅ Use `synced_test_db` for data (no synthetic ORM models)
 - ✅ Use factory functions (`make_critic_run`, `make_grader_run`)
 - ✅ Use scope fixtures (80%+ usage target)
 - ✅ Use canonical prompts (not ad-hoc strings)

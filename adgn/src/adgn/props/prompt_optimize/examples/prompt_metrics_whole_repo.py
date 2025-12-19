@@ -2,13 +2,17 @@
 
 In whole-repo mode, validation uses full-snapshot examples only and the examples
 table is NOT accessible (RLS blocks). Validation performance is queried via the
-get_validation_run_aggregates() SECURITY DEFINER function.
+get_validation_run_aggregates() PostgreSQL SECURITY DEFINER function.
+
+NOTE: `get_validation_run_aggregates()` is a **PostgreSQL function** (not Python).
+Call it via SQL: `SELECT * FROM get_validation_run_aggregates()`.
+There is NO Python export for this function - it only exists in the database.
 
 This module is specifically for whole-repo mode. For targeted mode (where per-file
 examples are visible), use prompt_metrics_targeted.py instead.
 
 Key differences from targeted mode:
-- Validation: Use get_validation_run_aggregates() function (per-run results)
+- Validation: Use SQL `SELECT * FROM get_validation_run_aggregates()` (per-run results)
 - Training: Use aggregated_recall_by_prompt view (pre-aggregated stats)
 """
 

@@ -34,6 +34,10 @@ if TYPE_CHECKING:
 # Bootstrap commands should complete quickly - failing fast reveals issues.
 DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS = 1000
 
+# Timeout for Python-based bootstrap commands (5 seconds).
+# Python commands have cold start overhead (import time), so need longer timeout.
+DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS = 5000
+
 
 def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel] | None, type]]:
     """Extract tool Input/Output models from FastMCP server (no session needed).
@@ -276,18 +280,24 @@ def docker_exec_call(
 
 
 def read_package_file_call(
-    builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer], package: str, file_path: str
+    builder: TypedBootstrapBuilder,
+    runtime: Mounted[ContainerExecServer],
+    package: str,
+    file_path: str,
+    *,
+    timeout_ms: int | None = None,
 ) -> FunctionCallItem:
     """Bootstrap helper for reading a file from a Python package using importlib.resources.
 
-    Uses DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS as the timeout (1 second).
-    Bootstrap commands should complete quickly; failing fast reveals issues.
+    Uses DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS (5 seconds) by default to account for
+    Python cold start overhead during import.
 
     Args:
         builder: Bootstrap builder for generating typed tool calls
         runtime: Mounted runtime server (e.g., comp.runtime)
         package: Python package name (e.g., 'adgn.props.critic')
         file_path: Path to file within package (e.g., 'prompts/critic_system.j2.md')
+        timeout_ms: Optional timeout override (default: DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS)
 
     Example:
         call = read_package_file_call(
@@ -298,7 +308,56 @@ def read_package_file_call(
     python_code = (
         f"from importlib import resources; print(resources.files('{package}').joinpath('{file_path}').read_text())"
     )
-    return docker_exec_call(builder, runtime, ["python", "-c", python_code])
+    return docker_exec_call(
+        builder, runtime, ["python", "-c", python_code], timeout_ms=timeout_ms or DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS
+    )
+
+
+def read_package_files_call(
+    builder: TypedBootstrapBuilder,
+    runtime: Mounted[ContainerExecServer],
+    packages_and_files: list[tuple[str, list[str]]],
+    *,
+    timeout_ms: int = 30000,
+) -> FunctionCallItem:
+    """Bootstrap helper for reading multiple files from Python packages in a single call.
+
+    More efficient than multiple read_package_file_call() invocations when reading
+    several files during bootstrap.
+
+    Args:
+        builder: Bootstrap builder for generating typed tool calls
+        runtime: Mounted runtime server (e.g., comp.runtime)
+        packages_and_files: List of (package, files) tuples. Each tuple specifies
+            a package name and list of files to read from that package.
+            Example: [("adgn.props.docs", ["system_overview.md"]),
+                     ("adgn.props.db", ["models.py", "examples.py"])]
+        timeout_ms: Timeout in milliseconds (default: 30 seconds for multiple files)
+
+    Returns:
+        Single FunctionCallItem that reads all specified files
+
+    Example:
+        call = read_package_files_call(
+            builder, comp.runtime,
+            [("adgn.props.db", ["models.py", "examples.py"]),
+             ("adgn.props.docs", ["system_overview.md"])]
+        )
+    """
+    # Flatten to list of (package, file) tuples
+    files_spec: list[tuple[str, str]] = []
+    for package, files in packages_and_files:
+        for file in files:
+            files_spec.append((package, file))
+
+    # Generate Python code that reads all files
+    python_code_lines = ["import importlib.resources"]
+    for package, file in files_spec:
+        python_code_lines.append(f"print('=== {package}/{file} ===')")
+        python_code_lines.append(f"print(importlib.resources.read_text({package!r}, {file!r}))")
+
+    python_code = "\n".join(python_code_lines)
+    return docker_exec_call(builder, runtime, cmd=["python", "-c", python_code], timeout_ms=timeout_ms)
 
 
 # TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)

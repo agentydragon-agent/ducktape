@@ -72,7 +72,6 @@ src/adgn/props/
 │       ├── listing.py           # List examples/snapshots by split/scope
 │       ├── prompt_metrics_targeted.py   # Metrics via views (targeted mode)
 │       ├── prompt_metrics_whole_repo.py # Metrics via SECURITY DEFINER (whole-repo mode)
-│       ├── runs.py              # Run status, execution traces, failure analysis
 │       ├── pareto.py            # Pareto frontier analysis
 │       └── evaluation_pipeline.py       # Async run_critic/run_grader usage
 ├── clustering/
@@ -81,6 +80,7 @@ src/adgn/props/
 │   └── examples/                # Clustering-specific examples
 ├── examples/                    # Shared examples (used by multiple agents)
 │   ├── working_with_examples.py
+│   ├── runs.py                  # Run status, execution traces, failure analysis
 │   └── mcp_http_client_example.py
 └── cli/
     └── cmd_agent_helper.py      # Top-level agent-helper group
@@ -253,7 +253,7 @@ Prompt optimizer has two modes affecting data access:
 - Example: `prompt_metrics_targeted.py`
 
 ### Whole-Repo Mode
-- Uses `get_validation_run_aggregates()` SECURITY DEFINER function
+- Uses SQL: `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL SECURITY DEFINER function, NOT Python)
 - Validation examples RLS-blocked
 - Example: `prompt_metrics_whole_repo.py`
 

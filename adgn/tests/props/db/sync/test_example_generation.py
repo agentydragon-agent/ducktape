@@ -14,7 +14,7 @@ from adgn.props.models.true_positive import TruePositiveOccurrence
 from adgn.props.splits import Split
 
 
-def test_generate_examples_train_split(synced_test_fixtures):
+def test_generate_examples_train_split(synced_test_db):
     """Test example generation for TRAIN split creates per-trigger examples + full-specimen."""
     with get_session() as session:
         # Use test-trivial fixture (train split)
@@ -54,7 +54,7 @@ def test_generate_examples_train_split(synced_test_fixtures):
         assert full_specimen_found, "Full-specimen example not found in generated examples"
 
 
-def test_generate_examples_valid_test_split(synced_test_fixtures):
+def test_generate_examples_valid_test_split(synced_test_db):
     """Test example generation for VALID split (per-file + full) and TEST split (full-specimen only)."""
     with get_session() as session:
         # Test VALID split using test-validation fixture

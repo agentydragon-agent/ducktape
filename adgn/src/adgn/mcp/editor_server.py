@@ -132,6 +132,15 @@ class EditorState:
     file_path: Path
     content: str  # current buffer
     original: str  # original buffer for aborts
+    done_result: DoneResponse | None = None  # Set when done() is called
+
+    def normalized_content(self) -> str:
+        """Return content with exactly one trailing newline."""
+        return self.content.rstrip("\n") + "\n"
+
+    def write_to_disk(self) -> None:
+        """Persist current buffer to disk with normalized trailing newline."""
+        self.file_path.write_text(self.normalized_content(), encoding="utf-8")
 
 
 ## Simple file IO helpers are inlined at call sites to avoid trivial indirection
@@ -156,6 +165,14 @@ class EditorServer(EnhancedFastMCP):
     add_line_after_tool: FunctionTool
     save_tool: FunctionTool
     done_tool: FunctionTool
+
+    # Internal state reference (assigned in __init__)
+    _state: EditorState
+
+    @property
+    def is_done(self) -> bool:
+        """Return True if done() tool has been called."""
+        return self._state.done_result is not None
 
     def __init__(self, file_path: Path):
         """Construct an in-process editor server for the given file with standard tools.
@@ -244,7 +261,7 @@ class EditorServer(EnhancedFastMCP):
 
         def save(input: SaveArgs) -> SaveResult:
             """Persist current buffer to disk."""
-            state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
+            state.write_to_disk()
             return SaveResult(ok=True)
 
         self.save_tool = self.flat_model()(save)
@@ -255,20 +272,33 @@ class EditorServer(EnhancedFastMCP):
             - On failure: revert immediately and return Failure.
             - On success: for Python files, syntax-check; on error, revert and return Failure.
               Otherwise, save and return Success.
+
+            After calling done(), is_done property returns True, signaling the agent
+            loop should terminate.
             """
+            result: DoneResponse
             if input.outcome is EditorOutcome.FAILURE:
                 state.content = state.original
-                return Failure(summary=input.summary)
-
-            # Success path
-            if is_python_path(state.file_path):
+                result = Failure(summary=input.summary)
+            elif is_python_path(state.file_path):
+                # Success path with syntax check for Python
                 try:
-                    ast.parse(state.content + "\n")
+                    ast.parse(state.normalized_content())
                 except SyntaxError as e:
                     state.content = state.original
-                    return Failure(summary=f"Cannot complete: syntax error line {e.lineno}: {e.msg}")
+                    result = Failure(summary=f"Cannot complete: syntax error line {e.lineno}: {e.msg}")
+                else:
+                    state.write_to_disk()
+                    result = Success(summary=input.summary)
+            else:
+                # Non-Python success path
+                state.write_to_disk()
+                result = Success(summary=input.summary)
 
-            state.file_path.write_text(state.content.rstrip("\n") + "\n", encoding="utf-8")
-            return Success(summary=input.summary)
+            state.done_result = result
+            return result
 
         self.done_tool = self.flat_model()(done)
+
+        # Store state reference for property access
+        self._state = state

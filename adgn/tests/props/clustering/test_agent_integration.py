@@ -18,20 +18,15 @@ from tests.props.conftest import (
 )
 
 from adgn.agent.loop_control import Abort, NoAction
-from adgn.props.clustering.cluster_agent import (
-    ClusteringCompletionHandler,
-    OutcomeIncomplete,
-    OutcomeSuccess,
-    _compute_outcome,
-)
+from adgn.props.clustering.cluster_agent import ClusteringHandler, OutcomeIncomplete, OutcomeSuccess, _compute_outcome
 from adgn.props.db import get_session
 from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
 from adgn.props.db.examples import Example
 from adgn.props.db.prompts import hash_and_upsert_prompt
 
 
-async def test_completion_handler_detects_all_assigned(synced_test_fixtures, test_db):
-    """Test ClusteringCompletionHandler detects when all unknowns are assigned."""
+async def test_completion_handler_detects_all_assigned(synced_test_db, test_db):
+    """Test ClusteringHandler detects when all unknowns are assigned."""
 
     # Setup: Use git fixture example, create clustering run, grader runs with unknowns
     test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
@@ -70,7 +65,7 @@ async def test_completion_handler_detects_all_assigned(synced_test_fixtures, tes
         session.flush()
 
     # Test: Handler should return NoAction when not all assigned
-    handler = ClusteringCompletionHandler(run_id, test_db)
+    handler = ClusteringHandler(run_id)
     decision = handler.on_before_sample()
     assert isinstance(decision, NoAction)
 
@@ -116,8 +111,8 @@ async def test_completion_handler_detects_all_assigned(synced_test_fixtures, tes
     # No cleanup needed - test_db fixture drops entire database
 
 
-async def test_completion_handler_no_unknowns(synced_test_fixtures, test_db):
-    """Test ClusteringCompletionHandler aborts immediately when no unknowns exist."""
+async def test_completion_handler_no_unknowns(synced_test_db, test_db):
+    """Test ClusteringHandler aborts immediately when no unknowns exist."""
 
     # Setup: Use git fixture, create run with NO grader runs (no unknowns)
     with get_session() as session:
@@ -131,14 +126,14 @@ async def test_completion_handler_no_unknowns(synced_test_fixtures, test_db):
         run_id = run.id
 
     # Test: Handler should return Abort immediately (no unknowns to cluster)
-    handler = ClusteringCompletionHandler(run_id, test_db)
+    handler = ClusteringHandler(run_id)
     decision = handler.on_before_sample()
     assert isinstance(decision, Abort)
 
     # No cleanup needed - test_db fixture drops entire database
 
 
-async def test_compute_outcome_success(synced_test_fixtures, test_db):
+async def test_compute_outcome_success(synced_test_db, test_db):
     """Test _compute_outcome returns OutcomeSuccess when all unknowns assigned."""
 
     # Setup: Create complete clustering run
@@ -212,7 +207,7 @@ async def test_compute_outcome_success(synced_test_fixtures, test_db):
     # No cleanup needed - test_db fixture drops entire database
 
 
-async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
+async def test_compute_outcome_incomplete(synced_test_db, test_db):
     """Test _compute_outcome returns OutcomeIncomplete when unknowns remain."""
 
     # Setup: Create partial clustering run
@@ -280,7 +275,7 @@ async def test_compute_outcome_incomplete(synced_test_fixtures, test_db):
     # No cleanup needed - test_db fixture drops entire database
 
 
-async def test_compute_outcome_with_mapped_to_existing(synced_test_fixtures, test_db):
+async def test_compute_outcome_with_mapped_to_existing(synced_test_db, test_db):
     """Test _compute_outcome counts mapped_to_existing correctly."""
 
     # Setup: Create clustering run with mixed assignments

@@ -87,7 +87,7 @@ async def check_table_permissions_async(conn: AsyncConnection, username: str, ta
 
 
 @pytest.mark.requires_postgres
-async def test_temp_user_direct_insert(synced_test_fixtures: DatabaseConfig, test_prompt_sha: str):
+async def test_temp_user_direct_insert(synced_test_db: DatabaseConfig, test_prompt_sha: str):
     """Test 1: Direct Python INSERT with temp user (no Docker).
 
     This tests the temp user manager in isolation.
@@ -111,13 +111,13 @@ async def test_temp_user_direct_insert(synced_test_fixtures: DatabaseConfig, tes
         session.commit()
 
     # Create temp user
-    manager = CriticUserManager(synced_test_fixtures.admin, run_id)
+    manager = CriticUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
 
         # Connect as temp user
-        user_config = synced_test_fixtures.admin.with_user(creds)
+        user_config = synced_test_db.admin.with_user(creds)
         user_engine = create_engine(user_config.url())
 
         with user_engine.connect() as conn:
@@ -151,7 +151,7 @@ async def test_temp_user_direct_insert(synced_test_fixtures: DatabaseConfig, tes
 
 
 @pytest.mark.requires_postgres
-async def test_temp_user_permissions_visible(synced_test_fixtures: DatabaseConfig):
+async def test_temp_user_permissions_visible(synced_test_db: DatabaseConfig):
     """Test 2: Verify permissions are actually granted and visible.
 
     Uses has_table_privilege() to check effective permissions (includes inherited).
@@ -159,13 +159,13 @@ async def test_temp_user_permissions_visible(synced_test_fixtures: DatabaseConfi
     """
     run_id = uuid4()
 
-    manager = CriticUserManager(synced_test_fixtures.admin, run_id)
+    manager = CriticUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
 
         # Query effective permissions from admin connection
-        admin_engine = create_engine(synced_test_fixtures.admin.url())
+        admin_engine = create_engine(synced_test_db.admin.url())
         with admin_engine.connect() as conn:
             perms = check_table_permissions_sync(conn, creds.username, "reported_issues")
             print(f"  Admin view - Effective permissions: {perms}")
@@ -173,7 +173,7 @@ async def test_temp_user_permissions_visible(synced_test_fixtures: DatabaseConfi
         admin_engine.dispose()
 
         # Query permissions from user connection
-        user_config = synced_test_fixtures.admin.with_user(creds)
+        user_config = synced_test_db.admin.with_user(creds)
         user_engine = create_engine(user_config.url())
         with user_engine.connect() as conn:
             # Get current_user for self-check
@@ -189,7 +189,7 @@ async def test_temp_user_permissions_visible(synced_test_fixtures: DatabaseConfi
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_container_env_vars(
-    synced_test_fixtures: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
 ):
     """Test 3: Log all environment variables inside Docker container.
 
@@ -217,7 +217,7 @@ async def test_docker_container_env_vars(
         hydrator=test_specimens_hydrator,
         critic_run_id=run_id,
         scope=scope,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         mount_properties=False,
     )
 
@@ -270,7 +270,7 @@ async def test_docker_container_env_vars(
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_connection_info(
-    synced_test_fixtures: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
 ):
     """Test 4: Query database connection info from inside Docker container.
 
@@ -297,7 +297,7 @@ async def test_docker_connection_info(
         hydrator=test_specimens_hydrator,
         critic_run_id=run_id,
         scope=scope,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         mount_properties=False,
     )
 
@@ -376,7 +376,7 @@ conn.close()
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_minimal_insert(
-    synced_test_fixtures: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
 ):
     """Test 5: Minimal Docker INSERT test (simplest failing case).
 
@@ -403,7 +403,7 @@ async def test_docker_minimal_insert(
         hydrator=test_specimens_hydrator,
         critic_run_id=run_id,
         scope=scope,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         mount_properties=False,
     )
 
@@ -462,7 +462,7 @@ print("SUCCESS: INSERT completed")
 
 
 @pytest.mark.requires_postgres
-async def test_permissions_visible_before_container(synced_test_fixtures: DatabaseConfig, test_prompt_sha: str):
+async def test_permissions_visible_before_container(synced_test_db: DatabaseConfig, test_prompt_sha: str):
     """Priority 1: Verify permissions exist BEFORE container creation.
 
     This bifurcates: "permissions never existed" vs "container can't see them".
@@ -484,14 +484,14 @@ async def test_permissions_visible_before_container(synced_test_fixtures: Databa
         session.commit()
 
     # Create temp user
-    manager = CriticUserManager(synced_test_fixtures.admin, run_id)
+    manager = CriticUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
 
         # Query effective permissions immediately after grant (BEFORE any container creation)
         # With template role inheritance, has_table_privilege() checks inherited permissions
-        admin_url = synced_test_fixtures.admin.url().replace("postgresql://", "postgresql+asyncpg://")
+        admin_url = synced_test_db.admin.url().replace("postgresql://", "postgresql+asyncpg://")
         admin_engine = create_async_engine(admin_url, echo=False)
 
         async with admin_engine.begin() as conn:
@@ -522,7 +522,7 @@ async def test_permissions_visible_before_container(synced_test_fixtures: Databa
 
 
 @pytest.mark.requires_postgres
-async def test_admin_vs_temp_user_visibility(synced_test_fixtures: DatabaseConfig, test_prompt_sha: str):
+async def test_admin_vs_temp_user_visibility(synced_test_db: DatabaseConfig, test_prompt_sha: str):
     """Priority 10: Admin vs temp user side-by-side comparison.
 
     Verifies both admin and temp user connections see the same effective permissions
@@ -541,13 +541,13 @@ async def test_admin_vs_temp_user_visibility(synced_test_fixtures: DatabaseConfi
         session.add(critic_run)
         session.commit()
 
-    manager = CriticUserManager(synced_test_fixtures.admin, run_id)
+    manager = CriticUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
 
         # Admin perspective - check temp user's permissions from admin connection
-        admin_url = synced_test_fixtures.admin.url().replace("postgresql://", "postgresql+asyncpg://")
+        admin_url = synced_test_db.admin.url().replace("postgresql://", "postgresql+asyncpg://")
         admin_engine = create_async_engine(admin_url, echo=False)
         async with admin_engine.begin() as conn:
             admin_view_perms = await check_table_permissions_async(conn, creds.username, "reported_issues")
@@ -555,7 +555,7 @@ async def test_admin_vs_temp_user_visibility(synced_test_fixtures: DatabaseConfi
         await admin_engine.dispose()
 
         # Temp user perspective - check own permissions
-        user_config = synced_test_fixtures.admin.with_user(creds)
+        user_config = synced_test_db.admin.with_user(creds)
         user_url = user_config.url().replace("postgresql://", "postgresql+asyncpg://")
         user_engine = create_async_engine(user_url, echo=False)
         async with user_engine.begin() as conn:
@@ -575,7 +575,7 @@ async def test_admin_vs_temp_user_visibility(synced_test_fixtures: DatabaseConfi
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_with_retry_loop(
-    synced_test_fixtures: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
 ):
     """Priority 3: Check for asynchronous replication lag.
 
@@ -601,7 +601,7 @@ async def test_docker_with_retry_loop(
         hydrator=test_specimens_hydrator,
         critic_run_id=run_id,
         scope=scope,
-        db_config=synced_test_fixtures,
+        db_config=synced_test_db,
         mount_properties=False,
     )
 

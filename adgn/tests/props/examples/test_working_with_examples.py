@@ -8,7 +8,7 @@ from adgn.props.db.models import Snapshot
 from adgn.props.examples.working_with_examples import main
 
 
-def test_working_with_examples_with_synced_data(synced_test_fixtures, capsys):
+def test_working_with_examples_with_synced_data(synced_test_db, capsys):
     """Test that working_with_examples handles examples correctly."""
 
     # Get some train examples to query
@@ -21,7 +21,7 @@ def test_working_with_examples_with_synced_data(synced_test_fixtures, capsys):
             .all()
         )
 
-        # synced_test_fixtures includes test-trivial (train split) which always has examples
+        # synced_test_db includes test-trivial (train split) which always has examples
         assert train_examples, "Expected train examples from test-trivial fixture"
 
         # Remember example details for verification

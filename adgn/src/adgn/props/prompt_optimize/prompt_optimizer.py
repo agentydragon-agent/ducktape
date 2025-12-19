@@ -34,7 +34,7 @@ from pydantic import Field
 from sqlalchemy import func
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, docker_exec_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
 from adgn.agent.handler import AbortIf, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError
@@ -42,7 +42,7 @@ from adgn.mcp._shared.constants import WORKING_DIR
 from adgn.mcp._shared.mounted import Mounted
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.exec.docker.server import ContainerExecServer
-from adgn.openai_utils.model import FunctionCallItem, OpenAIModelProto, SystemMessage, UserMessage
+from adgn.openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.openai_utils.types import ReasoningSummary
 from adgn.props.agent_setup import AgentEnvironment, build_props_handlers, make_mcp_http_bootstrap_calls
@@ -218,45 +218,6 @@ def _trace_query_advice(
 
 
 # ============================================================================
-# Bootstrap Helper
-# ============================================================================
-
-
-def _read_package_files(
-    builder: TypedBootstrapBuilder,
-    runtime: Mounted[ContainerExecServer],
-    packages_and_files: list[tuple[str, list[str]]],
-) -> list[FunctionCallItem]:
-    """Generate a single docker_exec call that reads all specified package files.
-
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        runtime: Mounted runtime server
-        packages_and_files: List of (package, files) tuples
-            Example: [("adgn.props.docs", ["system_overview.md"]),
-                     ("adgn.props.examples", ["query_top_prompts.py", "query_train_examples.py"])]
-
-    Returns:
-        List containing single FunctionCallItem that reads all files
-    """
-    # Build Python script that reads all files in one execution
-    files_spec = []
-    for package, files in packages_and_files:
-        for file in files:
-            files_spec.append((package, file))
-
-    # Generate Python code
-    python_code_lines = ["import importlib.resources"]
-    for package, file in files_spec:
-        python_code_lines.append(f"print('=== {package}/{file} ===')")
-        python_code_lines.append(f"print(importlib.resources.read_text({package!r}, {file!r}))")
-
-    python_code = "\n".join(python_code_lines)
-
-    return [docker_exec_call(builder, runtime, cmd=["python", "-c", python_code])]
-
-
-# ============================================================================
 # Prompt Optimizer Agent Environment
 # ============================================================================
 
@@ -386,36 +347,35 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         # Build package files list with conditional target-metric-specific files
         # Files in adgn.props.prompt_optimize.examples:
         #   - listing.py: List examples/snapshots by split/scope
-        #   - runs.py: Run status, execution traces, failure analysis
         #   - pareto.py: Pareto frontier analysis
         #   - prompt_metrics_targeted.py / prompt_metrics_whole_repo.py: Mode-specific metrics
-        example_query_files = [
+        # Note: runs.py moved to adgn.props.examples (shared across agents)
+        example_files = [
             "listing.py",  # List examples/snapshots by split/scope
-            "runs.py",  # Run status, execution traces, failure analysis
             "pareto.py",  # Pareto frontier analysis (which prompts win on which examples)
         ]
         if self._target_metric == TargetMetric.WHOLE_REPO:
-            example_query_files.append("prompt_metrics_whole_repo.py")
+            example_files.append("prompt_metrics_whole_repo.py")
         else:
-            example_query_files.append("prompt_metrics_targeted.py")
+            example_files.append("prompt_metrics_targeted.py")
 
         return [
             # MCP-over-HTTP bootstrap (lists tools, reads resources)
             *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
-            # All package file reads (merged into single call)
-            *_read_package_files(
+            # All package file reads (single call for efficiency)
+            read_package_files_call(
                 builder,
                 runtime,
                 [
                     # Database ORM models - single source of truth for schema (replaces psql \d+ commands)
                     # Includes all view definitions: aggregated_recall_by_prompt, aggregated_recall_by_example,
                     # occurrence_statistics, occurrence_credits, pareto_frontier_by_example
-                    ("adgn.props.db", ["models.py"]),
-                    # Shared examples (working_with_examples.py is in adgn.props.examples)
-                    ("adgn.props.examples", ["working_with_examples.py"]),
-                    # Optimizer-specific examples
-                    ("adgn.props.prompt_optimize.examples", ["evaluation_pipeline.py"]),
-                    ("adgn.props.prompt_optimize.examples", example_query_files),
+                    # Note: Example is in examples.py (import from adgn.props.db.examples), not models.py
+                    ("adgn.props.db", ["models.py", "examples.py"]),
+                    # Shared examples (used by multiple agents)
+                    ("adgn.props.examples", ["working_with_examples.py", "runs.py"]),
+                    # Optimizer-specific examples (evaluation pipeline + analysis scripts)
+                    ("adgn.props.prompt_optimize.examples", ["evaluation_pipeline.py", *example_files]),
                     # System documentation
                     ("adgn.props.docs", ["system_overview.md"]),
                     ("adgn.props.critic.prompts", ["critic_system.j2.md"]),
@@ -1161,12 +1121,10 @@ Prioritize recall.
             agent._handlers.append(budget_handler)
 
             agent.insert_messages([SystemMessage.text(system), UserMessage.text(user)])
-            logger.info("PO_DEBUG: starting agent.run()")
+            logger.debug("Starting agent.run()")
             await agent.run()
-            logger.info("PO_DEBUG: agent.run() finished, exiting mcp_client context...")
-        logger.info("PO_DEBUG: exited mcp_client context, exiting agent_env context...")
+            logger.debug("Agent run complete")
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
-    logger.info("PO_DEBUG: exited agent_env context, cleanup complete")
 
     logger.info(f"Optimization session complete. Results in: {session_dir}")
     logger.info(f"Budget: ${budget:.2f}")

@@ -16,7 +16,7 @@ from fastmcp.server.auth import AuthProvider
 from sqlalchemy.orm import Session
 
 from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder
+from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
@@ -154,6 +154,7 @@ async def _run_grader_agent(
                 return found_run is not None and found_run.status in (
                     GraderRunStatus.COMPLETED,
                     GraderRunStatus.MAX_TURNS_EXCEEDED,
+                    GraderRunStatus.REPORTED_FAILURE,
                 )
 
         handlers_list.extend(
@@ -491,6 +492,36 @@ class GraderAgentEnvironment(AgentEnvironment):
         Returns empty list - grader reads data directly from PostgreSQL.
         """
         return []
+
+    def bootstrap_items(self, builder, runtime) -> list:
+        """Build bootstrap items with database schema and CLI helper documentation.
+
+        Includes:
+        - Database ORM models (single source of truth for schema)
+        - Grader decision helper functions
+
+        Note: No MCP HTTP bootstrap since grader reads data directly from PostgreSQL.
+
+        Args:
+            builder: TypedBootstrapBuilder for generating typed tool calls
+            runtime: Mounted runtime server (comp.runtime)
+
+        Returns:
+            List of FunctionCallItems to inject before agent sampling
+        """
+        return [
+            # All package file reads (single call for efficiency)
+            read_package_files_call(
+                builder,
+                runtime,
+                [
+                    # Database ORM models (single source of truth for schema)
+                    ("adgn.props.db", ["models.py"]),
+                    # Grader decision helper functions for Python API
+                    ("adgn.props.grader", ["decision_helpers.py"]),
+                ],
+            )
+        ]
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         """Create grader submit server.
