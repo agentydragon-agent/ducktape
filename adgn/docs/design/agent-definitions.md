@@ -738,7 +738,7 @@ Everything needed to restart an agent after app quits must be saved to database:
 - Type-specific context in `type_config` JSONB:
   - Critics: `snapshot_slug`, `scope_hash`
   - Graders: `graded_transcript_id`
-  - Freeform/Prompt optimizer: just the type marker
+  - Freeform/Prompt optimizer: just the type marker (metric-specific behavior in AGENT.md)
 - Transcript events in `events` table (reconstruct conversation)
 
 On restart:
@@ -776,9 +776,13 @@ class FreeformTypeConfig(BaseModel):
 
 
 class PromptOptimizerTypeConfig(BaseModel):
-    """Prompt optimizer configuration."""
+    """Prompt optimizer configuration (no extra fields, just type marker).
+
+    Different optimization targets are handled by different agent definitions
+    (e.g., prompt_optimizer_grader_score, prompt_optimizer_issue_quality),
+    each with its own AGENT.md containing metric-specific instructions.
+    """
     agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
-    target_metric: str  # e.g., "grader_score", "issue_quality" - which metric to optimize
 
 
 # Discriminated union for type-specific config only
