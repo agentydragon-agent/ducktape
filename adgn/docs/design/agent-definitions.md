@@ -300,16 +300,25 @@ agent-helpers inflate --self /workspace/agents/self
 The agent runtime automatically:
 1. Unpacks agent definition to `/workspace`
 2. Sets environment variables (`AGENT_DEFINITION_ID`, `MCP_SERVER_URL`, `PGHOST`, etc.)
-3. Executes `init` via docker_exec
-4. Injects init output as first assistant message (warm-start)
-5. Reads `/workspace/AGENT.md` as system prompt
-6. Begins agent sampling
+3. Reads `/workspace/AGENT.md` as system prompt (via `dynamic_instructions`)
+4. Injects `./init` execution as bootstrap tool call (via `SequenceHandler`)
+5. Agent loop executes init via standard MCP docker_exec flow
+6. Init output becomes part of transcript as tool result (warm-start)
+7. Agent begins sampling with init context already visible
+
+```python
+# Bootstrap handler injects init execution as first action
+builder = TypedBootstrapBuilder.for_server(runtime.server)
+init_call = docker_exec_call(builder, runtime, ["./init"], timeout_ms=5000)
+bootstrap = SequenceHandler([InjectItems(items=[init_call])])
+```
 
 Agent-type-specific context (e.g., `SNAPSHOT_SLUG` for critics) is set by the
 compositor that launches that agent type, not by the general runtime.
 
-This warm-start pattern ensures the agent sees init output without relying
-on the LLM to follow an instruction to run it.
+This pattern ensures the agent sees init output as a tool result in its
+transcript, following the existing bootstrap pattern used by critics,
+graders, and other agents.
 
 Agents that need to read other definitions (e.g., optimizer reading critic) use
 the helper explicitly.
@@ -697,27 +706,30 @@ class AgentHandle:
             inherit_mounts_from=inherit_mounts_from,
         )
 
-        # 4. Create handlers
+        # 4. Create bootstrap handler for init execution
+        builder = TypedBootstrapBuilder.for_server(compositor.runtime.server)
+        init_call = docker_exec_call(builder, compositor.runtime, ["./init"], timeout_ms=5000)
+        bootstrap = SequenceHandler([InjectItems(items=[init_call])])
+
+        # 5. Create handlers
         db_handler = DatabaseEventHandler(transcript_id=transcript_id)
         text_capture = CaptureTextHandler()  # Captures text, aborts loop
 
-        # 5. Create Agent with handlers
+        # 6. Create Agent with handlers
         async with Client(compositor) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
                 client=model_client,
                 handlers=[
-                    db_handler,      # Persist all events
+                    bootstrap,       # First: execute ./init via docker_exec
+                    db_handler,      # Persist all events (including init output)
                     text_capture,    # Capture text + abort
                     # ... other handlers
                 ],
                 tool_policy=AllowAnyToolOrTextMessage(),
                 dynamic_instructions=lambda: (Path(workspace) / "AGENT.md").read_text(),
             )
-
-        # 5. Run init script, inject as first assistant message (warm-start)
-        init_output = await compositor.runtime.server.docker_exec(["./init"])
-        agent.insert_message(AssistantMessage.text(init_output))
+        # Note: init output is now in transcript as tool result from bootstrap
 
         return cls(
             transcript_id=transcript_id,
