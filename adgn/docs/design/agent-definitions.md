@@ -611,35 +611,117 @@ class AgentRegistry:
         self._agents.clear()
 
 
+@dataclass
 class AgentHandle:
-    """Handle to a single long-running agent."""
+    """Handle to a single long-running agent.
 
-    def __init__(self, transcript_id: UUID, container, mcp_server, agent: Agent):
-        self.transcript_id = transcript_id
-        self.container = container
-        self.mcp_server = mcp_server
-        self.agent = agent  # Stateful, holds conversation history
+    State held per agent:
+    - transcript_id: unique identifier, also PK in agent_runs table
+    - messages: full conversation history (system, user, assistant, tool calls/results)
+    - container: Docker container running agent's environment
+    - mcp_server: HTTP server providing tools (critic_submit, docker_exec, etc.)
+    - mcp_client: client connection to container's MCP (for tool calls)
+    - model_client: OpenAI-compatible client for LLM calls
+    - config: everything needed to restart (definition_id, mounts, env vars)
+    """
+
+    transcript_id: UUID
+    messages: list[Message]           # Full conversation history
+    container: Container              # Docker container handle
+    mcp_server: FastMCP               # HTTP MCP server (host-side)
+    mcp_client: MCPClient             # Client to container's tools
+    model_client: OpenAIModelProto    # LLM client
+    config: AgentConfig               # For restart: definition_id, mounts, model, etc.
+
+    @classmethod
+    async def create(
+        cls,
+        transcript_id: UUID,
+        definition_id: str,
+        inherit_mounts_from: UUID | None,
+        model_client: OpenAIModelProto,
+    ) -> "AgentHandle":
+        # 1. Load definition from DB
+        definition = load_definition(definition_id)
+
+        # 2. Unpack to temp workspace
+        workspace = tempfile.mkdtemp(prefix=f"agent_{transcript_id}_")
+        unpack_definition(definition.archive, workspace)
+
+        # 3. Start container with mounts
+        container = await start_container(
+            workspace=workspace,
+            inherit_mounts_from=inherit_mounts_from,
+            env={...},  # PG creds, etc.
+        )
+
+        # 4. Start MCP server (provides tools to agent)
+        mcp_server = create_mcp_server(transcript_id, container)
+        await mcp_server.start()
+
+        # 5. Create MCP client (for agent to call tools)
+        mcp_client = await MCPClient.connect(mcp_server.url)
+
+        # 6. Build initial messages: system prompt from AGENT.md
+        system_prompt = (Path(workspace) / "AGENT.md").read_text()
+        messages = [Message(role="system", content=system_prompt)]
+
+        # 7. Run init script, add output as first assistant message (warm-start)
+        init_output = await container.exec(["./init"])
+        messages.append(Message(role="assistant", content=init_output))
+
+        return cls(
+            transcript_id=transcript_id,
+            messages=messages,
+            container=container,
+            mcp_server=mcp_server,
+            mcp_client=mcp_client,
+            model_client=model_client,
+            config=AgentConfig(definition_id, workspace, inherit_mounts_from),
+        )
 
     async def send_and_wait_for_text(self, message: str) -> str:
-        # Add user message to agent's conversation
-        self.agent.add_message(role="user", content=message)
+        # Add user message
+        self.messages.append(Message(role="user", content=message))
 
-        # Run with AbortOnTextMessage handler
-        result = await self.agent.run_until_text()
+        # Run agent loop until text response
+        while True:
+            # Get LLM response
+            response = await self.model_client.chat(self.messages)
+            self.messages.append(response)
 
-        return result.text_content
+            # Persist to events table
+            persist_event(self.transcript_id, response)
+
+            if response.is_text_message():
+                return response.content
+
+            # Handle tool calls
+            for tool_call in response.tool_calls:
+                result = await self.mcp_client.call_tool(tool_call)
+                tool_result = Message(role="tool", tool_call_id=tool_call.id, content=result)
+                self.messages.append(tool_result)
+                persist_event(self.transcript_id, tool_result)
 
     def inject_restart_message(self):
-        self.agent.add_message(
+        self.messages.append(Message(
             role="system",
             content="Your container was restarted. Any local state (files in /tmp, "
                     "running processes, environment variables set at runtime) has been "
                     "lost. The conversation history and mounted volumes are preserved."
-        )
+        ))
 
     async def restart_container(self):
         await self.container.kill()
         self.container = await start_container(self.config)
+        # Reconnect MCP client
+        self.mcp_client = await MCPClient.connect(self.mcp_server.url)
+
+    async def shutdown(self):
+        await self.mcp_client.close()
+        await self.mcp_server.stop()
+        await self.container.kill()
+        shutil.rmtree(self.config.workspace)
 ```
 
 **Usage patterns:**
