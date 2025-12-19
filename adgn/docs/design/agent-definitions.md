@@ -495,60 +495,57 @@ async def start_agent(
     Creates a new agent with its own transcript_id, sets up container and
     environment, but does NOT run any turns yet.
 
-    Returns: session_id (use with send_message)
+    Returns: transcript_id (use with send_message)
     """
 
 @mcp.tool()
 async def send_message(
-    session_id: str,
+    transcript_id: str,
     message: str,
 ) -> str:
-    """Send a message to a running sub-agent session.
+    """Send a message to a sub-agent.
 
     Adds the message to the conversation, then runs the agent until it
     produces a text response. Aborts and returns when agent sends text.
 
+    If the container was previously killed (e.g., parent was idle), it will
+    be restarted and the agent receives a system message:
+    "Your container was restarted. Any local state (files in /tmp, running
+    processes, environment variables set at runtime) has been lost. The
+    conversation history and mounted volumes are preserved."
+
     Returns: The agent's text response
 
     Errors:
-    - If session is already rolling out (concurrent send_message not allowed)
-    - If session doesn't exist or has ended
-    """
-
-@mcp.tool()
-async def end_agent(
-    session_id: str,
-) -> str:
-    """End a sub-agent session and clean up resources.
-
-    Returns: Final session summary (transcript_id, turn count, etc.)
+    - If agent is already rolling out (concurrent send_message not allowed)
+    - If transcript doesn't exist
     """
 ```
 
 **Workflow:**
 ```python
 # Start a sub-agent for architecture analysis
-session = start_agent(definition_id="freeform_abc123")
+transcript_id = start_agent(definition_id="freeform_abc123")
 
 # Have a conversation
-response1 = send_message(session, "Trace how API requests reach the database")
+response1 = send_message(transcript_id, "Trace how API requests reach the database")
 # Agent runs, explores code, responds with findings
 
-response2 = send_message(session, "Now focus on the authentication middleware")
+response2 = send_message(transcript_id, "Now focus on the authentication middleware")
 # Continues same conversation, agent has context from previous turns
 
-response3 = send_message(session, "Summarize your findings")
-# Agent synthesizes
+# ... time passes, container gets cleaned up ...
 
-# Clean up
-end_agent(session)
+response3 = send_message(transcript_id, "Summarize your findings")
+# Container restarted, agent gets system message about restart, then continues
 ```
 
 **State Management:**
-- Session state stored in memory (parent agent process)
-- Each session has: transcript_id, container handle, conversation history
-- Concurrent send_message calls to same session are rejected
-- Sessions auto-cleanup on parent agent exit
+- Session identified by transcript_id (no separate session concept)
+- Container may be killed when idle, restarted on next send_message
+- Agent notified of restart via system message (loses /tmp, keeps conversation)
+- Conversation history persisted in events table
+- No explicit end_agent needed - resources cleaned up when parent exits or on timeout
 
 ### Use Cases
 
