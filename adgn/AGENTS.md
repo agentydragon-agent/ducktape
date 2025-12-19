@@ -25,6 +25,88 @@ See `README.md` for a shorter overview.
 - `agent-serve` → start Agent backend server (`http://127.0.0.1:8765`)
 - Background: `devenv up` starts the Vite dev server in the background
 
+## Claude Code Web Environment
+
+When running in Claude Code Web (Anthropic's hosted environment), the setup is handled
+automatically via a SessionStart hook.
+
+**Important:** Claude Code Web looks for `.claude/settings.json` **only in the current
+working directory**, not parent directories ([Issue #10367][gh-10367], [Issue #12962][gh-12962]).
+The hook is configured at the repo root (`ducktape/.claude/settings.json`).
+
+[gh-10367]: https://github.com/anthropics/claude-code/issues/10367
+[gh-12962]: https://github.com/anthropics/claude-code/issues/12962
+
+### Automatic Setup
+
+The SessionStart hook (`ducktape/.claude/hooks/session-start.sh`) automatically:
+1. Installs and configures Podman with Docker API compatibility (vfs storage + runc runtime)
+2. Installs direnv
+3. Detects adgn project and runs `uv sync --extra dev`
+4. Installs pre-commit hooks
+5. Sets `ADGN_TEST_NETWORK_MODE=host` for tests
+
+Reference: [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks)
+
+### Environment Detection
+
+The environment is detected via these variables (set by Claude Code Web):
+- `CLAUDE_CODE_REMOTE=true` — Primary indicator
+- `CLAUDE_CODE_ENTRYPOINT=remote` — Confirms remote mode
+- `IS_SANDBOX=yes` — Sandbox/microVM mode
+
+Use `adgn.testing.claude_code_web` module for programmatic detection:
+```python
+from adgn.testing.claude_code_web import is_claude_code_web, get_test_network_mode
+
+if is_claude_code_web():
+    print("Running in Claude Code Web")
+
+# Get environment-appropriate network mode
+network_mode = get_test_network_mode("none")  # Returns "host" in CC Web
+```
+
+### Docker/Container Limitations
+
+The Claude Code Web microVM environment has an incomplete `/proc` filesystem
+(e.g., missing `/proc/sys/net/ipv4/ping_group_range`, `/proc/self/setgroups`)
+which prevents OCI runtimes from setting up network namespaces for nested containers.
+
+**What works:**
+- Containers with `--network=host` (shared host networking)
+- Docker/Podman API via socket (`/var/run/docker.sock`)
+- Image pulling and basic container operations
+- vfs storage driver (overlay doesn't work on 9p filesystem)
+
+**What doesn't work:**
+- Containers with `--network=none` or `--network=bridge`
+- Network isolation for nested containers
+- crun runtime (use runc instead)
+
+### Running Tests
+
+Tests automatically use host networking in Claude Code Web:
+
+```bash
+# Run all Docker tests (uses host networking automatically)
+uv run pytest tests/mcp/exec/test_docker.py -v
+
+# Tests requiring network isolation are skipped automatically
+# (marked with @pytest.mark.requires_network_isolation)
+```
+
+To override network mode manually:
+```bash
+ADGN_TEST_NETWORK_MODE=host uv run pytest ...
+```
+
+### Test Markers
+
+- `@pytest.mark.requires_docker` — Skipped if Docker/Podman unavailable
+- `@pytest.mark.requires_network_isolation` — Skipped in Claude Code Web
+  (use this for tests that truly require network isolation, e.g., preventing
+  agents from accessing external resources to avoid "cheating")
+
 ## Common Dev Commands
 - Tests (under `tests/`):
   - Inside `adgn/`: `pytest tests`
@@ -41,7 +123,7 @@ See `README.md` for a shorter overview.
 - `asyncio_mode = auto` (pytest-asyncio)
 - `testpaths = ["tests"]`
 - `addopts` (applied automatically): `-n=16 -m 'not live_llm' -v --tb=short --strict-markers --disable-warnings --durations=25`
-- Markers: `slow`, `integration`, `unit`, `shell`, `asyncio`, `real_github`, `live_llm`, `macos`, `requires_docker`, `requires_sandbox_exec`
+- Markers: `slow`, `integration`, `unit`, `shell`, `asyncio`, `real_github`, `live_llm`, `macos`, `requires_docker`, `requires_sandbox_exec`, `requires_network_isolation`
 - Hermetic git (pytest-env): `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`
 
 ### UI E2E Tests (Playwright)

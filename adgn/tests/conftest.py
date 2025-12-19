@@ -24,6 +24,7 @@ from adgn.agent.policies.policy_types import ApprovalDecision
 from adgn.agent.runtime.container import AgentContainerCompositor
 from adgn.agent.runtime.images import DEFAULT_RUNTIME_IMAGE
 from adgn.mcp._shared.container_session import ContainerOptions
+from adgn.testing.claude_code_web import get_claude_code_web_env, get_test_network_mode
 from adgn.mcp.approval_policy.engine import PolicyEngine
 from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced.flat_mixin import FlatModelMixin
@@ -116,6 +117,13 @@ def pytest_configure(config: pytest.Config) -> None:
     # Ensure runtime/policy evaluation containers use a single image tag.
     os.environ.setdefault("ADGN_RUNTIME_IMAGE", DEFAULT_RUNTIME_IMAGE)
 
+    # Register custom markers
+    config.addinivalue_line(
+        "markers",
+        "requires_network_isolation: mark test as requiring container network isolation "
+        "(skipped in Claude Code Web where only host networking works)",
+    )
+
 
 def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
     for item in items:
@@ -128,6 +136,16 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
         pytest.skip("seatbelt sandbox tests require macOS (sandbox-exec unavailable)")
     if item.get_closest_marker("macos") is not None and platform.system() != "Darwin":
         pytest.skip("macOS-only test")
+
+    # Skip network isolation tests in Claude Code Web (microVM doesn't support network namespaces)
+    if item.get_closest_marker("requires_network_isolation") is not None:
+        env = get_claude_code_web_env()
+        if not env.supports_container_network_isolation:
+            pytest.skip(
+                "Test requires container network isolation which is not supported in Claude Code Web. "
+                "Use host networking or run locally."
+            )
+
     if item.get_closest_marker("requires_docker") is None:
         return
     try:
@@ -635,10 +653,33 @@ def require_sandbox_exec():
 
 
 def make_container_opts(
-    image: str, *, working_dir: Path = Path("/workspace"), ephemeral: bool = True
+    image: str,
+    *,
+    working_dir: Path = Path("/workspace"),
+    ephemeral: bool = True,
+    network_mode: str | None = None,
 ) -> ContainerOptions:
-    """Create standard ContainerOptions with proper Path type conversion."""
-    return ContainerOptions(image=image, working_dir=working_dir, binds=None, ephemeral=ephemeral)
+    """Create standard ContainerOptions with proper Path type conversion.
+
+    Args:
+        image: Docker image to use
+        working_dir: Working directory inside container
+        ephemeral: Whether container should be removed after use
+        network_mode: Network mode for the container. If None, uses environment-aware
+            default (host mode in Claude Code Web, none otherwise).
+
+    Returns:
+        ContainerOptions configured for the current environment
+    """
+    # Use environment-aware network mode if not explicitly specified
+    resolved_network_mode = network_mode if network_mode is not None else get_test_network_mode("none")
+    return ContainerOptions(
+        image=image,
+        working_dir=working_dir,
+        binds=None,
+        ephemeral=ephemeral,
+        network_mode=resolved_network_mode,
+    )
 
 
 # --- Shared lightweight fixtures used across agent and MCP tests ---

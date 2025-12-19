@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 
-@pytest.mark.macos
+@pytest.mark.requires_sandbox_exec
 @pytest.mark.xfail(
     strict=False, reason="Narrow sandbox policy is brittle across macOS dyld/SSV changes; keep as documentation test"
 )
