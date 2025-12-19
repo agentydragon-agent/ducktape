@@ -712,7 +712,6 @@ class AgentRegistry:
 
     def __init__(self):
         self._agents: dict[UUID, AgentHandle] = {}
-        self._locks: dict[UUID, asyncio.Lock] = {}  # Prevent concurrent run_agent
 
     async def create_agent(
         self,
@@ -738,7 +737,6 @@ class AgentRegistry:
         )
 
         self._agents[transcript_id] = handle
-        self._locks[transcript_id] = asyncio.Lock()
         return transcript_id
 
     async def run_agent(self, transcript_id: UUID, message: str) -> str:
@@ -746,13 +744,7 @@ class AgentRegistry:
         if handle is None:
             raise ValueError(f"No agent with transcript_id {transcript_id}")
 
-        async with self._locks[transcript_id]:
-            # Check if container died, restart if needed
-            if not handle.container.is_alive():
-                await handle.restart_container()
-
-            # Add message and run until text response
-            return await handle.send_and_wait_for_text(message)
+        return await handle.run(message)
 
     async def cleanup(self, transcript_id: UUID):
         """Cleanup a specific agent."""
@@ -794,6 +786,7 @@ class AgentHandle:
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
     config: AgentConfig               # For restart
     workspace: Path                   # Unpacked agent definition
+    _lock: asyncio.Lock               # Prevent concurrent run() calls
 
     @classmethod
     async def create(
@@ -851,16 +844,25 @@ class AgentHandle:
             text_capture_handler=text_capture,
             config=config,
             workspace=workspace,
+            _lock=asyncio.Lock(),
         )
 
-    async def send_and_wait_for_text(self, message: str) -> str:
-        """Send message and run agent until it produces text response."""
-        # Add user message to agent's transcript
-        self.agent.insert_message(UserMessage.text(message))
+    async def run(self, message: str) -> str:
+        """Send message and run agent until it produces text response.
 
-        # Run agent loop - CaptureTextHandler captures and aborts on text
-        await self.agent.run()
-        return self.text_capture_handler.take()  # Returns captured text, clears state
+        Thread-safe: only one run() call can execute at a time.
+        """
+        async with self._lock:
+            # Check if container died, restart if needed
+            if not self.compositor.container.is_alive():
+                await self.restart_container()
+
+            # Add user message to agent's transcript
+            self.agent.insert_message(UserMessage.text(message))
+
+            # Run agent loop - CaptureTextHandler captures and aborts on text
+            await self.agent.run()
+            return self.text_capture_handler.take()  # Returns captured text, clears state
 
     async def restart_container(self):
         """Restart container after it was killed.
@@ -1000,9 +1002,9 @@ agent_id = await registry.create_agent(AgentConfig(
 - Container stays alive between `run_agent` calls
 - Agent.run() is resumable - doesn't clear `_transcript`, just resets `finished` flag
 - Events persisted to DB via `DatabaseEventHandler` (for crash recovery)
-- Lock prevents concurrent `run_agent` to same agent
+- Lock inside AgentHandle prevents concurrent runs to same agent
 - Restart: container restarted, re-unpack definition, inject system message
-- Uses existing `Agent.run()` loop with `AbortOnTextMessage` handler to stop when text produced
+- Uses existing `Agent.run()` loop with `CaptureTextHandler` to stop when text produced
 
 ### Use Cases
 
