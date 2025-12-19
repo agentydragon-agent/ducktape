@@ -17,20 +17,21 @@ as compressed archives with content-addressed identity and database-level access
 ## Provenance Model
 
 **All provenance tracking uses `transcript_id`** - the unique identifier for a specific
-agent run. This replaces separate `prompt_optimization_run_id`, `prompt_improvement_run_id`,
-etc. columns throughout the codebase.
+agent run. This replaces:
+- Separate `critic_runs`, `grader_runs`, `prompt_optimization_runs` tables → unified `agent_runs`
+- Separate `prompt_optimization_run_id`, `improvement_run_id` columns → `created_by_transcript_id`
 
 Benefits:
 - Single consistent pattern across all tables
 - Direct link to full agent transcript for debugging
-- No need for separate "run" tables per agent type
+- **One `agent_runs` table** instead of per-agent-type tables
 - Simpler RLS policies (just check `current_transcript_id()`)
+- Lineage via `parent_transcript_id` in `agent_runs`
 
-Tables affected by this unification:
-- `agent_definitions.created_by_transcript_id`
-- `critic_runs.created_by_transcript_id` (replaces `prompt_optimization_run_id`)
-- `prompts.created_by_transcript_id` (replaces `prompt_optimization_run_id`, `improvement_run_id`)
-- Any other table tracking "which agent created this"
+Tables using `created_by_transcript_id` for provenance:
+- `agent_definitions` - which agent created this definition
+- `prompts` - which agent created this prompt (replaces `prompt_optimization_run_id`, `improvement_run_id`)
+- Any other artifact table
 
 For repo-backed/manual entries, `created_by_transcript_id` is NULL.
 
@@ -105,7 +106,59 @@ No restrictions. Common patterns:
 
 ## Storage
 
-### Database Schema
+### Unified Agent Runs Table
+
+Instead of separate `critic_runs`, `grader_runs`, `prompt_optimization_runs` tables,
+use a single unified table with agent-type-specific columns and CHECK constraints:
+
+```sql
+CREATE TABLE agent_runs (
+    transcript_id UUID PRIMARY KEY,
+    agent_type TEXT NOT NULL,                    -- 'critic', 'grader', 'prompt_optimizer'
+    agent_definition_id TEXT REFERENCES agent_definitions(id),
+    status TEXT NOT NULL DEFAULT 'running',
+    created_at TIMESTAMPTZ DEFAULT now(),
+
+    -- Provenance: which agent spawned this one?
+    parent_transcript_id UUID REFERENCES agent_runs(transcript_id),
+
+    -- Common columns
+    model TEXT NOT NULL,
+
+    -- Critic-specific (NULL for other agent types)
+    snapshot_slug TEXT,
+    scope_hash TEXT,
+
+    -- Grader-specific (NULL for other agent types)
+    graded_transcript_id UUID REFERENCES agent_runs(transcript_id),
+
+    -- Output (JSONB, structure depends on agent_type)
+    output JSONB,
+
+    -- CHECK constraints for column presence by agent_type
+    CONSTRAINT critic_columns CHECK (
+        agent_type != 'critic' OR (snapshot_slug IS NOT NULL AND scope_hash IS NOT NULL)
+    ),
+    CONSTRAINT grader_columns CHECK (
+        agent_type != 'grader' OR graded_transcript_id IS NOT NULL
+    )
+);
+
+CREATE INDEX idx_agent_runs_type ON agent_runs(agent_type);
+CREATE INDEX idx_agent_runs_parent ON agent_runs(parent_transcript_id);
+CREATE INDEX idx_agent_runs_snapshot ON agent_runs(snapshot_slug) WHERE snapshot_slug IS NOT NULL;
+```
+
+Benefits:
+- **transcript_id is THE universal identifier** for any agent run
+- Lineage via `parent_transcript_id` - trivial to trace "who spawned who"
+- Single RLS policy set
+- Easy cross-agent queries
+- Type-specific columns with CHECK constraints ensure data integrity
+
+The `events` table already uses `transcript_id` as FK, so tool calls link naturally.
+
+### Agent Definitions Schema
 
 ```sql
 CREATE TABLE agent_definitions (
