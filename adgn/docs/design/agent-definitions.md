@@ -390,6 +390,10 @@ the helper explicitly.
 - Wire up optimizer to create new critic definitions
 - Metrics queries that group by definition
 
+### Phase 5: Remove Legacy
+- Drop `prompts` table (all prompt-related functionality migrated to agent definitions)
+- Remove any remaining Jinja2 prompt templating code
+
 ## Runtime Information (No Jinja2)
 
 Agent definitions are fully static - no Jinja2 templating.
@@ -515,19 +519,36 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
 
 1. Parent agent creates ad-hoc agent definition directory:
    ```bash
-   $ mkdir /workspace/subagents/code-tracer
+   $ mkdir -p /workspace/subagents/code-tracer
    $ cat > /workspace/subagents/code-tracer/AGENT.md << 'EOF'
    You are a code tracer. Analyze how data flows from X to Y.
 
    ## Your Task
    Trace the data flow and report your findings.
+
+   ## Environment
+   You have access to MCP tools via the MCP-over-HTTP server. Use resources.read()
+   to access context provided by the runtime. Use tools like bash, read_file, etc.
+   to explore the codebase.
+
+   Report your findings as a structured response when complete.
    EOF
    $ cat > /workspace/subagents/code-tracer/init << 'EOF'
-   #!/bin/bash
-   echo "Code tracer ready"
+   #!/usr/bin/env python3
+   """Init script for code tracer sub-agent."""
+   from importlib.resources import files
+
+   # Read MCP connection info from adgn package resources
+   print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
+   print("=== Code Tracer Ready ===")
    EOF
    $ chmod +x /workspace/subagents/code-tracer/init
    ```
+
+   **Important**: Sub-agent definitions must include environment instructions so
+   the sub-agent knows how to use MCP-over-HTTP, available tools, etc. The init
+   script should print the common MCP connection documentation from the adgn
+   package.
 
 2. Parent registers the definition:
    ```bash
