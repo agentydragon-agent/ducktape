@@ -139,39 +139,31 @@ use a single unified table with agent-type-specific columns and CHECK constraint
 ```sql
 CREATE TABLE agent_runs (
     transcript_id UUID PRIMARY KEY,
-    agent_type agent_type NOT NULL,
-    agent_definition_id TEXT REFERENCES agent_definitions(id),
+    agent_definition_id TEXT NOT NULL REFERENCES agent_definitions(id),
     status TEXT NOT NULL DEFAULT 'running',
     created_at TIMESTAMPTZ DEFAULT now(),
 
-    -- Provenance: which agent spawned this one?
+    -- Provenance: which agent spawned this one? (FK enforced)
     parent_transcript_id UUID REFERENCES agent_runs(transcript_id),
 
     -- Common columns
     model TEXT NOT NULL,
 
-    -- Critic-specific (NULL for other agent types)
-    snapshot_slug TEXT,
-    scope_hash TEXT,
-
-    -- Grader-specific (NULL for other agent types)
-    graded_transcript_id UUID REFERENCES agent_runs(transcript_id),
+    -- Type-specific config stored as JSONB (Pydantic serde)
+    -- Contains agent_type discriminator + type-specific fields
+    -- e.g., {"agent_type": "critic", "snapshot_slug": "...", "scope_hash": "..."}
+    type_config JSONB NOT NULL,
 
     -- Output (JSONB, structure depends on agent_type)
-    output JSONB,
-
-    -- CHECK constraints for column presence by agent_type
-    CONSTRAINT critic_columns CHECK (
-        agent_type != 'critic'::agent_type OR (snapshot_slug IS NOT NULL AND scope_hash IS NOT NULL)
-    ),
-    CONSTRAINT grader_columns CHECK (
-        agent_type != 'grader'::agent_type OR graded_transcript_id IS NOT NULL
-    )
+    output JSONB
 );
 
-CREATE INDEX idx_agent_runs_type ON agent_runs(agent_type);
+-- Extract agent_type from JSONB for indexing
+CREATE INDEX idx_agent_runs_type ON agent_runs((type_config->>'agent_type'));
 CREATE INDEX idx_agent_runs_parent ON agent_runs(parent_transcript_id);
-CREATE INDEX idx_agent_runs_snapshot ON agent_runs(snapshot_slug) WHERE snapshot_slug IS NOT NULL;
+-- Partial index for critic snapshot lookups
+CREATE INDEX idx_agent_runs_snapshot ON agent_runs((type_config->>'snapshot_slug'))
+    WHERE type_config->>'agent_type' = 'critic';
 ```
 
 Benefits:
@@ -673,12 +665,12 @@ cross-reference validation remains:
 def validate_agent_config(config: AgentConfig) -> None:
     """Validate agent configuration before creation.
 
-    Type-specific required fields are enforced by the config dataclasses.
+    Type-specific required fields are enforced by the Pydantic models.
     This function validates cross-reference constraints.
     """
-    if isinstance(config, GraderConfig):
+    if isinstance(config.type_config, GraderTypeConfig):
         # Graders can only grade critic runs
-        run = get_agent_run(config.graded_transcript_id)
+        run = get_agent_run(config.type_config.graded_transcript_id)
         if run.agent_type != AgentType.CRITIC:
             raise ValueError(
                 f"Grader can only grade critic runs, got {run.agent_type}"
@@ -745,55 +737,53 @@ General agent lifecycle management - used by prompt optimizer running critics,
 agents spawning sub-agents, CLI, etc. Not sub-agent specific.
 
 ```python
-@dataclass
-class CriticConfig:
-    """Configuration for a critic agent."""
-    definition_id: str
+from pydantic import BaseModel
+
+# Type-specific config (discriminated union) - only the non-shared fields
+class CriticTypeConfig(BaseModel):
+    """Critic-specific configuration."""
+    agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
     snapshot_slug: str
     scope_hash: str
-    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
-
-    @property
-    def agent_type(self) -> AgentType:
-        return AgentType.CRITIC
 
 
-@dataclass
-class GraderConfig:
-    """Configuration for a grader agent."""
-    definition_id: str
+class GraderTypeConfig(BaseModel):
+    """Grader-specific configuration."""
+    agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
     graded_transcript_id: UUID  # Must be a critic run (validated)
-    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
 
-    @property
-    def agent_type(self) -> AgentType:
-        return AgentType.GRADER
+
+class FreeformTypeConfig(BaseModel):
+    """Freeform sub-agent configuration (no extra fields, just type marker)."""
+    agent_type: Literal[AgentType.FREEFORM] = AgentType.FREEFORM
+
+
+class PromptOptimizerTypeConfig(BaseModel):
+    """Prompt optimizer configuration (no extra fields, just type marker)."""
+    agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
+
+
+# Discriminated union for type-specific config only
+TypeConfig = Annotated[
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig,
+    Field(discriminator="agent_type"),
+]
 
 
 @dataclass
-class FreeformConfig:
-    """Configuration for a freeform sub-agent."""
+class AgentConfig:
+    """Full agent configuration - shared fields + type-specific config.
+
+    Shared fields are at the top level. Type-specific fields are in `type_config`.
+    The `type_config` is stored as JSONB in the database for easy serde.
+    """
     definition_id: str
-    parent_transcript_id: UUID  # Required - inherits mounts from parent
+    parent_transcript_id: UUID | None  # FK to agent_runs, explicit None or UUID
+    type_config: TypeConfig            # Pydantic model, stored as JSONB
 
     @property
     def agent_type(self) -> AgentType:
-        return AgentType.FREEFORM
-
-
-@dataclass
-class PromptOptimizerConfig:
-    """Configuration for the prompt optimizer agent."""
-    definition_id: str
-    parent_transcript_id: UUID | None  # Explicit: None for top-level, UUID for sub-agent
-
-    @property
-    def agent_type(self) -> AgentType:
-        return AgentType.PROMPT_OPTIMIZER
-
-
-# Discriminated union of all agent configs
-AgentConfig = CriticConfig | GraderConfig | FreeformConfig | PromptOptimizerConfig
+        return self.type_config.agent_type
 
 
 class AgentRegistry:
@@ -811,12 +801,9 @@ class AgentRegistry:
         # Create agent_runs record (persists all config for restart)
         create_agent_run(
             transcript_id=transcript_id,
-            agent_type=config.agent_type,
             definition_id=config.definition_id,
             parent_transcript_id=config.parent_transcript_id,
-            snapshot_slug=config.snapshot_slug,
-            scope_hash=config.scope_hash,
-            graded_transcript_id=config.graded_transcript_id,
+            type_config=config.type_config.model_dump(),  # Pydantic -> JSONB
         )
 
         # Start container + MCP server (long-running)
@@ -1058,28 +1045,33 @@ class CaptureTextHandler(BaseHandler):
 ```python
 # Prompt optimizer running critics (spawned by optimizer)
 registry = AgentRegistry()
-critic_id = await registry.create_agent(CriticConfig(
+critic_id = await registry.create_agent(AgentConfig(
     definition_id="critic_abc123",
-    snapshot_slug="ducktape/2025-01-15",
-    scope_hash="abc123",
     parent_transcript_id=optimizer_transcript_id,  # Spawned by optimizer
+    type_config=CriticTypeConfig(
+        snapshot_slug="ducktape/2025-01-15",
+        scope_hash="abc123",
+    ),
 ))
 result = await registry.run_agent(critic_id, "Begin review")
 # Critic runs to completion, returns structured output
 
 # Critic spawning sub-agent for task decomposition
-sub_id = await registry.create_agent(FreeformConfig(
+sub_id = await registry.create_agent(AgentConfig(
     definition_id="freeform_abc123",
-    parent_transcript_id=current_transcript_id(),  # Inherits snapshot mount from parent
+    parent_transcript_id=current_transcript_id(),  # Inherits snapshot mount
+    type_config=FreeformTypeConfig(),
 ))
 response = await registry.run_agent(sub_id, "Trace the auth flow...")
 
 # CLI running grader (top-level, no parent)
 registry = AgentRegistry()
-agent_id = await registry.create_agent(GraderConfig(
+agent_id = await registry.create_agent(AgentConfig(
     definition_id="grader",
-    graded_transcript_id=some_critic_transcript,
     parent_transcript_id=None,  # Top-level invocation from CLI
+    type_config=GraderTypeConfig(
+        graded_transcript_id=some_critic_transcript,
+    ),
 ))
 ```
 
