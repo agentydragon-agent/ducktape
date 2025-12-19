@@ -745,12 +745,28 @@ Everything needed to restart an agent after app quits must be saved to database:
   - Freeform/Prompt optimizer: just the type marker (metric-specific behavior in AGENT.md)
 - Transcript events in `events` table (reconstruct conversation)
 
+**Workspace persistence:**
+
+Agent workspaces are stored at a predictable path derived from transcript_id:
+`~/.local/share/adgn/workspaces/{transcript_id}/`
+
+This directory:
+- Is mounted as `/workspace` in the container
+- Survives container restarts and app quits
+- Contains the unpacked agent definition (AGENT.md, init, tools/, etc.)
+- Can store files the agent creates during operation
+- Never deleted by agent runtime code (cleanup is external, e.g., CLI gc command)
+
+Agents can rely on `/workspace` being persistent. Any files created there
+(notes, intermediate results, cached data) will survive restarts.
+
 On restart:
 1. Query `agent_runs` for agent's configuration
-2. Re-unpack agent definition to container workspace
+2. Workspace already exists at `~/.local/share/adgn/workspaces/{transcript_id}/`
 3. Reconstruct mounts from stored configuration
 4. Rebuild `Agent` from persisted events
-5. Continue conversation
+5. Restart container (workspace already mounted)
+6. Continue conversation
 
 ### Implementation: Agent Registry
 
@@ -870,14 +886,14 @@ class AgentRegistry:
 
         return handle
 
-    async def cleanup(self, transcript_id: UUID):
-        """Cleanup a specific agent."""
+    async def stop_agent(self, transcript_id: UUID):
+        """Stop a specific agent's container (preserves workspace)."""
         handle = self._agents.pop(transcript_id, None)
         if handle:
             await handle.shutdown()
 
-    async def cleanup_all(self):
-        """Cleanup all agents (e.g., on process exit)."""
+    async def stop_all(self):
+        """Stop all agent containers (e.g., on process exit). Preserves workspaces."""
         for handle in self._agents.values():
             await handle.shutdown()
         self._agents.clear()
@@ -909,7 +925,8 @@ class AgentHandle:
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
     config: AgentConfig               # For restart
-    workspace: Path                   # Unpacked agent definition (host path, mounted into container)
+    workspace: Path                   # Persistent workspace (host path, mounted as /workspace in container)
+                                      # Path is deterministic: ~/.local/share/adgn/workspaces/{transcript_id}/
     _lock: asyncio.Lock               # Prevent concurrent run() calls
 
     @classmethod
@@ -922,9 +939,11 @@ class AgentHandle:
         # 1. Load definition from DB
         definition = load_definition(config.definition_id)
 
-        # 2. Unpack to temp workspace
-        workspace = Path(tempfile.mkdtemp(prefix=f"agent_{transcript_id}_"))
-        unpack_definition(definition.archive, workspace)
+        # 2. Unpack to persistent workspace (survives container restarts)
+        workspace = get_workspace_path(transcript_id)  # ~/.local/share/adgn/workspaces/{transcript_id}/
+        if not workspace.exists():
+            workspace.mkdir(parents=True)
+            unpack_definition(definition.archive, workspace)
 
         # 3. Create compositor (manages container, MCP server, hydration)
         # PropertiesDockerCompositorHTTP handles:
@@ -991,26 +1010,24 @@ class AgentHandle:
     async def restart_container(self):
         """Restart container after it was killed.
 
-        Re-unpacks agent definition to ensure workspace is intact.
+        Workspace is persistent - if it's missing, that's a fatal error.
         """
-        # Re-unpack agent definition (container workspace was lost)
-        definition = load_definition(self.config.definition_id)
-        unpack_definition(definition.archive, self.workspace)
+        if not self.workspace.exists():
+            raise RuntimeError(
+                f"Workspace {self.workspace} disappeared for agent {self.transcript_id}. "
+                "Cannot recover - agent state is corrupted."
+            )
 
-        # Restart container
+        # Restart container (workspace is persistent, already mounted)
         await self.compositor.runtime.server.start()
 
-        # Insert restart notification - triggers handlers, so DB persists it
-        self.agent.insert_message(SystemMessage.text(
-            "Your container was restarted. Any local state (files in /tmp, "
-            "running processes, environment variables set at runtime) has been "
-            "lost. The conversation history and mounted volumes are preserved."
-        ))
-
     async def shutdown(self):
-        """Clean up all resources."""
+        """Stop container but preserve workspace.
+
+        Workspace is persistent and will remain for future restarts.
+        Workspace cleanup is handled externally (e.g., CLI gc command, manual deletion).
+        """
         await self.compositor.__aexit__(None, None, None)
-        shutil.rmtree(self.workspace)
 ```
 
 **New handler for conversational interface:**
