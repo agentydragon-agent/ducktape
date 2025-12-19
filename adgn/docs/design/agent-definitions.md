@@ -551,24 +551,23 @@ Rather than one-shot spawning, sub-agents support continuous conversation:
 
 ```python
 @mcp.tool()
-async def start_agent(
+async def create_agent(
     definition_id: str,
-    inherit_mounts: bool = True,
 ) -> str:
-    """Start a sub-agent session.
+    """Create a sub-agent session.
 
     Creates a new agent with its own transcript_id, sets up container and
     environment, but does NOT run any turns yet.
 
-    Returns: transcript_id (use with send_message)
+    Returns: transcript_id (use with run_agent)
     """
 
 @mcp.tool()
-async def send_message(
+async def run_agent(
     transcript_id: str,
     message: str,
 ) -> str:
-    """Send a message to a sub-agent.
+    """Send a message to a sub-agent and run until response.
 
     Adds the message to the conversation, then runs the agent until it
     produces a text response. Aborts and returns when agent sends text.
@@ -582,27 +581,90 @@ async def send_message(
     Returns: The agent's text response
 
     Errors:
-    - If agent is already rolling out (concurrent send_message not allowed)
+    - If agent is already rolling out (concurrent run_agent not allowed)
     - If transcript doesn't exist
     """
 ```
 
+**Agent-type-specific launcher tools:**
+
+The generic `create_agent`/`run_agent` tools are the low-level building blocks.
+Each launcher agent type has specialized MCP tools that wrap these with
+appropriate inputs:
+
+```python
+# Critic agent's tool for spawning sub-agents (freeform analysis tasks)
+@mcp.tool()
+async def spawn_analysis_subagent(definition_id: str) -> str:
+    """Spawn a sub-agent for code analysis.
+
+    The sub-agent gets:
+    - Same snapshot mount as parent (read-only)
+    - Unpacked agent definition directory
+    - NO other state transferred
+
+    Returns: transcript_id
+    """
+
+# Prompt optimizer's tool for running critics
+@mcp.tool()
+async def run_critic(
+    definition_id: str,
+    snapshot_slug: str,
+    scope_hash: str,
+) -> str:
+    """Run a critic agent with specified inputs.
+
+    Creates critic, sets up snapshot mount, runs to completion.
+    Prompt optimizer doesn't need ongoing conversation with critics.
+
+    Returns: Critic's output (structured critique)
+    """
+
+# Prompt optimizer's tool for running graders
+@mcp.tool()
+async def run_grader(
+    definition_id: str,
+    graded_transcript_id: str,
+) -> str:
+    """Run a grader agent on a specific transcript.
+
+    Creates grader, provides transcript to grade, runs to completion.
+
+    Returns: Grader's output (score + reasoning)
+    """
+```
+
+These heterogeneous launcher tools are backed by shared backend code
+(AgentRegistry) that handles container lifecycle, message passing, etc.
+
 **Workflow:**
 ```python
-# Start a sub-agent for architecture analysis
-transcript_id = start_agent(definition_id="freeform_abc123")
+# Critic spawning a sub-agent for architecture analysis
+transcript_id = spawn_analysis_subagent(definition_id="freeform_abc123")
 
 # Have a conversation
-response1 = send_message(transcript_id, "Trace how API requests reach the database")
+response1 = run_agent(transcript_id, "Trace how API requests reach the database")
 # Agent runs, explores code, responds with findings
 
-response2 = send_message(transcript_id, "Now focus on the authentication middleware")
+response2 = run_agent(transcript_id, "Now focus on the authentication middleware")
 # Continues same conversation, agent has context from previous turns
 
 # ... time passes, container gets cleaned up ...
 
-response3 = send_message(transcript_id, "Summarize your findings")
+response3 = run_agent(transcript_id, "Summarize your findings")
 # Container restarted, agent gets system message about restart, then continues
+```
+
+**Prompt optimizer workflow (no conversation needed):**
+```python
+# Run critic with specific inputs
+output = run_critic(
+    definition_id="critic_abc123",
+    snapshot_slug="ducktape/2025-01-15",
+    scope_hash="abc123",
+)
+# Returns structured critique, no ongoing conversation
 ```
 
 **State Management:**
@@ -610,46 +672,76 @@ response3 = send_message(transcript_id, "Summarize your findings")
 - Conversation history persisted in events table
 - No explicit end_agent needed - resources cleaned up when parent exits
 
+**Persistence for restart:**
+
+Everything needed to restart an agent after app quits must be saved to database:
+- `agent_definition_id` - which definition to unpack
+- Agent-type-specific context stored in `agent_runs`:
+  - Critics: `snapshot_slug` (where to mount snapshot)
+  - Graders: `graded_transcript_id`
+  - Freeform sub-agents: `parent_transcript_id` (inherit mounts from parent's config)
+- Transcript events in `events` table (reconstruct conversation)
+
+On restart:
+1. Query `agent_runs` for agent's configuration
+2. Re-unpack agent definition to container workspace
+3. Reconstruct mounts from stored configuration
+4. Rebuild `Agent` from persisted events
+5. Continue conversation
+
 ### Implementation: Agent Registry
 
 General agent lifecycle management - used by prompt optimizer running critics,
 agents spawning sub-agents, CLI, etc. Not sub-agent specific.
 
 ```python
+@dataclass
+class AgentConfig:
+    """Configuration for an agent - everything needed to restart it."""
+    definition_id: str
+    agent_type: str
+    parent_transcript_id: UUID | None = None
+    # Agent-type-specific config (persisted to agent_runs)
+    snapshot_slug: str | None = None        # For critics
+    scope_hash: str | None = None           # For critics
+    graded_transcript_id: UUID | None = None  # For graders
+
+
 class AgentRegistry:
     """Manages long-running agent containers."""
 
     def __init__(self):
         self._agents: dict[UUID, AgentHandle] = {}
-        self._locks: dict[UUID, asyncio.Lock] = {}  # Prevent concurrent send_message
+        self._locks: dict[UUID, asyncio.Lock] = {}  # Prevent concurrent run_agent
 
-    async def start_agent(
+    async def create_agent(
         self,
-        definition_id: str,
-        parent_transcript_id: UUID | None = None,
-        inherit_mounts_from: UUID | None = None,
+        config: AgentConfig,
     ) -> UUID:
         transcript_id = uuid4()
 
-        # Create agent_runs record
+        # Create agent_runs record (persists all config for restart)
         create_agent_run(
-            transcript_id,
-            definition_id,
-            parent=parent_transcript_id,
+            transcript_id=transcript_id,
+            agent_type=config.agent_type,
+            definition_id=config.definition_id,
+            parent_transcript_id=config.parent_transcript_id,
+            snapshot_slug=config.snapshot_slug,
+            scope_hash=config.scope_hash,
+            graded_transcript_id=config.graded_transcript_id,
         )
 
         # Start container + MCP server (long-running)
         handle = await AgentHandle.create(
             transcript_id=transcript_id,
-            definition_id=definition_id,
-            inherit_mounts_from=inherit_mounts_from,
+            config=config,
         )
 
         self._agents[transcript_id] = handle
         self._locks[transcript_id] = asyncio.Lock()
         return transcript_id
 
-    async def send_message(self, transcript_id: UUID, message: str) -> str:
+    async def run_agent(self, transcript_id: UUID, message: str) -> str:
         handle = self._agents.get(transcript_id)
         if handle is None:
             raise ValueError(f"No agent with transcript_id {transcript_id}")
@@ -658,7 +750,6 @@ class AgentRegistry:
             # Check if container died, restart if needed
             if not handle.container.is_alive():
                 await handle.restart_container()
-                handle.inject_restart_message()
 
             # Add message and run until text response
             return await handle.send_and_wait_for_text(message)
@@ -685,6 +776,7 @@ class AgentHandle:
     - agent: the Agent instance (owns transcript in _transcript)
     - compositor: manages container + MCP server lifecycle
     - config: for restart (definition_id, mounts, model, etc.)
+    - workspace: path to unpacked agent definition
 
     Key insight: Agent.run() is resumable. It resets `finished=False` but
     preserves `_transcript`. So send_and_wait_for_text() just:
@@ -700,32 +792,31 @@ class AgentHandle:
     agent: Agent                      # Agent instance (owns transcript)
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
-    config: AgentConfig               # For restart: definition_id, mounts, model, etc.
+    config: AgentConfig               # For restart
+    workspace: Path                   # Unpacked agent definition
 
     @classmethod
     async def create(
         cls,
         transcript_id: UUID,
-        definition_id: str,
-        inherit_mounts_from: UUID | None,
+        config: AgentConfig,
         model_client: OpenAIModelProto,
     ) -> "AgentHandle":
         # 1. Load definition from DB
-        definition = load_definition(definition_id)
+        definition = load_definition(config.definition_id)
 
         # 2. Unpack to temp workspace
-        workspace = tempfile.mkdtemp(prefix=f"agent_{transcript_id}_")
+        workspace = Path(tempfile.mkdtemp(prefix=f"agent_{transcript_id}_"))
         unpack_definition(definition.archive, workspace)
 
         # 3. Create compositor (manages container, MCP server, hydration)
         # PropertiesDockerCompositorHTTP handles:
-        # - Docker container with mounts
+        # - Docker container with mounts (based on agent type + config)
         # - MCP-over-HTTP server
         # - Environment variables (PG creds, MCP_SERVER_URL, etc.)
         compositor = await create_compositor(
             workspace=workspace,
-            definition_id=definition_id,
-            inherit_mounts_from=inherit_mounts_from,
+            config=config,  # Agent-type-specific mounts derived from config
         )
 
         # 4. Create bootstrap handler for init execution
@@ -749,7 +840,7 @@ class AgentHandle:
                     # ... other handlers
                 ],
                 tool_policy=AllowAnyToolOrTextMessage(),
-                dynamic_instructions=lambda: (Path(workspace) / "AGENT.md").read_text(),
+                dynamic_instructions=lambda: (workspace / "AGENT.md").read_text(),
             )
         # Note: init output is now in transcript as tool result from bootstrap
 
@@ -758,7 +849,8 @@ class AgentHandle:
             agent=agent,
             compositor=compositor,
             text_capture_handler=text_capture,
-            config=AgentConfig(definition_id, workspace, inherit_mounts_from, model_client),
+            config=config,
+            workspace=workspace,
         )
 
     async def send_and_wait_for_text(self, message: str) -> str:
@@ -771,7 +863,14 @@ class AgentHandle:
         return self.text_capture_handler.take()  # Returns captured text, clears state
 
     async def restart_container(self):
-        """Restart container after it was killed."""
+        """Restart container after it was killed.
+
+        Re-unpacks agent definition to ensure workspace is intact.
+        """
+        # Re-unpack agent definition (container workspace was lost)
+        definition = load_definition(self.config.definition_id)
+        unpack_definition(definition.archive, self.workspace)
+
         # Restart container
         await self.compositor.runtime.server.start()
 
@@ -785,7 +884,7 @@ class AgentHandle:
     async def shutdown(self):
         """Clean up all resources."""
         await self.compositor.__aexit__(None, None, None)
-        shutil.rmtree(self.config.workspace)
+        shutil.rmtree(self.workspace)
 ```
 
 **New handler for conversational interface:**
@@ -866,31 +965,43 @@ class CaptureTextHandler(BaseHandler):
 **Usage patterns:**
 
 ```python
-# Prompt optimizer running critics
+# Prompt optimizer running critics (one-shot, no conversation)
 registry = AgentRegistry()
-critic_id = await registry.start_agent("critic", parent_transcript_id=my_transcript)
-result = await registry.send_message(critic_id, "Review this code...")
+critic_id = await registry.create_agent(AgentConfig(
+    definition_id="critic_abc123",
+    agent_type="critic",
+    parent_transcript_id=my_transcript,
+    snapshot_slug="ducktape/2025-01-15",
+    scope_hash="abc123",
+))
+result = await registry.run_agent(critic_id, "Begin review")
+# Critic runs to completion, returns structured output
 
-# Agent spawning sub-agent for task decomposition
-sub_id = await registry.start_agent(
-    "freeform_abc123",
+# Critic spawning sub-agent for task decomposition
+sub_id = await registry.create_agent(AgentConfig(
+    definition_id="freeform_abc123",
+    agent_type="freeform",
     parent_transcript_id=current_transcript_id(),
-    inherit_mounts_from=current_transcript_id(),
-)
-response = await registry.send_message(sub_id, "Trace the auth flow...")
+    # Inherits snapshot mount from parent's config
+))
+response = await registry.run_agent(sub_id, "Trace the auth flow...")
 
 # CLI running any agent
 registry = AgentRegistry()
-agent_id = await registry.start_agent("grader")
+agent_id = await registry.create_agent(AgentConfig(
+    definition_id="grader",
+    agent_type="grader",
+    graded_transcript_id=some_transcript,
+))
 ```
 
 **Key properties:**
 - Same infrastructure for all agent execution
-- Container stays alive between `send_message` calls
+- Container stays alive between `run_agent` calls
 - Agent.run() is resumable - doesn't clear `_transcript`, just resets `finished` flag
 - Events persisted to DB via `DatabaseEventHandler` (for crash recovery)
-- Lock prevents concurrent `send_message` to same agent
-- Restart: container restarted, inject system message, transcript already in memory
+- Lock prevents concurrent `run_agent` to same agent
+- Restart: container restarted, re-unpack definition, inject system message
 - Uses existing `Agent.run()` loop with `AbortOnTextMessage` handler to stop when text produced
 
 ### Use Cases
@@ -900,14 +1011,40 @@ agent_id = await registry.start_agent("grader")
 - **Parallel review**: Spawn multiple sub-agents for different file groups
 - **Iterative refinement**: Sub-agent finds issues, parent synthesizes
 
-### Prompt Optimizer Awareness
+### Prompt Optimizer Role
 
-The prompt optimizer agent should know about sub-agent spawning so it can:
+The prompt optimizer's job extends beyond just writing system prompts:
+
+1. **System prompts**: Evolve AGENT.md to improve agent effectiveness
+2. **Tool development**: Create and refine helper scripts in agent definitions
+   that help agents do their job well (e.g., analysis tools, formatters)
+3. **Sub-agent delegation**: Teach agents to effectively delegate work to
+   sub-agents for complex tasks
+4. **End-to-end optimization**: Improve the full agent definition package,
+   not just the prompt
+
+The optimizer should know about sub-agent spawning so it can:
 - Teach critics to decompose complex reviews into sub-tasks
 - Add sub-agent patterns to critic AGENT.md (e.g., "For large codebases, spawn
   sub-agents to analyze different modules in parallel")
 - Evolve effective sub-agent prompts alongside the main critic prompt
 - Optimize the division of labor between parent and child agents
 
-This is documented in the prompt optimizer's own AGENT.md and referenced when
-evolving critic definitions.
+### Prompt Improver Agent
+
+The prompt improver agent (a specific instantiation of prompt optimizer):
+- Has access to agent definitions of rollouts it should analyze
+- Can read evaluation results to understand what works
+- Creates new agent definitions as its output
+- **Output**: The new agent definition ID (its return value IS the definition)
+
+```python
+# Prompt improver's workflow
+# 1. Read eval results to find promising directions
+# 2. Fetch and analyze existing definitions
+# 3. Create improved definition (AGENT.md + tools)
+# 4. Register via: agent-helpers agent-definition create --type critic /workspace/improved
+# 5. Return the new definition_id as output
+```
+
+This is documented in the prompt improver's own AGENT.md.
