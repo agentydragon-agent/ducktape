@@ -676,6 +676,14 @@ These refactors have no dependencies and can be merged independently:
    - All tables: agent_runs, events, issues, grader_evaluations, agent_definitions
    - Update all FK references
 
+10. **Unify `get_validation_run_aggregates()` function**
+    - Add `scope_kind` and `scope_hash` columns to output
+    - Filter based on `current_prompt_optimizer_target_metric()`:
+      - WHOLE_REPO: only `entire_snapshot` rows
+      - TARGETED: both `entire_snapshot` and `explicit_file` rows
+    - SECURITY DEFINER to bypass ground truth RLS
+    - Single function serves both modes, filtering enforced server-side
+
 ### Phase 1: Foundation
 
 1. **Database schema**
