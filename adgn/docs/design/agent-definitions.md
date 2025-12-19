@@ -634,6 +634,8 @@ class AgentHandle:
     transcript_id: UUID
     agent: Agent                      # Agent instance (owns transcript)
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
+    db_handler: DatabaseEventHandler  # For explicit persistence (system messages)
+    text_capture_handler: CaptureTextHandler  # Captures text + aborts
     config: AgentConfig               # For restart: definition_id, mounts, model, etc.
 
     @classmethod
@@ -662,14 +664,18 @@ class AgentHandle:
             inherit_mounts_from=inherit_mounts_from,
         )
 
-        # 4. Create Agent with handlers
+        # 4. Create handlers
+        db_handler = DatabaseEventHandler(transcript_id=transcript_id)
+        text_capture = CaptureTextHandler()  # Captures text, aborts loop
+
+        # 5. Create Agent with handlers
         async with Client(compositor) as mcp_client:
             agent = await Agent.create(
                 mcp_client=mcp_client,
                 client=model_client,
                 handlers=[
-                    DatabaseEventHandler(transcript_id=transcript_id),
-                    AbortOnTextMessage(),  # Stop when agent produces text
+                    db_handler,
+                    text_capture,
                     # ... other handlers
                 ],
                 tool_policy=AllowAnyToolOrTextMessage(),
@@ -684,6 +690,8 @@ class AgentHandle:
             transcript_id=transcript_id,
             agent=agent,
             compositor=compositor,
+            db_handler=db_handler,
+            text_capture_handler=text_capture,
             config=AgentConfig(definition_id, workspace, inherit_mounts_from, model_client),
         )
 
@@ -692,17 +700,9 @@ class AgentHandle:
         # Add user message to agent's transcript
         self.agent.insert_message(UserMessage.text(message))
 
-        # Run agent loop - AbortOnTextMessage handler stops when text produced
-        result = await self.agent.run()
-        return result.text
-
-    def inject_restart_message(self):
-        """Inject system message notifying agent of container restart."""
-        self.agent.insert_message(SystemMessage.text(
-            "Your container was restarted. Any local state (files in /tmp, "
-            "running processes, environment variables set at runtime) has been "
-            "lost. The conversation history and mounted volumes are preserved."
-        ))
+        # Run agent loop - CaptureTextHandler captures and aborts on text
+        await self.agent.run()
+        return self.text_capture_handler.take()  # Returns captured text, clears state
 
     async def restart_container(self):
         """Restart container after it was killed."""
@@ -710,14 +710,92 @@ class AgentHandle:
         await self.compositor.runtime.server.start()
 
         # Agent transcript is preserved (Agent.run() doesn't clear _transcript)
-        # Just inject restart notification
-        self.inject_restart_message()
+        # Inject restart notification - will be persisted on next run()
+        self.agent.insert_message(SystemMessage.text(
+            "Your container was restarted. Any local state (files in /tmp, "
+            "running processes, environment variables set at runtime) has been "
+            "lost. The conversation history and mounted volumes are preserved."
+        ))
+        # Persist directly via db handler (insert_message doesn't trigger handlers)
+        self.db_handler.on_system_text(self.transcript_id, "container_restart")
 
     async def shutdown(self):
         """Clean up all resources."""
         await self.compositor.__aexit__(None, None, None)
         shutil.rmtree(self.config.workspace)
 ```
+
+**CaptureTextHandler for conversational interface:**
+
+```python
+class CaptureTextHandler(BaseHandler):
+    """Capture assistant text and abort loop for conversational use.
+
+    Unlike FinishOnTextMessageHandler which just aborts, this handler
+    captures the text so it can be retrieved after run() completes.
+    """
+
+    def __init__(self):
+        self._captured: str | None = None
+        self._should_abort = False
+
+    def on_assistant_text_event(self, evt: AssistantText) -> None:
+        """Capture text and set abort flag."""
+        self._captured = evt.text
+        self._should_abort = True
+
+    def on_before_sample(self) -> LoopDecision:
+        """Abort if text was captured."""
+        if self._should_abort:
+            self._should_abort = False
+            return Abort()
+        return NoAction()
+
+    def take(self) -> str:
+        """Return captured text and clear state for next run()."""
+        text = self._captured
+        self._captured = None
+        if text is None:
+            raise RuntimeError("No text captured - agent may have been aborted for other reason")
+        return text
+```
+
+**Required infrastructure extension for system message persistence:**
+
+Currently `Agent.insert_message()` does not notify handlers (by design - for setup).
+To persist system messages like restart notifications:
+
+1. Add `SystemText` event type to `events.py`:
+   ```python
+   class SystemText(BaseModel):
+       type: Literal["system_text"] = "system_text"
+       text: str
+       tag: str | None = None  # Optional: "container_restart", "context_injected", etc.
+   ```
+
+2. Add `on_system_text_event` to `BaseHandler`:
+   ```python
+   def on_system_text_event(self, evt: SystemText) -> None:
+       """Called when a system message is injected."""
+       return
+   ```
+
+3. Extend `DatabaseEventHandler` to persist:
+   ```python
+   def on_system_text(self, transcript_id: UUID, tag: str | None = None) -> None:
+       self._write_event(SystemText(text=..., tag=tag))
+   ```
+
+4. Update `Agent._notify_handlers_for_transcript_item` to call the hook:
+   ```python
+   elif isinstance(item, SystemMessage):
+       text = self._extract_text_from_message(item)
+       for h in self._handlers:
+           h.on_system_text_event(SystemText(text=text))
+   ```
+
+Alternatively, `AgentHandle` keeps a reference to the `DatabaseEventHandler` and
+calls it directly after `insert_message()`, as shown in `restart_container()` above.
 
 **Usage patterns:**
 
