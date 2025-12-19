@@ -47,12 +47,7 @@ async def test_capture_text_basic(make_agent_with_capture, capture_handler) -> N
 
 async def test_capture_text_after_tool_call(make_agent_with_capture, capture_handler) -> None:
     """Test capture after agent makes a tool call then responds."""
-    agent = await make_agent_with_capture(
-        steps=[
-            EchoCall("testing"),
-            AssistantMessage("Tool call completed."),
-        ]
-    )
+    agent = await make_agent_with_capture(steps=[EchoCall("testing"), AssistantMessage("Tool call completed.")])
     agent.insert_message(UserMessage.text("use echo then respond"))
 
     await agent.run()
@@ -63,10 +58,7 @@ async def test_capture_text_after_tool_call(make_agent_with_capture, capture_han
 async def test_capture_text_multiple_runs(make_agent_with_capture, capture_handler) -> None:
     """Test capture across multiple agent runs (conversational pattern)."""
     agent = await make_agent_with_capture(
-        steps=[
-            AssistantMessage("First response"),
-            AssistantMessage("Second response"),
-        ]
+        steps=[AssistantMessage("First response"), AssistantMessage("Second response")]
     )
 
     # First run

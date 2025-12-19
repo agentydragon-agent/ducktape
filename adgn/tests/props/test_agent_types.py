@@ -26,22 +26,10 @@ class TestTypeConfigDiscriminatedUnion:
     @pytest.mark.parametrize(
         ("data", "expected_type"),
         [
-            (
-                {"agent_type": "critic", "snapshot_slug": "x", "scope_hash": "y"},
-                CriticTypeConfig,
-            ),
-            (
-                {"agent_type": "grader", "graded_agent_run_id": "550e8400-e29b-41d4-a716-446655440000"},
-                GraderTypeConfig,
-            ),
-            (
-                {"agent_type": "freeform"},
-                FreeformTypeConfig,
-            ),
-            (
-                {"agent_type": "prompt_optimizer", "target_metric": "whole-repo"},
-                PromptOptimizerTypeConfig,
-            ),
+            ({"agent_type": "critic", "snapshot_slug": "x", "scope_hash": "y"}, CriticTypeConfig),
+            ({"agent_type": "grader", "graded_agent_run_id": "550e8400-e29b-41d4-a716-446655440000"}, GraderTypeConfig),
+            ({"agent_type": "freeform"}, FreeformTypeConfig),
+            ({"agent_type": "prompt_optimizer", "target_metric": "whole-repo"}, PromptOptimizerTypeConfig),
         ],
     )
     def test_discriminator_routes_to_correct_type(

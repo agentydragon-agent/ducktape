@@ -25,11 +25,7 @@ from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
 from adgn.props.db.models import AgentDefinition
 
-app = typer.Typer(
-    name="agent-definition",
-    help="Agent definition management commands",
-    add_completion=False,
-)
+app = typer.Typer(name="agent-definition", help="Agent definition management commands", add_completion=False)
 
 
 def _compute_definition_hash(definition_dir: Path) -> str:
@@ -88,7 +84,9 @@ def _validate_definition(definition_dir: Path) -> list[str]:
 @app.command("create")
 def cmd_create(
     definition_dir: Annotated[Path, typer.Argument(help="Directory containing agent definition")],
-    definition_id: Annotated[str | None, typer.Option("--id", help="Definition ID (auto-generated if not provided)")] = None,
+    definition_id: Annotated[
+        str | None, typer.Option("--id", help="Definition ID (auto-generated if not provided)")
+    ] = None,
     agent_type: Annotated[AgentType, typer.Option("--type", help="Agent type")] = AgentType.FREEFORM,
     force: Annotated[bool, typer.Option("--force", "-f", help="Overwrite existing definition")] = False,
 ) -> None:
