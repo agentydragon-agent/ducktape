@@ -623,12 +623,14 @@ These properties MUST be maintained by the implementation:
 
 5. **Two prompt optimizer target metrics** (different validation access):
    - `WHOLE_REPO`: Only full-snapshot validation examples (black-box validation)
-     - VALID split access only via `get_validation_run_aggregates()` function
+     - VALID metrics only via SECURITY DEFINER function (full-snapshot aggregates)
      - Per-file VALID examples blocked entirely
    - `TARGETED`: Both per-file and full-snapshot validation examples
-     - VALID split access via aggregate views (not raw data)
-     - Allows iteration on specific files
-   - Both modes: TRAIN split via direct RLS-filtered access, VALID split via aggregates only
+     - VALID examples table accessible (filenames only, no ground truth)
+     - VALID metrics via SECURITY DEFINER function (includes per-file aggregates)
+   - Both modes: TRAIN ground truth via direct RLS-filtered access
+   - Both modes: VALID metrics via SECURITY DEFINER functions only (views can't bypass ground truth RLS)
+   - `target_metric` stored in `PromptOptimizerTypeConfig`, used by `current_prompt_optimizer_target_metric()` for RLS
 
 ### Phase 0: Independent Refactors (can be done anytime, in parallel)
 
@@ -1181,14 +1183,30 @@ class FreeformTypeConfig(BaseModel):
     agent_type: Literal[AgentType.FREEFORM] = AgentType.FREEFORM
 
 
-class PromptOptimizerTypeConfig(BaseModel):
-    """Prompt optimizer configuration (no extra fields, just type marker).
+class TargetMetric(StrEnum):
+    """Prompt optimizer target metric mode."""
+    WHOLE_REPO = "whole-repo"  # Black-box validation: only full-snapshot examples
+    TARGETED = "targeted"      # Allows per-file iteration on VALID split
 
-    Different optimization targets are handled by different agent definitions
-    (e.g., prompt_optimizer_grader_score, prompt_optimizer_issue_quality),
-    each with its own AGENT.md containing metric-specific instructions.
+
+class PromptOptimizerTypeConfig(BaseModel):
+    """Prompt optimizer configuration.
+
+    The target_metric controls validation split access:
+    - WHOLE_REPO: TRAIN ground truth only, VALID metrics via SECURITY DEFINER function
+                  (full-snapshot aggregates only)
+    - TARGETED: TRAIN ground truth + VALID examples table (filenames only, no ground truth),
+                VALID metrics via SECURITY DEFINER function (includes per-file aggregates)
+
+    Both modes use SECURITY DEFINER functions for VALID metrics because:
+    - Ground truth tables have TRAIN-only RLS
+    - Aggregate views join ground truth tables, so inherit TRAIN-only restriction
+    - Only SECURITY DEFINER can bypass RLS to compute VALID aggregates
+
+    RLS uses current_prompt_optimizer_target_metric() to gate direct data access.
     """
     agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
+    target_metric: TargetMetric
 
 
 # Discriminated union for type-specific config only
