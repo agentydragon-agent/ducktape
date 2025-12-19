@@ -922,22 +922,24 @@ architecture" or "look for type errors" and delegate to specialized sub-agents.
 
    Report your findings as a structured response when complete.
    EOF
+   # Copy shared resources into sub-agent definition
+   $ mkdir -p /workspace/subagents/code-tracer/docs /workspace/subagents/code-tracer/examples
+   $ cp /workspace/docs/mcp_http_connection.md /workspace/subagents/code-tracer/docs/
+   $ cp /workspace/examples/mcp_use.py /workspace/subagents/code-tracer/examples/
    $ cat > /workspace/subagents/code-tracer/init << 'EOF'
    #!/usr/bin/env python3
    """Init script for code tracer sub-agent."""
-   from importlib.resources import files
-
-   # Ad-hoc sub-agents use importlib.resources since they don't have
-   # pre-packaged docs like built-in agents do
-   print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
+   from pathlib import Path
+   workspace = Path("/workspace")
+   print(workspace.joinpath("docs/mcp_http_connection.md").read_text())
    print("=== Code Tracer Ready ===")
    EOF
    $ chmod +x /workspace/subagents/code-tracer/init
    ```
 
-   **Note**: Ad-hoc sub-agents created at runtime use `importlib.resources` to
-   read shared boilerplate from the installed adgn package. Built-in agents have
-   all docs/examples pre-packaged in their workspace instead.
+   Sub-agent definitions are self-contained packets just like built-in agents.
+   The parent copies shared resources from its own workspace into the sub-agent's
+   definition before registering it.
 
 2. Parent registers the definition:
    ```bash
