@@ -640,7 +640,6 @@ class AgentHandle:
     agent: Agent                      # Agent instance (owns transcript)
     compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     text_capture_handler: CaptureTextHandler  # Captures text + aborts
-    inject_handler: QueuedInjectHandler  # Queues messages for injection
     config: AgentConfig               # For restart: definition_id, mounts, model, etc.
 
     @classmethod
@@ -672,7 +671,6 @@ class AgentHandle:
         # 4. Create handlers
         db_handler = DatabaseEventHandler(transcript_id=transcript_id)
         text_capture = CaptureTextHandler()  # Captures text, aborts loop
-        inject_handler = QueuedInjectHandler()  # For queuing messages between runs
 
         # 5. Create Agent with handlers
         async with Client(compositor) as mcp_client:
@@ -680,8 +678,7 @@ class AgentHandle:
                 mcp_client=mcp_client,
                 client=model_client,
                 handlers=[
-                    inject_handler,  # First: inject queued messages
-                    db_handler,      # Persist all events (including injected)
+                    db_handler,      # Persist all events
                     text_capture,    # Capture text + abort
                     # ... other handlers
                 ],
@@ -698,7 +695,6 @@ class AgentHandle:
             agent=agent,
             compositor=compositor,
             text_capture_handler=text_capture,
-            inject_handler=inject_handler,
             config=AgentConfig(definition_id, workspace, inherit_mounts_from, model_client),
         )
 
@@ -716,9 +712,8 @@ class AgentHandle:
         # Restart container
         await self.compositor.runtime.server.start()
 
-        # Queue restart notification for injection on next run()
-        # InjectItems triggers handlers, so DatabaseEventHandler will persist it
-        self.inject_handler.queue(SystemMessage.text(
+        # Inject restart notification - triggers handlers, so DB persists it
+        self.agent.inject_message(SystemMessage.text(
             "Your container was restarted. Any local state (files in /tmp, "
             "running processes, environment variables set at runtime) has been "
             "lost. The conversation history and mounted volumes are preserved."
@@ -730,7 +725,7 @@ class AgentHandle:
         shutil.rmtree(self.config.workspace)
 ```
 
-**New handlers for conversational interface:**
+**New handler for conversational interface:**
 
 ```python
 class CaptureTextHandler(BaseHandler):
@@ -763,54 +758,39 @@ class CaptureTextHandler(BaseHandler):
         if text is None:
             raise RuntimeError("No text captured - agent may have been aborted for other reason")
         return text
-
-
-class QueuedInjectHandler(BaseHandler):
-    """Queue messages for injection at start of next run().
-
-    Used to inject messages between run() calls (e.g., restart notifications).
-    InjectItems triggers handler notifications, so DatabaseEventHandler will
-    persist the injected messages.
-    """
-
-    def __init__(self):
-        self._queue: list[TranscriptItem] = []
-
-    def queue(self, item: TranscriptItem) -> None:
-        """Queue an item for injection on next on_before_sample."""
-        self._queue.append(item)
-
-    def on_before_sample(self) -> LoopDecision:
-        """Inject queued items if any, then clear queue."""
-        if self._queue:
-            items = self._queue.copy()
-            self._queue.clear()
-            return InjectItems(items=items)
-        return NoAction()
 ```
 
-**Required infrastructure extension for system message persistence:**
+**Required infrastructure extensions:**
 
-Currently `Agent._notify_handlers_for_transcript_item` has `pass` for SystemMessage.
-To persist system messages via InjectItems (which already triggers handlers):
+1. **Add `Agent.inject_message()` method** - inserts message AND triggers handlers:
+   ```python
+   def inject_message(self, message: Message) -> None:
+       """Insert message and trigger handlers (for mid-conversation injection).
 
-1. Add `SystemText` event type to `events.py`:
+       Unlike insert_message() which is for setup before run(), this method
+       notifies handlers so the message is persisted, displayed, etc.
+       """
+       self._transcript.append(message)
+       self._notify_handlers_for_transcript_item(message)
+   ```
+
+2. **Add `SystemText` event type** to `events.py`:
    ```python
    class SystemText(BaseModel):
        type: Literal["system_text"] = "system_text"
        text: str
    ```
 
-2. Add `on_system_text_event` to `BaseHandler`:
+3. **Add `on_system_text_event` to `BaseHandler`** (currently `pass` for SystemMessage):
    ```python
    def on_system_text_event(self, evt: SystemText) -> None:
        """Called when a system message is injected."""
        return
    ```
 
-3. Extend `DatabaseEventHandler.on_system_text_event` to persist.
+4. **Extend `DatabaseEventHandler`** to persist system messages.
 
-4. Update `Agent._notify_handlers_for_transcript_item` to call the hook:
+5. **Update `Agent._notify_handlers_for_transcript_item`** to call the hook:
    ```python
    elif isinstance(item, SystemMessage):
        text = self._extract_text_from_message(item)
@@ -818,10 +798,9 @@ To persist system messages via InjectItems (which already triggers handlers):
            h.on_system_text_event(SystemText(text=text))
    ```
 
-**Compatibility check needed:** Verify existing agent deployments are compatible
-with InjectItems triggering handlers for SystemMessage. If any existing code
-injects SystemMessage via handlers and doesn't expect persistence, this could
-cause issues.
+**Compatibility check needed:** Verify existing agent deployments don't rely on
+SystemMessage not triggering handlers. Current uses of `insert_message()` for
+setup remain unchanged (no handlers). Only `inject_message()` triggers handlers.
 
 **Usage patterns:**
 
