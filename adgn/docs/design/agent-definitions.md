@@ -776,8 +776,9 @@ class FreeformTypeConfig(BaseModel):
 
 
 class PromptOptimizerTypeConfig(BaseModel):
-    """Prompt optimizer configuration (no extra fields, just type marker)."""
+    """Prompt optimizer configuration."""
     agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
+    target_metric: str  # e.g., "grader_score", "issue_quality" - which metric to optimize
 
 
 # Discriminated union for type-specific config only
