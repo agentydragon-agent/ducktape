@@ -545,29 +545,39 @@ response3 = send_message(transcript_id, "Summarize your findings")
 - Conversation history persisted in events table
 - No explicit end_agent needed - resources cleaned up when parent exits
 
-### Implementation: Long-Running Containers
+### Implementation: Agent Registry
 
-Sub-agents use long-running containers that persist between `send_message` calls:
+General agent lifecycle management - used by prompt optimizer running critics,
+agents spawning sub-agents, CLI, etc. Not sub-agent specific.
 
 ```python
-class SubAgentRegistry:
-    """Manages long-running sub-agent containers within parent process."""
+class AgentRegistry:
+    """Manages long-running agent containers."""
 
     def __init__(self):
-        self._agents: dict[UUID, SubAgentHandle] = {}
+        self._agents: dict[UUID, AgentHandle] = {}
         self._locks: dict[UUID, asyncio.Lock] = {}  # Prevent concurrent send_message
 
-    async def start_agent(self, definition_id: str, inherit_mounts: bool) -> UUID:
+    async def start_agent(
+        self,
+        definition_id: str,
+        parent_transcript_id: UUID | None = None,
+        inherit_mounts_from: UUID | None = None,
+    ) -> UUID:
         transcript_id = uuid4()
 
         # Create agent_runs record
-        create_agent_run(transcript_id, definition_id, parent=current_transcript_id())
+        create_agent_run(
+            transcript_id,
+            definition_id,
+            parent=parent_transcript_id,
+        )
 
         # Start container + MCP server (long-running)
-        handle = await SubAgentHandle.create(
+        handle = await AgentHandle.create(
             transcript_id=transcript_id,
             definition_id=definition_id,
-            inherit_mounts=inherit_mounts,
+            inherit_mounts_from=inherit_mounts_from,
         )
 
         self._agents[transcript_id] = handle
@@ -588,14 +598,21 @@ class SubAgentRegistry:
             # Add message and run until text response
             return await handle.send_and_wait_for_text(message)
 
-    async def cleanup_all(self):
-        """Called when parent agent exits."""
-        for handle in self._agents.values():
+    async def cleanup(self, transcript_id: UUID):
+        """Cleanup a specific agent."""
+        handle = self._agents.pop(transcript_id, None)
+        if handle:
             await handle.shutdown()
 
+    async def cleanup_all(self):
+        """Cleanup all agents (e.g., on process exit)."""
+        for handle in self._agents.values():
+            await handle.shutdown()
+        self._agents.clear()
 
-class SubAgentHandle:
-    """Handle to a single long-running sub-agent."""
+
+class AgentHandle:
+    """Handle to a single long-running agent."""
 
     def __init__(self, transcript_id: UUID, container, mcp_server, agent: Agent):
         self.transcript_id = transcript_id
@@ -621,19 +638,38 @@ class SubAgentHandle:
         )
 
     async def restart_container(self):
-        # Kill old container if zombie
         await self.container.kill()
-        # Start fresh container with same config
         self.container = await start_container(self.config)
 ```
 
+**Usage patterns:**
+
+```python
+# Prompt optimizer running critics
+registry = AgentRegistry()
+critic_id = await registry.start_agent("critic", parent_transcript_id=my_transcript)
+result = await registry.send_message(critic_id, "Review this code...")
+
+# Agent spawning sub-agent for task decomposition
+sub_id = await registry.start_agent(
+    "freeform_abc123",
+    parent_transcript_id=current_transcript_id(),
+    inherit_mounts_from=current_transcript_id(),
+)
+response = await registry.send_message(sub_id, "Trace the auth flow...")
+
+# CLI running any agent
+registry = AgentRegistry()
+agent_id = await registry.start_agent("grader")
+```
+
 **Key properties:**
+- Same infrastructure for all agent execution
 - Container stays alive between `send_message` calls
 - Agent object is stateful, holds full conversation in memory
-- Events also persisted to DB (for recovery if parent crashes)
-- Lock prevents concurrent `send_message` to same sub-agent
+- Events also persisted to DB (for crash recovery)
+- Lock prevents concurrent `send_message` to same agent
 - Restart detection + system message injection
-- Parent's cleanup handler shuts down all sub-agents
 
 ### Use Cases
 
