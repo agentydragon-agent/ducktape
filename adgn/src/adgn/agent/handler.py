@@ -8,19 +8,22 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from typing import Literal
 
+from mcp.types import TextContent
 from pydantic import BaseModel
 
 from adgn.agent.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, InjectItems, LoopDecision, NoAction
-from adgn.openai_utils.model import UserMessage
+from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 __all__ = [
     "AbortIf",
     "AbortTurnDecision",
     "BaseHandler",
+    "BootstrapHandler",
     "CaptureTextHandler",
     "ContinueDecision",
     "FinishOnTextMessageHandler",
+    "InitFailedError",
     "RedirectOnTextMessageHandler",
     "SequenceHandler",
 ]
@@ -280,3 +283,110 @@ class RedirectOnTextMessageHandler(BaseHandler):
             self._text_detected = False
             return InjectItems(items=[UserMessage.text(self._reminder)])
         return NoAction()
+
+
+class InitFailedError(Exception):
+    """Raised when init script returns non-zero exit code.
+
+    This exception is raised by BootstrapHandler when the init script fails,
+    allowing callers to handle initialization failures appropriately (e.g.,
+    log the error, mark the agent run as failed, clean up resources).
+    """
+
+    def __init__(self, message: str, exit_code: int | None = None):
+        """Initialize InitFailedError.
+
+        Args:
+            message: Error message from init script output
+            exit_code: Exit code if available (None if not extractable)
+        """
+        super().__init__(message)
+        self.exit_code = exit_code
+
+
+class BootstrapHandler(BaseHandler):
+    """Execute init script and abort on failure.
+
+    Injects an init call as the first action and monitors its result. If the
+    init script fails (non-zero exit code / isError=True), raises InitFailedError
+    to abort the agent run immediately.
+
+    This enables init scripts to perform environmental sanity checks before
+    the agent begins execution:
+    - Verify database credentials are valid
+    - Check that the MCP server is reachable
+    - Validate expected resources exist (snapshots, ground truth data, etc.)
+    - Ensure required tools are available in the container
+
+    Usage:
+        from adgn.agent.bootstrap import docker_exec_call, TypedBootstrapBuilder
+
+        builder = TypedBootstrapBuilder.for_server(runtime.server)
+        init_call = docker_exec_call(builder, runtime, ["./init"], timeout_ms=5000)
+        bootstrap = BootstrapHandler(init_call)
+
+        agent = await Agent.create(
+            ...,
+            handlers=[bootstrap, other_handlers...],
+        )
+
+        try:
+            await agent.run()
+        except InitFailedError as e:
+            logger.error(f"Init failed: {e}")
+            # Handle failure (mark run as failed, cleanup, etc.)
+    """
+
+    def __init__(self, init_call: FunctionCallItem):
+        """Initialize bootstrap handler.
+
+        Args:
+            init_call: FunctionCallItem for the init script execution.
+                       Use docker_exec_call() to create this.
+        """
+        if not isinstance(init_call, FunctionCallItem):
+            raise TypeError(f"init_call must be FunctionCallItem, got {type(init_call).__name__}")
+
+        self._init_call = init_call
+        self._init_complete = False
+        self._init_failed = False
+        self._error_message: str | None = None
+
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        """Check init result for errors."""
+        if evt.call_id != self._init_call.call_id:
+            return
+
+        self._init_complete = True
+        if evt.result.isError:
+            self._init_failed = True
+            # Extract error message from result content
+            for content in evt.result.content or []:
+                if isinstance(content, TextContent):
+                    self._error_message = content.text
+                    break
+            if self._error_message is None:
+                self._error_message = "Init script failed (no output captured)"
+
+    def on_before_sample(self) -> LoopDecision:
+        """Inject init call first, then abort if it failed."""
+        if not self._init_complete:
+            # First call - inject the init command
+            return InjectItems(items=[self._init_call])
+
+        if self._init_failed:
+            # Init completed with error - raise exception to abort
+            raise InitFailedError(f"Init script failed: {self._error_message or 'unknown error'}")
+
+        # Init succeeded - continue normal execution
+        return NoAction()
+
+    @property
+    def init_complete(self) -> bool:
+        """Check if init has completed (success or failure)."""
+        return self._init_complete
+
+    @property
+    def init_failed(self) -> bool:
+        """Check if init failed."""
+        return self._init_failed
