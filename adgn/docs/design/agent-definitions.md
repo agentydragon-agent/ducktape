@@ -579,9 +579,8 @@ optimizer uses `run_critic`/`run_grader` with explicit inputs. See
 ### Schema Support
 
 Already handled by unified `agent_runs` table:
-- `agent_type = 'freeform'` for ad-hoc sub-agents
+- `agent_definition_id` references the ad-hoc definition (agent_type joined from there)
 - `parent_transcript_id` links to spawning agent
-- `agent_definition_id` references the ad-hoc definition
 
 ### MCP Tools (Conversational Interface)
 
