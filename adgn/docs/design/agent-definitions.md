@@ -21,7 +21,7 @@ Minimal conventions:
 ```
 <agent_definition>/
 ├── AGENT.md              # System prompt (required)
-├── init.sh               # Runs on agent startup (required, must be executable)
+├── init               # Runs on agent startup (required, must be executable)
 └── ...                   # Any other files the agent needs
 ```
 
@@ -37,7 +37,7 @@ You are a code quality critic agent. Your job is to review code and identify iss
 Review the snapshot code and report issues using the available tools.
 
 ## Getting Started
-Run `./init.sh` for environment details and available tools.
+Run `./init` for environment details and available tools.
 (Note: Runtime auto-executes this, but instruction remains for clarity)
 
 ## Workflow
@@ -48,28 +48,28 @@ Run `./init.sh` for environment details and available tools.
 ... (rest of agent-specific instructions)
 ```
 
-### init.sh
+### init
 
 Required, must be executable. Executed automatically by the runtime before agent
 sampling begins (warm-start pattern - we don't rely on LLM following an instruction).
 
-Default init.sh for repo-tracked agents reads common boilerplate from the
-installed adgn package:
+Default init for repo-tracked agents is written in Python and reads common
+boilerplate from the installed adgn package:
 
-```bash
-#!/bin/bash
-# Init script for critic agent
+```python
+#!/usr/bin/env python3
+"""Init script for critic agent."""
+
+import os
+from importlib.resources import files
 
 # Read MCP connection info from adgn package resources
-python3 -c "
-from importlib.resources import files
 print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
-"
 
 # Read scope from environment (set by runtime)
-echo "=== Review Scope ==="
-echo "Snapshot: $SNAPSHOT_SLUG"
-echo "Files: $SCOPE_FILES"
+print("=== Review Scope ===")
+print(f"Snapshot: {os.environ.get('SNAPSHOT_SLUG', 'N/A')}")
+print(f"Files: {os.environ.get('SCOPE_FILES', 'N/A')}")
 
 # Any agent-specific setup...
 ```
@@ -200,8 +200,8 @@ inflate-agent --self /workspace/agents/self
 The agent runtime automatically:
 1. Unpacks agent definition to `/workspace`
 2. Sets environment variables (`AGENT_DEFINITION_ID`, `SNAPSHOT_SLUG`, `MCP_SERVER_URL`, etc.)
-3. Executes `init.sh` via docker_exec
-4. Injects init.sh output as first assistant message (warm-start)
+3. Executes `init` via docker_exec
+4. Injects init output as first assistant message (warm-start)
 5. Reads `/workspace/AGENT.md` as system prompt
 6. Begins agent sampling
 
@@ -267,30 +267,30 @@ Agent definitions are fully static - no Jinja2 templating.
 
 1. **Common boilerplate** (MCP connection docs, tool usage patterns):
    - Stored in `adgn.props.prompts` package resources
-   - init.sh reads via `importlib.resources`
+   - init reads via `importlib.resources`
    - Shared across all agents, versioned with the adgn package
 
 2. **Run-specific context** (snapshot slug, file scope, credentials):
    - Passed via environment variables (`$SNAPSHOT_SLUG`, `$SCOPE_FILES`, `$PGHOST`, etc.)
-   - init.sh prints these for the agent to see
+   - init prints these for the agent to see
 
 3. **MCP server URL/token**:
    - `$MCP_SERVER_URL` and `$MCP_SERVER_TOKEN` set by runtime
-   - init.sh demonstrates connection (already the pattern today)
+   - init demonstrates connection (already the pattern today)
 
 This keeps AGENT.md fully self-contained while allowing runtime-specific context.
 
-### init.sh output limits
+### init output limits
 
-The init.sh output is injected into the conversation as the first assistant
+The init output is injected into the conversation as the first assistant
 turn (warm-start). To prevent truncation:
 
 - docker_exec tool has `max_output_bytes` parameter:
   - Hard cap: 100KB (server-enforced maximum)
   - Default: 10KB if not specified
   - For OpenAI strict mode: parameter must be explicitly set in schema (even if to null)
-- Default init.sh calls set higher limits (e.g., 50KB) explicitly
-- E2E tests verify init.sh output is not truncated (see TODO section)
+- Default init calls set higher limits (e.g., 50KB) explicitly
+- E2E tests verify init output is not truncated (see TODO section)
 
 ## Syncing Repo-Tracked Definitions
 
@@ -321,7 +321,7 @@ The sync runs:
 
 Validation happens at insert time. A valid agent definition must have:
 - `AGENT.md` file (required)
-- `init.sh` file that is executable (required)
+- `init` file that is executable (required)
 
 Insert fails if these requirements are not met.
 
@@ -353,7 +353,7 @@ The agent's own definition is unpacked to `/workspace` (the default cwd):
 ```
 /workspace/
 ├── AGENT.md              # System prompt (complete, self-contained)
-├── init.sh               # Auto-executed on startup
+├── init               # Auto-executed on startup
 └── tools/                # Agent's helper scripts (if any)
 ```
 
@@ -362,5 +362,5 @@ Runtime context comes via environment variables, not files.
 
 ## TODO
 
-- [ ] E2E test verifying init.sh output is not truncated (check for TruncatedOutput model in
+- [ ] E2E test verifying init output is not truncated (check for TruncatedOutput model in
   first step of steps-driven OpenAI mock)
