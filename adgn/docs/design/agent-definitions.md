@@ -27,15 +27,52 @@ Minimal conventions:
 
 ### AGENT.md
 
-The system prompt. This is what the agent "is". May reference other files in the
-definition via `/agents/self/...` paths.
+The complete system prompt. This is what the agent "is". Fully self-contained.
+
+Example structure:
+```markdown
+You are a code quality critic agent. Your job is to review code and identify issues.
+
+## Your Task
+Review the snapshot code and report issues using the available tools.
+
+## Getting Started
+Run `./bootstrap.sh` for environment details and available tools.
+(Note: Runtime auto-executes this, but instruction remains for clarity)
+
+## Workflow
+1. Analyze code using available tools (rg, ruff, mypy, etc.)
+2. Report issues using Python helpers or direct SQL
+3. Complete review by calling submit_critique()
+
+... (rest of agent-specific instructions)
+```
 
 ### bootstrap.sh
 
-If present, executed automatically when the agent starts. Use for:
-- Setting up environment variables
-- Pre-computing indexes or caches
-- Validating prerequisites
+If present, executed automatically by the runtime before agent sampling begins
+(warm-start pattern - we don't rely on LLM following an instruction to run it).
+
+Default bootstrap.sh for repo-tracked agents reads common boilerplate from the
+installed adgn package:
+
+```bash
+#!/bin/bash
+# Bootstrap script for critic agent
+
+# Read MCP connection info from adgn package resources
+python3 -c "
+from importlib.resources import files
+print(files('adgn.props.prompts').joinpath('mcp_http_connection.md').read_text())
+"
+
+# Read scope from environment (set by runtime)
+echo "=== Review Scope ==="
+echo "Snapshot: $SNAPSHOT_SLUG"
+echo "Files: $SCOPE_FILES"
+
+# Any agent-specific setup...
+```
 
 Exit non-zero to abort agent startup.
 
@@ -158,12 +195,18 @@ inflate-agent --type critic --baseline /workspace/agents/critic/base
 inflate-agent --self /workspace/agents/self
 ```
 
-### Bootstrap Integration
+### Bootstrap Integration (Warm-Start)
 
 The agent runtime automatically:
-1. Sets `AGENT_DEFINITION_ID` environment variable
-2. Inflates the agent's own definition to `/agents/self/` (symlink to workspace location)
-3. Runs `bootstrap.sh` if present
+1. Unpacks agent definition to `/workspace`
+2. Sets environment variables (`AGENT_DEFINITION_ID`, `SNAPSHOT_SLUG`, `MCP_SERVER_URL`, etc.)
+3. Executes `bootstrap.sh` via docker_exec (if present)
+4. Injects bootstrap output as first assistant message (warm-start)
+5. Reads `/workspace/AGENT.md` as system prompt
+6. Begins agent sampling
+
+This warm-start pattern ensures the agent sees bootstrap output without relying
+on the LLM to follow an instruction to run it.
 
 Agents that need to read other definitions (e.g., optimizer reading critic) use
 the helper explicitly.
@@ -218,31 +261,33 @@ the helper explicitly.
 
 ## Runtime Information (No Jinja2)
 
-Agent definitions are static - no Jinja2 templating. Dynamic runtime information
-is provided via files written by the runtime before agent starts.
+Agent definitions are fully static - no Jinja2 templating.
 
-### Runtime-provided files
+### How dynamic info is provided
 
-The runtime writes these files to `/workspace/.runtime/` before starting the agent:
+1. **Common boilerplate** (MCP connection docs, tool usage patterns):
+   - Stored in `adgn.props.prompts` package resources
+   - bootstrap.sh reads via `importlib.resources`
+   - Shared across all agents, versioned with the adgn package
 
-```
-/workspace/.runtime/
-├── mcp_connection.md     # MCP server URL, token, connection instructions
-├── compositor_meta.json  # Tool schemas, server info
-└── scope.json           # Files to review, snapshot info, etc.
-```
+2. **Run-specific context** (snapshot slug, file scope, credentials):
+   - Passed via environment variables (`$SNAPSHOT_SLUG`, `$SCOPE_FILES`, `$PGHOST`, etc.)
+   - bootstrap.sh prints these for the agent to see
 
-AGENT.md references these:
-```markdown
-## MCP Connection
-See `/workspace/.runtime/mcp_connection.md` for connection details.
+3. **MCP server URL/token**:
+   - `$MCP_SERVER_URL` and `$MCP_SERVER_TOKEN` set by runtime
+   - bootstrap.sh demonstrates connection (already the pattern today)
 
-## Your Scope
-Check `/workspace/.runtime/scope.json` for the files you should review.
-```
+This keeps AGENT.md fully self-contained while allowing runtime-specific context.
 
-This eliminates all Jinja2 templating. The agent definition is fully static and
-self-contained.
+### Bootstrap output limits
+
+The bootstrap.sh output is injected into the conversation as the first assistant
+turn (warm-start). To prevent truncation:
+
+- docker_exec tool supports configurable `max_output_chars` parameter
+- Default bootstrap calls use higher limits (e.g., 50KB)
+- E2E tests verify bootstrap output is not truncated (check for TruncatedOutput model)
 
 ## Syncing Repo-Tracked Definitions
 
@@ -297,12 +342,10 @@ The agent's own definition is unpacked to `/workspace` (the default cwd):
 
 ```
 /workspace/
-├── AGENT.md              # System prompt
-├── bootstrap.sh          # Runs on startup
-├── tools/                # Agent's helper scripts
-└── .runtime/             # Runtime-provided files (written by runtime)
-    ├── mcp_connection.md
-    └── scope.json
+├── AGENT.md              # System prompt (complete, self-contained)
+├── bootstrap.sh          # Auto-executed on startup
+└── tools/                # Agent's helper scripts (if any)
 ```
 
 Agent reads its prompt from `/workspace/AGENT.md`. Simple, no symlinks needed.
+Runtime context comes via environment variables, not files.
