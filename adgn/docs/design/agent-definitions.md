@@ -763,7 +763,27 @@ These refactors have no dependencies and can be merged independently:
 14. **Drop legacy**
     - Remove `prompts` table
     - Remove Jinja2 templating code
-    - Clean up old agent environment classes
+    - Delete `AgentEnvironment` base class and all subclasses:
+      - `CriticAgentEnvironment`
+      - `GraderAgentEnvironment`
+      - `PromptOptimizerAgentEnvironment`
+      - `ClusteringAgentEnvironment` (if exists)
+
+**Where per-agent-type logic moves:**
+
+| Current Location | New Location |
+|------------------|--------------|
+| Jinja2 prompt templates | `AGENT.md` in definition archive |
+| Environment-specific mounts | `AgentHandle.create()` derives from `type_config` |
+| Handler setup (e.g., FinishOnTextMessage vs FinishOnAgentComplete) | `AgentHandle.create()` chooses based on `agent_type` |
+| MCP server configuration | `init` script + MCP resources (context via HTTP) |
+| Tool availability | `tools/` directory in definition archive |
+| Database credentials setup | Unified: `create_agent_role()` + `derive_agent_password()` |
+| Container environment vars | `AgentHandle.create()` sets based on `type_config` |
+
+The key insight: agent-type-specific **behavior** lives in the definition (AGENT.md, init, tools).
+Agent-type-specific **infrastructure** (mounts, handlers, DB access) is derived from `type_config`
+in `AgentHandle.create()` - a single code path with type-based branching, not separate classes.
 
 ### MVP Checkpoint
 
