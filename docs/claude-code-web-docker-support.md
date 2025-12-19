@@ -72,19 +72,6 @@ Works but adds significant complexity and overhead.
 
 ## Hook Configuration
 
-### Discovery Behavior
-
-Claude Code Web looks for `.claude/settings.json` **only in the current working directory**, not parent directories.
-
-**Sources:**
-- [Issue #10367: Hooks Non-Functional in Subdirectories](https://github.com/anthropics/claude-code/issues/10367)
-- [Issue #12962: Settings.json parent directory traversal for monorepos](https://github.com/anthropics/claude-code/issues/12962)
-
-### Known Bugs
-
-1. **Issue #10997**: SessionStart hooks fail on first run with GitHub marketplace plugins (async loading race condition)
-2. **Issue #10373**: SessionStart hook output not injected into brand new conversations
-
 ### Implementation
 
 Hook placed at repo root: `ducktape/.claude/settings.json`
@@ -157,14 +144,10 @@ These tests are automatically skipped in Claude Code Web.
 | `adgn/src/adgn/testing/__init__.py` | Module exports |
 | `adgn/src/adgn/testing/claude_code_web.py` | Environment detection |
 | `adgn/tests/conftest.py` | Network mode handling, new marker |
-| `adgn/AGENTS.md` | Documentation with sources |
+| `adgn/AGENTS.md` | Documentation |
 | `adgn/tests/mcp/sandboxed_jupyter/test_sandboxer_narrow.py` | Fixed marker |
 
 ## References
 
 - [Claude Code Hooks Documentation](https://code.claude.com/docs/en/hooks)
 - [Claude Code on the Web](https://code.claude.com/docs/en/claude-code-on-the-web.md)
-- [GitHub Issue #10367: Hooks in Subdirectories](https://github.com/anthropics/claude-code/issues/10367)
-- [GitHub Issue #12962: Monorepo Settings Traversal](https://github.com/anthropics/claude-code/issues/12962)
-- [GitHub Issue #10997: First Run Hook Failure](https://github.com/anthropics/claude-code/issues/10997)
-- [GitHub Issue #10373: SessionStart Output Injection](https://github.com/anthropics/claude-code/issues/10373)

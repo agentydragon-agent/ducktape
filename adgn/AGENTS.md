@@ -30,12 +30,7 @@ See `README.md` for a shorter overview.
 When running in Claude Code Web (Anthropic's hosted environment), the setup is handled
 automatically via a SessionStart hook.
 
-**Important:** Claude Code Web looks for `.claude/settings.json` **only in the current
-working directory**, not parent directories ([Issue #10367][gh-10367], [Issue #12962][gh-12962]).
 The hook is configured at the repo root (`ducktape/.claude/settings.json`).
-
-[gh-10367]: https://github.com/anthropics/claude-code/issues/10367
-[gh-12962]: https://github.com/anthropics/claude-code/issues/12962
 
 ### Automatic Setup
 
