@@ -434,18 +434,22 @@ turn (warm-start). To prevent truncation:
 
 ## Syncing Repo-Tracked Definitions
 
-Canonical agent definitions live in git at `adgn/src/adgn/props/agents/`. Synced to
-database as part of the existing DB sync command:
+Canonical agent definitions are synced to database as part of the existing DB sync:
 
 ```bash
 # Existing sync command handles agent definitions too
 python -m adgn.props.cli db sync
-
-# This (among other things):
-# 1. Walks adgn/src/adgn/props/agents/
-# 2. For each directory, computes SHA256
-# 3. Upserts to database if not present (idempotent)
 ```
+
+The git structure doesn't have to match the final agent directory format. The sync
+process can assemble agent directories from shared common bits:
+
+- Common tools shared across agents (e.g., `common/tools/`)
+- Shared init patterns (e.g., `common/init_templates/`)
+- Agent-specific AGENT.md files
+
+The sync builds the final tar archives by combining these pieces, enabling DRY
+in the repo while producing self-contained agent definitions in the database.
 
 The sync runs:
 - On CI after merge to main
@@ -821,13 +825,7 @@ class AgentRegistry:
         transcript_id = uuid4()
 
         # Create agent_runs record (persists all config for restart)
-        # Note: create_agent_run handles Pydantic -> JSONB serialization internally
-        create_agent_run(
-            transcript_id=transcript_id,
-            definition_id=config.definition_id,
-            parent_transcript_id=config.parent_transcript_id,
-            type_config=config.type_config,  # Pydantic model, serialized at DB layer
-        )
+        create_agent_run(transcript_id=transcript_id, config=config)
 
         # Start container + MCP server (long-running)
         handle = await AgentHandle.create(
