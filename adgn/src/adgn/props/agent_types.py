@@ -101,3 +101,34 @@ TypeConfig = Annotated[
     CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ClusteringTypeConfig,
     Field(discriminator="agent_type"),
 ]
+
+
+class AgentConfig(BaseModel):
+    """Full agent configuration for creating agent runs.
+
+    Combines shared fields (definition, model, parent) with type-specific config.
+    The type_config is stored as JSONB in the database and determines what
+    MCP server, handlers, and mounts are used for the agent.
+
+    Usage:
+        config = AgentConfig(
+            definition_id="critic",
+            model="claude-sonnet-4-20250514",
+            parent_agent_run_id=None,
+            type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
+        )
+        # Access agent type via property
+        assert config.agent_type == AgentType.CRITIC
+    """
+
+    definition_id: str = Field(description="Agent definition ID (references agent_definitions.id)")
+    model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-4-20250514')")
+    parent_agent_run_id: UUID | None = Field(
+        default=None, description="Parent agent run ID for sub-agents (FK to agent_runs)"
+    )
+    type_config: TypeConfig = Field(description="Type-specific configuration (stored as JSONB)")
+
+    @property
+    def agent_type(self) -> AgentType:
+        """Get the agent type from type_config discriminator."""
+        return self.type_config.agent_type

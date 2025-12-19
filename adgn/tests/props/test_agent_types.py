@@ -6,6 +6,8 @@ from pydantic import TypeAdapter, ValidationError
 import pytest
 
 from adgn.props.agent_types import (
+    AgentConfig,
+    AgentType,
     ClusteringTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
@@ -65,3 +67,114 @@ class TestPromptOptimizerTypeConfig:
         """target_metric is required."""
         with pytest.raises(ValidationError):
             PromptOptimizerTypeConfig()  # type: ignore[call-arg]
+
+
+class TestAgentConfig:
+    """Tests for AgentConfig combining shared fields with type-specific config."""
+
+    def test_basic_construction_with_critic(self) -> None:
+        """AgentConfig accepts all required fields with CriticTypeConfig."""
+        config = AgentConfig(
+            definition_id="critic",
+            model="claude-sonnet-4-20250514",
+            type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
+        )
+        assert config.definition_id == "critic"
+        assert config.model == "claude-sonnet-4-20250514"
+        assert config.parent_agent_run_id is None
+        assert isinstance(config.type_config, CriticTypeConfig)
+
+    def test_agent_type_property_returns_critic(self) -> None:
+        """agent_type property returns correct type for critic."""
+        config = AgentConfig(
+            definition_id="critic",
+            model="claude-sonnet-4-20250514",
+            type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
+        )
+        assert config.agent_type == AgentType.CRITIC
+
+    def test_agent_type_property_returns_grader(self) -> None:
+        """agent_type property returns correct type for grader."""
+        config = AgentConfig(
+            definition_id="grader",
+            model="claude-sonnet-4-20250514",
+            type_config=GraderTypeConfig(graded_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000")),
+        )
+        assert config.agent_type == AgentType.GRADER
+
+    def test_agent_type_property_returns_freeform(self) -> None:
+        """agent_type property returns correct type for freeform."""
+        config = AgentConfig(
+            definition_id="custom-sub-agent",
+            model="claude-sonnet-4-20250514",
+            parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440001"),
+            type_config=FreeformTypeConfig(),
+        )
+        assert config.agent_type == AgentType.FREEFORM
+
+    def test_agent_type_property_returns_clustering(self) -> None:
+        """agent_type property returns correct type for clustering."""
+        config = AgentConfig(
+            definition_id="clustering",
+            model="claude-sonnet-4-20250514",
+            type_config=ClusteringTypeConfig(snapshot_slug="snap-456"),
+        )
+        assert config.agent_type == AgentType.CLUSTERING
+
+    def test_parent_agent_run_id_accepts_uuid(self) -> None:
+        """parent_agent_run_id accepts UUID for sub-agents."""
+        parent_id = UUID("550e8400-e29b-41d4-a716-446655440000")
+        config = AgentConfig(
+            definition_id="freeform",
+            model="claude-sonnet-4-20250514",
+            parent_agent_run_id=parent_id,
+            type_config=FreeformTypeConfig(),
+        )
+        assert config.parent_agent_run_id == parent_id
+
+    def test_parent_agent_run_id_coerced_from_string(self) -> None:
+        """parent_agent_run_id is coerced from string to UUID."""
+        config = AgentConfig(
+            definition_id="freeform",
+            model="claude-sonnet-4-20250514",
+            parent_agent_run_id="550e8400-e29b-41d4-a716-446655440000",  # type: ignore[arg-type]
+            type_config=FreeformTypeConfig(),
+        )
+        assert isinstance(config.parent_agent_run_id, UUID)
+
+    def test_json_serialization_roundtrip(self) -> None:
+        """AgentConfig can be serialized to JSON and back."""
+        original = AgentConfig(
+            definition_id="critic",
+            model="claude-sonnet-4-20250514",
+            parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
+            type_config=CriticTypeConfig(snapshot_slug="snap-123", scope_hash="abc"),
+        )
+        json_str = original.model_dump_json()
+        restored = AgentConfig.model_validate_json(json_str)
+        assert restored == original
+        assert restored.agent_type == AgentType.CRITIC
+
+    def test_definition_id_required(self) -> None:
+        """definition_id is required."""
+        with pytest.raises(ValidationError):
+            AgentConfig(
+                model="claude-sonnet-4-20250514",  # type: ignore[call-arg]
+                type_config=FreeformTypeConfig(),
+            )
+
+    def test_model_required(self) -> None:
+        """model is required."""
+        with pytest.raises(ValidationError):
+            AgentConfig(
+                definition_id="test",  # type: ignore[call-arg]
+                type_config=FreeformTypeConfig(),
+            )
+
+    def test_type_config_required(self) -> None:
+        """type_config is required."""
+        with pytest.raises(ValidationError):
+            AgentConfig(
+                definition_id="test",  # type: ignore[call-arg]
+                model="claude-sonnet-4-20250514",
+            )

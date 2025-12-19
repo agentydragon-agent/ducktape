@@ -193,3 +193,29 @@ def cmd_list(
         for defn in definitions:
             created_by = f" (by {defn.created_by_agent_run_id})" if defn.created_by_agent_run_id else ""
             typer.echo(f"  {defn.id} [{defn.agent_type}] {len(defn.archive):,} bytes{created_by}")
+
+
+@app.command("validate")
+def cmd_validate(definition_dir: Annotated[Path, typer.Argument(help="Directory containing agent definition")]) -> None:
+    """Validate agent definition structure without inserting into database.
+
+    Checks:
+    - AGENT.md exists
+    - init script exists and is executable
+
+    Exits with code 0 if valid, 1 if invalid.
+    """
+    # Validate directory exists
+    if not definition_dir.is_dir():
+        typer.echo(f"Error: {definition_dir} is not a directory", err=True)
+        raise typer.Exit(1)
+
+    # Run validation
+    errors = _validate_definition(definition_dir)
+    if errors:
+        typer.echo("Validation failed:", err=True)
+        for error in errors:
+            typer.echo(f"  ✗ {error}", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ Valid agent definition: {definition_dir}")
