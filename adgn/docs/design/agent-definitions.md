@@ -621,10 +621,14 @@ These properties MUST be maintained by the implementation:
 4. **Event insertion**: Only runtime with admin credentials inserts events
    - Agents have SELECT only on events table
 
-5. **Two prompt optimizer modes** (from existing implementation):
-   - `PromptOptimizerUserManager`: TRAIN split access via RLS, validation via aggregate function
-   - `ImprovementUserManager`: Access restricted to specific allowed_examples (per-run RLS)
-   - Both modes prevent access to raw validation data
+5. **Two prompt optimizer target metrics** (different validation access):
+   - `WHOLE_REPO`: Only full-snapshot validation examples (black-box validation)
+     - VALID split access only via `get_validation_run_aggregates()` function
+     - Per-file VALID examples blocked entirely
+   - `TARGETED`: Both per-file and full-snapshot validation examples
+     - VALID split access via aggregate views (not raw data)
+     - Allows iteration on specific files
+   - Both modes: TRAIN split via direct RLS-filtered access, VALID split via aggregates only
 
 ### Phase 0: Independent Refactors (can be done anytime, in parallel)
 
