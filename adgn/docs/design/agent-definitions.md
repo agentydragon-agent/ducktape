@@ -256,12 +256,17 @@ CREATE TABLE agent_role_salt (
 REVOKE ALL ON agent_role_salt FROM PUBLIC;
 
 -- Password derivation: hash(salt, agent_run_id)
+-- SECURITY DEFINER runs as owner (admin), but we DON'T grant execute to agents
 CREATE FUNCTION derive_agent_password(run_id UUID) RETURNS TEXT AS $$
     SELECT encode(
         sha256((SELECT salt FROM agent_role_salt) || run_id::text::bytea),
         'hex'
     )
 $$ LANGUAGE SQL STABLE SECURITY DEFINER;
+
+-- CRITICAL: No GRANT to agent_base - only admin can call this
+-- Alternative: implement password derivation in Python instead of SQL
+-- Either way, agents must NOT be able to derive passwords for other agents
 ```
 
 **Role creation** (on agent creation, never dropped):
@@ -345,9 +350,7 @@ CREATE POLICY grader_read_graded_events ON events
         )
     );
 
--- Prompt optimizer can read all events
-CREATE POLICY optimizer_read_all_events ON events
-    FOR SELECT USING (current_agent_type() = 'prompt_optimizer');
+-- Prompt optimizer: TRAIN split only (see Split-Based Access section)
 ```
 
 **agent_definitions table:**
@@ -394,9 +397,7 @@ CREATE POLICY grader_read_graded_run ON agent_runs
         )
     );
 
--- Prompt optimizer can read all runs
-CREATE POLICY optimizer_read_all_runs ON agent_runs
-    FOR SELECT USING (current_agent_type() = 'prompt_optimizer');
+-- Prompt optimizer: TRAIN split only (see Split-Based Access section)
 ```
 
 **issues table (critic output):**
@@ -418,46 +419,83 @@ CREATE POLICY grader_read_issues ON issues
         )
     );
 
--- Prompt optimizer can read all issues
-CREATE POLICY optimizer_read_issues ON issues
-    FOR SELECT USING (current_agent_type() = 'prompt_optimizer');
+-- Prompt optimizer: TRAIN split only (see Split-Based Access section)
 ```
 
 **ground_truth_issues table:**
 ```sql
--- Graders can read all ground truth
+-- Graders can ONLY read ground truth for the snapshot they're evaluating
 CREATE POLICY grader_read_ground_truth ON ground_truth_issues
-    FOR SELECT USING (current_agent_type() = 'grader');
+    FOR SELECT USING (
+        current_agent_type() = 'grader'
+        AND snapshot_slug = (
+            -- Look up snapshot from the critic run being graded
+            SELECT (type_config->>'snapshot_slug')
+            FROM agent_runs graded
+            WHERE graded.agent_run_id = (
+                SELECT (type_config->>'graded_agent_run_id')::uuid
+                FROM agent_runs WHERE agent_run_id = current_agent_run_id()
+            )
+        )
+    );
 
--- Prompt optimizer can read all ground truth
-CREATE POLICY optimizer_read_ground_truth ON ground_truth_issues
-    FOR SELECT USING (current_agent_type() = 'prompt_optimizer');
+-- Prompt optimizer: TRAIN split only (see Split-Based Access below)
 ```
 
 **grader_evaluations table:**
 ```sql
--- Graders can insert their evaluations
-CREATE POLICY grader_insert_evaluations ON grader_evaluations
-    FOR INSERT WITH CHECK (
+-- Graders can SELECT, INSERT, UPDATE their own evaluations
+CREATE POLICY grader_own_evaluations ON grader_evaluations
+    FOR ALL USING (
         current_agent_type() = 'grader'
         AND agent_run_id = current_agent_run_id()
     );
 
--- Prompt optimizer can read all evaluations
-CREATE POLICY optimizer_read_evaluations ON grader_evaluations
-    FOR SELECT USING (current_agent_type() = 'prompt_optimizer');
+-- Prompt optimizer: TRAIN split only (see Split-Based Access below)
+```
+
+### Split-Based Access (Prompt Optimizer)
+
+Prompt optimizer has special split-based restrictions to prevent overfitting:
+
+```sql
+-- All data access filtered to TRAIN split only
+-- Snapshots, issues, ground_truth, grader_evaluations, agent_runs, events
+-- are filtered by: snapshot.split = 'TRAIN'
+
+-- VALIDATION split access ONLY via aggregate views/functions:
+-- - get_validation_run_aggregates() - returns high-level metrics only
+-- - No access to individual issues, ground truth, or grading decisions on VALID split
+
+CREATE POLICY optimizer_train_only_issues ON issues
+    FOR SELECT USING (
+        current_agent_type() = 'prompt_optimizer'
+        AND EXISTS (
+            SELECT 1 FROM agent_runs ar
+            JOIN snapshots s ON s.slug = (ar.type_config->>'snapshot_slug')
+            WHERE ar.agent_run_id = issues.agent_run_id
+            AND s.split = 'TRAIN'
+        )
+    );
+
+-- Similar policies for: ground_truth_issues, grader_evaluations, agent_runs, events
+-- All filtered to TRAIN split only
+
+-- Validation access via SECURITY DEFINER function (aggregates only)
+GRANT EXECUTE ON FUNCTION get_validation_run_aggregates() TO agent_base;
 ```
 
 ### Access Summary Matrix
 
 | Table | Critic | Grader | Prompt Optimizer | Freeform |
 |-------|--------|--------|------------------|----------|
-| **events** | SELECT own | SELECT own + graded | SELECT all | SELECT own |
+| **events** | SELECT own | SELECT own + graded | SELECT TRAIN only | SELECT own |
 | **agent_definitions** | SELECT builtin/own, INSERT freeform | SELECT builtin/own | SELECT all, INSERT critic/grader | SELECT builtin/own |
-| **agent_runs** | SELECT own | SELECT own + graded | SELECT all | SELECT own |
-| **issues** | INSERT own | SELECT graded | SELECT all | - |
-| **ground_truth_issues** | - | SELECT all | SELECT all | - |
-| **grader_evaluations** | - | INSERT own | SELECT all | - |
+| **agent_runs** | SELECT own | SELECT own + graded | SELECT TRAIN only | SELECT own |
+| **issues** | INSERT own | SELECT graded | SELECT TRAIN only | - |
+| **ground_truth_issues** | - | SELECT graded snapshot only | SELECT TRAIN only | - |
+| **grader_evaluations** | - | SELECT/INSERT/UPDATE own | SELECT TRAIN only | - |
+| **validation aggregates** | - | - | via function only | - |
 
 Note: Events INSERT is done by runtime with admin credentials, not by agents directly.
 
@@ -563,6 +601,30 @@ the helper explicitly.
 ```
 
 ## Implementation Plan
+
+### Security Requirements (must be verified throughout)
+
+These properties MUST be maintained by the implementation:
+
+1. **Password isolation**: Agents must NOT be able to derive passwords for other agents
+   - `derive_agent_password` callable only by admin, not by `agent_base` role
+   - Alternative: implement password derivation in Python (simpler to secure)
+
+2. **Split-based data isolation**: Prompt optimizer must NOT access validation split directly
+   - No access to individual issues, ground truth, or grading decisions on VALID split
+   - Validation data only via aggregate views/functions (`get_validation_run_aggregates()`)
+   - Prevents overfitting to validation set
+
+3. **Grader snapshot isolation**: Graders can only see ground truth for their evaluated snapshot
+   - Not all ground truth data, only the snapshot being graded
+
+4. **Event insertion**: Only runtime with admin credentials inserts events
+   - Agents have SELECT only on events table
+
+5. **Two prompt optimizer modes** (from existing implementation):
+   - `PromptOptimizerUserManager`: TRAIN split access via RLS, validation via aggregate function
+   - `ImprovementUserManager`: Access restricted to specific allowed_examples (per-run RLS)
+   - Both modes prevent access to raw validation data
 
 ### Phase 0: Independent Refactors (can be done anytime, in parallel)
 
