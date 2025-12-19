@@ -228,10 +228,18 @@ CREATE POLICY read_definitions ON agent_definitions
         OR created_by_transcript_id = current_transcript_id()
     );
 
--- Agents can only INSERT with their own transcript_id
+-- Only prompt_optimizer and critic can create new definitions
+-- (grader just evaluates, doesn't evolve agent definitions)
 CREATE POLICY insert_own ON agent_definitions
     FOR INSERT
-    WITH CHECK (created_by_transcript_id = current_transcript_id());
+    WITH CHECK (
+        created_by_transcript_id = current_transcript_id()
+        AND EXISTS (
+            SELECT 1 FROM agent_runs
+            WHERE transcript_id = current_transcript_id()
+            AND agent_type IN ('prompt_optimizer', 'critic')
+        )
+    );
 
 -- No UPDATE or DELETE allowed (definitions are immutable, create new versions instead)
 ```
@@ -274,26 +282,31 @@ inflate_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
 
 ### CLI
 
+Part of the existing `agent-helpers` subcommand:
+
 ```bash
 # Inflate by ID
-inflate-agent critic_a1b2c3 /workspace/agents/critic_a1b2c3
+agent-helpers inflate critic_a1b2c3 /workspace/agents/critic_a1b2c3
 
 # Inflate baseline (just use the readable ID)
-inflate-agent critic /workspace/agents/critic
+agent-helpers inflate critic /workspace/agents/critic
 
-# Inflate self
-inflate-agent --self /workspace/agents/self
+# Inflate self (uses current agent's definition from AGENT_DEFINITION_ID env var)
+agent-helpers inflate --self /workspace/agents/self
 ```
 
 ### Bootstrap Integration (Warm-Start)
 
 The agent runtime automatically:
 1. Unpacks agent definition to `/workspace`
-2. Sets environment variables (`AGENT_DEFINITION_ID`, `SNAPSHOT_SLUG`, `MCP_SERVER_URL`, etc.)
+2. Sets environment variables (`AGENT_DEFINITION_ID`, `MCP_SERVER_URL`, `PGHOST`, etc.)
 3. Executes `init` via docker_exec
 4. Injects init output as first assistant message (warm-start)
 5. Reads `/workspace/AGENT.md` as system prompt
 6. Begins agent sampling
+
+Agent-type-specific context (e.g., `SNAPSHOT_SLUG` for critics) is set by the
+compositor that launches that agent type, not by the general runtime.
 
 This warm-start pattern ensures the agent sees init output without relying
 on the LLM to follow an instruction to run it.
