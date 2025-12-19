@@ -437,3 +437,70 @@ Runtime context comes via environment variables, not files.
 
 - [ ] E2E test verifying init output is not truncated (check for TruncatedOutput model in
   first step of steps-driven OpenAI mock)
+
+## Future: Sub-Agent Spawning
+
+Agents can spawn sub-agents for task decomposition. A critic might say "go trace the
+architecture" or "look for type errors" and delegate to specialized sub-agents.
+
+### Workflow
+
+1. Parent agent creates ad-hoc agent definition:
+   ```python
+   # Create minimal definition with just AGENT.md
+   save_agent_definition(
+       agent_type="freeform",  # or "subagent"
+       content={"AGENT.md": "You are a code tracer. Analyze how data flows from X to Y..."},
+   )
+   # Returns: definition_id = "freeform_abc123"
+   ```
+
+2. Parent spawns sub-agent via MCP tool:
+   ```python
+   result = spawn_subagent(
+       definition_id="freeform_abc123",
+       inherit_mounts=True,  # same snapshot, same /workspace access
+       # parent_transcript_id automatically set to current_transcript_id()
+   )
+   # Blocks until sub-agent completes, returns output
+   ```
+
+3. Sub-agent runs with:
+   - Its own transcript_id
+   - `parent_transcript_id` pointing to parent
+   - Same environment (snapshot mounts, DB access)
+   - Its ad-hoc AGENT.md as system prompt
+
+4. Parent receives result and continues
+
+### Schema Support
+
+Already handled by unified `agent_runs` table:
+- `agent_type = 'freeform'` for ad-hoc sub-agents
+- `parent_transcript_id` links to spawning agent
+- `agent_definition_id` references the ad-hoc definition
+
+### MCP Tool
+
+```python
+@mcp.tool()
+async def spawn_subagent(
+    definition_id: str,
+    inherit_mounts: bool = True,
+    max_turns: int = 20,
+) -> str:
+    """Spawn a sub-agent and wait for its result.
+
+    The sub-agent runs with your transcript as parent and inherits your
+    environment (mounted snapshots, database access).
+
+    Returns the sub-agent's output as a string.
+    """
+```
+
+### Use Cases
+
+- **Architecture tracing**: "Go trace how requests flow from API to database"
+- **Targeted analysis**: "Look specifically for type errors in the models/ directory"
+- **Parallel review**: Spawn multiple sub-agents for different file groups
+- **Iterative refinement**: Sub-agent finds issues, parent synthesizes
