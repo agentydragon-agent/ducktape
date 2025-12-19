@@ -617,20 +617,23 @@ class AgentHandle:
 
     State held per agent:
     - transcript_id: unique identifier, also PK in agent_runs table
-    - messages: full conversation history (system, user, assistant, tool calls/results)
-    - container: Docker container running agent's environment
-    - mcp_server: HTTP server providing tools (critic_submit, docker_exec, etc.)
-    - mcp_client: client connection to container's MCP (for tool calls)
-    - model_client: OpenAI-compatible client for LLM calls
-    - config: everything needed to restart (definition_id, mounts, env vars)
+    - agent: the Agent instance (owns transcript in _transcript)
+    - compositor: manages container + MCP server lifecycle
+    - config: for restart (definition_id, mounts, model, etc.)
+
+    Key insight: Agent.run() is resumable. It resets `finished=False` but
+    preserves `_transcript`. So send_and_wait_for_text() just:
+    1. Inserts user message
+    2. Calls agent.run() - continues from existing transcript
+    3. Returns when AbortOnTextMessage handler stops the loop
+
+    Events are persisted to DB via DatabaseEventHandler (for crash recovery
+    if the process dies - can reconstruct Agent from DB events).
     """
 
     transcript_id: UUID
-    messages: list[Message]           # Full conversation history
-    container: Container              # Docker container handle
-    mcp_server: FastMCP               # HTTP MCP server (host-side)
-    mcp_client: MCPClient             # Client to container's tools
-    model_client: OpenAIModelProto    # LLM client
+    agent: Agent                      # Agent instance (owns transcript)
+    compositor: PropertiesDockerCompositorHTTP  # Container + MCP lifecycle
     config: AgentConfig               # For restart: definition_id, mounts, model, etc.
 
     @classmethod
@@ -648,79 +651,71 @@ class AgentHandle:
         workspace = tempfile.mkdtemp(prefix=f"agent_{transcript_id}_")
         unpack_definition(definition.archive, workspace)
 
-        # 3. Start container with mounts
-        container = await start_container(
+        # 3. Create compositor (manages container, MCP server, hydration)
+        # PropertiesDockerCompositorHTTP handles:
+        # - Docker container with mounts
+        # - MCP-over-HTTP server
+        # - Environment variables (PG creds, MCP_SERVER_URL, etc.)
+        compositor = await create_compositor(
             workspace=workspace,
+            definition_id=definition_id,
             inherit_mounts_from=inherit_mounts_from,
-            env={...},  # PG creds, etc.
         )
 
-        # 4. Start MCP server (provides tools to agent)
-        mcp_server = create_mcp_server(transcript_id, container)
-        await mcp_server.start()
+        # 4. Create Agent with handlers
+        async with Client(compositor) as mcp_client:
+            agent = await Agent.create(
+                mcp_client=mcp_client,
+                client=model_client,
+                handlers=[
+                    DatabaseEventHandler(transcript_id=transcript_id),
+                    AbortOnTextMessage(),  # Stop when agent produces text
+                    # ... other handlers
+                ],
+                tool_policy=AllowAnyToolOrTextMessage(),
+                dynamic_instructions=lambda: (Path(workspace) / "AGENT.md").read_text(),
+            )
 
-        # 5. Create MCP client (for agent to call tools)
-        mcp_client = await MCPClient.connect(mcp_server.url)
-
-        # 6. Build initial messages: system prompt from AGENT.md
-        system_prompt = (Path(workspace) / "AGENT.md").read_text()
-        messages = [Message(role="system", content=system_prompt)]
-
-        # 7. Run init script, add output as first assistant message (warm-start)
-        init_output = await container.exec(["./init"])
-        messages.append(Message(role="assistant", content=init_output))
+        # 5. Run init script, inject as first assistant message (warm-start)
+        init_output = await compositor.runtime.server.docker_exec(["./init"])
+        agent.insert_message(AssistantMessage.text(init_output))
 
         return cls(
             transcript_id=transcript_id,
-            messages=messages,
-            container=container,
-            mcp_server=mcp_server,
-            mcp_client=mcp_client,
-            model_client=model_client,
-            config=AgentConfig(definition_id, workspace, inherit_mounts_from),
+            agent=agent,
+            compositor=compositor,
+            config=AgentConfig(definition_id, workspace, inherit_mounts_from, model_client),
         )
 
     async def send_and_wait_for_text(self, message: str) -> str:
-        # Add user message
-        self.messages.append(Message(role="user", content=message))
+        """Send message and run agent until it produces text response."""
+        # Add user message to agent's transcript
+        self.agent.insert_message(UserMessage.text(message))
 
-        # Run agent loop until text response
-        while True:
-            # Get LLM response
-            response = await self.model_client.chat(self.messages)
-            self.messages.append(response)
-
-            # Persist to events table
-            persist_event(self.transcript_id, response)
-
-            if response.is_text_message():
-                return response.content
-
-            # Handle tool calls
-            for tool_call in response.tool_calls:
-                result = await self.mcp_client.call_tool(tool_call)
-                tool_result = Message(role="tool", tool_call_id=tool_call.id, content=result)
-                self.messages.append(tool_result)
-                persist_event(self.transcript_id, tool_result)
+        # Run agent loop - AbortOnTextMessage handler stops when text produced
+        result = await self.agent.run()
+        return result.text
 
     def inject_restart_message(self):
-        self.messages.append(Message(
-            role="system",
-            content="Your container was restarted. Any local state (files in /tmp, "
-                    "running processes, environment variables set at runtime) has been "
-                    "lost. The conversation history and mounted volumes are preserved."
+        """Inject system message notifying agent of container restart."""
+        self.agent.insert_message(SystemMessage.text(
+            "Your container was restarted. Any local state (files in /tmp, "
+            "running processes, environment variables set at runtime) has been "
+            "lost. The conversation history and mounted volumes are preserved."
         ))
 
     async def restart_container(self):
-        await self.container.kill()
-        self.container = await start_container(self.config)
-        # Reconnect MCP client
-        self.mcp_client = await MCPClient.connect(self.mcp_server.url)
+        """Restart container after it was killed."""
+        # Restart container
+        await self.compositor.runtime.server.start()
+
+        # Agent transcript is preserved (Agent.run() doesn't clear _transcript)
+        # Just inject restart notification
+        self.inject_restart_message()
 
     async def shutdown(self):
-        await self.mcp_client.close()
-        await self.mcp_server.stop()
-        await self.container.kill()
+        """Clean up all resources."""
+        await self.compositor.__aexit__(None, None, None)
         shutil.rmtree(self.config.workspace)
 ```
 
@@ -748,10 +743,11 @@ agent_id = await registry.start_agent("grader")
 **Key properties:**
 - Same infrastructure for all agent execution
 - Container stays alive between `send_message` calls
-- Agent object is stateful, holds full conversation in memory
-- Events also persisted to DB (for crash recovery)
+- Agent.run() is resumable - doesn't clear `_transcript`, just resets `finished` flag
+- Events persisted to DB via `DatabaseEventHandler` (for crash recovery)
 - Lock prevents concurrent `send_message` to same agent
-- Restart detection + system message injection
+- Restart: container restarted, inject system message, transcript already in memory
+- Uses existing `Agent.run()` loop with `AbortOnTextMessage` handler to stop when text produced
 
 ### Use Cases
 
