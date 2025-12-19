@@ -1,11 +1,10 @@
-"""Agent workspace path utilities.
+"""Agent workspace management.
 
 Agent workspaces are persistent directories that store:
 - Unpacked agent definition (AGENT.md, init, tools/, etc.)
 - Files created by the agent during operation
 
-Workspaces are stored at a predictable path derived from agent_run_id,
-allowing them to survive container restarts and app quits.
+Workspaces survive container restarts and app quits.
 """
 
 from __future__ import annotations
@@ -14,41 +13,26 @@ import os
 from pathlib import Path
 from uuid import UUID
 
-# Default base directory for agent workspaces
-# Can be overridden via ADGN_WORKSPACES_DIR environment variable
-DEFAULT_WORKSPACES_BASE = Path.home() / ".local" / "share" / "adgn" / "workspaces"
+from platformdirs import user_data_path
 
 
-def get_workspaces_base() -> Path:
-    """Get the base directory for agent workspaces.
+class WorkspaceManager:
+    """Manages agent workspace directories.
 
-    Returns:
-        Path to workspaces base directory. Uses ADGN_WORKSPACES_DIR env var
-        if set, otherwise ~/.local/share/adgn/workspaces/
+    Use from_env() for production, inject base_path directly for tests.
     """
-    env_path = os.environ.get("ADGN_WORKSPACES_DIR")
-    if env_path:
-        return Path(env_path)
-    return DEFAULT_WORKSPACES_BASE
 
+    def __init__(self, base_path: Path):
+        self._base_path = base_path
 
-def get_workspace_path(agent_run_id: UUID) -> Path:
-    """Get the workspace path for an agent run.
+    @classmethod
+    def from_env(cls) -> WorkspaceManager:
+        """Create from ADGN_WORKSPACES_DIR or platform default."""
+        env_path = os.environ.get("ADGN_WORKSPACES_DIR")
+        if env_path:
+            return cls(Path(env_path))
+        return cls(user_data_path("adgn") / "workspaces")
 
-    The workspace path is deterministic based on agent_run_id, enabling:
-    - Persistence across container restarts
-    - Resume after app quits
-    - Predictable cleanup
-
-    Args:
-        agent_run_id: The agent's unique run identifier
-
-    Returns:
-        Path to the agent's workspace directory (host path, mounted as
-        /workspace in container). Directory may or may not exist yet.
-
-    Example:
-        >>> get_workspace_path(UUID("550e8400-e29b-41d4-a716-446655440000"))
-        PosixPath('/home/user/.local/share/adgn/workspaces/550e8400-e29b-41d4-a716-446655440000')
-    """
-    return get_workspaces_base() / str(agent_run_id)
+    def get_path(self, agent_run_id: UUID) -> Path:
+        """Get workspace path for an agent run."""
+        return self._base_path / str(agent_run_id)

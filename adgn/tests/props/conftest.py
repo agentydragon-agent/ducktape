@@ -21,6 +21,7 @@ from adgn.props.db.clustering_models import ClusteringRun
 from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.examples import Example
 from adgn.props.db.models import (
+    CanonicalIssuesSnapshot,
     CriticRun,
     CriticRunStatus,
     GraderRun,
@@ -59,8 +60,10 @@ from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
 from adgn.props.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 from tests.llm.support.openai_mock import FakeOpenAIModel
+
+# Props-specific constant for GraderRun fixtures
+EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:

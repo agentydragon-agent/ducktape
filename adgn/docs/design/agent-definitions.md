@@ -632,63 +632,37 @@ These properties MUST be maintained by the implementation:
    - Both modes: VALID metrics via SECURITY DEFINER functions only (views can't bypass ground truth RLS)
    - `target_metric` stored in `PromptOptimizerTypeConfig`, used by `current_prompt_optimizer_target_metric()` for RLS
 
-### Phase 0: Independent Refactors (can be done anytime, in parallel)
+### Development Style Requirements
 
-These refactors have no dependencies and can be merged independently:
+These requirements apply to all implementation:
 
-1. ✅ **`AgentType` StrEnum** (Python)
-   - Define enum in `adgn.props.agent_types` module
-   - No callers yet, just defines the enum
-   - **Done:** `adgn/src/adgn/props/agent_types.py` + tests
+1. **Dependency Injection**: Classes that access filesystem paths or environment must:
+   - Take dependencies (e.g., `base_path: Path`) as required constructor args (no `None` defaults)
+   - Provide `from_env()` classmethod for production use
+   - Example: `WorkspaceManager(base_path)` + `WorkspaceManager.from_env()`
 
-2. ✅ **`agent_type` enum** (PostgreSQL)
-   - Add enum type without any tables using it yet
-   - Simple migration, no data changes
-   - **Done:** `migrations/versions/20251223000000_add_agent_type_enum.py`
+2. **Testing**: Tests must:
+   - Use DRY fixtures for shared setup
+   - Avoid trivial change-detector tests (don't just assert enum values match strings)
+   - Test behavior, not implementation details
+   - Use parametrized tests where appropriate
 
-3. ✅ **TypeConfig Pydantic models**
-   - Define `CriticTypeConfig`, `GraderTypeConfig`, `FreeformTypeConfig`, `PromptOptimizerTypeConfig`
-   - Define `TypeConfig` discriminated union
-   - Can be validated and tested in isolation
-   - **Done:** `adgn/src/adgn/props/agent_types.py` + tests
+3. **Documentation**: Only document what isn't obvious from function/class/argument names and types.
 
-4. **`CaptureTextHandler`** (needs Docker for testing)
-   - New handler that captures assistant text and aborts loop
-   - Useful beyond agent definitions (any conversational use case)
-   - Add to `adgn.props.handlers`
+### Phase 0: Independent Refactors
 
-5. **`Agent.run()` return type refactor** (needs Docker for testing)
-   - Change from returning `AgentResult` to returning `None`
-   - Callers already mostly ignore the return value
-   - Prepares for resumable `run()` pattern
+**Completed:**
+- ✅ `AgentType` StrEnum + TypeConfig Pydantic models → `adgn/src/adgn/props/agent_types.py`
+- ✅ `agent_type_enum` PostgreSQL type → `migrations/versions/20251223000000_add_agent_type_enum.py`
+- ✅ `WorkspaceManager` class with DI → `adgn/src/adgn/props/agent_workspace.py`
 
-6. ✅ **`get_workspace_path(agent_run_id)` helper**
-   - Simple utility: `~/.local/share/adgn/workspaces/{agent_run_id}/`
-   - No dependencies
-   - **Done:** `adgn/src/adgn/props/agent_workspace.py` + tests
-
-7. **Extract MCP connection docs to package resources**
-   - Move `mcp_http_connection.md` to `adgn.props.prompts` resources
-   - Init scripts can start using `importlib.resources` pattern
-   - Decouples from Jinja2 templating
-
-8. **Drop `severity` and `category` columns from `issues` table** (if present)
-   - These columns are not needed
-   - Simple migration: `ALTER TABLE issues DROP COLUMN severity, DROP COLUMN category;`
-
-9. **Rename `transcript_id` to `agent_run_id`** (if not already done)
-   - All tables: agent_runs, events, issues, grader_evaluations, agent_definitions
-   - Update all FK references
-
-10. **Unify `get_validation_run_aggregates()` function**
-    - Add `scope_kind` and `scope_hash` columns to output
-    - Filter based on `current_prompt_optimizer_target_metric()`:
-      - WHOLE_REPO: only `entire_snapshot` rows
-      - TARGETED: both `entire_snapshot` and `explicit_file` rows
-    - SECURITY DEFINER to bypass ground truth RLS
-    - Single function serves both modes, filtering enforced server-side
-    - Tests: verify correct output for both target metrics (WHOLE_REPO sees only
-      entire_snapshot, TARGETED sees both scope kinds)
+**Remaining:**
+- `CaptureTextHandler` (needs Docker for agent loop testing)
+- `Agent.run()` return type refactor (needs Docker)
+- Extract MCP connection docs to package resources
+- Drop `severity` and `category` columns from `issues` table (if present)
+- Rename `transcript_id` to `agent_run_id` (if not already done)
+- Unify `get_validation_run_aggregates()` function with scope_kind filtering
 
 ### Phase 1: Foundation
 
@@ -1404,7 +1378,8 @@ class AgentHandle:
         definition = load_definition(config.definition_id)
 
         # 2. Unpack to persistent workspace (survives container restarts)
-        workspace = get_workspace_path(agent_run_id)  # ~/.local/share/adgn/workspaces/{agent_run_id}/
+        workspace_mgr = WorkspaceManager.from_env()
+        workspace = workspace_mgr.get_path(agent_run_id)
         if not workspace.exists():
             workspace.mkdir(parents=True)
             unpack_definition(definition.archive, workspace)
