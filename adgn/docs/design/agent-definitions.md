@@ -799,11 +799,12 @@ class AgentRegistry:
         transcript_id = uuid4()
 
         # Create agent_runs record (persists all config for restart)
+        # Note: create_agent_run handles Pydantic -> JSONB serialization internally
         create_agent_run(
             transcript_id=transcript_id,
             definition_id=config.definition_id,
             parent_transcript_id=config.parent_transcript_id,
-            type_config=config.type_config.model_dump(),  # Pydantic -> JSONB
+            type_config=config.type_config,  # Pydantic model, serialized at DB layer
         )
 
         # Start container + MCP server (long-running)
