@@ -207,17 +207,33 @@ detecting duplicate submissions.
 ### RLS Policies
 
 ```sql
--- All agents can read all definitions (no secrets in agent definitions)
-CREATE POLICY read_all ON agent_definitions
+-- Granular read access to agent definitions:
+-- 1. Built-in (repo-synced) definitions: readable by all agents
+-- 2. Prompt optimizer: can read ALL definitions (needs to analyze and evolve them)
+-- 3. Other agents: can read their own instantiation definition + definitions they created
+CREATE POLICY read_definitions ON agent_definitions
     FOR SELECT
-    USING (true);
+    USING (
+        -- Built-in (repo-synced) definitions are readable by all
+        created_by_transcript_id IS NULL
+        -- OR prompt optimizer can read all (needs full visibility to evolve agents)
+        OR EXISTS (
+            SELECT 1 FROM agent_runs
+            WHERE transcript_id = current_transcript_id()
+            AND agent_type = 'prompt_optimizer'
+        )
+        -- OR this is the definition the agent was instantiated from (self-awareness)
+        OR id = (SELECT agent_definition_id FROM agent_runs WHERE transcript_id = current_transcript_id())
+        -- OR the agent created this definition (own creations)
+        OR created_by_transcript_id = current_transcript_id()
+    );
 
 -- Agents can only INSERT with their own transcript_id
 CREATE POLICY insert_own ON agent_definitions
     FOR INSERT
     WITH CHECK (created_by_transcript_id = current_transcript_id());
 
--- No UPDATE or DELETE allowed
+-- No UPDATE or DELETE allowed (definitions are immutable, create new versions instead)
 ```
 
 Repo-backed definitions have `created_by_transcript_id = NULL` and are inserted
