@@ -631,8 +631,40 @@ async def run_grader(
 
     Creates grader, provides transcript to grade, runs to completion.
 
+    Validation:
+    - graded_transcript_id must be a critic-type run (rejects other agent types)
+
     Returns: Grader's output (score + reasoning)
     """
+```
+
+**Validation rules:**
+
+Agent-type-specific constraints enforced at creation time:
+
+```python
+def validate_agent_config(config: AgentConfig) -> None:
+    """Validate agent configuration before creation."""
+
+    if config.agent_type == "grader":
+        # Graders can only grade critic runs
+        if config.graded_transcript_id is None:
+            raise ValueError("Grader requires graded_transcript_id")
+        run = get_agent_run(config.graded_transcript_id)
+        if run.agent_type != "critic":
+            raise ValueError(
+                f"Grader can only grade critic runs, got {run.agent_type}"
+            )
+
+    if config.agent_type == "critic":
+        # Critics require snapshot context
+        if config.snapshot_slug is None or config.scope_hash is None:
+            raise ValueError("Critic requires snapshot_slug and scope_hash")
+
+    # Freeform sub-agents must have a parent
+    if config.agent_type == "freeform":
+        if config.parent_transcript_id is None:
+            raise ValueError("Freeform sub-agents require parent_transcript_id")
 ```
 
 These heterogeneous launcher tools are backed by shared backend code
