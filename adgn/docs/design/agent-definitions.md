@@ -504,3 +504,15 @@ async def spawn_subagent(
 - **Targeted analysis**: "Look specifically for type errors in the models/ directory"
 - **Parallel review**: Spawn multiple sub-agents for different file groups
 - **Iterative refinement**: Sub-agent finds issues, parent synthesizes
+
+### Prompt Optimizer Awareness
+
+The prompt optimizer agent should know about sub-agent spawning so it can:
+- Teach critics to decompose complex reviews into sub-tasks
+- Add sub-agent patterns to critic AGENT.md (e.g., "For large codebases, spawn
+  sub-agents to analyze different modules in parallel")
+- Evolve effective sub-agent prompts alongside the main critic prompt
+- Optimize the division of labor between parent and child agents
+
+This is documented in the prompt optimizer's own AGENT.md and referenced when
+evolving critic definitions.
