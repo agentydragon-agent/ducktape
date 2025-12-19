@@ -292,10 +292,9 @@ fetch_agent_definition(definition_id="critic_a1b2c3", target_dir=Path("/workspac
 
 # Fetch the baseline critic definition
 fetch_agent_definition(definition_id="critic", target_dir=Path("/workspace/agents/critic"))
-
-# Fetch own definition (uses environment variable set by runtime)
-fetch_agent_definition(self=True, target_dir=Path("/workspace/agents/self"))
 ```
+
+Note: Agents don't need to fetch their own definition - it's already unpacked at `/workspace` by the runtime.
 
 ### CLI
 
@@ -307,9 +306,6 @@ agent-helpers agent-definition fetch critic_a1b2c3 /workspace/agents/critic_a1b2
 
 # Fetch baseline (just use the readable ID)
 agent-helpers agent-definition fetch critic /workspace/agents/critic
-
-# Fetch self (uses current agent's definition from AGENT_DEFINITION_ID env var)
-agent-helpers agent-definition fetch --self /workspace/agents/self
 ```
 
 ### Bootstrap Integration (Warm-Start)
