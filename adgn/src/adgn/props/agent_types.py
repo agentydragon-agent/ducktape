@@ -28,6 +28,7 @@ class AgentType(StrEnum):
     CRITIC = "critic"
     GRADER = "grader"
     PROMPT_OPTIMIZER = "prompt_optimizer"
+    CLUSTERING = "clustering"  # Groups unknown issues into clusters
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
 
 
@@ -83,8 +84,20 @@ class PromptOptimizerTypeConfig(BaseModel):
     target_metric: TargetMetric
 
 
+class ClusteringTypeConfig(BaseModel):
+    """Clustering agent configuration.
+
+    Clustering agents group unknown issues (grader decisions with no TP match)
+    into named clusters. They have direct SQL access to create clusters and
+    assign unknowns.
+    """
+
+    agent_type: Literal[AgentType.CLUSTERING] = AgentType.CLUSTERING
+    snapshot_slug: str  # Which snapshot's unknowns to cluster
+
+
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
-    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig,
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ClusteringTypeConfig,
     Field(discriminator="agent_type"),
 ]

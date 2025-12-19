@@ -124,6 +124,7 @@ class AgentType(StrEnum):
     CRITIC = "critic"
     GRADER = "grader"
     PROMPT_OPTIMIZER = "prompt_optimizer"
+    CLUSTERING = "clustering"  # Groups unknown issues into clusters
     FREEFORM = "freeform"  # Ad-hoc sub-agents
 ```
 
@@ -132,6 +133,7 @@ CREATE TYPE agent_type AS ENUM (
     'critic',
     'grader',
     'prompt_optimizer',
+    'clustering',
     'freeform'
 );
 ```
@@ -564,6 +566,58 @@ environment variables or the general runtime.
 This pattern ensures the agent sees init output as a tool result in its
 transcript, following the existing bootstrap pattern used by critics,
 graders, and other agents.
+
+### Init Error Handling
+
+If `./init` exits with a non-zero exit code, the agent run should be aborted
+immediately with an error. This allows init scripts to perform environmental
+sanity checks before the agent begins execution:
+
+- Verify database credentials are valid
+- Check that the MCP server is reachable
+- Validate expected resources exist (snapshots, ground truth data, etc.)
+- Ensure required tools are available in the container
+
+The bootstrap handler should check the tool result's `isError` flag after init
+execution and abort the agent loop with a descriptive error if init failed.
+This prevents wasted LLM calls when the environment is misconfigured.
+
+```python
+class InitFailedError(Exception):
+    """Raised when init script returns non-zero exit code."""
+    pass
+
+class BootstrapHandler(BaseHandler):
+    """Execute init and abort on failure."""
+
+    def __init__(self, init_call: FunctionCallItem):
+        self._init_call = init_call
+        self._init_complete = False
+        self._init_failed = False
+        self._error_message: str | None = None
+
+    def on_tool_result_event(self, evt: ToolCallOutput) -> None:
+        """Check init result for errors."""
+        if evt.call_id == self._init_call.call_id:
+            self._init_complete = True
+            if evt.result.isError:
+                self._init_failed = True
+                # Extract error message from result
+                for content in evt.result.content or []:
+                    if isinstance(content, TextContent):
+                        self._error_message = content.text
+                        break
+
+    def on_before_sample(self) -> LoopDecision:
+        """Inject init call first, then abort if it failed."""
+        if not self._init_complete:
+            return InjectItems(items=[self._init_call])
+        if self._init_failed:
+            raise InitFailedError(
+                f"Init script failed: {self._error_message or 'unknown error'}"
+            )
+        return NoAction()
+```
 
 Agents that need to read other definitions (e.g., optimizer reading critic) use
 the helper explicitly.
@@ -1237,9 +1291,20 @@ class PromptOptimizerTypeConfig(BaseModel):
     target_metric: TargetMetric
 
 
+class ClusteringTypeConfig(BaseModel):
+    """Clustering agent configuration.
+
+    Clustering agents group unknown issues (grader decisions with no TP match)
+    into named clusters. They have direct SQL access to create clusters and
+    assign unknowns.
+    """
+    agent_type: Literal[AgentType.CLUSTERING] = AgentType.CLUSTERING
+    snapshot_slug: str  # Which snapshot's unknowns to cluster
+
+
 # Discriminated union for type-specific config only
 TypeConfig = Annotated[
-    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig,
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ClusteringTypeConfig,
     Field(discriminator="agent_type"),
 ]
 

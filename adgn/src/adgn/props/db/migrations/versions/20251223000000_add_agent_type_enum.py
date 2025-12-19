@@ -1,8 +1,8 @@
 """Add agent_type PostgreSQL enum.
 
 Creates agent_type_enum for the unified agent system. This enum identifies
-different agent types (critic, grader, prompt_optimizer, freeform) and is
-used in type_config JSONB discriminated unions.
+different agent types (critic, grader, prompt_optimizer, clustering, freeform)
+and is used in type_config JSONB discriminated unions.
 
 Note: This migration only creates the enum type. The agent_runs table and
 related schema changes will be added in subsequent migrations.
@@ -31,6 +31,7 @@ def upgrade() -> None:
     - critic: Analyzes code snapshots and reports issues
     - grader: Evaluates critic output against ground truth
     - prompt_optimizer: Optimizes prompts using training/validation splits
+    - clustering: Groups unknown issues into clusters
     - freeform: Ad-hoc sub-agents created by other agents
     """
     op.execute("""
@@ -41,6 +42,7 @@ def upgrade() -> None:
                     'critic',
                     'grader',
                     'prompt_optimizer',
+                    'clustering',
                     'freeform'
                 );
             END IF;

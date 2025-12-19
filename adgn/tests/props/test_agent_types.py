@@ -6,6 +6,7 @@ from pydantic import TypeAdapter, ValidationError
 import pytest
 
 from adgn.props.agent_types import (
+    ClusteringTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
@@ -30,6 +31,7 @@ class TestTypeConfigDiscriminatedUnion:
             ({"agent_type": "grader", "graded_agent_run_id": "550e8400-e29b-41d4-a716-446655440000"}, GraderTypeConfig),
             ({"agent_type": "freeform"}, FreeformTypeConfig),
             ({"agent_type": "prompt_optimizer", "target_metric": "whole-repo"}, PromptOptimizerTypeConfig),
+            ({"agent_type": "clustering", "snapshot_slug": "snapshot-123"}, ClusteringTypeConfig),
         ],
     )
     def test_discriminator_routes_to_correct_type(
