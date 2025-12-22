@@ -10,3 +10,6 @@ src/adgn/props/runs/
 
 # Generated TypeScript types
 src/adgn/agent/web/src/generated/*
+
+# Bootstrap output dumps from e2e tests
+tests/props/bootstrap_dumps/

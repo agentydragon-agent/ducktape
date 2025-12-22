@@ -9,10 +9,11 @@ from collections.abc import Callable, Sequence
 from typing import Literal
 
 from mcp.types import TextContent
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from adgn.agent.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
 from adgn.agent.loop_control import Abort, InjectItems, LoopDecision, NoAction
+from adgn.mcp.exec.models import BaseExecResult, TruncatedStream
 from adgn.openai_utils.model import FunctionCallItem, UserMessage
 
 __all__ = [
@@ -286,30 +287,49 @@ class RedirectOnTextMessageHandler(BaseHandler):
 
 
 class InitFailedError(Exception):
-    """Raised when init script returns non-zero exit code.
+    """Raised when init script returns non-zero exit code or output was truncated.
 
     This exception is raised by BootstrapHandler when the init script fails,
     allowing callers to handle initialization failures appropriately (e.g.,
     log the error, mark the agent run as failed, clean up resources).
+
+    Attributes:
+        exec_result: The BaseExecResult from docker_exec, if parseable. Contains
+            exit status, stdout/stderr (possibly truncated). None if the result
+            couldn't be parsed (e.g., MCP error).
+        mcp_error_text: Raw error text from MCP if isError=True. None otherwise.
     """
 
-    def __init__(self, message: str, exit_code: int | None = None):
+    exec_result: BaseExecResult | None
+    mcp_error_text: str | None
+
+    def __init__(self, message: str, *, exec_result: BaseExecResult | None = None, mcp_error_text: str | None = None):
         """Initialize InitFailedError.
 
         Args:
-            message: Error message from init script output
-            exit_code: Exit code if available (None if not extractable)
+            message: Human-readable error summary
+            exec_result: The parsed BaseExecResult if available
+            mcp_error_text: Raw MCP error text if isError=True
         """
-        super().__init__(message)
-        self.exit_code = exit_code
+        # Build detailed message including stdout/stderr if available
+        full_message = message
+        if exec_result is not None:
+            stdout = exec_result.stdout
+            stderr = exec_result.stderr
+            stdout_text = stdout.truncated_text if isinstance(stdout, TruncatedStream) else stdout
+            stderr_text = stderr.truncated_text if isinstance(stderr, TruncatedStream) else stderr
+            full_message = f"{message}\n\nSTDOUT:\n{stdout_text}\n\nSTDERR:\n{stderr_text}"
+        super().__init__(full_message)
+        self.exec_result = exec_result
+        self.mcp_error_text = mcp_error_text
 
 
 class BootstrapHandler(BaseHandler):
     """Execute init script and abort on failure.
 
     Injects an init call as the first action and monitors its result. If the
-    init script fails (non-zero exit code / isError=True), raises InitFailedError
-    to abort the agent run immediately.
+    init script fails (non-zero exit code / isError=True / truncated output),
+    raises InitFailedError to abort the agent run immediately.
 
     This enables init scripts to perform environmental sanity checks before
     the agent begins execution:
@@ -317,6 +337,10 @@ class BootstrapHandler(BaseHandler):
     - Check that the MCP server is reachable
     - Validate expected resources exist (snapshots, ground truth data, etc.)
     - Ensure required tools are available in the container
+
+    Truncation detection: If the docker_exec output was truncated (stdout or
+    stderr contains a TruncatedStream object with truncated_text/total_bytes),
+    the bootstrap is considered failed since important context may be missing.
 
     Usage:
         from adgn.agent.bootstrap import docker_exec_call, TypedBootstrapBuilder
@@ -349,24 +373,66 @@ class BootstrapHandler(BaseHandler):
 
         self._init_call = init_call
         self._init_complete = False
-        self._init_failed = False
-        self._error_message: str | None = None
+        # Structured failure state: one of these is set on failure
+        self._failed_exec_result: BaseExecResult | None = None
+        self._mcp_error_text: str | None = None
+
+    def _check_exec_result_failure(self, exec_result: BaseExecResult) -> str | None:
+        """Check if exec_result represents a failure. Returns error message or None."""
+        # Check for truncation in stdout
+        if isinstance(exec_result.stdout, TruncatedStream):
+            return (
+                f"Init script output was truncated (stdout: {exec_result.stdout.total_bytes} bytes total). "
+                "Bootstrap context may be incomplete."
+            )
+
+        # Check for truncation in stderr
+        if isinstance(exec_result.stderr, TruncatedStream):
+            return (
+                f"Init script stderr was truncated ({exec_result.stderr.total_bytes} bytes total). "
+                "Bootstrap context may be incomplete."
+            )
+
+        # Check exit status
+        if exec_result.exit.kind == "exited" and exec_result.exit.exit_code != 0:
+            return f"Init script exited with code {exec_result.exit.exit_code}"
+
+        if exec_result.exit.kind == "timed_out":
+            return "Init script timed out"
+
+        if exec_result.exit.kind == "killed":
+            return f"Init script was killed by signal {exec_result.exit.signal}"
+
+        return None
 
     def on_tool_result_event(self, evt: ToolCallOutput) -> None:
-        """Check init result for errors."""
+        """Check init result for errors and truncation."""
         if evt.call_id != self._init_call.call_id:
             return
 
         self._init_complete = True
+
+        # Check for explicit MCP error
         if evt.result.isError:
-            self._init_failed = True
-            # Extract error message from result content
             for content in evt.result.content or []:
                 if isinstance(content, TextContent):
-                    self._error_message = content.text
-                    break
-            if self._error_message is None:
-                self._error_message = "Init script failed (no output captured)"
+                    self._mcp_error_text = content.text
+                    return
+            self._mcp_error_text = "Init script failed (no output captured)"
+            return
+
+        # Parse the result as BaseExecResult using Pydantic
+        for content in evt.result.content or []:
+            if isinstance(content, TextContent):
+                try:
+                    exec_result = BaseExecResult.model_validate_json(content.text)
+                except ValidationError:
+                    continue
+
+                # Check for failure conditions
+                if self._check_exec_result_failure(exec_result) is not None:
+                    self._failed_exec_result = exec_result
+                return
 
     def on_before_sample(self) -> LoopDecision:
         """Inject init call first, then abort if it failed."""
@@ -374,9 +440,12 @@ class BootstrapHandler(BaseHandler):
             # First call - inject the init command
             return InjectItems(items=[self._init_call])
 
-        if self._init_failed:
-            # Init completed with error - raise exception to abort
-            raise InitFailedError(f"Init script failed: {self._error_message or 'unknown error'}")
+        if self._mcp_error_text is not None:
+            raise InitFailedError(f"Init script failed: {self._mcp_error_text}", mcp_error_text=self._mcp_error_text)
+
+        if self._failed_exec_result is not None:
+            error_msg = self._check_exec_result_failure(self._failed_exec_result)
+            raise InitFailedError(f"Init script failed: {error_msg}", exec_result=self._failed_exec_result)
 
         # Init succeeded - continue normal execution
         return NoAction()
@@ -389,4 +458,4 @@ class BootstrapHandler(BaseHandler):
     @property
     def init_failed(self) -> bool:
         """Check if init failed."""
-        return self._init_failed
+        return self._failed_exec_result is not None or self._mcp_error_text is not None

@@ -16,8 +16,9 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import SystemMessage, UserMessage
+from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
-from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision, ReportedIssue
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision, ReportedIssue
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext, format_timestamp_session
 
@@ -56,19 +57,19 @@ class ClusterSubmitPayload(BaseModel):
     clusters: list[ClusterSpec]
 
 
-def _extract_unknowns_from_run(session, db_run: GraderRun, reported_issues: list) -> list[UnknownIssue]:
+def _extract_unknowns_from_run(session, db_run: AgentRun, reported_issues: list) -> list[UnknownIssue]:
     """Extract unknown issues from a single grader run.
 
     Returns empty list if critic result is not complete or if no novel issues found.
     """
     # Skip grader runs that didn't complete successfully
-    if db_run.status != GraderRunStatus.COMPLETED:
+    if db_run.status != AgentRunStatus.COMPLETED:
         return []
 
     # Query grading decisions with no TP match (unknowns)
     unknown_decisions = (
         session.query(GradingDecision)
-        .filter_by(grader_run_id=db_run.id)
+        .filter_by(agent_run_id=db_run.agent_run_id)
         .filter(GradingDecision.target_tp_id.is_(None))
         .all()
     )
@@ -79,10 +80,13 @@ def _extract_unknowns_from_run(session, db_run: GraderRun, reported_issues: list
     # Build a map of issue_id -> ReportedIssue for quick lookup
     issues_by_id = {issue.issue_id: issue for issue in reported_issues}
 
+    # Get critic run ID from grader's type_config
+    graded_critic_run_id = db_run.grader_config().graded_agent_run_id
+
     # Extract unknown issues (build from grading decisions)
     return [
         UnknownIssue(
-            tp_id=ClusteredIssueID(critic_run_id=db_run.critic_run_id, tp_id=decision.input_issue_id),
+            tp_id=ClusteredIssueID(critic_run_id=graded_critic_run_id, tp_id=decision.input_issue_id),
             rationale=Rationale(matching_issue.rationale),
             files={Path(loc.file) for occ in matching_issue.occurrences for loc in occ.locations},
         )
@@ -162,13 +166,27 @@ async def cluster_unknowns(*, model: str = "gpt-5", out_dir: Path | None = None,
     by_spec: dict[str, list[UnknownIssue]] = defaultdict(list)
     with get_session() as session:
         # Load grader runs and their reported issues
-        # Query grader runs that completed successfully
-        grader_runs = session.query(GraderRun).filter_by(status=GraderRunStatus.COMPLETED).all()
+        # Query grader runs that completed successfully (via AgentRun with JSONB filter)
+        grader_runs = (
+            session.query(AgentRun)
+            .filter(
+                AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                AgentRun.status == AgentRunStatus.COMPLETED,
+            )
+            .all()
+        )
 
         for db_run in grader_runs:
-            # Load reported issues for this critic run
-            reported_issues = session.query(ReportedIssue).filter_by(critic_run_id=db_run.critic_run_id).all()
-            by_spec[db_run.snapshot_slug].extend(_extract_unknowns_from_run(session, db_run, reported_issues))
+            # Load reported issues for this grader's critic run
+            graded_critic_run_id = db_run.grader_config().graded_agent_run_id
+            reported_issues = session.query(ReportedIssue).filter_by(agent_run_id=graded_critic_run_id).all()
+
+            # Get snapshot_slug from the critic run's type_config
+            critic_run = session.get(AgentRun, graded_critic_run_id)
+            if not critic_run:
+                raise ValueError(f"Critic run {graded_critic_run_id} not found for grader {db_run.agent_run_id}")
+            snapshot_slug = critic_run.critic_config().snapshot_slug
+            by_spec[snapshot_slug].extend(_extract_unknowns_from_run(session, db_run, reported_issues))
 
     if not by_spec:
         raise RuntimeError("no unknown issues found in grader runs in database")

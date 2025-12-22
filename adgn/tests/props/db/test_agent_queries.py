@@ -16,24 +16,14 @@ Does NOT test:
 from __future__ import annotations
 
 from datetime import datetime
-from uuid import uuid4
 
 import pytest
 
 from adgn.props.db import get_session, query_builders as qb
 from adgn.props.db.examples import Example
-from adgn.props.db.models import (
-    AggregatedRecallByPrompt,
-    CriticRun,
-    CriticRunStatus,
-    Event,
-    FalsePositive,
-    Snapshot,
-    TruePositive,
-)
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.models import AggregatedRecallByDefinition, Event, FalsePositive, Snapshot, TruePositive
 from adgn.props.splits import Split
-from tests.props.conftest import make_grader_run
+from tests.props.conftest import make_critic_run, make_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -75,48 +65,19 @@ def query_test_data(synced_test_db):
         assert len(train_examples) >= 1, "Need at least 1 train example from git fixtures"
         assert len(valid_examples) >= 2, "Need at least 2 valid examples from git fixtures"
 
-        # Extract values while session is open (avoid DetachedInstanceError)
-        train_0_slug = train_examples[0].snapshot_slug
-        train_0_hash = train_examples[0].scope_hash
-        valid_0_slug = valid_examples[0].snapshot_slug
-        valid_0_hash = valid_examples[0].scope_hash
-        valid_1_slug = valid_examples[1].snapshot_slug
-        valid_1_hash = valid_examples[1].scope_hash
-
-        # Create prompt (helper computes proper hash)
-        prompt_sha = hash_and_upsert_prompt("Test prompt for query validation")
-
-        # Create critic runs directly with extracted values (avoid passing detached Example objects)
-        critic_run_train = CriticRun(
-            transcript_id=uuid4(),
-            prompt_sha256=prompt_sha,
-            snapshot_slug=train_0_slug,
-            scope_hash=train_0_hash,
-            model="test-model",
-            status=CriticRunStatus.COMPLETED,
-            completion_summary="Test completion summary for train",
+        # Create critic runs using factory (uses attached Example objects directly)
+        critic_run_train = make_critic_run(
+            example=train_examples[0], completion_summary="Test completion summary for train"
         )
         session.add(critic_run_train)
 
-        critic_run_valid_1 = CriticRun(
-            transcript_id=uuid4(),
-            prompt_sha256=prompt_sha,
-            snapshot_slug=valid_0_slug,
-            scope_hash=valid_0_hash,
-            model="test-model",
-            status=CriticRunStatus.COMPLETED,
-            completion_summary="Test completion summary for valid-1",
+        critic_run_valid_1 = make_critic_run(
+            example=valid_examples[0], completion_summary="Test completion summary for valid-1"
         )
         session.add(critic_run_valid_1)
 
-        critic_run_valid_2 = CriticRun(
-            transcript_id=uuid4(),
-            prompt_sha256=prompt_sha,
-            snapshot_slug=valid_1_slug,
-            scope_hash=valid_1_hash,
-            model="test-model",
-            status=CriticRunStatus.COMPLETED,
-            completion_summary="Test completion summary for valid-2",
+        critic_run_valid_2 = make_critic_run(
+            example=valid_examples[1], completion_summary="Test completion summary for valid-2"
         )
         session.add(critic_run_valid_2)
 
@@ -134,8 +95,8 @@ def query_test_data(synced_test_db):
 
         session.flush()
 
-        # Create event records for one transcript_id (for event query tests)
-        test_transcript_id = critic_run_train.transcript_id
+        # Create event records for one agent_run_id (for event query tests)
+        agent_run_id = critic_run_train.agent_run_id
         now = datetime.now()
         event_specs = [
             (0, "tool_call", {"name": "Read", "args_json": '{"file_path": "test.py"}', "call_id": "call-1"}),
@@ -146,16 +107,12 @@ def query_test_data(synced_test_db):
         for seq_num, evt_type, payload in event_specs:
             session.add(
                 Event(
-                    transcript_id=test_transcript_id,
-                    sequence_num=seq_num,
-                    event_type=evt_type,
-                    timestamp=now,
-                    payload=payload,
+                    agent_run_id=agent_run_id, sequence_num=seq_num, event_type=evt_type, timestamp=now, payload=payload
                 )
             )
 
         session.commit()
-        return test_transcript_id  # Return for use in event query tests
+        return agent_run_id  # Return for use in event query tests
 
 
 class TestQueryBuilders:
@@ -265,11 +222,15 @@ class TestQueryBuilders:
                 assert len(result) == 0
 
     def test_valid_aggregates_view(self, query_test_data):
-        """aggregated_recall_by_prompt view computes statistics for valid split."""
+        """aggregated_recall_by_definition view computes statistics for valid split."""
 
         with get_session() as session:
-            # Query the aggregated_recall_by_prompt view for valid split
-            result = session.query(AggregatedRecallByPrompt).filter(AggregatedRecallByPrompt.split == Split.VALID).all()
+            # Query the aggregated_recall_by_definition view for valid split
+            result = (
+                session.query(AggregatedRecallByDefinition)
+                .filter(AggregatedRecallByDefinition.split == Split.VALID)
+                .all()
+            )
 
             # Should have at least 1 row (from valid grader runs created in fixture)
             assert len(result) >= 1
@@ -302,19 +263,19 @@ class TestQueryBuilders:
             # Should have at least 1 critic run (created in query_test_data fixture)
             assert len(result) >= 1
 
-            # Check structure
+            # Check structure (uses agent_runs table now, not legacy critic_runs)
             row = result[0]
-            assert row.id is not None
-            assert row.status is not None  # CriticRunStatus enum value
+            assert row.agent_run_id is not None  # Primary key is agent_run_id now
+            assert row.status is not None  # AgentRunStatus enum value
             assert row.created_at is not None
-            assert len(row.prompt_sha256) == 64  # SHA256 hash
+            assert row.scope_hash is not None  # From type_config JSONB
             assert row.model == "test-model"
 
     def test_tools_used_by_transcript(self, query_test_data):
-        """tools_used_by_transcript() returns tool usage counts for a transcript."""
-        transcript_id = query_test_data
+        """tools_used_by_agent_run() returns tool usage counts for a transcript."""
+        agent_run_id = query_test_data
         with get_session() as session:
-            result = session.execute(qb.tools_used_by_transcript(transcript_id)).fetchall()
+            result = session.execute(qb.tools_used_by_agent_run(agent_run_id)).fetchall()
 
             # Should have 2 different tools (Read, Grep)
             assert len(result) >= 2
@@ -325,10 +286,10 @@ class TestQueryBuilders:
             assert "Grep" in tools
 
     def test_tool_sequence_by_transcript(self, query_test_data):
-        """tool_sequence_by_transcript() returns tool calls in chronological order."""
-        transcript_id = query_test_data
+        """tool_sequence_by_agent_run() returns tool calls in chronological order."""
+        agent_run_id = query_test_data
         with get_session() as session:
-            result = session.execute(qb.tool_sequence_by_transcript(transcript_id)).fetchall()
+            result = session.execute(qb.tool_sequence_by_agent_run(agent_run_id)).fetchall()
 
             # Should have 2 tool calls
             assert len(result) >= 2
@@ -340,10 +301,10 @@ class TestQueryBuilders:
             assert result[1].tool_name == "Grep"
 
     def test_failed_tools_by_transcript(self, query_test_data):
-        """failed_tools_by_transcript() returns tools with isError=true in results."""
-        transcript_id = query_test_data
+        """failed_tools_by_agent_run() returns tools with isError=true in results."""
+        agent_run_id = query_test_data
         with get_session() as session:
-            result = session.execute(qb.failed_tools_by_transcript(transcript_id)).fetchall()
+            result = session.execute(qb.failed_tools_by_agent_run(agent_run_id)).fetchall()
 
             # Should have 1 failed tool (Grep)
             assert len(result) >= 1

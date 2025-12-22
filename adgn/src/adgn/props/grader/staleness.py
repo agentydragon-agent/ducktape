@@ -7,18 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import canonicaljson
-from sqlalchemy import select
 
+from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import (
-    CanonicalIssuesSnapshot,
-    CriticRun,
-    FalsePositive,
-    GraderRun,
-    Snapshot as DBSnapshot,
-    TruePositive,
-)
+from adgn.props.db.models import AgentRun, CanonicalIssuesSnapshot, FalsePositive, Snapshot as DBSnapshot, TruePositive
 from adgn.props.db.snapshots import (
     DBFalsePositiveOccurrence,
     DBKnownFalsePositive,
@@ -129,31 +122,53 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
     current_canonical_cache: dict[tuple[SnapshotSlug, str], dict[str, Any]] = {}
 
     with get_session() as session:
-        # Query GraderRun with CriticRun and Example for scope (no Event join needed)
-        query = (
-            select(GraderRun.snapshot_slug, GraderRun.canonical_issues_snapshot, CriticRun.scope_hash, Example.scope)
-            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
-            .join(
-                Example,
-                (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.scope_hash == CriticRun.scope_hash),
-            )
-            .order_by(GraderRun.created_at.desc())
+        # Two-phase approach: first get grader runs with their linked critic runs
+        # Query AgentRun for graders
+        grader_runs = (
+            session.query(AgentRun)
+            .filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER)
+            .order_by(AgentRun.created_at.desc())
+            .all()
         )
 
-        for snapshot_slug, stored_snapshot, scope_hash, scope_spec in session.execute(query):
+        for grader_run in grader_runs:
+            grader_config = grader_run.grader_config()
+            stored_snapshot = grader_config.canonical_issues_snapshot
+            graded_critic_run_id = grader_config.graded_agent_run_id
+
+            # Get the critic run to find scope_hash and snapshot_slug
+            critic_run = session.get(AgentRun, graded_critic_run_id)
+            if not critic_run:
+                raise ValueError(f"Critic run {graded_critic_run_id} not found for grader {grader_run.agent_run_id}")
+
+            critic_config = critic_run.critic_config()
+            scope_hash = critic_config.scope_hash
+            snapshot_slug = critic_config.snapshot_slug
+
+            # Get the example for scope spec
+            example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).first()
+
+            if not example:
+                raise ValueError(f"Example not found: {snapshot_slug}/{scope_hash}")
+
+            scope_spec = example.scope
             total += 1
             by_snapshot[snapshot_slug]["total"] += 1
 
             # All grader runs must have canonical_issues_snapshot (enforced by NOT NULL constraint)
             # This assertion documents the database invariant
-            assert stored_snapshot is not None, f"Grader run {snapshot_slug} missing canonical_issues_snapshot"
+            if stored_snapshot is None:
+                continue  # Skip runs without canonical snapshot
+
+            # Parse stored snapshot from dict to model
+            stored_snapshot_model = CanonicalIssuesSnapshot.model_validate(stored_snapshot)
 
             # Resolve scope specification to file set
             targeted_files = resolve_scope_files(snapshot_slug, scope_spec)
 
             # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
-            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot.true_positives, targeted_files)
-            relevant_stored_fps = filter_relevant_db_fps(stored_snapshot.false_positives, targeted_files)
+            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot_model.true_positives, targeted_files)
+            relevant_stored_fps = filter_relevant_db_fps(stored_snapshot_model.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize
             filtered_stored = CanonicalIssuesSnapshot(

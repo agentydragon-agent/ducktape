@@ -4,10 +4,14 @@ Tests the new HTTP transport for grader_submit tools using real Docker container
 real PostgreSQL database, and mocked OpenAI responses.
 
 Comprehensive tests verify:
+- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Reading critic runs (reported_issues from the critique being graded)
 - Reading ground truth (true_positives, false_positives)
 - Writing grading decisions
 - Submitting via MCP
+
+All tests verify that bootstrap commands (including ./init) exit with code 0
+before proceeding with the test scenario.
 """
 
 from __future__ import annotations
@@ -15,16 +19,15 @@ from __future__ import annotations
 import pytest
 
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, CriticRunStatus, GraderRun, GraderRunStatus, GradingDecision
+from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from adgn.props.grader.grader import grade_critic_run_by_id
 from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBootstrapValidation, Step
 
 # Using fixtures from conftest.py:
 # - test_snapshot: snapshot slug
-# - test_prompt_sha: critic prompt hash
 # - subtract_file_scope: ExplicitFileScope for subtract.py
 # - zero_issues_critic_responses: configured critic client
 
@@ -34,26 +37,27 @@ async def zero_issue_critic_run(
     synced_test_db,
     test_trivial_specimen,
     test_snapshot,
-    test_prompt_sha,
     subtract_file_scope,
     zero_issues_critic_responses,
     async_docker_client,
     test_specimens_hydrator,
+    test_workspace_manager,
 ):
     """Create a zero-issue critic run for grader testing."""
-    critic_input = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
-
     critic_run_id, status = await run_critic(
-        input_data=critic_input,
+        definition_id=CRITIC_AGENT_DEFINITION_ID,
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
         client=zero_issues_critic_responses,
         hydrator=test_specimens_hydrator,
         db_config=synced_test_db,
-        prompt_optimization_run_id=None,
+        parent_agent_run_id=None,
         docker_client=async_docker_client,
+        workspace_manager=test_workspace_manager,
         max_turns=100,
     )
 
-    assert status == CriticRunStatus.COMPLETED
+    assert status == AgentRunStatus.COMPLETED
     assert critic_run_id is not None
 
     return critic_run_id
@@ -62,7 +66,7 @@ async def zero_issue_critic_run(
 def _make_grader_steps() -> list[Step]:
     """Create step sequence for grader that grades via CLI + HTTP finalization.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
     First step validates bootstrap succeeded.
     """
@@ -71,9 +75,8 @@ def _make_grader_steps() -> list[Step]:
         # Also validates bootstrap on first step
         DockerExecCallWithBootstrapValidation(
             cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "grader",
+                "python",
+                "/workspace/bin/grader.py",
                 "submit",
                 "Graded zero-issue critique against ground truth. No issues to match.",
             ],
@@ -85,7 +88,13 @@ def _make_grader_steps() -> list[Step]:
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_grader_http_mode_zero_issues(
-    zero_issue_critic_run, synced_test_db, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
+    zero_issue_critic_run,
+    synced_test_db,
+    make_step_runner,
+    test_snapshot,
+    async_docker_client,
+    test_specimens_hydrator,
+    test_workspace_manager,
 ):
     """Test grader successfully grades zero-issue critique using HTTP MCP mode.
 
@@ -108,7 +117,8 @@ async def test_grader_http_mode_zero_issues(
                 docker_client=async_docker_client,
                 hydrator=test_specimens_hydrator,
                 db_config=synced_test_db,
-                prompt_optimization_run_id=None,
+                workspace_manager=test_workspace_manager,
+                parent_agent_run_id=None,
                 verbose=False,
                 max_turns=100,
             )
@@ -117,13 +127,17 @@ async def test_grader_http_mode_zero_issues(
 
             # Verify database records
             session.commit()
-            grader_run = session.get(GraderRun, grader_run_id)
+            grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
-            assert grader_run.snapshot_slug == test_snapshot
-            assert grader_run.critic_run_id == zero_issue_critic_run
+            # For graders, snapshot_slug is derived from the graded critic's type_config
+            grader_config = grader_run.grader_config()
+            graded_critic = session.get(AgentRun, grader_config.graded_agent_run_id)
+            assert graded_critic is not None
+            assert graded_critic.critic_config().snapshot_slug == test_snapshot
+            assert grader_config.graded_agent_run_id == zero_issue_critic_run
 
             # Verify the grader completed successfully
-            assert grader_run.status == GraderRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
+            assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
         except (RuntimeError, AssertionError):
             # Print captured requests for debugging
             print(f"\n=== Captured {len(grader_client.captured)} requests ===")
@@ -143,7 +157,12 @@ async def test_grader_http_mode_zero_issues(
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_grader_http_mode_sql_workflow(
-    zero_issue_critic_run, synced_test_db, make_step_runner, async_docker_client, test_specimens_hydrator
+    zero_issue_critic_run,
+    synced_test_db,
+    make_step_runner,
+    async_docker_client,
+    test_specimens_hydrator,
+    test_workspace_manager,
 ):
     """Test grader HTTP mode with SQL workflow.
 
@@ -162,7 +181,8 @@ async def test_grader_http_mode_sql_workflow(
             docker_client=async_docker_client,
             hydrator=test_specimens_hydrator,
             db_config=synced_test_db,
-            prompt_optimization_run_id=None,
+            workspace_manager=test_workspace_manager,
+            parent_agent_run_id=None,
             verbose=False,
             max_turns=100,
         )
@@ -170,9 +190,9 @@ async def test_grader_http_mode_sql_workflow(
         assert grader_run_id is not None
 
         session.commit()
-        grader_run = session.get(GraderRun, grader_run_id)
+        grader_run = session.get(AgentRun, grader_run_id)
         assert grader_run is not None
-        assert grader_run.status == GraderRunStatus.COMPLETED
+        assert grader_run.status == AgentRunStatus.COMPLETED
 
 
 # =============================================================================
@@ -183,23 +203,22 @@ async def test_grader_http_mode_sql_workflow(
 def _make_critic_steps_with_issue() -> list[Step]:
     """Create step sequence for critic that submits one issue.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
     """
     return [
-        # 1. Add issue using CLI helper - validates bootstrap on first step
+        # 1. Add issue using bin CLI - validates bootstrap on first step
         DockerExecCallWithBootstrapValidation(
-            cmd=["adgn-properties", "agent-helper", "critic", "add-issue", "test-issue-01", "Test issue found in code"],
+            cmd=["python", "/workspace/bin/critique.py", "insert-issue", "test-issue-01", "Test issue found in code"],
             timeout_ms=15000,
         ),
         # 2. Add occurrence with file location
         AssertDockerExecThenCall(
             expected_output="",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "critic",
-                "add-occurrence",
+                "python",
+                "/workspace/bin/critique.py",
+                "insert-occurrence",
                 "test-issue-01",
                 "subtract.py",
                 "-s",
@@ -209,10 +228,10 @@ def _make_critic_steps_with_issue() -> list[Step]:
             ],
             timeout_ms=15000,
         ),
-        # 3. Submit via CLI helper
+        # 3. Submit via bin CLI
         AssertDockerExecThenCall(
             expected_output="",
-            next_cmd=["adgn-properties", "agent-helper", "critic", "submit", "1", "Found 1 test issue"],
+            next_cmd=["python", "/workspace/bin/critique.py", "submit", "1", "Found 1 test issue"],
             timeout_ms=15000,
         ),
     ]
@@ -223,33 +242,35 @@ async def critic_run_with_issue(
     synced_test_db,
     test_trivial_specimen,
     test_snapshot,
-    test_prompt_sha,
     subtract_file_scope,
     make_step_runner,
     async_docker_client,
     test_specimens_hydrator,
+    test_workspace_manager,
 ):
     """Create a critic run with one reported issue for grader testing."""
     runner = make_step_runner(steps=_make_critic_steps_with_issue())
-    critic_input = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
 
     critic_run_id, status = await run_critic(
-        input_data=critic_input,
+        definition_id=CRITIC_AGENT_DEFINITION_ID,
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
         client=runner,
         hydrator=test_specimens_hydrator,
         db_config=synced_test_db,
-        prompt_optimization_run_id=None,
+        parent_agent_run_id=None,
         docker_client=async_docker_client,
+        workspace_manager=test_workspace_manager,
         mount_properties=False,
         max_turns=100,
     )
 
-    assert status == CriticRunStatus.COMPLETED, f"Expected COMPLETED, got {status}"
+    assert status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {status}"
     assert critic_run_id is not None
 
     # Verify the issue was actually created
     with get_session() as session:
-        critic_run = session.get(CriticRun, critic_run_id)
+        critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
         assert len(critic_run.reported_issues) == 1, f"Expected 1 issue, got {len(critic_run.reported_issues)}"
 
@@ -265,7 +286,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str) -> list[Step]:
     3. Write grading decisions
     4. Submit via MCP
 
-    Uses psql queries to verify database access, then CLI helpers for decisions.
+    Uses psql queries to verify database access, then bin CLI for decisions.
     """
     return [
         # Step 1: Read reported_issues from the critique being graded
@@ -274,7 +295,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str) -> list[Step]:
             cmd=[
                 "psql",
                 "-c",
-                f"SELECT issue_id, rationale FROM reported_issues WHERE critic_run_id = '{critic_run_id}'",
+                f"SELECT issue_id, rationale FROM reported_issues WHERE agent_run_id = '{critic_run_id}'",
             ],
             timeout_ms=2000,
         ),
@@ -299,22 +320,20 @@ def _make_grader_steps_comprehensive(critic_run_id: str) -> list[Step]:
         AssertDockerExecThenCall(
             expected_output="(0 rows)",  # No FPs in test-trivial fixture
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "grader",
+                "python",
+                "/workspace/bin/grader.py",
                 "add-no-match",
                 "test-issue-01",
                 "Novel finding not in canonical ground truth",
             ],
             timeout_ms=10000,
         ),
-        # Step 5: Submit grading via CLI helper (which calls MCP)
+        # Step 5: Submit grading via bin CLI (which calls MCP)
         AssertDockerExecThenCall(
             expected_output="Added no-match decision",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "grader",
+                "python",
+                "/workspace/bin/grader.py",
                 "submit",
                 "Graded 1 issue: 1 novel finding (no canonical match)",
             ],
@@ -327,7 +346,13 @@ def _make_grader_steps_comprehensive(critic_run_id: str) -> list[Step]:
 @pytest.mark.requires_postgres
 @pytest.mark.timeout(60)  # Critic fixture + grader steps (~48s observed)
 async def test_grader_comprehensive_data_access(
-    critic_run_with_issue, synced_test_db, make_step_runner, test_snapshot, async_docker_client, test_specimens_hydrator
+    critic_run_with_issue,
+    synced_test_db,
+    make_step_runner,
+    test_snapshot,
+    async_docker_client,
+    test_specimens_hydrator,
+    test_workspace_manager,
 ):
     """Test grader can read critic runs, ground truth, write decisions, and submit.
 
@@ -355,7 +380,8 @@ async def test_grader_comprehensive_data_access(
                 docker_client=async_docker_client,
                 hydrator=test_specimens_hydrator,
                 db_config=synced_test_db,
-                prompt_optimization_run_id=None,
+                workspace_manager=test_workspace_manager,
+                parent_agent_run_id=None,
                 verbose=False,
                 max_turns=100,
             )
@@ -364,16 +390,20 @@ async def test_grader_comprehensive_data_access(
 
             # Verify database records
             session.commit()
-            grader_run = session.get(GraderRun, grader_run_id)
+            grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
-            assert grader_run.snapshot_slug == test_snapshot
-            assert grader_run.critic_run_id == critic_run_with_issue
+            # For graders, snapshot_slug is derived from the graded critic's type_config
+            grader_config2 = grader_run.grader_config()
+            graded_critic = session.get(AgentRun, grader_config2.graded_agent_run_id)
+            assert graded_critic is not None
+            assert graded_critic.critic_config().snapshot_slug == test_snapshot
+            assert grader_config2.graded_agent_run_id == critic_run_with_issue
 
             # Verify the grader completed successfully
-            assert grader_run.status == GraderRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
+            assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
 
             # Verify grading decision was written
-            decisions = session.query(GradingDecision).filter(GradingDecision.grader_run_id == grader_run_id).all()
+            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == grader_run_id).all()
             assert len(decisions) == 1, f"Expected 1 decision, got {len(decisions)}"
             decision = decisions[0]
             assert decision.input_issue_id == "test-issue-01"

@@ -12,22 +12,22 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.orm import Session
 from tests.props.conftest import make_clustering_run
 
-from adgn.props.clustering.user_manager import ClusteringUserManager
 from adgn.props.db import get_session
-from adgn.props.db.clustering_models import ClusteringRun, UnknownCluster
-from adgn.props.db.models import Snapshot
+from adgn.props.db.clustering_models import UnknownCluster
+from adgn.props.db.models import AgentRun, Snapshot
+from adgn.props.db.temp_user_manager import TempUserManager
 
 
 def test_migration_applied(admin_engine):
     """Verify clustering schema was created in test database."""
     with admin_engine.connect() as conn:
-        # Check if RLS helper function exists
-        result = conn.execute(text("SELECT proname FROM pg_proc WHERE proname = 'current_clustering_run_id'"))
+        # Check if unified RLS helper function exists
+        result = conn.execute(text("SELECT proname FROM pg_proc WHERE proname = 'current_agent_run_id'"))
         function_exists = result.scalar() is not None
-        assert function_exists, "current_clustering_run_id() function not found"
+        assert function_exists, "current_agent_run_id() function not found"
 
-        # Check if clustering tables exist
-        required_tables = ["clustering_runs", "unknown_clusters", "unknown_assignments"]
+        # Check if clustering tables exist (clustering_runs merged into agent_runs)
+        required_tables = ["agent_runs", "unknown_clusters", "unknown_assignments"]
         result = conn.execute(
             text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename = ANY(:tables)"),
             {"tables": required_tables},
@@ -45,8 +45,8 @@ async def test_rls_isolation_between_runs(clustering_user_engine_factory, test_s
         run2 = make_clustering_run(test_snapshot)
         session.add_all([run1, run2])
         session.flush()
-        run1_id = run1.id
-        run2_id = run2.id
+        run1_id = run1.agent_run_id
+        run2_id = run2.agent_run_id
         session.commit()
 
     # Test: Each user can only see their own run
@@ -57,21 +57,21 @@ async def test_rls_isolation_between_runs(clustering_user_engine_factory, test_s
         # User 1 sees only run 1
         with Session(user1_engine) as user1_session:
             # Quick debug check
-            result = user1_session.execute(text("SELECT current_user, current_clustering_run_id()"))
+            result = user1_session.execute(text("SELECT current_user, current_agent_run_id()"))
             row = result.fetchone()
-            assert row is not None, "Expected row from current_user/current_clustering_run_id() query"
+            assert row is not None, "Expected row from current_user/current_agent_run_id() query"
             if row[1] is None:
-                raise RuntimeError(f"current_clustering_run_id() returned NULL for user {row[0]}, expected {run1_id}")
+                raise RuntimeError(f"current_agent_run_id() returned NULL for user {row[0]}, expected {run1_id}")
 
-            visible_runs = user1_session.query(ClusteringRun).all()
+            visible_runs = user1_session.query(AgentRun).all()
             assert len(visible_runs) == 1
-            assert visible_runs[0].id == run1_id
+            assert visible_runs[0].agent_run_id == run1_id
 
         # User 2 sees only run 2
         with Session(user2_engine) as user2_session:
-            visible_runs = user2_session.query(ClusteringRun).all()
+            visible_runs = user2_session.query(AgentRun).all()
             assert len(visible_runs) == 1
-            assert visible_runs[0].id == run2_id
+            assert visible_runs[0].agent_run_id == run2_id
 
 
 async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_factory, test_snapshot):
@@ -82,16 +82,12 @@ async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_fac
         run2 = make_clustering_run(test_snapshot)
         session.add_all([run1, run2])
         session.flush()
-        run1_id = run1.id
-        run2_id = run2.id
+        run1_id = run1.agent_run_id
+        run2_id = run2.agent_run_id
 
         # Create clusters for each run
-        cluster1 = UnknownCluster(
-            clustering_run_id=run1_id, cluster_name="run1-cluster", description="Cluster for run 1"
-        )
-        cluster2 = UnknownCluster(
-            clustering_run_id=run2_id, cluster_name="run2-cluster", description="Cluster for run 2"
-        )
+        cluster1 = UnknownCluster(agent_run_id=run1_id, cluster_name="run1-cluster", description="Cluster for run 1")
+        cluster2 = UnknownCluster(agent_run_id=run2_id, cluster_name="run2-cluster", description="Cluster for run 2")
         session.add_all([cluster1, cluster2])
         session.commit()
 
@@ -105,14 +101,14 @@ async def test_rls_isolation_clusters_and_assignments(clustering_user_engine_fac
             clusters = user1_session.query(UnknownCluster).all()
             assert len(clusters) == 1
             assert clusters[0].cluster_name == "run1-cluster"
-            assert clusters[0].clustering_run_id == run1_id
+            assert clusters[0].agent_run_id == run1_id
 
         # User 2 sees only run 2's clusters
         with Session(user2_engine) as user2_session:
             clusters = user2_session.query(UnknownCluster).all()
             assert len(clusters) == 1
             assert clusters[0].cluster_name == "run2-cluster"
-            assert clusters[0].clustering_run_id == run2_id
+            assert clusters[0].agent_run_id == run2_id
 
 
 async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_factory, test_snapshot):
@@ -122,7 +118,7 @@ async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_f
         run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
-        run_id = run.id
+        run_id = run.agent_run_id
         session.commit()
 
     # Test: User can read snapshots but not modify
@@ -130,7 +126,7 @@ async def test_rls_read_only_access_to_reference_tables(clustering_user_engine_f
         with Session(user_engine) as user_session:
             # Can read snapshot
             snapshots = user_session.query(Snapshot).all()
-            assert any(s.slug == test_snapshot for s in snapshots)
+            assert any(s.slug == test_snapshot for s in snapshots), f"Expected snapshot {test_snapshot} not visible"
 
             # Cannot delete snapshot (read-only)
             def try_delete():
@@ -148,13 +144,13 @@ async def test_scoped_user_cleanup(test_db, test_snapshot, admin_engine):
         run = make_clustering_run(test_snapshot)
         session.add(run)
         session.flush()
-        run_id = run.id
+        run_id = run.agent_run_id
         session.commit()
 
-    username = f"clustering_run_{run_id}_agent"
+    username = f"agent_{run_id}"
 
     # Create and exit scoped user
-    async with ClusteringUserManager(test_db.admin, run_id):
+    async with TempUserManager(test_db.admin, run_id):
         # Verify user exists during context
         with Session(admin_engine) as session:
             result = session.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :username"), {"username": username})

@@ -18,13 +18,17 @@ import yaml
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import FalsePositive, ModelMetadata, Snapshot, TruePositive
+from adgn.props.db.models import AgentDefinition, FalsePositive, ModelMetadata, Snapshot, TruePositive
+from adgn.props.definition_utils import pack_definition, validate_packed_definition
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.prop_utils import specimens_definitions_root
 from adgn.props.splits import Split
 
 from ._loader import FilesystemLoader
+
+# Agent definitions are stored in the props package under agent_defs/
+AGENT_DEFS_PATH = Path(__file__).parent.parent.parent / "agent_defs"
 
 logger = logging.getLogger(__name__)
 
@@ -534,3 +538,99 @@ def sync_model_metadata_with_session(session: Session) -> ModelMetadataSyncStats
         f"Model metadata synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={len(MODEL_METADATA)} total"
     )
     return ModelMetadataSyncStats(added=added, updated=updated, deleted=deleted, total=len(MODEL_METADATA))
+
+
+# ============================================================================
+# Agent Definitions Sync (from repo-tracked agent_defs/)
+# ============================================================================
+
+
+# Detector definitions that inherit from critic (use critic agent_type)
+CRITIC_BASED_DETECTORS = {"dead_code", "flag_propagation", "contract_truthfulness", "high_recall_critic"}
+
+
+def sync_agent_definitions_to_db(session: Session) -> SyncStats:
+    """Sync repo-tracked agent definitions from agent_defs/ to database.
+
+    Reads agent definitions from src/adgn/props/agent_defs/ directory.
+    Each subdirectory is an agent type (e.g., critic/, grader/).
+    Definition ID is the directory name.
+
+    Symlinks are resolved at pack time: if a definition has symlinks to files
+    or directories outside the definition, they are resolved and their content
+    is included in the packed archive. This allows definitions to share common
+    files (e.g., docs/, examples/) via symlinks without hardcoded layering.
+
+    Args:
+        session: SQLAlchemy session
+
+    Returns:
+        Statistics about what changed (total, added, updated, deleted)
+    """
+    if not AGENT_DEFS_PATH.exists():
+        logger.warning(f"Agent definitions directory not found: {AGENT_DEFS_PATH}")
+        return SyncStats(total=0, added=0, updated=0, deleted=0)
+
+    # Find all definition directories (immediate children of agent_defs/, excluding common and __pycache__)
+    definition_dirs = [
+        d
+        for d in AGENT_DEFS_PATH.iterdir()
+        if d.is_dir() and not d.name.startswith(".") and d.name not in ("common", "__pycache__")
+    ]
+
+    # Get existing definitions from DB (only repo-backed ones - no created_by_agent_run_id)
+    existing = {
+        d.id: d for d in session.query(AgentDefinition).filter(AgentDefinition.created_by_agent_run_id.is_(None)).all()
+    }
+    source_ids = {d.name for d in definition_dirs}
+    db_ids = set(existing.keys())
+
+    # Track stats
+    added = 0
+    updated = 0
+    deleted = 0
+
+    # Delete orphaned definitions (in DB but not in source)
+    for def_id in db_ids - source_ids:
+        logger.info(f"Deleting orphaned agent definition: {def_id}")
+        session.delete(existing[def_id])
+        deleted += 1
+
+    # Add/update definitions from source
+    for definition_dir in definition_dirs:
+        def_id = definition_dir.name
+
+        # Pack archive (symlinks to external content are resolved automatically)
+        archive = pack_definition(definition_dir)
+
+        # Validate the packed archive - fail hard on invalid definitions
+        errors = validate_packed_definition(archive)
+        if errors:
+            raise ValueError(f"Invalid agent definition '{def_id}': {errors}")
+
+        # Critic-based detectors use "critic" as their agent_type (run with critic infra)
+        agent_type = "critic" if def_id in CRITIC_BASED_DETECTORS else def_id
+
+        if def_id not in db_ids:
+            # New definition - insert
+            logger.info(f"Adding agent definition: {def_id} (type={agent_type})")
+            definition = AgentDefinition(
+                id=def_id,
+                agent_type=agent_type,
+                archive=archive,
+                created_by_agent_run_id=None,  # Repo-backed
+            )
+            session.add(definition)
+            added += 1
+        else:
+            # Existing repo-backed definition - always update (cheap operation)
+            existing_def = existing[def_id]
+            logger.debug(f"Updating agent definition: {def_id} (type={agent_type})")
+            existing_def.archive = archive
+            existing_def.agent_type = agent_type
+            updated += 1
+
+    session.commit()
+    total = len(definition_dirs)
+    logger.info(f"Agent definitions synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
+    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)

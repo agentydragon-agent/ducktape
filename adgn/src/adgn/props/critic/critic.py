@@ -13,7 +13,6 @@ TODO: Do not install adgn package into critic container - snapshots contain past
       and installing current adgn would create conflicts/pollution in the review environment.
 """
 
-from collections.abc import Sequence
 import logging
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -21,35 +20,31 @@ from uuid import UUID, uuid4
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.server.auth import AuthProvider
+from openai import BadRequestError
 import typer
 
-from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
-from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler, SequenceHandler
-from adgn.agent.loop_control import AllowAnyToolOrTextMessage, InjectItems
+from adgn.agent.display import CompactDisplayHandler
+from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.openai_utils.types import ReasoningSummary
-from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
+from adgn.props.agent_handle import AgentHandle, ensure_definition_unpacked
+from adgn.props.agent_setup import AgentEnvironment
+from adgn.props.agent_types import CriticTypeConfig
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
-from adgn.props.critic.models import CriticInput, CriticScopeSpec, ResolvedFileScope
-from adgn.props.critic.submit_server import (
-    CRITIC_SCOPE_RESOURCE_URI,
-    CRITIC_SNAPSHOT_SLUG_RESOURCE_URI,
-    CriticSubmitServer,
-)
-from adgn.props.critic.user_manager import CriticUserManager
+from adgn.props.critic.models import ResolvedFileScope
+from adgn.props.critic.submit_server import CriticSubmitServer
 from adgn.props.db import get_session
+from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun as DBCriticRun, CriticRunStatus, Prompt, Snapshot
+from adgn.props.db.models import AgentRun, AgentRunStatus, Snapshot
 from adgn.props.display import short_uuid
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
-from adgn.props.prompts.util import render_prompt_template
+from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
 
 logger = logging.getLogger(__name__)
 
@@ -102,7 +97,7 @@ class CriticAgentEnvironment(AgentEnvironment):
     """Agent environment for HTTP-mode critic with critic_submit tool.
 
     Provides complete environment for critic agents:
-    - Temporary database user with RLS scoping (critic_agent_{run_id})
+    - Temporary database user with RLS scoping (agent_{run_id})
     - HTTP MCP server with critic_submit tool
     - Docker container with docker_exec
     - Hydrated snapshot mounted at /snapshots/<slug>/
@@ -118,9 +113,10 @@ class CriticAgentEnvironment(AgentEnvironment):
             snapshot_slug="ducktape/2025-11-26-00",
             docker_client=docker_client,
             hydrator=hydrator,
-            critic_run_id=run_id,
+            agent_run_id=run_id,
             scope=input_data.scope,
-            mount_properties=True,
+            db_config=db_config,
+            workspace_manager=workspace_manager,
         ) as compositor:
             # Run critic agent
             ...
@@ -131,10 +127,10 @@ class CriticAgentEnvironment(AgentEnvironment):
         snapshot_slug: SnapshotSlug,
         docker_client: aiodocker.Docker,
         hydrator: SnapshotHydrator,
-        critic_run_id: UUID,
+        agent_run_id: UUID,
         scope: CriticScopeSpec,
         db_config: DatabaseConfig,
-        mount_properties: bool = False,
+        workspace_manager: WorkspaceManager,
     ):
         """Create critic agent environment.
 
@@ -142,66 +138,24 @@ class CriticAgentEnvironment(AgentEnvironment):
             snapshot_slug: Snapshot slug to hydrate and mount
             docker_client: Async Docker client
             hydrator: Snapshot hydrator
-            critic_run_id: UUID of the critic run (for RLS scoping)
+            agent_run_id: UUID of the agent run (for RLS scoping)
             scope: Critic scope specification (AllFilesScope or ExplicitFileScope)
             db_config: Database configuration (passed via DI)
-            mount_properties: Whether to mount property definitions at /props
+            workspace_manager: Workspace manager for agent workspace paths
         """
-        # Store params needed by _make_mcp_server
-        self._critic_run_id = critic_run_id
+        # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
         self._snapshot_slug = snapshot_slug
         self._scope = scope
 
-        def make_user_manager() -> CriticUserManager:
-            """Create temporary critic user with RLS scoping."""
-            return CriticUserManager(db_config.admin, critic_run_id)
-
         super().__init__(
+            definition_id=CRITIC_AGENT_DEFINITION_ID,
+            agent_run_id=agent_run_id,
             docker_client=docker_client,
-            user_manager_factory=make_user_manager,
             hydrator=hydrator,
             db_config=db_config,
+            workspace_manager=workspace_manager,
             snapshot_slugs=[snapshot_slug],
-            workspace_prefix="critic_workspace_",
-            mount_properties=mount_properties,
         )
-
-    def bootstrap_mcp_resources(self) -> Sequence[tuple[str, str]]:
-        """Return MCP resources to read during bootstrap: snapshot slug and scope."""
-        return [("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI), ("Scope", CRITIC_SCOPE_RESOURCE_URI)]
-
-    def bootstrap_items(self, builder, runtime) -> list:
-        """Build bootstrap items with database schema and CLI helper documentation.
-
-        Includes:
-        - MCP HTTP bootstrap (lists tools, reads snapshot_slug and scope resources)
-        - Database ORM models (single source of truth for schema)
-        - Critic helper functions (insert_issue, insert_occurrence, submit_critique)
-
-        Args:
-            builder: TypedBootstrapBuilder for generating typed tool calls
-            runtime: Mounted runtime server (comp.runtime)
-
-        Returns:
-            List of FunctionCallItems to inject before agent sampling
-        """
-        from adgn.props.agent_setup import make_mcp_http_bootstrap_calls
-
-        return [
-            # MCP-over-HTTP bootstrap (lists tools, reads resources)
-            *make_mcp_http_bootstrap_calls(builder, runtime, self.bootstrap_mcp_resources()),
-            # All package file reads (single call for efficiency)
-            read_package_files_call(
-                builder,
-                runtime,
-                [
-                    # Database ORM models (single source of truth for schema)
-                    ("adgn.props.db", ["models.py"]),
-                    # Critic helper functions for Python API
-                    ("adgn.props.critic", ["helpers.py"]),
-                ],
-            ),
-        ]
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         """Create critic submit server with hydrated snapshot path.
@@ -217,7 +171,7 @@ class CriticAgentEnvironment(AgentEnvironment):
         """
         hydrated_path = self._hydrated_paths[self._snapshot_slug]
         return CriticSubmitServer(
-            critic_run_id=self._critic_run_id,
+            agent_run_id=self._agent_run_id,
             snapshot_slug=self._snapshot_slug,
             scope=self._scope,
             snapshot_hydrated_path=hydrated_path,
@@ -226,225 +180,201 @@ class CriticAgentEnvironment(AgentEnvironment):
 
 
 # =============================================================================
-# Critic Run Function
+# Critic Run (AgentHandle-based)
 # =============================================================================
 
 
 async def run_critic(
     *,
-    input_data: CriticInput,
+    definition_id: str,
+    snapshot_slug: SnapshotSlug,
+    scope: CriticScopeSpec,
     client: OpenAIModelProto,
-    prompt_optimization_run_id: UUID | None,
+    parent_agent_run_id: UUID | None,
     docker_client: aiodocker.Docker,
-    hydrator,
+    hydrator: SnapshotHydrator,
     db_config: DatabaseConfig,
+    workspace_manager: WorkspaceManager,
     mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
     max_turns: int,
-) -> tuple[UUID, CriticRunStatus]:
-    """Execute critic agent to produce candidate issues and persist to DB.
+) -> tuple[UUID, AgentRunStatus]:
+    """Execute critic agent using AgentHandle (definition-based).
 
-    Sets up critic submit server via MCP-over-HTTP, Docker exec MCP, and standard handlers
-    (bootstrap, database events, AbortIf). Runs agent until submit_result or error is called.
+    Uses AgentHandle to load a critic definition from the database. The definition's
+    AGENT.md provides the system prompt (no template rendering).
 
-    Uses CriticAgentEnvironment which manages:
-    - Temporary database user with RLS scoping
-    - HTTP MCP server with critic_submit tool
-    - Docker container with docker_exec
-    - Hydrated snapshot mounted at /snapshots/<slug>/
+    The prompt optimizer creates new definitions (e.g., "critic-v1", "critic-v2") with
+    evolved AGENT.md content. This function runs any such definition.
+
+    This function creates an AgentRun record. Agent definitions are the source of
+    truth for prompt content.
+
+    Args:
+        definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
+        snapshot_slug: Snapshot to review
+        scope: Files to review (AllFilesScope or ExplicitFileScope)
+        client: OpenAI-compatible model client
+        parent_agent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
+        docker_client: Async Docker client
+        hydrator: Snapshot hydrator
+        db_config: Database configuration
+        workspace_manager: Workspace manager for agent workspace paths
+        mount_properties: Whether to mount property definitions at /props
+        extra_handlers: Additional handlers to add
+        verbose: Whether to enable verbose display
+        max_lines: Max lines per event in verbose display
+        max_turns: Maximum agent turns before timeout
 
     Returns:
-        Tuple of (critic_run_id, status)
-        - critic_run_id: UUID of the critic run record
-        - status: CriticRunStatus indicating completion state
+        Tuple of (agent_run_id, status)
 
-    Note: Returns IDs only (not ORM objects) to avoid DetachedInstanceError when called
-    from within an MCP tool that outlives the session. Callers needing full data should
-    query the database using the returned critic_run_id.
+    Note:
+        - Uses CriticAgentEnvironment for temp user, CriticSubmitServer, hydration
+        - Uses AgentHandle for definition loading, AGENT.md system prompt, init script
+        - Definition's init script runs bootstrap (prints schema, helpers, scope)
     """
-    # Fetch optimized prompt from DB using prompt_sha256 (primary key lookup)
-    with get_session() as session:
-        prompt_obj = session.get(Prompt, input_data.prompt_sha256)
-        if not prompt_obj:
-            raise ValueError(f"Prompt not found in database: {input_data.prompt_sha256}")
-        optimized_prompt = prompt_obj.prompt_text
-
     # Compute scope hash for content-addressed example lookup
-    scope_hash = Example.from_scope(input_data.snapshot_slug, input_data.scope).scope_hash
+    scope_hash = Example.from_scope(snapshot_slug, scope).scope_hash
 
-    # Generate unique IDs for this run
-    run_id = uuid4()
-    transcript_id = uuid4()
+    # Generate unique ID for this run
+    agent_run_id = uuid4()
 
-    # Phase 1: Write initial run to DB (BEFORE agent runs - FK constraint!)
+    # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
         # Fetch snapshot to get split for verbose prefix
-        snapshot = session.query(Snapshot).filter_by(slug=input_data.snapshot_slug).one()
+        snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
         snapshot_split = snapshot.split
 
-        db_run = DBCriticRun(
-            id=run_id,
-            transcript_id=transcript_id,
-            prompt_sha256=input_data.prompt_sha256,
-            snapshot_slug=input_data.snapshot_slug,
-            scope_hash=scope_hash,
-            model=client.model,
-            prompt_optimization_run_id=prompt_optimization_run_id,
-            # output is nullable, will be set by submit server
-        )
-        session.add(db_run)
-        session.commit()
-        logger.info(
-            f"Created initial critic run in DB: {run_id=}, {transcript_id=}, snapshot_slug={input_data.snapshot_slug}"
-        )
-        # Print IDs early to console for easy retrieval if run is interrupted
-        typer.echo(f"[critic] transcript_id={short_uuid(transcript_id)} run_id={short_uuid(run_id)}", err=True)
+        # Store critic-specific config in type_config JSONB
+        type_config = CriticTypeConfig(snapshot_slug=snapshot_slug, scope_hash=scope_hash)
 
-    # Use CriticAgentEnvironment which manages:
+        agent_run = AgentRun(
+            agent_run_id=agent_run_id,
+            agent_definition_id=definition_id,
+            parent_agent_run_id=parent_agent_run_id,
+            model=client.model,
+            type_config=type_config,
+            status=AgentRunStatus.IN_PROGRESS,
+        )
+        session.add(agent_run)
+        session.commit()
+        logger.info(f"Created initial agent run in DB: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
+        typer.echo(f"[critic_v2] agent_run_id={short_uuid(agent_run_id)}", err=True)
+
+    # Get workspace path and ensure definition is unpacked BEFORE starting container
+    # (Docker mount creates the directory as root if it doesn't exist, preventing unpack)
+    workspace_path = workspace_manager.get_path(agent_run_id)
+    ensure_definition_unpacked(definition_id, workspace_path)
+
+    # Use CriticAgentEnvironment for:
     # - Temporary database user with RLS scoping
     # - HTTP MCP server with critic_submit tool
     # - Docker container with docker_exec
     # - Hydrated snapshot mounted at /snapshots/<slug>/
     comp_ctx = CriticAgentEnvironment(
-        snapshot_slug=input_data.snapshot_slug,
+        snapshot_slug=snapshot_slug,
         docker_client=docker_client,
         hydrator=hydrator,
-        critic_run_id=run_id,
-        scope=input_data.scope,
+        agent_run_id=agent_run_id,
+        scope=scope,
         db_config=db_config,
-        mount_properties=mount_properties,
+        workspace_manager=workspace_manager,
     )
 
-    async with comp_ctx as comp:
-        # Set up handlers
-        builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-
-        # Use agent environment's bootstrap method
-        logger.info("Critic bootstrap: using agent environment bootstrap items")
-        bootstrap_calls = comp_ctx.bootstrap_items(builder, comp.runtime)
-
-        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
-
+    async with comp_ctx as comp, Client(comp) as mcp_client:
+        # Build handlers for AgentHandle
         def _ready_state() -> bool:
             with get_session() as session:
-                critic_run = session.get(DBCriticRun, run_id)
-                return critic_run is not None and critic_run.status in (
-                    CriticRunStatus.COMPLETED,
-                    CriticRunStatus.REPORTED_FAILURE,
-                )
+                run = session.get(AgentRun, agent_run_id)
+                return run is not None and run.status in (AgentRunStatus.COMPLETED, AgentRunStatus.REPORTED_FAILURE)
 
-        handlers: list = [
-            bootstrap,
-            *await build_props_handlers(
-                transcript_id=transcript_id,
-                verbose_prefix=f"[CRITIC {short_uuid(transcript_id)} {snapshot_split} {input_data.snapshot_slug}] "
-                if verbose
-                else None,
-                compositor=comp,
+        # Build handlers for AgentHandle
+        # NOTE: Do NOT call build_props_handlers() here - AgentHandle.create() already adds
+        # DatabaseEventHandler. We only add CompactDisplayHandler if verbose is enabled.
+        handlers: list[BaseHandler] = []
+        if verbose:
+            display_handler = await CompactDisplayHandler.from_compositor(
+                comp,
                 max_lines=max_lines,
-            ),
-            RedirectOnTextMessageHandler(
-                reminder_message=(
-                    "You are a code review critic agent. The critique has not yet been submitted "
-                    "(critique_submit tool has not been called), so your task is unfinished. "
-                    "Use the provided MCP tools to mark all issues and occurrences you want to report, "
-                    "then either submit the critique or report failure if you encounter unrecoverable problems. "
-                    "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
-                    "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
-                )
-            ),
-            AbortIf(should_abort=_ready_state),
-            *extra_handlers,
-            MaxTurnsHandler(max_turns=max_turns),
-        ]
-
-        # Build combined dynamic instructions by rendering the template
-        async def _build_critic_instructions() -> str:
-            """Build critic system instructions by rendering critic_system.j2.md template.
-
-            The template has two placeholders:
-            1. {{ compositor_instructions }} - MCP wiring: servers, tools, resources
-            2. {{ optimized_prompt }} - The prompt being tested/optimized
-            """
-            compositor_instructions = comp.render_agent_dynamic_instructions()
-            return render_prompt_template(
-                "critic/prompts/critic_system.j2.md",
-                compositor_instructions=compositor_instructions,
-                optimized_prompt=optimized_prompt,
+                prefix=f"[CRITIC_V2 {short_uuid(agent_run_id)} {snapshot_split} {snapshot_slug}] ",
             )
+            handlers.append(display_handler)
 
-        # Run critic agent
-        # Note: resources and compositor_meta are auto-mounted by base Compositor
-        async with Client(comp) as mcp_client:
-            agent = await Agent.create(
-                mcp_client=mcp_client,
-                client=client,
-                handlers=handlers,
-                parallel_tool_calls=True,
-                tool_policy=AllowAnyToolOrTextMessage(),
-                reasoning_summary=ReasoningSummary.detailed,
-                dynamic_instructions=_build_critic_instructions,
-            )
-            status: CriticRunStatus
-            try:
-                await agent.run()
-            except MaxTurnsExceededError:
-                # Agent ran out of turns
-                # NOTE: max_turns_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
-                logger.warning(
-                    f"Critic hit max turns limit ({max_turns}) for {input_data.snapshot_slug}, "
-                    f"transcript_id={short_uuid(transcript_id)}"
-                )
-                status = CriticRunStatus.MAX_TURNS_EXCEEDED
-            except Exception as e:
-                # Check if this is a context length exceeded error
-                # TODO: Check specifically for openai.BadRequestError with code='context_length_exceeded'
-                # instead of string matching - more robust for different API providers
-                error_str = str(e).lower()
-                if "context_length_exceeded" in error_str or "context window" in error_str:
-                    # NOTE: context_length_exceeded is taken as recall=0.0 (see query_builders.py:803-806)
-                    logger.warning(
-                        f"Critic hit context length limit for {input_data.snapshot_slug}, "
-                        f"transcript_id={short_uuid(transcript_id)}: {e}"
+        handlers.extend(
+            [
+                RedirectOnTextMessageHandler(
+                    reminder_message=(
+                        "You are a code review critic agent. The critique has not yet been submitted "
+                        "(critique_submit tool has not been called), so your task is unfinished. "
+                        "Use the provided MCP tools to mark all issues and occurrences you want to report, "
+                        "then either submit the critique or report failure if you encounter unrecoverable problems. "
+                        "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
+                        "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
                     )
-                    status = CriticRunStatus.CONTEXT_LENGTH_EXCEEDED
-                else:
-                    # Re-raise other exceptions
-                    raise
+                ),
+                AbortIf(should_abort=_ready_state),
+                *extra_handlers,
+                MaxTurnsHandler(max_turns=max_turns),
+            ]
+        )
+
+        # Create AgentHandle - this loads definition, unpacks workspace, runs init
+        handle = await AgentHandle.create(
+            agent_run_id=agent_run_id,
+            definition_id=definition_id,
+            model_client=client,
+            mcp_client=mcp_client,
+            compositor=comp,
+            workspace_manager=workspace_manager,
+            handlers=handlers,
+        )
+
+        # Run the agent
+        agent_status: AgentRunStatus
+        try:
+            await handle.run()
+        except MaxTurnsExceededError:
+            logger.warning(
+                f"Critic hit max turns limit ({max_turns}) for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}"
+            )
+            agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
+        except BadRequestError as e:
+            # OpenAI BadRequestError with code='context_length_exceeded'
+            if e.code == "context_length_exceeded":
+                logger.warning(
+                    f"Critic hit context length limit for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}: {e}"
+                )
+                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
             else:
-                # Agent completed normally - check database
-                with get_session() as session:
-                    critic_run = session.get(DBCriticRun, run_id)
-                    if critic_run is None:
-                        raise CriticExecutionError("Critic run not found in database")
+                # Other BadRequestError - re-raise
+                raise
+        else:
+            # Agent completed normally - check database
+            with get_session() as session:
+                run = session.get(AgentRun, agent_run_id)
+                if run is None:
+                    raise CriticExecutionError("Agent run not found in database")
 
-                    if critic_run.status == CriticRunStatus.REPORTED_FAILURE:
-                        raise CriticExecutionError(
-                            f"Critic reported failure: {critic_run.completion_summary or 'No message'}"
-                        )
+                if run.status == AgentRunStatus.REPORTED_FAILURE:
+                    raise CriticExecutionError(f"Critic reported failure: {run.completion_summary or 'No message'}")
 
-                    if critic_run.status != CriticRunStatus.COMPLETED:
-                        raise CriticDidNotSubmitError("Critic did not submit")
+                if run.status != AgentRunStatus.COMPLETED:
+                    raise CriticDidNotSubmitError("Critic did not submit")
 
-                    status = CriticRunStatus.COMPLETED
-    # CriticAgentEnvironment.__aexit__ cleans up HTTP server, container, and temp user
+                agent_status = AgentRunStatus.COMPLETED
 
     # Phase 2: Update run with status
     with get_session() as session:
-        # Update run with status
-        # Issues are stored in normalized reported_issues table
-        found_run = session.get(DBCriticRun, run_id)
-        assert found_run is not None, f"Critic run {run_id} not found in database"
+        found_run = session.get(AgentRun, agent_run_id)
+        assert found_run is not None, f"Agent run {agent_run_id} not found in database"
 
-        found_run.status = status
+        found_run.status = agent_status
         session.commit()
 
-        # Extract ID before session closes (never return ORM objects from functions)
-        result_id = found_run.id
-        logger.info(f"Updated critic run in DB: {transcript_id=}, snapshot_slug={input_data.snapshot_slug}")
+        result_id = found_run.agent_run_id
+        logger.info(f"Updated agent run in DB: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
 
-    # Return plain ID and status (SQLAlchemy best practice: never return ORM objects from
-    # functions that manage their own sessions - they become detached and cause errors)
-    return (result_id, status)
+    return (result_id, agent_status)

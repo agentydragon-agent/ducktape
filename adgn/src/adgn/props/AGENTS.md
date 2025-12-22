@@ -13,12 +13,37 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 @docs/system_overview.md
 
 - @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
-- @docs/prompt_optimizer_context.md — Context specifically for prompt optimization tasks
 - @docs/agent_infrastructure.md — Infrastructure strategy, helper patterns, bootstrap layering
 - @README.md — Package overview, conventions, workflow
 
 **Specimen authoring (in specimens repo):**
 - Specimens repository has its own CLAUDE.md with format specs, authoring guide, and quality checklist
+
+## Documentation SSOT Principle
+
+**Agent-facing documentation lives in `agent_defs/` and is the single source of truth.**
+
+When writing documentation that agents could also use:
+- Write it ONCE in `agent_defs/` (under `common/docs/` for shared content or `<agent>/docs/` for agent-specific)
+- Reference or transclude it into production docs and developer-facing documentation
+- Do NOT duplicate content between `agent_defs/` and other locations
+
+**Rationale:**
+- Agents see `agent_defs/` content at runtime via init scripts (`print_bootstrap()` → `print_docs()`)
+- If the same information exists elsewhere, it will drift and become inconsistent
+- `agent_defs/` content is executable (supports `!command` syntax) and tested at runtime
+
+**What goes in `agent_defs/`:**
+- Database schema documentation (with `!psql` commands for live output)
+- RLS mechanism explanations
+- MCP/database access patterns
+- Workflow guides and examples
+- Any reference material agents need during execution
+
+**What does NOT go in `agent_defs/`:**
+- Developer tooling instructions (IDE setup, local testing)
+- Infrastructure deployment details
+- Internal architecture decisions not relevant to agent execution
 
 ## MCP Wiring & Prompt Authoring
 
@@ -116,13 +141,13 @@ adgn-properties db recreate  # Drops schema, runs migrations, creates RLS/views
     - Examples: All examples visible (per-file and whole-snapshot)
     - Ground truth: `true_positives`, `false_positives` tables readable
     - Individual runs: `critic_runs`, `critiques`, `grader_runs` readable with full details
-    - Aggregate views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example` for TRAIN
+    - Aggregate views: `aggregated_recall_by_definition`, `aggregated_recall_by_example` for TRAIN
     - Agent can debug, inspect per-occurrence credits, iterate on specific failures
   - **VALID/TEST splits**: Restricted to prevent overfitting
     - Examples: Only whole-snapshot examples visible (per-file examples hidden)
     - Ground truth: `true_positives`, `false_positives` tables return 0 rows (RLS filtered)
     - Individual runs: `critic_runs`, `critiques`, `grader_runs` hidden (RLS filtered)
-    - Aggregate views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example` show VALID/TEST metrics
+    - Aggregate views: `aggregated_recall_by_definition`, `aggregated_recall_by_example` show VALID/TEST metrics
     - Agent can run evaluations on whole snapshots, but only sees scalar recall metrics
     - Cannot inspect which issues were missed or iterate on specific VALID failures
 - Container receives temp user credentials (not admin)
@@ -137,7 +162,7 @@ agent_env = PromptOptimizerAgentEnvironment(
     workspace_root=workspace_path,
     docker_client=docker_client,
     hydrator=hydrator,
-    prompt_optimization_run_id=run_id,
+    optimizer_run_id=run_id,
     critic_client=critic_client,
     grader_client=grader_client,
     db_config=db_config,
@@ -154,13 +179,12 @@ async with agent_env as compositor:
 ```
 
 **Other examples:**
-- `ImprovementUserManager`: Manual per-user policies (O(n) overhead)
-- `ClusteringUserManager`: Function-based RLS like prompt optimizer
+- Improvement agents: Use `TempUserManager` with `ImprovementTypeConfig` for RLS-scoped access to allowed examples
 
 **See also:**
-- `src/adgn/props/db/prompt_optimizer_user_manager.py` - Prompt optimizer user manager
-- `src/adgn/props/db/temp_user_manager.py` - Base class for temporary users
+- `src/adgn/props/db/temp_user_manager.py` - Unified user manager for all agent types
 - `src/adgn/props/db/migrations/versions/20251215000000_add_prompt_optimizer_rls.py` - RLS setup migration
+- `src/adgn/props/db/migrations/versions/20251230000000_migrate_improvement_to_agent_runs.py` - Improvement agent RLS migration
 
 ## Accessing PostgreSQL Directly
 

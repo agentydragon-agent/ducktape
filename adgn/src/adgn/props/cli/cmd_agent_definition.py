@@ -11,74 +11,19 @@ Structure:
 
 from __future__ import annotations
 
-import hashlib
-import io
-import os
 from pathlib import Path
 import shutil
-import tarfile
 from typing import Annotated
+from uuid import uuid4
 
 import typer
 
 from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
 from adgn.props.db.models import AgentDefinition
+from adgn.props.definition_utils import pack_definition, unpack_definition, validate_definition
 
 app = typer.Typer(name="agent-definition", help="Agent definition management commands", add_completion=False)
-
-
-def _compute_definition_hash(definition_dir: Path) -> str:
-    """Compute SHA256 of agent definition directory for auto-ID generation.
-
-    Hash includes relative paths, executable flags, and file contents.
-    """
-    hasher = hashlib.sha256()
-    for path in sorted(definition_dir.rglob("*")):
-        if path.is_file():
-            rel = path.relative_to(definition_dir)
-            mode = "x" if os.access(path, os.X_OK) else "r"
-            hasher.update(f"{rel}:{mode}:".encode())
-            hasher.update(path.read_bytes())
-    return hasher.hexdigest()
-
-
-def _pack_definition(definition_dir: Path) -> bytes:
-    """Pack directory into uncompressed tar archive."""
-    buffer = io.BytesIO()
-    with tarfile.open(fileobj=buffer, mode="w") as tar:
-        for path in sorted(definition_dir.rglob("*")):
-            if path.is_file():
-                rel = path.relative_to(definition_dir)
-                tar.add(path, arcname=str(rel))
-    return buffer.getvalue()
-
-
-def _unpack_definition(archive: bytes, target_dir: Path) -> None:
-    """Unpack tar archive to target directory."""
-    target_dir.mkdir(parents=True, exist_ok=True)
-    buffer = io.BytesIO(archive)
-    with tarfile.open(fileobj=buffer, mode="r") as tar:
-        tar.extractall(target_dir)
-
-
-def _validate_definition(definition_dir: Path) -> list[str]:
-    """Validate agent definition structure, return list of errors."""
-    errors = []
-
-    # AGENT.md required
-    agent_md = definition_dir / "AGENT.md"
-    if not agent_md.exists():
-        errors.append("Missing required file: AGENT.md")
-
-    # init required and must be executable
-    init_script = definition_dir / "init"
-    if not init_script.exists():
-        errors.append("Missing required file: init")
-    elif not os.access(init_script, os.X_OK):
-        errors.append("init script must be executable (chmod +x)")
-
-    return errors
 
 
 @app.command("create")
@@ -93,15 +38,14 @@ def cmd_create(
     """Pack directory into tar archive and insert into agent_definitions table.
 
     Validates structure (AGENT.md required, init must be executable).
-    Auto-generates ID from type + hash prefix if not provided.
+    Auto-generates ID from type + UUID if not provided.
     """
-    # Validate directory exists
     if not definition_dir.is_dir():
-        typer.echo(f"Error: {definition_dir} is not a directory", err=True)
+        typer.echo(f"Error: Not a directory: {definition_dir}", err=True)
         raise typer.Exit(1)
 
     # Validate structure
-    errors = _validate_definition(definition_dir)
+    errors = validate_definition(definition_dir)
     if errors:
         typer.echo("Validation errors:", err=True)
         for error in errors:
@@ -110,11 +54,10 @@ def cmd_create(
 
     # Generate ID if not provided
     if definition_id is None:
-        content_hash = _compute_definition_hash(definition_dir)
-        definition_id = f"{agent_type.value}_{content_hash[:8]}"
+        definition_id = f"{agent_type.value}_{uuid4().hex[:8]}"
 
     # Pack definition
-    archive = _pack_definition(definition_dir)
+    archive = pack_definition(definition_dir)
     typer.echo(f"Packed {len(archive):,} bytes from {definition_dir}")
 
     # Insert into database
@@ -170,7 +113,7 @@ def cmd_fetch(
         agent_type = definition.agent_type
 
     # Unpack
-    _unpack_definition(archive, target_dir)
+    unpack_definition(archive, target_dir)
     typer.echo(f"Unpacked {definition_id} ({agent_type}) to {target_dir}")
 
 
@@ -205,13 +148,12 @@ def cmd_validate(definition_dir: Annotated[Path, typer.Argument(help="Directory 
 
     Exits with code 0 if valid, 1 if invalid.
     """
-    # Validate directory exists
     if not definition_dir.is_dir():
-        typer.echo(f"Error: {definition_dir} is not a directory", err=True)
+        typer.echo(f"Error: Not a directory: {definition_dir}", err=True)
         raise typer.Exit(1)
 
     # Run validation
-    errors = _validate_definition(definition_dir)
+    errors = validate_definition(definition_dir)
     if errors:
         typer.echo("Validation failed:", err=True)
         for error in errors:

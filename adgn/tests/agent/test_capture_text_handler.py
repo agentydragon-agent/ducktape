@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from adgn.agent.agent import Agent
+from adgn.agent.events import AssistantText
 from adgn.agent.handler import CaptureTextHandler
 from adgn.agent.loop_control import AllowAnyToolOrTextMessage
 from adgn.openai_utils.model import UserMessage
@@ -80,8 +81,6 @@ async def test_capture_text_not_captured_raises(capture_handler) -> None:
 
 async def test_has_text_property(capture_handler) -> None:
     """Test has_text property without consuming the text."""
-    from adgn.agent.events import AssistantText
-
     assert not capture_handler.has_text
 
     # Simulate receiving text event

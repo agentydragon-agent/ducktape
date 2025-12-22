@@ -17,12 +17,12 @@ from uuid import UUID
 
 import canonicaljson
 from pydantic import TypeAdapter
-from sqlalchemy import and_, func, select
 
 from adgn.agent.events import UserText
+from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session, init_db
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun, Event, GraderRun, Snapshot as DBSnapshot
+from adgn.props.db.models import AgentRun, Event, Snapshot as DBSnapshot
 from adgn.props.grader.models import FalsePositiveID, KnownFalsePositive, Rationale, TruePositiveID, TruePositiveIssue
 from adgn.props.ids import SnapshotSlug
 from adgn.props.scope_utils import resolve_scope_files
@@ -104,39 +104,47 @@ def identify_stale_runs() -> tuple[list[str], dict[SnapshotSlug, dict[str, int]]
     current_canonical_cache: dict[tuple[SnapshotSlug, str], dict[str, Any]] = {}
 
     with get_session() as session:
-        # Subquery to find the first user_text event for each transcript
-        min_seq_subq = (
-            select(Event.transcript_id, func.min(Event.sequence_num).label("min_seq"))
-            .where(Event.event_type == "user_text")
-            .group_by(Event.transcript_id)
-            .subquery()
+        # Two-phase approach: first get grader runs, then query events per run
+        grader_runs = (
+            session.query(AgentRun)
+            .filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER)
+            .order_by(AgentRun.created_at.desc())
+            .all()
         )
 
-        # Main query: join GraderRun with Event, CriticRun, and Example
-        query = (
-            select(
-                GraderRun.id,
-                GraderRun.snapshot_slug,
-                GraderRun.transcript_id,
-                Event.payload,
-                CriticRun.scope_hash,
-                Example.scope,
-            )
-            .join(Event, Event.transcript_id == GraderRun.transcript_id)
-            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
-            .join(
-                Example,
-                (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.scope_hash == CriticRun.scope_hash),
-            )
-            .join(
-                min_seq_subq,
-                and_(min_seq_subq.c.transcript_id == Event.transcript_id, min_seq_subq.c.min_seq == Event.sequence_num),
-            )
-            .where(Event.event_type == "user_text")
-            .order_by(GraderRun.created_at.desc())
-        )
+        for grader_run in grader_runs:
+            run_id = grader_run.agent_run_id
+            graded_critic_run_id = grader_run.grader_config().graded_agent_run_id
 
-        for run_id, snapshot_slug, _transcript_id, payload, scope_hash, scope_spec in session.execute(query):
+            # Get the first user_text event for this grader run (events linked directly to agent_run_id)
+            first_event = (
+                session.query(Event)
+                .filter(Event.agent_run_id == run_id, Event.event_type == "user_text")
+                .order_by(Event.sequence_num)
+                .first()
+            )
+
+            if not first_event:
+                continue
+
+            payload = first_event.payload
+
+            # Get critic run for scope info
+            critic_run = session.get(AgentRun, graded_critic_run_id)
+            if not critic_run:
+                raise ValueError(f"Critic run {graded_critic_run_id} not found for grader {run_id}")
+
+            critic_config = critic_run.critic_config()
+            scope_hash = critic_config.scope_hash
+            snapshot_slug = critic_config.snapshot_slug
+
+            # Get example for scope spec
+            example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).first()
+
+            if not example:
+                continue
+
+            scope_spec = example.scope
             by_snapshot[snapshot_slug]["total"] += 1
 
             # Extract text from the payload (EventType union - should be UserText for user_text events)
@@ -202,28 +210,24 @@ def delete_stale_runs(stale_run_ids: list[str], dry_run: bool = False) -> None:
     run_ids_uuid = [UUID(run_id) for run_id in stale_run_ids]
 
     with get_session() as session:
-        # Get transcript IDs for these grader runs using ORM
-        transcript_query = select(GraderRun.transcript_id.distinct()).where(GraderRun.id.in_(run_ids_uuid))
-        transcript_ids = [row[0] for row in session.execute(transcript_query)]
-
-        print(f"{'Would delete' if dry_run else 'Deleting'} {len(transcript_ids)} associated transcripts")
+        print(f"{'Would delete' if dry_run else 'Deleting'} {len(run_ids_uuid)} grader runs and their events")
 
         if not dry_run:
             # Delete in transaction
-            # First delete grader_runs (they reference transcripts via FK)
-            deleted_runs = (
-                session.query(GraderRun).filter(GraderRun.id.in_(run_ids_uuid)).delete(synchronize_session=False)
+            # First delete events (linked directly to agent_run_id)
+            deleted_events = (
+                session.query(Event).filter(Event.agent_run_id.in_(run_ids_uuid)).delete(synchronize_session=False)
             )
 
-            # Then delete events (transcript data)
-            deleted_events = (
-                session.query(Event).filter(Event.transcript_id.in_(transcript_ids)).delete(synchronize_session=False)
+            # Then delete agent_runs (graders)
+            deleted_runs = (
+                session.query(AgentRun)
+                .filter(AgentRun.agent_run_id.in_(run_ids_uuid))
+                .delete(synchronize_session=False)
             )
 
             session.commit()
-            print(
-                f"✓ Deleted {deleted_runs} grader runs and {deleted_events} events for {len(transcript_ids)} transcripts"
-            )
+            print(f"✓ Deleted {deleted_runs} agent runs and {deleted_events} events")
 
 
 def main():

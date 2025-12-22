@@ -134,9 +134,6 @@ class GraderInput(BaseModel):
     """Input for a grader run (critic run + specimen → metrics)."""
 
     critic_run_id: UUID = Field(description="Database ID of critic run to grade")
-    prompt_optimization_run_id: UUID | None = Field(
-        default=None, description="Optional link to prompt optimization session"
-    )
 
     model_config = ConfigDict(extra="forbid")
 

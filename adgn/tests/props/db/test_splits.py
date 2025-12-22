@@ -14,7 +14,7 @@ from adgn.props.splits import Split
 # Use synced_production_db for tests that need production specimens
 
 
-def test_specimen_has_valid_split(synced_test_db):
+def test_specimen_has_valid_split(synced_production_db):
     """Verify all specimens have valid splits in manifests."""
     with get_session() as session:
         snapshots = session.query(Snapshot).all()
@@ -22,22 +22,22 @@ def test_specimen_has_valid_split(synced_test_db):
             assert_that(snapshot.split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
-def test_unknown_specimen_raises(test_db):
+def test_unknown_specimen_raises(synced_production_db):
     """Verify query raises for unknown specimens."""
     with get_session() as session:
         result = session.get(Snapshot, "nonexistent/specimen")
         assert result is None, "Expected nonexistent specimen to return None"
 
 
-def test_split_distribution(synced_test_db):
+def test_split_distribution(synced_production_db):
     """Verify train/valid/test distribution by specimen count (non-strict bounds).
 
     Note: This tests specimen count, not issue count. The split is optimized for
     minimum issue counts (>=60 for valid and test), so specimen counts may vary widely.
     This test just ensures all splits have at least one specimen.
     """
-    # Each split should have at least one specimen
     with get_session() as session:
+        # Each split should have at least one specimen
         train_count = session.query(Snapshot).filter_by(split=Split.TRAIN.value).count()
         valid_count = session.query(Snapshot).filter_by(split=Split.VALID.value).count()
         # test_count = session.query(Snapshot).filter_by(split=Split.TEST.value).count()

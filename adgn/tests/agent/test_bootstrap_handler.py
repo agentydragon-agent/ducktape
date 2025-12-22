@@ -8,6 +8,7 @@ import pytest
 from adgn.agent.events import ToolCallOutput
 from adgn.agent.handler import BootstrapHandler, InitFailedError
 from adgn.agent.loop_control import InjectItems, NoAction
+from adgn.mcp.exec.models import BaseExecResult, Exited
 from adgn.openai_utils.model import FunctionCallItem
 
 
@@ -153,12 +154,15 @@ class TestInitFailedError:
         error = InitFailedError("Init failed: connection refused")
         assert str(error) == "Init failed: connection refused"
 
-    def test_exit_code(self) -> None:
-        """InitFailedError stores optional exit code."""
-        error = InitFailedError("Init failed", exit_code=1)
-        assert error.exit_code == 1
+    def test_exec_result(self) -> None:
+        """InitFailedError stores optional exec_result."""
+        exec_result = BaseExecResult(exit=Exited(exit_code=1), stdout="output", stderr="error", duration_ms=100)
+        error = InitFailedError("Init failed", exec_result=exec_result)
+        assert error.exec_result is not None
+        assert isinstance(error.exec_result.exit, Exited)
+        assert error.exec_result.exit.exit_code == 1
 
-    def test_exit_code_default(self) -> None:
-        """InitFailedError defaults exit_code to None."""
+    def test_exec_result_default(self) -> None:
+        """InitFailedError defaults exec_result to None."""
         error = InitFailedError("Init failed")
-        assert error.exit_code is None
+        assert error.exec_result is None

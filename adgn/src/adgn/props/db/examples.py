@@ -14,16 +14,12 @@ from __future__ import annotations
 
 from datetime import datetime
 import hashlib
-from typing import TYPE_CHECKING
 
 import canonicaljson
 from pydantic import TypeAdapter
 from sqlalchemy import ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.orm import Mapped, Session, mapped_column, relationship
-
-if TYPE_CHECKING:
-    from adgn.props.db.models import CriticRun
 
 from adgn.props.db.models import Base, PydanticColumn, Snapshot, SnapshotSlugColumn
 from adgn.props.ids import SnapshotSlug
@@ -113,12 +109,8 @@ class Example(Base):
 
     # Relationships - use string references to avoid circular imports
     snapshot_obj: Mapped[Snapshot] = relationship("Snapshot", foreign_keys=[snapshot_slug], back_populates="examples")
-    critic_runs: Mapped[list[CriticRun]] = relationship(
-        "CriticRun",
-        foreign_keys="[CriticRun.snapshot_slug, CriticRun.scope_hash]",
-        back_populates="example_obj",
-        overlaps="example_obj,snapshot_obj,critic_runs",
-    )
+    # Note: CriticRun relationship removed - AgentRun stores snapshot_slug/scope_hash in JSONB type_config,
+    # so there's no direct FK relationship possible. Query AgentRun via type_config filtering instead.
 
     @classmethod
     def from_scope(cls, snapshot_slug: SnapshotSlug, scope: AllFilesScope | ExplicitFileScope) -> Example:

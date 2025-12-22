@@ -8,11 +8,18 @@ Key schema details:
 - No 'id' or 'key' attribute - use the tuple (snapshot_slug, scope_hash) as identifier
 - Access via: example.snapshot_slug, example.scope_hash, example.scope
 - Query pattern: session.query(Example).filter_by(snapshot_slug=..., scope_hash=...)
+
+TODO: Move this module to agent_defs/ with appropriate symlinks for agents that need it.
 """
 
+from sqlalchemy import exists
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import aliased
+
+from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun, GraderRun
+from adgn.props.db.models import AgentRun
 from adgn.props.display import short_sha
 
 # Example keys to query (can be patched in tests)
@@ -41,21 +48,29 @@ def main():
 
             print(f"✓ {snapshot_slug} / {short_sha(scope_hash)}... | {example.scope}")
 
-            # Count associated critic runs
+            # Count associated critic runs (AgentRun with CRITIC agent_type)
             critic_count = (
-                session.query(CriticRun)
-                .filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash)
+                session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                    AgentRun.type_config["snapshot_slug"].astext == snapshot_slug,
+                    AgentRun.type_config["scope_hash"].astext == scope_hash,
+                )
                 .count()
             )
             print(f"  Critic runs: {critic_count}")
 
-            # Count associated grader runs
+            # Count associated grader runs (AgentRun with GRADER agent_type)
+            # Graders don't have snapshot_slug directly - lookup via graded critic's type_config
+            CriticRun = aliased(AgentRun)
             grader_count = (
-                session.query(GraderRun)
-                .join(CriticRun, GraderRun.critic_run_id == CriticRun.id)
+                session.query(AgentRun)
                 .filter(
-                    CriticRun.snapshot_slug == snapshot_slug,
-                    CriticRun.scope_hash == scope_hash,
+                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                    exists().where(
+                        CriticRun.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
+                        CriticRun.type_config["snapshot_slug"].astext == snapshot_slug,
+                    ),
                 )
                 .count()
             )

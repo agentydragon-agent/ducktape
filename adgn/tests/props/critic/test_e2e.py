@@ -9,40 +9,34 @@ Tests the critic agent end-to-end using:
 Covers:
 - Zero issues submission (clean code)
 - Issue submission workflow
-- Bootstrap script connection
+- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Infinite loop prevention (regression test)
+
+All tests verify that bootstrap commands (including ./init) exit with code 0
+before proceeding with the test scenario.
 """
 
 from __future__ import annotations
 
-from uuid import uuid4
-
-from fastmcp.client import Client
 import pytest
 
-from adgn.props.agent_setup import make_mcp_http_bootstrap_script
-from adgn.props.critic.critic import (
-    CRITIC_SCOPE_RESOURCE_URI,
-    CRITIC_SNAPSHOT_SLUG_RESOURCE_URI,
-    CriticAgentEnvironment,
-    run_critic,
-)
-from adgn.props.critic.models import CriticInput
+from adgn.props.agent_workspace import WorkspaceManager
+from adgn.props.critic.critic import run_critic
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, CriticRunStatus
+from adgn.props.db.models import AgentRun, AgentRunStatus, Event
 from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBootstrapValidation, Step
 
 
 def _make_critic_steps_zero_issues_minimal() -> list[Step]:
     """Create minimal step sequence for critic that finds zero issues.
 
-    Uses CLI helper to submit directly (fastest path).
+    Uses /workspace/bin/critique CLI to submit directly (fastest path).
     First step validates bootstrap succeeded.
     """
     return [
-        # Submit via CLI helper (no issues to add) - also validates bootstrap
+        # Submit via critique CLI (no issues to add) - also validates bootstrap
         DockerExecCallWithBootstrapValidation(
-            cmd=["adgn-properties", "agent-helper", "critic", "submit", "0", "Reviewed code, no issues found"],
+            cmd=["python", "/workspace/bin/critique.py", "submit", "0", "Reviewed code, no issues found"],
             timeout_ms=15000,
         )
     ]
@@ -55,10 +49,10 @@ async def test_critic_http_mode_zero_issues(
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
-    test_prompt_sha,
     subtract_file_scope,
     async_docker_client,
     test_specimens_hydrator,
+    tmp_path,
 ):
     """Test critic successfully submits zero issues using HTTP MCP mode.
 
@@ -71,32 +65,48 @@ async def test_critic_http_mode_zero_issues(
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_critic_steps_zero_issues_minimal())
 
-    # Run critic with HTTP mode enabled
-    input_data = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
+    # Create workspace manager pointing to temp path
+    workspace_manager = WorkspaceManager(tmp_path)
 
+    # Run critic using AgentHandle-based flow
     critic_run_id, status = await run_critic(
-        input_data=input_data,
+        definition_id="critic",
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
         client=runner,
+        parent_agent_run_id=None,
+        docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         db_config=synced_test_db,
-        prompt_optimization_run_id=None,
-        docker_client=async_docker_client,
+        workspace_manager=workspace_manager,
         mount_properties=False,
         max_turns=100,
     )
 
     # Verify status
-    assert status == CriticRunStatus.COMPLETED, "Critic should succeed in HTTP mode"
+    assert status == AgentRunStatus.COMPLETED, "Critic should succeed in HTTP mode"
     assert critic_run_id is not None
 
     # Verify database records
     with get_session() as session:
-        run = session.get(CriticRun, critic_run_id)
+        run = session.get(AgentRun, critic_run_id)
         assert run is not None
-        assert run.snapshot_slug == test_snapshot
-        assert run.status == CriticRunStatus.COMPLETED
+        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.status == AgentRunStatus.COMPLETED
         # Check issues in normalized tables (not JSONB)
         assert len(run.reported_issues) == 0
+
+        # Verify events were persisted (DatabaseEventHandler stores events by agent_run_id)
+        events = session.query(Event).filter_by(agent_run_id=critic_run_id).order_by(Event.sequence_num).all()
+        assert len(events) > 0, "Expected at least one event to be persisted"
+
+        # Check for api_request events (OpenAI calls)
+        api_request_events = [e for e in events if e.event_type == "api_request"]
+        assert len(api_request_events) >= 1, "Expected at least one api_request event"
+
+        # Check for tool_call events (the submit call)
+        tool_call_events = [e for e in events if e.event_type == "tool_call"]
+        assert len(tool_call_events) >= 1, "Expected at least one tool_call event"
 
 
 @pytest.mark.requires_docker
@@ -106,10 +116,10 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
-    test_prompt_sha,
     subtract_file_scope,
     async_docker_client,
     test_specimens_hydrator,
+    tmp_path,
 ):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
@@ -122,135 +132,55 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
     # Use step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_critic_steps_zero_issues_minimal())
 
-    input_data = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
+    # Create workspace manager pointing to temp path
+    workspace_manager = WorkspaceManager(tmp_path)
 
     _, status = await run_critic(
-        input_data=input_data,
+        definition_id="critic",
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
         client=runner,
+        parent_agent_run_id=None,
+        docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         db_config=synced_test_db,
-        prompt_optimization_run_id=None,
-        docker_client=async_docker_client,
+        workspace_manager=workspace_manager,
         mount_properties=False,
         max_turns=100,
     )
 
-    assert status == CriticRunStatus.COMPLETED, "Critic should succeed"
+    assert status == AgentRunStatus.COMPLETED, "Critic should succeed"
     # Step runner validates via bootstrap check; verify single step was used
     assert runner.current_step_index == 1, f"Expected 1 step completed, got {runner.current_step_index}"
-
-
-@pytest.mark.requires_docker
-@pytest.mark.requires_postgres
-async def test_critic_http_bootstrap_connection(
-    synced_test_db,
-    test_trivial_specimen,
-    test_snapshot,
-    subtract_file_scope,
-    async_docker_client,
-    test_specimens_hydrator,
-):
-    """Test that bootstrap script can connect to MCP server and list tools.
-
-    Verifies the MCP-over-HTTP bootstrap works by:
-    1. Starting a critic environment with HTTP server
-    2. Running the actual bootstrap script (same one used by AgentEnvironment)
-    3. Checking output contains expected tool names
-    """
-    # Create critic environment (starts HTTP server)
-    critic_run_id = uuid4()
-    critic_env = CriticAgentEnvironment(
-        snapshot_slug=test_snapshot,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        critic_run_id=critic_run_id,
-        scope=subtract_file_scope,
-        db_config=synced_test_db,
-        mount_properties=False,
-    )
-
-    async with critic_env as compositor:
-        # Generate the actual bootstrap script that AgentEnvironment uses
-        bootstrap_script = make_mcp_http_bootstrap_script(
-            resources=[("Snapshot Slug", CRITIC_SNAPSHOT_SLUG_RESOURCE_URI), ("Scope", CRITIC_SCOPE_RESOURCE_URI)]
-        )
-
-        # Execute bootstrap script by calling the exec tool via MCP client
-        async with Client(compositor.runtime.server) as client:
-            tool_result = await client.call_tool(
-                "exec",
-                {
-                    "cmd": ["python3", "-c", bootstrap_script],
-                    "cwd": None,
-                    "env": None,
-                    "user": None,
-                    "timeout_ms": 15_000,
-                },
-            )
-
-        # Parse output from MCP tool result
-        assert not tool_result.is_error, f"Tool call failed: {tool_result.content}"
-        result = tool_result.structured_content
-
-        # Verify execution succeeded
-        assert isinstance(result, dict), f"Expected dict result, got: {type(result)}"
-        assert "exit" in result, f"No 'exit' key in result: {list(result.keys())}"
-        exit_info = result["exit"]
-        assert exit_info.get("exit_code") == 0, (
-            f"Bootstrap failed (exit {exit_info.get('exit_code')})\nstderr: {result.get('stderr', '')}\nstdout: {result.get('stdout', '')}"
-        )
-
-        stdout = result.get("stdout", "")
-
-        # Verify MCP server initialization succeeded
-        assert "MCP Server Initialization" in stdout, "Failed to initialize MCP session"
-
-        # Verify tools were listed
-        assert "Available Tools" in stdout, "Failed to list tools section"
-
-        # Verify expected critic tools are present (HTTP mode uses submit-only flow)
-        expected_tools = ["submit", "report_failure"]
-        for tool_name in expected_tools:
-            assert tool_name in stdout, f"Expected tool '{tool_name}' not found in bootstrap output"
-
-        # Verify resources were read with actual content
-        assert "Snapshot Slug" in stdout, "Failed to read snapshot slug resource header"
-        assert test_snapshot in stdout, f"Expected snapshot slug '{test_snapshot}' not found in resource content"
-
-        assert "Scope" in stdout, "Failed to read scope resource header"
-        # Scope should contain the file from subtract_file_scope
-        assert "subtract.py" in stdout, "Expected scope file 'subtract.py' not found in resource content"
 
 
 def _make_critic_steps_with_issues() -> list[Step]:
     """Create step sequence for critic that finds and submits issues.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses /workspace/bin/critique.py CLI which runs INSIDE THE CONTAINER where it has access
     to the RLS-scoped credentials set up by the agent environment.
     First step validates bootstrap succeeded.
     """
     return [
-        # 1. Add issue using CLI helper (critic_run_id auto-detected from env)
+        # 1. Insert issue using critique CLI (agent_run_id auto-detected from env)
         # Also validates bootstrap on first step
         DockerExecCallWithBootstrapValidation(
             cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "critic",
-                "add-issue",
+                "python",
+                "/workspace/bin/critique.py",
+                "insert-issue",
                 "dead-import",
                 "Unused import detected in subtract.py",
             ],
             timeout_ms=15000,
         ),
-        # 2. Add occurrence with file location
+        # 2. Insert occurrence with file location
         AssertDockerExecThenCall(
             expected_output="",  # Just check exit code 0
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "critic",
-                "add-occurrence",
+                "python",
+                "/workspace/bin/critique.py",
+                "insert-occurrence",
                 "dead-import",
                 "subtract.py",
                 "-s",
@@ -260,10 +190,10 @@ def _make_critic_steps_with_issues() -> list[Step]:
             ],
             timeout_ms=15000,
         ),
-        # 3. Submit via CLI helper
+        # 3. Submit via critique CLI
         AssertDockerExecThenCall(
             expected_output="",  # Just check exit code 0
-            next_cmd=["adgn-properties", "agent-helper", "critic", "submit", "1", "Found 1 dead code issue"],
+            next_cmd=["python", "/workspace/bin/critique.py", "submit", "1", "Found 1 dead code issue"],
             timeout_ms=15000,
         ),
     ]
@@ -276,10 +206,10 @@ async def test_critic_http_mode_submit_with_issues(
     test_trivial_specimen,
     make_step_runner,
     test_snapshot,
-    test_prompt_sha,
     subtract_file_scope,
     async_docker_client,
     test_specimens_hydrator,
+    tmp_path,
 ):
     """Test critic HTTP mode with actual issue submission.
 
@@ -290,30 +220,34 @@ async def test_critic_http_mode_submit_with_issues(
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_critic_steps_with_issues())
 
-    input_data = CriticInput(snapshot_slug=test_snapshot, scope=subtract_file_scope, prompt_sha256=test_prompt_sha)
+    # Create workspace manager pointing to temp path
+    workspace_manager = WorkspaceManager(tmp_path)
 
     # Run critic - bootstrap validation happens on first step
     critic_run_id, status = await run_critic(
-        input_data=input_data,
+        definition_id="critic",
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
         client=runner,
+        parent_agent_run_id=None,
+        docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         db_config=synced_test_db,
-        prompt_optimization_run_id=None,
-        docker_client=async_docker_client,
+        workspace_manager=workspace_manager,
         mount_properties=False,
         max_turns=100,
     )
 
     # Verify status
-    assert status == CriticRunStatus.COMPLETED, "Critic should succeed in HTTP mode with issues"
+    assert status == AgentRunStatus.COMPLETED, "Critic should succeed in HTTP mode with issues"
     assert critic_run_id is not None
 
     # Verify database records
     with get_session() as session:
-        run = session.get(CriticRun, critic_run_id)
+        run = session.get(AgentRun, critic_run_id)
         assert run is not None
-        assert run.snapshot_slug == test_snapshot
-        assert run.status == CriticRunStatus.COMPLETED
+        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.status == AgentRunStatus.COMPLETED
 
         # Check that the issue was actually stored
         assert len(run.reported_issues) == 1
@@ -326,3 +260,79 @@ async def test_critic_http_mode_submit_with_issues(
         occurrence = issue.occurrences[0]
         assert len(occurrence.locations) == 1
         assert occurrence.locations[0].file == "subtract.py"
+
+
+# =============================================================================
+# AgentHandle-based flow tests (run_critic)
+# =============================================================================
+
+
+def _make_critic_v2_steps_zero_issues() -> list[Step]:
+    """Create step sequence for run_critic that finds zero issues.
+
+    Uses the AgentHandle-based infrastructure which loads system prompt
+    from AGENT.md in the definition.
+    """
+    return [
+        # Submit via critique CLI (no issues to add) - validates bootstrap worked
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critique.py", "submit", "0", "No issues found"], timeout_ms=15000
+        )
+    ]
+
+
+@pytest.mark.requires_docker
+@pytest.mark.requires_postgres
+async def test_critic_v2_zero_issues(
+    synced_test_db,
+    test_trivial_specimen,
+    make_step_runner,
+    test_snapshot,
+    subtract_file_scope,
+    async_docker_client,
+    test_specimens_hydrator,
+    tmp_path,
+):
+    """Test run_critic with AgentHandle-based flow.
+
+    Tests the definition-based flow that uses:
+    - AgentHandle to load agent definition from database
+    - AGENT.md as the system prompt (no Jinja rendering)
+    - init script for bootstrap context injection
+    - Same CriticAgentEnvironment for temp user and MCP server
+    """
+    # Create step runner with bootstrap validation
+    runner = make_step_runner(steps=_make_critic_v2_steps_zero_issues())
+
+    # Create workspace manager pointing to temp path
+    workspace_manager = WorkspaceManager(tmp_path)
+
+    # Run critic using AgentHandle-based flow
+    critic_run_id, status = await run_critic(
+        definition_id="critic",  # The base critic definition
+        snapshot_slug=test_snapshot,
+        scope=subtract_file_scope,
+        client=runner,
+        parent_agent_run_id=None,
+        docker_client=async_docker_client,
+        hydrator=test_specimens_hydrator,
+        db_config=synced_test_db,
+        workspace_manager=workspace_manager,
+        mount_properties=False,
+        max_turns=100,
+    )
+
+    # Verify status
+    assert status == AgentRunStatus.COMPLETED, "Critic v2 should succeed"
+    assert critic_run_id is not None
+
+    # Verify database records
+    with get_session() as session:
+        run = session.get(AgentRun, critic_run_id)
+        assert run is not None
+        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.status == AgentRunStatus.COMPLETED
+        # Definition ID is stored in agent_definition_id
+        assert run.agent_definition_id == "critic"
+        # Check issues in normalized tables
+        assert len(run.reported_issues) == 0

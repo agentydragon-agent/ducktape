@@ -74,22 +74,24 @@ The ground truth issues (true positives and false positives) were hand-labeled b
 
 ### Optimization Modes
 
-The prompt optimizer supports two terminal metric modes that control validation data access. Both modes require explicit selection via CLI flag.
+The prompt optimizer supports two terminal metric modes that control **validation** data access. Both modes require explicit selection via CLI flag.
 
-**Whole-Repo Mode:**
+**TRAIN split always has full access** in both modes: examples, ground truth (TPs/FPs), execution traces, individual run details.
+
+**Whole-Repo Mode (validation restrictions):**
 - **Philosophy:** Black-box validation - agent only sees aggregate recall, no filenames
 - **Trade-off:** More realistic generalization test, but harder to debug failures
 - **Validation examples:** Only full-snapshot (comprehensive review)
 - **Query method:** SQL `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL SECURITY DEFINER function, NOT Python)
-- **Data access:** Examples table is RLS-blocked for VALID split (no filenames visible)
+- **Data access (VALID split):** Examples table RLS-blocked (no filenames visible), ground truth hidden, execution traces hidden
 - **Use case:** Final evaluation, measuring true generalization without risk of overfitting
 
-**Targeted Mode:**
+**Targeted Mode (validation restrictions):**
 - **Philosophy:** White-box iteration - agent can see filenames and target specific files
 - **Trade-off:** Easier to iterate on specific patterns, but risk of overfitting to validation
 - **Validation examples:** Both per-file and full-snapshot (same as TRAIN split)
-- **Query method:** `aggregated_recall_by_prompt` view (pre-aggregated stats with n_examples, UCB, LCB)
-- **Data access:** Examples table is accessible for VALID split (filenames visible, ground truth still hidden)
+- **Query method:** `aggregated_recall_by_definition` view (pre-aggregated stats with n_examples, UCB, LCB)
+- **Data access (VALID split):** Examples table accessible (filenames visible), but ground truth and execution traces still hidden
 - **Use case:** Rapid iteration, debugging specific patterns, earlier optimization stages
 - **IMPORTANT:** Always check `n_examples >= 5` before trusting metrics (small samples = high variance)
 
@@ -114,17 +116,14 @@ from adgn.props.db.examples import Example  # Note: Example is in examples.py, n
 - Split information comes from the related `Snapshot` (via `snapshot_obj.split`)
 - Query pattern: `.filter_by(snapshot_slug=slug, scope_hash=hash)`
 
-**`prompts`:**
-- `prompt_sha256` (primary key) - content-addressed by SHA256 hash
-- `prompt_text` - full prompt content
-
 **`critic_runs`:**
-- Links to: `prompt_sha256`, `snapshot_slug`, `scope_hash`, `transcript_id`
+- Links to: `snapshot_slug`, `scope_hash`, `agent_run_id`
 - `status` - 'in_progress', 'completed', 'max_turns_exceeded', 'context_length_exceeded'
 - `completion_summary` - Markdown summary from agent (when status='completed')
 - `output` - discriminated union: `DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded`
 - `scope_hash` - references Example via composite FK (snapshot_slug, scope_hash)
 - Relationships: `reported_issues` (one-to-many), `grader_runs` (one-to-many)
+- `agent_run_id` - references AgentRun table (tracks execution metadata)
 
 **`reported_issues`:**
 - Critic findings stored explicitly (composite PK: `critic_run_id`, `issue_id`)
@@ -135,12 +134,13 @@ from adgn.props.db.examples import Example  # Note: Example is in examples.py, n
 - Foreign key to composite PK of `reported_issues`
 
 **`grader_runs`:**
-- Links to: `critic_run_id`, `snapshot_slug`, `transcript_id`
+- Links to: `critic_run_id`, `snapshot_slug`, `agent_run_id`
 - `status` - 'in_progress', 'completed', 'max_turns_exceeded'
 - `output` - discriminated union: `DBGraderSuccess | DBGraderMaxTurnsExceeded`
 - When successful, `output.occurrence_results` contains per-occurrence credits (found_credit 0.0-1.0 for each TP occurrence)
-- For aggregate recall metrics, query database views: `aggregated_recall_by_prompt`, `aggregated_recall_by_example`
+- For aggregate recall metrics, query database views: `aggregated_recall_by_definition`, `aggregated_recall_by_example`
 - Relationships: `decisions` (one-to-many), `critic_run_obj` (many-to-one)
+- `agent_run_id` - references AgentRun table (tracks execution metadata)
 
 **`grading_decisions`:**
 - Grader decisions linking input issues to ground truth occurrences
@@ -150,7 +150,7 @@ from adgn.props.db.examples import Example  # Note: Example is in examples.py, n
 
 **`events`:**
 - Tool call traces from agent execution
-- Links to: `transcript_id`, `sequence_num`
+- Links to: `agent_run_id`, `sequence_num`
 - `event_type` - e.g., "tool_call", "function_call_output", "assistant_text", "reasoning"
 - `payload` - structured event data (discriminated union: `EventType`)
 - Reasoning summaries: Events with `event_type = "reasoning"` contain `payload.summary` (list of summary text items)
@@ -220,7 +220,7 @@ The terminal metric depends on the optimization mode (see "Optimization Modes" s
 
 **Computation:**
 - Single-run recall: `sum(occ.found_credit for occ in occurrence_results) / len(occurrence_results)`
-- Cross-run aggregates: Query `aggregated_recall_by_prompt` or `aggregated_recall_by_example` views
+- Cross-run aggregates: Query `aggregated_recall_by_definition` or `aggregated_recall_by_example` views
 - Terminal metric query varies by mode (see above)
 
 **Weighting by occurrence (not by example):**
@@ -275,12 +275,12 @@ grader_run = session.query(GraderRun).filter_by(critique_id=critique_id).first()
 # Access ground truth
 tps = session.query(TruePositive).filter_by(snapshot_slug=slug).all()
 
-# Read execution traces
-events = session.query(Event).filter_by(transcript_id=transcript_id).order_by(Event.sequence_num).all()
+# Read execution traces (agent_run_id comes from CriticRun/GraderRun)
+events = session.query(Event).filter_by(agent_run_id=agent_run_id).order_by(Event.sequence_num).all()
 
 # Filter for reasoning summaries
 reasoning_events = session.query(Event).filter_by(
-    transcript_id=transcript_id,
+    agent_run_id=agent_run_id,
     event_type="reasoning"
 ).order_by(Event.sequence_num).all()
 # Access summary text: reasoning_events[0].payload.summary (list of ReasoningSummaryItem)
@@ -331,9 +331,9 @@ result = await run_critic_on_example(
 # Query aggregate metrics via views
 results = session.execute(text("""
     SELECT recall, n_examples, ucb, lcb
-    FROM aggregated_recall_by_prompt
-    WHERE prompt_sha256 = :hash AND split = 'valid'
-"""), {"hash": prompt_hash})
+    FROM aggregated_recall_by_definition
+    WHERE agent_definition_id = :def_id AND split = 'valid'
+"""), {"def_id": definition_id})
 
 # Can see filenames but CANNOT inspect ground truth or execution traces
 # Always check n_examples >= 5 for reliability; use UCB/LCB for uncertainty

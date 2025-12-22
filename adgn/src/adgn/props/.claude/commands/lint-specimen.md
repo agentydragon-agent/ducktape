@@ -1,10 +1,13 @@
 # Lint a specimen for conformance
 
-@../../specimens/CLAUDE.md
+Read the specimens repository documentation first:
+- `~/code/specimens/CLAUDE.md` — Main guide
+- `~/code/specimens/docs/authoring-guide.md` — Authoring rules
+- `~/code/specimens/docs/format-spec.md` — Format specification
 
 ## What this command does
 
-Lint a specimen directory (and its files) against the authoring rules defined in @../../specimens/CLAUDE.md (which transcludes @../../docs/authoring.md).
+Lint a specimen directory (and its files) against the authoring rules defined in the specimens repository documentation.
 
 **CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only specific issues, the linter must check every `issues/*.libsonnet` file in the specimen.
 
@@ -14,7 +17,7 @@ Report only lints/errors and offer concrete fix suggestions. Do not modify files
 
 Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
 
-@../../docs/quality-checklist.md
+Read `~/code/specimens/docs/quality-checklist.md` for the pre-commit verification checklist.
 
 ## Input
 - Target specimen: path to a specimen directory or any file inside it.

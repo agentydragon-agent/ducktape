@@ -6,13 +6,9 @@ Incremental migration target: we will gradually move subcommands here.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
-import contextlib
 from dataclasses import dataclass
-from importlib import resources
 import logging
 from pathlib import Path
-import shutil
 import tempfile
 from typing import Annotated
 from uuid import UUID
@@ -22,24 +18,21 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 from rich.traceback import install as rich_traceback_install
-from sqlalchemy import distinct, func, select, tuple_
+from sqlalchemy import func
 import typer
 from typer_di import Depends, TyperDI
 
 from adgn.cli.logging_callback import make_logging_callback
 from adgn.cli_utils import async_run
-from adgn.llm.rendering.rich_renderers import render_to_rich
 from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.bootstrap_capture import BootstrapCaptured, CapturingClient, format_bootstrap_output
+from adgn.props.agent_types import AgentType, AllowedExample
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_agent_definition import app as agent_definition_app
-from adgn.props.cli.cmd_agent_helper import app as agent_helper_app
 from adgn.props.cli.cmd_analyze_exec import cmd_analyze_exec
 from adgn.props.cli.cmd_classify_noops import cmd_classify_noops
 from adgn.props.cli.cmd_cluster_unknowns import app as cluster_unknowns_app
 from adgn.props.cli.cmd_db import db_app
-from adgn.props.cli.cmd_detector import cmd_detector_coverage, cmd_run_detector
 from adgn.props.cli.cmd_gepa import cmd_gepa
 from adgn.props.cli.cmd_grade_validation import cmd_grade_validation
 from adgn.props.cli.cmd_snapshot import snapshot_app
@@ -48,23 +41,16 @@ from adgn.props.cli.cmd_stats import stats_app
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.cli.shared import BuildOptions, build_cmd, filter_files
 from adgn.props.cluster_unknowns import cluster_unknowns
-from adgn.props.critic.critic import resolve_critic_scope, run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.critic.critic import run_critic
 from adgn.props.critic.persistence import load_critic_submit_payload_mcp
 from adgn.props.db import get_session, init_db
 from adgn.props.db.config import get_database_config
-from adgn.props.db.models import (
-    CriticRun as DBCriticRun,
-    CriticRunStatus,
-    GraderRun as DBGraderRun,
-    GraderRunStatus,
-    GradingDecision,
-    Prompt,
-    Snapshot,
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision, Snapshot
+from adgn.props.db.query_builders import (
+    DefinitionPerformanceRow,
+    query_definition_performance_stats,
+    query_recall_by_example,
 )
-from adgn.props.db.prompts import hash_and_upsert_prompt
-from adgn.props.db.query_builders import PromptPerformanceRow, query_prompt_performance_stats, query_recall_by_example
-from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.display import short_sha
 from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.eval_harness import run_all_evals
@@ -83,7 +69,6 @@ from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompt_optimize.target_metric import TargetMetric
 from adgn.props.prompts.builder import build_enforce_prompt
 from adgn.props.prompts.schemas import build_input_schemas_json
-from adgn.props.prompts.util import build_standard_context, get_templates_env
 from adgn.props.runs_context import RunsContext
 from adgn.props.splits import Split
 
@@ -97,9 +82,9 @@ def _get_critique_payload(critic_run_id: UUID | None):
     """
     assert critic_run_id is not None, "Critic run ID must not be None"
     with get_session() as session:
-        critic_run = session.get(DBCriticRun, critic_run_id)
+        critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None, f"Critic run {critic_run_id} not found"
-        assert critic_run.status == CriticRunStatus.COMPLETED, (
+        assert critic_run.status == AgentRunStatus.COMPLETED, (
             f"Critic run {critic_run_id} did not complete successfully (status: {critic_run.status})"
         )
         # Load MCP payload from normalized tables
@@ -112,7 +97,6 @@ app = TyperDI(help="adgn-properties — properties tooling", add_completion=Fals
 app.add_typer(db_app, name="db")
 app.add_typer(snapshot_app, name="snapshot")
 app.add_typer(cluster_unknowns_app, name="cluster-unknowns")
-app.add_typer(agent_helper_app, name="agent-helper")
 app.add_typer(agent_definition_app, name="agent-definition")
 
 # Configure logging via shared callback (default: WARNING level for props)
@@ -177,136 +161,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
     )
 
 
-async def _run_snapshot_minicodex_async(
-    snapshot: SnapshotSlug,
-    *,
-    dry_run: bool,
-    embed_paths: list[Path] | None,
-    mode: str,
-    final_only: bool,
-    output_final_message: Path | None,
-    client: OpenAIModelProto,
-    files: list[str] | None,
-    hydrator: SnapshotHydrator,
-    docker_client: aiodocker.Docker,
-) -> int:
-    db_config = get_database_config()
-
-    # Get available files from database (no hydration)
-    with get_session() as session:
-        snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
-        available_files = snapshot_obj.files_with_issues()
-
-    supplemental_text = read_embedded_paths(embed_paths) if embed_paths else None
-
-    # Filter files if requested (returns CriticScopeSpec: sentinel or explicit set)
-    # Convert set[Path] to dict for filter_files (which expects Mapping)
-    available_files_dict = dict.fromkeys(available_files)
-    files_spec = filter_files(available_files_dict, files)
-
-    # Resolve files for prompt rendering
-    resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
-
-    # Load preset template based on mode
-    preset_name = {"discover": "discover", "open": "open", "find": "find"}[mode]
-    prompt_raw = _load_preset_text(preset_name)
-
-    # Create temporary workspace for compositor (only used for rendering, not execution)
-    tmpdir = Path(tempfile.mkdtemp(prefix="props_cli_workspace_"))
-    try:
-        compositor = PropertiesDockerCompositor(tmpdir, docker_client, mount_properties=True, hydrator=hydrator)
-        prompt = _render_prompt_with_context(
-            prompt_raw, compositor=compositor, files=resolved_files, supplemental_text=supplemental_text
-        )
-    finally:
-        # Clean up temp workspace
-        shutil.rmtree(tmpdir, ignore_errors=True)
-
-    # Dry-run: save prompt and exit (before any agent/compositor setup)
-    if dry_run:
-        prompt_dir = Path(tempfile.gettempdir()) / "adgn_codex_prompts"
-        prompt_dir.mkdir(parents=True, exist_ok=True)
-        prompt_file = prompt_dir / f"codex_prompt_snapshot_{mode}.md"
-        prompt_file.write_text(prompt, encoding="utf-8")
-        typer.echo(f"Prompt saved to: {prompt_file}")
-        return 0
-
-    # Use run_critic for structured execution and DB persistence
-    critic_run_id, status = await run_critic(
-        input_data=CriticInput(snapshot_slug=snapshot, scope=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)),
-        client=client,
-        hydrator=hydrator,
-        db_config=db_config,
-        prompt_optimization_run_id=None,
-        docker_client=docker_client,
-        mount_properties=True,
-        verbose=True,
-        max_turns=100,
-    )
-
-    # Handle max turns exceeded
-    if status != CriticRunStatus.COMPLETED:
-        typer.echo("Error: Critic exceeded max turns limit", err=True)
-        return 1
-
-    # Query critique data from database
-    critique_payload = _get_critique_payload(critic_run_id)
-
-    # Output final message if requested
-    if output_final_message:
-        output_final_message.write_text(critique_payload.model_dump_json(indent=2), encoding="utf-8")
-
-    # Display results
-    if not final_only:
-        Console().print(render_to_rich(critique_payload))
-    return 0
-
-
-@app.command("snapshot-discover")
-@async_run
-async def cmd_snapshot_discover(
-    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
-    dry_run: bool = opt.OPT_DRY_RUN,
-    final_only: bool = opt.OPT_FINAL_ONLY,
-    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
-    files: list[str] | None = opt.OPT_FILES_FILTER,
-    hydrator: SnapshotHydrator = Depends(get_hydrator),
-) -> None:
-    """Discover only-new issues vs snapshot notes (covered/not_covered_yet)."""
-    docker_client = aiodocker.Docker()
-    try:
-        # Get all snapshots from database
-        with get_session() as session:
-            all_snapshots = session.query(Snapshot).all()
-            names = sorted([s.slug for s in all_snapshots])
-        if snapshot not in names:
-            typer.echo(f"Unknown snapshot slug: {snapshot}\nAvailable: \n" + "\n".join(f" - {n}" for n in names))
-            raise typer.Exit(2)
-        # TODO: Remove this manual path wrangling. The covered.md/not_covered_yet.md files
-        # should be deprecated and removed, along with snapshot-discover command and related paths.
-        spec_dir = get_specimens_base_path() / snapshot
-        embed_paths: list[Path] | None = [
-            p for p in [spec_dir / "covered.md", spec_dir / "not_covered_yet.md"] if p.exists()
-        ]
-        if not embed_paths:
-            embed_paths = None
-        rc = await _run_snapshot_minicodex_async(
-            snapshot,
-            dry_run=dry_run,
-            embed_paths=embed_paths,
-            mode="discover",
-            final_only=final_only,
-            output_final_message=output_final_message,
-            client=build_client("gpt-5"),
-            files=files,
-            hydrator=hydrator,
-            docker_client=docker_client,
-        )
-        raise typer.Exit(code=rc)
-    finally:
-        await docker_client.close()
-
-
 @app.command("cluster-unknowns")
 @async_run
 async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = opt.OPT_OUTPUT_DIR) -> None:
@@ -340,7 +194,6 @@ async def prompt_optimize(
     try:
         await run_prompt_optimizer(
             budget=budget,
-            ctx=RunsContext.from_pkg_dir(),
             hydrator=hydrator,
             optimizer_client=build_client(optimizer_model),
             critic_client=build_client(critic_model),
@@ -381,18 +234,18 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, prompt_sha256_param: str, limit: int) -> list[tuple[SnapshotSlug, str | None]]:
-        """Select Pareto-optimal training examples for a prompt."""
+    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[AllowedExample]:
+        """Select Pareto-optimal training examples for an agent definition."""
         # Query occurrence-weighted recall per example using helper
-        results = query_recall_by_example(session, split=Split.TRAIN, prompt_sha256=prompt_sha256_param)
+        results = query_recall_by_example(session, split=Split.TRAIN, agent_definition_id=agent_definition_id_param)
 
         if not results:
-            raise ValueError(f"No grader runs found for prompt {short_sha(prompt_sha256_param)}")
+            raise ValueError(f"No grader runs found for definition {short_sha(agent_definition_id_param)}")
 
         # Build example scores dict
-        example_scores: dict[tuple[SnapshotSlug, str | None], float] = {}
+        example_scores: dict[AllowedExample, float] = {}
         for row in results:
-            key = (row.snapshot_slug, row.scope_hash)
+            key = AllowedExample(snapshot_slug=row.snapshot_slug, scope_hash=row.scope_hash)
             example_scores[key] = row.recall
 
         # Sort by recall descending and take top N
@@ -401,142 +254,142 @@ async def prompt_improve_cmd(
         logger.info(
             f"Selected {len(top_n)} Pareto-optimal examples (recall range: {top_n[-1][1]:.1%} to {top_n[0][1]:.1%})"
         )
-        return [key for key, _score in top_n]
+        return [ex for ex, _score in top_n]
 
-    # 1. Load current prompt
-    console.print("[dim]Loading prompt from database...[/dim]")
+    # 1. Select agent definition to improve
+    # NOTE: The --prompt-sha256 option is deprecated. This command now works on agent definitions.
+    console.print("[dim]Loading agent definition from database...[/dim]")
     with get_session() as session:
         if prompt_sha256:
-            # Explicit prompt specified - verify it has enough training examples
-            prompt = session.query(Prompt).filter_by(prompt_sha256=prompt_sha256).first()
-            if not prompt:
-                console.print(f"[red]Error:[/red] Prompt not found: {prompt_sha256}")
-                raise typer.Exit(1)
-            prompt_text = prompt.prompt_text
-
-            # Count training examples with grader runs for this prompt
-            grader_runs = (
-                session.query(DBCriticRun, DBGraderRun)
-                .join(DBGraderRun, DBCriticRun.id == DBGraderRun.critic_run_id)
-                .join(Snapshot, DBCriticRun.snapshot_slug == Snapshot.slug)
-                .filter(DBCriticRun.prompt_sha256 == prompt_sha256, Snapshot.split == Split.TRAIN)
-                .all()
-            )
-
-            if len(grader_runs) < n_examples:
-                console.print(
-                    f"[red]Error:[/red] Prompt {short_sha(prompt_sha256)} has only {len(grader_runs)} "
-                    f"training examples with grader runs (need {n_examples})"
-                )
-                raise typer.Exit(1)
-
+            # Legacy option - no longer supported
             console.print(
-                f"[green]✓[/green] Loaded prompt: {short_sha(prompt_sha256)} "
-                f"({len(grader_runs)} training examples available)"
+                "[red]Error:[/red] The --prompt-sha256 option is deprecated. "
+                "The improvement command now operates on agent definitions."
             )
-        else:
-            # Auto-select: find prompts with enough training examples, pick best by validation LCB
-            # Count training examples per prompt
-            prompt_example_counts = (
-                session.query(
-                    DBCriticRun.prompt_sha256,
-                    func.count(distinct(tuple_(DBCriticRun.snapshot_slug, DBCriticRun.scope_hash))).label(
-                        "example_count"
-                    ),
+            console.print("[dim]This command needs redesign per Task 7 in docs/design/agent-definitions.md[/dim]")
+            raise typer.Exit(1)
+        # Auto-select: find prompts with enough training examples, pick best by validation LCB
+        # Count training examples per prompt using two-phase approach for unified AgentRun model
+        # Phase 1: Get all completed critic runs with grader runs on TRAIN split
+        critic_runs = (
+            session.query(AgentRun)
+            .filter(
+                AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                AgentRun.status == AgentRunStatus.COMPLETED,
+            )
+            .all()
+        )
+
+        # Build index: agent_definition_id -> set of (snapshot_slug, scope_hash) for examples that have grader runs
+        # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
+        definition_to_examples: dict[str, set[tuple[str, str]]] = {}
+        for cr in critic_runs:
+            critic_config = cr.critic_config()
+            snapshot_slug = critic_config.snapshot_slug
+            scope_hash = critic_config.scope_hash
+            definition_id = cr.agent_definition_id
+
+            # Check if this snapshot is in TRAIN split
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+            if not snapshot or snapshot.split != Split.TRAIN:
+                continue
+
+            # Check if there's a grader run for this critic run
+            has_grader = (
+                session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                    AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
                 )
-                .join(DBGraderRun, DBCriticRun.id == DBGraderRun.critic_run_id)
-                .join(Snapshot, DBCriticRun.snapshot_slug == Snapshot.slug)
-                .filter(Snapshot.split == Split.TRAIN)
-                .group_by(DBCriticRun.prompt_sha256)
-                .having(func.count(distinct(tuple_(DBCriticRun.snapshot_slug, DBCriticRun.scope_hash))) >= n_examples)
-                .all()
+                .first()
             )
+            if has_grader:
+                if definition_id not in definition_to_examples:
+                    definition_to_examples[definition_id] = set()
+                definition_to_examples[definition_id].add((snapshot_slug, scope_hash))
 
-            if not prompt_example_counts:
-                console.print(f"[red]Error:[/red] No prompts have {n_examples}+ training examples with grader runs")
-                raise typer.Exit(1)
+        # Filter to definitions with enough examples
+        definition_example_counts = [
+            (def_id, len(examples))
+            for def_id, examples in definition_to_examples.items()
+            if len(examples) >= n_examples
+        ]
 
-            eligible_sha256s = {p for p, _ in prompt_example_counts}
+        if not definition_example_counts:
+            console.print(f"[red]Error:[/red] No definitions have {n_examples}+ training examples with grader runs")
+            raise typer.Exit(1)
 
-            # Get performance stats for eligible prompts
-            stats = query_prompt_performance_stats(session, limit=100)
-            # Get validation stats for whole-snapshot examples
-            valid_stats_key = (Split.VALID, "entire_snapshot")
-            eligible_stats = [
-                s
-                for s in stats
-                if s.prompt_sha256 in eligible_sha256s
-                and valid_stats_key in s.stats
-                and s.stats[valid_stats_key].success_count > 0
-            ]
+        eligible_definition_ids = {d for d, _ in definition_example_counts}
 
-            if not eligible_stats:
+        # Get performance stats for eligible definitions
+        stats = query_definition_performance_stats(session, limit=100)
+        # Get validation stats for whole-snapshot examples
+        valid_stats_key = (Split.VALID, "entire_snapshot")
+        eligible_stats = [
+            s
+            for s in stats
+            if s.agent_definition_id in eligible_definition_ids
+            and valid_stats_key in s.stats
+            and s.stats[valid_stats_key].success_count > 0
+        ]
+
+        if not eligible_stats:
+            console.print(f"[red]Error:[/red] No prompts with {n_examples}+ training examples have validation results")
+            raise typer.Exit(1)
+
+        # Pick best by validation LCB (whole-snapshot)
+        def get_lcb(s: DefinitionPerformanceRow) -> float:
+            lcb = s.stats[valid_stats_key].lcb
+            return lcb if lcb is not None else -1.0
+
+        best = max(eligible_stats, key=get_lcb)
+        definition_id = best.agent_definition_id
+
+        example_count = next(count for d, count in definition_example_counts if d == definition_id)
+        console.print(f"[green]✓[/green] Selected best definition: {definition_id} ({example_count} training examples)")
+
+        # Display validation stats for all available scope kinds
+        def format_lcb(lcb: float | None) -> str:
+            return f"{lcb:.1%}" if lcb is not None else "N/A"
+
+        for (split, scope_kind_str), split_stats in best.stats.items():
+            if split == Split.VALID:
                 console.print(
-                    f"[red]Error:[/red] No prompts with {n_examples}+ training examples have validation results"
+                    f"  Valid ({scope_kind_str}): recall={split_stats.mean_recall:.1%}, "
+                    f"LCB={format_lcb(split_stats.lcb)}, "
+                    f"n={split_stats.success_count}/{split_stats.total_count}, "
+                    f"{split_stats.zero_count}z {split_stats.stuck_count}s {split_stats.context_count}c"
                 )
-                raise typer.Exit(1)
-
-            # Pick best by validation LCB (whole-snapshot)
-            def get_lcb(s: PromptPerformanceRow) -> float:
-                lcb = s.stats[valid_stats_key].lcb
-                return lcb if lcb is not None else -1.0
-
-            best = max(eligible_stats, key=get_lcb)
-            prompt_sha256 = best.prompt_sha256
-            prompt = session.query(Prompt).filter_by(prompt_sha256=prompt_sha256).first()
-            if not prompt:
-                console.print(f"[red]Error:[/red] Prompt metadata missing: {prompt_sha256}")
-                raise typer.Exit(1)
-
-            example_count = next(count for p, count in prompt_example_counts if p == prompt_sha256)
-            prompt_text = prompt.prompt_text
-            console.print(
-                f"[green]✓[/green] Selected best prompt: {short_sha(prompt_sha256)} ({example_count} training examples)"
-            )
-
-            # Display validation stats for all available scope kinds
-            def format_lcb(lcb: float | None) -> str:
-                return f"{lcb:.1%}" if lcb is not None else "N/A"
-
-            for (split, scope_kind_str), split_stats in best.stats.items():
-                if split == Split.VALID:
-                    console.print(
-                        f"  Valid ({scope_kind_str}): recall={split_stats.mean_recall:.1%}, "
-                        f"LCB={format_lcb(split_stats.lcb)}, "
-                        f"n={split_stats.success_count}/{split_stats.total_count}, "
-                        f"{split_stats.zero_count}z {split_stats.stuck_count}s {split_stats.context_count}c"
-                    )
 
     # 2. Select training examples
     console.print(f"\n[dim]Selecting {n_examples} training examples...[/dim]")
     with get_session() as session:
-        example_keys = select_pareto_examples(session, prompt_sha256, n_examples)
-        if not example_keys:
+        allowed_examples = select_pareto_examples(session, definition_id, n_examples)
+        if not allowed_examples:
             console.print("[red]Error:[/red] No training examples found")
             raise typer.Exit(1)
 
-        if len(example_keys) < n_examples:
+        if len(allowed_examples) < n_examples:
             console.print(
-                f"[yellow]Warning:[/yellow] Only {len(example_keys)} examples available (requested {n_examples})"
+                f"[yellow]Warning:[/yellow] Only {len(allowed_examples)} examples available (requested {n_examples})"
             )
 
-        console.print(f"[green]✓[/green] Selected {len(example_keys)} examples")
+        console.print(f"[green]✓[/green] Selected {len(allowed_examples)} examples")
 
         table = Table(title="Training Examples")
         table.add_column("Snapshot", style="cyan")
         table.add_column("Scope Hash", style="dim")
-        for slug, scope_hash in example_keys[:5]:
-            assert scope_hash is not None
-            table.add_row(slug, short_sha(scope_hash))
-        if len(example_keys) > 5:
-            table.add_row("[dim]...[/dim]", f"[dim](+{len(example_keys) - 5} more)[/dim]")
+        for ex in allowed_examples[:5]:
+            table.add_row(str(ex.snapshot_slug), short_sha(ex.scope_hash))
+        if len(allowed_examples) > 5:
+            table.add_row("[dim]...[/dim]", f"[dim](+{len(allowed_examples) - 5} more)[/dim]")
         console.print(table)
 
     # 3. Run improvement agent
     console.print("\n[bold]Running improvement agent[/bold]")
     console.print(f"  Model: {model}")
     console.print(f"  Token budget: {token_budget:,}")
-    console.print(f"  Examples: {len(example_keys)}")
+    console.print(f"  Examples: {len(allowed_examples)}")
     console.print()
 
     docker_client = aiodocker.Docker()
@@ -544,14 +397,16 @@ async def prompt_improve_cmd(
     openai_client = build_client(model)
     try:
         result = await run_improvement_agent(
-            examples=example_keys,
-            current_prompt=prompt_text,
+            examples=allowed_examples,
+            baseline_definition_ids=[definition_id],
             token_budget=token_budget,
             model=model,
             hydrator=hydrator,
             docker_client=docker_client,
             db_config=db_config,
             client=openai_client,
+            critic_client=openai_client,
+            grader_client=openai_client,
             output_dir=out_dir,
             verbose=verbose,
         )
@@ -563,28 +418,20 @@ async def prompt_improve_cmd(
     finally:
         await docker_client.close()
 
-    # 4. Display results
+    # 5. Display results
     console.print()
     if isinstance(result.outcome, OutcomeSuccess):
-        # Persist to database
-        prompt_sha256 = hash_and_upsert_prompt(result.outcome.submission.prompt_text)
-
         panel = Panel(
-            f"[green]✓ Prompt submitted successfully[/green]\n\n"
-            f"[bold]Prompt SHA256:[/bold] {prompt_sha256}\n\n"
+            f"[green]✓ Improvement agent completed successfully[/green]\n\n"
+            f"[bold]Definition ID:[/bold] {result.outcome.definition_id}\n\n"
             f"[bold]Tokens:[/bold] {result.tokens_used:,} / {token_budget:,} "
             f"({100 * result.tokens_used / token_budget:.1f}%)\n\n"
-            f"[bold]Rationale:[/bold]\n{result.outcome.submission.rationale}\n\n"
-            f"[bold]Expected improvement:[/bold]\n{result.outcome.submission.expected_improvement}\n\n"
-            f"[bold]Prompt length:[/bold] {len(result.outcome.submission.prompt_text):,} characters",
+            f"[bold]Issues found:[/bold] {result.outcome.issues_found:.1f}\n"
+            f"[bold]Baseline avg:[/bold] {result.outcome.baseline_avg:.1f}",
             title="Improvement Result",
             border_style="green",
         )
         console.print(panel)
-
-        # Display prompt text
-        console.print("\n[bold cyan]Improved Prompt:[/bold cyan]\n")
-        console.print(Panel(result.outcome.submission.prompt_text, border_style="dim"))
     elif isinstance(result.outcome, OutcomeExhausted):
         panel = Panel(
             f"[yellow]! Token budget exhausted[/yellow]\n\n"
@@ -624,6 +471,7 @@ async def snapshot_grade(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
     try:
         # Query database and grade critic run in single session
         with get_session() as session:
@@ -634,39 +482,45 @@ async def snapshot_grade(
                 docker_client,
                 hydrator,
                 db_config,
+                workspace_manager=workspace_manager,
                 verbose=verbose,
                 max_turns=200,
             )
-            db_grader_run = session.get(DBGraderRun, grader_run_id)
-            if db_grader_run is None:
+            grader_run = session.get(AgentRun, grader_run_id)
+            if grader_run is None:
                 raise RuntimeError(f"Grader run {grader_run_id} not found in database")
 
+            # Derive snapshot_slug from the graded critic run
+            grader_config = grader_run.grader_config()
+            graded_critic_run = session.get(AgentRun, grader_config.graded_agent_run_id)
+            if graded_critic_run is None:
+                raise RuntimeError(f"Graded critic run {grader_config.graded_agent_run_id} not found in database")
+            snapshot_slug = graded_critic_run.critic_config().snapshot_slug
             typer.echo(f"Graded critic run {critic_run_id}")
             typer.echo(f"Grader run ID: {grader_run_id}")
-            typer.echo(f"Grader run transcript_id: {db_grader_run.transcript_id}")
-            typer.echo(f"Snapshot: {db_grader_run.snapshot_slug}")
-            typer.echo(f"Status: {db_grader_run.status.value}")
+            typer.echo(f"Snapshot: {snapshot_slug}")
+            typer.echo(f"Status: {grader_run.status.value}")
             typer.echo("")
 
-            # Display notes_md if available
-            if db_grader_run.notes_md:
+            # Display completion_summary if available
+            if grader_run.completion_summary:
                 typer.echo("Summary:")
-                typer.echo(db_grader_run.notes_md)
+                typer.echo(grader_run.completion_summary)
                 typer.echo("")
 
             # Display recall metrics from grading_decisions
-            if db_grader_run.status == GraderRunStatus.COMPLETED:
+            if grader_run.status == AgentRunStatus.COMPLETED:
                 # TODO: Deduplicate recall calculation into db/grading.py helper function
                 total_credit = (
                     session.query(func.sum(GradingDecision.credit))
-                    .filter_by(grader_run_id=grader_run_id)
+                    .filter_by(agent_run_id=grader_run_id)
                     .filter(GradingDecision.target_tp_id.isnot(None))
                     .scalar()
                     or 0.0
                 )
                 n_occurrences = (
                     session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                    .filter_by(grader_run_id=grader_run_id)
+                    .filter_by(agent_run_id=grader_run_id)
                     .filter(GradingDecision.target_tp_id.isnot(None))
                     .distinct()
                     .count()
@@ -692,25 +546,35 @@ async def cmd_grade_missing(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
     try:
         # Find critic run IDs missing grader runs for this model
         with get_session() as session:
-            # More efficient than NOT IN: LEFT JOIN with NULL check
-            # Only grade successful critic runs (filter by status)
-            ungraded_critic_run_ids = (
-                session.execute(
-                    select(DBCriticRun.id)
-                    .outerjoin(
-                        DBGraderRun, (DBGraderRun.critic_run_id == DBCriticRun.id) & (DBGraderRun.model == grader_model)
-                    )
-                    .where(
-                        DBGraderRun.id.is_(None),  # No grader run exists for this model
-                        DBCriticRun.status == CriticRunStatus.COMPLETED,  # Only completed critic runs
-                    )
+            # Two-phase approach for unified AgentRun model
+            # Phase 1: Get all completed critic runs
+            completed_critic_runs = (
+                session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                    AgentRun.status == AgentRunStatus.COMPLETED,
                 )
-                .scalars()
                 .all()
             )
+
+            # Phase 2: Filter to those without grader runs for this model
+            ungraded_critic_run_ids: list[UUID] = []
+            for cr in completed_critic_runs:
+                has_grader = (
+                    session.query(AgentRun)
+                    .filter(
+                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                        AgentRun.type_config["graded_agent_run_id"].astext == str(cr.agent_run_id),
+                        AgentRun.model == grader_model,
+                    )
+                    .first()
+                )
+                if not has_grader:
+                    ungraded_critic_run_ids.append(cr.agent_run_id)
 
             if not ungraded_critic_run_ids:
                 typer.echo(f"No critic runs missing grader runs for model '{grader_model}'")
@@ -736,6 +600,7 @@ async def cmd_grade_missing(
                             docker_client,
                             hydrator,
                             db_config,
+                            workspace_manager=workspace_manager,
                             verbose=verbose,
                             max_turns=200,
                         )
@@ -844,10 +709,6 @@ async def cmd_eval_all(hydrator: SnapshotHydrator = Depends(get_hydrator)) -> No
         await docker_client.close()
 
 
-# Detector commands
-app.command("run-detector")(cmd_run_detector)
-app.command("detector-coverage")(cmd_detector_coverage)
-
 # GEPA command
 app.command("gepa")(cmd_gepa)
 
@@ -870,103 +731,33 @@ app.command("speak-with-dead")(cmd_speak_with_dead)
 # ---------- Shared helpers for run ----------
 
 
-def _render_prompt_with_context(
-    text: str, *, compositor: PropertiesDockerCompositor, files: Iterable[Path], supplemental_text: str | None = None
-) -> str:
-    """Render a (potentially Jinja) prompt with standard props context; plain text passes through.
-
-    Args:
-        text: Template text (Jinja or plain)
-        compositor: Docker compositor with configuration
-        files: File paths for scope
-        supplemental_text: Optional additional context
-
-    Returns:
-        Rendered prompt text
-    """
-    env = get_templates_env()
-    tmpl = env.from_string(text)
-    context = build_standard_context(files=files, compositor=compositor, supplemental_text=supplemental_text)
-    return str(tmpl.render(**context))
-
-
-# --- Unified run command (always structured; preset/prompt-file/text) ---
-
-_PRESET_MAP: dict[str, str] = {
-    # General review styles
-    "open": "prompts/open.j2.md",
-    "find": "prompts/find.j2.md",
-    "discover": "prompts/discover.j2.md",
-    # High-volume structured critic
-    "max-recall-critic": "prompts/max_recall_critic.j2.md",
-}
-
-
-def _print_presets() -> None:
-    for name in sorted(_PRESET_MAP.keys()):
-        print(name)
-
-
-def _load_preset_text(name: str) -> str:
-    if not (rel := _PRESET_MAP.get(name)):
-        raise typer.BadParameter(f"Unknown preset: {name}. Use 'adgn-properties list-presets' to see options.")
-    # Resources are relative to the adgn.props package root
-    res = resources.files("adgn.props").joinpath(rel)
-    try:
-        return res.read_text(encoding="utf-8")
-    except Exception as e:
-        raise typer.BadParameter(f"Failed to load preset '{name}' from resources: {rel} ({e})") from e
-
-
-# (Jinja rendering helpers are inlined at call sites; plain Markdown passes through unchanged)
-
-
 @app.command("run")
 @async_run
 async def cmd_run(
     # Scope (required)
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
-    # Prompt source (at most one; default: max-recall-critic)
-    preset: str | None = typer.Option(
-        None, "--preset", help="Built-in prompt name; see 'adgn-properties list-presets'"
-    ),
-    prompt_file: Path | None = typer.Option(None, "--prompt-file", exists=True, dir_okay=False, readable=True),
-    prompt_text: str | None = typer.Option(
-        None, "--prompt-text", help="Inline prompt text (discouraged for long prompts)"
+    # Definition ID (required)
+    definition_id: str = typer.Option(
+        "critic", "--definition-id", "-d", help="Agent definition ID (e.g., 'critic', 'critic-v1'). Default: 'critic'."
     ),
     # File filtering
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options
     model: str = opt.OPT_MODEL,
-    dry_run: bool = typer.Option(
-        False, help="Capture first API request (tools, instructions, inputs) and print JSON; don't call LLM"
-    ),
     max_lines: int = opt.OPT_MAX_LINES,
     hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
-    """Run structured critic on a snapshot with DB persistence.
+    """Run critic agent on a snapshot with DB persistence.
 
-    Default preset: max-recall-critic. Prints critique JSON on completion.
+    Uses AgentHandle to load agent definition from DB. The definition's AGENT.md
+    provides the system prompt.
+
+    Example:
+        adgn-properties run ducktape/2025-11-26-00 --definition-id critic
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
     try:
-        # Validate prompt source
-        sources = [x is not None for x in (preset, prompt_file, prompt_text)]
-        if sum(sources) == 0:
-            preset = "max-recall-critic"
-        elif sum(sources) > 1:
-            print("ERROR: Provide at most one of --preset, --prompt-file, or --prompt-text.")
-            raise typer.Exit(2)
-
-        # Resolve prompt content
-        if preset is not None:
-            prompt_raw = _load_preset_text(preset)
-        elif prompt_file is not None:
-            prompt_raw = prompt_file.read_text(encoding="utf-8")
-        else:
-            prompt_raw = prompt_text or ""
-
         # Get available files from database (no hydration)
         with get_session() as session:
             snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
@@ -975,55 +766,21 @@ async def cmd_run(
         # Filter files if requested
         available_files_dict = dict.fromkeys(available_files)
         files_spec = filter_files(available_files_dict, files)
-        resolved_files = await resolve_critic_scope(snapshot_slug=snapshot, files=files_spec)
 
-        # Create temporary workspace for compositor (only used for rendering, not execution)
-        workspace_tmpdir = Path(tempfile.mkdtemp(prefix="props_cli_workspace_"))
-        try:
-            compositor = PropertiesDockerCompositor(
-                workspace_tmpdir, docker_client, mount_properties=True, hydrator=hydrator, ephemeral=False
-            )
-            prompt = _render_prompt_with_context(prompt_raw, compositor=compositor, files=resolved_files)
-        finally:
-            # Clean up temp workspace
-            shutil.rmtree(workspace_tmpdir, ignore_errors=True)
+        # Create workspace manager for this CLI run
+        workspace_manager = WorkspaceManager.from_env()
 
-        # Build client - CapturingClient for dry_run, real client otherwise
-        if dry_run:
-            capturing_client = CapturingClient()
-            with contextlib.suppress(BootstrapCaptured):
-                await run_critic(
-                    input_data=CriticInput(
-                        snapshot_slug=snapshot, scope=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
-                    ),
-                    client=capturing_client,
-                    hydrator=hydrator,
-                    db_config=db_config,
-                    prompt_optimization_run_id=None,
-                    docker_client=docker_client,
-                    mount_properties=True,
-                    verbose=False,
-                    max_lines=max_lines,
-                    max_turns=1,
-                )
-
-            if capturing_client.captured is None:
-                typer.echo("[ERROR] No request captured - agent exited before first API call", err=True)
-                raise typer.Exit(1)
-
-            typer.echo(format_bootstrap_output(capturing_client.captured))
-            return
-
-        # Run critic with DB persistence
+        # Run critic using AgentHandle-based flow
         critic_run_id, status = await run_critic(
-            input_data=CriticInput(
-                snapshot_slug=snapshot, scope=files_spec, prompt_sha256=hash_and_upsert_prompt(prompt)
-            ),
+            definition_id=definition_id,
+            snapshot_slug=snapshot,
+            scope=files_spec,
             client=build_client(model),
+            parent_agent_run_id=None,
+            docker_client=docker_client,
             hydrator=hydrator,
             db_config=db_config,
-            prompt_optimization_run_id=None,
-            docker_client=docker_client,
+            workspace_manager=workspace_manager,
             mount_properties=True,
             verbose=True,
             max_lines=max_lines,
@@ -1033,19 +790,11 @@ async def cmd_run(
         # Print results
         typer.echo("\n=== Critique Complete ===")
         typer.echo(f"Critic Run ID: {critic_run_id}")
-        if status == CriticRunStatus.COMPLETED:
-            # Query critique data from database
+        if status == AgentRunStatus.COMPLETED:
             critique_payload = _get_critique_payload(critic_run_id)
-
             typer.echo(f"Issues found: {len(critique_payload.issues)}")
             typer.echo(f"\n{critique_payload.model_dump_json(indent=2)}")
         else:
-            typer.echo("Critic exceeded max turns limit", err=True)
+            typer.echo(f"Critic run ended with status: {status.value}", err=True)
     finally:
         await docker_client.close()
-
-
-@app.command("list-presets")
-def cmd_list_presets() -> None:
-    """List available built-in prompt presets and their descriptions."""
-    _print_presets()

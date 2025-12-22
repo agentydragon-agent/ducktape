@@ -19,10 +19,12 @@ DO NOT import from these modules outside this package.
 
 # Re-export public sync functions
 from ._sync import (
+    AGENT_DEFS_PATH,
     ModelMetadataSyncStats,
     SyncStats,
     get_specimens_base_path,
     load_manifests_from_yaml,
+    sync_agent_definitions_to_db,
     sync_examples_to_db,
     sync_issues_to_db,
     sync_model_metadata,
@@ -31,10 +33,12 @@ from ._sync import (
 )
 
 __all__ = [
+    "AGENT_DEFS_PATH",
     "ModelMetadataSyncStats",
     "SyncStats",
     "get_specimens_base_path",
     "load_manifests_from_yaml",
+    "sync_agent_definitions_to_db",
     "sync_examples_to_db",
     "sync_issues_to_db",
     "sync_model_metadata",

@@ -1,16 +1,24 @@
-"""Base class for temporary PostgreSQL user management with async context manager pattern.
+"""Temporary PostgreSQL user management with async context manager pattern.
 
-Provides lifecycle management (create, yield credentials, cleanup) for ephemeral database users.
-Subclasses implement domain-specific permission grants via grant_permissions().
+Provides lifecycle management (create, yield credentials, cleanup) for ephemeral database users
+used by all agent types (critic, grader, clustering, prompt optimizer, etc.).
+
+All agents use the unified pattern:
+- Username: agent_{agent_run_id}
+- Role: agent_base (grants via migration 20251226000001)
+- RLS: current_agent_run_id() extracts UUID, current_agent_type() determines access
+
+Type-specific access is controlled entirely by RLS policies based on agent_runs.type_config,
+not by different roles or username patterns.
 """
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
 from dataclasses import dataclass
 import logging
 import re
 import secrets
+from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -55,104 +63,74 @@ class TempUserCredentials:
     password: str
 
 
-class TempUserManager(ABC):
-    """Base async context manager for temporary PostgreSQL users.
+class TempUserManager:
+    """Async context manager for temporary PostgreSQL agent users.
+
+    Creates ephemeral database users for agent runs with RLS-scoped access.
+    All agent types use the same pattern - type-specific access is controlled
+    by RLS policies based on agent_runs.type_config.
 
     Lifecycle:
-    1. Generate username and secure password
-    2. Create PostgreSQL role
-    3. Grant permissions (subclass-specific)
+    1. Generate username from agent_run_id (agent_{uuid} pattern)
+    2. Create PostgreSQL role with secure password
+    3. Grant agent_base role (provides common permissions)
     4. Yield credentials (username, password)
-    5. Revoke permissions (subclass-specific cleanup)
-    6. Terminate connections and drop role
-
-    Subclasses must implement:
-    - generate_username(): Return username encoding scope/purpose
-    - grant_permissions(): Grant domain-specific permissions
-
-    Subclasses may override:
-    - revoke_permissions(): Custom cleanup (e.g., drop RLS policies)
+    5. Revoke permissions and terminate connections
+    6. Drop role
 
     Usage:
-        class MyUserManager(TempUserManager):
-            def __init__(self, admin_config: DbConnectionConfig, run_id: int):
-                super().__init__(admin_config)
-                self.run_id = run_id
-
-            def generate_username(self) -> str:
-                return f"myapp_run_{self.run_id}_agent"
-
-            async def grant_permissions(self, username: str) -> None:
-                async with self.admin_engine.begin() as conn:
-                    await conn.execute(text(f"GRANT SELECT ON TABLE foo TO {username}"))
-
-        async with MyUserManager(admin_config, 42) as creds:
+        async with TempUserManager(admin_config, agent_run_id) as creds:
             # Combine credentials with your connection parameters
-            config = DbConnectionConfig(
-                host="host.docker.internal",  # Override for Docker context
-                port=5432,
-                database="mydb",
-                user=creds.username,
-                password=creds.password,
-            )
+            config = admin_config.with_user(creds)
             engine = create_engine(config.url())
+            # Agent has RLS-scoped access based on agent_run_id and type_config
+        # User automatically cleaned up on exit
     """
 
-    def __init__(self, admin_config: DbConnectionConfig):
-        """Initialize with admin database config.
+    def __init__(self, admin_config: DbConnectionConfig, agent_run_id: UUID):
+        """Initialize with admin database config and agent run ID.
 
         Args:
             admin_config: Admin database connection (must have CREATE ROLE permission)
+            agent_run_id: Agent run ID to scope access to (encoded in username)
         """
         self.admin_config = admin_config
+        self.agent_run_id = agent_run_id
         self.admin_engine: AsyncEngine | None = None
         self._username: str | None = None
         self._password: str | None = None
 
-    @abstractmethod
     def generate_username(self) -> str:
-        """Generate username encoding scope/purpose.
+        """Generate username encoding the agent run ID.
 
-        Called once during __aenter__.
+        Uses the unified agent_{uuid} pattern recognized by current_agent_run_id().
 
         Returns:
-            Username for the temporary role (e.g., "myapp_run_42_agent")
+            Username for the temporary role (e.g., "agent_12345678-1234-...")
         """
+        return f"agent_{self.agent_run_id}"
 
-    @abstractmethod
     async def grant_permissions(self, username: str) -> None:
-        """Grant domain-specific permissions to the user.
+        """Grant permissions via the unified agent_base template role.
 
-        Called after user creation, before yielding credentials.
-        Use self.admin_engine for database operations.
+        The agent_base role (created in migration 20251226000001) provides:
+        - Schema and sequence usage
+        - Access to agent_runs and agent_definitions
+        - Read on reference tables (snapshots, examples, prompts)
+        - Read/write on agent-specific tables (reported_issues, grading_decisions, etc.)
 
-        Args:
-            username: Role name to grant permissions to
-
-        Example:
-            async with self.admin_engine.begin() as conn:
-                quoted_username = quote_ident(username)
-                await conn.execute(text(f"GRANT SELECT ON TABLE foo TO {quoted_username}"))
-                await conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {quoted_username}"))
+        RLS policies filter access based on agent_run_id via current_agent_run_id().
+        Type-specific access is controlled by RLS policies checking current_agent_type().
         """
-
-    async def revoke_permissions(self, username: str) -> None:
-        """Revoke permissions (override for custom cleanup).
-
-        Called during __aexit__ before dropping the user.
-        Base implementation revokes all table/sequence/schema permissions.
-
-        Args:
-            username: Role name to revoke permissions from
-        """
-        if self.admin_engine is None:
-            return
-
+        assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL TABLES IN SCHEMA public FROM {quoted_username}"))
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public FROM {quoted_username}"))
-            await conn.execute(text(f"REVOKE ALL PRIVILEGES ON SCHEMA public FROM {quoted_username}"))
+            await conn.execute(text(f"GRANT agent_base TO {quoted_username}"))
+
+        logger.debug(f"Granted agent_base to {username}")
+
+    async def revoke_permissions(self, username: str) -> None:
+        """No-op: DROP ROLE automatically removes role memberships and inherited privileges."""
 
     async def __aenter__(self) -> TempUserCredentials:
         """Create user and grant permissions, return credentials."""

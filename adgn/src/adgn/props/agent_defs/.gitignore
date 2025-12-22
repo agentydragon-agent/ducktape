@@ -1,0 +1,4 @@
+# Python bytecode - agent definitions are packed as tar archives, not imported as modules
+__pycache__/
+*.pyc
+*.pyo

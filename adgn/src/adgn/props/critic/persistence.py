@@ -65,18 +65,18 @@ def convert_reported_issue_orm_to_mcp(issue: ORMReportedIssue) -> ReportedIssue:
     )
 
 
-def load_critic_submit_payload_mcp(session, critic_run_id, notes_md: str | None = None) -> CriticSubmitPayload:
-    """Load CriticSubmitPayload (MCP type) from database for a given critic run.
+def load_critic_submit_payload_mcp(session, agent_run_id, notes_md: str | None = None) -> CriticSubmitPayload:
+    """Load CriticSubmitPayload (MCP type) from database for a given agent run.
 
     Args:
         session: SQLAlchemy session
-        critic_run_id: UUID of the critic run
-        notes_md: Optional notes in markdown (typically from critic_run.completion_summary)
+        agent_run_id: UUID of the agent run (critic agent)
+        notes_md: Optional notes in markdown (typically from agent_run.completion_summary)
 
     Returns:
         MCP CriticSubmitPayload reconstructed from normalized tables
     """
-    reported_issues = session.query(ORMReportedIssue).filter_by(critic_run_id=critic_run_id).all()
+    reported_issues = session.query(ORMReportedIssue).filter_by(agent_run_id=agent_run_id).all()
     return CriticSubmitPayload(
         issues=[convert_reported_issue_orm_to_mcp(issue) for issue in reported_issues], notes_md=notes_md
     )

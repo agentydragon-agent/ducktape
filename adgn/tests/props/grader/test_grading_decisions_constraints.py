@@ -36,7 +36,7 @@ def add_decision(session, test_grader_run):
 
     def _add(input_issue_id, rationale="Test decision", **kwargs):
         decision = GradingDecision(
-            grader_run_id=test_grader_run, input_issue_id=input_issue_id, rationale=rationale, **kwargs
+            agent_run_id=test_grader_run, input_issue_id=input_issue_id, rationale=rationale, **kwargs
         )
         session.add(decision)
         return decision

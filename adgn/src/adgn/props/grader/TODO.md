@@ -1,65 +1,15 @@
 # Grader TODOs
 
-## RLS-Secured Database Access (Like Clustering)
+## RLS-Secured Database Access (DONE)
 
-**Current state:** Grader uses admin database credentials and ground truth is passed via MCP resources.
+**Completed:** Grader now uses unified `TempUserManager` with `agent_{uuid}` pattern.
 
-**Desired state:** Grader gets isolated PostgreSQL credentials with RLS policies that:
-- Allow reading only the specific critique being graded
-- Allow reading only the relevant ground truth (TPs/FPs) for that critique's snapshot
-- Allow writing only grading results associated with its grader run
-- Prevent accidental access to other critiques, snapshots, or runs
-
-**Implementation approach:**
-1. Create `GraderUserManager` similar to `ClusteringUserManager` or `PromptOptimizerUserManager`
-   - Username pattern: `grader_agent_{grader_run_id}` or similar
-   - Create temporary user on grader run start
-   - Drop user on grader run completion
-
-2. Add RLS policies for grader access:
-   ```sql
-   -- Function to extract grader run ID from username
-   CREATE FUNCTION current_grader_run_id() RETURNS uuid AS $$
-     SELECT uuid(regexp_replace(current_user, 'grader_agent_', ''));
-   $$ LANGUAGE SQL STABLE;
-
-   -- Policy: Graders can only read their assigned critique
-   CREATE POLICY grader_read_critique ON critiques
-     FOR SELECT TO grader_users
-     USING (id = (SELECT critique_id FROM grader_runs WHERE id = current_grader_run_id()));
-
-   -- Policy: Graders can only read ground truth for their critique's snapshot
-   CREATE POLICY grader_read_true_positives ON true_positives
-     FOR SELECT TO grader_users
-     USING (snapshot_slug = (
-       SELECT c.snapshot_slug FROM critiques c
-       JOIN grader_runs gr ON gr.critique_id = c.id
-       WHERE gr.id = current_grader_run_id()
-     ));
-
-   -- Similar policies for false_positives, snapshots, etc.
-
-   -- Policy: Graders can only write their own grading results
-   CREATE POLICY grader_write_results ON grader_runs
-     FOR UPDATE TO grader_users
-     USING (id = current_grader_run_id())
-     WITH CHECK (id = current_grader_run_id());
-   ```
-
-3. Pass RLS-scoped credentials to grader container (not admin credentials)
-   - Similar to how clustering passes scoped credentials
-   - Ground truth would still be available via resources (now backed by RLS-restricted queries)
-
-**Benefits:**
-- Defense in depth: grader can't accidentally access wrong data
-- Audit trail: database logs show which grader accessed what
-- Consistent with other agent patterns (clustering, prompt optimizer)
-- No code changes needed in grader logic (just credential swap + RLS setup)
+- Username pattern: `agent_{agent_run_id}` (unified for all agent types)
+- Grants `agent_base` role to temporary users
+- RLS policies use `current_agent_run_id()` and `current_agent_type()` for scoping
 
 **Related files:**
-- `src/adgn/props/db/clustering_user_manager.py` - Reference implementation
-- `src/adgn/props/db/prompt_optimizer_user_manager.py` - Another reference
-- `src/adgn/props/db/temp_user_manager.py` - Base class
+- `src/adgn/props/db/temp_user_manager.py` - Unified user manager
 
 ---
 
@@ -111,61 +61,16 @@ Currently validation happens in `GraderSubmitServer.submit_result()` but could b
    - Recall metrics would improve retroactively
 
 **Implementation considerations:**
-- Store unknowns in separate table with foreign keys to grader runs
+- Store unknowns in separate table with foreign keys to agent runs
 - Add clustering table for grouped unknowns (similar to existing clustering schema)
 - Add human labeling table for decisions
 - Track ground truth provenance (which issues came from human labeling vs original authoring)
-
-**Database schema additions needed:**
-```sql
--- Unknowns table (extract from JSONB to first-class rows)
-CREATE TABLE grader_unknowns (
-  id uuid PRIMARY KEY,
-  grader_run_id uuid REFERENCES grader_runs(id),
-  input_issue_id text NOT NULL,  -- InputIssueID from critique
-  rationale text NOT NULL,
-  -- Could add: embedding vector for similarity search
-);
-
--- Clustered unknowns (cross-run grouping)
-CREATE TABLE unknown_clusters (
-  id uuid PRIMARY KEY,
-  representative_unknown_id uuid REFERENCES grader_unknowns(id),
-  created_at timestamptz DEFAULT now(),
-);
-
-CREATE TABLE unknown_cluster_members (
-  cluster_id uuid REFERENCES unknown_clusters(id),
-  unknown_id uuid REFERENCES grader_unknowns(id),
-  similarity_score float,  -- How strongly this unknown matches the cluster
-  PRIMARY KEY (cluster_id, unknown_id)
-);
-
--- Human labeling decisions
-CREATE TABLE unknown_labeling_decisions (
-  id uuid PRIMARY KEY,
-  cluster_id uuid REFERENCES unknown_clusters(id),
-  decision text NOT NULL CHECK (decision IN ('new_tp', 'new_fp', 'noise')),
-  rationale text,
-  labeled_by text,  -- User who made the decision
-  labeled_at timestamptz DEFAULT now(),
-  -- If new_tp or new_fp, link to the created ground truth item
-  created_tp_id text,  -- References true_positives.tp_id
-  created_fp_id text,  -- References false_positives.fp_id
-);
-```
-
-**UI considerations:**
-- Labeling interface for reviewing clustered unknowns
-- Display context: show original code, critique rationale, similar canonical issues
-- Batch operations: label entire cluster at once
-- Track labeling progress: which clusters need review
 
 ---
 
 ## Related Work
 
 See also:
-- `src/adgn/props/db/clustering_user_manager.py` - RLS pattern for isolated agents
-- `src/adgn/props/noop_classifier/` - Clustering infrastructure (might be reusable)
+- `src/adgn/props/db/temp_user_manager.py` - Unified user manager for all agent types
+- `src/adgn/props/clustering/` - Clustering infrastructure
 - `src/adgn/props/db/migrations/versions/*_clustering*.py` - Clustering schema migrations

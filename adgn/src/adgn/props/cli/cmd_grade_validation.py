@@ -1,4 +1,4 @@
-"""Grade validation set: ensure complete critic and grader coverage across all prompts."""
+"""Grade validation set: ensure complete critic and grader coverage across all definitions."""
 
 from __future__ import annotations
 
@@ -15,23 +15,17 @@ from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
+from adgn.props.agent_types import AgentType
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_database_config, get_hydrator
 from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
 from adgn.props.db import get_session
+from adgn.props.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from adgn.props.db.examples import Example
-from adgn.props.db.models import (
-    CriticRun,
-    CriticRunStatus,
-    GraderRun,
-    GraderRunStatus,
-    GradingDecision,
-    Prompt,
-    Snapshot,
-)
-from adgn.props.db.query_builders import query_prompt_performance_stats
-from adgn.props.display import short_sha, short_uuid
+from adgn.props.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingDecision, Snapshot
+from adgn.props.db.query_builders import query_definition_performance_stats
+from adgn.props.display import short_uuid
 from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
@@ -46,7 +40,7 @@ class ValidationWorkItem:
 
     snapshot_slug: SnapshotSlug
     scope_hash: str
-    prompt_optimization_run_id: UUID | None
+    parent_agent_run_id: UUID | None
 
 
 @async_run
@@ -57,13 +51,13 @@ async def cmd_grade_validation(
     verbose: bool = opt.OPT_VERBOSE,
     hydrator: SnapshotHydrator = Depends(get_hydrator),
 ) -> None:
-    """Grade validation set: ensure complete critic and grader coverage across all prompts.
+    """Grade validation set: ensure complete critic and grader coverage across all definitions.
 
     For each validation snapshot example:
-    1. For each (example, prompt) pair:
-       a. Check if critique exists (via CriticRun)
+    1. For each (example, critic_definition) pair:
+       a. Check if successful critic run exists (via AgentRun)
        b. If not, RUN critic to generate it
-    2. For each critique:
+    2. For each successful critic run:
        a. Check if grader run exists (for ANY model)
        b. If not, RUN grader with specified grader_model
 
@@ -73,6 +67,7 @@ async def cmd_grade_validation(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
     try:
         critic_client = build_client(critic_model)
         grader_client = build_client(grader_model)
@@ -94,82 +89,87 @@ async def cmd_grade_validation(
 
             typer.echo(f"Found {len(validation_examples)} validation examples")
 
-            # Get all prompts in the same order as stats command displays them
+            # Get all critic definitions in the same order as stats command displays them
             # (ordered by valid LCB desc, train LCB desc, created_at desc)
-            prompt_perf_rows = query_prompt_performance_stats(session, limit=1000)
-            ordered_prompt_sha256s = [row.prompt_sha256 for row in prompt_perf_rows]
+            perf_rows = query_definition_performance_stats(session, limit=1000)
+            ordered_definition_ids = [row.agent_definition_id for row in perf_rows]
 
-            # Also get any prompts not yet evaluated (not in perf stats)
-            all_prompts_query = session.query(Prompt).all()
-            unevaluated_shas = [
-                p.prompt_sha256 for p in all_prompts_query if p.prompt_sha256 not in ordered_prompt_sha256s
-            ]
+            # Also get any critic definitions not yet evaluated (not in perf stats)
+            all_critic_defs = (
+                session.query(AgentDefinition).filter(AgentDefinition.agent_type == AgentType.CRITIC).all()
+            )
+            unevaluated_defs = [d.id for d in all_critic_defs if d.id not in ordered_definition_ids]
 
-            # Combine: evaluated prompts first (in priority order), then unevaluated
-            all_prompt_sha256s = ordered_prompt_sha256s + unevaluated_shas
+            # Combine: evaluated definitions first (in priority order), then unevaluated
+            all_definition_ids = ordered_definition_ids + unevaluated_defs
 
-            if not all_prompt_sha256s:
-                typer.echo("No prompts found in database")
-                return
+            if not all_definition_ids:
+                raise typer.BadParameter(
+                    "No critic definitions found in database - run 'adgn-properties db sync' first"
+                )
 
-            typer.echo(f"Found {len(all_prompt_sha256s)} prompts\n")
+            typer.echo(f"Found {len(all_definition_ids)} critic definitions\n")
 
-            # Build work items grouped by prompt
-            # Each prompt gets a list of ValidationWorkItem
-            # critic_run_id is None if critic needs to run, otherwise UUID if grader needs to run
-            work_items_by_prompt: dict[str, list[ValidationWorkItem]] = defaultdict(list)
+            # Build work items grouped by definition
+            # Each definition gets a list of ValidationWorkItem
+            # parent_agent_run_id is None if critic needs to run, otherwise UUID if grader needs to run
+            work_items_by_definition: dict[str, list[ValidationWorkItem]] = defaultdict(list)
 
             for example in validation_examples:
-                for prompt_sha256 in all_prompt_sha256s:
-                    # Check if successful critic run exists for (example, prompt)
-                    # Query via example's critic_runs relationship (avoiding manual FK comparisons)
-                    # Prefer most recent successful run
+                for definition_id in all_definition_ids:
+                    # Check if successful critic run exists for (example, definition)
+                    # Query AgentRun by agent_definition_id and type_config fields
                     critic_run = (
-                        session.query(CriticRun)
-                        .with_parent(example, Example.critic_runs)
-                        .filter(CriticRun.prompt_sha256 == prompt_sha256, CriticRun.status == CriticRunStatus.COMPLETED)
-                        .order_by(CriticRun.created_at.desc())
+                        session.query(AgentRun)
+                        .filter(
+                            AgentRun.agent_definition_id == definition_id,
+                            AgentRun.type_config["snapshot_slug"].astext == example.snapshot_slug,
+                            AgentRun.type_config["scope_hash"].astext == example.scope_hash,
+                            AgentRun.status == AgentRunStatus.COMPLETED,
+                        )
+                        .order_by(AgentRun.created_at.desc())
                         .first()
                     )
 
                     if critic_run is None:
                         # No successful critic run exists, need to run critic then grader
-                        work_items_by_prompt[prompt_sha256].append(
+                        work_items_by_definition[definition_id].append(
                             ValidationWorkItem(
                                 snapshot_slug=example.snapshot_slug,
                                 scope_hash=example.scope_hash,
-                                prompt_optimization_run_id=None,
+                                parent_agent_run_id=None,
                             )
                         )
                         continue
 
                     # Check if successful grader run exists for this critic run
                     # Accept grader runs from ANY model
-                    successful_grader_exists = session.execute(
-                        select(GraderRun.id)
-                        .where(
-                            GraderRun.critic_run_id == critic_run.id,
-                            GraderRun.status == GraderRunStatus.COMPLETED,  # Only count successful runs
+                    successful_grader_exists = (
+                        session.query(AgentRun)
+                        .filter(
+                            AgentRun.agent_definition_id == GRADER_AGENT_DEFINITION_ID,
+                            AgentRun.type_config["graded_agent_run_id"].astext == str(critic_run.agent_run_id),
+                            AgentRun.status == AgentRunStatus.COMPLETED,
                         )
-                        .limit(1)
-                    ).first()
+                        .first()
+                    )
 
                     if not successful_grader_exists:
                         # Critic succeeded, need to run grader
-                        work_items_by_prompt[prompt_sha256].append(
+                        work_items_by_definition[definition_id].append(
                             ValidationWorkItem(
                                 snapshot_slug=example.snapshot_slug,
                                 scope_hash=example.scope_hash,
-                                prompt_optimization_run_id=critic_run.id,
+                                parent_agent_run_id=critic_run.agent_run_id,
                             )
                         )
                     # else: both critic and grader succeeded - nothing to do
 
             # Count work needed (flatten to count)
-            total_pairs = len(validation_examples) * len(all_prompt_sha256s)
-            all_work_items = [item for items in work_items_by_prompt.values() for item in items]
-            need_critic = sum(1 for item in all_work_items if item.prompt_optimization_run_id is None)
-            need_grader_only = sum(1 for item in all_work_items if isinstance(item.prompt_optimization_run_id, UUID))
+            total_pairs = len(validation_examples) * len(all_definition_ids)
+            all_work_items = [item for items in work_items_by_definition.values() for item in items]
+            need_critic = sum(1 for item in all_work_items if item.parent_agent_run_id is None)
+            need_grader_only = sum(1 for item in all_work_items if isinstance(item.parent_agent_run_id, UUID))
             completed = total_pairs - len(all_work_items)
 
             typer.echo("\nWork summary:")
@@ -181,13 +181,13 @@ async def cmd_grade_validation(
                 typer.echo("\n✓ All validation set examples have complete coverage!")
                 return
 
-        # Phase 2: Process prompts with worker pool, examples within each prompt in parallel
+        # Phase 2: Process definitions with worker pool, examples within each definition in parallel
         typer.echo(f"\n=== Processing {need_critic + need_grader_only} items with {max_parallel} workers ===\n")
 
         async def process_one(
             snapshot_slug: SnapshotSlug,
             scope_hash: str,
-            prompt_sha256: str,
+            definition_id: str,
             critic_run_id_or_none: UUID | None,
             worker_id: int,
             item_index: int,
@@ -217,40 +217,38 @@ async def cmd_grade_validation(
 
                         example_scope = matching_example.scope
 
-                    # Run critic (compositor handles snapshot hydration internally)
-                    # Use the scope from the example directly
-                    critic_input = CriticInput(
-                        snapshot_slug=snapshot_slug, scope=example_scope, prompt_sha256=prompt_sha256
-                    )
-
+                    # Run critic using definition-based run_critic()
                     (critic_run_id, status) = await run_critic(
-                        input_data=critic_input,
+                        definition_id=definition_id,
+                        snapshot_slug=snapshot_slug,
+                        scope=example_scope,
                         client=critic_client,
                         docker_client=docker_client,
                         hydrator=hydrator,
                         db_config=db_config,
-                        prompt_optimization_run_id=None,
+                        workspace_manager=workspace_manager,
+                        parent_agent_run_id=None,
                         mount_properties=True,
                         verbose=verbose,
                         max_turns=100,
                     )
 
                     # Check if critic succeeded - if not, skip grading
-                    if status != CriticRunStatus.COMPLETED:
+                    if status != AgentRunStatus.COMPLETED:
                         # Critic failed (max_turns_exceeded or context_length_exceeded)
                         if not verbose:
                             typer.echo(
-                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {short_sha(prompt_sha256)}"
+                                f"[W{worker_id} {item_index}/{total_items}] ⚠ Critic {status}: {snapshot_slug} x {definition_id}"
                             )
                         return (status, False, False, None)
 
                     if not verbose:
                         typer.echo(
-                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {short_sha(prompt_sha256)} → {short_uuid(critic_run_id)}"
+                            f"[W{worker_id} {item_index}/{total_items}] ✓ Critic {snapshot_slug} x {definition_id} → {short_uuid(critic_run_id)}"
                         )
                 except Exception as e:
                     typer.echo(
-                        f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {short_sha(prompt_sha256)}: {e}",
+                        f"[W{worker_id} {item_index}/{total_items}] ✗ Critic failed {snapshot_slug} x {definition_id}: {e}",
                         err=True,
                     )
                     return ("critic_failed", False, False, None)
@@ -265,26 +263,27 @@ async def cmd_grade_validation(
                         docker_client,
                         hydrator,
                         db_config,
+                        workspace_manager,
                         verbose=verbose,
                         max_turns=200,
                     )
 
                     # Fetch recall for progress message (direct query to grading_decisions)
-                    grader_run = session.get(GraderRun, grader_run_id)
+                    grader_run = session.get(AgentRun, grader_run_id)
                     assert grader_run is not None
 
-                    if grader_run.status == GraderRunStatus.COMPLETED:
+                    if grader_run.status == AgentRunStatus.COMPLETED:
                         # Show absolute numbers instead of percentage (query grading_decisions)
                         total_credit = (
                             session.query(func.sum(GradingDecision.credit))
-                            .filter_by(grader_run_id=grader_run_id)
+                            .filter_by(agent_run_id=grader_run_id)
                             .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
                             .scalar()
                             or 0.0
                         )
                         n_occurrences = (
                             session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                            .filter_by(grader_run_id=grader_run_id)
+                            .filter_by(agent_run_id=grader_run_id)
                             .filter(GradingDecision.target_tp_id.isnot(None))
                             .distinct()
                             .count()
@@ -307,30 +306,30 @@ async def cmd_grade_validation(
 
             return ("complete", critic_success, grader_success, grader_run_id)
 
-        # Worker pool: process (prompt, example) pairs with queue
+        # Worker pool: process (definition, example) pairs with queue
         all_results: list[tuple[str, bool, bool, UUID | None]] = []
         results_lock = asyncio.Lock()
 
-        # Build queue of (prompt_sha256, ValidationWorkItem) tuples
-        # Ordered by prompt priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
+        # Build queue of (definition_id, ValidationWorkItem) tuples
+        # Ordered by definition priority (same order as stats table: valid LCB desc, train LCB desc, created_at desc)
         work_queue: asyncio.Queue[tuple[str, ValidationWorkItem]] = asyncio.Queue()
         total_items = 0
-        for prompt_sha256 in all_prompt_sha256s:
-            items = work_items_by_prompt.get(prompt_sha256, [])
+        for definition_id in all_definition_ids:
+            items = work_items_by_definition.get(definition_id, [])
             for item in items:
-                await work_queue.put((prompt_sha256, item))
+                await work_queue.put((definition_id, item))
                 total_items += 1
 
         items_processed = 0
         progress_lock = asyncio.Lock()
 
         async def worker(worker_id: int) -> None:
-            """Worker that grabs (prompt, work_item) items from queue and processes them."""
+            """Worker that grabs (definition, work_item) items from queue and processes them."""
             nonlocal items_processed
 
             while True:
                 try:
-                    prompt_sha256, work_item = work_queue.get_nowait()
+                    definition_id, work_item = work_queue.get_nowait()
                 except asyncio.QueueEmpty:
                     break
 
@@ -341,8 +340,8 @@ async def cmd_grade_validation(
                 result = await process_one(
                     work_item.snapshot_slug,
                     work_item.scope_hash,
-                    prompt_sha256,
-                    work_item.prompt_optimization_run_id,
+                    definition_id,
+                    work_item.parent_agent_run_id,
                     worker_id,
                     item_index,
                     total_items,
@@ -367,6 +366,6 @@ async def cmd_grade_validation(
         typer.echo(f"Complete: {complete}")
         typer.echo(f"Critic failures: {critic_failures}")
         typer.echo(f"Grader failures: {grader_failures}")
-        typer.echo("\nFor recall metrics, query: aggregated_recall_by_prompt or aggregated_recall_by_example views")
+        typer.echo("\nFor recall metrics, query: aggregated_recall_by_definition or aggregated_recall_by_example views")
     finally:
         await docker_client.close()

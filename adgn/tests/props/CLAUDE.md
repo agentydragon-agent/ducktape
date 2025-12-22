@@ -50,7 +50,7 @@ def test_my_feature(synced_test_db: DatabaseConfig):
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
 
-def test_critic_on_train_example(synced_test_db: DatabaseConfig, test_prompt_sha: str):
+def test_critic_on_train_example(synced_test_db: DatabaseConfig):
     """Test critic on training data."""
     with get_session() as session:
         # Query the example you need
@@ -59,7 +59,7 @@ def test_critic_on_train_example(synced_test_db: DatabaseConfig, test_prompt_sha
         ).first()
 
         # Use factory with required example parameter
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        critic_run = make_critic_run(example=example)
         session.add(critic_run)
         session.commit()
 ```
@@ -72,7 +72,6 @@ If you need to query specific scopes:
 def test_single_file_scope(
     synced_test_db: DatabaseConfig,
     add_py_scope: ExplicitFileScope,
-    test_prompt_sha: str,
 ):
     """Test with single-file scope."""
     with get_session() as session:
@@ -82,19 +81,10 @@ def test_single_file_scope(
             scope_hash=add_py_scope.compute_hash(),
         ).one()
 
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-        )
+        critic_run = make_critic_run(example=example)
 ```
 
 ## Available Fixtures (conftest.py)
-
-### Canonical Prompts
-
-- `CANONICAL_CRITIC_PROMPT`: String constant with realistic critic prompt
-- `test_prompt_sha`: Fixture returning SHA256 hash (auto-upserted)
-- `test_prompt_sha`: Minimal test prompt (legacy, use canonical for realistic tests)
 
 ### Scope Fixtures
 
@@ -108,38 +98,37 @@ def test_single_file_scope(
 
 ### Factory Functions
 
-**make_critic_run()** - Build CriticRun from Example
+**make_critic_run()** - Build AgentRun from Example
 
 ```python
 def make_critic_run(
     *,  # Keyword-only arguments
     example: Example,  # REQUIRED
-    prompt_sha256: str,  # REQUIRED
     model: str = "test-model",
-    output: DBCriticOutput | None = None,
-    status: CriticRunStatus = CriticRunStatus.COMPLETED,
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
     completion_summary: str | None = None,
-    transcript_id: UUID | None = None,
-) -> CriticRun:
+    agent_run_id: UUID | None = None,
+    agent_definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+) -> AgentRun:
 ```
 
 **Key points**:
 - `example` parameter is REQUIRED (not optional)
-- `prompt_sha256` is REQUIRED
 - Automatically derives `snapshot_slug` and `scope_hash` from example
 - Returns ORM model (not yet added to session)
 
-**make_grader_run()** - Build GraderRun from CriticRun
+**make_grader_run()** - Build AgentRun for grader from critic AgentRun
 
 ```python
 def make_grader_run(
-    critic_run_id: UUID,
-    snapshot_slug: SnapshotSlug,
-    canonical_issues_snapshot,
+    *,  # Keyword-only arguments
+    critic_run: AgentRun,  # REQUIRED
+    canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     model: str = "test-model",
-    output: DBGraderOutput | None = None,
-    transcript_id: UUID | None = None,
-) -> GraderRun:
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
+    agent_run_id: UUID | None = None,
+    agent_definition_id: str = GRADER_AGENT_DEFINITION_ID,
+) -> AgentRun:
 ```
 
 ### Helper Fixtures
@@ -154,20 +143,14 @@ def make_grader_run(
 ### Pattern 1: Test Critic Behavior
 
 ```python
-def test_critic_finds_dead_code(
-    synced_test_db: DatabaseConfig,
-    test_prompt_sha: str,
-):
+def test_critic_finds_dead_code(synced_test_db: DatabaseConfig):
     """Critic should detect dead code in test fixtures."""
     with get_session() as session:
         example = session.query(Example).filter_by(
             snapshot_slug="test-fixtures/test-trivial"
         ).first()
 
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-        )
+        critic_run = make_critic_run(example=example)
         session.add(critic_run)
         session.commit()
 
@@ -179,10 +162,7 @@ def test_critic_finds_dead_code(
 ### Pattern 2: Test Grader Metrics
 
 ```python
-def test_grader_computes_recall(
-    synced_test_db: DatabaseConfig,
-    test_prompt_sha: str,
-):
+def test_grader_computes_recall(synced_test_db: DatabaseConfig):
     """Grader should compute recall correctly."""
     with get_session() as session:
         example = session.query(Example).filter_by(
@@ -190,31 +170,23 @@ def test_grader_computes_recall(
         ).first()
 
         # Create critic run with known output
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            output=make_critic_success(issues=[...]),
-        )
+        critic_run = make_critic_run(example=example)
         session.add(critic_run)
         session.flush()
 
         # Create grader run
-        grader_run = make_grader_run(
-            critic_run_id=critic_run.id,
-            snapshot_slug=example.snapshot_slug,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-        )
+        grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.commit()
 
         # Assert on grader metrics
-        assert grader_run.output.tag == "success"
+        assert grader_run.type_config.agent_type == "grader"
 ```
 
 ### Pattern 3: Test ORM Relationships
 
 ```python
-def test_example_critic_runs_relationship(synced_test_db: DatabaseConfig, test_prompt_sha: str):
+def test_example_critic_runs_relationship(synced_test_db: DatabaseConfig):
     """Example.critic_runs relationship should work bidirectionally."""
     with get_session() as session:
         example = session.query(Example).filter_by(
@@ -222,8 +194,8 @@ def test_example_critic_runs_relationship(synced_test_db: DatabaseConfig, test_p
         ).first()
 
         # Create two critic runs for same example
-        run1 = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        run2 = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        run1 = make_critic_run(example=example)
+        run2 = make_critic_run(example=example)
         session.add_all([run1, run2])
         session.commit()
 
@@ -288,29 +260,15 @@ def test_bad_example_creation(test_db):
 ```python
 # WRONG - Don't do this
 def test_bad_critic_run(test_db):
-    critic_run = CriticRun(
-        transcript_id=uuid4(),
-        snapshot_slug="test/spec",
-        scope_hash="abc123",
+    agent_run = AgentRun(
+        agent_run_id=uuid4(),
+        agent_definition_id="critic",
         model="test-model",
-        prompt_sha256="def456",
-        output=make_critic_success(),
+        type_config=CriticTypeConfig(snapshot_slug="test/spec", scope_hash="abc123"),
     )
 ```
 
-**Why wrong**: Use `make_critic_run(example=..., prompt_sha256=...)` factory instead.
-
-### ❌ Ad-hoc Prompt Strings
-
-```python
-# WRONG - Don't do this
-def test_bad_prompts(synced_test_db, test_db):
-    prompt_sha = hash_and_upsert_prompt("review this code")
-    another_sha = hash_and_upsert_prompt("find bugs here")
-    # ... 14 more ad-hoc prompts
-```
-
-**Why wrong**: Use `test_prompt_sha` or `test_prompt_sha` fixtures.
+**Why wrong**: Use `make_critic_run(example=...)` factory instead.
 
 ### ❌ Inline Scope Construction
 

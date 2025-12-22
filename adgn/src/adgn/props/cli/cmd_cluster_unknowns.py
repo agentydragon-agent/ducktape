@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 import tempfile
 from typing import Annotated
+from uuid import UUID
 
 import aiodocker
 from rich.console import Console
@@ -20,8 +21,9 @@ from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.clustering.cluster_agent import OutcomeSuccess, run_clustering_agent
 from adgn.props.db import get_session
-from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
+from adgn.props.db.clustering_models import UnknownAssignment, UnknownCluster
 from adgn.props.db.config import get_database_config
+from adgn.props.db.models import AgentRun, AgentRunStatus
 from adgn.props.display import ellipticize
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 
@@ -35,9 +37,7 @@ app = TyperDI(help="Clustering commands for unknown issues")
 @async_run
 async def cmd_run(
     snapshot_slug: SnapshotSlug = opt.ARG_SNAPSHOT,
-    resume_clustering_run_id: Annotated[
-        int | None, Option("--resume-clustering-run-id", help="Resume existing clustering run")
-    ] = None,
+    resume_agent_run_id: Annotated[str | None, Option("--resume", help="Resume existing agent run by UUID")] = None,
     model: str = opt.OPT_MODEL,
     output_dir: Annotated[Path | None, Option(help="Output directory for workspace/logs (defaults to temp)")] = None,
     verbose: bool = opt.OPT_VERBOSE,
@@ -45,7 +45,7 @@ async def cmd_run(
 ) -> None:
     """Run clustering agent on a snapshot (create new run or resume existing).
 
-    Creates a clustering run (or resumes an existing one), hydrates the snapshot,
+    Creates an agent run (or resumes an existing one), hydrates the snapshot,
     and runs the clustering agent to group unknown issues into clusters.
 
     The agent has RLS-scoped database access and will automatically terminate when
@@ -56,49 +56,50 @@ async def cmd_run(
         adgn-properties cluster-unknowns run ducktape/2025-11-20-00
 
         # Resume existing run
-        adgn-properties cluster-unknowns run ducktape/2025-11-20-00 --resume-clustering-run-id 42
+        adgn-properties cluster-unknowns run ducktape/2025-11-20-00 --resume 550e8400-e29b-41d4-a716-446655440000
 
         # Use different model
         adgn-properties cluster-unknowns run ducktape/2025-11-20-00 --model gpt-4o
     """
     db_config = get_database_config()
 
-    # 1. Get or create clustering run
-    with get_session() as session:
-        if resume_clustering_run_id:
-            # Resume existing run
-            run = session.get(ClusteringRun, resume_clustering_run_id)
+    # 1. Validate resume parameter if provided
+    agent_run_id: UUID | None = None
+    if resume_agent_run_id:
+        try:
+            agent_run_id = UUID(resume_agent_run_id)
+        except ValueError:
+            console.print(f"[red]Error:[/red] Invalid UUID: {resume_agent_run_id}")
+            raise SystemExit(1)
+
+        with get_session() as session:
+            run = session.get(AgentRun, agent_run_id)
             if not run:
-                console.print(f"[red]Error:[/red] Run {resume_clustering_run_id} not found")
+                console.print(f"[red]Error:[/red] Agent run {agent_run_id} not found")
                 raise SystemExit(1)
 
-            if run.snapshot_slug != snapshot_slug:
+            # Validate this is a clustering run
+            type_config = run.clustering_config()
+            if type_config.snapshot_slug != snapshot_slug:
                 console.print(
-                    f"[red]Error:[/red] Run {resume_clustering_run_id} is for {run.snapshot_slug}, not {snapshot_slug}"
+                    f"[red]Error:[/red] Agent run {agent_run_id} is for {type_config.snapshot_slug}, not {snapshot_slug}"
                 )
                 raise SystemExit(1)
 
-            if run.status != "in_progress":
+            if run.status != AgentRunStatus.IN_PROGRESS:
                 console.print(
-                    f"[red]Error:[/red] Run {resume_clustering_run_id} has status {run.status}, expected 'in_progress'"
+                    f"[red]Error:[/red] Agent run {agent_run_id} has status {run.status.value}, expected 'in_progress'"
                 )
                 raise SystemExit(1)
 
-            run_id = resume_clustering_run_id
-            console.print(f"[cyan]Resuming clustering run {run_id} for {snapshot_slug}[/cyan]")
-        else:
-            # Create new run
-            run = ClusteringRun(snapshot_slug=snapshot_slug, status="in_progress")
-            session.add(run)
-            session.flush()
-            run_id = run.id
-            session.commit()
-
-            console.print(f"[green]Created clustering run {run_id} for {snapshot_slug}[/green]")
+            console.print(f"[cyan]Resuming clustering agent run {agent_run_id} for {snapshot_slug}[/cyan]")
+    else:
+        console.print(f"[green]Starting new clustering agent for {snapshot_slug}[/green]")
 
     # 2. Set up dependencies
+    run_id_display = str(agent_run_id)[:8] if agent_run_id else "new"
     if output_dir is None:
-        output_dir = Path(tempfile.mkdtemp(prefix=f"cluster_run_{run_id}_"))
+        output_dir = Path(tempfile.mkdtemp(prefix=f"cluster_run_{run_id_display}_"))
 
     docker_client = aiodocker.Docker()
 
@@ -107,19 +108,19 @@ async def cmd_run(
         client = build_client(model)
         console.print(f"[cyan]Starting clustering agent (model={client.model})...[/cyan]")
         result = await run_clustering_agent(
-            run_id=run_id,
+            snapshot_slug=snapshot_slug,
             hydrator=hydrator,
             docker_client=docker_client,
             db_config=db_config,
             client=client,
+            agent_run_id=agent_run_id,
             output_dir=output_dir,
             verbose=verbose,
         )
 
         # 4. Display outcome
         console.print("\n[bold]Clustering Run Complete[/bold]")
-        console.print(f"Run ID: {result.run_id}")
-        console.print(f"Transcript ID: {result.transcript_id}")
+        console.print(f"Agent Run ID: {result.agent_run_id}")
         console.print(f"Output directory: {output_dir}")
 
         if isinstance(result.outcome, OutcomeSuccess):
@@ -132,46 +133,53 @@ async def cmd_run(
             console.print(f"  Remaining unknowns: {result.outcome.remaining_unknowns}")
             console.print(f"  Message: {result.outcome.message}")
 
-        console.print(f"\nView details: adgn-properties cluster-unknowns show {result.run_id}")
+        console.print(f"\nView details: adgn-properties cluster-unknowns show {result.agent_run_id}")
 
     finally:
         await docker_client.close()
 
 
 @app.command("show")
-def cmd_show(run_id: Annotated[int, Argument(help="Clustering run ID to display")]) -> None:
+def cmd_show(agent_run_id: Annotated[str, Argument(help="Agent run UUID to display")]) -> None:
     """Display clustering run status, clusters, and assignments.
 
-    Shows comprehensive information about a clustering run including:
+    Shows comprehensive information about a clustering agent run including:
     - Run metadata (snapshot, status, timestamps)
     - Clusters created (with assignment counts)
     - Recent assignments
 
     Example:
-        adgn-properties cluster-unknowns show 42
+        adgn-properties cluster-unknowns show 550e8400-e29b-41d4-a716-446655440000
     """
+    try:
+        run_id = UUID(agent_run_id)
+    except ValueError:
+        console.print(f"[red]Error:[/red] Invalid UUID: {agent_run_id}")
+        raise SystemExit(1)
+
     with get_session() as session:
         # 1. Get run info
-        run = session.get(ClusteringRun, run_id)
+        run = session.get(AgentRun, run_id)
         if not run:
-            console.print(f"[red]Error:[/red] Run {run_id} not found")
+            console.print(f"[red]Error:[/red] Agent run {run_id} not found")
             raise SystemExit(1)
 
+        # Validate this is a clustering run
+        type_config = run.clustering_config()
+
         # 2. Display run metadata
-        console.print(f"\n[bold]Clustering Run {run_id}[/bold]")
-        console.print(f"Snapshot: {run.snapshot_slug}")
-        console.print(f"Status: {run.status}")
-        console.print(f"Started: {run.started_at}")
-        if run.completed_at:
-            console.print(f"Completed: {run.completed_at}")
-        if run.transcript_id:
-            console.print(f"Transcript ID: {run.transcript_id}")
+        console.print("\n[bold]Clustering Agent Run[/bold]")
+        console.print(f"Agent Run ID: {run_id}")
+        console.print(f"Snapshot: {type_config.snapshot_slug}")
+        console.print(f"Status: {run.status.value}")
+        console.print(f"Created: {run.created_at}")
+        console.print(f"Updated: {run.updated_at}")
 
         # 3. Get clusters
         clusters = (
             session.execute(
                 select(UnknownCluster)
-                .where(UnknownCluster.clustering_run_id == run_id)
+                .where(UnknownCluster.agent_run_id == run_id)
                 .order_by(UnknownCluster.cluster_name)
             )
             .scalars()
@@ -210,7 +218,7 @@ def cmd_show(run_id: Annotated[int, Argument(help="Clustering run ID to display"
         assignments = (
             session.execute(
                 select(UnknownAssignment)
-                .where(UnknownAssignment.clustering_run_id == run_id, UnknownAssignment.cancelled_at.is_(None))
+                .where(UnknownAssignment.agent_run_id == run_id, UnknownAssignment.cancelled_at.is_(None))
                 .order_by(UnknownAssignment.created_at.desc())
                 .limit(10)
             )
@@ -251,7 +259,7 @@ def cmd_show(run_id: Annotated[int, Argument(help="Clustering run ID to display"
         total_assignments = (
             session.execute(
                 select(UnknownAssignment).where(
-                    UnknownAssignment.clustering_run_id == run_id, UnknownAssignment.cancelled_at.is_(None)
+                    UnknownAssignment.agent_run_id == run_id, UnknownAssignment.cancelled_at.is_(None)
                 )
             )
             .scalars()

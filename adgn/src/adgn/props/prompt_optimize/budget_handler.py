@@ -58,11 +58,11 @@ class BudgetEnforcementHandler(BaseHandler):
     def __init__(
         self,
         *,
-        prompt_optimization_run_id: UUID,
+        optimizer_run_id: UUID,
         budget_limit: float,  # USD
         agent: Agent,
     ) -> None:
-        self._po_run_id = prompt_optimization_run_id
+        self._optimizer_run_id = optimizer_run_id
         self._budget_limit = budget_limit
         self._agent = agent
         self._state = BudgetState.MONITORING
@@ -75,7 +75,7 @@ class BudgetEnforcementHandler(BaseHandler):
         Returns:
             Total cost as float (sum of all run costs)
         """
-        query = qb.po_run_costs(self._po_run_id)
+        query = qb.po_run_costs(self._optimizer_run_id)
 
         # Execute and sum cost_usd column
         result = session.execute(query).fetchall()
@@ -87,7 +87,7 @@ class BudgetEnforcementHandler(BaseHandler):
         if self._state == BudgetState.SUMMARY_REQUESTED:
             # Agent produced text response after summary request
             self._state = BudgetState.SUMMARY_PRODUCED
-            logger.info(f"PO run {self._po_run_id}: Summary report produced, will abort on next sample")
+            logger.info(f"PO run {self._optimizer_run_id}: Summary report produced, will abort on next sample")
 
     def on_before_sample(self) -> LoopDecision:
         """Enforce budget limits before each sampling step.
@@ -100,7 +100,7 @@ class BudgetEnforcementHandler(BaseHandler):
         """
         # State: Summary complete, abort
         if self._state == BudgetState.SUMMARY_PRODUCED:
-            logger.info(f"PO run {self._po_run_id}: Aborting after summary")
+            logger.info(f"PO run {self._optimizer_run_id}: Aborting after summary")
             return Abort()
 
         # State: Monitoring - check budget before sampling
@@ -110,13 +110,13 @@ class BudgetEnforcementHandler(BaseHandler):
 
             if cumulative_cost >= self._budget_limit:
                 logger.info(
-                    f"PO run {self._po_run_id}: Budget exhausted (${cumulative_cost:.4f} >= ${self._budget_limit:.2f})"
+                    f"PO run {self._optimizer_run_id}: Budget exhausted (${cumulative_cost:.4f} >= ${self._budget_limit:.2f})"
                 )
                 self._state = BudgetState.SUMMARY_REQUESTED
 
                 # Switch agent to text-only mode
                 self._agent._tool_policy = ForbidAllTools()
-                logger.info(f"PO run {self._po_run_id}: Switched to text-only mode (ForbidAllTools)")
+                logger.info(f"PO run {self._optimizer_run_id}: Switched to text-only mode (ForbidAllTools)")
 
                 # Inject system message requesting final summary
                 summary_request = UserMessage.text(

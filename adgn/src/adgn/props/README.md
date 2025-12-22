@@ -212,7 +212,7 @@ with get_session() as session:
     # Get grader runs with metrics
     graders = session.query(GraderRun).all()
     for gr in graders:
-        print(f"Run {gr.transcript_id}: {gr.output['grade']['metrics']}")
+        print(f"Run {gr.agent_run_id}: {gr.output['grade']['metrics']}")
 ```
 
 All structured runs are persisted with:

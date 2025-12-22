@@ -3,19 +3,19 @@
 Tests functions for pareto frontier analysis.
 """
 
-from adgn.props.db import get_session
-from adgn.props.db.examples import Example
-from adgn.props.db.models import Snapshot
-from adgn.props.models.critic_scopes import AllFilesScope
-from adgn.props.prompt_optimize.examples.pareto import (
+from adgn.props.agent_defs.prompt_optimizer.examples.pareto import (
     show_difficult_examples,
     show_prompts_by_wins_sql,
     show_winning_prompts_orm,
 )
+from adgn.props.db import get_session
+from adgn.props.db.examples import Example
+from adgn.props.db.models import Snapshot
+from adgn.props.models.critic_scopes import AllFilesScope
 from tests.props.conftest import make_critic_and_grader_run, make_grader_output
 
 
-def test_show_winning_prompts_orm_with_data(synced_test_db, capsys, test_prompt_sha):
+def test_show_winning_prompts_orm_with_data(synced_test_db, capsys):
     """Test that show_winning_prompts_orm produces output with training data."""
 
     with get_session() as session:
@@ -30,7 +30,6 @@ def test_show_winning_prompts_orm_with_data(synced_test_db, capsys, test_prompt_
         if len(train_examples) >= 1:
             make_critic_and_grader_run(
                 example=train_examples[0],
-                prompt_sha256=test_prompt_sha,
                 grader_output=make_grader_output(found_credit=0.8),
                 session=session,
             )
@@ -54,7 +53,7 @@ def test_show_winning_prompts_orm_empty(test_db, capsys):
     assert "examples by best recall" in output
 
 
-def test_show_prompts_by_wins_sql_with_data(synced_test_db, capsys, test_prompt_sha):
+def test_show_prompts_by_wins_sql_with_data(synced_test_db, capsys):
     """Test that show_prompts_by_wins_sql produces output with validation data."""
     with get_session() as session:
         all_valid_examples = (
@@ -68,7 +67,6 @@ def test_show_prompts_by_wins_sql_with_data(synced_test_db, capsys, test_prompt_
         if len(valid_examples) >= 1:
             make_critic_and_grader_run(
                 example=valid_examples[0],
-                prompt_sha256=test_prompt_sha,
                 grader_output=make_grader_output(found_credit=0.9),
                 session=session,
             )
@@ -92,7 +90,7 @@ def test_show_prompts_by_wins_sql_empty(test_db, capsys):
     assert "prompts by validation examples won" in output
 
 
-def test_show_difficult_examples_with_data(synced_test_db, capsys, test_prompt_sha):
+def test_show_difficult_examples_with_data(synced_test_db, capsys):
     """Test that show_difficult_examples produces output with training data."""
     with get_session() as session:
         all_train_examples = (
@@ -106,7 +104,6 @@ def test_show_difficult_examples_with_data(synced_test_db, capsys, test_prompt_s
         if len(train_examples) >= 1:
             make_critic_and_grader_run(
                 example=train_examples[0],
-                prompt_sha256=test_prompt_sha,
                 grader_output=make_grader_output(found_credit=0.1),  # Low recall = difficult
                 session=session,
             )

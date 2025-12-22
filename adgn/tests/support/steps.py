@@ -9,6 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Protocol, TypeVar
 
@@ -20,7 +21,7 @@ from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PRE
 from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
-from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut
+from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from adgn.mcp.ui.server import SendMessageInput
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
@@ -29,6 +30,9 @@ from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
 
 logger = logging.getLogger(__name__)
+
+# Directory for bootstrap output dumps (under tests/props/)
+BOOTSTRAP_DUMPS_DIR = Path(__file__).parent.parent / "props" / "bootstrap_dumps"
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -42,7 +46,51 @@ def _is_runtime_exec_tool(tool_name: str) -> bool:
         return False
 
 
-def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
+def _get_stream_size(stream: str | TruncatedStream) -> int:
+    """Get the byte size of a stdout/stderr stream.
+
+    For TruncatedStream, uses total_bytes (original size before truncation).
+    For str, uses UTF-8 encoded length.
+    """
+    if isinstance(stream, TruncatedStream):
+        return stream.total_bytes
+    return len(stream.encode("utf-8"))
+
+
+def _get_stream_text(stream: str | TruncatedStream) -> str:
+    """Get the text content of a stdout/stderr stream."""
+    if isinstance(stream, TruncatedStream):
+        return stream.truncated_text
+    return stream
+
+
+def _dump_bootstrap_output(exec_result: BaseExecResult, cmd_args: str, test_name: str | None = None) -> Path:
+    """Dump bootstrap init output to a file for inspection.
+
+    Creates files in tests/bootstrap_dumps/<agent_type>_<timestamp>.txt
+
+    Args:
+        exec_result: The parsed exec result containing stdout/stderr
+        cmd_args: Command arguments string (used to infer agent type)
+        test_name: Optional test name for the filename
+
+    Returns:
+        Path to the dump file
+    """
+    BOOTSTRAP_DUMPS_DIR.mkdir(parents=True, exist_ok=True)
+
+    name = test_name or "unknown"
+    stdout_path = BOOTSTRAP_DUMPS_DIR / f"{name}.stdout"
+    stderr_path = BOOTSTRAP_DUMPS_DIR / f"{name}.stderr"
+
+    stdout_path.write_text(_get_stream_text(exec_result.stdout))
+    stderr_path.write_text(_get_stream_text(exec_result.stderr))
+
+    logger.info("Bootstrap output dumped to: %s, %s", stdout_path, stderr_path)
+    return stdout_path
+
+
+def assert_bootstrap_exec_success(req: ResponsesRequest, *, test_name: str | None = None) -> None:
     """Assert all runtime exec calls in the request completed with exit code 0.
 
     Bootstrap commands run BEFORE the test's step sequence. If any bootstrap command
@@ -52,18 +100,35 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
     1. Builds a map of call_id -> tool_name from FunctionCallItem entries
     2. Finds FunctionCallOutputItem entries for runtime_exec calls (via parse_tool_name)
     3. Parses outputs as BaseExecResult and validates exit status
+    4. Logs bootstrap output sizes for each command
+    5. Dumps bootstrap output to tests/bootstrap_dumps/ for inspection
+
+    Args:
+        req: The ResponsesRequest containing bootstrap calls and outputs
+        test_name: Optional test name for the dump filename (e.g., "test_critic_http_mode_zero_issues")
 
     Raises:
         AssertionError: If any runtime exec command failed or timed out, with details
             about which command failed and why.
     """
+    # Try to get test name from pytest if not provided
+    if test_name is None:
+        raw = os.environ.get("PYTEST_CURRENT_TEST", "")
+        # Format: "path/to/test.py::test_name[param] (call)" - extract just test_name
+        test_name = raw.split("::")[-1].split("[")[0].split(" ")[0]
+
     # Build call_id -> tool_name map from FunctionCallItem entries
     call_id_to_tool: dict[str, str] = {}
+    call_id_to_args: dict[str, str] = {}
     for item in req.input:
         if isinstance(item, FunctionCallItem):
             call_id_to_tool[item.call_id] = item.name
+            # Store full arguments for dump
+            args_str = item.arguments if isinstance(item.arguments, str) else json.dumps(item.arguments)
+            call_id_to_args[item.call_id] = args_str
 
     failures: list[str] = []
+    bootstrap_sizes: list[tuple[str, int, int]] = []  # (cmd_preview, stdout_bytes, stderr_bytes)
 
     for item in req.input:
         if not isinstance(item, FunctionCallOutputItem):
@@ -95,6 +160,15 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
             )
             continue
 
+        # Collect output sizes for logging
+        stdout_bytes = _get_stream_size(exec_result.stdout)
+        stderr_bytes = _get_stream_size(exec_result.stderr)
+        cmd_args = call_id_to_args.get(call_id, "unknown")
+        bootstrap_sizes.append((cmd_args[:50], stdout_bytes, stderr_bytes))
+
+        # Dump bootstrap output to file for inspection
+        _dump_bootstrap_output(exec_result, cmd_args, test_name=test_name)
+
         # Check exit status - dump full model on failure for diagnostics
         if isinstance(exec_result.exit, TimedOut):
             failures.append(
@@ -113,6 +187,20 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
                 f"Bootstrap command was KILLED (tool={tool_name}, call_id={call_id}):\n"
                 f"  {exec_result.model_dump_json(indent=2)}"
             )
+
+    # Log bootstrap output sizes
+    if bootstrap_sizes:
+        total_stdout = sum(s[1] for s in bootstrap_sizes)
+        total_stderr = sum(s[2] for s in bootstrap_sizes)
+        logger.info(
+            "Bootstrap output sizes: %d commands, %d bytes stdout, %d bytes stderr (total: %d bytes)",
+            len(bootstrap_sizes),
+            total_stdout,
+            total_stderr,
+            total_stdout + total_stderr,
+        )
+        for cmd_preview, stdout_bytes, stderr_bytes in bootstrap_sizes:
+            logger.debug("  %s: stdout=%d, stderr=%d", cmd_preview, stdout_bytes, stderr_bytes)
 
     if failures:
         raise AssertionError(

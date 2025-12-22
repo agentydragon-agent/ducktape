@@ -1,0 +1,67 @@
+#!/usr/bin/env python3
+"""Init script for improvement agent.
+
+Executed automatically by the runtime before agent sampling begins.
+Prints environment info, documentation, and verifies resources are available.
+
+Exit non-zero to abort agent startup (e.g., if required resources are missing).
+"""
+
+import sys
+
+# Add workspace to path for local imports (bin/, etc.)
+sys.path.insert(0, "/workspace")
+
+from init_helpers import print_bootstrap, print_section
+from sqlalchemy import text
+
+from adgn.props.db import get_session
+from adgn.props.db.models import Snapshot
+
+# Print standard bootstrap (tree, docs, env)
+print_bootstrap("Improvement", [
+    # Infrastructure (how to connect)
+    "database_access.md",
+    "mcp_http_connection.md",
+    # Domain data in topo order
+    "db/examples.md",
+    "db/ground_truth.md",
+    "db/critiques.md",
+    "db/grading.md",
+    "db/evaluation_flow.md",
+    "db/costs.md",
+    # Task-specific context
+    "critic_context.md",
+    "writing_agent_definitions.md",
+    # Optimization techniques
+    "optimization/meta_prompting.md",
+    "optimization/automatic_optimization.md",
+    "optimization/anthropic_best_practices.md",
+])
+
+# Print CLI usage from bin/critic_dev module docstring
+print_section("Critic Dev CLI Commands")
+from bin import critic_dev  # noqa: E402
+
+print(critic_dev.__doc__)
+
+# Extended database verification for improvement agent
+print_section("Database Access Verification")
+
+with get_session() as session:
+    result = session.execute(text("SELECT current_user")).scalar()
+    print(f"✓ Connected as: {result}")
+
+    count = session.query(Snapshot).count()
+    print(f"✓ Database connected - {count} snapshots available")
+
+    agent_run_id = session.execute(text("SELECT current_agent_run_id()")).scalar()
+    if not agent_run_id:
+        print("\nERROR: current_agent_run_id() returned NULL - RLS will block writes", file=sys.stderr)
+        sys.exit(1)
+    print(f"✓ Agent run ID: {agent_run_id}")
+
+    train_count = session.query(Snapshot).filter_by(split="train").count()
+    print(f"✓ Training snapshots accessible: {train_count}")
+
+print("\n=== Ready to begin definition improvement ===\n")

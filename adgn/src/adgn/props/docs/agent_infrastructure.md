@@ -66,12 +66,12 @@ src/adgn/props/
 │   ├── cli_helpers.py           # CLI: add-decision, delete-decision, submit
 │   └── examples/                # Grader-specific examples (if any)
 ├── prompt_optimize/
-│   ├── helpers.py               # upsert_prompt, run_critic, run_grader
-│   ├── cli_helpers.py           # CLI: upsert-prompt, run-critic, run-grader
+│   ├── helpers.py               # run_critic, run_grader
+│   ├── cli_helpers.py           # CLI: run-critic, run-grader
 │   └── examples/                # Optimizer-specific examples
 │       ├── listing.py           # List examples/snapshots by split/scope
-│       ├── prompt_metrics_targeted.py   # Metrics via views (targeted mode)
-│       ├── prompt_metrics_whole_repo.py # Metrics via SECURITY DEFINER (whole-repo mode)
+│       ├── definition_stats_targeted.py   # Definition stats via views (targeted mode)
+│       ├── definition_stats_whole_repo.py # Definition stats via SECURITY DEFINER (whole-repo mode)
 │       ├── pareto.py            # Pareto frontier analysis
 │       └── evaluation_pipeline.py       # Async run_critic/run_grader usage
 ├── clustering/
@@ -88,70 +88,25 @@ src/adgn/props/
 
 ## Adding New Helpers
 
-### Pattern: Python + CLI
+### Helper Functions
 
-1. **Add async helper** in `<agent>/helpers.py`:
-   ```python
-   async def insert_issue(
-       session: AsyncSession,
-       critic_run_id: UUID,
-       issue_id: str,
-       rationale: str,
-   ) -> ReportedIssue:
-       """Insert a reported issue for the current critic run."""
-       issue = ReportedIssue(
-           critic_run_id=critic_run_id,
-           issue_id=issue_id,
-           rationale=rationale,
-       )
-       session.add(issue)
-       await session.commit()
-       return issue
-   ```
+Agent-specific helpers live in `agent_defs/<agent>/helpers.py`. These are sync functions that auto-detect agent run context from PostgreSQL RLS.
 
-2. **Add CLI command** in `<agent>/cli_helpers.py`:
-   ```python
-   import typer
-   from adgn.props.critic.helpers import insert_issue
-   from adgn.props.agent_helpers import get_critic_run_id, get_async_session
-
-   app = typer.Typer()
-
-   @app.command("add-issue")
-   def add_issue(
-       issue_id: str,
-       rationale: str,
-       critic_run_id: Annotated[UUID | None, typer.Option()] = None,
-   ) -> None:
-       """Add an issue to the current critic run."""
-       run_id = critic_run_id or get_critic_run_id()  # Auto-infer from env
-       async def _run():
-           async with get_async_session() as session:
-               await insert_issue(session, run_id, issue_id, rationale)
-       asyncio.run(_run())
-       print(f"Added issue {issue_id}")
-   ```
-
-3. **Register in CLI** in `cli/cmd_agent_helper.py`:
-   ```python
-   from adgn.props.critic.cli_helpers import app as critic_app
-   app.add_typer(critic_app, name="critic")
-   ```
-
-### Auto-Inference Pattern
-
-Helpers auto-detect context from environment when run by agent:
-
+Example (critic helpers):
 ```python
-def get_critic_run_id() -> UUID:
-    """Get critic run ID from environment."""
-    env_value = os.environ.get("CRITIC_RUN_ID")
-    if not env_value:
-        raise ValueError("CRITIC_RUN_ID not set - run via agent or pass --critic-run-id")
-    return UUID(env_value)
+from adgn.props.agent_defs.critic.helpers import insert_issue, insert_occurrence
+
+insert_issue("dead-code-1", "Unused function found")
+insert_occurrence("dead-code-1", "utils.py", 10, 20)
 ```
 
-CLI arguments override auto-detected values for manual testing/debugging.
+The agent run ID is extracted from the PostgreSQL username pattern (`agent_{uuid}`):
+```python
+from adgn.props.agent_helpers import get_current_agent_run_id
+
+with get_session() as session:
+    agent_run_id = get_current_agent_run_id(session)
+```
 
 ## Adding Bootstrap Content
 
@@ -248,13 +203,13 @@ def test_listing_example_runs(synced_test_fixtures):
 Prompt optimizer has two modes affecting data access:
 
 ### Targeted Mode
-- Uses views directly (`occurrence_credits`, `aggregated_recall_by_prompt`)
+- Uses views directly (`occurrence_credits`, `aggregated_recall_by_definition`)
 - Can see validation example filenames
-- Example: `prompt_metrics_targeted.py`
+- Example: `definition_stats_targeted.py`
 
 ### Whole-Repo Mode
 - Uses SQL: `SELECT * FROM get_validation_run_aggregates()` (PostgreSQL SECURITY DEFINER function, NOT Python)
 - Validation examples RLS-blocked
-- Example: `prompt_metrics_whole_repo.py`
+- Example: `definition_stats_whole_repo.py`
 
 Keep mode-specific examples separate - don't try to unify incompatible data access patterns.
