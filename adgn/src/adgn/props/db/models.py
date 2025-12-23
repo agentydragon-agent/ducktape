@@ -17,6 +17,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, TypeAdapter
 
 if TYPE_CHECKING:
+    from adgn.props.db.clustering_models import UnknownAssignment, UnknownCluster
     from adgn.props.db.examples import Example
 
 from sqlalchemy import (
@@ -41,32 +42,104 @@ from sqlalchemy.schema import DDL
 from sqlalchemy.types import TypeDecorator
 
 from adgn.agent.events import EventType
+from adgn.props.agent_types import (
+    ClusteringTypeConfig,
+    CriticTypeConfig,
+    FreeformTypeConfig,
+    GraderTypeConfig,
+    ImprovementTypeConfig,
+    PromptOptimizerTypeConfig,
+    TypeConfig,
+)
 from adgn.props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
 from adgn.props.ids import SnapshotSlug, _SnapshotSlugBase
-from adgn.props.models.critic_scopes import ScopeKind
+from adgn.props.models.examples import ExampleKind
 from adgn.props.models.snapshot import BundleFilter, Source
-from adgn.props.models.true_positive import FalsePositiveOccurrence, TruePositiveOccurrence
 from adgn.props.splits import Split
 
 T = TypeVar("T", bound=BaseModel)
 
 
-class CriticRunStatus(StrEnum):
-    """Critic run status enumeration."""
+# Reusable SQLAlchemy Enum type for ExampleKind
+# Use this instead of mapped_column(String) for proper Python enum conversion
+EXAMPLE_KIND_ENUM_TYPE = Enum(
+    ExampleKind,
+    name="example_kind_enum",
+    create_constraint=False,  # VIEW models, enum type already exists
+    values_callable=lambda x: [e.value for e in x],  # Use enum value not name
+)
+
+
+class StatsWithCI(BaseModel):
+    """Statistics with 95% confidence interval bounds.
+
+    Maps to PostgreSQL composite type stats_with_ci.
+
+    Attributes:
+        n: sample count
+        mean: sample mean
+        min: minimum value
+        max: maximum value
+        lcb95: lower 95% confidence bound (mean - 1.96 * stddev/sqrt(n)); NULL if n < 2
+        ucb95: upper 95% confidence bound (mean + 1.96 * stddev/sqrt(n)); NULL if n < 2
+    """
+
+    n: int
+    mean: float
+    min: float
+    max: float
+    lcb95: float | None
+    ucb95: float | None
+
+
+class StatsWithCIType(TypeDecorator[StatsWithCI | None]):
+    """SQLAlchemy column type for stats_with_ci PostgreSQL composite type.
+
+    PostgreSQL composite types are returned as named tuples by psycopg2 when
+    registered via register_composite(). This type decorator converts between
+    named tuples and StatsWithCI Pydantic models.
+
+    Note: We use Text as the impl type because PostgreSQL composite types
+    don't have a direct SQLAlchemy type. The actual type coercion is handled
+    by register_composite() in session.py.
+    """
+
+    # Use Text as a placeholder - the actual type is stats_with_ci in PostgreSQL
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(
+        self, value: StatsWithCI | None, dialect: Any
+    ) -> tuple[int, float, float, float, float | None, float | None] | None:
+        """Convert StatsWithCI to tuple for database storage."""
+        if value is None:
+            return None
+        return (value.n, value.mean, value.min, value.max, value.lcb95, value.ucb95)
+
+    def process_result_value(self, value: Any, dialect: Any) -> StatsWithCI | None:
+        """Convert named tuple from database to StatsWithCI.
+
+        psycopg2's register_composite() returns a named tuple with attributes
+        matching the composite type fields (n, mean, min, max, lcb95, ucb95).
+        """
+        if value is None:
+            return None
+        # Access via named attributes (from register_composite's named tuple)
+        return StatsWithCI(
+            n=value.n, mean=value.mean, min=value.min, max=value.max, lcb95=value.lcb95, ucb95=value.ucb95
+        )
+
+
+class AgentRunStatus(StrEnum):
+    """Agent run status enumeration.
+
+    Unified status for all agent types (critic, grader, prompt_optimizer, etc.).
+    """
 
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
     MAX_TURNS_EXCEEDED = "max_turns_exceeded"
     CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded"
-    REPORTED_FAILURE = "reported_failure"
-
-
-class GraderRunStatus(StrEnum):
-    """Grader run status enumeration."""
-
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    MAX_TURNS_EXCEEDED = "max_turns_exceeded"
     REPORTED_FAILURE = "reported_failure"
 
 
@@ -217,8 +290,7 @@ class Base(DeclarativeBase):
         UUID: PG_UUID(as_uuid=True),
         SnapshotSlug: SnapshotSlugColumn(),
         Split: StrEnumColumn(Split, name="split_enum"),
-        CriticRunStatus: StrEnumColumn(CriticRunStatus, name="critic_run_status_enum"),
-        GraderRunStatus: StrEnumColumn(GraderRunStatus, name="grader_run_status_enum"),
+        AgentRunStatus: StrEnumColumn(AgentRunStatus, name="agent_run_status_enum"),
     }
 
 
@@ -249,15 +321,14 @@ class Snapshot(Base):
     )
     # CRITICAL: order_by ensures deterministic ordering for GEPA checkpoint compatibility
     # GEPA maps Example → DataId via list position, so examples must load in stable order
+    # NOTE: examples is a VIEW, so we need explicit primaryjoin (no FK constraint exists)
     examples: Mapped[list[Example]] = relationship(
         "Example",
-        foreign_keys="[Example.snapshot_slug]",
+        primaryjoin="Snapshot.slug == foreign(Example.snapshot_slug)",
         back_populates="snapshot_obj",
-        cascade="all, delete-orphan",
-        order_by="Example.scope_hash",
+        viewonly=True,  # VIEW is read-only
+        order_by="Example.files_hash",
     )
-    critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="snapshot_obj")
-    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="snapshot_obj")
 
     @classmethod
     def get(cls, slug: SnapshotSlug) -> Snapshot | None:
@@ -279,11 +350,19 @@ class Snapshot(Base):
 
     def files_with_issues(self) -> set[Path]:
         """Return files with ground truth TP or FP issues."""
+        # occurrence.files is JSONB dict {path: line_ranges}, so we iterate keys (strings)
+        # and convert to Path objects
         tp_files = {
-            file_path for tp in self.true_positives for occurrence in tp.occurrences for file_path in occurrence.files
+            Path(file_path)
+            for tp in self.true_positives
+            for occurrence in tp.occurrences
+            for file_path in occurrence.files
         }
         fp_files = {
-            file_path for fp in self.false_positives for occurrence in fp.occurrences for file_path in occurrence.files
+            Path(file_path)
+            for fp in self.false_positives
+            for occurrence in fp.occurrences
+            for file_path in occurrence.files
         }
         return tp_files | fp_files
 
@@ -293,6 +372,7 @@ class TruePositive(Base):
 
     Composite primary key: (snapshot_slug, tp_id).
     Each true positive has one or more occurrences with expect_caught_from semantics.
+    Occurrences are stored in the separate true_positive_occurrences table.
     """
 
     __tablename__ = "true_positives"
@@ -302,9 +382,6 @@ class TruePositive(Base):
     )
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    occurrences: Mapped[list[TruePositiveOccurrence]] = mapped_column(
-        PydanticColumn(list[TruePositiveOccurrence]), nullable=False
-    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -312,6 +389,9 @@ class TruePositive(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="true_positives")
+    occurrences: Mapped[list[TruePositiveOccurrenceORM]] = relationship(
+        back_populates="true_positive", cascade="all, delete-orphan"
+    )
 
     @classmethod
     def get(cls, snapshot_slug: SnapshotSlug, tp_id: str) -> TruePositive | None:
@@ -339,6 +419,7 @@ class FalsePositive(Base):
 
     Composite primary key: (snapshot_slug, fp_id).
     Each FP has one or more occurrences with relevant_files semantics.
+    Occurrences are stored in the separate false_positive_occurrences table.
     """
 
     __tablename__ = "false_positives"
@@ -348,9 +429,6 @@ class FalsePositive(Base):
     )
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
-    occurrences: Mapped[list[FalsePositiveOccurrence]] = mapped_column(
-        PydanticColumn(list[FalsePositiveOccurrence]), nullable=False
-    )
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
@@ -358,6 +436,9 @@ class FalsePositive(Base):
 
     # Relationships
     snapshot_obj: Mapped[Snapshot] = relationship(back_populates="false_positives")
+    occurrences: Mapped[list[FalsePositiveOccurrenceORM]] = relationship(
+        back_populates="false_positive", cascade="all, delete-orphan"
+    )
 
     @classmethod
     def get(cls, snapshot_slug: SnapshotSlug, fp_id: str) -> FalsePositive | None:
@@ -380,251 +461,184 @@ class FalsePositive(Base):
         return list(session.execute(select(cls).where(cls.snapshot_slug == snapshot_slug)).scalars().all())  # type: ignore[arg-type]
 
 
-class Prompt(Base):
-    """Critic prompt template identified by SHA256 hash.
+class TruePositiveOccurrenceORM(Base):
+    """Occurrence within a true positive issue.
 
-    Provenance tracking:
-    - prompt_optimization_run_id: Set when prompt is created by the prompt optimizer agent
-    - improvement_run_id: Set when prompt is created by the improvement agent
-    - Both can be NULL for manually created prompts
+    Each occurrence represents a specific location where the issue manifests.
+    Has expect_caught_from defining which file sets should trigger detection.
     """
 
-    __tablename__ = "prompts"
+    __tablename__ = "true_positive_occurrences"
 
-    prompt_sha256: Mapped[str] = mapped_column("prompt_sha256", String(64), primary_key=True)
-    # prompt_text has no unique constraint: PostgreSQL btree indexes can't handle values >2.7KB
-    # (1/3 of 8KB page). Uniqueness is enforced via prompt_sha256 primary key instead.
-    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
-    prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
-    )
-    improvement_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("improvement_runs.id"), nullable=True, index=True
-    )
-    template_file_path: Mapped[str | None] = mapped_column(Text, nullable=True, index=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    tp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expect_caught_from: Mapped[list] = mapped_column(JSONB, nullable=False)  # [[path, ...], ...]
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
 
-    # Relationships
-    critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="prompt_obj")
-    prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="prompts")
-    improvement_run: Mapped[ImprovementRun | None] = relationship(back_populates="prompts")
-
-
-class ImprovementRunStatus(StrEnum):
-    """Improvement run status enumeration."""
-
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    ABANDONED = "abandoned"
-
-
-class ImprovementRun(Base):
-    """Improvement agent session for prompt refinement.
-
-    Tracks which examples the improvement agent is allowed to access
-    via RLS policies. The allowed_examples JSONB column stores an array
-    of {snapshot_slug, scope_hash} objects.
-
-    Usage:
-        # Register run before creating temp user:
-        async with admin_engine.begin() as conn:
-            await register_improvement_run(conn, run_id, allowed_examples)
-
-        # Then create temp user via ImprovementUserManager
-        # RLS policies filter rows based on allowed_examples
-
-    Prompts created by this agent have improvement_run_id set.
-    """
-
-    __tablename__ = "improvement_runs"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    started_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    allowed_examples: Mapped[dict[str, Any]] = mapped_column(
-        JSONB, nullable=False, comment="Array of {snapshot_slug, scope_hash} objects defining allowed examples"
-    )
-    status: Mapped[ImprovementRunStatus] = mapped_column(
-        Enum(
-            ImprovementRunStatus,
-            name="improvement_run_status_enum",
-            create_constraint=True,
-            native_enum=True,
-            values_callable=lambda e: [member.value for member in e],  # Use lowercase values
-        ),
-        nullable=False,
-        server_default="in_progress",
-    )
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    prompts: Mapped[list[Prompt]] = relationship(back_populates="improvement_run")
-
-
-class PromptOptimizationRun(Base):
-    """Prompt optimization session grouping related critic/grader runs.
-
-    TODO: Add status tracking (running/completed/failed/budget_exceeded).
-    TODO: Integrate with prompt_optimizer.py to create and update runs.
-    """
-
-    __tablename__ = "prompt_optimization_runs"
-
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
-    transcript_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, unique=True, index=True)
-    budget_limit: Mapped[float] = mapped_column(nullable=False)
-    config: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
-    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    prompts: Mapped[list[Prompt]] = relationship(back_populates="prompt_optimization_run")
-    critic_runs: Mapped[list[CriticRun]] = relationship(back_populates="prompt_optimization_run")
-    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="prompt_optimization_run")
-
-
-class CriticRun(Base):
-    """Single critic run (code → candidate issues).
-
-    Produces reported issues (stored in normalized reported_issues table).
-    Can be graded by one or more grader runs.
-    """
-
-    __tablename__ = "critic_runs"
     __table_args__ = (
         ForeignKeyConstraint(
-            ["snapshot_slug", "scope_hash"],
-            ["examples.snapshot_slug", "examples.scope_hash"],
-            ondelete="RESTRICT",
-            name="critic_runs_example_fk",
+            ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
     )
 
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    prompt_sha256: Mapped[str] = mapped_column(String(64), ForeignKey("prompts.prompt_sha256"), nullable=False)
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
-    )
-    model: Mapped[str] = mapped_column(String, nullable=False)
-    prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
-    )
-    scope_hash: Mapped[str] = mapped_column(
-        String(64), nullable=False, comment="SHA256 hash of canonical JSON scope structure (references examples table)"
-    )
-    status: Mapped[CriticRunStatus] = mapped_column(
-        nullable=False,
-        server_default="in_progress",
-        comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
-    )
-    completion_summary: Mapped[str | None] = mapped_column(
-        String, nullable=True, comment="Markdown summary from agent when status='completed'"
-    )
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
-
     # Relationships
-    prompt_obj: Mapped[Prompt] = relationship(back_populates="critic_runs")
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="critic_runs")
-    example_obj: Mapped[Example] = relationship(
-        foreign_keys=[snapshot_slug, scope_hash], back_populates="critic_runs", overlaps="critic_runs,snapshot_obj"
-    )
-    reported_issues: Mapped[list[ReportedIssue]] = relationship(
-        back_populates="critic_run", cascade="all, delete-orphan"
-    )
-    grader_runs: Mapped[list[GraderRun]] = relationship(back_populates="critic_run_obj")
-    prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="critic_runs")
-    events: Mapped[list[Event]] = relationship(
-        foreign_keys="[Event.transcript_id]",
-        primaryjoin="CriticRun.transcript_id == foreign(Event.transcript_id)",
-        order_by="[Event.sequence_num]",
-        viewonly=True,
-    )
+    true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
+
+    @property
+    def expect_caught_from_set(self) -> set[frozenset[Path]]:
+        """Convert JSONB list[list[str]] to set[frozenset[Path]]."""
+        return {frozenset(Path(p) for p in alt) for alt in self.expect_caught_from}
 
 
-class GraderRun(Base):
-    """Single grader run (critic_run + snapshot → metrics).
+class FalsePositiveOccurrenceORM(Base):
+    """Occurrence within a false positive issue.
 
-    Grades the issues reported by a critic run against canonical ground truth.
-    No intermediate Critique - grader reads directly from reported_issues table.
-
-    Tracking canonical issues:
-        canonical_issues_snapshot stores the TPs+FPs used at grading time.
-        This enables detecting stale grader runs after editing issue files.
-
-        To find stale runs for a snapshot:
-            1. Load current canonical TPs+FPs from registry
-            2. Serialize with TypeAdapter + canonicaljson (same as grader.py)
-            3. Query for runs where canonical_issues_snapshot != current snapshot
+    Each occurrence represents a specific location where the false positive manifests.
+    Has relevant_files defining which files make this FP relevant.
     """
 
-    __tablename__ = "grader_runs"
+    __tablename__ = "false_positive_occurrences"
 
-    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
-    transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, index=True)
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
-        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), nullable=False
-    )
-    model: Mapped[str] = mapped_column(String, nullable=False)
-    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("critic_runs.id"), nullable=False)
-    prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), ForeignKey("prompt_optimization_runs.id"), nullable=True, index=True
-    )
-    canonical_issues_snapshot: Mapped[CanonicalIssuesSnapshot] = mapped_column(
-        PydanticColumn(CanonicalIssuesSnapshot),
-        nullable=False,
-        comment="Snapshot of canonical TPs+FPs used at grading time",
-    )
-    status: Mapped[GraderRunStatus] = mapped_column(
-        nullable=False,
-        server_default="in_progress",
-        comment="Run status: in_progress, completed, max_turns_exceeded, or reported_failure",
-    )
-    notes_md: Mapped[str | None] = mapped_column(
-        Text, nullable=True, comment="Markdown notes/summary from grader agent"
-    )
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    relevant_files: Mapped[list] = mapped_column(JSONB, nullable=False)  # [path, ...]
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
+        ),
     )
 
     # Relationships
-    snapshot_obj: Mapped[Snapshot] = relationship(back_populates="grader_runs")
-    critic_run_obj: Mapped[CriticRun] = relationship(back_populates="grader_runs")
-    prompt_optimization_run: Mapped[PromptOptimizationRun | None] = relationship(back_populates="grader_runs")
-    decisions: Mapped[list[GradingDecision]] = relationship(back_populates="grader_run", cascade="all, delete-orphan")
-    events: Mapped[list[Event]] = relationship(
-        foreign_keys="[Event.transcript_id]",
-        primaryjoin="GraderRun.transcript_id == foreign(Event.transcript_id)",
-        order_by="[Event.sequence_num]",
-        viewonly=True,
+    false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
+
+    @property
+    def relevant_files_set(self) -> set[Path]:
+        """Convert JSONB list[str] to set[Path]."""
+        return {Path(p) for p in self.relevant_files}
+
+
+class SnapshotFile(Base):
+    """File in a snapshot with metadata.
+
+    Used for FK validation of file paths in occurrences and trigger sets.
+    Populated during sync from hydrated snapshot content.
+    """
+
+    __tablename__ = "snapshot_files"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
     )
+    relative_path: Mapped[str] = mapped_column(String, primary_key=True)
+    line_count: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Relationships
+    snapshot_obj: Mapped[Snapshot] = relationship()
+
+
+class FileSet(Base):
+    """Content-addressable file set for training examples.
+
+    Primary key is (snapshot_slug, files_hash) where files_hash is MD5 of sorted file paths.
+    Deduplicated by PK constraint - same files always produce same hash.
+    """
+
+    __tablename__ = "file_sets"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
+        SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
+    )
+    files_hash: Mapped[str] = mapped_column(String, primary_key=True, comment="MD5 of sorted file paths")
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Relationships
+    snapshot_obj: Mapped[Snapshot] = relationship()
+    members: Mapped[list[FileSetMember]] = relationship(back_populates="file_set", cascade="all, delete-orphan")
+
+
+class FileSetMember(Base):
+    """File belonging to a file set.
+
+    FK to snapshot_files validates file paths exist in the snapshot.
+    """
+
+    __tablename__ = "file_set_members"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    files_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+
+    # Composite FK to file_sets
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "files_hash"], ["file_sets.snapshot_slug", "file_sets.files_hash"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    file_set: Mapped[FileSet] = relationship(back_populates="members")
+
+
+class OccurrenceTrigger(Base):
+    """M:N relationship linking true_positive_occurrences to file_sets.
+
+    Each occurrence can be triggered by multiple file sets (expect_caught_from alternatives).
+    """
+
+    __tablename__ = "occurrence_triggers"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    tp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    files_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+
+    # Composite FKs
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "tp_id", "occurrence_id"],
+            [
+                "true_positive_occurrences.snapshot_slug",
+                "true_positive_occurrences.tp_id",
+                "true_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "files_hash"], ["file_sets.snapshot_slug", "file_sets.files_hash"], ondelete="CASCADE"
+        ),
+    )
+
+    # Relationships
+    file_set: Mapped[FileSet] = relationship()
 
 
 class ReportedIssue(Base):
-    """Issue reported by the critic agent during code review.
+    """Issue reported by an agent during code review.
 
     Part of the critic workflow - agent creates issue headers and links occurrences.
-    Uses compound primary key (critic_run_id, issue_id) for scoped uniqueness.
+    Uses compound primary key (agent_run_id, issue_id) for scoped uniqueness.
     Agent uses hard DELETE to remove incorrect issues.
     """
 
     __tablename__ = "reported_issues"
 
-    critic_run_id: Mapped[UUID] = mapped_column(
+    agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("critic_runs.id", ondelete="CASCADE"),
+        ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"),
         primary_key=True,
         nullable=False,
         server_default=FetchedValue(),
@@ -634,7 +648,7 @@ class ReportedIssue(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
-    critic_run: Mapped[CriticRun] = relationship(back_populates="reported_issues")
+    agent_run: Mapped[AgentRun] = relationship(back_populates="reported_issues")
     occurrences: Mapped[list[ReportedIssueOccurrence]] = relationship(
         back_populates="reported_issue", cascade="all, delete-orphan"
     )
@@ -658,7 +672,7 @@ class ReportedIssueOccurrence(Base):
     __tablename__ = "reported_issue_occurrences"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, server_default=FetchedValue())
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False, server_default=FetchedValue())
     reported_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
     # Locations array (1+ location anchors)
@@ -673,8 +687,8 @@ class ReportedIssueOccurrence(Base):
     # Foreign key to composite primary key
     __table_args__ = (
         ForeignKeyConstraint(
-            ["critic_run_id", "reported_issue_id"],
-            ["reported_issues.critic_run_id", "reported_issues.issue_id"],
+            ["agent_run_id", "reported_issue_id"],
+            ["reported_issues.agent_run_id", "reported_issues.issue_id"],
             ondelete="CASCADE",
         ),
     )
@@ -693,7 +707,7 @@ class GradingDecision(Base):
 
     Database constraints:
     - CHECK constraint ensures input_issue_id corresponds to a reported issue in the
-      critique being graded (validates via grader_run -> critic_run -> reported_issues)
+      critique being graded (validates via agent_run -> reported_issues)
     - SQL trigger enforces credit sum ≤1.0 per occurrence (see check_credit_sum function)
 
     Agent uses hard DELETE to remove incorrect decisions.
@@ -702,9 +716,9 @@ class GradingDecision(Base):
     __tablename__ = "grading_decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    grader_run_id: Mapped[UUID] = mapped_column(
+    agent_run_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
-        ForeignKey("grader_runs.id", ondelete="CASCADE"),
+        ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"),
         nullable=False,
         server_default=FetchedValue(),
     )
@@ -726,16 +740,16 @@ class GradingDecision(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
-    grader_run: Mapped[GraderRun] = relationship(back_populates="decisions")
+    agent_run: Mapped[AgentRun] = relationship(back_populates="grading_decisions")
 
     @classmethod
-    def get_active_for_run(cls, session: Session, grader_run_id: UUID) -> list[GradingDecision]:
-        """Get all decisions for a grader run.
+    def get_active_for_run(cls, session: Session, agent_run_id: UUID) -> list[GradingDecision]:
+        """Get all decisions for a grader agent run.
 
         Note: Soft-delete was removed, so all persisted decisions are active.
         """
         return list(
-            session.execute(select(cls).where(cls.grader_run_id == grader_run_id).order_by(cls.created_at))
+            session.execute(select(cls).where(cls.agent_run_id == agent_run_id).order_by(cls.created_at))
             .scalars()
             .all()
         )
@@ -764,7 +778,7 @@ class ModelMetadata(Base):
 class Event(Base):
     """Agent execution event.
 
-    Linked to critic/grader runs via shared transcript_id.
+    Linked to agent runs via agent_run_id foreign key.
 
     The payload column automatically serializes/deserializes EventType via EventTypeColumn.
     Access event.payload to get a typed EventType instance, set it to store.
@@ -772,26 +786,27 @@ class Event(Base):
 
     __tablename__ = "events"
     __table_args__ = (
-        UniqueConstraint("transcript_id", "sequence_num", name="uq_events_transcript_id_seq"),
-        Index("ix_events_transcript_id_seq", "transcript_id", "sequence_num"),
+        UniqueConstraint("agent_run_id", "sequence_num", name="uq_events_agent_run_id_seq"),
+        Index("ix_events_agent_run_id_seq", "agent_run_id", "sequence_num"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    agent_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
+    )
     sequence_num: Mapped[int] = mapped_column(nullable=False)
     event_type: Mapped[str] = mapped_column(String, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
     payload: Mapped[EventType] = mapped_column(PydanticColumn(EventType), nullable=False)  # type: ignore[arg-type]
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(
-        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
-    )
+
+    # Relationships
+    agent_run: Mapped[AgentRun] = relationship(back_populates="events")
 
 
 class RunCost(Base):
     """Cost metrics from run_costs database VIEW (not a table).
 
-    Aggregates token usage and costs per transcript+model from the Event table.
+    Aggregates token usage and costs per agent_run+model from the Event table.
     Used by prompt optimizer queries to track evaluation costs.
 
     The view is automatically created via DDL event listener during metadata.create_all().
@@ -803,7 +818,7 @@ class RunCost(Base):
     # Tell SQLAlchemy NOT to create this as a table
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     model: Mapped[str] = mapped_column(String, primary_key=True)
     cost_usd: Mapped[float] = mapped_column(nullable=False)
     input_tokens: Mapped[int] = mapped_column(nullable=False)
@@ -815,13 +830,13 @@ class OccurrenceCredit(Base):
     """Occurrence credits from occurrence_credits database VIEW (not a table).
 
     Detailed view with one row per (grader_run, occurrence), fully denormalized for filtering/grouping:
-    - Run identification (grader_run_id, transcript_id, graded_at)
-    - Snapshot/Example context (snapshot_slug, split, scope_hash, scope_kind, reviewed_scope)
-    - Critique provenance (critique_id, critic_run_id, critic_transcript_id, prompt_sha256, prompt_text)
+    - Run identification (grader_run_id, graded_at)
+    - Snapshot/Example context (snapshot_slug, split, files_hash, example_kind)
+    - Critique provenance (critic_run_id, critic_definition_id)
     - Models (critic_model, grader_model)
     - Occurrence details (tp_id, occurrence_id, found_credit, matched_by_json, grader_rationale)
 
-    The view is created by Alembic migration 20251216000000_replace_is_whole_snapshot_with_scope_kind.py.
+    The view is created by migration 20251223000000_schema_squashed.py.
     """
 
     __tablename__ = "occurrence_credits"
@@ -829,53 +844,50 @@ class OccurrenceCredit(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key (grader_run_id, tp_id, occurrence_id)
-    grader_run_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    grader_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Run identification
-    grader_transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     graded_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)
 
     # Snapshot/Example context
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
     split: Mapped[Split] = mapped_column(nullable=False)
-    scope_hash: Mapped[str] = mapped_column(String, nullable=False)
-    scope_kind: Mapped[ScopeKind] = mapped_column(String, nullable=False)
-    reviewed_files: Mapped[list[str]] = mapped_column(PydanticColumn(list[str]), nullable=False)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
+    files_hash: Mapped[str | None] = mapped_column(String, nullable=True)  # NULL for whole_snapshot
 
     # Critique provenance
-    critique_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    critic_run_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    critic_transcript_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    prompt_sha256: Mapped[str] = mapped_column(String, nullable=False)
-    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
-    prompt_optimization_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True)
+    critic_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
 
     # Models
     critic_model: Mapped[str] = mapped_column(String, nullable=False)
-    grader_model: Mapped[str] = mapped_column(String, nullable=False)
+    grader_model: Mapped[str | None] = mapped_column(String, nullable=True)
 
     # Occurrence details
     found_credit: Mapped[float] = mapped_column(nullable=False)
-    matched_by_json: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    matched_by_json: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     grader_rationale: Mapped[str] = mapped_column(Text, nullable=False)
 
 
 class CriticRunOccurrenceStats(Base):
     """Per-critic-run occurrence statistics from critic_run_occurrence_stats database VIEW.
 
-    Intermediate view that aggregates occurrence metrics per critic run, across all graders:
-    - avg_occurrences_caught: Average raw occurrence count across graders for this run
-    - n_catchable_occurrences: Total occurrences that could be caught (computed once)
-    - n_grader_runs: How many graders ran on this critic run
-
-    This eliminates duplication - both aggregated_recall_by_prompt and
+    Intermediate view that aggregates occurrence metrics per critic run, across all graders.
+    This eliminates duplication - both aggregated_recall_by_definition and
     aggregated_recall_by_example SELECT from this view.
 
-    Failed critic runs (max_turns/context_length) have avg_occurrences_caught = NULL.
+    Columns grouped by: example identification, then critic-specific, then grader statistics.
+    - n_catchable_occurrences: Ground truth count (same for all runs on this example)
+    - critic_status: Critic run status (completed, max_turns_exceeded, etc.)
+    - occurrences_caught_stats: Full statistics across graders (stats_with_ci)
+      - .n is grader count
+      - .mean is average credit
+      - .min/.max for range
+      - .lcb95/.ucb95 for 95% confidence bounds
 
-    The view is created by migration 20251217000001_aggregate_over_graders.py
+    Failed critic runs (max_turns/context_length) have occurrences_caught_stats = NULL.
     """
 
     __tablename__ = "critic_run_occurrence_stats"
@@ -885,153 +897,115 @@ class CriticRunOccurrenceStats(Base):
     # Primary key
     critic_run_id: Mapped[UUID] = mapped_column(primary_key=True)
 
-    # Identifiers
-    prompt_sha256: Mapped[str] = mapped_column(String, nullable=False)
+    # Example identification
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
-    scope_hash: Mapped[str] = mapped_column(String, nullable=False)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
+    files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     split: Mapped[Split] = mapped_column(nullable=False)
-    critic_model: Mapped[str] = mapped_column(String, nullable=False)
-    status: Mapped[CriticRunStatus] = mapped_column(nullable=False)
-
-    # Occurrence metrics (aggregated across graders)
-    avg_occurrences_caught: Mapped[float | None] = mapped_column(nullable=True)
     n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Critic-specific columns
+    critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
+    critic_model: Mapped[str] = mapped_column(String, nullable=False)
+    critic_status: Mapped[AgentRunStatus] = mapped_column(nullable=False)
+
+    # Grader statistics (aggregated across graders)
+    occurrences_caught_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
-class AggregatedRecallByPrompt(Base):
-    """Aggregated recall by prompt from aggregated_recall_by_prompt database VIEW (not a table).
+class AggregatedRecallByDefinition(Base):
+    """Aggregated recall by agent definition from aggregated_recall_by_definition database VIEW.
 
-    Computes occurrence-based weighted metrics per (split, prompt_sha256, critic_model, scope_kind):
-    - Aggregates over all grader models (grader_model removed from GROUP BY)
-    - Grouped by scope_kind to allow filtering by scope type (entire_snapshot vs explicit_files)
-    - Computes raw occurrence counts (not percentages) for occurrence-based weighting
-    - Tracks catchable occurrences for dataset-level recall computation
-    - Splits metrics: among_successful vs overall (includes failures as zero)
-    - Explicit failure tracking (max_turns_exceeded, context_length_exceeded, reported_failure)
-
-    OCCURRENCE-BASED WEIGHTING:
-    Examples with more occurrences contribute proportionally more to aggregate metrics.
-    Dataset-level recall: SUM(avg_occurrences_caught) / SUM(total_catchable_occurrences)
-    This is NOT average of per-example percentages.
+    Per-critic-definition aggregate metrics across all examples.
+    Columns grouped: grouping keys, then example/run counts, then occurrence stats.
 
     Use cases:
-    - CLI stats: "Show me occurrence-weighted recall for all prompts on VALID split"
-    - Prompt optimizer: "Which prompt catches the most occurrences on TRAIN?"
-    - Scope-specific analysis: "How do prompts perform on full-snapshot vs per-file examples?"
+    - CLI stats: "Show me occurrence-weighted recall for all definitions on VALID split"
+    - Prompt optimizer: "Which definition catches the most occurrences on TRAIN?"
+    - Scope-specific analysis: "How do definitions perform on full-snapshot vs per-file examples?"
     - Leaderboard queries
-    - Failure analysis: "Which prompts frequently hit max_turns or context limits?"
-
-    The view is created and updated by migration 20251220000003_add_status_to_validation_run_aggregates.py
+    - Failure analysis: "Which definitions frequently hit max_turns or context limits?"
     """
 
-    __tablename__ = "aggregated_recall_by_prompt"
+    __tablename__ = "aggregated_recall_by_definition"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (matches view GROUP BY - no grader_model!)
+    # Composite primary key (matches view GROUP BY)
     split: Mapped[Split] = mapped_column(primary_key=True)
-    prompt_sha256: Mapped[str] = mapped_column(String, primary_key=True)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
+    critic_definition_id: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
-    scope_kind: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Count by outcome
-    n_successful: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_max_turns_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_context_length_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_reported_failure: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    # Total examples and runs (added in 20251220000003)
+    # Example and run counts
     n_examples: Mapped[int] = mapped_column(Integer, nullable=False)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Occurrence counts (raw counts, not percentages!)
-    avg_occurrences_caught_among_successful: Mapped[float | None] = mapped_column(nullable=True)
-    occurrences_variance_among_successful: Mapped[float | None] = mapped_column(nullable=True)
-    avg_occurrences_caught_overall: Mapped[float] = mapped_column(nullable=False)
-
-    # Catchable occurrences (for dataset-level recall)
-    avg_catchable_occurrences: Mapped[float] = mapped_column(nullable=False)
+    # Catchable occurrences (sum across distinct examples, not runs)
     total_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Computed recall and confidence bounds (added in 20251220000003)
-    recall: Mapped[float | None] = mapped_column(nullable=True)
-    ucb: Mapped[float | None] = mapped_column(nullable=True)
-    lcb: Mapped[float | None] = mapped_column(nullable=True)
+    # Status breakdown (JSONB: {"completed": 5, "max_turns_exceeded": 2})
+    status_counts: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False)
 
-    # Grader metadata
-    avg_grader_runs_per_critic: Mapped[float] = mapped_column(nullable=False)
-    total_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Recall statistics across all critic runs (failed runs count as 0 recall via 0 credit)
+    # .n = total run count, .mean = average recall, .lcb95/.ucb95 = 95% CI bounds
+    occurrences_caught_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
 class AggregatedRecallByExample(Base):
     """Aggregated recall by example from aggregated_recall_by_example database VIEW (not a table).
 
-    Computes occurrence-based weighted metrics per (split, snapshot_slug, scope_hash, critic_model):
-    - Aggregates over all grader models (grader_model removed from GROUP BY)
-    - Same semantics as aggregated_recall_by_prompt but grouped by example instead of prompt
-    - Computes raw occurrence counts (not percentages) for occurrence-based weighting
-    - Tracks catchable occurrences for dataset-level recall computation
+    Per-example aggregate metrics across all critic runs for that example.
+    Same semantics as aggregated_recall_by_definition but grouped by example instead of definition.
 
     Use cases:
     - CLI stats: "Show me per-example breakdown with occurrence weighting"
     - Prompt improver: "Which examples does this prompt struggle with?"
     - Training data analysis
-
-    The view is created and updated by migration 20251217000001_aggregate_over_graders.py
     """
 
     __tablename__ = "aggregated_recall_by_example"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key (no grader_model!)
-    split: Mapped[Split] = mapped_column(primary_key=True)
+    # Composite primary key
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    scope_hash: Mapped[str] = mapped_column(String, primary_key=True)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
+    files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
+    split: Mapped[Split] = mapped_column(primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Count by outcome
-    n_successful: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_max_turns_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_context_length_exceeded: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_reported_failure: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Catchable occurrences (ground truth count for this example)
+    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Total runs for this (example, critic_model) combination (added in 20251220000003)
+    # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # Occurrence counts (raw counts, not percentages!)
-    avg_occurrences_caught_among_successful: Mapped[float | None] = mapped_column(nullable=True)
-    occurrences_variance_among_successful: Mapped[float | None] = mapped_column(nullable=True)
-    avg_occurrences_caught_overall: Mapped[float] = mapped_column(nullable=False)
+    # Status breakdown (JSONB: {"completed": 5, "max_turns_exceeded": 2})
+    status_counts: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False)
 
-    # Catchable occurrences (for dataset-level recall)
-    avg_catchable_occurrences: Mapped[float] = mapped_column(nullable=False)
-    total_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
-
-    # Computed recall (added in 20251220000003)
-    recall: Mapped[float | None] = mapped_column(nullable=True)
-
-    # Grader metadata
-    avg_grader_runs_per_critic: Mapped[float] = mapped_column(nullable=False)
-    total_grader_runs: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Recall statistics across all critic runs (failed runs count as 0 recall via 0 credit)
+    # .n = total run count, .mean = average recall, .lcb95/.ucb95 = 95% CI bounds
+    occurrences_caught_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
 class ParetoFrontierByExample(Base):
     """Pareto frontier from pareto_frontier_by_example database VIEW (not a table).
 
-    For each example, shows the best recall achieved and which prompt SHAs achieved it.
+    For each example, shows the best mean credit achieved and which agent definitions achieved it.
+    Returns raw totals (total_credit, n_catchable_occurrences) rather than computing recall fraction.
+    Consumer can compute recall as total_credit / n_catchable_occurrences if needed.
+
+    For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows the best average
+    total_credit across all definitions and lists all definition IDs that achieved this best score.
+
     Useful for prompt optimization to identify:
-    - Which prompts excel on specific examples (prompt specialization)
-    - Examples where no prompt performs well (improvement opportunities)
-    - Generalist vs specialist prompt patterns
+    - Which definitions excel on specific examples (definition specialization)
+    - Examples where no definition performs well (improvement opportunities)
+    - Generalist vs specialist definition patterns
 
-    Use cases:
-    - Prompt optimizer: "Which prompt SHAs win on which examples?"
-    - Ensemble analysis: Combine best prompts for different patterns
-    - Training diagnostics: "Where do all prompts struggle?"
-
-    The view is created by Alembic migration 20251220000001_add_pareto_frontier_view.py.
+    Built on critic_run_occurrence_stats, which already aggregates over grader models.
+    Failed critic runs (max_turns/context_length) count as 0.0 credit.
     """
 
     __tablename__ = "pareto_frontier_by_example"
@@ -1039,53 +1013,197 @@ class ParetoFrontierByExample(Base):
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
     # Composite primary key
-    split: Mapped[Split] = mapped_column(primary_key=True)
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    scope_hash: Mapped[str] = mapped_column(String, primary_key=True)
-    scope_kind: Mapped[str] = mapped_column(String, primary_key=True)
+    split: Mapped[Split] = mapped_column(primary_key=True)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
+    files_hash: Mapped[str | None] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
+    # Ground truth count for this example
+    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+
     # Pareto frontier data
-    best_recall: Mapped[float] = mapped_column(nullable=False)
-    winning_prompt_shas: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
-    winning_prompt_n_runs: Mapped[list[int]] = mapped_column(ARRAY(Integer), nullable=False)
+    best_mean_credit: Mapped[float] = mapped_column(nullable=False)
+    winning_critic_definition_ids: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
+    # Stats for each winning definition (parallel array with winning_critic_definition_ids)
+    # PostgreSQL returns ARRAY of composite type as list of tuples - we store as JSONB for now
+    winning_definition_credit_stats: Mapped[list[Any]] = mapped_column(ARRAY(Text), nullable=False)
 
 
 class OccurrenceStatistics(Base):
     """Occurrence statistics from occurrence_statistics database VIEW (not a table).
 
-    Statistics per (split, tp_id, occurrence_id, critic_model, grader_model) across all runs:
-    - Mean, stddev, min, max credit
-    - Number of runs and prompts
-    - Full catch rate (how often credit = 1.0)
+    Aggregated statistics per occurrence across all runs, using stats_with_ci.
+    Groups by: example identification → ground truth → critic-specific → grader-specific.
 
     Use cases:
-    - Identify "hard" occurrences (low mean_credit, high variance)
+    - Identify "hard" occurrences (low credit_stats.mean, high variance)
     - Training diagnostics: "Which occurrences are never caught?"
-    - Prompt improver: "Focus on occurrences with low full_catch_rate"
-
-    The view is created by Alembic migration 20251215000002_add_occurrence_views.py.
+    - Prompt improver: "Focus on occurrences with low credit_stats.mean"
     """
 
     __tablename__ = "occurrence_statistics"
     __table_args__ = {"info": {"is_view": True}, "extend_existing": True}  # noqa: RUF012
     __mapper_args__ = {"eager_defaults": False}  # noqa: RUF012
 
-    # Composite primary key
+    # Example identification
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     split: Mapped[Split] = mapped_column(primary_key=True)
+    example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, primary_key=True)
+    trigger_set_id: Mapped[int | None] = mapped_column(Integer, primary_key=True)  # NULL for whole_snapshot
+
+    # Ground truth identification
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+
+    # Critic-specific
+    critic_definition_id: Mapped[str] = mapped_column(String, primary_key=True)
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
+
+    # Grader-specific
     grader_model: Mapped[str] = mapped_column(String, primary_key=True)
 
-    # Statistics
-    mean_credit: Mapped[float] = mapped_column(nullable=False)
-    stddev_credit: Mapped[float | None] = mapped_column(nullable=True)  # NULL for single run
-    min_credit: Mapped[float] = mapped_column(nullable=False)
-    max_credit: Mapped[float] = mapped_column(nullable=False)
-    n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
-    n_prompts: Mapped[int] = mapped_column(Integer, nullable=False)
-    full_catch_rate: Mapped[float] = mapped_column(nullable=False)
+    # Credit statistics (stats_with_ci: .n = grader count, .mean = avg credit, etc.)
+    credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
+
+
+# ============================================================================
+# Agent Definition Tables
+# ============================================================================
+
+
+class AgentDefinition(Base):
+    """Agent definition archive stored in database.
+
+    Contains AGENT.md, init script, tools, examples, and docs packed as tar.
+    Definitions can be repo-backed (readable names) or agent-created (auto-generated IDs).
+    """
+
+    __tablename__ = "agent_definitions"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    agent_type: Mapped[str] = mapped_column(String, nullable=False)  # agent_type_enum value
+    archive: Mapped[bytes] = mapped_column(postgresql.BYTEA, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    created_by_agent_run_id: Mapped[UUID | None] = mapped_column(PG_UUID(as_uuid=True), nullable=True, index=True)
+
+    # Relationships
+    agent_runs: Mapped[list[AgentRun]] = relationship(back_populates="agent_definition")
+
+
+class AgentRun(Base):
+    """Unified agent run record (replaces separate critic_runs, grader_runs, etc.).
+
+    Each run references an agent definition and stores type-specific config as JSONB.
+    Parent-child relationships track sub-agent spawning.
+
+    Status tracking:
+    - status: Current run status (in_progress, completed, etc.)
+    - completion_summary: Markdown summary from agent (when status='completed')
+      or error message (when status='reported_failure')
+    """
+
+    __tablename__ = "agent_runs"
+
+    agent_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, default=uuid4)
+    agent_definition_id: Mapped[str] = mapped_column(String, ForeignKey("agent_definitions.id"), nullable=False)
+    parent_agent_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id"), nullable=True, index=True
+    )
+    model: Mapped[str] = mapped_column(String, nullable=False)
+    type_config: Mapped[TypeConfig] = mapped_column(PydanticColumn(TypeConfig), nullable=False)
+    status: Mapped[AgentRunStatus] = mapped_column(
+        nullable=False,
+        server_default="in_progress",
+        comment="Run status: in_progress, completed, max_turns_exceeded, context_length_exceeded, or reported_failure",
+    )
+    completion_summary: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+        comment="Markdown summary from agent when status='completed', or error message when status='reported_failure'",
+    )
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    agent_definition: Mapped[AgentDefinition] = relationship(back_populates="agent_runs")
+    parent: Mapped[AgentRun | None] = relationship("AgentRun", remote_side=[agent_run_id], backref="children")
+    reported_issues: Mapped[list[ReportedIssue]] = relationship(
+        back_populates="agent_run", cascade="all, delete-orphan"
+    )
+    grading_decisions: Mapped[list[GradingDecision]] = relationship(
+        back_populates="agent_run", cascade="all, delete-orphan"
+    )
+    events: Mapped[list[Event]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
+    unknown_clusters: Mapped[list[UnknownCluster]] = relationship(
+        back_populates="agent_run", cascade="all, delete-orphan"
+    )
+    unknown_assignments: Mapped[list[UnknownAssignment]] = relationship(
+        back_populates="agent_run", cascade="all, delete-orphan", foreign_keys="[UnknownAssignment.agent_run_id]"
+    )
+
+    # Type-safe config accessors
+    def critic_config(self) -> CriticTypeConfig:
+        """Get type_config as CriticTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a critic run.
+        Raises ValueError if type_config is not CriticTypeConfig.
+        """
+        if isinstance(self.type_config, CriticTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected CriticTypeConfig, got {type(self.type_config).__name__}")
+
+    def grader_config(self) -> GraderTypeConfig:
+        """Get type_config as GraderTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a grader run.
+        Raises ValueError if type_config is not GraderTypeConfig.
+        """
+        if isinstance(self.type_config, GraderTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
+
+    def clustering_config(self) -> ClusteringTypeConfig:
+        """Get type_config as ClusteringTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a clustering run.
+        Raises ValueError if type_config is not ClusteringTypeConfig.
+        """
+        if isinstance(self.type_config, ClusteringTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected ClusteringTypeConfig, got {type(self.type_config).__name__}")
+
+    def improvement_config(self) -> ImprovementTypeConfig:
+        """Get type_config as ImprovementTypeConfig or raise ValueError.
+
+        Use when this run is expected to be an improvement run.
+        Raises ValueError if type_config is not ImprovementTypeConfig.
+        """
+        if isinstance(self.type_config, ImprovementTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected ImprovementTypeConfig, got {type(self.type_config).__name__}")
+
+    def prompt_optimizer_config(self) -> PromptOptimizerTypeConfig:
+        """Get type_config as PromptOptimizerTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a prompt optimizer run.
+        Raises ValueError if type_config is not PromptOptimizerTypeConfig.
+        """
+        if isinstance(self.type_config, PromptOptimizerTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected PromptOptimizerTypeConfig, got {type(self.type_config).__name__}")
+
+    def freeform_config(self) -> FreeformTypeConfig:
+        """Get type_config as FreeformTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a freeform sub-agent run.
+        Raises ValueError if type_config is not FreeformTypeConfig.
+        """
+        if isinstance(self.type_config, FreeformTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}")
 
 
 # ============================================================================
@@ -1124,7 +1242,7 @@ def create_run_costs_view(target, connection, **kw):
     run_costs_query = (
         select(
             Event.payload["response_id"].astext.label("response_id"),
-            Event.transcript_id,
+            Event.agent_run_id,
             Event.payload["usage"]["model"].astext.label("model"),
             input_tokens_int.label("input_tokens"),
             cached_tokens_int.label("cached_tokens"),
@@ -1144,3 +1262,11 @@ def create_run_costs_view(target, connection, **kw):
     # Create the view
     connection.execute(DDL(f"CREATE VIEW run_costs AS {compiled_query}"))
     connection.commit()
+
+
+# Import clustering_models at end of module to register UnknownCluster/UnknownAssignment
+# with SQLAlchemy's class registry. AgentRun has relationships to these classes using
+# string references ("UnknownCluster", "UnknownAssignment") which SQLAlchemy resolves
+# lazily. This import ensures the classes are registered before any queries execute.
+# This must be at module scope (not inside TYPE_CHECKING) so it runs at import time.
+from adgn.props.db import clustering_models as _clustering_models  # noqa: F401, E402

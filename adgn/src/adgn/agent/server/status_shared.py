@@ -53,7 +53,6 @@ class UiStateLite(BaseModel):
 class ContainerState(BaseModel):
     present: bool
     id: str | None
-    ephemeral: bool
     model_config = ConfigDict(extra="forbid")
 
 
@@ -72,7 +71,7 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     """Shared builder for agent status used by HTTP and WS paths.
 
     Computes policy presence/version, MCP server states, lifecycle,
-    container id (for non-ephemeral runtime), pending approvals, and run phase.
+    container id, pending approvals, and run phase.
     """
     registry = app.state.registry
     persistence = app.state.persistence
@@ -104,14 +103,14 @@ async def build_agent_status_core(app: FastAPI, agent_id: str) -> AgentStatusCor
     last_map = await persistence.list_agents_last_activity()
     last_at = last_map.get(agent_id)
 
-    # Container id via runtime container.info (only when not ephemeral)
+    # Container id via runtime container.info
     container_id: str | None = None
-    if c and present and (c.runtime_ephemeral is False) and c.runtime_server is not None:
+    if c and present and c.runtime_server is not None:
         info: ContainerInfo = await read_text_json_typed(
             c.compositor_client.session, c.runtime_server.container_info_resource.uri, ContainerInfo
         )
         container_id = info.container_id
-    container = ContainerState(present=present, id=container_id, ephemeral=(c.runtime_ephemeral if c else False))
+    container = ContainerState(present=present, id=container_id)
 
     # Run phase from live signals; no exceptions expected in this path
     # Check policy gateway for in-flight tool calls (if container and gateway exist)

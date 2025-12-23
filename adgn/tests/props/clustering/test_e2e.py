@@ -2,6 +2,9 @@
 
 Tests the HTTP transport for clustering agent using real Docker containers,
 real PostgreSQL database, and mocked OpenAI responses.
+
+All tests verify that bootstrap commands (including ./init) exit with code 0
+before proceeding with the test scenario (via DockerExecCallWithBootstrapValidation).
 """
 
 from __future__ import annotations
@@ -20,19 +23,18 @@ from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBoot
 
 from adgn.props.clustering.cluster_agent import run_clustering_agent
 from adgn.props.db import get_session
-from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
+from adgn.props.db.clustering_models import UnknownAssignment, UnknownCluster
 from adgn.props.db.examples import Example
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.models import AgentRun, AgentRunStatus
+from adgn.props.ids import SnapshotSlug
 
 
-def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[int, UUID, list[str]]:
+def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[UUID, UUID, list[str]]:
     """Create a clustering run with grader run containing unknowns.
 
     Returns:
-        tuple of (clustering_run_id, grader_run_id, unknown_ids)
+        tuple of (clustering_agent_run_id, grader_run_id, unknown_ids)
     """
-    test_prompt_sha = hash_and_upsert_prompt("test prompt for clustering")
-
     with get_session() as session:
         # Query example from git fixtures
         example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
@@ -42,10 +44,10 @@ def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[int, UUID, list
         run = make_clustering_run(snapshot_slug)
         session.add(run)
         session.flush()
-        run_id = run.id
+        run_id = run.agent_run_id
 
         # Create critic run (needed for grader_run FK)
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
+        critic_run = make_critic_run(example=example)
         session.add(critic_run)
         session.flush()
 
@@ -53,12 +55,12 @@ def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[int, UUID, list
         grader_run = make_grader_run(critic_run=critic_run)
         session.add(grader_run)
         session.flush()
-        grader_run_id = grader_run.id
+        grader_run_id = grader_run.agent_run_id
 
         # Create reported issues and mark them as unknowns via grading decisions
         unknown_ids = ["unknown-1", "unknown-2"]
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=unknown_ids, session=session)
-        make_unknown_grading_decisions(grader_run_id=grader_run.id, unknown_ids=unknown_ids, session=session)
+        make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=unknown_ids, session=session)
+        make_unknown_grading_decisions(agent_run_id=grader_run.agent_run_id, unknown_ids=unknown_ids, session=session)
         session.commit()
 
         return run_id, grader_run_id, unknown_ids
@@ -67,18 +69,17 @@ def _setup_clustering_run_with_unknowns(synced_test_db) -> tuple[int, UUID, list
 def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[Step]:
     """Create step sequence for clustering agent that creates a cluster and assigns unknowns.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
     First step validates bootstrap succeeded.
     """
     grader_run_str = str(grader_run_id)
     steps: list[Step] = [
-        # 1. Create cluster via CLI helper - also validates bootstrap
+        # 1. Create cluster via bin CLI - also validates bootstrap
         DockerExecCallWithBootstrapValidation(
             cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "clustering",
+                "python",
+                "/workspace/bin/clustering.py",
                 "create-cluster",
                 "dead-imports",
                 "Unused imports that add no value",
@@ -93,9 +94,8 @@ def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[
             AssertDockerExecThenCall(
                 expected_output="",  # Just check exit code 0
                 next_cmd=[
-                    "adgn-properties",
-                    "agent-helper",
-                    "clustering",
+                    "python",
+                    "/workspace/bin/clustering.py",
                     "assign-to-cluster",
                     grader_run_str,
                     unknown_id,
@@ -109,6 +109,9 @@ def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[
     return steps
 
 
+# This test spawns multiple docker execs with heavy Python startup (~6s/exec)
+# Keep timeout generous to avoid flakes when CI is contended.
+@pytest.mark.timeout(45)
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_cluster(
@@ -130,11 +133,12 @@ async def test_clustering_http_mode_assign_to_cluster(
 
     # Run clustering agent
     result = await run_clustering_agent(
-        run_id=clustering_run_id,
+        snapshot_slug=SnapshotSlug("test-fixtures/test-trivial"),
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
         db_config=synced_test_db,
         client=runner,
+        agent_run_id=clustering_run_id,
     )
 
     # Verify result
@@ -142,18 +146,18 @@ async def test_clustering_http_mode_assign_to_cluster(
 
     # Verify database records
     with get_session() as session:
-        run = session.get(ClusteringRun, clustering_run_id)
+        run = session.get(AgentRun, clustering_run_id)
         assert run is not None
-        assert run.status == "completed"
+        assert run.status == AgentRunStatus.COMPLETED
 
         # Check cluster was created
-        clusters = session.query(UnknownCluster).filter_by(clustering_run_id=clustering_run_id).all()
+        clusters = session.query(UnknownCluster).filter_by(agent_run_id=clustering_run_id).all()
         assert len(clusters) == 1
         cluster = clusters[0]
         assert cluster.cluster_name == "dead-imports"
 
         # Check all unknowns were assigned
-        assignments = session.query(UnknownAssignment).filter_by(clustering_run_id=clustering_run_id).all()
+        assignments = session.query(UnknownAssignment).filter_by(agent_run_id=clustering_run_id).all()
         assert len(assignments) == len(unknown_ids)
         for assignment in assignments:
             assert assignment.cluster_id == cluster.id
@@ -163,7 +167,7 @@ async def test_clustering_http_mode_assign_to_cluster(
 def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: list[str]) -> list[Step]:
     """Create step sequence for clustering agent that maps unknowns to existing TP/FP.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
     First step validates bootstrap succeeded.
     """
@@ -172,9 +176,8 @@ def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: lis
         # 1. Map first unknown to existing TP - also validates bootstrap
         DockerExecCallWithBootstrapValidation(
             cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "clustering",
+                "python",
+                "/workspace/bin/clustering.py",
                 "assign-to-tp",
                 grader_run_str,
                 unknown_ids[0],
@@ -187,9 +190,8 @@ def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: lis
         AssertDockerExecThenCall(
             expected_output="",  # Just check exit code 0
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "clustering",
+                "python",
+                "/workspace/bin/clustering.py",
                 "assign-to-fp",
                 grader_run_str,
                 unknown_ids[1],
@@ -201,6 +203,9 @@ def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: lis
     ]
 
 
+# This test also runs multiple docker execs with heavy Python startup (~6s/exec)
+# Keep timeout generous to avoid flakes when CI is contended.
+@pytest.mark.timeout(45)
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_existing(
@@ -220,11 +225,12 @@ async def test_clustering_http_mode_assign_to_existing(
 
     # Run clustering agent
     result = await run_clustering_agent(
-        run_id=clustering_run_id,
+        snapshot_slug=SnapshotSlug("test-fixtures/test-trivial"),
         hydrator=test_specimens_hydrator,
         docker_client=async_docker_client,
         db_config=synced_test_db,
         client=runner,
+        agent_run_id=clustering_run_id,
     )
 
     # Verify result
@@ -232,16 +238,16 @@ async def test_clustering_http_mode_assign_to_existing(
 
     # Verify database records
     with get_session() as session:
-        run = session.get(ClusteringRun, clustering_run_id)
+        run = session.get(AgentRun, clustering_run_id)
         assert run is not None
-        assert run.status == "completed"
+        assert run.status == AgentRunStatus.COMPLETED
 
         # Check no new clusters were created
-        clusters = session.query(UnknownCluster).filter_by(clustering_run_id=clustering_run_id).all()
+        clusters = session.query(UnknownCluster).filter_by(agent_run_id=clustering_run_id).all()
         assert len(clusters) == 0
 
         # Check all unknowns were assigned to existing TP/FP
-        assignments = session.query(UnknownAssignment).filter_by(clustering_run_id=clustering_run_id).all()
+        assignments = session.query(UnknownAssignment).filter_by(agent_run_id=clustering_run_id).all()
         assert len(assignments) == len(unknown_ids)
 
         # Verify mapping types

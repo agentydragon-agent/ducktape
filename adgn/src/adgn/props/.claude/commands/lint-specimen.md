@@ -1,12 +1,15 @@
 # Lint a specimen for conformance
 
-@../../specimens/CLAUDE.md
+Read the specimens repository documentation first:
+- `~/code/specimens/CLAUDE.md` — Main guide
+- `~/code/specimens/docs/authoring-guide.md` — Authoring rules
+- `~/code/specimens/docs/format-spec.md` — Format specification
 
 ## What this command does
 
-Lint a specimen directory (and its files) against the authoring rules defined in @../../specimens/CLAUDE.md (which transcludes @../../docs/authoring.md).
+Lint a specimen directory (and its files) against the authoring rules defined in the specimens repository documentation.
 
-**CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only specific issues, the linter must check every `issues/*.libsonnet` file in the specimen.
+**CRITICAL: Examine ALL issues in the specimen, not just a sample.** Unless explicitly instructed to examine only specific issues, the linter must check every `issues/*.yaml` file in the specimen.
 
 Report only lints/errors and offer concrete fix suggestions. Do not modify files without explicit user approval.
 
@@ -14,11 +17,11 @@ Report only lints/errors and offer concrete fix suggestions. Do not modify files
 
 Do not duplicate requirement lists here. The linter MUST read the authoring guide at runtime and derive all rules from it.
 
-@../../docs/quality-checklist.md
+Read `~/code/specimens/docs/quality-checklist.md` for the pre-commit verification checklist.
 
 ## Input
 - Target specimen: path to a specimen directory or any file inside it.
-  - A valid specimen contains `issues/*.libsonnet` files
+  - A valid specimen contains `issues/*.yaml` files
   - If omitted, discover candidates via `specimens/*/` directories
 
 ## Output
@@ -32,8 +35,8 @@ A textual report of all violations with:
 2) Identify target specimen directory
 3) Validate structure and files
 4) **Use `adgn-properties snapshot exec <slug> -- <command>` for ALL interactions with the hydrated specimen** to ensure proper isolation and correct specimen hydration
-5) **Check EVERY issue file in `issues/*.libsonnet`** (not just a sample):
-   - Evaluate Jsonnet to JSON
+5) **Check EVERY issue file in `issues/*.yaml`** (not just a sample):
+   - Parse YAML
    - **Verify ONE logical problem per file** (Authoring Guide §3):
      - Each file should describe ONE logical problem type (e.g., "missing type annotations", "dead code")
      - If an issue describes multiple INDEPENDENT problems at one location, it should be split

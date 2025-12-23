@@ -18,8 +18,7 @@
 
 Specimens are frozen code states with labeled issues (true positives and false positives) used for training and evaluating the LLM critic. The dataset includes:
 - `snapshots.yaml` — central registry of all snapshots with source commits and train/valid/test splits
-- `lib.libsonnet` — Jsonnet helper library for authoring issues
-- Per-snapshot directories with issue files (`.libsonnet`)
+- Per-snapshot directories with issue files (`.yaml`)
 
 ### Configuration
 
@@ -138,7 +137,7 @@ flowchart TD
 
 ## Specimen inspection (for assistants)
 
-Use the `snapshot exec` command to inspect a hydrated specimen’s workspace inside an isolated container (no network). The workspace is mounted at /workspace and property definitions at /props.
+Use the `snapshot exec` command to inspect a hydrated specimen's workspace inside an isolated container (no network). The workspace is mounted at /workspace.
 
 Examples
 - Open interactive shell:
@@ -212,7 +211,7 @@ with get_session() as session:
     # Get grader runs with metrics
     graders = session.query(GraderRun).all()
     for gr in graders:
-        print(f"Run {gr.transcript_id}: {gr.output['grade']['metrics']}")
+        print(f"Run {gr.agent_run_id}: {gr.output['grade']['metrics']}")
 ```
 
 All structured runs are persisted with:

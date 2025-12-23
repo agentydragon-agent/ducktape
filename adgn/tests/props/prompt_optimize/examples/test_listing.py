@@ -5,16 +5,16 @@ Consolidated from: test_query_train_examples, test_query_valid_examples,
 test_query_full_snapshot_train_examples, test_query_dataset_scale.
 """
 
-from adgn.props.db import get_session
-from adgn.props.db.examples import Example
-from adgn.props.db.models import Snapshot
-from adgn.props.models.critic_scopes import AllFilesScope
-from adgn.props.prompt_optimize.examples.listing import (
+from adgn.props.agent_defs.prompt_optimizer.examples.listing import (
     list_full_snapshot_train_examples,
     list_train_examples,
     list_valid_snapshots,
     show_dataset_scale,
 )
+from adgn.props.db import get_session
+from adgn.props.db.examples import Example
+from adgn.props.db.models import Snapshot
+from adgn.props.models.examples import ExampleKind, WholeSnapshotExample
 
 
 def test_list_train_examples_with_synced_data(synced_test_db, capsys):
@@ -92,7 +92,7 @@ def test_list_full_snapshot_train_examples_with_synced_data(synced_test_db, caps
         )
         assert train_examples, "Expected train examples from test-trivial fixture"
 
-        full_snapshot_examples = [ex for ex in train_examples if isinstance(ex.scope, AllFilesScope)]
+        full_snapshot_examples = [ex for ex in train_examples if ex.example_kind == ExampleKind.WHOLE_SNAPSHOT]
         assert full_snapshot_examples, "Expected full-snapshot examples from test-trivial fixture"
 
         first_example = full_snapshot_examples[0]
@@ -108,8 +108,8 @@ def test_list_full_snapshot_train_examples_with_synced_data(synced_test_db, caps
     assert expected_snapshot in output, f"Expected snapshot slug '{expected_snapshot}' in output"
 
     if full_snapshot_examples:
-        assert "Usage with run_critic_on_example:" in output
-        assert "run_critic_on_example(" in output
+        assert "Usage with run_critic:" in output
+        assert "run_critic(" in output
 
 
 def test_list_full_snapshot_train_examples_empty_database(test_db, capsys):

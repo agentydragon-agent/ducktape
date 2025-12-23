@@ -13,13 +13,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from adgn.props.db.snapshots import (
-    DBCanonicalFPCoverage,
-    DBCanonicalTPCoverage,
     DBFalsePositiveOccurrence,
     DBGraderMaxTurnsExceeded,
     DBGraderOutput,
     DBGraderSuccess,
-    DBIssueCoverageEntry,
     DBKnownFalsePositive,
     DBLineRange,
     DBOccurrenceMatch,
@@ -29,14 +26,10 @@ from adgn.props.db.snapshots import (
     DBUnknownIssue,
 )
 from adgn.props.grader.models import (
-    CanonicalFPCoverage,
-    CanonicalTPCoverage,
     FalsePositiveID,
     GraderMaxTurnsExceeded,
     GraderOutput,
     GraderSuccess,
-    InputIssueID,
-    IssueCoverageEntry,
     KnownFalsePositive,
     OccurrenceMatch,
     OccurrenceResult,
@@ -139,46 +132,6 @@ def fp_from_db(db_fp: DBKnownFalsePositive) -> KnownFalsePositive:
             )
             for occ in db_fp.occurrences
         ],
-    )
-
-
-def _issue_coverage_entry_to_db(entry: IssueCoverageEntry) -> DBIssueCoverageEntry:
-    """Convert MCP IssueCoverageEntry to DB representation."""
-    return DBIssueCoverageEntry(input_id=str(entry.input_id), credit=entry.credit)
-
-
-def _issue_coverage_entry_from_db(db_entry: DBIssueCoverageEntry) -> IssueCoverageEntry:
-    """Convert DB IssueCoverageEntry to MCP representation."""
-    return IssueCoverageEntry(input_id=InputIssueID(db_entry.input_id), credit=db_entry.credit)
-
-
-def _canonical_tp_coverage_to_db(coverage: CanonicalTPCoverage) -> DBCanonicalTPCoverage:
-    """Convert MCP CanonicalTPCoverage to DB representation."""
-    return DBCanonicalTPCoverage(
-        covered_by=[_issue_coverage_entry_to_db(e) for e in coverage.covered_by],
-        recall_credit=coverage.recall_credit,
-        rationale=str(coverage.rationale),
-    )
-
-
-def _canonical_tp_coverage_from_db(db_coverage: DBCanonicalTPCoverage) -> CanonicalTPCoverage:
-    """Convert DB CanonicalTPCoverage to MCP representation."""
-    return CanonicalTPCoverage(
-        covered_by=[_issue_coverage_entry_from_db(e) for e in db_coverage.covered_by],
-        recall_credit=db_coverage.recall_credit,
-        rationale=Rationale(db_coverage.rationale),
-    )
-
-
-def _canonical_fp_coverage_to_db(coverage: CanonicalFPCoverage) -> DBCanonicalFPCoverage:
-    """Convert MCP CanonicalFPCoverage to DB representation."""
-    return DBCanonicalFPCoverage(covered_by=[str(id) for id in coverage.covered_by], rationale=str(coverage.rationale))
-
-
-def _canonical_fp_coverage_from_db(db_coverage: DBCanonicalFPCoverage) -> CanonicalFPCoverage:
-    """Convert DB CanonicalFPCoverage to MCP representation."""
-    return CanonicalFPCoverage(
-        covered_by=[InputIssueID(id) for id in db_coverage.covered_by], rationale=Rationale(db_coverage.rationale)
     )
 
 

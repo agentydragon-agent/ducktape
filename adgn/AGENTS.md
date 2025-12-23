@@ -31,17 +31,12 @@ See `README.md` for a shorter overview.
   - From repo root: `direnv exec adgn pytest adgn/tests`
 - Single test: `direnv exec tana pytest tests/tana/test_convert.py::test_node_export`
 - **Debugging hangs/timeouts**: Run without xdist parallelization for clearer output: `pytest -n 0 -v --tb=long <test_path>`
-- Lint/format: `ruff format .`, `ruff check . --fix`
-- Type check: `mypy --config-file pyproject.toml`
-- Pre-commit: `pre-commit install`, `pre-commit run -a`
+- Pre-commit (preferred): `pre-commit run -a` (runs ruff, mypy, trivial-patterns, etc.)
+- Setup: `pre-commit install`
 - Optional extras (GNOME console script deps): `python -m pip install -e '.[gnome]'`
 
-## Pytest Defaults (pyproject.toml)
-- `timeout = 30`, `timeout_method = thread` (pytest-timeout)
-- `asyncio_mode = auto` (pytest-asyncio)
-- `testpaths = ["tests"]`
-- `addopts` (applied automatically): `-n=16 -m 'not live_llm' -v --tb=short --strict-markers --disable-warnings --durations=25`
-- Markers: `slow`, `integration`, `unit`, `shell`, `asyncio`, `real_github`, `live_llm`, `macos`, `requires_docker`, `requires_sandbox_exec`
+## Pytest Defaults
+See `[tool.pytest.ini_options]` in `pyproject.toml` for current `addopts`, markers, and timeout settings.
 - Hermetic git (pytest-env): `GIT_CONFIG_NOSYSTEM=1`, `GIT_CONFIG_GLOBAL=/dev/null`
 
 ### UI E2E Tests (Playwright)
@@ -56,6 +51,9 @@ See `README.md` for a shorter overview.
   - `responses_db.py`; CLI `rspcache`
 - LLM toolkit and agent (`src/adgn/llm/*`, `src/adgn/agent/*`, `src/adgn/mcp/*`, `src/adgn/props/*`)
   - Agent UI/server, MCP utilities, instruction optimizer, properties/specimens
+- Seatbelt (`src/adgn/seatbelt/`) — sandbox policy validation and compilation
+- Instruction optimizer (`src/adgn/inop/`) — Claude instruction optimization
+- Tools (`src/adgn/tools/`) — `trivial_patterns` linter, arg0 utilities
 
 ## Agent (CLI + Local UI)
 - Commands:
@@ -74,7 +72,6 @@ See `README.md` for a shorter overview.
   - Approvals: protocol‑native `approval_pending → approval_decision (approve | deny_continue | deny_abort)`
   - Serve/dev build agent and MCP on the uvicorn loop via `app.state.agent_factory` to avoid cross‑loop deadlocks
 
-
 ### UI Development and Builds
 - Dev (recommended): `adgn-agent dev` — starts FastAPI + Vite, with proxying for `/ws` and `/transcript`
 - Split dev: `adgn-agent serve` (backend) + `npm --prefix src/adgn/agent/web run dev` (optionally set `VITE_BACKEND_ORIGIN=http://127.0.0.1:8765`)
@@ -88,14 +85,7 @@ See `README.md` for a shorter overview.
   - Use hard refresh after rebuilding assets; server logs include “WS OUT” at `log_level=debug`
 
 ## LLM Toolkit and CLIs
-- Core scripts (see `[project.scripts]`):
-  - `adgn-agent` → Agent UI/REPL
-  - `adgn-llm-edit` → `adgn.llm.llm_edit:app`
-  - `adgn-sysrw` → `adgn.llm.sysrw.cli:app`
-  - `adgn-properties` → `adgn.props.cli:main` (also `adgn-properties` Typer UI)
-  - `git-commit-ai` → `adgn.git_commit_ai.cli:main`
-  - `sandbox-jupyter` → `adgn.mcp.sandboxed_jupyter.wrapper:main`
-  - Other helpers: `adgn-openai-probe`, `adgn-sandboxer`, `adgn-mcp-*`, `adgn-matrix-bot`
+See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry points.
 ### Properties/specimens
 **For detailed props-specific documentation, see:**
 - @src/adgn/props/AGENTS.md — Complete guide to specimens, models, database, tooling, and workflows
@@ -112,15 +102,18 @@ Bootstrap handlers inject synthetic function calls before the agent's first samp
 
 **Pattern (immediate construction):**
 ```python
-from adgn.agent.bootstrap import TypedBootstrapBuilder, BootstrapHandler, read_resource_call, docker_exec_call
+from adgn.agent.bootstrap import TypedBootstrapBuilder, BootstrapHandler, docker_exec_call, read_package_file_call
 
 # Create builder with introspection (validates payload types against server schema)
 builder = TypedBootstrapBuilder.for_server(runtime_server)
 
 # Create handler. Build calls immediately - no factories, no inheritance
 bootstrap = BootstrapHandler([
-    read_resource_call(builder, server="resources", uri="resource://foo/bar"),
-    docker_exec_call(builder, server="runtime", cmd=["ls", "-la"]),
+    # Standalone helper functions:
+    docker_exec_call(builder, server=runtime, cmd=["ls", "-la"]),
+    read_package_file_call(builder, server=runtime, path="pyproject.toml"),
+    # Method on builder for resource reads:
+    builder.read_resource(comp.resources, server=some_mount, uri="resource://foo/bar"),
 ])
 handlers = [bootstrap, ...other handlers...]
 ```
@@ -130,7 +123,8 @@ handlers = [bootstrap, ...other handlers...]
 - Auto-generates call_ids (no manual management needed)
 - Type-safe: Pydantic payloads validated via introspection
 - Immediate construction (not factories/lambdas)
-- Helper functions for common patterns: `read_resource_call()`, `docker_exec_call()`
+- Standalone helpers: `docker_exec_call()`, `read_package_file_call()`, `read_package_files_call()`
+- Builder method: `builder.read_resource()` for resources server reads
 
 **Future enhancement:** See `src/adgn/agent/docs/bootstrap_type_safety.md` for plans to eliminate string literals via generic/typed stubs
 
@@ -239,7 +233,7 @@ handlers = [bootstrap, ...other handlers...]
 
 Runtime exec
 - Runtime Docker MCP server name/tool: `runtime/exec` (shared constants).
-- Host-side timeouts enforced for both ephemeral-per-call and per-session containers; timeouts surface and per-session containers are restarted when needed.
+- Host-side timeouts are enforced; if a command times out the session container is restarted before the next call.
 
 Approval Policy
 - Policies are standalone Python programs executed in Docker. They read a JSON request from stdin and write a JSON response to stdout.

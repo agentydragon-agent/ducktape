@@ -18,7 +18,7 @@ def editor_session(make_typed_mcp):
     @asynccontextmanager
     async def _open(p: Path):
         server = EditorServer(p)
-        async with make_typed_mcp(server, "editor") as pair:
+        async with make_typed_mcp(server) as pair:
             yield pair
 
     return _open

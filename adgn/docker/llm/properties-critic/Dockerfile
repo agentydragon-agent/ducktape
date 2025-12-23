@@ -28,7 +28,8 @@ RUN --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
         fd-find \
         postgresql-client \
         curl \
-        golang-go
+        golang-go \
+        tree
 
 WORKDIR /opt/adgn
 

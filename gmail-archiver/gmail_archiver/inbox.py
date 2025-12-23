@@ -113,14 +113,22 @@ class GmailInbox:
         raise KeyError(f"Message {message_id} not found in inbox cache")
 
     def ensure_metadata_cached(self, message_ids: Iterable[str], batch_size: int = 50) -> None:
-        """Ensure message metadata is in cache, batch-fetching any missing ones."""
-        missing = [mid for mid in message_ids if mid not in self._full_cache and mid not in self._metadata_cache]
-        if not missing:
+        uncached_ids = [mid for mid in message_ids if mid not in self._metadata_cache]
+        if not uncached_ids:
             return
 
         if self.show_progress:
-            self.console.print(f"[dim]Fetching {len(missing)} messages for display...[/dim]")
+            self.console.print(f"[dim]Fetching metadata for {len(uncached_ids)} messages...[/dim]")
 
-        fetched = self.client.get_messages_metadata_batch(missing, batch_size=batch_size)
+        fetched = self.client.get_messages_metadata_batch(uncached_ids, batch_size=batch_size)
         for msg in fetched:
             self._metadata_cache[msg.id] = msg
+
+    def get_metadata(self, message_id: str) -> GmailMessageWithHeaders:
+        """Raises if not cached - call ensure_metadata_cached first."""
+        if metadata := self._metadata_cache.get(message_id):
+            return metadata
+        if message_id in self._full_cache:
+            # Fallback: derive metadata from full message if available
+            raise RuntimeError(f"Metadata for message {message_id} not in metadata cache; available in full cache only")
+        raise RuntimeError(f"Metadata for message {message_id} not in cache - call ensure_metadata_cached first")

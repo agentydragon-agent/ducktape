@@ -12,6 +12,7 @@ from typer_di import Depends
 
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.resources import get_hydrator
 from adgn.props.db.config import get_database_config
@@ -76,12 +77,14 @@ async def cmd_gepa(
     # Run optimization
     console.print("\n[bold green]Starting GEPA optimization...[/bold green]\n")
     db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
     optimized_prompt, result = await optimize_with_gepa(
         initial_prompt=initial_prompt,
         hydrator=hydrator,
         critic_client=build_client(critic_model),
         grader_client=build_client(grader_model),
         db_config=db_config,
+        workspace_manager=workspace_manager,
         reflection_model=reflection_model,
         max_metric_calls=max_metric_calls,
         max_parallelism=max_parallelism,

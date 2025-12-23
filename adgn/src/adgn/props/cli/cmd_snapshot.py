@@ -24,12 +24,63 @@ from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.db.sync import get_specimens_base_path
 from adgn.props.docker_env import PROPERTIES_DOCKER_IMAGE, build_critic_binds, ensure_critic_image_async
-from adgn.props.file_filters import apply_gitignore_patterns
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
 # Snapshot subcommand group
 snapshot_app = TyperDI(help="Snapshot commands")
+
+
+def _apply_gitignore_patterns(
+    file_list: list[str], include: Sequence[str] = (), exclude: Sequence[str] = ()
+) -> list[str]:
+    """Apply gitignore-style include/exclude patterns to a file list.
+
+    Include patterns are applied first (whitelist), then exclude patterns (blacklist).
+
+    Args:
+        file_list: List of file paths to filter
+        include: Patterns to include (if specified, only matching files are kept)
+        exclude: Patterns to exclude (matching files are removed)
+
+    Returns:
+        Filtered list of file paths
+
+    Example:
+        >>> _apply_gitignore_patterns(
+        ...     ["adgn/src/foo.py", "adgn/tests/test.py", "wt/bar.py"],
+        ...     include=["adgn/"],
+        ...     exclude=["adgn/tests/"]
+        ... )
+        ["adgn/src/foo.py"]
+    """
+    import fnmatch
+
+    def matches_pattern(path: str, pattern: str) -> bool:
+        """Check if path matches gitignore-style pattern."""
+        # Remove trailing slash from pattern (indicates directory)
+        if pattern.endswith("/"):
+            pattern = pattern.rstrip("/")
+            # For directory patterns, match the directory and everything under it
+            return path.startswith(pattern + "/") or path == pattern
+        # For file patterns, use fnmatch
+        return fnmatch.fnmatch(path, pattern) or path.startswith(pattern + "/")
+
+    def matches_any_pattern(path: str, patterns: Sequence[str]) -> bool:
+        """Check if path matches any of the given patterns."""
+        return any(matches_pattern(path, pattern) for pattern in patterns)
+
+    result = file_list
+
+    # Apply include patterns (if specified, only keep matching files)
+    if include:
+        result = [f for f in result if matches_any_pattern(f, include)]
+
+    # Apply exclude patterns (remove matching files)
+    if exclude:
+        result = [f for f in result if not matches_any_pattern(f, exclude)]
+
+    return result
 
 
 def copy_working_tree_files(
@@ -63,7 +114,7 @@ def copy_working_tree_files(
 
     # Combine and apply filters
     all_files = tracked_files + untracked_files
-    filtered_files = apply_gitignore_patterns(all_files, include=include, exclude=exclude)
+    filtered_files = _apply_gitignore_patterns(all_files, include=include, exclude=exclude)
 
     # Copy files
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -121,14 +172,30 @@ async def snapshot_dump(
                 "issues": {
                     tp.tp_id: {
                         "rationale": tp.rationale,
-                        "instances": [occ.model_dump(mode="json") for occ in tp.occurrences],
+                        "instances": [
+                            {
+                                "occurrence_id": occ.occurrence_id,
+                                "files": occ.files,
+                                "note": occ.note,
+                                "expect_caught_from": occ.expect_caught_from,
+                            }
+                            for occ in tp.occurrences
+                        ],
                     }
                     for tp in db_snapshot.true_positives
                 },
                 "false_positives": {
                     fp.fp_id: {
                         "rationale": fp.rationale,
-                        "instances": [occ.model_dump(mode="json") for occ in fp.occurrences],
+                        "instances": [
+                            {
+                                "occurrence_id": occ.occurrence_id,
+                                "files": occ.files,
+                                "note": occ.note,
+                                "relevant_files": occ.relevant_files,
+                            }
+                            for occ in fp.occurrences
+                        ],
                     }
                     for fp in db_snapshot.false_positives
                 },
@@ -190,7 +257,7 @@ async def _run_in_snapshot_container(
             # their containers. This CLI command manually constructs what those servers build via
             # ContainerOptions/properties_docker_spec. Consider extracting a shared container factory
             # or making the MCP container session logic more reusable for interactive/non-MCP cases.
-            binds, _defs = build_critic_binds(hydrated.content_root, mount_properties=True, workspace_mode="rw")
+            binds = build_critic_binds(hydrated.content_root, workspace_mode="rw")
 
             # Build container config for aiodocker
             config: dict[str, Any] = {

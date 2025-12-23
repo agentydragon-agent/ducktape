@@ -11,8 +11,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from adgn.props.ids import BaseIssueID, SnapshotSlug
-from adgn.props.models.critic_scopes import CriticScopeSpec
+from adgn.props.ids import BaseIssueID
 from adgn.props.models.true_positive import Occurrence
 from adgn.props.rationale import Rationale
 
@@ -22,26 +21,6 @@ from adgn.props.rationale import Rationale
 
 type ResolvedFileScope = set[Path]
 """Resolved file scope - guaranteed to be an explicit set of paths (no sentinels). Internal only."""
-
-
-# =============================================================================
-# Critic Input/Output Models
-# =============================================================================
-
-
-class CriticInput(BaseModel):
-    """Input for a critic run (codebase → candidate issues).
-
-    Internal format used by critic execution.
-    """
-
-    snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    scope: CriticScopeSpec = Field(
-        description="Critic scope specification: either AllFilesScope (review entire snapshot) or ExplicitFileScope (review specific files)"
-    )
-    prompt_sha256: str = Field(description="SHA256 hash of the system prompt for reproducibility tracking")
-
-    model_config = ConfigDict(extra="forbid")
 
 
 # =============================================================================

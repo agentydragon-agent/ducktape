@@ -5,6 +5,6 @@ querying to scale to 10-50 examples (vs GEPA's 3-5) with lower context consumpti
 
 Key components:
 - token_budget_handler: Token budget enforcement with progressive warnings
-- prompt_submission_server: MCP server for prompt submission
+- reminder_handler: Periodic reminders for improvement progress
 - improve_agent: Main orchestrator workflow
 """

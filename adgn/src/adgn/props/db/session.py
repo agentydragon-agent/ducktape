@@ -37,13 +37,16 @@ from contextlib import contextmanager
 import logging
 from pathlib import Path
 import threading
+from typing import Any
 
 from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect, text
+from psycopg2.extras import register_composite
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
+from sqlalchemy.pool import ConnectionPoolEntry
 
 from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.models import Base
@@ -79,6 +82,23 @@ def _get_engine(config: DatabaseConfig | None = None):
 
         # Connection pool sized for parallel evaluation (default max_parallelism=20 + overhead)
         _engine = create_engine(url, echo=False, pool_size=20, max_overflow=12)
+
+        # Register composite type adapter on each checkout from pool
+        # Uses "checkout" event (not "connect") so registration happens on every use,
+        # not just when connection is created. This handles the case where:
+        # 1. Connection is created before migrations (type doesn't exist)
+        # 2. Migrations create the type
+        # 3. Subsequent checkouts get the type registered
+        @event.listens_for(_engine, "checkout")
+        def _register_composite_types(
+            dbapi_connection: Any, connection_record: ConnectionPoolEntry, connection_proxy: Any
+        ) -> None:
+            """Register PostgreSQL composite types on connection checkout."""
+            try:
+                register_composite("stats_with_ci", dbapi_connection, globally=False)
+            except Exception as e:
+                # Type may not exist yet (during migration) - that's OK
+                logger.debug(f"Could not register stats_with_ci composite type: {e}")
 
         # Bind the scoped session factory to the engine
         _session_factory.configure(bind=_engine)

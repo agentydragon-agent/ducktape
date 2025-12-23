@@ -127,7 +127,7 @@ class OpenAIRunner(AgentRunner):
                         binds=binds,
                         network_mode=network_mode,
                         environment=setup.docker.env or {},
-                        ephemeral=True,
+                        labels={"adgn.project": "inop", "adgn.role": "container"},
                     ),
                 )
 

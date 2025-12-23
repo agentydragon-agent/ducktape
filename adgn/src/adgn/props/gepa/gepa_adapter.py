@@ -36,6 +36,7 @@ from collections.abc import Mapping, Sequence
 import concurrent.futures
 from dataclasses import dataclass
 from datetime import datetime
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -54,29 +55,28 @@ from sqlalchemy import func
 
 from adgn.agent.events import REFLECTION_EVENT_TYPES, EventType
 from adgn.openai_utils.model import OpenAIModelProto
-from adgn.props.critic.critic import run_critic
-from adgn.props.critic.models import CriticInput
+from adgn.props.agent_types import AgentType
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example, get_examples_for_split
-from adgn.props.db.models import (
-    CriticRun as DBCriticRun,
-    CriticRunStatus,
-    Event,
-    GraderRun as DBGraderRun,
-    GraderRunStatus,
-    GradingDecision,
-)
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.models import AgentRun, AgentRunStatus, Event, GradingDecision
 from adgn.props.db.snapshots import DBCriticSubmitPayload
 from adgn.props.display import short_sha
 from adgn.props.gepa.warm_start import build_historical_gepa_state
-from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
-from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
+
+
+def _gepa_not_implemented() -> None:
+    """Raise NotImplementedError for GEPA - called at runtime entrypoints."""
+    raise NotImplementedError(
+        "GEPA is broken: run_critic_legacy() has been removed. "
+        "GEPA needs migration to definition-based run_critic(). "
+        "See docs/design/agent-definitions.md Task 9."
+    )
 
 
 # =============================================================================
@@ -84,22 +84,20 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
-def _filter_reflection_events(transcript_id: UUID) -> list[EventType]:
+def _filter_reflection_events(agent_run_id: UUID) -> list[EventType]:
     """Load and filter events for GEPA reflection dataset.
 
-    Fetches events for a transcript and filters to reflection-relevant types
+    Fetches events for an agent run and filters to reflection-relevant types
     (excludes ApiRequest/Response to prevent O(n²) context blowup in reflection LM).
 
     Args:
-        transcript_id: Transcript UUID to fetch events for
+        agent_run_id: Agent run UUID to fetch events for
 
     Returns:
         List of filtered events (ToolCall, ToolCallOutput, AssistantText, ReasoningItem)
     """
     with get_session() as session:
-        event_rows = (
-            session.query(Event).filter(Event.transcript_id == transcript_id).order_by(Event.sequence_num).all()
-        )
+        event_rows = session.query(Event).filter(Event.agent_run_id == agent_run_id).order_by(Event.sequence_num).all()
         # Filter using isinstance against REFLECTION_EVENT_TYPES tuple
         return type_cast(
             list[EventType], [e.payload for e in event_rows if isinstance(e.payload, REFLECTION_EVENT_TYPES)]
@@ -118,7 +116,7 @@ class CriticTrajectory:
     critique_payload is None if the critic ran out of turns before submitting.
     """
 
-    transcript_id: UUID
+    agent_run_id: UUID
     events: list[EventType]
     critique_payload: DBCriticSubmitPayload | None
 
@@ -131,8 +129,8 @@ class CriticOutput:
     Semantic data (issues, grading decisions) lives in normalized tables.
     """
 
-    critic_status: CriticRunStatus
-    grader_status: GraderRunStatus | None
+    critic_status: AgentRunStatus
+    grader_status: AgentRunStatus | None
     critic_run_id: UUID
 
 
@@ -157,8 +155,8 @@ class ReflectionExample(BaseModel):
     current_text: str
     score: float
     trajectory: CriticTrajectory
-    critic_status: CriticRunStatus
-    grader_status: GraderRunStatus | None
+    critic_status: AgentRunStatus
+    grader_status: AgentRunStatus | None
 
 
 # =============================================================================
@@ -192,15 +190,18 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
         db_config: DatabaseConfig,
+        workspace_manager: WorkspaceManager,
         run_dir: Path,
         reflection_model: str | None = None,
         verbose: bool = False,
         max_parallelism: int = 20,
     ):
+        _gepa_not_implemented()
         self.hydrator = hydrator
         self.critic_client = critic_client
         self.grader_client = grader_client
         self.db_config = db_config
+        self.workspace_manager = workspace_manager
         self.reflection_model = reflection_model
         self.verbose = verbose
         self.max_parallelism = max_parallelism
@@ -216,12 +217,12 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
             self.propose_new_texts = None
 
     def _make_evaluation_result(
-        self, transcript_id: UUID, critic_run_id: UUID, grader_run_id: UUID | None, capture_traces: bool
+        self, agent_run_id: UUID, critic_run_id: UUID, grader_run_id: UUID | None, capture_traces: bool
     ) -> EvaluationResult:
         """Build EvaluationResult by fetching critic output and trajectory from database.
 
         Args:
-            transcript_id: Transcript UUID identifying the critic run
+            agent_run_id: Agent run UUID identifying the critic run
             critic_run_id: Critic run UUID
             grader_run_id: Grader run UUID or None if no grader run
             capture_traces: Whether to fetch and build trajectory
@@ -229,9 +230,11 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         Returns:
             EvaluationResult with computed score and optional trajectory
         """
-        # Fetch critic status from database
+        # Fetch critic status from database (now AgentRun)
         with get_session() as session:
-            critic_run = session.query(DBCriticRun).filter_by(transcript_id=transcript_id).one()
+            critic_run = session.get(AgentRun, critic_run_id)
+            if critic_run is None:
+                raise ValueError(f"AgentRun {critic_run_id} not found")
             critic_status = critic_run.status
 
         # Build trajectory if requested
@@ -239,21 +242,21 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         if capture_traces:
             critique_payload_db: DBCriticSubmitPayload | None = None
             # Load payload (only notes_md; issues are in normalized tables)
-            if critic_status == CriticRunStatus.COMPLETED:
+            if critic_status == AgentRunStatus.COMPLETED:
                 with get_session() as payload_session:
-                    run = payload_session.get(DBCriticRun, critic_run_id)
+                    run = payload_session.get(AgentRun, critic_run_id)
                     critique_payload_db = DBCriticSubmitPayload(notes_md=run.completion_summary) if run else None
 
-            filtered_events = _filter_reflection_events(transcript_id)
+            filtered_events = _filter_reflection_events(agent_run_id)
             trajectory = CriticTrajectory(
-                transcript_id=transcript_id, events=filtered_events, critique_payload=critique_payload_db
+                agent_run_id=agent_run_id, events=filtered_events, critique_payload=critique_payload_db
             )
 
         # Fetch grader status if grader ran
-        grader_status: GraderRunStatus | None = None
+        grader_status: AgentRunStatus | None = None
         if grader_run_id is not None:
             with get_session() as session:
-                grader_run = session.get(DBGraderRun, grader_run_id)
+                grader_run = session.get(AgentRun, grader_run_id)
                 grader_status = grader_run.status if grader_run else None
 
         # Compute single-run recall (fitness score)
@@ -266,7 +269,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                 # Pattern 1: Total credit (recall numerator)
                 total_credit = (
                     session.query(func.sum(GradingDecision.credit))
-                    .filter_by(grader_run_id=grader_run_id)
+                    .filter_by(agent_run_id=grader_run_id)
                     .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
                     .scalar()
                     or 0.0
@@ -274,7 +277,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                 # Pattern 2: Occurrence count (recall denominator)
                 occurrence_count = (
                     session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                    .filter_by(grader_run_id=grader_run_id)
+                    .filter_by(agent_run_id=grader_run_id)
                     .filter(GradingDecision.target_tp_id.isnot(None))
                     .distinct()
                     .count()
@@ -459,52 +462,10 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         self, specimen_input: Example, prompt_sha256: str, capture_traces: bool, docker_client: aiodocker.Docker
     ) -> EvaluationResult:
         """Implementation of single specimen evaluation (called under semaphore)."""
-        slug = specimen_input.snapshot_slug
-
-        # Run critic - use specimen's scope for consistent cache keys
-        # Compositor handles snapshot hydration internally
-        critic_input = CriticInput(
-            snapshot_slug=slug,
-            scope=specimen_input.scope,  # Use scope for cache consistency
-            prompt_sha256=prompt_sha256,
-        )
-
-        critic_run_id, status = await run_critic(
-            input_data=critic_input,
-            client=self.critic_client,
-            docker_client=docker_client,
-            hydrator=self.hydrator,
-            db_config=self.db_config,
-            prompt_optimization_run_id=None,
-            verbose=self.verbose,
-            max_turns=100,
-        )
-
-        # Get transcript_id from database
-        with get_session() as session:
-            critic_run = session.get(DBCriticRun, critic_run_id)
-            assert critic_run is not None, f"CriticRun {critic_run_id} not found"
-            transcript_id = critic_run.transcript_id
-
-        # Grade if critic succeeded
-        if status == CriticRunStatus.COMPLETED:
-            with get_session() as session:
-                grader_run_id = await grade_critic_run_by_id(
-                    session,
-                    critic_run_id,
-                    self.grader_client,
-                    docker_client,
-                    self.hydrator,
-                    self.db_config,
-                    verbose=self.verbose,
-                    max_turns=200,
-                )
-                # No need to load grader_run - _make_evaluation_result queries grading_decisions directly
-
-        # Pass grader_run_id (or None if critic failed) for score calculation
-        return self._make_evaluation_result(
-            transcript_id, critic_run_id, grader_run_id if status == CriticRunStatus.COMPLETED else None, capture_traces
-        )
+        # NOTE: This code is unreachable because CriticAdapter.__init__ calls _gepa_not_implemented()
+        # Keeping signature for type checking purposes only
+        _gepa_not_implemented()
+        raise AssertionError("unreachable")
 
     async def _evaluate_async(
         self, batch: list[Example], candidate: dict[str, str], capture_traces: bool, docker_client: aiodocker.Docker
@@ -528,71 +489,84 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
         semaphore = asyncio.Semaphore(self.max_parallelism)
 
         system_prompt = candidate["system_prompt"]
-        prompt_sha256 = hash_and_upsert_prompt(system_prompt)
+        # Hash prompt for cache lookup (no DB storage - GEPA is broken anyway)
+        prompt_sha256 = hashlib.sha256(system_prompt.encode()).hexdigest()
 
         # Phase 1: Check DB for each input (single query with LEFT JOIN)
         cached_results: dict[int, EvaluationResult] = {}  # batch_idx -> result found in DB
         uncached_inputs: list[tuple[int, Example]] = []  # (batch_idx, input)
 
         with get_session() as session:
-            # Single query: fetch critic runs with optional grader runs via LEFT JOIN
-            cache_rows = (
-                session.query(DBCriticRun, DBGraderRun)
-                .outerjoin(
-                    DBGraderRun,
-                    (DBCriticRun.id == DBGraderRun.critic_run_id)
-                    & (DBGraderRun.model == self.grader_client.model)
-                    & (DBGraderRun.status == GraderRunStatus.COMPLETED),
-                )
+            # Query completed critic runs matching prompt and model
+            critic_runs = (
+                session.query(AgentRun)
                 .filter(
-                    DBCriticRun.prompt_sha256 == prompt_sha256,
-                    DBCriticRun.model == self.critic_client.model,
-                    DBCriticRun.status == CriticRunStatus.COMPLETED,
+                    AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                    AgentRun.type_config["prompt_sha256"].astext == prompt_sha256,
+                    AgentRun.model == self.critic_client.model,
+                    AgentRun.status == AgentRunStatus.COMPLETED,
                 )
                 .all()
             )
 
-            # Index results by (snapshot_slug, scope_hash)
-            cache_by_key: dict[tuple[SnapshotSlug, str], tuple[DBCriticRun, DBGraderRun | None]] = {
-                (critic.snapshot_slug, critic.scope_hash): (critic, grader) for critic, grader in cache_rows
-            }
+            # Index critics by their frozen ExampleSpec (hashable discriminated union)
+            critic_by_key = {c.critic_config().example: c for c in critic_runs}
+
+            # Query completed grader runs for these critic runs
+            critic_run_ids = [c.agent_run_id for c in critic_runs]
+            grader_runs: list[AgentRun] = []
+            if critic_run_ids:
+                # Note: We need to filter graders by their graded_agent_run_id being in critic_run_ids
+                # Since JSONB contains UUID as string, we need to cast
+                grader_runs = (
+                    session.query(AgentRun)
+                    .filter(
+                        AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                        AgentRun.model == self.grader_client.model,
+                        AgentRun.status == AgentRunStatus.COMPLETED,
+                    )
+                    .all()
+                )
+                # Filter in Python for those matching our critic runs
+                grader_runs = [g for g in grader_runs if g.grader_config().graded_agent_run_id in set(critic_run_ids)]
+
+            # Index grader runs by graded_agent_run_id (critic_run_id)
+            grader_by_critic_id: dict[UUID, AgentRun] = {g.grader_config().graded_agent_run_id: g for g in grader_runs}
 
             # Process each specimen using indexed results
             for idx, specimen_input in enumerate(batch):
-                scope_hash = specimen_input.scope_hash
-                cache_key = (specimen_input.snapshot_slug, scope_hash)
+                # Use frozen ExampleSpec as cache key (hashable discriminated union)
+                cache_key = specimen_input.to_example_spec()
 
-                cache_hit = cache_by_key.get(cache_key)
-                if not cache_hit:
+                critic_run = critic_by_key.get(cache_key)
+                if not critic_run:
                     logger.info(
-                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                     )
                     uncached_inputs.append((idx, specimen_input))
                     continue
 
-                critic_run, grader_run = cache_hit
-
-                # Extract critic data
-                transcript_id = critic_run.transcript_id
-                critic_run_id = critic_run.id
+                # Use critic_run_id directly for events/trajectory
+                critic_run_id = critic_run.agent_run_id
 
                 # Check if grader run is required but missing
+                grader_run = grader_by_critic_id.get(critic_run_id)
                 grader_run_id: UUID | None = None
-                if critic_run.status == CriticRunStatus.COMPLETED:
+                if critic_run.status == AgentRunStatus.COMPLETED:
                     if not grader_run:
                         logger.info(
-                            f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                            f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                         )
                         uncached_inputs.append((idx, specimen_input))
                         continue
-                    grader_run_id = grader_run.id
+                    grader_run_id = grader_run.agent_run_id
 
                 # Cache hit
                 logger.info(
-                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                 )
                 cached_results[idx] = self._make_evaluation_result(
-                    transcript_id, critic_run_id, grader_run_id, capture_traces
+                    critic_run_id, critic_run_id, grader_run_id, capture_traces
                 )
 
         # Phase 2: Evaluate uncached inputs in parallel
@@ -725,17 +699,17 @@ def _log_run_statistics(critic_model: str, grader_model: str) -> None:
     with get_session() as session:
         # Count critic run statuses using SQL aggregation
         critic_status_counts = (
-            session.query(DBCriticRun.status, func.count(DBCriticRun.id))
-            .filter(DBCriticRun.model == critic_model)
-            .group_by(DBCriticRun.status)
+            session.query(AgentRun.status, func.count(AgentRun.agent_run_id))
+            .filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC, AgentRun.model == critic_model)
+            .group_by(AgentRun.status)
             .all()
         )
 
         # Count grader run statuses using SQL aggregation
         grader_status_counts = (
-            session.query(DBGraderRun.status, func.count(DBGraderRun.id))
-            .filter(DBGraderRun.model == grader_model)
-            .group_by(DBGraderRun.status)
+            session.query(AgentRun.status, func.count(AgentRun.agent_run_id))
+            .filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER, AgentRun.model == grader_model)
+            .group_by(AgentRun.status)
             .all()
         )
 
@@ -769,6 +743,7 @@ async def optimize_with_gepa(
     critic_client: OpenAIModelProto,
     grader_client: OpenAIModelProto,
     db_config: DatabaseConfig,
+    workspace_manager: WorkspaceManager,
     *,
     reflection_model: str,
     max_metric_calls: int = 100,
@@ -813,6 +788,7 @@ async def optimize_with_gepa(
     Raises:
         ValueError: If any snapshot has no critic scopes
     """
+    _gepa_not_implemented()
     logger.info("Starting GEPA optimization")
     logger.info(f"Reflection model: {reflection_model}")
     logger.info(f"Max metric calls: {max_metric_calls}")
@@ -860,6 +836,7 @@ async def optimize_with_gepa(
         critic_client,
         grader_client,
         db_config,
+        workspace_manager,
         Path(run_dir),
         reflection_model=reflection_model,
         verbose=verbose,

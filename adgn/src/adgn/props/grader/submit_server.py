@@ -18,7 +18,7 @@ from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.props.db import get_session
-from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision, ReportedIssue
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision, ReportedIssue
 
 logger = logging.getLogger(__name__)
 
@@ -104,26 +104,26 @@ class GraderSubmitServer(EnhancedFastMCP):
     def _submit_grading(self, summary: str) -> GraderSubmitResult:
         """Submit grading with validation."""
         with get_session() as session:
-            # Load grader run
-            grader_run = session.get(GraderRun, self._grader_run_id)
-            if grader_run is None:
+            # Load grader run (now AgentRun)
+            agent_run = session.get(AgentRun, self._grader_run_id)
+            if agent_run is None:
                 raise ToolError(f"Grader run {self._grader_run_id} not found")
 
             # Check if run is already in a terminal state
-            if grader_run.status == GraderRunStatus.COMPLETED:
+            if agent_run.status == AgentRunStatus.COMPLETED:
                 raise ToolError(f"Grader run {self._grader_run_id} already completed")
 
-            if grader_run.status == GraderRunStatus.REPORTED_FAILURE:
+            if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
                 raise ToolError(f"Grader run {self._grader_run_id} already reported failure")
 
             # Load reported issues from normalized table
-            reported_issues = session.query(ReportedIssue).filter_by(critic_run_id=self._critic_run_id).all()
+            reported_issues = session.query(ReportedIssue).filter_by(agent_run_id=self._critic_run_id).all()
 
             # Extract input issue IDs from reported issues
             input_issue_ids = {issue.issue_id for issue in reported_issues}
 
             # Load all decisions for this grader run
-            decisions = session.query(GradingDecision).filter_by(grader_run_id=self._grader_run_id).all()
+            decisions = session.query(GradingDecision).filter_by(agent_run_id=self._grader_run_id).all()
 
             # Group decisions by input_issue_id
             decisions_by_input: dict[str, list[GradingDecision]] = {}
@@ -142,8 +142,8 @@ class GraderSubmitServer(EnhancedFastMCP):
             # Database CHECK constraint (validate_input_issue_exists) prevents those at INSERT time.
 
             # Mark run as completed and store summary
-            grader_run.status = GraderRunStatus.COMPLETED
-            grader_run.notes_md = summary
+            agent_run.status = AgentRunStatus.COMPLETED
+            agent_run.completion_summary = summary
             # Note: output field left as None - grading results are in grading_decisions table
             session.commit()
 
@@ -163,18 +163,18 @@ class GraderSubmitServer(EnhancedFastMCP):
     def _report_failure(self, message: str) -> None:
         """Report that grading could not be completed."""
         with get_session() as session:
-            grader_run = session.get(GraderRun, self._grader_run_id)
-            if grader_run is None:
+            agent_run = session.get(AgentRun, self._grader_run_id)
+            if agent_run is None:
                 raise ToolError(f"Grader run {self._grader_run_id} not found")
 
-            if grader_run.status == GraderRunStatus.COMPLETED:
+            if agent_run.status == AgentRunStatus.COMPLETED:
                 raise ToolError(f"Grader run {self._grader_run_id} already completed")
 
-            if grader_run.status == GraderRunStatus.REPORTED_FAILURE:
+            if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
                 raise ToolError(f"Grader run {self._grader_run_id} already reported failure")
 
-            grader_run.status = GraderRunStatus.REPORTED_FAILURE
-            grader_run.notes_md = message
+            agent_run.status = AgentRunStatus.REPORTED_FAILURE
+            agent_run.completion_summary = message
             session.commit()
 
             logger.info("Grader run %s reported failure: %s", self._grader_run_id, message)

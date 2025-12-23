@@ -1,0 +1,86 @@
+# Clustering Database Schema
+
+## Overview
+
+The clustering subsystem uses **Row-Level Security (RLS)** to isolate data access per clustering run. Each agent runs as a temporary PostgreSQL user whose username encodes the agent_run_id, enabling automatic query scoping.
+
+## unknown_clusters
+
+!psql -c "\d+ unknown_clusters"
+
+## unknown_assignments
+
+!psql -c "\d+ unknown_assignments"
+
+**Soft Delete Workflow:**
+1. To cancel an assignment: UPDATE `cancelled_at = now()`, `cancellation_reason = '...'`
+2. To create a replacement: INSERT new row (UNIQUE constraint allows it after cancellation)
+3. Queries should filter `WHERE cancelled_at IS NULL` to get active assignments only
+
+## RLS Mechanism
+
+Temporary agent users follow the unified pattern:
+```
+agent_{agent_run_id}
+```
+
+**`current_agent_run_id() → UUID`** extracts the agent_run_id from the current username.
+
+For clustering tables, temporary users can only see/modify rows where `agent_run_id` matches their extracted run_id.
+
+## Query Examples
+
+### Get all clusters for current run
+```sql
+SELECT * FROM unknown_clusters ORDER BY cluster_name;
+-- Returns only clusters where agent_run_id matches current user's run
+```
+
+### Get active assignments for current run
+```sql
+SELECT * FROM unknown_assignments
+WHERE cancelled_at IS NULL
+ORDER BY created_at;
+```
+
+### Create a new cluster
+```sql
+INSERT INTO unknown_clusters (agent_run_id, cluster_name, description)
+VALUES (current_agent_run_id(), 'missing-null-checks', 'Functions that dont validate nullable parameters');
+```
+
+### Assign an unknown to a cluster
+```sql
+INSERT INTO unknown_assignments (
+    agent_run_id, grader_run_id, unknown_id,
+    cluster_id, rationale
+)
+VALUES (
+    current_agent_run_id(),
+    'a1b2c3d4-...'::uuid,
+    'input-issue-5',
+    (SELECT id FROM unknown_clusters WHERE cluster_name = 'missing-null-checks'),
+    'Same pattern: parameter used without null check'
+);
+```
+
+### Cancel an assignment
+```sql
+UPDATE unknown_assignments
+SET cancelled_at = now(),
+    cancellation_reason = 'Reassigning to different cluster after review'
+WHERE grader_run_id = 'a1b2c3d4-...'::uuid
+  AND unknown_id = 'input-issue-5'
+  AND cancelled_at IS NULL;
+```
+
+## Validation Rules
+
+### Cluster Names
+- Must be kebab-case (enforced by application layer)
+- Must be unique within an agent_run_id
+- Examples: `missing-error-handling`, `duplicate-validation`, `unused-imports`
+
+### Assignment Targets
+- Exactly one of (`cluster_id`, `mapped_tp_id`, `mapped_fp_id`) must be NOT NULL
+- Enforced by CHECK constraint

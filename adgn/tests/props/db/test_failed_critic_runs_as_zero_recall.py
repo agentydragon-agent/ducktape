@@ -1,183 +1,170 @@
 """Test that failed critic runs appear in occurrence_credits view with zero credit."""
 
 from dataclasses import dataclass
-from pathlib import Path
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from adgn.props.db import get_session
+from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.examples import Example
 from adgn.props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    AggregatedRecallByDefinition,
     AggregatedRecallByExample,
-    AggregatedRecallByPrompt,
-    CriticRun,
-    CriticRunStatus,
-    GraderRun,
+    FileSet,
+    FileSetMember,
+    OccurrenceTrigger,
     Snapshot,
+    SnapshotFile,
     TruePositive,
+    TruePositiveOccurrenceORM,
 )
 from adgn.props.grader.models import GraderSuccess, InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ExplicitFileScope
+from adgn.props.models.examples import ExampleKind, SingleFileSetExample
 from adgn.props.models.snapshot import LocalSource
-from adgn.props.models.true_positive import TruePositiveOccurrence
 from adgn.props.rationale import Rationale
 from adgn.props.splits import Split
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import make_critic_run, make_reported_issues, populate_grading_decisions
+from tests.props.conftest import make_critic_run, make_grader_run, make_reported_issues, populate_grading_decisions
 
 
-@pytest.fixture
-def basic_snapshot_with_tp():
-    """Fixture providing a snapshot with one TP occurrence."""
-    snapshot_slug = SnapshotSlug(f"test-basic/{uuid4()}")
-    files = ["test/file1.py"]
+def make_tp_with_occurrence(
+    session: Session,
+    snapshot_slug: SnapshotSlug,
+    tp_id: str,
+    rationale: str,
+    occurrence_id: str,
+    files: dict[str, list[tuple[int, int]] | None],
+    expect_caught_from: list[list[str]],
+    note: str | None = None,
+) -> TruePositive:
+    """Create a TruePositive with a single occurrence using ORM models.
 
-    def _create(session):
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    Args:
+        session: Database session
+        snapshot_slug: Snapshot slug
+        tp_id: True positive ID
+        rationale: Issue rationale
+        occurrence_id: Occurrence ID
+        files: Dict of {path: line_ranges or None}
+        expect_caught_from: List of trigger sets, each a list of file paths
+        note: Optional note
 
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="test-tp-001",
-            rationale="Test issue",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-1",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    Returns:
+        TruePositive ORM object (added to session but not flushed)
+    """
+    tp = TruePositive(snapshot_slug=snapshot_slug, tp_id=tp_id, rationale=rationale)
+    session.add(tp)
+    session.flush()  # Need to flush TP before adding occurrence
 
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
-        session.commit()
-
-        return snapshot_slug, example.scope_hash
-
-    return _create
+    occ = TruePositiveOccurrenceORM(
+        snapshot_slug=snapshot_slug,
+        tp_id=tp_id,
+        occurrence_id=occurrence_id,
+        files=files,
+        expect_caught_from=expect_caught_from,
+        note=note,
+    )
+    session.add(occ)
+    return tp
 
 
 @dataclass
 class CriticRunFactory:
-    """Factory for creating critic runs in tests."""
+    """Factory for creating critic runs in tests.
+
+    Uses git-synced fixtures (test-fixtures/test-trivial) instead of synthetic data.
+    """
 
     session: Session
-    snapshot_slug: SnapshotSlug
-    scope_hash: str
-    prompt_sha: str
+    example: Example
+
+    @property
+    def snapshot_slug(self) -> SnapshotSlug:
+        return self.example.snapshot_slug
 
     def create_successful(self):
         """Create a successful critic run with grader run."""
-        # Get the example for this critic run
-        example = (
-            self.session.query(Example).filter_by(snapshot_slug=self.snapshot_slug, scope_hash=self.scope_hash).one()
-        )
-
         # Create critic run
-        critic_run = make_critic_run(example=example, prompt_sha256=self.prompt_sha, status=CriticRunStatus.COMPLETED)
+        critic_run = make_critic_run(example=self.example, status=AgentRunStatus.COMPLETED)
         self.session.add(critic_run)
         self.session.flush()
 
         # Create grader run with zero occurrences found
-        grader_success = GraderSuccess(
-            occurrence_results=[
-                OccurrenceResult(
-                    tp_id=TruePositiveID("test-tp-001"),
-                    occurrence_id="occ-1",
-                    found_credit=0.0,
-                    matched_by=[],  # Empty matched_by means occurrence not found
-                    rationale=Rationale("Occurrence not found in critique"),
-                )
-            ],
-            unknowns=[],
-            summary=Rationale("No issues found in critique"),
-        )
-        grader_run = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=self.snapshot_slug,
-            model="test-grader-model",
-            critic_run_id=critic_run.id,
-            prompt_optimization_run_id=None,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+        # Note: We use the git fixture's TP ID (test-issue) - but we don't need to know it
+        # because we're testing the aggregation logic, not the grading logic
+        grader_run = make_grader_run(
+            critic_run=critic_run, model="test-grader-model", canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT
         )
         self.session.add(grader_run)
-        self.session.flush()  # Ensure grader_run.id is available
+        self.session.flush()  # Ensure grader_run.agent_run_id is available
 
-        # Populate grading_decisions table from MCP occurrence_results
-        # Note: matched_by is empty, so no grading decisions will be created
-        populate_grading_decisions(
-            grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=self.session
-        )
-
-    def create_failed(self, failure_type: str):
-        """Create a failed critic run (max_turns or context_length)."""
-        # Get the example for this critic run
-        example = (
-            self.session.query(Example).filter_by(snapshot_slug=self.snapshot_slug, scope_hash=self.scope_hash).one()
-        )
-
-        if failure_type == "max_turns":
-            status = CriticRunStatus.MAX_TURNS_EXCEEDED
-        elif failure_type == "context_length":
-            status = CriticRunStatus.CONTEXT_LENGTH_EXCEEDED
-        else:
-            raise ValueError(f"Unknown failure type: {failure_type}")
-
-        critic_run = make_critic_run(example=example, prompt_sha256=self.prompt_sha, status=status)
+    def create_failed(self, status: AgentRunStatus):
+        """Create a failed critic run with the given status."""
+        critic_run = make_critic_run(example=self.example, status=status)
         self.session.add(critic_run)
 
 
 @pytest.fixture
-def critic_run_factory(test_prompt_sha, basic_snapshot_with_tp):
-    """Factory for creating critic runs with common parameters captured.
+def critic_run_factory():
+    """Factory for creating critic runs using git-synced test fixtures.
 
+    Uses test-fixtures/test-trivial with the subtract.py file-set example (has exactly 1 TP).
     Returns a factory function that takes a session and returns a CriticRunFactory.
     """
 
-    def _make_factory(session):
-        snapshot_slug, scope_hash = basic_snapshot_with_tp(session)
-        return CriticRunFactory(
-            session=session, snapshot_slug=snapshot_slug, scope_hash=scope_hash, prompt_sha=test_prompt_sha
+    def _make_factory(session: Session) -> CriticRunFactory:
+        # Use git-synced fixture: test-fixtures/test-trivial has 4 TPs
+        # Get the subtract.py file-set example (has exactly 1 catchable TP - test-issue)
+        # Note: add.py and multiply.py file-sets have 2 catchable TPs each (test-issue-2/4 or test-issue-3/4)
+        example = (
+            session.query(Example)
+            .filter_by(snapshot_slug=SnapshotSlug("test-fixtures/test-trivial"))
+            .filter(Example.files_hash.isnot(None))
+            .filter(Example.n_catchable_occurrences == 1)
+            .first()
         )
+        assert example is not None, "Expected single-file-set example with 1 catchable TP in test-trivial"
+        return CriticRunFactory(session=session, example=example)
 
     return _make_factory
 
 
-def create_critic_run_with_multiple_grader_runs(
-    session: Session, example: Example, prompt_sha256: str, credits: list[float]
-) -> CriticRun:
+def create_critic_run_with_multiple_grader_runs(session: Session, example: Example, credits: list[float]) -> AgentRun:
     """Helper to create a successful critic run with multiple grader runs at different credits.
 
     Args:
         session: Database session
         example: Example to create critic run for
-        prompt_sha256: Prompt hash
         credits: List of credit values for grader runs (one grader run per credit)
 
     Returns:
-        The created CriticRun (already added to session and flushed)
+        The created AgentRun (already added to session and flushed)
     """
-    critic_run = make_critic_run(
-        example=example, prompt_sha256=prompt_sha256, model="test-model", status=CriticRunStatus.COMPLETED
-    )
+    critic_run = make_critic_run(example=example, model="test-model", status=AgentRunStatus.COMPLETED)
     session.add(critic_run)
     session.flush()
+
+    # Pick a real TP occurrence from this snapshot (avoid synthetic IDs that violate FK trigger)
+    tp_occ = (
+        session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=example.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert tp_occ is not None, "Expected at least one TP occurrence for example snapshot"
 
     # Create multiple grader runs with different credits
     for idx, credit in enumerate(credits):
         grader_success = GraderSuccess(
             occurrence_results=[
                 OccurrenceResult(
-                    tp_id=TruePositiveID("test-tp-001"),
-                    occurrence_id="occ-1",
+                    tp_id=TruePositiveID(tp_occ.tp_id),
+                    occurrence_id=tp_occ.occurrence_id,
                     found_credit=credit,
                     matched_by=[OccurrenceMatch(input_id=InputIssueID(f"input-{idx}"), credit=credit)],
                     rationale=Rationale(f"Credit {credit}"),
@@ -188,18 +175,13 @@ def create_critic_run_with_multiple_grader_runs(
         )
 
         # Create reported issue for this grader run
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=[f"input-{idx}"], session=session)
+        make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=[f"input-{idx}"], session=session)
 
-        grader_run = GraderRun(
-            transcript_id=uuid4(),
-            snapshot_slug=example.snapshot_slug,
-            model="test-grader-model",
-            critic_run_id=critic_run.id,
-            prompt_optimization_run_id=None,
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+        grader_run = make_grader_run(
+            critic_run=critic_run, model="test-grader-model", canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT
         )
         session.add(grader_run)
-        session.flush()  # Ensure grader_run.id is available
+        session.flush()  # Ensure grader_run.agent_run_id is available
 
         # Populate grading_decisions table from MCP occurrence_results
         populate_grading_decisions(
@@ -209,639 +191,661 @@ def create_critic_run_with_multiple_grader_runs(
     return critic_run
 
 
-def test_failed_critic_run_appears_with_zero_credit(test_db, test_prompt_sha):
-    """Test that max_turns_exceeded critic runs generate zero-credit rows for catchable occurrences."""
+def _compute_files_hash(file_paths: list[str]) -> str:
+    """Compute content-addressable hash for a file set."""
+    import hashlib
 
+    sorted_paths = sorted(file_paths)
+    content = "\n".join(sorted_paths)
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def _create_synthetic_example(
+    session: Session, snapshot_slug: SnapshotSlug, files: list[str], tp_id: str, occurrence_id: str
+) -> Example:
+    """Create synthetic file set and return the generated Example from VIEW.
+
+    The Example VIEW auto-generates rows from OccurrenceTrigger entries.
+    Creates the full chain: SnapshotFile → FileSet → FileSetMember → OccurrenceTrigger.
+
+    Args:
+        session: Database session
+        snapshot_slug: Snapshot slug (must exist)
+        files: List of file paths for the file set
+        tp_id: TruePositive ID (must exist in the snapshot with occurrence)
+        occurrence_id: Occurrence ID from the TruePositive
+
+    Returns:
+        Example ORM object from the VIEW
+    """
+    # Create SnapshotFile entries for FK validation
+    for file_path in files:
+        snapshot_file = SnapshotFile(snapshot_slug=snapshot_slug, relative_path=file_path, line_count=10)
+        session.add(snapshot_file)
+
+    session.flush()
+
+    # Compute files_hash
+    files_hash = _compute_files_hash(files)
+
+    # Create file set with computed hash
+    fs = FileSet(snapshot_slug=snapshot_slug, files_hash=files_hash)
+    session.add(fs)
+    session.flush()
+
+    # Create file set members
+    for file_path in files:
+        fsm = FileSetMember(files_hash=files_hash, file_path=file_path, snapshot_slug=snapshot_slug)
+        session.add(fsm)
+
+    # Create occurrence trigger linking TP occurrence to file set
+    ot = OccurrenceTrigger(snapshot_slug=snapshot_slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
+    session.add(ot)
+
+    session.flush()
+
+    # Query the Example from VIEW
+    return (
+        session.query(Example)
+        .filter_by(snapshot_slug=snapshot_slug, example_kind=ExampleKind.FILE_SET, files_hash=files_hash)
+        .one()
+    )
+
+
+def _get_whole_snapshot_example(session: Session, snapshot_slug: SnapshotSlug) -> Example:
+    """Get the whole-snapshot Example for a snapshot (auto-generated by VIEW).
+
+    Args:
+        session: Database session
+        snapshot_slug: Snapshot slug (must exist)
+
+    Returns:
+        Example ORM object for whole-snapshot scope
+    """
+    return session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=ExampleKind.WHOLE_SNAPSHOT).one()
+
+
+def test_failed_critic_run_appears_with_zero_credit(synced_test_session: Session):
+    """Test that max_turns_exceeded critic runs generate zero-credit rows for catchable occurrences."""
     snapshot_slug = SnapshotSlug("test-failure/2025-01-01-00")
 
     # Files for the critic run
     files = ["test/file1.py"]
 
-    with get_session() as session:
-        # Insert snapshot
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    # Insert snapshot
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        # Insert TruePositive with occurrence catchable from file1.py
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="test-tp-001",
-            rationale="Test issue catchable from file1",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-1",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    # Insert TruePositive with occurrence catchable from file1.py
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="test-tp-001",
+        rationale="Test issue catchable from file1",
+        occurrence_id="occ-1",
+        files={"test/file1.py": None},
+        expect_caught_from=[["test/file1.py"]],
+    )
+    synced_test_session.flush()
 
-        # Insert example (file-set)
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
+    # Create synthetic example via trigger set (uses the TP we just created)
+    example = _create_synthetic_example(
+        synced_test_session, snapshot_slug, files, tp_id="test-tp-001", occurrence_id="occ-1"
+    )
 
-        # Insert failed critic run (max_turns_exceeded, no critique)
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            model="test-critic-model",
-            status=CriticRunStatus.MAX_TURNS_EXCEEDED,
-        )
-        session.add(critic_run)
-        session.commit()
+    # Insert failed critic run (max_turns_exceeded, no critique)
+    critic_run = make_critic_run(example=example, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED)
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
 
-        # Query occurrence_credits view - should include zero-credit row for the catchable occurrence
-        result = session.execute(
-            text(
-                """
-                SELECT critic_run_id, tp_id, occurrence_id, found_credit, grader_rationale
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
+    # Query occurrence_credits view - should include zero-credit row for the catchable occurrence
+    result = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchone()
+            SELECT critic_run_id, tp_id, occurrence_id, found_credit, grader_rationale
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchone()
 
-        assert result is not None, "Failed critic run should generate zero-credit row"
-        assert result.critic_run_id == critic_run.id, "Should reference the failed critic run"
-        assert result.tp_id == "test-tp-001", "Should include the catchable TP"
-        assert result.occurrence_id == "occ-1", "Should include the catchable occurrence"
-        assert result.found_credit == 0.0, "Failed run should have zero credit"
-        assert "max_turns_exceeded" in result.grader_rationale, "Rationale should mention failure reason"
+    assert result is not None, "Failed critic run should generate zero-credit row"
+    assert result.critic_run_id == critic_run.agent_run_id, "Should reference the failed critic run"
+    assert result.tp_id == "test-tp-001", "Should include the catchable TP"
+    assert result.occurrence_id == "occ-1", "Should include the catchable occurrence"
+    assert result.found_credit == 0.0, "Failed run should have zero credit"
+    assert "max_turns_exceeded" in result.grader_rationale, "Rationale should mention failure reason"
 
 
-def test_context_length_exceeded_also_counted_as_zero(test_db, test_prompt_sha):
+def test_context_length_exceeded_also_counted_as_zero(synced_test_session: Session):
     """Test that context_length_exceeded critic runs also generate zero-credit rows."""
-
     snapshot_slug = SnapshotSlug("test-context-failure/2025-01-01-00")
 
     files = ["test/file1.py"]
 
-    with get_session() as session:
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="test-tp-002",
-            rationale="Test issue",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-2",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="test-tp-002",
+        rationale="Test issue",
+        occurrence_id="occ-2",
+        files={"test/file1.py": None},
+        expect_caught_from=[["test/file1.py"]],
+    )
+    synced_test_session.flush()
 
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
+    example = _create_synthetic_example(
+        synced_test_session, snapshot_slug, files, tp_id="test-tp-002", occurrence_id="occ-2"
+    )
 
-        # Insert failed critic run (context_length_exceeded)
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            model="test-critic-model",
-            status=CriticRunStatus.CONTEXT_LENGTH_EXCEEDED,
-        )
-        session.add(critic_run)
-        session.commit()
+    # Insert failed critic run (context_length_exceeded)
+    critic_run = make_critic_run(
+        example=example, model="test-critic-model", status=AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
+    )
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
 
-        result = session.execute(
-            text(
-                """
-                SELECT found_credit, grader_rationale
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
+    result = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchone()
+            SELECT found_credit, grader_rationale
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchone()
 
-        assert result is not None
-        assert result.found_credit == 0.0
-        assert "context_length_exceeded" in result.grader_rationale
+    assert result is not None
+    assert result.found_credit == 0.0
+    assert "context_length_exceeded" in result.grader_rationale
 
 
-def test_only_catchable_occurrences_included_for_failures(test_db, test_prompt_sha):
+def test_only_catchable_occurrences_included_for_failures(synced_test_session: Session):
     """Test that failed runs only generate zero-credit rows for catchable occurrences."""
-
     snapshot_slug = SnapshotSlug("test-catchability/2025-01-01-00")
 
     # Review only file1.py
     files = ["test/file1.py"]
 
-    with get_session() as session:
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        # TP1: Catchable from file1.py (should appear in view)
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="catchable-tp",
-            rationale="Issue catchable from file1",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="catchable-occ",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    # TP1: Catchable from file1.py (should appear in view)
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="catchable-tp",
+        rationale="Issue catchable from file1",
+        occurrence_id="catchable-occ",
+        files={"test/file1.py": None},
+        expect_caught_from=[["test/file1.py"]],
+    )
 
-        # TP2: NOT catchable from file1.py alone (requires file2.py - should NOT appear)
-        tp2 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="not-catchable-tp",
-            rationale="Issue requires both files",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="not-catchable-occ",
-                    files={Path("test/file1.py"): None, Path("test/file2.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py"), Path("test/file2.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp2)
+    # TP2: NOT catchable from file1.py alone (requires file2.py - should NOT appear)
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="not-catchable-tp",
+        rationale="Issue requires both files",
+        occurrence_id="not-catchable-occ",
+        files={"test/file1.py": None, "test/file2.py": None},
+        expect_caught_from=[["test/file1.py", "test/file2.py"]],
+    )
+    synced_test_session.flush()
 
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
+    # Create example from the catchable TP
+    example = _create_synthetic_example(
+        synced_test_session, snapshot_slug, files, tp_id="catchable-tp", occurrence_id="catchable-occ"
+    )
 
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            model="test-critic-model",
-            status=CriticRunStatus.MAX_TURNS_EXCEEDED,
-        )
-        session.add(critic_run)
-        session.commit()
+    critic_run = make_critic_run(example=example, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED)
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
 
-        # Should only see the catchable occurrence
-        results = session.execute(
-            text(
-                """
-                SELECT tp_id, occurrence_id
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
-                ORDER BY tp_id
+    # Should only see the catchable occurrence
+    results = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchall()
+            SELECT tp_id, occurrence_id
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+            ORDER BY tp_id
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchall()
 
-        assert len(results) == 1, "Should only include catchable occurrence"
-        assert results[0].tp_id == "catchable-tp"
-        assert results[0].occurrence_id == "catchable-occ"
+    assert len(results) == 1, "Should only include catchable occurrence"
+    assert results[0].tp_id == "catchable-tp"
+    assert results[0].occurrence_id == "catchable-occ"
 
 
-def test_whole_snapshot_failure_includes_all_occurrences(test_db, test_prompt_sha, all_files_scope):
+def test_whole_snapshot_failure_includes_all_occurrences(synced_test_session: Session):
     """Test that whole-snapshot failed runs include all occurrences (no catchability filtering)."""
-
     snapshot_slug = SnapshotSlug("test-whole-snapshot-failure/2025-01-01-00")
 
-    with get_session() as session:
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.VALID, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.VALID, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        # Add multiple TPs with different expect_caught_from
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="tp-1",
-            rationale="Issue 1",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-1",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    # Add multiple TPs with different expect_caught_from
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="tp-issue-1",
+        rationale="Issue 1",
+        occurrence_id="occ-issue-1",
+        files={"test/file1.py": None},
+        expect_caught_from=[["test/file1.py"]],
+    )
 
-        tp2 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="tp-2",
-            rationale="Issue 2",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-2",
-                    files={Path("test/file2.py"): None},
-                    expect_caught_from={frozenset([Path("test/file2.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp2)
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="tp-issue-2",
+        rationale="Issue 2",
+        occurrence_id="occ-issue-2",
+        files={"test/file2.py": None},
+        expect_caught_from=[["test/file2.py"]],
+    )
+    synced_test_session.flush()
 
-        # Whole-snapshot example (use fixture)
-        example = Example.from_scope(snapshot_slug, all_files_scope)
-        session.add(example)
+    # Whole-snapshot example (auto-generated by VIEW)
+    example = _get_whole_snapshot_example(synced_test_session, snapshot_slug)
 
-        # Failed critic run for whole-snapshot
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            model="test-critic-model",
-            status=CriticRunStatus.MAX_TURNS_EXCEEDED,
-        )
-        session.add(critic_run)
-        session.commit()
+    # Failed critic run for whole-snapshot
+    critic_run = make_critic_run(example=example, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED)
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
 
-        # Should include ALL occurrences (no catchability filtering for whole-snapshot)
-        results = session.execute(
-            text(
-                """
-                SELECT tp_id, occurrence_id
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
-                ORDER BY tp_id
+    # Should include ALL occurrences (no catchability filtering for whole-snapshot)
+    results = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchall()
+            SELECT tp_id, occurrence_id
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+            ORDER BY tp_id
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchall()
 
-        assert len(results) == 2, "Whole-snapshot failure should include all occurrences"
-        assert results[0].tp_id == "tp-1"
-        assert results[0].occurrence_id == "occ-1"
-        assert results[1].tp_id == "tp-2"
-        assert results[1].occurrence_id == "occ-2"
+    assert len(results) == 2, "Whole-snapshot failure should include all occurrences"
+    assert results[0].tp_id == "tp-issue-1"
+    assert results[0].occurrence_id == "occ-issue-1"
+    assert results[1].tp_id == "tp-issue-2"
+    assert results[1].occurrence_id == "occ-issue-2"
 
 
-def test_successful_run_not_affected_by_failure_logic(test_db, test_prompt_sha):
+def test_successful_run_not_affected_by_failure_logic(synced_test_session: Session):
     """Test that successful critic+grader runs still work correctly (not affected by UNION ALL)."""
-
     snapshot_slug = SnapshotSlug("test-success-unaffected/2025-01-01-00")
-    grader_transcript_id = uuid4()
+    grader_agent_run_id = uuid4()
 
     files = ["test/file1.py"]
 
-    with get_session() as session:
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="success-tp",
-            rationale="Test issue",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="success-occ",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp1)
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="success-tp",
+        rationale="Test issue",
+        occurrence_id="success-occ",
+        files={"test/file1.py": None},
+        expect_caught_from=[["test/file1.py"]],
+    )
+    synced_test_session.flush()
 
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
+    example = _create_synthetic_example(
+        synced_test_session, snapshot_slug, files, tp_id="success-tp", occurrence_id="success-occ"
+    )
 
-        # Successful critic run
-        critic_run = make_critic_run(
-            example=example, prompt_sha256=test_prompt_sha, model="test-critic-model", status=CriticRunStatus.COMPLETED
-        )
-        session.add(critic_run)
-        session.flush()
+    # Successful critic run
+    critic_run = make_critic_run(example=example, model="test-critic-model", status=AgentRunStatus.COMPLETED)
+    synced_test_session.add(critic_run)
+    synced_test_session.flush()
 
-        # Successful grader run
-        grader_success = GraderSuccess(
-            occurrence_results=[
-                OccurrenceResult(
-                    tp_id=TruePositiveID("success-tp"),
-                    occurrence_id="success-occ",
-                    found_credit=0.8,
-                    matched_by=[OccurrenceMatch(input_id=InputIssueID("input-1"), credit=0.8)],
-                    rationale=Rationale("Partially found"),
-                )
-            ],
-            unknowns=[],
-            summary=Rationale("Test summary"),
-        )
+    # Successful grader run
+    grader_success = GraderSuccess(
+        occurrence_results=[
+            OccurrenceResult(
+                tp_id=TruePositiveID("success-tp"),
+                occurrence_id="success-occ",
+                found_credit=0.8,
+                matched_by=[OccurrenceMatch(input_id=InputIssueID("input-1"), credit=0.8)],
+                rationale=Rationale("Partially found"),
+            )
+        ],
+        unknowns=[],
+        summary=Rationale("Test summary"),
+    )
 
-        # Create reported issue for this grader run
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=["input-1"], session=session)
+    # Create reported issue for this grader run (use test/file1.py which exists in this synthetic snapshot)
+    make_reported_issues(
+        agent_run_id=critic_run.agent_run_id,
+        issue_ids=["input-1"],
+        session=synced_test_session,
+        location_file="test/file1.py",
+    )
 
-        grader_run = GraderRun(
-            transcript_id=grader_transcript_id,
-            snapshot_slug=snapshot_slug,
-            critic_run_id=critic_run.id,
-            model="test-grader-model",
-            canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-        )
-        session.add(grader_run)
-        session.flush()  # Ensure grader_run.id is available
+    grader_run = make_grader_run(
+        critic_run=critic_run,
+        model="test-grader-model",
+        canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+        agent_run_id=grader_agent_run_id,
+    )
+    synced_test_session.add(grader_run)
+    synced_test_session.flush()  # Ensure grader_run.agent_run_id is available
 
-        # Populate grading_decisions table from MCP occurrence_results
-        populate_grading_decisions(
-            grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
-        )
+    # Populate grading_decisions table from MCP occurrence_results
+    populate_grading_decisions(
+        grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=synced_test_session
+    )
 
-        session.commit()
+    synced_test_session.commit()
 
-        # Should see the successful run with actual found_credit
-        result = session.execute(
-            text(
-                """
-                SELECT grader_run_id, found_credit, grader_rationale
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
+    # Should see the successful run with actual found_credit
+    result = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchone()
+            SELECT grader_run_id, found_credit, grader_rationale
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchone()
 
-        assert result is not None
-        assert result.grader_run_id is not None, "Successful run should have grader_run_id"
-        assert result.found_credit == 0.8, "Should have actual found_credit from grader"
-        assert "Partially found" in result.grader_rationale, "Should have actual grader rationale"
+    assert result is not None
+    assert result.grader_run_id is not None, "Successful run should have grader_run_id"
+    assert result.found_credit == 0.8, "Should have actual found_credit from grader"
+    assert "Partially found" in result.grader_rationale, "Should have actual grader rationale"
 
 
-def test_multiple_occurrences_with_or_logic_in_expect_caught_from(test_db, test_prompt_sha):
+def test_multiple_occurrences_with_or_logic_in_expect_caught_from(synced_test_session: Session):
     """Test catchability with OR logic: expect_caught_from with multiple trigger sets."""
-
     snapshot_slug = SnapshotSlug("test-or-logic/2025-01-01-00")
 
     # Review only file1.py
     files = ["test/file1.py"]
 
-    with get_session() as session:
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+    snapshot = Snapshot(slug=snapshot_slug, split=Split.TRAIN, source=LocalSource(vcs="local", root="."))
+    synced_test_session.add(snapshot)
 
-        # TP with OR logic: catchable from EITHER file1.py OR file2.py
-        tp = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="or-logic-tp",
-            rationale="Duplication - catchable from either file",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="or-occ",
-                    files={Path("test/file1.py"): None, Path("test/file2.py"): None},
-                    expect_caught_from={
-                        frozenset([Path("test/file1.py")]),  # OR
-                        frozenset([Path("test/file2.py")]),  # OR
-                    },
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp)
+    # TP with OR logic: catchable from EITHER file1.py OR file2.py
+    make_tp_with_occurrence(
+        synced_test_session,
+        snapshot_slug=snapshot_slug,
+        tp_id="or-logic-tp",
+        rationale="Duplication - catchable from either file",
+        occurrence_id="or-occ",
+        files={"test/file1.py": None, "test/file2.py": None},
+        # OR logic: either file triggers detection
+        expect_caught_from=[["test/file1.py"], ["test/file2.py"]],
+    )
+    synced_test_session.flush()
 
-        scope = ExplicitFileScope(files=files)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
+    example = _create_synthetic_example(
+        synced_test_session, snapshot_slug, files, tp_id="or-logic-tp", occurrence_id="or-occ"
+    )
 
-        critic_run = make_critic_run(
-            example=example,
-            prompt_sha256=test_prompt_sha,
-            model="test-critic-model",
-            status=CriticRunStatus.MAX_TURNS_EXCEEDED,
-        )
-        session.add(critic_run)
-        session.commit()
+    critic_run = make_critic_run(example=example, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED)
+    synced_test_session.add(critic_run)
+    synced_test_session.commit()
 
-        # Should be catchable because file1.py satisfies one of the trigger sets
-        result = session.execute(
-            text(
-                """
-                SELECT tp_id, occurrence_id
-                FROM occurrence_credits
-                WHERE snapshot_slug = :slug
+    # Should be catchable because file1.py satisfies one of the trigger sets
+    result = synced_test_session.execute(
+        text(
             """
-            ),
-            {"slug": str(snapshot_slug)},
-        ).fetchone()
+            SELECT tp_id, occurrence_id
+            FROM occurrence_credits
+            WHERE snapshot_slug = :slug
+        """
+        ),
+        {"slug": str(snapshot_slug)},
+    ).fetchone()
 
-        assert result is not None, "Occurrence should be catchable via OR logic"
-        assert result.tp_id == "or-logic-tp"
-        assert result.occurrence_id == "or-occ"
+    assert result is not None, "Occurrence should be catchable via OR logic"
+    assert result.tp_id == "or-logic-tp"
+    assert result.occurrence_id == "or-occ"
 
 
-def test_multiple_grader_runs_do_not_overweight_critic_run(test_db, critic_run_factory):
+def test_multiple_grader_runs_do_not_overweight_critic_run(synced_test_session: Session, critic_run_factory):
     """Test that multiple grader runs for same critic run don't cause overweighting.
 
     Regression test for weighting issue where a critic run graded N times
     would contribute N rows instead of 1 row (with averaged credit).
     """
-    with get_session() as session:
-        factory = critic_run_factory(session)
-        snapshot_slug, scope_hash = factory.snapshot_slug, factory.scope_hash
+    factory = critic_run_factory(synced_test_session)
 
-        # Create 1 failed critic run (0 credit)
-        factory.create_failed("max_turns")
+    # Create 1 failed critic run (0 credit)
+    factory.create_failed(AgentRunStatus.MAX_TURNS_EXCEEDED)
 
-        # Create 1 successful critic run with 3 grader runs at different credits
-        example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).one()
-        create_critic_run_with_multiple_grader_runs(
-            session=session, example=example, prompt_sha256=factory.prompt_sha, credits=[0.5, 0.6, 0.7]
-        )
+    # Create 1 successful critic run with 3 grader runs at different credits
+    create_critic_run_with_multiple_grader_runs(
+        session=synced_test_session, example=factory.example, credits=[0.5, 0.6, 0.7]
+    )
 
-        session.commit()
+    synced_test_session.commit()
 
-        # Query aggregated view using ORM (occurrence-based weighting)
-        result = (
-            session.query(AggregatedRecallByPrompt)
-            .filter_by(prompt_sha256=factory.prompt_sha, split=Split.TRAIN, critic_model="test-model")
-            .one()
-        )
+    # Query aggregated view using ORM (occurrence-based weighting)
+    result = (
+        synced_test_session.query(AggregatedRecallByDefinition)
+        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .one()
+    )
 
-        assert result is not None, "Should have aggregated metrics"
+    assert result is not None, "Should have aggregated metrics"
 
-        # Expected behavior (with correct weighting):
-        # - 2 critic runs total: 1 successful, 1 max_turns_exceeded
-        # - Failed run: avg_occurrences_caught = NULL, n_catchable_occurrences = 0 (no grader runs)
-        # - Successful run: avg_occurrences_caught = avg(0.5, 0.6, 0.7) = 0.6, n_catchable_occurrences = 1
-        # - avg_occurrences_caught_overall = AVG(0.0, 0.6) = 0.3
-        # - avg_catchable_occurrences = AVG(0, 1) = 0.5
-        # - recall = 0.3 / 0.5 = 0.6
-        n_total_runs = result.n_successful + result.n_max_turns_exceeded + result.n_context_length_exceeded
-        assert n_total_runs == 2, f"Should count both critic runs, got {n_total_runs}"
-        assert result.n_successful == 1, "Should count 1 successful run"
-        assert result.n_max_turns_exceeded == 1, "Should count 1 max_turns failure"
+    # Expected behavior (with correct weighting):
+    # - 2 critic runs total: 1 successful, 1 max_turns_exceeded
+    # - 1 example with 1 catchable occurrence (test-issue in subtract.py)
+    #
+    # Aggregation logic:
+    # - total_catchable_occurrences: Sum across distinct examples = 1
+    # - occurrences_caught_stats.mean: AVG across runs of per-run mean credit
+    #   - Failed run: counts as 0 credit
+    #   - Successful run: avg(0.5, 0.6, 0.7) = 0.6 credit (averaged across grader runs)
+    #   - Mean: (0.0 + 0.6) / 2 = 0.3
+    # - recall = 0.3 / 1 = 0.3 (30% of catchable occurrences found on average)
+    n_completed = result.status_counts.get("completed", 0)
+    n_max_turns = result.status_counts.get("max_turns_exceeded", 0)
+    n_context = result.status_counts.get("context_length_exceeded", 0)
+    n_total_runs = n_completed + n_max_turns + n_context
+    assert n_total_runs == 2, f"Should count both critic runs, got {n_total_runs}"
+    assert n_completed == 1, "Should count 1 successful run"
+    assert n_max_turns == 1, "Should count 1 max_turns failure"
 
-        # Check aggregated values
-        assert abs(result.avg_occurrences_caught_overall - 0.3) < 0.01, (
-            f"avg_occurrences_caught_overall should be 0.3, got {result.avg_occurrences_caught_overall}"
-        )
-        assert abs(float(result.avg_catchable_occurrences) - 0.5) < 0.01, (
-            f"avg_catchable_occurrences should be 0.5, got {result.avg_catchable_occurrences}"
-        )
+    # Check aggregated values
+    avg_caught = result.occurrences_caught_stats.mean if result.occurrences_caught_stats else 0.0
+    assert abs(avg_caught - 0.3) < 0.01, f"occurrences_caught_stats.mean should be 0.3, got {avg_caught}"
 
-        # Compute and check recall
-        recall = result.avg_occurrences_caught_overall / float(result.avg_catchable_occurrences)
-        assert abs(recall - 0.6) < 0.01, f"Recall should be 0.6 (0.3/0.5), got {recall}"
+    # total_catchable_occurrences: Sum across distinct examples (not runs)
+    # This example has 1 catchable occurrence, so the sum is 1
+    assert result.total_catchable_occurrences == 1, (
+        f"total_catchable_occurrences should be 1 (sum across examples), got {result.total_catchable_occurrences}"
+    )
 
-        # Without the fix, multiple grader runs would cause overweighting:
-        # - Would incorrectly count 4 occurrence-runs (1 failed + 3 grader rows)
-        # - Would compute recall as 0.45 instead of 0.3
+    # Compute and check recall
+    recall = avg_caught / float(result.total_catchable_occurrences)
+    assert abs(recall - 0.3) < 0.01, f"Recall should be 0.3 (0.3/1.0), got {recall}"
 
-
-def test_aggregated_view_counts_total_and_failed_runs(test_db, critic_run_factory):
-    """Test that aggregated_recall_by_prompt includes n_successful and failure counts."""
-    with get_session() as session:
-        factory = critic_run_factory(session)
-
-        # Create 3 successful runs
-        for _i in range(3):
-            factory.create_successful()
-
-        # Create 2 max_turns_exceeded failures
-        for _i in range(2):
-            factory.create_failed("max_turns")
-
-        # Create 1 context_length_exceeded failure
-        factory.create_failed("context_length")
-
-        session.commit()
-
-        # Query aggregated view using ORM (occurrence-based weighting)
-        result = (
-            session.query(AggregatedRecallByPrompt)
-            .filter_by(prompt_sha256=factory.prompt_sha, split=Split.TRAIN, critic_model="test-model")
-            .one()
-        )
-
-        assert result is not None, "Should have aggregated metrics"
-        n_total = result.n_successful + result.n_max_turns_exceeded + result.n_context_length_exceeded
-        assert n_total == 6, f"Should count all 6 critic runs (3 success + 2 max_turns + 1 context), got {n_total}"
-        assert result.n_successful == 3, "Should count 3 successful runs"
-        assert result.n_max_turns_exceeded == 2, "Should count 2 max_turns_exceeded failures"
-        assert result.n_context_length_exceeded == 1, "Should count 1 context_length_exceeded failure"
+    # Without the fix, multiple grader runs would cause overweighting:
+    # - Would incorrectly count 4 occurrence-runs (1 failed + 3 grader rows)
+    # - Would compute avg_caught as 0.45 instead of 0.3
 
 
-def test_aggregated_view_counts_zero_when_no_failures(test_db, critic_run_factory):
+def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Session, critic_run_factory):
+    """Test that aggregated_recall_by_definition includes n_successful and failure counts."""
+    factory = critic_run_factory(synced_test_session)
+
+    # Create 3 successful runs
+    for _i in range(3):
+        factory.create_successful()
+
+    # Create 2 max_turns_exceeded failures
+    for _i in range(2):
+        factory.create_failed(AgentRunStatus.MAX_TURNS_EXCEEDED)
+
+    # Create 1 context_length_exceeded failure
+    factory.create_failed(AgentRunStatus.CONTEXT_LENGTH_EXCEEDED)
+
+    synced_test_session.commit()
+
+    # Query aggregated view using ORM (occurrence-based weighting)
+    result = (
+        synced_test_session.query(AggregatedRecallByDefinition)
+        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .one()
+    )
+
+    assert result is not None, "Should have aggregated metrics"
+    n_completed = result.status_counts.get("completed", 0)
+    n_max_turns = result.status_counts.get("max_turns_exceeded", 0)
+    n_context = result.status_counts.get("context_length_exceeded", 0)
+    n_total = n_completed + n_max_turns + n_context
+    assert n_total == 6, f"Should count all 6 critic runs (3 success + 2 max_turns + 1 context), got {n_total}"
+    assert n_completed == 3, "Should count 3 successful runs"
+    assert n_max_turns == 2, "Should count 2 max_turns_exceeded failures"
+    assert n_context == 1, "Should count 1 context_length_exceeded failure"
+
+
+def test_aggregated_view_counts_zero_when_no_failures(synced_test_session: Session, critic_run_factory):
     """Test that failure counts are zero when all runs succeed."""
-    with get_session() as session:
-        factory = critic_run_factory(session)
+    factory = critic_run_factory(synced_test_session)
 
-        # Create only successful runs
-        for _i in range(3):
-            factory.create_successful()
+    # Create only successful runs
+    for _i in range(3):
+        factory.create_successful()
 
-        session.commit()
+    synced_test_session.commit()
 
-        # Query aggregated view using ORM (occurrence-based weighting)
-        result = (
-            session.query(AggregatedRecallByPrompt)
-            .filter_by(prompt_sha256=factory.prompt_sha, split=Split.TRAIN, critic_model="test-model")
-            .one()
-        )
+    # Query aggregated view using ORM (occurrence-based weighting)
+    result = (
+        synced_test_session.query(AggregatedRecallByDefinition)
+        .filter_by(critic_definition_id=CRITIC_AGENT_DEFINITION_ID, split=Split.TRAIN, critic_model="test-model")
+        .one()
+    )
 
-        assert result is not None, "Should have aggregated metrics"
-        assert result.n_successful == 3, "Should count 3 successful runs"
-        assert result.n_max_turns_exceeded == 0, "Should have zero max_turns failures"
-        assert result.n_context_length_exceeded == 0, "Should have zero context_length failures"
+    assert result is not None, "Should have aggregated metrics"
+    n_completed = result.status_counts.get("completed", 0)
+    n_max_turns = result.status_counts.get("max_turns_exceeded", 0)
+    n_context = result.status_counts.get("context_length_exceeded", 0)
+    assert n_completed == 3, "Should count 3 successful runs"
+    assert n_max_turns == 0, "Should have zero max_turns failures"
+    assert n_context == 0, "Should have zero context_length failures"
 
 
-def test_aggregated_recall_by_example_has_correct_weighting(test_db, critic_run_factory):
+def test_aggregated_recall_by_example_has_correct_weighting(synced_test_session: Session, critic_run_factory):
     """Test that aggregated_recall_by_example correctly weights critic runs (not grader runs)."""
-    with get_session() as session:
-        factory = critic_run_factory(session)
-        snapshot_slug = factory.snapshot_slug
-        scope_hash = factory.scope_hash
+    factory = critic_run_factory(synced_test_session)
+    snapshot_slug = factory.snapshot_slug
+    example = factory.example
 
-        # Create 1 failed critic run
-        factory.create_failed("max_turns")
+    # Create 1 failed critic run
+    factory.create_failed(AgentRunStatus.MAX_TURNS_EXCEEDED)
 
-        # Create 1 successful critic run with 3 grader runs at different credits
-        example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).one()
-        create_critic_run_with_multiple_grader_runs(
-            session=session, example=example, prompt_sha256=factory.prompt_sha, credits=[0.4, 0.5, 0.6]
-        )
+    # Create 1 successful critic run with 3 grader runs at different credits
+    create_critic_run_with_multiple_grader_runs(session=synced_test_session, example=example, credits=[0.4, 0.5, 0.6])
 
-        session.commit()
+    synced_test_session.commit()
 
-        # Query aggregated_recall_by_example using ORM (occurrence-based weighting)
-        result = (
-            session.query(AggregatedRecallByExample).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).one()
-        )
+    # Query aggregated_recall_by_example using ORM (occurrence-based weighting)
+    # Filter by the example's actual fields
+    result = (
+        synced_test_session.query(AggregatedRecallByExample)
+        .filter_by(snapshot_slug=snapshot_slug, example_kind=example.example_kind, files_hash=example.files_hash)
+        .one()
+    )
 
-        assert result is not None, "Should have example metrics"
+    assert result is not None, "Should have example metrics"
 
-        # Count critic runs
-        n_total_runs = result.n_successful + result.n_max_turns_exceeded + result.n_context_length_exceeded
-        assert n_total_runs == 2, f"Should count 2 critic runs, got {n_total_runs}"
-        assert result.n_successful == 1, "Should count 1 successful run"
-        assert result.n_max_turns_exceeded == 1, "Should count 1 max_turns failure"
-        assert result.n_context_length_exceeded == 0, "Should count 0 context failures"
+    # Count critic runs
+    n_completed = result.status_counts.get("completed", 0)
+    n_max_turns = result.status_counts.get("max_turns_exceeded", 0)
+    n_context = result.status_counts.get("context_length_exceeded", 0)
+    n_total_runs = n_completed + n_max_turns + n_context
+    assert n_total_runs == 2, f"Should count 2 critic runs, got {n_total_runs}"
+    assert n_completed == 1, "Should count 1 successful run"
+    assert n_max_turns == 1, "Should count 1 max_turns failure"
+    assert n_context == 0, "Should count 0 context failures"
 
-        # Occurrence-based weighting:
-        # - Failed run: avg_occurrences_caught = NULL, n_catchable_occurrences = 0
-        # - Successful run: avg_occurrences_caught = avg(0.4,0.5,0.6) = 0.5, n_catchable_occurrences = 1
-        # - avg_occurrences_caught_overall = AVG(0.0, 0.5) = 0.25
-        # - avg_catchable_occurrences = AVG(0, 1) = 0.5
-        # - recall = 0.25 / 0.5 = 0.5
-        assert abs(result.avg_occurrences_caught_overall - 0.25) < 0.01, (
-            f"Expected 0.25, got {result.avg_occurrences_caught_overall}"
-        )
-        assert abs(float(result.avg_catchable_occurrences) - 0.5) < 0.01, (
-            f"Expected 0.5, got {result.avg_catchable_occurrences}"
-        )
+    # Occurrence-based weighting (per-example view):
+    # - This example has 1 catchable occurrence (test-issue in subtract.py)
+    # - n_catchable_occurrences: MAX per example (constant) = 1
+    # - occurrences_caught_stats.mean: AVG across runs
+    #   - Failed run: counts as 0 credit
+    #   - Successful run: avg(0.4, 0.5, 0.6) = 0.5 credit
+    #   - Mean: (0.0 + 0.5) / 2 = 0.25
+    # - recall = 0.25 / 1 = 0.25
+    avg_caught = result.occurrences_caught_stats.mean if result.occurrences_caught_stats else 0.0
+    assert abs(avg_caught - 0.25) < 0.01, f"Expected 0.25, got {avg_caught}"
 
-        # Compute recall
-        recall = result.avg_occurrences_caught_overall / float(result.avg_catchable_occurrences)
-        assert abs(recall - 0.5) < 0.01, f"Expected recall 0.5 (0.25/0.5), got {recall}"
+    # n_catchable_occurrences: MAX per example (it's constant for this example = 1)
+    assert result.n_catchable_occurrences == 1, (
+        f"Expected 1 (one catchable occurrence in example), got {result.n_catchable_occurrences}"
+    )
+
+    # Compute recall
+    recall = avg_caught / float(result.n_catchable_occurrences)
+    assert abs(recall - 0.25) < 0.01, f"Expected recall 0.25 (0.25/1.0), got {recall}"
 
 
-def test_occurrence_statistics_has_correct_n_critic_runs(test_db, test_prompt_sha, basic_snapshot_with_tp):
+def test_occurrence_statistics_has_correct_n_critic_runs(
+    synced_test_session: Session, subtract_file_example: SingleFileSetExample
+):
     """Test that aggregated_recall_by_example counts critic runs correctly (not grader runs)."""
-    with get_session() as session:
-        snapshot_slug, scope_hash = basic_snapshot_with_tp(session)
+    # Use git-synced fixture: test-fixtures/test-trivial with subtract.py scope
+    snapshot_slug = subtract_file_example.snapshot_slug
 
-        # Get the example for critic run creation
-        example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).one()
+    # Get the example for critic run creation
+    example = Example.from_spec(synced_test_session, subtract_file_example)
 
-        # Create 2 critic runs with different numbers of grader runs
-        # Critic run 1: graded 1 time (credit 0.8)
-        create_critic_run_with_multiple_grader_runs(
-            session=session, example=example, prompt_sha256=test_prompt_sha, credits=[0.8]
-        )
+    # Create 2 critic runs with different numbers of grader runs
+    # Critic run 1: graded 1 time (credit 0.8)
+    create_critic_run_with_multiple_grader_runs(session=synced_test_session, example=example, credits=[0.8])
 
-        # Critic run 2: graded 4 times (credits 0.5, 0.6, 0.7, 0.8)
-        create_critic_run_with_multiple_grader_runs(
-            session=session, example=example, prompt_sha256=test_prompt_sha, credits=[0.5, 0.6, 0.7, 0.8]
-        )
+    # Critic run 2: graded 4 times (credits 0.5, 0.6, 0.7, 0.8)
+    create_critic_run_with_multiple_grader_runs(
+        session=synced_test_session, example=example, credits=[0.5, 0.6, 0.7, 0.8]
+    )
 
-        session.commit()
+    synced_test_session.commit()
 
-        # Query aggregated_recall_by_example using ORM (occurrence-based weighting)
-        result = (
-            session.query(AggregatedRecallByExample).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).one()
-        )
+    # Query aggregated_recall_by_example using ORM (occurrence-based weighting)
+    result = (
+        synced_test_session.query(AggregatedRecallByExample)
+        .filter_by(snapshot_slug=snapshot_slug, example_kind=example.example_kind, files_hash=example.files_hash)
+        .one()
+    )
 
-        assert result is not None, "Should have aggregated stats for example"
+    assert result is not None, "Should have aggregated stats for example"
 
-        # Should count 2 critic runs, not 5 grader runs
-        n_total_runs = result.n_successful + result.n_max_turns_exceeded + result.n_context_length_exceeded
-        assert n_total_runs == 2, f"Should count 2 critic runs, got {n_total_runs}"
-        assert result.n_successful == 2, "Should count 2 successful runs"
+    # Should count 2 critic runs, not 5 grader runs
+    n_completed = result.status_counts.get("completed", 0)
+    n_max_turns = result.status_counts.get("max_turns_exceeded", 0)
+    n_context = result.status_counts.get("context_length_exceeded", 0)
+    n_total_runs = n_completed + n_max_turns + n_context
+    assert n_total_runs == 2, f"Should count 2 critic runs, got {n_total_runs}"
+    assert n_completed == 2, "Should count 2 successful runs"
 
-        # Occurrence-based weighting:
-        # - Run 1: avg_occurrences_caught = 0.8 (1 grader)
-        # - Run 2: avg_occurrences_caught = avg(0.5, 0.6, 0.7, 0.8) = 0.65 (4 graders averaged)
-        # - avg_occurrences_caught_overall = (0.8 + 0.65) / 2 = 0.725
-        # - avg_catchable_occurrences = 1 (one occurrence)
-        # - recall = 0.725 / 1.0 = 0.725
-        assert abs(result.avg_occurrences_caught_overall - 0.725) < 0.01, (
-            f"Expected 0.725, got {result.avg_occurrences_caught_overall}"
-        )
-        assert abs(result.avg_catchable_occurrences - 1.0) < 0.01, (
-            f"Expected 1.0, got {result.avg_catchable_occurrences}"
-        )
+    # Occurrence-based weighting:
+    # - Run 1: occurrences_caught_stats.mean = 0.8 (1 grader)
+    # - Run 2: occurrences_caught_stats.mean = avg(0.5, 0.6, 0.7, 0.8) = 0.65 (4 graders averaged)
+    # - avg_occurrences_caught = (0.8 + 0.65) / 2 = 0.725
+    # - n_catchable_occurrences = 1 (one occurrence)
+    # - recall = 0.725 / 1.0 = 0.725
+    avg_caught = result.occurrences_caught_stats.mean if result.occurrences_caught_stats else 0.0
+    assert abs(avg_caught - 0.725) < 0.01, f"Expected 0.725, got {avg_caught}"
+    assert abs(result.n_catchable_occurrences - 1.0) < 0.01, f"Expected 1.0, got {result.n_catchable_occurrences}"
 
-        # Compute recall
-        recall = result.avg_occurrences_caught_overall / float(result.avg_catchable_occurrences)
-        assert abs(recall - 0.725) < 0.01, f"Expected recall 0.725, got {recall}"
+    # Compute recall
+    recall = avg_caught / float(result.n_catchable_occurrences)
+    assert abs(recall - 0.725) < 0.01, f"Expected recall 0.725, got {recall}"

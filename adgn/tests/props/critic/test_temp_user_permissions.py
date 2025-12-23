@@ -15,6 +15,7 @@ Run with: pytest tests/props/critic/test_temp_user_permissions.py -v
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from uuid import uuid4
 
 from fastmcp.client import Client
@@ -22,14 +23,14 @@ import pytest
 from sqlalchemy import Connection, create_engine, text
 from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.critic.critic import CriticAgentEnvironment
-from adgn.props.critic.user_manager import CriticUserManager
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
 from adgn.props.db.models import ReportedIssue
+from adgn.props.db.temp_user_manager import TempUserManager
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ExplicitFileScope
 from tests.props.conftest import make_critic_run
 
 
@@ -87,7 +88,7 @@ async def check_table_permissions_async(conn: AsyncConnection, username: str, ta
 
 
 @pytest.mark.requires_postgres
-async def test_temp_user_direct_insert(synced_test_db: DatabaseConfig, test_prompt_sha: str):
+async def test_temp_user_direct_insert(synced_test_db: DatabaseConfig):
     """Test 1: Direct Python INSERT with temp user (no Docker).
 
     This tests the temp user manager in isolation.
@@ -104,14 +105,13 @@ async def test_temp_user_direct_insert(synced_test_db: DatabaseConfig, test_prom
 
         critic_run = make_critic_run(
             example=example,
-            prompt_sha256=test_prompt_sha,  # Use valid prompt from fixture
+            agent_run_id=run_id,  # Use our test ID
         )
-        critic_run.id = run_id  # Override with our test ID
         session.add(critic_run)
         session.commit()
 
     # Create temp user
-    manager = CriticUserManager(synced_test_db.admin, run_id)
+    manager = TempUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
@@ -128,17 +128,17 @@ async def test_temp_user_direct_insert(synced_test_db: DatabaseConfig, test_prom
             print(f"  Connected as: {row[0]}")
             print(f"  Database: {row[1]}")
 
-            # Verify RLS function
-            result = conn.execute(text("SELECT current_critic_run_id()"))
+            # Verify RLS function (uses unified current_agent_run_id)
+            result = conn.execute(text("SELECT current_agent_run_id()"))
             rls_run_id = result.scalar()
-            print(f"  current_critic_run_id(): {rls_run_id}")
+            print(f"  current_agent_run_id(): {rls_run_id}")
             assert rls_run_id == run_id, "RLS function should return correct run_id"
 
-            # Try INSERT
+            # Try INSERT (uses agent_run_id now)
             conn.execute(
                 text(
                     """
-                INSERT INTO reported_issues (critic_run_id, issue_id, rationale)
+                INSERT INTO reported_issues (agent_run_id, issue_id, rationale)
                 VALUES (:run_id, 'test-direct-insert', 'Direct INSERT test')
             """
                 ),
@@ -159,7 +159,7 @@ async def test_temp_user_permissions_visible(synced_test_db: DatabaseConfig):
     """
     run_id = uuid4()
 
-    manager = CriticUserManager(synced_test_db.admin, run_id)
+    manager = TempUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
@@ -189,7 +189,7 @@ async def test_temp_user_permissions_visible(synced_test_db: DatabaseConfig):
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_container_env_vars(
-    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, tmp_path: Path
 ):
     """Test 3: Log all environment variables inside Docker container.
 
@@ -198,27 +198,26 @@ async def test_docker_container_env_vars(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
-    # Create test critic run
+    # Create test critic run with a whole-snapshot example
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example, f"Need example for {snapshot_slug}"
+        example_spec = example.to_example_spec()
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
     # Create agent environment
+    workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
-        critic_run_id=run_id,
-        scope=scope,
+        agent_run_id=run_id,
         db_config=synced_test_db,
-        mount_properties=False,
+        workspace_manager=workspace_manager,
     )
 
     async with agent_env as compositor, Client(compositor.runtime.server) as client:
@@ -264,13 +263,13 @@ async def test_docker_container_env_vars(
         assert "PGDATABASE" in pg_vars, "PGDATABASE must be set"
         assert "PGUSER" in pg_vars, "PGUSER must be set"
         assert "PGPASSWORD" in pg_vars, "PGPASSWORD must be set"
-        assert pg_vars["PGUSER"].startswith("critic_agent_"), "PGUSER should be critic agent user"
+        assert pg_vars["PGUSER"].startswith("agent_"), "PGUSER should be agent user (unified pattern)"
 
 
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_connection_info(
-    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, tmp_path: Path
 ):
     """Test 4: Query database connection info from inside Docker container.
 
@@ -279,26 +278,25 @@ async def test_docker_connection_info(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
+    workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
-        critic_run_id=run_id,
-        scope=scope,
+        agent_run_id=run_id,
         db_config=synced_test_db,
-        mount_properties=False,
+        workspace_manager=workspace_manager,
     )
 
     async with agent_env as compositor:
@@ -312,13 +310,13 @@ conn = psycopg2.connect("")  # Empty string uses PG* env vars
 
 cursor = conn.cursor()
 
-# Query connection info
+# Query connection info (uses unified current_agent_run_id)
 cursor.execute(\"\"\"
     SELECT current_user,
            current_database(),
            inet_server_addr(),
            inet_server_port(),
-           current_critic_run_id()
+           current_agent_run_id()
 \"\"\")
 
 row = cursor.fetchone()
@@ -326,7 +324,7 @@ print(f"current_user: {row[0]}")
 print(f"current_database: {row[1]}")
 print(f"server_addr: {row[2]}")
 print(f"server_port: {row[3]}")
-print(f"current_critic_run_id: {row[4]}")
+print(f"current_agent_run_id: {row[4]}")
 
 # Check permissions
 cursor.execute(\"\"\"
@@ -363,11 +361,11 @@ conn.close()
             print("\n=== Container Database Connection Info ===")
             print(output["stdout"])
 
-            # Parse output and verify
+            # Parse output and verify (unified agent_ pattern)
             stdout = output["stdout"]
-            assert f"current_user: critic_agent_{run_id}" in stdout, "Should connect as critic agent user"
+            assert f"current_user: agent_{run_id}" in stdout, "Should connect as agent user (unified pattern)"
             assert "current_database:" in stdout
-            assert "current_critic_run_id:" in stdout
+            assert "current_agent_run_id:" in stdout
             assert "INSERT permission: True" in stdout, "Should have INSERT permission"
             assert "SELECT permission: True" in stdout, "Should have SELECT permission"
             assert "UPDATE permission: True" in stdout, "Should have UPDATE permission"
@@ -376,7 +374,7 @@ conn.close()
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_minimal_insert(
-    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, tmp_path: Path
 ):
     """Test 5: Minimal Docker INSERT test (simplest failing case).
 
@@ -385,32 +383,31 @@ async def test_docker_minimal_insert(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
+    workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
-        critic_run_id=run_id,
-        scope=scope,
+        agent_run_id=run_id,
         db_config=synced_test_db,
-        mount_properties=False,
+        workspace_manager=workspace_manager,
     )
 
     async with agent_env as compositor:
         # Use the actual issue helpers like the real test does
         insert_script = """
-from adgn.props.critic.issue_helpers import insert_issue, insert_occurrence
+from adgn.props.agent_defs.critic.helpers import insert_issue, insert_occurrence
 
 # Insert issue (this is where it fails)
 insert_issue(
@@ -454,15 +451,15 @@ print("SUCCESS: INSERT completed")
 
             assert "SUCCESS" in output["stdout"], "INSERT should succeed"
 
-            # Verify the issue was actually inserted
+            # Verify the issue was actually inserted (uses agent_run_id now)
             with get_session() as session:
-                issue = session.query(ReportedIssue).filter_by(critic_run_id=run_id, issue_id="test-minimal").first()
+                issue = session.query(ReportedIssue).filter_by(agent_run_id=run_id, issue_id="test-minimal").first()
                 assert issue is not None, "Issue should be in database"
                 assert issue.rationale == "Minimal test issue"
 
 
 @pytest.mark.requires_postgres
-async def test_permissions_visible_before_container(synced_test_db: DatabaseConfig, test_prompt_sha: str):
+async def test_permissions_visible_before_container(synced_test_db: DatabaseConfig):
     """Priority 1: Verify permissions exist BEFORE container creation.
 
     This bifurcates: "permissions never existed" vs "container can't see them".
@@ -478,13 +475,12 @@ async def test_permissions_visible_before_container(synced_test_db: DatabaseConf
         example = session.query(Example).first()
         assert example, "Need at least one example in database"
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
     # Create temp user
-    manager = CriticUserManager(synced_test_db.admin, run_id)
+    manager = TempUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
@@ -518,11 +514,11 @@ async def test_permissions_visible_before_container(synced_test_db: DatabaseConf
         await admin_engine.dispose()
 
         assert perms.all_granted(), f"All permissions should be granted via template role: {perms}"
-        assert "critic_agent_template" in memberships, "User should be member of critic_agent_template"
+        assert "agent_base" in memberships, "User should be member of agent_base (unified role)"
 
 
 @pytest.mark.requires_postgres
-async def test_admin_vs_temp_user_visibility(synced_test_db: DatabaseConfig, test_prompt_sha: str):
+async def test_admin_vs_temp_user_visibility(synced_test_db: DatabaseConfig):
     """Priority 10: Admin vs temp user side-by-side comparison.
 
     Verifies both admin and temp user connections see the same effective permissions
@@ -536,12 +532,11 @@ async def test_admin_vs_temp_user_visibility(synced_test_db: DatabaseConfig, tes
         example = session.query(Example).first()
         assert example, "Need at least one example"
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
-    manager = CriticUserManager(synced_test_db.admin, run_id)
+    manager = TempUserManager(synced_test_db.admin, run_id)
 
     async with manager as creds:
         print(f"\n✓ Created user: {creds.username}")
@@ -575,7 +570,7 @@ async def test_admin_vs_temp_user_visibility(synced_test_db: DatabaseConfig, tes
 @pytest.mark.requires_postgres
 @pytest.mark.requires_docker
 async def test_docker_with_retry_loop(
-    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, test_prompt_sha: str
+    synced_test_db: DatabaseConfig, async_docker_client, test_specimens_hydrator, tmp_path: Path
 ):
     """Priority 3: Check for asynchronous replication lag.
 
@@ -583,26 +578,25 @@ async def test_docker_with_retry_loop(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        critic_run.id = run_id
+        critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
         session.commit()
 
+    workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
-        critic_run_id=run_id,
-        scope=scope,
+        agent_run_id=run_id,
         db_config=synced_test_db,
-        mount_properties=False,
+        workspace_manager=workspace_manager,
     )
 
     async with agent_env as compositor:

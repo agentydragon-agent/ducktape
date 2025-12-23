@@ -9,85 +9,83 @@ from rich.table import Table
 import typer
 
 from adgn.cli_utils import async_run
-from adgn.props.critic.prompts import list_critic_system_prompts
 from adgn.props.db import get_session, recreate_database
 from adgn.props.db.config import DatabaseConfig, get_database_config
-from adgn.props.db.prompts import load_and_upsert_detector_prompt_with_session
 from adgn.props.db.setup import ensure_database_exists
 from adgn.props.db.sync import (
     ModelMetadataSyncStats,
     SyncStats,
     get_specimens_base_path,
-    sync_examples_to_db,
+    sync_agent_definitions_to_db,
+    sync_file_sets_to_db,
     sync_issues_to_db,
     sync_model_metadata_with_session,
+    sync_snapshot_files_to_db,
     sync_snapshots_to_db,
 )
+from adgn.props.hydration import SnapshotHydrator
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
 
 
 @dataclass
-class DetectorPromptSyncResult:
-    """Result from syncing a single detector prompt."""
-
-    filename: str
-    prompt_sha256: str
-
-
-@dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, examples, detector prompts, and model metadata."""
+    """Combined result from syncing snapshots, issues, files, file sets, model metadata, and agent definitions."""
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
-    example_stats: SyncStats
-    detector_prompts: list[DetectorPromptSyncResult]
+    snapshot_file_stats: SyncStats
+    file_set_stats: SyncStats
     model_metadata_stats: ModelMetadataSyncStats
+    agent_definition_stats: SyncStats
 
 
-def sync_all(skip_specimens: bool = False) -> FullSyncResult:
-    """Sync snapshots, issues, examples, detector prompts, and model metadata in a single operation.
+async def sync_all() -> FullSyncResult:
+    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions.
 
     All sync operations happen within a single database session for consistency.
+    Note: examples are now a VIEW derived from file_sets + snapshots, no separate sync needed.
 
-    Args:
-        skip_specimens: If True, skip syncing all data from specimens repository
-                       (snapshots, issues, examples)
+    Sync order is critical:
+    1. snapshots (no dependencies)
+    2. snapshot_files (depends on snapshots via FK)
+    3. issues (depends on snapshots)
+    4. file_sets (depends on snapshot_files and issues via FK)
+    5. model_metadata (independent)
+    6. agent_definitions (independent)
 
     Returns:
         Combined results from all sync operations
     """
     with get_session() as session:
-        if skip_specimens:
-            # Skip all specimen data sync
-            snapshot_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-            issue_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-            example_stats = SyncStats(total=0, added=0, updated=0, deleted=0)
-        else:
-            base_path = get_specimens_base_path()
-            snapshot_stats = sync_snapshots_to_db(session, base_path)
-            issue_stats = sync_issues_to_db(session, base_path)
-            example_stats = sync_examples_to_db(session, base_path)
+        base_path = get_specimens_base_path()
+        hydrator = SnapshotHydrator(base_path)
+        snapshot_stats = sync_snapshots_to_db(session, base_path)
 
-        # Sync critic system prompts
-        detector_prompts = [
-            DetectorPromptSyncResult(
-                filename=filename, prompt_sha256=load_and_upsert_detector_prompt_with_session(session, filename)
-            )
-            for filename in list_critic_system_prompts()
-        ]
+        # Sync snapshot files BEFORE issues (needed for FK validation in file_set_members)
+        snapshot_file_stats = await sync_snapshot_files_to_db(session, base_path, hydrator)
+
+        # Sync issues (true_positives/false_positives)
+        issue_stats = sync_issues_to_db(session, base_path)
+
+        # Sync file sets (examples VIEW is derived from these automatically)
+        # Depends on both snapshot_files (FK) and true_positives (FK)
+        file_set_stats = sync_file_sets_to_db(session, base_path)
 
         # Sync model metadata
         model_metadata_stats = sync_model_metadata_with_session(session)
 
+        # Sync repo-tracked agent definitions
+        agent_definition_stats = sync_agent_definitions_to_db(session)
+
         return FullSyncResult(
             snapshot_stats=snapshot_stats,
             issue_stats=issue_stats,
-            example_stats=example_stats,
-            detector_prompts=detector_prompts,
+            snapshot_file_stats=snapshot_file_stats,
+            file_set_stats=file_set_stats,
             model_metadata_stats=model_metadata_stats,
+            agent_definition_stats=agent_definition_stats,
         )
 
 
@@ -101,14 +99,11 @@ def ensure_databases_exist(config: DatabaseConfig) -> None:
     ensure_database_exists(config, config.admin.database, drop_existing=False)
 
 
-def recreate_database_and_sync(skip_specimens: bool = False) -> FullSyncResult:
+async def recreate_database_and_sync() -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
     Drops all tables/views/policies, creates fresh schema, and syncs all data
-    (snapshots, issues, examples, detector prompts, and model metadata).
-
-    Args:
-        skip_specimens: If True, skip syncing all data from specimens repository
+    (snapshots, issues, examples, model metadata, and agent definitions).
 
     Returns:
         Combined results from all sync operations
@@ -117,51 +112,46 @@ def recreate_database_and_sync(skip_specimens: bool = False) -> FullSyncResult:
     recreate_database()
 
     # Sync all data sources into fresh database
-    return sync_all(skip_specimens=skip_specimens)
+    return await sync_all()
 
 
-@async_run
-async def cmd_sync(
-    skip_specimens: bool = typer.Option(False, "--skip-specimens", help="Skip syncing from specimens repository"),
-) -> None:
-    """Sync snapshots, issues, examples, detector prompts, and model metadata from source to DB."""
-    console = Console()
+def print_sync_result(console: Console, result: FullSyncResult) -> None:
+    """Print sync result summary table.
 
-    # Sync all data sources
-    if skip_specimens:
-        console.print("Syncing data (skipping specimens repository)...")
-    else:
-        console.print("Syncing data from filesystem...")
-    result = sync_all(skip_specimens=skip_specimens)
-
-    # Data sync table
+    Args:
+        console: Rich console for output
+        result: Sync result to display
+    """
     table = Table(show_header=False, box=None, padding=(0, 2))
     table.add_column("Type", style="cyan")
     table.add_column("Stats")
     table.add_row("Snapshots", result.snapshot_stats.summary_text)
     table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Examples", result.example_stats.summary_text)
+    table.add_row("Snapshot files", result.snapshot_file_stats.summary_text)
+    table.add_row("File sets", result.file_set_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
+    table.add_row("Agent definitions", result.agent_definition_stats.summary_text)
     console.print(table)
-
-    # Detector prompts (critic system prompts synced to DB)
-    console.print("\n[bold]Critic prompts (file → sha256):[/bold]")
-    for detector in result.detector_prompts:
-        console.print(f"  {detector.filename} → {detector.prompt_sha256}")
 
 
 @async_run
-async def cmd_db_recreate(
-    yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt"),
-    skip_specimens: bool = typer.Option(False, "--skip-specimens", help="Skip syncing from specimens repository"),
-) -> None:
+async def cmd_sync() -> None:
+    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
+    console = Console()
+    console.print("Syncing data from filesystem...")
+    result = await sync_all()
+    print_sync_result(console, result)
+
+
+@async_run
+async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation prompt")) -> None:
     """Recreate database from scratch (destructive - drops all tables/views/policies).
 
     This command will:
     1. Ensure database exists (eval_results)
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
-    4. Sync all data from filesystem (snapshots, issues, examples, detector prompts, model metadata)
+    4. Sync all data from filesystem (snapshots, issues, files, file sets, model metadata, agent definitions)
 
     Note: Temporary database users are created per-agent instead of a shared agent_user role.
           Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
@@ -183,21 +173,10 @@ async def cmd_db_recreate(
     # Connect and recreate (includes full sync)
     console = Console()
     console.print("Recreating database schema...")
-    if skip_specimens:
-        console.print("(Skipping specimens repository sync)")
-    result = recreate_database_and_sync(skip_specimens=skip_specimens)
+    result = await recreate_database_and_sync()
     console.print("✓ Database recreated:")
 
-    # Data sync table
-    table = Table(show_header=False, box=None, padding=(0, 2))
-    table.add_column("Type", style="cyan")
-    table.add_column("Stats")
-    table.add_row("Snapshots", result.snapshot_stats.summary_text)
-    table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Examples", result.example_stats.summary_text)
-    table.add_row("Model metadata", result.model_metadata_stats.summary_text)
-    table.add_row("Detector prompts", f"{len(result.detector_prompts)} synced")
-    console.print(table)
+    print_sync_result(console, result)
 
 
 # Register commands

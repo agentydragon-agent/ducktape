@@ -52,7 +52,7 @@ class SnapshotDoc(BaseModel):
     This is the schema for entries in snapshots.yaml.
 
     Issues are stored in the database (TruePositive/FalsePositive ORM tables).
-    The *.libsonnet issue files are synced to the database once via `adgn-properties db sync`.
+    The issue YAML files are synced to the database once via `adgn-properties db sync`.
 
     Bundle is optional historical metadata - records the source commit and filters used
     during capture for provenance. Not used for runtime hydration operations.

@@ -14,23 +14,30 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from adgn.openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
+from adgn.props.agent_types import ClusteringTypeConfig, CriticTypeConfig, GraderTypeConfig
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli.cmd_db import sync_all
+from adgn.props.critic.critic import run_critic
 from adgn.props.critic.models import CriticSubmitPayload, CriticSuccess
 from adgn.props.db import dispose_db, get_session, init_db, recreate_database
-from adgn.props.db.clustering_models import ClusteringRun
+from adgn.props.db.agent_definition_ids import (
+    CLUSTERING_AGENT_DEFINITION_ID,
+    CRITIC_AGENT_DEFINITION_ID,
+    GRADER_AGENT_DEFINITION_ID,
+)
 from adgn.props.db.config import DatabaseConfig, get_database_config
 from adgn.props.db.examples import Example
 from adgn.props.db.models import (
-    CriticRun,
-    CriticRunStatus,
-    GraderRun,
-    GraderRunStatus,
+    AgentRun,
+    AgentRunStatus,
+    CanonicalIssuesSnapshot,
+    FalsePositiveOccurrenceORM,
     GradingDecision,
     ReportedIssue,
     ReportedIssueOccurrence,
     Snapshot,
+    TruePositiveOccurrenceORM,
 )
-from adgn.props.db.prompts import hash_and_upsert_prompt
 from adgn.props.db.setup import ensure_database_exists
 from adgn.props.db.snapshots import (
     DBCriticContextLengthExceeded,
@@ -55,12 +62,19 @@ from adgn.props.grader.models import (
 from adgn.props.grader.persistence import grader_success_to_db
 from adgn.props.hydration import HydratedSnapshot, SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
+from adgn.props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from adgn.props.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
+from adgn.props.prompt_improve.improve_agent import run_improvement_agent
+from adgn.props.prompt_improve.reminder_handler import TerminationStatus
+from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
+from adgn.props.prompt_optimize.target_metric import TargetMetric
 from adgn.props.rationale import Rationale
 from adgn.props.runs_context import RunsContext
-from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
 from tests.llm.support.openai_mock import FakeOpenAIModel
+from tests.support.steps import Step
+
+# Props-specific constant for grader AgentRun fixtures
+EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -74,52 +88,17 @@ def pytest_addoption(parser: pytest.Parser) -> None:
 
 
 @pytest.fixture
-def subtract_file_scope() -> ExplicitFileScope:
-    """Scope for reviewing just subtract.py file."""
-    return ExplicitFileScope(files=["subtract.py"])
+def test_workspace_manager(tmp_path: Path) -> WorkspaceManager:
+    """Shared WorkspaceManager fixture for agent tests.
+
+    Creates a WorkspaceManager rooted in the test's tmp_path directory.
+    This is preferred over creating WorkspaceManager directly in tests.
+    """
+    return WorkspaceManager(tmp_path)
 
 
-@pytest.fixture
-def all_files_scope() -> AllFilesScope:
-    """Scope for reviewing all files in a snapshot."""
-    return AllFilesScope()
-
-
-# Scope fixtures for common test fixture files
-@pytest.fixture
-def add_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just add.py file (test-trivial)."""
-    return ExplicitFileScope(files=["add.py"])
-
-
-@pytest.fixture
-def multiply_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just multiply.py file (test-trivial)."""
-    return ExplicitFileScope(files=["multiply.py"])
-
-
-@pytest.fixture
-def divide_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just divide.py file (test-trivial)."""
-    return ExplicitFileScope(files=["divide.py"])
-
-
-@pytest.fixture
-def example_module_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just example_module.py file (test-split-test)."""
-    return ExplicitFileScope(files=["example_module.py"])
-
-
-@pytest.fixture
-def sample_subtract_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just sample_subtract.py file (test-validation)."""
-    return ExplicitFileScope(files=["sample_subtract.py"])
-
-
-@pytest.fixture
-def calculator_py_scope() -> ExplicitFileScope:
-    """Scope for reviewing just calculator.py file (test-validation-2)."""
-    return ExplicitFileScope(files=["calculator.py"])
+# NOTE: Use Example.from_spec(session, spec) directly to look up examples.
+# Example is generated from ground truth during sync - from_spec just retrieves it.
 
 
 @pytest.fixture(autouse=True)
@@ -176,12 +155,17 @@ def test_example(synced_test_db: DatabaseConfig) -> Example:
 
 
 def make_grader_output(
-    tp_count: int = 1, summary: str = "Test grader output", found_credit: float = 0.0, unknowns: list[str] | None = None
+    *,
+    tp_occurrences: list[tuple[str, str]],
+    summary: str = "Test grader output",
+    found_credit: float = 0.0,
+    unknowns: list[str] | None = None,
 ) -> DBGraderOutput:
-    """Build test grader output with per-occurrence results.
+    """Build test grader output with per-occurrence results using REAL TP IDs.
 
     Args:
-        tp_count: Number of test occurrences to create (default: 1)
+        tp_occurrences: List of (tp_id, occurrence_id) tuples from database.
+            Query from true_positive_occurrences table for the snapshot.
         summary: Summary text (default: "Test grader output")
         found_credit: Credit for each occurrence (0.0 = not found, 1.0 = fully found). Default: 0.0
         unknowns: Optional list of unknown issue IDs (unlabeled issues found by critic)
@@ -190,16 +174,21 @@ def make_grader_output(
         DBGraderSuccess with specified parameters (or DBGraderOutput for unknowns)
 
     Example:
+        # Query real TPs from database
+        tp_occs = session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id).filter_by(
+            snapshot_slug="test-fixtures/test-trivial"
+        ).all()
+
         # Create output with 80% recall across all occurrences
-        output = make_grader_output(tp_count=5, found_credit=0.8)
+        output = make_grader_output(tp_occurrences=tp_occs, found_credit=0.8)
 
         # Create output with unknowns (unlabeled issues)
-        output = make_grader_output(tp_count=2, unknowns=["unknown-001", "unknown-002"])
+        output = make_grader_output(tp_occurrences=tp_occs[:2], unknowns=["unknown-001"])
     """
     occurrence_results = [
         OccurrenceResult(
-            tp_id=TruePositiveID(f"tp-{i:03d}"),
-            occurrence_id=f"occ-{i:03d}",
+            tp_id=TruePositiveID(tp_id),
+            occurrence_id=occ_id,
             found_credit=found_credit,
             matched_by=[OccurrenceMatch(input_id=InputIssueID(f"issue-{i:03d}"), credit=found_credit)]
             if found_credit > 0.0
@@ -208,7 +197,7 @@ def make_grader_output(
                 "Test occurrence - not found" if found_credit == 0.0 else f"Test occurrence (credit={found_credit})"
             ),
         )
-        for i in range(1, tp_count + 1)
+        for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1)
     ]
 
     grader_success = GraderSuccess(
@@ -219,6 +208,30 @@ def make_grader_output(
         else [],
     )
     return grader_success_to_db(grader_success)
+
+
+def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> list[tuple[str, str]]:
+    """Get all TP occurrence (tp_id, occurrence_id) tuples for a snapshot.
+
+    Args:
+        snapshot_slug: The snapshot slug to query
+        session: Database session
+
+    Returns:
+        List of (tp_id, occurrence_id) tuples
+
+    Example:
+        with get_session() as session:
+            tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/test-trivial", session)
+            output = make_grader_output(tp_occurrences=tp_occs, found_credit=0.8)
+    """
+    rows = (
+        session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .filter_by(snapshot_slug=snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .all()
+    )
+    return [(row.tp_id, row.occurrence_id) for row in rows]
 
 
 def make_critic_success(notes_md: str = "") -> DBCriticOutput:
@@ -386,190 +399,166 @@ def make_fp_occurrence(
 
 
 # make_critique is DEPRECATED - Critique table has been eliminated
-# Use make_critic_run instead to create CriticRun records
+# Use make_critic_run instead to create AgentRun records for critic runs
 
 
-def make_clustering_run(snapshot_slug: SnapshotSlug, status: str = "in_progress", transcript_id: str | None = None):
-    """Build ClusteringRun with defaults.
+def make_clustering_run(
+    snapshot_slug: SnapshotSlug,
+    status: AgentRunStatus = AgentRunStatus.IN_PROGRESS,
+    agent_run_id: UUID | None = None,
+    model: str = "test-model",
+) -> AgentRun:
+    """Build AgentRun for clustering with ClusteringTypeConfig.
 
     Args:
         snapshot_slug: Snapshot this run analyzes (must be SnapshotSlug)
-        status: Run status (default: "in_progress")
-        transcript_id: Optional transcript ID
+        status: Run status (default: IN_PROGRESS)
+        agent_run_id: Optional agent run ID (auto-generated if None)
+        model: Model name (default: test-model)
 
     Returns:
-        ClusteringRun ORM model (not yet added to session)
+        AgentRun ORM model (not yet added to session)
 
     Examples:
         # Basic run:
         make_clustering_run(SnapshotSlug("test/spec-a"))
 
         # With custom status:
-        make_clustering_run(SnapshotSlug("test/spec-b"), status="completed")
+        make_clustering_run(SnapshotSlug("test/spec-b"), status=AgentRunStatus.COMPLETED)
     """
-    return ClusteringRun(snapshot_slug=snapshot_slug, status=status, transcript_id=transcript_id)
-
-
-def get_example(session: Session, snapshot_slug: SnapshotSlug, scope: AllFilesScope | ExplicitFileScope) -> Example:
-    """Get an existing Example from the database.
-
-    For git fixture examples that should already exist (synced via fixtures).
-    Raises an error if the example doesn't exist.
-
-    Args:
-        session: Active SQLAlchemy session
-        snapshot_slug: Snapshot slug (SnapshotSlug type)
-        scope: Scope for the example (AllFilesScope or ExplicitFileScope)
-
-    Returns:
-        Example: The existing example
-
-    Raises:
-        ValueError: If the example doesn't exist
-    """
-    example = Example.from_scope(snapshot_slug, scope)
-
-    existing = (
-        session.query(Example).filter_by(snapshot_slug=example.snapshot_slug, scope_hash=example.scope_hash).first()
+    if agent_run_id is None:
+        agent_run_id = uuid4()
+    type_config = ClusteringTypeConfig(snapshot_slug=snapshot_slug)
+    return AgentRun(
+        agent_run_id=agent_run_id,
+        agent_definition_id=CLUSTERING_AGENT_DEFINITION_ID,
+        model=model,
+        type_config=type_config,
+        status=status,
     )
 
-    if not existing:
-        raise ValueError(
-            f"Example not found for snapshot={snapshot_slug}, scope_hash={example.scope_hash}. "
-            "Git fixtures may not be synced."
-        )
 
-    return existing
-
-
-def get_or_create_example(
-    session: Session, snapshot_slug: SnapshotSlug, scope: AllFilesScope | ExplicitFileScope
-) -> Example:
-    """Get or create an Example in the database.
-
-    For test-specific examples that may not exist yet.
-    Uses get-or-create pattern to avoid foreign key violations.
-
-    Args:
-        session: Active SQLAlchemy session
-        snapshot_slug: Snapshot slug (SnapshotSlug type)
-        scope: Scope for the example (AllFilesScope or ExplicitFileScope)
-
-    Returns:
-        Example: Either the existing example or newly created one
-    """
-    example = Example.from_scope(snapshot_slug, scope)
-
-    # Get or create the example
-    existing = (
-        session.query(Example).filter_by(snapshot_slug=example.snapshot_slug, scope_hash=example.scope_hash).first()
-    )
-
-    if existing:
-        return existing
-
-    session.add(example)
-    session.flush()
-    return example
+# DEPRECATED: get_example() and get_or_create_example() removed
+# Examples are now database VIEWs auto-generated from file_sets and snapshots tables
+# Query directly:
+#   example = session.query(Example).filter_by(
+#       snapshot_slug="test-fixtures/test-trivial",
+#       scope_kind=ExampleKind.WHOLE_SNAPSHOT
+#   ).one()
+#
+# Or for single-file-set:
+#   example = session.query(Example).filter_by(
+#       snapshot_slug="test-fixtures/test-trivial",
+#       scope_kind=ExampleKind.FILE_SET,
+#       files_hash=123
+#   ).one()
 
 
 def make_critic_run(
     *,  # Force keyword arguments
     example: Example,  # Required, not optional
-    prompt_sha256: str,  # Required
     model: str = "test-model",
-    status: CriticRunStatus = CriticRunStatus.COMPLETED,
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
     completion_summary: str | None = None,
-    transcript_id: UUID | None = None,
-) -> CriticRun:
-    """Build CriticRun from Example (preferred pattern).
+    agent_run_id: UUID | None = None,
+    agent_definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+) -> AgentRun:
+    """Build AgentRun for critic from Example (preferred pattern).
 
-    Derives snapshot_slug, scope, scope_hash from example automatically.
+    Derives snapshot_slug and ExampleSpec from example automatically.
 
     Args:
-        example: Example to derive snapshot_slug, scope_hash, and scope from (required)
-        prompt_sha256: Hash of the prompt used (required)
+        example: Example ORM object to derive ExampleSpec from (required)
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
         completion_summary: Markdown summary (auto-provided for COMPLETED status if None)
-        transcript_id: Optional transcript ID (defaults to uuid4())
+        agent_run_id: Optional agent run ID (defaults to uuid4())
+        agent_definition_id: Agent definition ID (default: CRITIC_AGENT_DEFINITION_ID)
 
     Returns:
-        CriticRun ORM model (not yet added to session)
+        AgentRun ORM model (not yet added to session)
 
     Examples:
-        # Basic usage (with test_prompt_sha fixture):
-        make_critic_run(example=my_example, prompt_sha256=test_prompt_sha)
+        # Basic usage:
+        make_critic_run(example=my_example)
 
         # With specific status:
-        make_critic_run(example=my_example, prompt_sha256=test_prompt_sha, status=CriticRunStatus.MAX_TURNS_EXCEEDED)
-    """
-    # Derive fields from example
-    snapshot_slug = example.snapshot_slug
-    scope_hash = example.scope_hash
+        make_critic_run(example=my_example, status=AgentRunStatus.MAX_TURNS_EXCEEDED)
 
-    if transcript_id is None:
-        transcript_id = uuid4()
+        # With explicit agent_run_id (for tests that need specific IDs):
+        make_critic_run(example=my_example, agent_run_id=my_uuid)
+    """
+    # agent_run_id defaults to uuid4()
+    if agent_run_id is None:
+        agent_run_id = uuid4()
 
     # Auto-provide completion_summary for COMPLETED status (required by CHECK constraint)
-    if completion_summary is None and status == CriticRunStatus.COMPLETED:
+    if completion_summary is None and status == AgentRunStatus.COMPLETED:
         completion_summary = "Test completion summary"
 
-    return CriticRun(
-        transcript_id=transcript_id,
-        prompt_sha256=prompt_sha256,
-        snapshot_slug=snapshot_slug,
+    # Convert Example ORM to ExampleSpec Pydantic model
+    example_spec = example.to_example_spec()
+
+    # Build type_config using Pydantic model directly
+    type_config = CriticTypeConfig(example=example_spec)
+
+    return AgentRun(
+        agent_run_id=agent_run_id,
+        agent_definition_id=agent_definition_id,
         model=model,
-        scope_hash=scope_hash,
         status=status,
         completion_summary=completion_summary,
+        type_config=type_config,
     )
 
 
 def make_grader_run(
     *,  # Force keyword arguments
-    critic_run: CriticRun,  # Required
+    critic_run: AgentRun,  # Required
     canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     model: str = "test-model",
-    status: GraderRunStatus = GraderRunStatus.COMPLETED,
-    transcript_id: UUID | None = None,
-) -> GraderRun:
-    """Build GraderRun from CriticRun (derives snapshot_slug and critic_run_id).
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
+    agent_run_id: UUID | None = None,
+    agent_definition_id: str = GRADER_AGENT_DEFINITION_ID,
+) -> AgentRun:
+    """Build AgentRun for grader from critic AgentRun (derives graded_agent_run_id).
 
     Args:
-        critic_run: Critic run being evaluated (derives snapshot_slug and critic_run_id)
+        critic_run: Critic run being evaluated (derives graded_agent_run_id)
         canonical_issues_snapshot: Snapshot of TPs+FPs used (default: EMPTY_CANONICAL_ISSUES_SNAPSHOT)
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
-        transcript_id: Optional transcript ID (defaults to uuid4())
+        agent_run_id: Optional agent run ID (defaults to uuid4())
+        agent_definition_id: Agent definition ID (default: GRADER_AGENT_DEFINITION_ID)
 
     Returns:
-        GraderRun ORM model (not yet added to session)
+        AgentRun ORM model (not yet added to session)
 
     Examples:
         # Minimal usage (with critic_run):
         make_grader_run(critic_run=my_critic_run)
 
         # With specific status:
-        make_grader_run(critic_run=my_critic_run, status=GraderRunStatus.MAX_TURNS_EXCEEDED)
+        make_grader_run(critic_run=my_critic_run, status=AgentRunStatus.MAX_TURNS_EXCEEDED)
 
         # With custom canonical issues:
         make_grader_run(critic_run=my_critic_run, canonical_issues_snapshot=my_snapshot)
     """
-    # Derive from critic_run
-    snapshot_slug = critic_run.snapshot_slug
-    critic_run_id = critic_run.id
+    if agent_run_id is None:
+        agent_run_id = uuid4()
 
-    if transcript_id is None:
-        transcript_id = uuid4()
+    # Build type_config using Pydantic model directly
+    type_config = GraderTypeConfig(
+        graded_agent_run_id=critic_run.agent_run_id,
+        canonical_issues_snapshot=canonical_issues_snapshot.model_dump(mode="json"),
+    )
 
-    return GraderRun(
-        transcript_id=transcript_id,
-        snapshot_slug=snapshot_slug,
+    return AgentRun(
+        agent_run_id=agent_run_id,
+        agent_definition_id=agent_definition_id,
         model=model,
-        critic_run_id=critic_run_id,
-        canonical_issues_snapshot=canonical_issues_snapshot,
         status=status,
+        type_config=type_config,
     )
 
 
@@ -591,32 +580,37 @@ def extract_input_issue_ids(grader_output: DBGraderSuccess) -> list[str]:
     return sorted(issue_ids)
 
 
-def make_reported_issues(*, critic_run_id: UUID, issue_ids: list[str], session: Session) -> list[ReportedIssue]:
-    """Create ReportedIssue and ReportedIssueOccurrence rows for a critic run.
+def make_reported_issues(
+    *, agent_run_id: UUID, issue_ids: list[str], session: Session, location_file: str | None = "subtract.py"
+) -> list[ReportedIssue]:
+    """Create ReportedIssue rows (and optionally ReportedIssueOccurrence) for a critic run.
 
     Deterministic factory - always creates fresh issues, no conditional logic.
     Call once per critic run with all issue IDs upfront.
 
     Args:
-        critic_run_id: The critic run these issues belong to
+        agent_run_id: The agent run (critic) these issues belong to
         issue_ids: List of issue IDs to create (e.g., ["input-1", "input-2"])
         session: Database session
+        location_file: File path for occurrence locations. Default "subtract.py" exists in test-trivial fixture.
+            Pass None to skip occurrence creation (useful for whole_snapshot examples).
 
     Returns:
         List of created ReportedIssue objects
     """
     issues = []
     for issue_id in issue_ids:
-        issue = ReportedIssue(critic_run_id=critic_run_id, issue_id=issue_id, rationale=f"Test issue {issue_id}")
+        issue = ReportedIssue(agent_run_id=agent_run_id, issue_id=issue_id, rationale=f"Test issue {issue_id}")
         session.add(issue)
         session.flush()
 
-        occurrence = ReportedIssueOccurrence(
-            critic_run_id=critic_run_id,
-            reported_issue_id=issue_id,
-            locations=[DBLocationAnchor(file="test.py", start_line=1, end_line=1)],
-        )
-        session.add(occurrence)
+        if location_file is not None:
+            occurrence = ReportedIssueOccurrence(
+                agent_run_id=agent_run_id,
+                reported_issue_id=issue_id,
+                locations=[DBLocationAnchor(file=location_file, start_line=1, end_line=1)],
+            )
+            session.add(occurrence)
         issues.append(issue)
 
     session.flush()
@@ -624,7 +618,7 @@ def make_reported_issues(*, critic_run_id: UUID, issue_ids: list[str], session: 
 
 
 def populate_grading_decisions(
-    *, grader_run: GraderRun, occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult], session: Session
+    *, grader_run: AgentRun, occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult], session: Session
 ) -> None:
     """Create GradingDecision rows from occurrence results.
 
@@ -635,7 +629,7 @@ def populate_grading_decisions(
     referenced in occurrence_results.
 
     Args:
-        grader_run: GraderRun to associate decisions with
+        grader_run: Grader AgentRun to associate decisions with
         occurrence_results: List of OccurrenceResult (MCP) or DBOccurrenceResult (DB persistence)
         session: Database session (uses provided session, not get_session())
 
@@ -646,7 +640,7 @@ def populate_grading_decisions(
     for occ_result in occurrence_results:
         for match in occ_result.matched_by:
             decision = GradingDecision(
-                grader_run_id=grader_run.id,
+                agent_run_id=grader_run.agent_run_id,
                 input_issue_id=str(match.input_id),
                 target_tp_id=str(occ_result.tp_id),
                 target_tp_occurrence_id=occ_result.occurrence_id,
@@ -659,7 +653,7 @@ def populate_grading_decisions(
 
 
 def make_unknown_grading_decisions(
-    *, grader_run_id: UUID, unknown_ids: list[str], session: Session, rationale_prefix: str = "Unknown issue"
+    *, agent_run_id: UUID, unknown_ids: list[str], session: Session, rationale_prefix: str = "Unknown issue"
 ) -> None:
     """Create GradingDecision rows marking input issues as unknowns.
 
@@ -669,7 +663,7 @@ def make_unknown_grading_decisions(
     Precondition: ReportedIssue rows must already exist for all unknown_ids.
 
     Args:
-        grader_run_id: Grader run to associate decisions with
+        agent_run_id: Agent run to associate decisions with
         unknown_ids: List of input issue IDs to mark as unknowns
         session: Database session (uses provided session, not get_session())
         rationale_prefix: Prefix for rationale text (default: "Unknown issue")
@@ -679,7 +673,7 @@ def make_unknown_grading_decisions(
     """
     for unknown_id in unknown_ids:
         decision = GradingDecision(
-            grader_run_id=grader_run_id,
+            agent_run_id=agent_run_id,
             input_issue_id=unknown_id,
             target_tp_id=None,
             target_tp_occurrence_id=None,
@@ -692,53 +686,53 @@ def make_unknown_grading_decisions(
 
 
 def make_critic_and_grader_run(
-    *, example: Example, prompt_sha256: str, grader_output: DBGraderOutput, session: Session
-) -> tuple[CriticRun, GraderRun]:
+    *, example: Example, grader_output: DBGraderOutput, session: Session
+) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables.
 
     Convenience factory for tests that need both critic and grader data.
     Functional composition: extracts issue IDs from output, creates all data deterministically.
 
     Creates:
-    - CriticRun with COMPLETED status
+    - Critic AgentRun with COMPLETED status
     - ReportedIssue rows (derived from grader_output)
     - ReportedIssueOccurrence rows (placeholder locations)
-    - GraderRun with provided output
+    - Grader AgentRun with provided output
     - GradingDecision rows from grader output
 
     Args:
         example: Example being evaluated
-        prompt_sha256: Critic prompt hash
         grader_output: Grader output (must be DBGraderSuccess for issue extraction)
         session: Database session
 
     Returns:
-        (critic_run, grader_run) tuple
+        (critic_run, grader_run) tuple of AgentRun objects
     """
     # Create critic run
-    critic_run = make_critic_run(example=example, prompt_sha256=prompt_sha256, status=CriticRunStatus.COMPLETED)
+    critic_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
     session.add(critic_run)
     session.flush()
 
     # Extract issue IDs from grader output (functional)
     if isinstance(grader_output, DBGraderSuccess):
         issue_ids = extract_input_issue_ids(grader_output)
-        # Create reported issues (deterministic)
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=issue_ids, session=session)
+        # For whole_snapshot examples, skip occurrence creation (no specific file to reference)
+        location_file = None if example.example_kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
+        make_reported_issues(
+            agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session, location_file=location_file
+        )
 
     # Derive grader status from output type
     grader_status = (
-        GraderRunStatus.COMPLETED if isinstance(grader_output, DBGraderSuccess) else GraderRunStatus.MAX_TURNS_EXCEEDED
+        AgentRunStatus.COMPLETED if isinstance(grader_output, DBGraderSuccess) else AgentRunStatus.MAX_TURNS_EXCEEDED
     )
 
     # Create grader run
-    grader_run = GraderRun(
-        transcript_id=uuid4(),
-        snapshot_slug=example.snapshot_slug,
-        critic_run_id=critic_run.id,
+    grader_run = make_grader_run(
+        critic_run=critic_run,
+        canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
         model="test-grader",
         status=grader_status,
-        canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     )
     session.add(grader_run)
     session.flush()
@@ -753,15 +747,15 @@ def make_critic_and_grader_run(
 
 def make_grader_run_with_decisions(
     *,  # Force keyword arguments
-    critic_run: CriticRun,
+    critic_run: AgentRun,
     session: Session,
     canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     model: str = "test-model",
-    status: GraderRunStatus = GraderRunStatus.COMPLETED,
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
     occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult] | None = None,
-    transcript_id: UUID | None = None,
-) -> GraderRun:
-    """Build GraderRun and populate grading_decisions table (one-step helper).
+    agent_run_id: UUID | None = None,
+) -> AgentRun:
+    """Build grader AgentRun and populate grading_decisions table (one-step helper).
 
     Combines make_grader_run() + session.add/flush + populate_grading_decisions()
     to reduce boilerplate in tests that need normalized table data.
@@ -770,23 +764,23 @@ def make_grader_run_with_decisions(
     make_reported_issues() + make_grader_run() + populate_grading_decisions().
 
     Args:
-        critic_run: Critic run being evaluated (derives snapshot_slug and critic_run_id)
+        critic_run: Critic AgentRun being evaluated (derives snapshot_slug and graded_agent_run_id)
         session: Database session (required for decisions and flush)
         canonical_issues_snapshot: Snapshot of TPs+FPs used (default: EMPTY_CANONICAL_ISSUES_SNAPSHOT)
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
         occurrence_results: Occurrence results for populating decisions (optional)
-        transcript_id: Optional transcript ID (defaults to uuid4())
+        agent_run_id: Optional agent run ID (defaults to uuid4())
 
     Returns:
-        GraderRun ORM model (added to session, flushed, with grading_decisions populated)
+        Grader AgentRun ORM model (added to session, flushed, with grading_decisions populated)
     """
     grader_run = make_grader_run(
         critic_run=critic_run,
         canonical_issues_snapshot=canonical_issues_snapshot,
         model=model,
         status=status,
-        transcript_id=transcript_id,
+        agent_run_id=agent_run_id,
     )
     session.add(grader_run)
     session.flush()
@@ -795,18 +789,12 @@ def make_grader_run_with_decisions(
     if occurrence_results:
         # Extract issue IDs and create reported issues first
         issue_ids = [str(match.input_id) for occ in occurrence_results for match in occ.matched_by]
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=issue_ids, session=session)
+        make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
         # Populate grading decisions from occurrence_results
         populate_grading_decisions(grader_run=grader_run, occurrence_results=occurrence_results, session=session)
 
     return grader_run
-
-
-@pytest.fixture
-def test_prompt_sha() -> str:
-    """Create and return a test prompt hash (upserts to DB once)."""
-    return hash_and_upsert_prompt("test prompt for database tests")
 
 
 @pytest.fixture
@@ -1094,7 +1082,7 @@ def test_snapshot(synced_test_db: DatabaseConfig) -> SnapshotSlug:
 # =============================================================================
 
 
-def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
+async def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
     """Sync test fixtures to the current database.
 
     Shared helper used by both synced_test_db and _session_synced_db.
@@ -1102,7 +1090,7 @@ def _sync_test_fixtures(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     test_fixtures_path = Path(__file__).parent / "fixtures" / "specimens"
     monkeypatch.setenv("ADGN_PROPS_SPECIMENS_ROOT", str(test_fixtures_path))
-    sync_all()
+    await sync_all()
 
 
 @pytest.fixture(scope="session")
@@ -1116,17 +1104,15 @@ def session_monkeypatch() -> Generator[pytest.MonkeyPatch, None, None]:
     mp.undo()
 
 
-@pytest.fixture(scope="session")
-def _session_synced_db(
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def _session_synced_db(
     request: pytest.FixtureRequest, session_monkeypatch: pytest.MonkeyPatch
-) -> Generator[DatabaseConfig, None, None]:
+) -> AsyncGenerator[DatabaseConfig, None]:
     """Internal: Session-scoped synced database.
 
     Use synced_readonly_session instead of this directly.
     Creates a single shared database for all read-only tests in the session.
     """
-    from adgn.props.db.config import get_database_config
-
     # Create session-scoped test database with fixed name
     db_name = "props_test_session_shared"
     base_config = get_database_config()
@@ -1142,7 +1128,7 @@ def _session_synced_db(
     recreate_database()
 
     # Sync test fixtures
-    _sync_test_fixtures(session_monkeypatch)
+    await _sync_test_fixtures(session_monkeypatch)
 
     yield test_config
 
@@ -1180,8 +1166,8 @@ def synced_readonly_session(_session_synced_db: DatabaseConfig) -> Generator[Ses
         yield session
 
 
-@pytest.fixture
-def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> DatabaseConfig:
+@pytest_asyncio.fixture
+async def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> DatabaseConfig:
     """Test database with test fixture specimens synced (not production).
 
     Syncs test-trivial and test-validation from tests/props/fixtures/specimens/.
@@ -1189,22 +1175,86 @@ def synced_test_db(test_db: DatabaseConfig, monkeypatch: pytest.MonkeyPatch) -> 
 
     Uses production CLI sync code via environment override.
     """
-    _sync_test_fixtures(monkeypatch)
+    await _sync_test_fixtures(monkeypatch)
     return test_db
 
 
 @pytest.fixture
-def synced_production_db(test_db: DatabaseConfig) -> DatabaseConfig:
+def synced_test_session(synced_test_db: DatabaseConfig) -> Generator[Session, None, None]:
+    """Function-scoped session over synced test database (read-write).
+
+    Use for tests that need to write to the database.
+    Eliminates `with get_session() as session:` boilerplate.
+
+    For read-only tests, prefer synced_readonly_session (session-scoped, faster).
+    """
+    with get_session() as session:
+        yield session
+
+
+@pytest_asyncio.fixture(scope="session", loop_scope="session")
+async def _session_synced_production_db(
+    session_monkeypatch: pytest.MonkeyPatch,
+) -> AsyncGenerator[DatabaseConfig, None]:
+    """Internal: Session-scoped synced production database.
+
+    Use synced_production_db instead of this directly.
+    Creates a single shared database for all production specimen tests in the session.
+    Syncs ONCE at session start - tests share the same synced data.
+    """
+    # Create session-scoped test database with fixed name
+    db_name = "props_test_session_production"
+    base_config = get_database_config()
+    ensure_database_exists(base_config, db_name, drop_existing=True)
+    test_config = base_config.with_database(db_name)
+
+    # Keep postgres engine for teardown
+    postgres_config = base_config.with_database("postgres")
+    postgres_engine = create_engine(postgres_config.admin_url(), isolation_level="AUTOCOMMIT")
+
+    dispose_db()
+    init_db(test_config)
+    recreate_database()
+
+    # Sync PRODUCTION specimens (uses ADGN_PROPS_SPECIMENS_ROOT from env)
+    await sync_all()
+
+    yield test_config
+
+    # Cleanup at end of session
+    dispose_db()
+    with postgres_engine.connect() as conn:
+        conn.execute(
+            text(
+                f"""
+            SELECT pg_terminate_backend(pg_stat_activity.pid)
+            FROM pg_stat_activity
+            WHERE pg_stat_activity.datname = '{db_name}'
+              AND pid <> pg_backend_pid()
+        """
+            )
+        )
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    postgres_engine.dispose()
+
+
+@pytest_asyncio.fixture
+async def synced_production_db(_session_synced_production_db: DatabaseConfig) -> DatabaseConfig:
     """Test database with PRODUCTION specimens synced from ADGN_PROPS_SPECIMENS_ROOT.
 
     Uses the specimens from the external specimens repository (not test fixtures).
-    This is slower but tests against real production data.
+    Session-scoped: syncs ONCE per test session, tests share the same synced data.
 
     Use this for tests that validate production specimen data (e.g., issue counts,
     specimen references). Most tests should use synced_test_db instead.
+
+    Tests using this fixture should be marked with @pytest.mark.requires_production_specimens
+    so they can be easily skipped: pytest -m 'not requires_production_specimens'
     """
-    sync_all()  # Uses default ADGN_PROPS_SPECIMENS_ROOT from environment
-    return test_db
+    # Re-initialize db module to point to the session db
+    dispose_db()
+    init_db(_session_synced_production_db)
+    return _session_synced_production_db
 
 
 @pytest.fixture
@@ -1217,29 +1267,224 @@ def test_validation_snapshot_slug(synced_test_db: DatabaseConfig) -> SnapshotSlu
     return SnapshotSlug("test-fixtures/test-validation")
 
 
-def _make_example_with_runs(
-    slug: SnapshotSlug, found_credit: float, test_prompt_sha: str
-) -> tuple[Example, CriticRun, GraderRun]:
-    """Helper to create example with critic and grader runs.
+# =============================================================================
+# ExampleSpec Fixtures
+# =============================================================================
+
+
+@pytest.fixture
+def all_files_scope(test_snapshot: SnapshotSlug) -> WholeSnapshotExample:
+    """WholeSnapshotExample for test-trivial fixture.
+
+    Use this when testing whole-snapshot evaluation paths.
+    Returns a frozen Pydantic model that can be used as dict key.
+    """
+    return WholeSnapshotExample(snapshot_slug=test_snapshot)
+
+
+@pytest.fixture
+def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExample:
+    """SingleFileSetExample for subtract.py in test-trivial.
+
+    Queries the database to get the actual files_hash for the subtract.py scope.
+    The file set is created during sync from ground truth expect_caught_from.
+    """
+    from adgn.props.db.models import FileSet, FileSetMember
+
+    slug = SnapshotSlug("test-fixtures/test-trivial")
+    with get_session() as session:
+        # Find file set that has exactly "subtract.py" file
+        # by finding FileSetMember with subtract.py and checking it's the only file
+        fs = (
+            session.query(FileSet)
+            .join(FileSetMember)
+            .filter(FileSet.snapshot_slug == slug)
+            .filter(FileSetMember.file_path == "subtract.py")
+            .first()
+        )
+        assert fs is not None, "No file set found for subtract.py in test-trivial"
+        return SingleFileSetExample(snapshot_slug=slug, files_hash=fs.files_hash)
+
+
+# ---------------------------------------------------------------------------
+# Shared ORM fixtures for real TP/FP occurrences from git fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def example_subtract_orm(synced_test_session: Session) -> Example:
+    """ORM Example for subtract.py (single TP occurrence) from git-synced fixture."""
+    slug = SnapshotSlug("test-fixtures/test-trivial")
+    example = (
+        synced_test_session.query(Example)
+        .filter_by(snapshot_slug=slug)
+        .filter(Example.files_hash.isnot(None))
+        .filter(Example.n_catchable_occurrences == 1)
+        .first()
+    )
+    assert example is not None, "Expected single-file-set example with 1 catchable TP in test-trivial"
+    return example
+
+
+@pytest.fixture
+def example_multi_tp_orm(synced_test_session: Session) -> Example:
+    """ORM Example with multiple TP occurrences from git-synced fixture (e.g., add.py)."""
+    slug = SnapshotSlug("test-fixtures/test-trivial")
+    example = (
+        synced_test_session.query(Example)
+        .filter_by(snapshot_slug=slug)
+        .filter(Example.files_hash.isnot(None))
+        .filter(Example.n_catchable_occurrences > 1)
+        .first()
+    )
+    assert example is not None, "Expected file-set example with multiple TP occurrences in test-trivial"
+    return example
+
+
+@pytest.fixture
+def tp_occurrence_single(synced_test_session: Session, example_subtract_orm: Example) -> tuple[str, str]:
+    """(tp_id, occurrence_id) for a real single-occurrence TP in test-trivial."""
+    tp_occ = (
+        synced_test_session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=example_subtract_orm.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert tp_occ is not None, "Expected at least one TP occurrence in test-trivial"
+    return tp_occ.tp_id, tp_occ.occurrence_id
+
+
+@pytest.fixture
+def tp_single_id(tp_occurrence_single: tuple[str, str]) -> str:
+    """TP id for the single-occurrence TP in test-trivial."""
+    return tp_occurrence_single[0]
+
+
+@pytest.fixture
+def tp_single_occurrence_id(tp_occurrence_single: tuple[str, str]) -> str:
+    """Occurrence id for the single-occurrence TP in test-trivial."""
+    return tp_occurrence_single[1]
+
+
+@pytest.fixture
+def tp_occurrences_multi(synced_test_session: Session, example_multi_tp_orm: Example) -> list[tuple[str, str]]:
+    """List of (tp_id, occurrence_id) for a multi-occurrence example in test-trivial."""
+    rows = (
+        synced_test_session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .filter_by(snapshot_slug=example_multi_tp_orm.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .all()
+    )
+    assert rows, "Expected TP occurrences for multi-TP example in test-trivial"
+    return [(row.tp_id, row.occurrence_id) for row in rows]
+
+
+@pytest.fixture
+def fp_occurrence(synced_test_session: Session) -> tuple[str, str]:
+    """FP occurrence (fp_id, occurrence_id) from git fixtures (fail fast if missing)."""
+    row = (
+        synced_test_session.query(FalsePositiveOccurrenceORM.fp_id, FalsePositiveOccurrenceORM.occurrence_id)
+        .order_by(FalsePositiveOccurrenceORM.fp_id, FalsePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert row is not None, "Expected at least one FP occurrence in git fixtures"
+    return row.fp_id, row.occurrence_id
+
+
+@pytest.fixture
+def fp_id(fp_occurrence: tuple[str, str]) -> str:
+    """FP id from git fixtures."""
+    return fp_occurrence[0]
+
+
+@pytest.fixture
+def fp_occurrence_id(fp_occurrence: tuple[str, str]) -> str:
+    """FP occurrence id from git fixtures."""
+    return fp_occurrence[1]
+
+
+def make_grader_run_with_credit(
+    *,
+    session: Session,
+    critic_run: AgentRun,
+    tp_occurrence: tuple[str, str],
+    credit: float,
+    input_idx: int = 0,
+    model: str = "test-grader-model",
+) -> AgentRun:
+    """Create grader run + grading_decision for a critic run using real TP occurrence IDs."""
+
+    tp_id, occ_id = tp_occurrence
+
+    # Create reported issue for this grader run
+    make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=[f"input-{input_idx}"], session=session)
+
+    grader_run = make_grader_run(
+        critic_run=critic_run, model=model, canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT
+    )
+    session.add(grader_run)
+    session.flush()
+
+    grader_success = GraderSuccess(
+        occurrence_results=[
+            OccurrenceResult(
+                tp_id=TruePositiveID(tp_id),
+                occurrence_id=occ_id,
+                found_credit=credit,
+                matched_by=[OccurrenceMatch(input_id=InputIssueID(f"input-{input_idx}"), credit=credit)],
+                rationale=Rationale(f"Credit {credit}"),
+            )
+        ],
+        unknowns=[],
+        summary=Rationale(f"Summary {credit}"),
+    )
+
+    populate_grading_decisions(
+        grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
+    )
+    return grader_run
+
+
+def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Example, AgentRun, AgentRun]:
+    """Helper to create example with multiple critic and grader runs.
+
+    Creates complete data including:
+    - 2 Critic AgentRuns (for UCB/LCB computation which requires COUNT(*) > 1)
+    - ReportedIssue + ReportedIssueOccurrence rows
+    - 2 Grader AgentRuns
+    - GradingDecision rows
+
+    The grading_decisions are populated using real TP IDs from the database.
 
     Args:
         slug: Snapshot slug to query
         found_credit: Credit value for grader output (0.0-1.0)
-        test_prompt_sha: Prompt SHA256 hash
 
     Returns:
-        Tuple of (example, critic_run, grader_run)
+        Tuple of (example, critic_run, grader_run) where runs are the first
+        pair of AgentRun objects (second pair also created for UCB/LCB stats)
     """
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=slug).first()
         assert example, f"No examples found for {slug}"
 
-        critic_run = make_critic_run(example=example, prompt_sha256=test_prompt_sha)
-        session.add(critic_run)
-        session.flush()
+        # Get real TP occurrences from database
+        tp_occs = get_tp_occurrences_for_snapshot(slug, session)
+        assert tp_occs, f"No TP occurrences found for {slug}"
 
-        grader_run = make_grader_run(critic_run=critic_run)
-        session.add(grader_run)
+        # Create grader output with real TP IDs
+        grader_output = make_grader_output(tp_occurrences=tp_occs, found_credit=found_credit)
+
+        # Create first pair of runs
+        critic_run, grader_run = make_critic_and_grader_run(
+            example=example, grader_output=grader_output, session=session
+        )
+
+        # Create second pair of runs with slightly different credit
+        # This is needed for UCB/LCB computation which requires COUNT(*) > 1
+        grader_output_2 = make_grader_output(tp_occurrences=tp_occs, found_credit=found_credit * 0.9)
+        make_critic_and_grader_run(example=example, grader_output=grader_output_2, session=session)
+
         session.commit()
 
         return (example, critic_run, grader_run)
@@ -1268,28 +1513,245 @@ def test_validation_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
 
 
 @pytest.fixture
-def test_train_example_with_runs(
-    synced_test_db: DatabaseConfig, test_prompt_sha: str
-) -> tuple[Example, CriticRun, GraderRun]:
+def test_train_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
     """Provide a train example with critic and grader runs.
 
     Uses test-trivial fixture (train split) and creates runs with 80% recall.
-    Returns (example, critic_run, grader_run) tuple for test assertions.
+    Returns (example, critic_run, grader_run) tuple where runs are AgentRun objects.
     """
-    return _make_example_with_runs(
-        SnapshotSlug("test-fixtures/test-trivial"), found_credit=0.8, test_prompt_sha=test_prompt_sha
+    return _make_example_with_runs(SnapshotSlug("test-fixtures/test-trivial"), found_credit=0.8)
+
+
+@pytest.fixture
+def test_valid_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
+    """Provide a valid example with critic and grader runs.
+
+    Uses test-validation fixture (valid split) and creates runs with 60% recall.
+    Returns (example, critic_run, grader_run) tuple where runs are AgentRun objects.
+    """
+    return _make_example_with_runs(SnapshotSlug("test-fixtures/test-validation"), found_credit=0.6)
+
+
+# =============================================================================
+# Critic E2E Test Factories
+# =============================================================================
+
+
+@pytest.fixture
+def run_critic_with_steps(
+    synced_test_db,
+    test_snapshot,
+    make_step_runner,
+    async_docker_client,
+    test_specimens_hydrator,
+    test_workspace_manager,
+):
+    """Factory fixture for running critic with custom steps.
+
+    Encapsulates common critic run setup so tests only need to provide steps.
+
+    Usage:
+        async def test_critic_behavior(run_critic_with_steps):
+            steps = [DockerExecCallWithBootstrapValidation(...)]
+            # Must provide example parameter now
+            with get_session() as session:
+                example = session.query(Example).filter_by(
+                    snapshot_slug="test-fixtures/test-trivial",
+                    scope_kind=ExampleKind.WHOLE_SNAPSHOT
+                ).one()
+                critic_run_id, status, runner = await run_critic_with_steps(steps, example=example.to_example_spec())
+            assert status == AgentRunStatus.COMPLETED
+
+    Returns:
+        Factory function that accepts steps and example, returns
+        (critic_run_id, status, runner) tuple.
+    """
+
+    async def _run(
+        steps: list[Step],
+        *,
+        definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+        example: ExampleSpec | None = None,
+        max_turns: int = 100,
+    ) -> tuple[UUID, AgentRunStatus, object]:
+        """Run critic with the given steps.
+
+        Args:
+            steps: Mock OpenAI response steps
+            definition_id: Agent definition ID (default: "critic")
+            example: ExampleSpec to review (default: whole-snapshot for test-trivial)
+            max_turns: Maximum turns before timeout
+
+        Returns:
+            Tuple of (critic_run_id, status, runner)
+        """
+        # Default to whole-snapshot example if not provided
+        if example is None:
+            example = WholeSnapshotExample(snapshot_slug=test_snapshot)
+
+        runner = make_step_runner(steps=steps)
+        critic_run_id, status = await run_critic(
+            definition_id=definition_id,
+            example=example,
+            client=runner,
+            parent_agent_run_id=None,
+            docker_client=async_docker_client,
+            hydrator=test_specimens_hydrator,
+            db_config=synced_test_db,
+            workspace_manager=test_workspace_manager,
+            max_turns=max_turns,
+        )
+        return critic_run_id, status, runner
+
+    return _run
+
+
+# =============================================================================
+# Prompt Optimizer E2E Test Factories
+# =============================================================================
+
+
+@pytest.fixture
+def run_prompt_optimizer_with_steps(
+    synced_test_db, make_step_runner, make_openai_client, async_docker_client, test_specimens_hydrator
+):
+    """Factory fixture for running prompt optimizer with custom steps.
+
+    Encapsulates common prompt optimizer run setup so tests only need to provide steps.
+
+    Usage:
+        async def test_optimizer_behavior(run_prompt_optimizer_with_steps, test_train_example_with_runs):
+            steps = [DockerExecCallWithBootstrapValidation(...), AssertDockerExecThenCall(...)]
+            await run_prompt_optimizer_with_steps(steps)
+            # Assertions...
+
+    Returns:
+        Factory function that accepts steps and optional overrides.
+    """
+
+    async def _run(
+        steps: list[Step],
+        *,
+        critic_steps: list[Step] | None = None,
+        grader_steps: list[Step] | None = None,
+        budget: float = 1.0,
+        target_metric: TargetMetric = TargetMetric.WHOLE_REPO,
+    ) -> None:
+        """Run prompt optimizer with the given steps.
+
+        Args:
+            steps: Mock OpenAI response steps for the optimizer agent
+            critic_steps: Optional steps for the critic agent (default: empty responses)
+            grader_steps: Optional steps for the grader agent (default: empty responses)
+            budget: Token budget (default: 1.0)
+            target_metric: Target metric for optimization (default: WHOLE_REPO)
+        """
+        runner = make_step_runner(steps=steps)
+
+        # Build critic client from steps or default to empty
+        critic_client = make_step_runner(steps=critic_steps) if critic_steps else make_openai_client([])
+        grader_client = make_step_runner(steps=grader_steps) if grader_steps else make_openai_client([])
+
+        await run_prompt_optimizer(
+            budget=budget,
+            hydrator=test_specimens_hydrator,
+            optimizer_client=runner,
+            critic_client=critic_client,
+            grader_client=grader_client,
+            docker_client=async_docker_client,
+            target_metric=target_metric,
+            db_config=synced_test_db,
+        )
+
+    return _run
+
+
+# =============================================================================
+# Improvement Agent E2E Test Factories
+# =============================================================================
+
+
+def _make_success_termination_status() -> TerminationStatus:
+    """Create a successful termination status for mocking."""
+    return TerminationStatus(
+        should_terminate=True,
+        blocking_message=None,
+        baseline_avg_issues=1.0,
+        best_candidate_issues=2.0,
+        best_candidate_id="test-improved-critic",
+        missing_evals_count=0,
     )
 
 
 @pytest.fixture
-def test_valid_example_with_runs(
-    synced_test_db: DatabaseConfig, test_prompt_sha: str
-) -> tuple[Example, CriticRun, GraderRun]:
-    """Provide a valid example with critic and grader runs.
+def run_improvement_agent_with_steps(
+    synced_test_db, test_snapshot, make_step_runner, make_openai_client, async_docker_client, test_specimens_hydrator
+):
+    """Factory fixture for running improvement agent with custom steps.
 
-    Uses test-validation fixture (valid split) and creates runs with 60% recall.
-    Returns (example, critic_run, grader_run) tuple for test assertions.
+    Encapsulates common improvement agent run setup so tests only need to provide steps.
+
+    Usage:
+        async def test_improvement_behavior(run_improvement_agent_with_steps, test_train_example_with_runs):
+            steps = [DockerExecCallWithBootstrapValidation(...), AssertDockerExecThenFinish(...)]
+            result = await run_improvement_agent_with_steps(steps)
+            assert result.tokens_used >= 0
+
+    Returns:
+        Factory function that accepts steps and optional overrides, returns ImprovementResult.
     """
-    return _make_example_with_runs(
-        SnapshotSlug("test-fixtures/test-validation"), found_credit=0.6, test_prompt_sha=test_prompt_sha
-    )
+    # Import to avoid circular - only needed for types in annotations
+    from unittest.mock import patch
+
+    async def _run(
+        steps: list[Step],
+        *,
+        token_budget: int = 100_000,
+        model: str = "gpt-5-nano",
+        baseline_definition_ids: list[str] | None = None,
+    ):
+        """Run improvement agent with the given steps.
+
+        Args:
+            steps: Mock OpenAI response steps for the improvement agent
+            token_budget: Token budget (default: 100_000)
+            model: Model name (default: gpt-5-nano)
+            baseline_definition_ids: Baseline definitions (default: [CRITIC_AGENT_DEFINITION_ID])
+
+        Returns:
+            ImprovementResult from run_improvement_agent
+        """
+        if baseline_definition_ids is None:
+            baseline_definition_ids = [CRITIC_AGENT_DEFINITION_ID]
+
+        # Get example from test fixtures
+        with get_session() as session:
+            example = session.query(Example).filter_by(snapshot_slug=test_snapshot).first()
+            assert example is not None, f"No example found for {test_snapshot}"
+            # Convert to ExampleSpec
+            example_spec = example.to_example_spec()
+
+        runner = make_step_runner(steps=steps)
+        fake_client = FakeOpenAIModel(outputs=[])
+
+        # Mock termination to succeed immediately
+        def mock_check_termination(session, improvement_run_id, type_config):
+            return _make_success_termination_status()
+
+        with patch(
+            "adgn.props.prompt_improve.reminder_handler.check_termination_condition", side_effect=mock_check_termination
+        ):
+            return await run_improvement_agent(
+                examples=[example_spec],
+                baseline_definition_ids=baseline_definition_ids,
+                token_budget=token_budget,
+                model=model,
+                hydrator=test_specimens_hydrator,
+                docker_client=async_docker_client,
+                db_config=synced_test_db,
+                client=runner,
+                critic_client=fake_client,
+                grader_client=fake_client,
+            )
+
+    return _run

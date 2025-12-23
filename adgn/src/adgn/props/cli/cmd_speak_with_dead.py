@@ -20,36 +20,31 @@ from adgn.openai_utils.client_factory import build_client
 from adgn.openai_utils.model import AssistantMessage, FunctionCallItem, ReasoningItem, UserMessage
 from adgn.props.cli.common_options import OPT_MAX_LINES
 from adgn.props.db import get_session
-from adgn.props.db.models import Event
+from adgn.props.db.models import AgentRun
 
 
-def _find_transcript_by_prefix(prefix: str) -> UUID:
-    """Find transcript ID by prefix match.
+def _find_agent_run_by_prefix(prefix: str) -> UUID:
+    """Find agent run ID by prefix match.
 
     Args:
-        prefix: Hex prefix of transcript ID
+        prefix: Hex prefix of agent run ID
 
     Returns:
-        Full UUID of matching transcript
+        Full UUID of matching agent run
 
     Raises:
         typer.BadParameter: If no match or multiple matches found
     """
     with get_session() as session:
-        # Query events to find transcripts whose ID starts with the prefix
-        # We'll use the transcript_id from Event table since there's no separate Transcript table
-        stmt = (
-            select(Event.transcript_id)
-            .where(cast(Event.transcript_id, String).like(f"{prefix}%"))
-            .group_by(Event.transcript_id)
-        )
+        # Query agent runs to find those whose ID starts with the prefix
+        stmt = select(AgentRun.agent_run_id).where(cast(AgentRun.agent_run_id, String).like(f"{prefix}%"))
         results = session.execute(stmt).scalars().all()
 
         if not results:
-            raise typer.BadParameter(f"No transcript found with prefix '{prefix}'")
+            raise typer.BadParameter(f"No agent run found with prefix '{prefix}'")
         if len(results) > 1:
             ids = [str(t) for t in results]
-            raise typer.BadParameter(f"Multiple transcripts match prefix '{prefix}': {ids}")
+            raise typer.BadParameter(f"Multiple agent runs match prefix '{prefix}': {ids}")
 
         return results[0]
 
@@ -69,7 +64,7 @@ async def cmd_speak_with_dead(
     """Interrogate a stuck agent by loading its state and asking a question.
 
     Args:
-        transcript_prefix: Hex prefix of the transcript ID to load
+        transcript_prefix: Hex prefix of the agent run ID to load
         question: Question to ask the agent about why it's stuck
         turn_index: Optional turn index to truncate transcript at (useful for debugging specific points)
         display: Display transcript before asking question
@@ -82,22 +77,27 @@ async def cmd_speak_with_dead(
     """
     console = Console()
 
-    console.print(f"[dim]Loading transcript {transcript_prefix}...[/dim]\n")
+    console.print(f"[dim]Loading agent run {transcript_prefix}...[/dim]\n")
 
-    # Find transcript by prefix
-    transcript_id = _find_transcript_by_prefix(transcript_prefix)
-    console.print(f"[dim]Found transcript: {transcript_id}[/dim]\n")
+    # Find agent run by prefix
+    agent_run_id = _find_agent_run_by_prefix(transcript_prefix)
+    console.print(f"[dim]Found agent run: {agent_run_id}[/dim]\n")
 
-    # Load events from DB
+    # Load agent run and events from DB via relationship
     with get_session() as session:
-        stmt = select(Event).where(Event.transcript_id == transcript_id).order_by(Event.sequence_num)
-        events = session.execute(stmt).scalars().all()
-
-        if not events:
-            console.print(f"[yellow]No events found for transcript {transcript_id}[/yellow]")
+        agent_run = session.get(AgentRun, agent_run_id)
+        if agent_run is None:
+            console.print(f"[red]ERROR: AgentRun {agent_run_id} not found[/red]")
             return
 
-        console.print(f"[dim]Loaded {len(events)} events from transcript {transcript_id}[/dim]")
+        # Access events via relationship and sort by sequence_num
+        events = sorted(agent_run.events, key=lambda e: e.sequence_num)
+
+        if not events:
+            console.print(f"[yellow]No events found for agent run {agent_run_id}[/yellow]")
+            return
+
+        console.print(f"[dim]Loaded {len(events)} events from agent run {agent_run_id}[/dim]")
 
         # Extract model and system instructions from last ApiRequest event
         model: str | None = None

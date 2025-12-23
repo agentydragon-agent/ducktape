@@ -26,11 +26,7 @@ def parse_dbsa_sf(email: Email, extractor: EmailTemplateExtractor) -> DBSASFEven
 
     # Extract event datetime if this is a DBSA SF reminder
     if extraction.data.template == "dbsa_sf_group_reminder" and extraction.data.event_datetime:
-        try:
-            event_dt = datetime.fromisoformat(extraction.data.event_datetime)
-            return DBSASFEvent(event_datetime=event_dt, confidence=extraction.confidence)
-        except ValueError as e:
-            raise ValueError(f"Invalid event datetime format: {extraction.data.event_datetime}") from e
+        return DBSASFEvent(event_datetime=extraction.data.event_datetime, confidence=extraction.confidence)
 
     # Unknown template or no datetime
     return DBSASFEvent(event_datetime=None, confidence=extraction.confidence)

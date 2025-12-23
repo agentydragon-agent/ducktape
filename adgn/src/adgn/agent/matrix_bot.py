@@ -55,7 +55,7 @@ class MatrixBotCompositor(Compositor):
     async def __aenter__(self):
         await super().__aenter__()
 
-        # Mount runtime server (docker exec with ephemeral containers)
+        # Mount runtime server (docker exec)
         self.runtime = await self.mount_inproc(
             "runtime",
             ContainerExecServer(
@@ -64,7 +64,7 @@ class MatrixBotCompositor(Compositor):
                     image=self._docker_image,
                     network_mode=self._network_mode,
                     environment=self._environment,
-                    ephemeral=True,
+                    labels={"adgn.project": "matrix-bot", "adgn.role": "runtime"},
                 ),
             ),
             pinned=True,

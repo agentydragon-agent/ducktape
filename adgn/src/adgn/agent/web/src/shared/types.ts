@@ -15,7 +15,7 @@ export type McpServerState = 'initializing' | 'running' | 'failed'
 export type McpState = { entries: Record<string, ServerEntry> }
 export type PolicyState = { version?: number | null }
 export type UiStateLite = { ready: boolean }
-export type ContainerState = { present: boolean; id?: string | null; ephemeral?: boolean }
+export type ContainerState = { present: boolean; id?: string | null }
 
 export type AgentStatus = {
   id: string

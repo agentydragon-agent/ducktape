@@ -19,21 +19,21 @@ class DatabaseEventHandler(BaseHandler):
     """Database event writer for Agent runs.
 
     Writes events to the database events table, maintaining sequence order.
-    Each event is linked to the agent run via transcript_id.
+    Each event is linked to the agent run via agent_run_id.
 
     Usage:
         from uuid import UUID
-        handler = DatabaseEventHandler(transcript_id=UUID('...'))
+        handler = DatabaseEventHandler(agent_run_id=UUID('...'))
         Agent.create(..., handlers=[handler, ...])
     """
 
-    def __init__(self, *, transcript_id: UUID) -> None:
+    def __init__(self, *, agent_run_id: UUID) -> None:
         """Initialize handler for a specific agent run.
 
         Args:
-            transcript_id: UUID linking this event stream to the agent run
+            agent_run_id: UUID linking this event stream to the agent run
         """
-        self.transcript_id = transcript_id
+        self.agent_run_id = agent_run_id
         self._sequence_num = 0
 
     def _write_event(
@@ -45,7 +45,7 @@ class DatabaseEventHandler(BaseHandler):
         with get_session() as session:
             session.add(
                 Event(
-                    transcript_id=self.transcript_id,
+                    agent_run_id=self.agent_run_id,
                     sequence_num=self._sequence_num,
                     event_type=event_type,
                     timestamp=datetime.now(UTC),
@@ -55,7 +55,7 @@ class DatabaseEventHandler(BaseHandler):
             session.flush()
 
         self._sequence_num += 1
-        logger.debug(f"Wrote event to DB: {self.transcript_id=} {self._sequence_num - 1=} {event_type=}")
+        logger.debug(f"Wrote event to DB: {self.agent_run_id=} {self._sequence_num - 1=} {event_type=}")
 
     # ---- BaseHandler hooks (typed) ----
     def on_user_text_event(self, evt: UserText) -> None:

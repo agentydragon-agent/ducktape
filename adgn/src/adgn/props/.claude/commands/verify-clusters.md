@@ -13,7 +13,7 @@
    - Synthesized rationale (combining all instances)
    - Exact file paths and line ranges
    - Proposed issue file name (following naming conventions)
-   - Proposed Jsonnet structure (single occurrence vs multi-occurrence)
+   - Proposed YAML structure (single occurrence vs multi-occurrence)
    - Verification commands ready to copy-paste
 
 **Output:** Enriched verification data file (`verification_order_enriched.json`) with all research completed.
@@ -107,7 +107,7 @@ VERIFICATION COMMANDS (pre-generated):
 
 PROPOSED FRAMING:
 
-Issue file: specimens/{snapshot}/{enriched.proposed_slug}.libsonnet
+Issue file: specimens/{snapshot}/issues/{enriched.proposed_slug}.yaml
 
 Rationale:
   {enriched.final_rationale}
@@ -117,7 +117,7 @@ expect_caught_from:
 
   Reasoning: {enriched.expect_caught_from_justification}
 
-Structure: {enriched.structure_type} (issue() vs issueMulti())
+Structure: {enriched.structure_type} (single vs multi-occurrence)
 
 OCCURRENCES (if multi):
 {enriched.occurrences - with files, line ranges, notes}
@@ -136,8 +136,8 @@ What should we do with this cluster?
 ### 2. Process User Response
 
 **If "accept":**
-- Create Jsonnet issue file at proposed path
-- Use `I.issueMulti()` if multiple occurrences, `I.issue()` if single
+- Create YAML issue file at proposed path
+- Use multi-occurrence format if multiple occurrences, single-occurrence if one
 - Extract exact line ranges from issue details
 - Log to `verification_log.jsonl`:
   ```json
@@ -147,7 +147,7 @@ What should we do with this cluster?
     "cluster_name": "...",
     "snapshot": "...",
     "action": "accepted",
-    "issue_file": "specimens/.../xxx.libsonnet",
+    "issue_file": "specimens/.../issues/xxx.yaml",
     "issue_ids": ["critique_id:tp_id", ...]
   }
   ```
@@ -159,7 +159,7 @@ What should we do with this cluster?
 - Log to `verification_log.jsonl` with `"action": "accepted_with_edits"` and `"user_corrections": "..."`
 
 **If "fp":**
-- Create false positive issue file using `I.falsePositive()` or `I.falsePositiveMulti()`
+- Create false positive issue file with `should_flag: false`
 - Rationale should explain why this is NOT an issue (intentional pattern, acceptable design choice, etc.)
 - Log to `verification_log.jsonl` with `"action": "marked_false_positive"`
 
@@ -191,18 +191,18 @@ What should we do with this cluster?
 - Issue organization principle: group by LOGICAL ISSUE, not by location
 - When to merge multiple clusters into one multi-occurrence file
 
-## Jsonnet Templates
+## YAML Issue Format
 
 **Read `docs/authoring.md` sections 3-4 for:**
-- Jsonnet helpers (`I.issue()`, `I.issueMulti()`, `I.falsePositive()`, `I.falsePositiveMulti()`)
-- Range format specifications (bare numbers, arrays, objects)
-- Auto-inference rules for `expect_caught_from` and `relevant_files`
+- YAML issue structure
+- Range format specifications
+- Rules for `expect_caught_from` and `relevant_files`
 - False positive rationale format (acknowledge what looks problematic, explain why acceptable)
 
 ## Tips for Efficient Verification
 
 1. **Use snapshot exec liberally** - Don't guess, read the actual code
-2. **Batch similar issues** - If you see multiple occurrences of the same pattern, use `issueMulti`
+2. **Batch similar issues** - If you see multiple occurrences of the same pattern, use multi-occurrence format
 3. **Be objective** - Avoid "user said..." or "this is nice", describe facts
 4. **Trust the ordering** - It's optimized for context locality, don't jump around
 5. **Use "adjacent"** - If you spot related issues while verifying, capture them
@@ -231,7 +231,7 @@ Assistant: [Saves state, shows summary, explains how to resume]
 ## Output Files
 
 **Created during workflow:**
-- `specimens/{snapshot}/{slug}.libsonnet` - Issue files (one per cluster or adjacent)
+- `specimens/{snapshot}/issues/{slug}.yaml` - Issue files (one per cluster or adjacent)
 - `verification_log.jsonl` - Append-only log (one JSON object per line)
 - `workflow_state.json` - Current position (overwritten each cluster)
 
@@ -247,8 +247,8 @@ Skipped: {S}
 Remaining: {R}
 
 Files created:
-- specimens/ducktape/2025-11-20-00/xxx.libsonnet
-- specimens/ducktape/2025-11-20-00/yyy.libsonnet
+- specimens/ducktape/2025-11-20-00/issues/xxx.yaml
+- specimens/ducktape/2025-11-20-00/issues/yyy.yaml
 - ...
 
 To resume: /verify-clusters

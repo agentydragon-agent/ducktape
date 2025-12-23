@@ -264,7 +264,7 @@ def ensure_archive_for_snapshot(manifest: SnapshotDoc, snapshot_path: Path) -> P
         raise SystemExit(f"Can't archive snapshot cache for '{slug}' (source={type(manifest.source).__name__})")
 
 
-def resolve_source_root(manifest: SnapshotDoc, snapshot_path: Path) -> Path:
+def resolve_source_root(manifest: SnapshotDoc, snapshot_path: Path) -> tuple[Path, bool]:
     """Extract/copy snapshot source to temporary directory (with caching for Git sources).
 
     Args:
@@ -272,19 +272,17 @@ def resolve_source_root(manifest: SnapshotDoc, snapshot_path: Path) -> Path:
         snapshot_path: Synthetic reference path (parent is snapshot directory, used for resolving LocalSource.root)
 
     Returns:
-        Path to extracted source code root (temporary directory)
+        Tuple of (path to source code root, needs_cleanup).
+        For LocalSource, returns the original path directly (no copy) with needs_cleanup=False.
+        For Git/GitHub sources, returns extracted temp directory with needs_cleanup=True.
     """
     if isinstance(manifest.source, GitHubSource | GitSource):
         archive = ensure_archive_for_snapshot(manifest, snapshot_path)
-        return _extract_tar_gz_to_temp(archive)
+        return _extract_tar_gz_to_temp(archive), True
     if isinstance(manifest.source, LocalSource):
-        # Copy local source to temp directory
+        # Return original path directly - all usages are read-only (Docker bind mounts, file checks)
         src = (snapshot_path.parent / manifest.source.root).resolve()
-        tmpdir = Path(tempfile.mkdtemp(prefix="adgn-snapshot-local-"))
-        dest = tmpdir / src.name
-        # Ignore broken symlinks (e.g., test fixtures pointing to lib.libsonnet in separate specimens repo)
-        shutil.copytree(src, dest, ignore_dangling_symlinks=True)
-        return dest
+        return src, False
     raise SystemExit(f"Unsupported source type: {type(manifest.source)}")
 
 
@@ -356,8 +354,8 @@ class SnapshotHydrator:
 
         snapshot_path = self._get_snapshot_path(slug)
 
-        # Extract source to temp directory
-        hydrated_root = resolve_source_root(manifest, snapshot_path)
+        # Extract source (or return original path for LocalSource)
+        hydrated_root, needs_cleanup = resolve_source_root(manifest, snapshot_path)
 
         try:
             # Build file map (for validation contexts, Docker mounts, etc.)
@@ -368,8 +366,9 @@ class SnapshotHydrator:
             # Yield hydrated snapshot - source paths only (no issues!)
             yield HydratedSnapshot(content_root=hydrated_root, all_discovered_files=all_discovered_files)
         finally:
-            # Clean up hydrated snapshot
-            shutil.rmtree(
-                hydrated_root.parent if hydrated_root.parent.name.startswith("adgn-snapshot-") else hydrated_root,
-                ignore_errors=True,
-            )
+            # Clean up only if we extracted to a temp directory (not for LocalSource)
+            if needs_cleanup:
+                shutil.rmtree(
+                    hydrated_root.parent if hydrated_root.parent.name.startswith("adgn-snapshot-") else hydrated_root,
+                    ignore_errors=True,
+                )

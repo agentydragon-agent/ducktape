@@ -6,12 +6,15 @@ See docs/test_scenario_steps.md for detailed usage guide.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
+import os
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from hamcrest import all_of, assert_that
+from hamcrest.core.matcher import Matcher
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
@@ -20,7 +23,7 @@ from adgn.mcp._shared.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PRE
 from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.approval_policy.engine import SetPolicyTextArgs
-from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut
+from adgn.mcp.exec.models import BaseExecResult, Exited, Killed, TimedOut, TruncatedStream
 from adgn.mcp.testing.simple_servers import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
 from adgn.mcp.ui.server import SendMessageInput
 from adgn.openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, ResponsesResult
@@ -29,6 +32,45 @@ from tests.support.assertions import assert_and_extract, assert_last_call
 from tests.support.responses import ResponsesFactory
 
 logger = logging.getLogger(__name__)
+
+# Directory for bootstrap output dumps (under tests/props/)
+BOOTSTRAP_DUMPS_DIR = Path(__file__).parent.parent / "props" / "bootstrap_dumps"
+
+
+def _assert_docker_exec_success(
+    output: BaseExecResult, stdout_matchers: list[Matcher[str]], expected_output: str
+) -> None:
+    """Assert docker exec succeeded with exit code 0 and stdout matches expectations.
+
+    Args:
+        output: The exec result to validate
+        stdout_matchers: PyHamcrest matchers for stdout (if provided, takes precedence)
+        expected_output: Substring to check in stdout (legacy, used if no matchers)
+
+    Raises:
+        AssertionError: If exit code is not 0 or stdout doesn't match
+    """
+    # Assert exit code is 0
+    if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
+        stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
+        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+        raise AssertionError(f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}")
+
+    stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+    logger.info(
+        "docker_exec succeeded: exit=%s stdout_bytes=%d stderr_bytes=%d sample=%r",
+        output.exit,
+        len(stdout_text.encode("utf-8")) if stdout_text else 0,
+        len(output.stderr.encode("utf-8")) if isinstance(output.stderr, str) else 0,
+        (stdout_text or "")[:120],
+    )
+
+    # Use matchers if provided, otherwise fall back to simple substring check
+    if stdout_matchers:
+        assert_that(stdout_text, all_of(*stdout_matchers))  # type: ignore[arg-type]
+    elif expected_output and expected_output not in stdout_text:
+        raise AssertionError(f"Expected stdout to contain {expected_output!r}, got {stdout_text!r}")
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -42,7 +84,51 @@ def _is_runtime_exec_tool(tool_name: str) -> bool:
         return False
 
 
-def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
+def _get_stream_size(stream: str | TruncatedStream) -> int:
+    """Get the byte size of a stdout/stderr stream.
+
+    For TruncatedStream, uses total_bytes (original size before truncation).
+    For str, uses UTF-8 encoded length.
+    """
+    if isinstance(stream, TruncatedStream):
+        return stream.total_bytes
+    return len(stream.encode("utf-8"))
+
+
+def _get_stream_text(stream: str | TruncatedStream) -> str:
+    """Get the text content of a stdout/stderr stream."""
+    if isinstance(stream, TruncatedStream):
+        return stream.truncated_text
+    return stream
+
+
+def _dump_bootstrap_output(exec_result: BaseExecResult, cmd_args: str, test_name: str | None = None) -> Path:
+    """Dump bootstrap init output to a file for inspection.
+
+    Creates files in tests/bootstrap_dumps/<agent_type>_<timestamp>.txt
+
+    Args:
+        exec_result: The parsed exec result containing stdout/stderr
+        cmd_args: Command arguments string (used to infer agent type)
+        test_name: Optional test name for the filename
+
+    Returns:
+        Path to the dump file
+    """
+    BOOTSTRAP_DUMPS_DIR.mkdir(parents=True, exist_ok=True)
+
+    name = test_name or "unknown"
+    stdout_path = BOOTSTRAP_DUMPS_DIR / f"{name}.stdout"
+    stderr_path = BOOTSTRAP_DUMPS_DIR / f"{name}.stderr"
+
+    stdout_path.write_text(_get_stream_text(exec_result.stdout))
+    stderr_path.write_text(_get_stream_text(exec_result.stderr))
+
+    logger.info("Bootstrap output dumped to: %s, %s", stdout_path, stderr_path)
+    return stdout_path
+
+
+def assert_bootstrap_exec_success(req: ResponsesRequest, *, test_name: str | None = None) -> None:
     """Assert all runtime exec calls in the request completed with exit code 0.
 
     Bootstrap commands run BEFORE the test's step sequence. If any bootstrap command
@@ -52,18 +138,35 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
     1. Builds a map of call_id -> tool_name from FunctionCallItem entries
     2. Finds FunctionCallOutputItem entries for runtime_exec calls (via parse_tool_name)
     3. Parses outputs as BaseExecResult and validates exit status
+    4. Logs bootstrap output sizes for each command
+    5. Dumps bootstrap output to tests/bootstrap_dumps/ for inspection
+
+    Args:
+        req: The ResponsesRequest containing bootstrap calls and outputs
+        test_name: Optional test name for the dump filename (e.g., "test_critic_http_mode_zero_issues")
 
     Raises:
         AssertionError: If any runtime exec command failed or timed out, with details
             about which command failed and why.
     """
+    # Try to get test name from pytest if not provided
+    if test_name is None:
+        raw = os.environ.get("PYTEST_CURRENT_TEST", "")
+        # Format: "path/to/test.py::test_name[param] (call)" - extract just test_name
+        test_name = raw.split("::")[-1].split("[")[0].split(" ")[0]
+
     # Build call_id -> tool_name map from FunctionCallItem entries
     call_id_to_tool: dict[str, str] = {}
+    call_id_to_args: dict[str, str] = {}
     for item in req.input:
         if isinstance(item, FunctionCallItem):
             call_id_to_tool[item.call_id] = item.name
+            # Store full arguments for dump
+            args_str = item.arguments if isinstance(item.arguments, str) else json.dumps(item.arguments)
+            call_id_to_args[item.call_id] = args_str
 
     failures: list[str] = []
+    bootstrap_sizes: list[tuple[str, int, int]] = []  # (cmd_preview, stdout_bytes, stderr_bytes)
 
     for item in req.input:
         if not isinstance(item, FunctionCallOutputItem):
@@ -95,6 +198,15 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
             )
             continue
 
+        # Collect output sizes for logging
+        stdout_bytes = _get_stream_size(exec_result.stdout)
+        stderr_bytes = _get_stream_size(exec_result.stderr)
+        cmd_args = call_id_to_args.get(call_id, "unknown")
+        bootstrap_sizes.append((cmd_args[:50], stdout_bytes, stderr_bytes))
+
+        # Dump bootstrap output to file for inspection
+        _dump_bootstrap_output(exec_result, cmd_args, test_name=test_name)
+
         # Check exit status - dump full model on failure for diagnostics
         if isinstance(exec_result.exit, TimedOut):
             failures.append(
@@ -113,6 +225,20 @@ def assert_bootstrap_exec_success(req: ResponsesRequest) -> None:
                 f"Bootstrap command was KILLED (tool={tool_name}, call_id={call_id}):\n"
                 f"  {exec_result.model_dump_json(indent=2)}"
             )
+
+    # Log bootstrap output sizes
+    if bootstrap_sizes:
+        total_stdout = sum(s[1] for s in bootstrap_sizes)
+        total_stderr = sum(s[2] for s in bootstrap_sizes)
+        logger.info(
+            "Bootstrap output sizes: %d commands, %d bytes stdout, %d bytes stderr (total: %d bytes)",
+            len(bootstrap_sizes),
+            total_stdout,
+            total_stderr,
+            total_stdout + total_stderr,
+        )
+        for cmd_preview, stdout_bytes, stderr_bytes in bootstrap_sizes:
+            logger.debug("  %s: stdout=%d, stderr=%d", cmd_preview, stdout_bytes, stderr_bytes)
 
     if failures:
         raise AssertionError(
@@ -237,71 +363,74 @@ class AssistantMessage:
 
 @dataclass
 class AssertDockerExecThenFinish:
-    """Assert docker exec succeeded and stdout contains expected text, then finish.
+    """Assert docker exec succeeded and stdout matches expectations, then finish.
 
     Use to validate that a command executed successfully and produced expected output.
     Fails if:
     - Previous call was not docker_exec
     - Exit code is not 0
-    - stdout doesn't contain expected_output
+    - stdout doesn't match stdout_matchers (if provided)
+    - stdout doesn't contain expected_output (legacy support)
+
+    Examples:
+        # Simple substring check (legacy)
+        AssertDockerExecThenFinish(expected_output="76%")
+
+        # Multiple matchers using all_of
+        AssertDockerExecThenFinish(
+            expected_output="",  # Required but not used when stdout_matchers provided
+            stdout_matchers=[
+                contains_string("76%"),
+                contains_string("Recall"),
+                contains_string("test-fixtures"),
+            ]
+        )
     """
 
     expected_output: str
     message: str = "Done"
+    stdout_matchers: list[Matcher[str]] = field(default_factory=list)
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         assert_last_call(req, "docker_exec")
         output = assert_and_extract(req, "docker_exec", BaseExecResult)
-
-        # Assert exit code is 0
-        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
-            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
-            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-            raise AssertionError(
-                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
-            )
-
-        # Assert stdout contains expected text
-        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-        if self.expected_output not in stdout_text:
-            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
-
+        _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
         return factory.make_assistant_message(self.message)
 
 
 @dataclass
 class AssertDockerExecThenCall:
-    """Assert docker exec succeeded and stdout contains expected text, then make another call.
+    """Assert docker exec succeeded and stdout matches expectations, then make another call.
 
     Use when you need to chain docker exec calls with validation between them.
     Fails if:
     - Previous call was not docker_exec
     - Exit code is not 0
-    - stdout doesn't contain expected_output
+    - stdout doesn't match stdout_matchers (if provided)
+    - stdout doesn't contain expected_output (legacy support)
+
+    Examples:
+        # Simple substring check
+        AssertDockerExecThenCall(expected_output="76%", next_cmd=[...])
+
+        # Multiple matchers
+        AssertDockerExecThenCall(
+            expected_output="",
+            stdout_matchers=[contains_string("76%"), contains_string("critic")],
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Done"],
+        )
     """
 
     expected_output: str
     next_cmd: list[str]
     timeout_ms: int = 30000
     tool_name: str = "exec"
+    stdout_matchers: list[Matcher[str]] = field(default_factory=list)
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         assert_last_call(req, "docker_exec")
         output = assert_and_extract(req, "docker_exec", BaseExecResult)
-
-        # Assert exit code is 0
-        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
-            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
-            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-            raise AssertionError(
-                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
-            )
-
-        # Assert stdout contains expected text
-        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-        if self.expected_output not in stdout_text:
-            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
-
+        _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
         return factory.make(factory.docker_exec(self.next_cmd, timeout_ms=self.timeout_ms, tool_name=self.tool_name))
 
 

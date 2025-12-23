@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from functools import singledispatch
-from typing import Any, Literal, Self
+from typing import Any, Literal, Self, cast
 
 from openai import AsyncOpenAI
 from openai.types.responses import (
@@ -16,6 +17,7 @@ from openai.types.responses import (
 from openai.types.responses.response_reasoning_item import ResponseReasoningItem
 from pydantic import BaseModel, ConfigDict, Field
 
+from adgn.openai_utils.errors import translate_context_length
 from adgn.openai_utils.types import ReasoningEffort, ReasoningParams, build_reasoning_params
 
 # ------------------------------
@@ -326,26 +328,6 @@ class OpenAIModelProto(ABC):
     async def responses_create(self, req: ResponsesRequest) -> ResponsesResult: ...
 
 
-# ------------------------------
-# Thin wrapper used in prod/tests
-# ------------------------------
-
-
-@dataclass
-class OpenAIModel(OpenAIModelProto):
-    client: AsyncOpenAI
-    model: str
-
-    async def responses_create(self, req: ResponsesRequest) -> ResponsesResult:
-        """Create a Responses completion (non-streaming) and convert to our types."""
-        if not isinstance(req, ResponsesRequest):
-            raise TypeError("responses_create expects a ResponsesRequest instance")
-
-        kwargs = req.model_dump()
-        sdk_resp: Response = await self.client.responses.create(**kwargs)
-        return ResponsesResult.from_sdk(sdk_resp)
-
-
 @dataclass
 class BoundOpenAIModel(OpenAIModelProto):
     """AsyncOpenAI adapter that binds a specific model and returns Pydantic results."""
@@ -360,5 +342,8 @@ class BoundOpenAIModel(OpenAIModelProto):
         if self.reasoning_effort and "reasoning" not in kwargs:
             kwargs["reasoning"] = build_reasoning_params(effort=self.reasoning_effort)
 
-        sdk_resp: Response = await self.client.responses.create(**kwargs)
+        create: Callable[..., Awaitable[Response]] = cast(
+            Callable[..., Awaitable[Response]], self.client.responses.create
+        )
+        sdk_resp: Response = await translate_context_length(create, **kwargs)
         return ResponsesResult.from_sdk(sdk_resp)

@@ -14,9 +14,9 @@ import pytest
 from sqlalchemy import create_engine, text
 
 from adgn.props.db import get_session
-from adgn.props.db.models import GradingDecision, ReportedIssue
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision, ReportedIssue
+from adgn.props.db.temp_user_manager import TempUserManager
 from adgn.props.grader.submit_server import GraderSubmitServer
-from adgn.props.grader.user_manager import GraderUserManager
 from tests.props.grader.conftest import make_test_grader_run
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
@@ -25,7 +25,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 @pytest.fixture
 async def grader_temp_creds(test_db, test_grader_run):
     """Create temporary database user with RLS scoping."""
-    async with GraderUserManager(test_db.admin, test_grader_run) as creds:
+    async with TempUserManager(test_db.admin, test_grader_run) as creds:
         yield creds
 
 
@@ -46,7 +46,16 @@ def grader_submit_server(test_grader_run, test_grader_critic_run):
     return GraderSubmitServer(grader_run_id=test_grader_run, critic_run_id=test_grader_critic_run)
 
 
-async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, test_db, temp_grader_engine):
+async def test_grader_sql_basic_workflow(
+    grader_submit_server,
+    test_grader_run,
+    test_db,
+    temp_grader_engine,
+    tp_single_id,
+    tp_single_occurrence_id,
+    fp_id,
+    fp_occurrence_id,
+):
     """Test basic grader SQL workflow with TP, FP, and no-match decisions."""
     # Simulate agent actions using temp user credentials
 
@@ -55,14 +64,14 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
                    credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
             {
                 "input_id": "input-001",
-                "tp_id": "tp-001",
-                "occ_id": "occ-001",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.8,
                 "rationale": "Matches TP occurrence partially",
             },
@@ -72,14 +81,14 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, target_fp_id, target_fp_occurrence_id,
+                  (agent_run_id, input_issue_id, target_fp_id, target_fp_occurrence_id,
                    credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :fp_id, :occ_id, :credit, :rationale)
+                VALUES (current_agent_run_id(), :input_id, :fp_id, :occ_id, :credit, :rationale)
             """),
             {
                 "input_id": "input-002",
-                "fp_id": "fp-001",
-                "occ_id": "occ-fp-001",
+                "fp_id": fp_id,
+                "occ_id": fp_occurrence_id,
                 "credit": 1.0,
                 "rationale": "Matches known FP pattern",
             },
@@ -89,8 +98,8 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-003", "credit": 0.0, "rationale": "No matching ground truth"},
         )
@@ -111,17 +120,17 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
     # Verify database state
     with get_session() as session:
         # Check decisions exist
-        decisions = session.query(GradingDecision).filter_by(grader_run_id=test_grader_run).all()
+        decisions = session.query(GradingDecision).filter_by(agent_run_id=test_grader_run).all()
         assert len(decisions) == 3
 
         tp_decision = next(d for d in decisions if d.input_issue_id == "input-001")
-        assert tp_decision.target_tp_id == "tp-001"
-        assert tp_decision.target_tp_occurrence_id == "occ-001"
+        assert tp_decision.target_tp_id == tp_single_id
+        assert tp_decision.target_tp_occurrence_id == tp_single_occurrence_id
         assert tp_decision.credit == 0.8
 
         fp_decision = next(d for d in decisions if d.input_issue_id == "input-002")
-        assert fp_decision.target_fp_id == "fp-001"
-        assert fp_decision.target_fp_occurrence_id == "occ-fp-001"
+        assert fp_decision.target_fp_id == fp_id
+        assert fp_decision.target_fp_occurrence_id == fp_occurrence_id
         assert fp_decision.credit == 1.0
 
         no_match = next(d for d in decisions if d.input_issue_id == "input-003")
@@ -137,8 +146,8 @@ async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grad
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-001", "credit": 0.0, "rationale": "No match"},
         )
@@ -146,8 +155,8 @@ async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grad
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-002", "credit": 0.0, "rationale": "No match"},
         )
@@ -161,7 +170,13 @@ async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grad
 
 
 async def test_grader_sql_multiple_decisions_allowed(
-    grader_submit_server, test_grader_run, test_db, temp_grader_engine
+    grader_submit_server,
+    test_grader_run,
+    test_db,
+    temp_grader_engine,
+    tp_occurrences_multi,
+    tp_single_id,
+    tp_single_occurrence_id,
 ):
     """Test that multiple decisions per input issue are allowed (partial credit to multiple TPs)."""
 
@@ -170,8 +185,8 @@ async def test_grader_sql_multiple_decisions_allowed(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-001", "credit": 0.0, "rationale": "No match"},
         )
@@ -179,8 +194,8 @@ async def test_grader_sql_multiple_decisions_allowed(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-002", "credit": 0.0, "rationale": "No match"},
         )
@@ -190,14 +205,14 @@ async def test_grader_sql_multiple_decisions_allowed(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
                    credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
             {
                 "input_id": "input-003",
-                "tp_id": "tp-001",
-                "occ_id": "occ-001",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.3,
                 "rationale": "Partially matches tp-001",
             },
@@ -206,14 +221,14 @@ async def test_grader_sql_multiple_decisions_allowed(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
                    credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
             {
                 "input_id": "input-003",
-                "tp_id": "tp-002",
-                "occ_id": "occ-002",
+                "tp_id": tp_occurrences_multi[0][0],
+                "occ_id": tp_occurrences_multi[0][1],
                 "credit": 0.5,
                 "rationale": "Also partially matches tp-002",
             },
@@ -243,19 +258,19 @@ async def test_grader_sql_rls_isolation(
     with get_session() as session:
         # Add "other-input" to the critic run's reported issues (for other grader run)
         other_issue = ReportedIssue(
-            critic_run_id=test_grader_critic_run, issue_id="other-input", rationale="Other issue"
+            agent_run_id=test_grader_critic_run, issue_id="other-input", rationale="Other issue"
         )
         session.add(other_issue)
 
         # Add "my-input" to the critic run's reported issues (for test_grader_run via temp creds)
-        my_issue = ReportedIssue(critic_run_id=test_grader_critic_run, issue_id="my-input", rationale="My issue")
+        my_issue = ReportedIssue(agent_run_id=test_grader_critic_run, issue_id="my-input", rationale="My issue")
         session.add(my_issue)
 
         session.flush()
 
         # Now add the decision for other run
         decision = GradingDecision(
-            grader_run_id=other_run_id, input_issue_id="other-input", credit=0.0, rationale="Other agent's decision"
+            agent_run_id=other_run_id, input_issue_id="other-input", credit=0.0, rationale="Other agent's decision"
         )
         session.add(decision)
         session.commit()
@@ -266,8 +281,8 @@ async def test_grader_sql_rls_isolation(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "my-input", "credit": 0.0, "rationale": "My decision"},
         )
@@ -282,7 +297,7 @@ async def test_grader_sql_rls_isolation(
 
 
 async def test_grader_sql_credit_sum_trigger_enforcement(
-    test_grader_run, test_grader_critic_run, test_db, temp_grader_engine
+    test_grader_run, test_grader_critic_run, test_db, temp_grader_engine, tp_single_id, tp_single_occurrence_id
 ):
     """Test SQL trigger prevents credit sum > 1.0 for same TP occurrence."""
     with temp_grader_engine.connect() as conn:
@@ -290,14 +305,14 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
                    credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
             {
                 "input_id": "input-001",
-                "tp_id": "tp-shared",
-                "occ_id": "occ-shared",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.7,
                 "rationale": "First match",
             },
@@ -310,14 +325,14 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
             conn.execute(
                 text("""
                     INSERT INTO grading_decisions
-                      (grader_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                      (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
                        credit, rationale)
-                    VALUES (current_grader_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                    VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
                 """),
                 {
                     "input_id": "input-002",
-                    "tp_id": "tp-shared",
-                    "occ_id": "occ-shared",
+                    "tp_id": tp_single_id,
+                    "occ_id": tp_single_occurrence_id,
                     "credit": 0.5,
                     "rationale": "Second match (would exceed 1.0)",
                 },
@@ -334,8 +349,8 @@ async def test_grader_sql_hard_delete_revision_workflow(
             conn.execute(
                 text("""
                     INSERT INTO grading_decisions
-                      (grader_run_id, input_issue_id, credit, rationale)
-                    VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                      (agent_run_id, input_issue_id, credit, rationale)
+                    VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
                 """),
                 {"input_id": f"input-00{i}", "credit": 0.0, "rationale": f"Decision {i}"},
             )
@@ -344,7 +359,7 @@ async def test_grader_sql_hard_delete_revision_workflow(
         conn.execute(
             text("""
                 DELETE FROM grading_decisions
-                WHERE grader_run_id = current_grader_run_id()
+                WHERE agent_run_id = current_agent_run_id()
                   AND input_issue_id = :input_id
             """),
             {"input_id": "input-002"},
@@ -362,8 +377,8 @@ async def test_grader_sql_hard_delete_revision_workflow(
         conn.execute(
             text("""
                 INSERT INTO grading_decisions
-                  (grader_run_id, input_issue_id, credit, rationale)
-                VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                  (agent_run_id, input_issue_id, credit, rationale)
+                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-002", "credit": 0.0, "rationale": "Revised decision"},
         )
@@ -384,8 +399,6 @@ async def test_grader_sql_hard_delete_revision_workflow(
 
 async def test_grader_report_failure_basic(grader_submit_server, test_grader_run, test_db):
     """Test report_failure tool marks run as failed with reason."""
-    from adgn.props.db.models import GraderRun, GraderRunStatus
-
     # Call report_failure tool
     await grader_submit_server.report_failure_tool.run(
         {"message": "Cannot grade: critic output is malformed and contains no parseable issues"}
@@ -393,10 +406,12 @@ async def test_grader_report_failure_basic(grader_submit_server, test_grader_run
 
     # Verify database state
     with get_session() as session:
-        grader_run = session.get(GraderRun, test_grader_run)
+        grader_run = session.get(AgentRun, test_grader_run)
         assert grader_run is not None
-        assert grader_run.status == GraderRunStatus.REPORTED_FAILURE
-        assert grader_run.notes_md == "Cannot grade: critic output is malformed and contains no parseable issues"
+        assert grader_run.status == AgentRunStatus.REPORTED_FAILURE
+        assert (
+            grader_run.completion_summary == "Cannot grade: critic output is malformed and contains no parseable issues"
+        )
 
 
 async def test_grader_report_failure_prevents_subsequent_submit(
@@ -421,8 +436,8 @@ async def test_grader_report_failure_after_complete_fails(
             conn.execute(
                 text("""
                     INSERT INTO grading_decisions
-                      (grader_run_id, input_issue_id, credit, rationale)
-                    VALUES (current_grader_run_id(), :input_id, :credit, :rationale)
+                      (agent_run_id, input_issue_id, credit, rationale)
+                    VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
                 """),
                 {"input_id": f"input-00{i}", "credit": 0.0, "rationale": f"Decision {i}"},
             )

@@ -1,0 +1,1 @@
+../../../common/docs/db/critiques.md

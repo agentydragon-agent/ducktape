@@ -1,13 +1,12 @@
-"""Shared fixtures for OpenAI strict mode tests.
+"""Shared fixtures and models for OpenAI tests."""
 
-This module contains common test models used across multiple strict mode test files
-to avoid duplication while keeping tests clear and maintainable.
-"""
-
+import os
 from pathlib import Path
 from typing import Annotated, Literal
 
+import openai
 from pydantic import BaseModel, ConfigDict, Field
+import pytest
 
 # ========== Invalid Models (violate strict mode) ==========
 
@@ -142,3 +141,30 @@ class NestedValidModel(BaseModel):
 
     nested: Inner
     model_config = ConfigDict(extra="forbid")
+
+
+# ========== Live OpenAI fixtures ==========
+
+
+@pytest.fixture(scope="session")
+def live_openai_model() -> str:
+    """Canonical model used for live OpenAI tests."""
+
+    return "gpt-4o-mini"
+
+
+@pytest.fixture(scope="session")
+def require_openai_api_key():
+    """Skip live tests unless OPENAI_API_KEY is set."""
+
+    if "OPENAI_API_KEY" not in os.environ:
+        pytest.skip("OPENAI_API_KEY not set")
+    return os.environ["OPENAI_API_KEY"]
+
+
+@pytest.fixture(scope="session")
+async def live_async_openai(require_openai_api_key):
+    """Session-scoped AsyncOpenAI client for live tests."""
+
+    _ = require_openai_api_key
+    return openai.AsyncOpenAI()

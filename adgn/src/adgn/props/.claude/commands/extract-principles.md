@@ -13,18 +13,12 @@ account better for the free-form critiques.
 
 ### Existing property definitions
 
-@definitions/
-
-Find the `definitions/` folder and read all included definitions to understand already defined formal properties
-of good code.
+Find and read all `.md` files in `props/` to understand already defined formal properties of good code.
 
 ### Specimens
 
-@specimens/
-
-The `specimens/` folder contains examples of bad code with critique. Canonical ground‑truth is now recorded in
-`issues.libsonnet` using the Jsonnet helpers (see `src/adgn_llm/properties/specimens/lib.libsonnet`).
-Use these to identify:
+Specimens are in the external repository at `~/code/specimens/`. Read the specimens there to find examples of bad code with critique. Canonical ground‑truth is now recorded in
+`issues/*.yaml` files. Use these to identify:
 - Issues to flag (should_flag=true) — candidates to generalize into new/edited properties
 - Canonical negatives (should_flag=false) — clarify exclusions or tighten definitions as needed.
 
@@ -37,7 +31,7 @@ Read issues noted in its README.md file and for those that do not yet clearly ma
 the subject code together with the critique. Read all such issues, and progressively build up your idea of what
 underlying generating principles and heuristics do the critiques come from.
 
-Your goal is to make it so that our formal `definitions/` contain property definitions that together would generate
+Your goal is to make it so that our formal `props/` contain property definitions that together would generate
 all issues in free-form critiques. If a particular critique is already well-covered by existing principles, do not
 consider it for proposing a new definition (as it's already well-covered).
 
@@ -83,7 +77,7 @@ a library vs when should I write my own thing").
 Start each definition as a section with a sub-heading, and include in it:
 
 * How you would propose stating the principle as a definition of a positive property that good code should have.
-  Use files in `definitions/` as a style guide.
+  Use files in `props/` as a style guide.
 * Insofar as it's possible, aim to write this definition as a precise definition that one can read and use to determine
   "does code X meet good property Y or not?". This will not always be fully possible - for example in cases where
   there are trade-offs.

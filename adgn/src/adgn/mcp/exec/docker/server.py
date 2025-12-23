@@ -19,7 +19,6 @@ from adgn.mcp._shared.container_session import (
     ContainerOptions,
     make_container_lifespan,
     render_container_result,
-    run_ephemeral_container,
     run_session_container,
     session_state_from_ctx,
 )
@@ -95,7 +94,6 @@ class ContainerExecServer(EnhancedFastMCP):
                 working_dir=str(s.working_dir),
                 network_mode=s.network_mode,
                 image_history=img_history,
-                ephemeral=s.ephemeral,
             )
             return ci.model_dump(mode="json")
 
@@ -138,10 +136,7 @@ class ContainerExecServer(EnhancedFastMCP):
                 # Pass cmd directly to Docker
                 cmd = input.cmd
 
-                if s.ephemeral or opts.ephemeral:
-                    (stdout_buf, stderr_buf, exit_code, timed_out) = await run_ephemeral_container(s, cmd, input)
-                else:
-                    (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(s, cmd, input, opts)
+                (stdout_buf, stderr_buf, exit_code, timed_out) = await run_session_container(s, cmd, input, opts)
 
                 duration_ms = get_duration_ms()
                 return render_container_result(stdout_buf, stderr_buf, exit_code, timed_out, duration_ms)

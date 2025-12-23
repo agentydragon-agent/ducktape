@@ -102,9 +102,6 @@ def _validate_schema_strict_compatible(schema: dict[str, Any], tool_name: str) -
 
     def check_subschema(subschema: dict[str, Any], path: str) -> None:
         """Check a single subschema for strict mode compatibility."""
-        if not isinstance(subschema, dict):
-            return
-
         schema_type = subschema.get("type")
 
         # Check object types

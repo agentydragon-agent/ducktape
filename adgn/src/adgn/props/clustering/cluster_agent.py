@@ -3,14 +3,13 @@
 Creates a scoped database environment, mounts snapshot code, and runs a clustering
 agent that groups unknown issues into named clusters using direct SQL access.
 
-The agent has RLS-scoped database credentials (run_id encoded in username) and
+The agent has RLS-scoped database credentials (agent_run_id encoded in username) and
 uses SQL to record clustering decisions. Completion is detected automatically
 when all unknowns are assigned.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
 import logging
 from pathlib import Path
 import tempfile
@@ -21,25 +20,29 @@ import aiodocker
 from fastmcp.client import Client
 from fastmcp.server.auth import AuthProvider
 from pydantic import BaseModel, Field
-from sqlalchemy import create_engine, func, select
-from sqlalchemy.orm import Session
+from sqlalchemy import create_engine, exists, func, select
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
+from sqlalchemy.orm import Session, aliased
 
-from adgn.agent.agent import Agent
-from adgn.agent.bootstrap import TypedBootstrapBuilder, read_package_files_call
+from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.events import AssistantText
-from adgn.agent.handler import BaseHandler, SequenceHandler
-from adgn.agent.loop_control import Abort, AllowAnyToolOrTextMessage, InjectItems, LoopDecision, NoAction
-from adgn.mcp._shared.mounted import Mounted
+from adgn.agent.handler import BaseHandler
+from adgn.agent.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
-from adgn.props.agent_setup import AgentEnvironment, build_props_handlers
-from adgn.props.clustering.user_manager import ClusteringUserManager
+from adgn.openai_utils.types import ReasoningSummary
+from adgn.props.agent_handle import AgentHandle
+from adgn.props.agent_setup import AgentEnvironment
+from adgn.props.agent_types import AgentType, ClusteringTypeConfig
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.db import get_session
-from adgn.props.db.clustering_models import ClusteringRun, UnknownAssignment, UnknownCluster
+from adgn.props.db.agent_definition_ids import CLUSTERING_AGENT_DEFINITION_ID
+from adgn.props.db.clustering_models import UnknownAssignment, UnknownCluster
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.models import GraderRun, GraderRunStatus, GradingDecision
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
+from adgn.props.display import short_uuid
 from adgn.props.hydration import SnapshotHydrator
+from adgn.props.ids import SnapshotSlug
 
 logger = logging.getLogger(__name__)
 
@@ -72,8 +75,7 @@ ClusteringOutcome = Annotated[OutcomeSuccess | OutcomeIncomplete, Field(discrimi
 class ClusteringResult(BaseModel):
     """Result from running clustering agent."""
 
-    run_id: int
-    transcript_id: UUID
+    agent_run_id: UUID
     outcome: ClusteringOutcome
 
 
@@ -86,19 +88,21 @@ class ClusteringHandler(BaseHandler):
     """Combined completion check and text redirect handler for clustering agent.
 
     On each turn:
-    1. Check if all unknowns are assigned → Abort if done
-    2. If agent sent text instead of tool calls → inject reminder with progress/examples
+    1. Check if all unknowns are assigned -> Abort if done
+    2. If agent sent text instead of tool calls -> inject reminder with progress/examples
 
     Queries the database once per turn to get current progress.
     """
 
-    def __init__(self, run_id: int):
+    def __init__(self, agent_run_id: UUID, snapshot_slug: SnapshotSlug):
         """Initialize handler.
 
         Args:
-            run_id: Clustering run ID to monitor
+            agent_run_id: Clustering agent run ID to monitor
+            snapshot_slug: Snapshot whose unknowns are being clustered
         """
-        self._run_id = run_id
+        self._agent_run_id = agent_run_id
+        self._snapshot_slug = snapshot_slug
         self._text_detected = False
 
     def on_assistant_text_event(self, evt: AssistantText) -> None:
@@ -108,27 +112,37 @@ class ClusteringHandler(BaseHandler):
     def on_before_sample(self) -> LoopDecision:
         """Check completion and redirect text messages."""
         with get_session() as session:
-            # Get run info
-            run = session.get(ClusteringRun, self._run_id)
-            if not run:
-                logger.warning(f"Clustering run {self._run_id} not found")
-                return NoAction()
-
-            snapshot_slug = run.snapshot_slug
+            snapshot_slug = self._snapshot_slug
 
             # Count total unknowns (grading decisions with no TP match)
-            total_unknowns = (
-                session.scalar(
-                    select(func.count())
-                    .select_from(GradingDecision)
-                    .join(GraderRun)
-                    .where(
-                        GraderRun.snapshot_slug == snapshot_slug,
-                        GraderRun.status == GraderRunStatus.COMPLETED,
-                        GradingDecision.target_tp_id.is_(None),
-                    )
+            # Two-phase approach: first find grader run IDs, then query decisions
+            # Graders don't have snapshot_slug directly - they reference a critic run via graded_agent_run_id.
+            # The snapshot_slug is in the critic's type_config.
+            critic_ref = aliased(AgentRun)
+            grader_run_ids = [
+                ar.agent_run_id
+                for ar in session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                    AgentRun.status == AgentRunStatus.COMPLETED,
+                    exists().where(
+                        critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
+                        critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
+                    ),
                 )
-                or 0
+                .all()
+            ]
+            total_unknowns = (
+                (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(GradingDecision)
+                        .where(GradingDecision.agent_run_id.in_(grader_run_ids), GradingDecision.target_tp_id.is_(None))
+                    )
+                    or 0
+                )
+                if grader_run_ids
+                else 0
             )
 
             if total_unknowns == 0:
@@ -138,7 +152,7 @@ class ClusteringHandler(BaseHandler):
             # Get assigned unknowns
             assigned_result = session.execute(
                 select(UnknownAssignment).where(
-                    UnknownAssignment.clustering_run_id == self._run_id, UnknownAssignment.cancelled_at.is_(None)
+                    UnknownAssignment.agent_run_id == self._agent_run_id, UnknownAssignment.cancelled_at.is_(None)
                 )
             )
             assigned_keys = {(a.grader_run_id, a.unknown_id) for a in assigned_result.scalars().all()}
@@ -147,7 +161,7 @@ class ClusteringHandler(BaseHandler):
 
             logger.info(
                 f"Completion check: {assigned_count}/{total_unknowns} assigned, "
-                f"{remaining} remaining (run_id={self._run_id})"
+                f"{remaining} remaining (agent_run_id={self._agent_run_id})"
             )
 
             # Check completion
@@ -168,25 +182,40 @@ class ClusteringHandler(BaseHandler):
     ) -> str:
         """Build reminder message with progress and example IDs."""
         # Get example unassigned unknowns (just IDs)
-        unassigned_decisions = (
-            session.execute(
-                select(GradingDecision)
-                .join(GraderRun)
-                .where(
-                    GraderRun.snapshot_slug == snapshot_slug,
-                    GraderRun.status == GraderRunStatus.COMPLETED,
-                    GradingDecision.target_tp_id.is_(None),
-                )
-                .limit(10)
+        # Two-phase: find grader run IDs, then query decisions
+        # Graders don't have snapshot_slug directly - they reference a critic run via graded_agent_run_id.
+        critic_ref = aliased(AgentRun)
+        grader_run_ids = [
+            ar.agent_run_id
+            for ar in session.query(AgentRun)
+            .filter(
+                AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                AgentRun.status == AgentRunStatus.COMPLETED,
+                exists().where(
+                    critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
+                    critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
+                ),
             )
-            .scalars()
             .all()
+        ]
+        unassigned_decisions = (
+            (
+                session.execute(
+                    select(GradingDecision)
+                    .where(GradingDecision.agent_run_id.in_(grader_run_ids), GradingDecision.target_tp_id.is_(None))
+                    .limit(10)
+                )
+                .scalars()
+                .all()
+            )
+            if grader_run_ids
+            else []
         )
 
         # Filter to unassigned and take first 5
         example_ids: list[str] = []
         for d in unassigned_decisions:
-            if (d.grader_run_id, d.input_issue_id) in assigned_keys:
+            if (d.agent_run_id, d.input_issue_id) in assigned_keys:
                 continue
             if len(example_ids) >= 5:
                 break
@@ -221,7 +250,7 @@ class ClusteringAgentEnvironment(AgentEnvironment):
     """Agent environment for clustering with direct SQL access.
 
     Provides complete environment for clustering agents:
-    - Temporary database user with RLS scoping (clustering_agent_{run_id})
+    - Temporary database user with RLS scoping (clustering_agent_{agent_run_id})
     - Docker container with docker_exec and psql access
     - No custom MCP servers (agent uses SQL directly for clustering decisions)
 
@@ -235,7 +264,7 @@ class ClusteringAgentEnvironment(AgentEnvironment):
         async with ClusteringAgentEnvironment(
             docker_client=docker_client,
             hydrator=hydrator,
-            clustering_run_id=run_id,
+            agent_run_id=agent_run_id,
             db_config=config,
         ) as compositor:
             # Run clustering agent
@@ -246,60 +275,31 @@ class ClusteringAgentEnvironment(AgentEnvironment):
         self,
         docker_client: aiodocker.Docker,
         hydrator: SnapshotHydrator,
-        clustering_run_id: int,
+        agent_run_id: UUID,
         db_config: DatabaseConfig,
+        workspace_manager: WorkspaceManager,
     ):
         """Create clustering agent environment.
 
         Args:
             docker_client: Async Docker client
             hydrator: Snapshot hydrator
-            clustering_run_id: Clustering run ID (for RLS scoping)
+            agent_run_id: Agent run ID (for RLS scoping)
             db_config: Database configuration (passed via DI)
+            workspace_manager: Workspace manager for agent workspace paths
         """
-
-        def make_user_manager() -> ClusteringUserManager:
-            """Create temporary clustering user with RLS scoping."""
-            return ClusteringUserManager(db_config.admin, clustering_run_id)
-
         super().__init__(
+            definition_id=CLUSTERING_AGENT_DEFINITION_ID,
+            agent_run_id=agent_run_id,
             docker_client=docker_client,
-            user_manager_factory=make_user_manager,
             hydrator=hydrator,
             db_config=db_config,
+            workspace_manager=workspace_manager,
             snapshot_slugs=[],  # Clustering doesn't need specific snapshots mounted
-            workspace_prefix="clustering_workspace_",
-            mount_properties=False,
+            container_name=f"clustering-{short_uuid(agent_run_id)}",
+            labels={"adgn.project": "props", "adgn.role": "clustering", "adgn.agent_run_id": str(agent_run_id)},
+            auto_remove=True,
         )
-
-    def bootstrap_items(self, builder: TypedBootstrapBuilder, runtime: Mounted[ContainerExecServer]) -> list:
-        """Build bootstrap items for clustering agent initialization.
-
-        Includes:
-        - System overview (snapshots, database, evaluation flow)
-        - Clustering schema documentation (tables, RLS, constraints)
-        - Example SQL query scripts
-
-        Args:
-            builder: Bootstrap builder for generating typed tool calls
-            runtime: Mounted runtime server (comp.runtime)
-
-        Returns:
-            List of FunctionCallItems to inject before agent sampling
-        """
-        return [
-            # All package file reads (single call for efficiency)
-            read_package_files_call(
-                builder,
-                runtime,
-                [
-                    # System overview
-                    ("adgn.props.docs", ["system_overview.md"]),
-                    # Clustering schema (tables, RLS, constraints, query examples)
-                    ("adgn.props.clustering", ["schema_docs.md", "example_queries.py"]),
-                ],
-            )
-        ]
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         """Create MCP server for clustering agent.
@@ -321,26 +321,28 @@ class ClusteringAgentEnvironment(AgentEnvironment):
 
 
 async def run_clustering_agent(
-    run_id: int,
+    snapshot_slug: SnapshotSlug,
     hydrator: SnapshotHydrator,
     docker_client: aiodocker.Docker,
     db_config: DatabaseConfig,
     client: OpenAIModelProto,
+    agent_run_id: UUID | None = None,
     output_dir: Path | None = None,
     verbose: bool = False,
 ) -> ClusteringResult:
-    """Run clustering agent for a specific clustering run.
+    """Run clustering agent for a snapshot.
 
-    Creates temporary PostgreSQL credentials with RLS-scoped access, hydrates
-    and mounts the snapshot code, and runs an agent that clusters unknowns
-    using direct SQL access.
+    Creates an AgentRun with ClusteringTypeConfig, temporary PostgreSQL credentials
+    with RLS-scoped access, and runs an agent that clusters unknowns using direct
+    SQL access.
 
     Args:
-        run_id: Clustering run ID to process
+        snapshot_slug: Snapshot whose unknowns to cluster
         hydrator: Snapshot hydrator (required)
         docker_client: Docker client (required)
         db_config: Database configuration (required, from CLI caller)
         client: OpenAI client (required). Use client.model for model name.
+        agent_run_id: Optional agent run ID (for resuming). If None, creates new run.
         output_dir: Output directory for workspace/logs (defaults to temp)
         verbose: Enable verbose logging
 
@@ -348,11 +350,11 @@ async def run_clustering_agent(
         ClusteringResult with outcome and statistics
 
     Raises:
-        ValueError: If run_id doesn't exist or snapshot not found
+        ValueError: If agent_run_id is provided but doesn't exist or has wrong type
 
     Example:
         result = await run_clustering_agent(
-            run_id=42,
+            snapshot_slug=SnapshotSlug("ducktape/2025-11-20-00"),
             hydrator=hydrator,
             docker_client=docker_client,
             db_config=db_config,
@@ -362,88 +364,99 @@ async def run_clustering_agent(
         if result.outcome.kind == "success":
             logger.info(f"Clustered {result.outcome.total_unknowns} unknowns")
     """
-    transcript_id = uuid4()
-
     # Default arguments
+    if agent_run_id is None:
+        agent_run_id = uuid4()
+
     if output_dir is None:
-        output_dir = Path(tempfile.mkdtemp(prefix=f"cluster_agent_run{run_id}_"))
+        output_dir = Path(tempfile.mkdtemp(prefix=f"cluster_agent_{agent_run_id}_"))
 
     output_dir = output_dir.resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1. Load clustering run from database
+    # 1. Create or validate AgentRun
     with get_session() as session:
-        run = session.get(ClusteringRun, run_id)
-        if not run:
-            raise ValueError(f"Clustering run {run_id} not found")
-        snapshot_slug = run.snapshot_slug
+        existing_run = session.get(AgentRun, agent_run_id)
+        if existing_run:
+            # Resuming existing run - validate it
+            if not isinstance(existing_run.type_config, ClusteringTypeConfig):
+                raise ValueError(f"Agent run {agent_run_id} is not a clustering run")
+            if existing_run.status != AgentRunStatus.IN_PROGRESS:
+                raise ValueError(f"Agent run {agent_run_id} has status {existing_run.status}, expected 'in_progress'")
+            # Validate snapshot matches
+            if existing_run.type_config.snapshot_slug != snapshot_slug:
+                raise ValueError(
+                    f"Agent run {agent_run_id} is for {existing_run.type_config.snapshot_slug}, not {snapshot_slug}"
+                )
+        else:
+            # Create new run
+            type_config = ClusteringTypeConfig(snapshot_slug=snapshot_slug)
+            agent_run = AgentRun(
+                agent_run_id=agent_run_id,
+                agent_definition_id=CLUSTERING_AGENT_DEFINITION_ID,
+                model=client.model,
+                type_config=type_config,
+                status=AgentRunStatus.IN_PROGRESS,
+            )
+            session.add(agent_run)
+            session.commit()
 
-        # Update transcript_id in database
-        run.transcript_id = str(transcript_id)
-        session.commit()
-
-    logger.info(
-        f"Starting clustering agent run {run_id} (transcript {transcript_id}): snapshot={snapshot_slug}, model={client.model}"
-    )
+    logger.info(f"Starting clustering agent run {agent_run_id}: snapshot={snapshot_slug}, model={client.model}")
     logger.info(f"Output directory: {output_dir}")
 
     # 2. Create agent environment with scoped database user and HTTP MCP server
+    workspace_manager = WorkspaceManager.from_env()
     agent_env = ClusteringAgentEnvironment(
-        docker_client=docker_client, hydrator=hydrator, clustering_run_id=run_id, db_config=db_config
+        docker_client=docker_client,
+        hydrator=hydrator,
+        agent_run_id=agent_run_id,
+        db_config=db_config,
+        workspace_manager=workspace_manager,
     )
 
-    async with agent_env as comp:
+    async with agent_env as comp, Client(comp) as mcp_client:
         # 3. Set up handlers
-        # Bootstrap calls (inject schema docs and example scripts)
-        builder = TypedBootstrapBuilder.for_server(comp.runtime.server)
-        bootstrap_calls = agent_env.bootstrap_items(builder, comp.runtime)
-        bootstrap = SequenceHandler([InjectItems(items=bootstrap_calls)])
+        # NOTE: Do NOT call build_props_handlers() here - AgentHandle.create() already adds
+        # DatabaseEventHandler. We only add CompactDisplayHandler if verbose is enabled.
+        handlers: list[BaseHandler] = []
+        if verbose:
+            display_handler = await CompactDisplayHandler.from_compositor(comp, prefix=f"[CLUSTER {agent_run_id}] ")
+            handlers.append(display_handler)
 
-        # Compose all handlers
-        props_handlers = await build_props_handlers(
-            transcript_id=transcript_id, verbose_prefix=f"[CLUSTER RUN={run_id}] " if verbose else None, compositor=comp
+        handlers.append(
+            ClusteringHandler(agent_run_id, snapshot_slug)
+        )  # Completion check + text redirect with progress
+
+        # 4. Create AgentHandle - handles definition loading, workspace, bootstrap, system prompt
+        agent_handle = await AgentHandle.create(
+            agent_run_id=agent_run_id,
+            definition_id=CLUSTERING_AGENT_DEFINITION_ID,
+            model_client=client,
+            mcp_client=mcp_client,
+            compositor=comp,
+            workspace_manager=workspace_manager,
+            handlers=handlers,
+            dynamic_instructions=comp.render_agent_dynamic_instructions,
+            parallel_tool_calls=True,
+            reasoning_summary=ReasoningSummary.detailed,
         )
 
-        handlers = [
-            bootstrap,
-            *props_handlers,
-            ClusteringHandler(run_id),  # Completion check + text redirect with progress
-        ]
-
-        # 4. System prompt (static file, no template rendering)
-        system_prompt_path = Path(__file__).parent / "prompts" / "clustering_system.md"
-        system_prompt = system_prompt_path.read_text()
-
-        # 5. Create and run agent
-        async with Client(comp) as mcp_client:
-
-            async def get_instructions() -> str:
-                return system_prompt
-
-            agent = await Agent.create(
-                mcp_client=mcp_client,
-                client=client,
-                handlers=handlers,
-                parallel_tool_calls=True,
-                dynamic_instructions=get_instructions,
-                tool_policy=AllowAnyToolOrTextMessage(),
-            )
-
-            logger.info("Starting agent execution")
-            await agent.run()
-            logger.info("Agent execution completed")
+        logger.info("Starting agent execution")
+        await agent_handle.run()
+        logger.info("Agent execution completed")
 
         # 6. Compute outcome
-        outcome = _compute_outcome(run_id, db_config)
+        outcome = _compute_outcome(agent_run_id, snapshot_slug, db_config)
 
-        return ClusteringResult(run_id=run_id, transcript_id=transcript_id, outcome=outcome)
+        return ClusteringResult(agent_run_id=agent_run_id, outcome=outcome)
 
 
-def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcome:
+def _compute_outcome(agent_run_id: UUID, snapshot_slug: SnapshotSlug, db_config: DatabaseConfig) -> ClusteringOutcome:
     """Compute final outcome from database state.
 
     Args:
-        run_id: Clustering run ID
+        agent_run_id: Clustering agent run ID
+        snapshot_slug: Snapshot whose unknowns were clustered
         db_config: Database configuration
 
     Returns:
@@ -453,26 +466,34 @@ def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcom
 
     try:
         with Session(engine) as session:
-            # Get run info
-            run = session.get(ClusteringRun, run_id)
-            if not run:
-                return OutcomeIncomplete(remaining_unknowns=0, message=f"Clustering run {run_id} not found")
-
-            snapshot_slug = run.snapshot_slug
-
             # Count total unknowns from completed grader runs (decisions with no TP match)
-            total_unknowns = (
-                session.scalar(
-                    select(func.count())
-                    .select_from(GradingDecision)
-                    .join(GraderRun)
-                    .where(
-                        GraderRun.snapshot_slug == snapshot_slug,
-                        GraderRun.status == GraderRunStatus.COMPLETED,
-                        GradingDecision.target_tp_id.is_(None),
-                    )
+            # Two-phase: find grader run IDs, then query decisions
+            # Graders don't have snapshot_slug directly - they reference a critic run via graded_agent_run_id.
+            critic_ref = aliased(AgentRun)
+            grader_run_ids = [
+                ar.agent_run_id
+                for ar in session.query(AgentRun)
+                .filter(
+                    AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                    AgentRun.status == AgentRunStatus.COMPLETED,
+                    exists().where(
+                        critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
+                        critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
+                    ),
                 )
-                or 0
+                .all()
+            ]
+            total_unknowns = (
+                (
+                    session.scalar(
+                        select(func.count())
+                        .select_from(GradingDecision)
+                        .where(GradingDecision.agent_run_id.in_(grader_run_ids), GradingDecision.target_tp_id.is_(None))
+                    )
+                    or 0
+                )
+                if grader_run_ids
+                else 0
             )
 
             if total_unknowns == 0:
@@ -482,7 +503,7 @@ def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcom
             # Count assignments by type
             assignments_result = session.execute(
                 select(UnknownAssignment).where(
-                    UnknownAssignment.clustering_run_id == run_id, UnknownAssignment.cancelled_at.is_(None)
+                    UnknownAssignment.agent_run_id == agent_run_id, UnknownAssignment.cancelled_at.is_(None)
                 )
             )
             assignments: list[UnknownAssignment] = list(assignments_result.scalars().all())
@@ -491,7 +512,7 @@ def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcom
             remaining = total_unknowns - assigned_count
 
             # Count clusters created
-            clusters_result = session.execute(select(UnknownCluster).where(UnknownCluster.clustering_run_id == run_id))
+            clusters_result = session.execute(select(UnknownCluster).where(UnknownCluster.agent_run_id == agent_run_id))
             clusters_created = len(clusters_result.scalars().all())
 
             # Count mapped to existing TPs/FPs
@@ -503,9 +524,10 @@ def _compute_outcome(run_id: int, db_config: DatabaseConfig) -> ClusteringOutcom
                 )
 
             # Update run status
-            run.status = "completed"
-            run.completed_at = datetime.now()
-            session.commit()
+            run = session.get(AgentRun, agent_run_id)
+            if run:
+                run.status = AgentRunStatus.COMPLETED
+                session.commit()
 
             return OutcomeSuccess(
                 total_unknowns=total_unknowns, clusters_created=clusters_created, mapped_to_existing=mapped_to_existing

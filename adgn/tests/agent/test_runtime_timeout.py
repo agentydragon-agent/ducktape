@@ -12,7 +12,7 @@ from tests.conftest import make_container_opts
 def _runtime_spec_persession(docker_client, image: str = "python:3.12-slim"):
     return ContainerExecServer(
         docker_client,
-        make_container_opts(image, ephemeral=False),  # per-session container
+        make_container_opts(image),  # per-session container
     )
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Sequence
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 import os
 from pathlib import Path
@@ -32,8 +32,6 @@ from adgn.mcp.notifications.buffer import NotificationsBuffer
 from adgn.mcp.stubs.typed_stubs import TypedClient
 from adgn.mcp.testing.simple_servers import make_simple_mcp as _make_simple_mcp
 from adgn.props.db.models import CanonicalIssuesSnapshot
-from tests.support.responses import _StepRunner
-from tests.support.steps import Step
 from tests.support.types import McpServerSpecs
 
 # Empty canonical issues snapshot for GraderRun fixtures.
@@ -228,12 +226,12 @@ def make_typed_mcp():
     """Global typed MCP helper yielding (TypedClient, session) for a FastMCP server.
 
     Usage:
-        async with make_typed_mcp(server, name) as (client, sess):
+        async with make_typed_mcp(server) as (client, sess):
             ...
     """
 
     @asynccontextmanager
-    async def _open(server: FastMCP, name: str):
+    async def _open(server: FastMCP):
         async with Client(server) as sess:
             client = TypedClient.from_server(server, sess)
             yield client, sess
@@ -245,33 +243,6 @@ def make_typed_mcp():
 def make_simple_mcp() -> FlatModelMixin:
     """Lightweight FastMCP backend with simple tools for tests."""
     return _make_simple_mcp()
-
-
-@pytest.fixture
-def make_step_runner(responses_factory):
-    """Factory fixture that creates step runners.
-
-    Returns a factory function that creates _StepRunner instances.
-    Each runner is a context manager that validates all steps completed.
-
-    Usage:
-        def test_workflow(make_step_runner):
-            with make_step_runner(steps=[...]) as runner:
-                # Use runner
-                pass
-            # Validation happens automatically on context exit
-
-        def test_multiple_agents(make_step_runner):
-            with make_step_runner(steps=[...]) as agent1, \
-                 make_step_runner(steps=[...]) as agent2:
-                # Use both agents
-                pass
-    """
-
-    def _make(steps: Sequence[Step]) -> _StepRunner:
-        return _StepRunner(factory=responses_factory, steps=steps)
-
-    return _make
 
 
 async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
@@ -512,7 +483,7 @@ async def typed_docker_client(make_typed_mcp, docker_exec_server_py312slim):
 
     Yields (TypedClient, session) tuple for direct use in tests.
     """
-    async with make_typed_mcp(docker_exec_server_py312slim, "docker") as (client, session):
+    async with make_typed_mcp(docker_exec_server_py312slim) as (client, session):
         yield client, session
 
 
@@ -634,11 +605,9 @@ def require_sandbox_exec():
 # --- Helper functions for container configuration ---
 
 
-def make_container_opts(
-    image: str, *, working_dir: Path = Path("/workspace"), ephemeral: bool = True
-) -> ContainerOptions:
+def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:
     """Create standard ContainerOptions with proper Path type conversion."""
-    return ContainerOptions(image=image, working_dir=working_dir, binds=None, ephemeral=ephemeral)
+    return ContainerOptions(image=image, working_dir=working_dir, binds=None)
 
 
 # --- Shared lightweight fixtures used across agent and MCP tests ---

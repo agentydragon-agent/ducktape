@@ -5,7 +5,7 @@ from pathlib import Path
 import pygit2
 import pytest
 
-from adgn.mcp.git_ro.server import GIT_RO_SERVER_NAME, GitRoServer
+from adgn.mcp.git_ro.server import GitRoServer
 
 
 def _ensure_identity(repo: pygit2.Repository) -> None:
@@ -70,5 +70,5 @@ async def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
             result = await typed_git_ro.diff(...)
     """
     server = GitRoServer(repo_git_ro)
-    async with make_typed_mcp(server, GIT_RO_SERVER_NAME) as (client, _session):
+    async with make_typed_mcp(server) as (client, _session):
         yield client

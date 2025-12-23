@@ -1,115 +1,88 @@
 """Test that the occurrence_credits view correctly extracts fields from GraderOutput."""
 
-from pathlib import Path
 from uuid import uuid4
 
 from sqlalchemy import text
 
 from adgn.props.db import get_session
+from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRunStatus, GraderRun, Snapshot, TruePositive
+from adgn.props.db.models import AgentRunStatus, TruePositive
 from adgn.props.grader.models import GraderSuccess, InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ExplicitFileScope
-from adgn.props.models.snapshot import LocalSource
-from adgn.props.models.true_positive import TruePositiveOccurrence
 from adgn.props.rationale import Rationale
-from adgn.props.splits import Split
 from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT
-from tests.props.conftest import make_critic_run, make_reported_issues, populate_grading_decisions
+from tests.props.conftest import make_critic_run, make_grader_run, make_reported_issues, populate_grading_decisions
 
 
-def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
-    """Test that the view includes grader runs with occurrence-based results."""
+def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
+    """Test that the view includes grader runs with occurrence-based results.
 
-    # Create test data
-    snapshot_slug = SnapshotSlug("test-view/2025-01-01-00")
-    critic_transcript_id = uuid4()
-    grader_transcript_id = uuid4()
-
-    # Scope for the critic run
-    files = ["test/file1.py", "test/file2.py"]
-    scope = ExplicitFileScope(files=files)
-
-    # Create GraderSuccess with occurrence results
-    grader_success = GraderSuccess(
-        occurrence_results=[
-            OccurrenceResult(
-                tp_id=TruePositiveID("tp-test-001"),
-                occurrence_id="occ-1",
-                found_credit=1.0,
-                matched_by=[OccurrenceMatch(input_id=InputIssueID("input-test-001"), credit=1.0)],
-                rationale=Rationale("Fully found this occurrence"),
-            )
-        ],
-        summary=Rationale("Test grading summary"),
-    )
+    Uses git-synced test fixtures (test-fixtures/test-trivial) instead of synthetic data.
+    The test-trivial fixture has a TP 'test-issue' with occurrence 'occ-1' in subtract.py.
+    """
+    # Use git-synced fixture: test-fixtures/test-trivial (TRAIN split)
+    snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
+    critic_agent_run_id = uuid4()
+    grader_agent_run_id = uuid4()
 
     with get_session() as session:
-        # Insert snapshot
-        snapshot = Snapshot(slug=snapshot_slug, split=Split.VALID, source=LocalSource(vcs="local", root="."))
-        session.add(snapshot)
+        # Get an existing example from git fixtures - use any single-file-set example
+        example = (
+            session.query(Example).filter_by(snapshot_slug=snapshot_slug).filter(Example.files_hash.isnot(None)).first()
+        )
+        assert example is not None, "Expected a single-file-set example in test-trivial"
 
-        # Insert TruePositive records (required for snapshot_files_with_issues view)
-        tp1 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="test-tp-001",
-            rationale="Test issue in file1",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-1",
-                    files={Path("test/file1.py"): None},
-                    expect_caught_from={frozenset([Path("test/file1.py")])},
-                    note=None,
+        # Get the actual TP from the fixture to match against
+        tps = session.query(TruePositive).filter_by(snapshot_slug=snapshot_slug).all()
+        # The test-trivial fixture has test-issue with occ-1 in subtract.py
+        # Find the TP that has subtract.py in its occurrences
+        matching_tp = None
+        matching_occ_id = None
+        for tp in tps:
+            for occ in tp.occurrences:
+                if "subtract.py" in [str(f) for f in occ.files]:
+                    matching_tp = tp
+                    matching_occ_id = occ.occurrence_id
+                    break
+            if matching_tp:
+                break
+
+        assert matching_tp is not None, "Should find a TP with subtract.py"
+        assert matching_occ_id is not None
+
+        # Create GraderSuccess with occurrence results matching the git fixture TP
+        grader_success = GraderSuccess(
+            occurrence_results=[
+                OccurrenceResult(
+                    tp_id=TruePositiveID(matching_tp.tp_id),
+                    occurrence_id=matching_occ_id,
+                    found_credit=1.0,
+                    matched_by=[OccurrenceMatch(input_id=InputIssueID("input-test-001"), credit=1.0)],
+                    rationale=Rationale("Fully found this occurrence"),
                 )
             ],
+            summary=Rationale("Test grading summary"),
         )
-        session.add(tp1)
-
-        tp2 = TruePositive(
-            snapshot_slug=snapshot_slug,
-            tp_id="test-tp-002",
-            rationale="Test issue in file2",
-            occurrences=[
-                TruePositiveOccurrence(
-                    occurrence_id="occ-2",
-                    files={Path("test/file2.py"): None},
-                    expect_caught_from={frozenset([Path("test/file2.py")])},
-                    note=None,
-                )
-            ],
-        )
-        session.add(tp2)
-
-        # Insert example (required for occurrence_credits view join)
-        example = Example.from_scope(snapshot_slug, scope)
-        session.add(example)
-        session.flush()
 
         # Insert critic run (required for view join) using fixture factory
-        critic_run = make_critic_run(
-            example=example,
-            transcript_id=critic_transcript_id,
-            prompt_sha256=test_prompt_sha,
-            status=CriticRunStatus.COMPLETED,
-        )
+        critic_run = make_critic_run(example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
         # Create reported issues first (required for grading decisions FK)
         issue_ids = ["input-test-001"]  # From the match in occurrence_results
-        make_reported_issues(critic_run_id=critic_run.id, issue_ids=issue_ids, session=session)
+        make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
-        # Insert grader run with output
-        grader_run = GraderRun(
-            transcript_id=grader_transcript_id,
-            snapshot_slug=snapshot_slug,
-            critic_run_id=critic_run.id,
-            model="test-grader-model",
+        # Insert grader run with output using fixture factory
+        grader_run = make_grader_run(
+            critic_run=critic_run,
             canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+            model="test-grader-model",
+            agent_run_id=grader_agent_run_id,
         )
         session.add(grader_run)
-        session.flush()  # Ensure grader_run.id is available
+        session.flush()  # Ensure grader_run.agent_run_id is available
 
         # Populate grading_decisions table from MCP occurrence_results
         populate_grading_decisions(
@@ -129,7 +102,7 @@ def test_view_extracts_grade_fields_correctly(test_db, test_prompt_sha):
         ).fetchone()
 
         assert result is not None, "View should return a row for the grader run with occurrence results"
-        assert result.grader_run_id == grader_run.id, "Should match the grader run ID"
-        assert result.tp_id == "tp-test-001", "Should extract tp_id from occurrence_results"
-        assert result.occurrence_id == "occ-1", "Should extract occurrence_id from occurrence_results"
+        assert result.grader_run_id == grader_run.agent_run_id, "Should match the grader run ID"
+        assert result.tp_id == matching_tp.tp_id, "Should extract tp_id from occurrence_results"
+        assert result.occurrence_id == matching_occ_id, "Should extract occurrence_id from occurrence_results"
         assert result.found_credit == 1.0, "Should extract found_credit from occurrence_results"

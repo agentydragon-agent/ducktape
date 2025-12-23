@@ -7,7 +7,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 import statistics
-from typing import Any, cast
+from typing import Any
 
 import plotext as plt  # type: ignore[import-untyped]
 from rich import box
@@ -16,25 +16,27 @@ from rich.table import Table
 from sqlalchemy import func
 import typer
 
+from adgn.props.agent_types import AgentType, CriticTypeConfig
 from adgn.props.db import get_session
 from adgn.props.db.examples import count_available_examples_by_scope_all, count_available_examples_for_split
 from adgn.props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    AggregatedRecallByDefinition,
     AggregatedRecallByExample,
-    AggregatedRecallByPrompt,
-    CriticRun,
-    CriticRunStatus,
     Event,
-    GraderRun,
-    GraderRunStatus,
     OccurrenceCredit,
     OccurrenceStatistics,
     Snapshot,
 )
-from adgn.props.db.query_builders import SplitPerformanceStats, query_prompt_performance_stats, query_recall_by_example
+from adgn.props.db.query_builders import (
+    SplitPerformanceStats,
+    query_definition_performance_stats,
+    query_recall_by_example,
+)
 from adgn.props.display import SHORT_SHA_LENGTH, ColumnDef, build_table_from_schema, short_sha
-from adgn.props.grader.staleness import check_staleness
-from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ScopeKind
+from adgn.props.grader.staleness import identify_stale_runs
+from adgn.props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from adgn.props.splits import Split
 
 # Stats subcommand group
@@ -49,6 +51,11 @@ stats_app = typer.Typer(help="Statistics and metrics commands")
 def fmt_pct(value: float | None) -> str:
     """Format value as percentage (0 decimal places) or dash if None."""
     return f"{value:.0%}" if value is not None else "—"
+
+
+def fmt_pct1(value: float | None) -> str:
+    """Format value as percentage (1 decimal place) or dash if None."""
+    return f"{value:.1%}" if value is not None else "-"
 
 
 def fmt_float(value: float | None, decimals: int = 2) -> str:
@@ -72,12 +79,53 @@ _DIMENSION_COLUMNS: list[ColumnDef[Any, Any]] = [
     ColumnDef("Critic", lambda r: r.critic_model, fmt_model, width=12),
 ]
 
+# Status display mapping: AgentRunStatus -> (header char, column width)
+# IN_PROGRESS excluded since it's transient, not a terminal outcome
+_STATUS_DISPLAY: dict[AgentRunStatus, tuple[str, int]] = {
+    AgentRunStatus.COMPLETED: ("✓", 4),
+    AgentRunStatus.MAX_TURNS_EXCEEDED: ("S", 3),
+    AgentRunStatus.CONTEXT_LENGTH_EXCEEDED: ("C", 3),
+    AgentRunStatus.REPORTED_FAILURE: ("F", 3),
+}
+
+
+def _get_status_count(r: Any, status: AgentRunStatus) -> int:
+    """Get count for a specific status from status_counts dict."""
+    return r.status_counts.get(status.value, 0) if r.status_counts else 0
+
+
+def _make_status_column(status: AgentRunStatus) -> ColumnDef[Any, Any]:
+    """Create a column definition for a status count."""
+    header, width = _STATUS_DISPLAY[status]
+    # Use default arg to capture current status value in closure
+    return ColumnDef(
+        header,
+        lambda r, s=status: _get_status_count(r, s),  # type: ignore[misc]
+        str,
+        justify="right",
+        width=width,
+    )
+
+
+# Status columns - generated from _STATUS_DISPLAY mapping
+_STATUS_COLUMNS: list[ColumnDef[Any, Any]] = [_make_status_column(status) for status in _STATUS_DISPLAY]
+
 # Common occurrence-based columns (used by prompt and example stats)
+# Views now use:
+#   - occurrences_caught_stats: StatsWithCI (n, mean, min, max, lcb95, ucb95)
+#     where .mean = average credit (count of occurrences caught) per run
+#   - n_catchable_occurrences: int (AggregatedRecallByExample) OR total_catchable_occurrences: int (AggregatedRecallByDefinition)
+#   - status_counts: dict[str, int] (e.g., {"completed": 5, "max_turns_exceeded": 2})
+#
+# Recall = mean / catchable_occurrences (mean is already the count, not a fraction)
 _OCCURRENCE_COLUMNS: list[ColumnDef[Any, Any]] = [
     ColumnDef(
         "Recall %",
         lambda r: (
-            r.avg_occurrences_caught_overall / r.avg_catchable_occurrences if r.avg_catchable_occurrences > 0 else 0.0
+            r.occurrences_caught_stats.mean
+            / getattr(r, "total_catchable_occurrences", getattr(r, "n_catchable_occurrences", 1))
+            if r.occurrences_caught_stats
+            else 0.0
         ),
         fmt_pct,
         justify="right",
@@ -85,17 +133,19 @@ _OCCURRENCE_COLUMNS: list[ColumnDef[Any, Any]] = [
     ),
     ColumnDef(
         "Caught",
-        lambda r: r.avg_occurrences_caught_overall,
+        lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0,
         lambda v: fmt_float(v, decimals=1),
         justify="right",
         width=7,
     ),
     ColumnDef(
-        "Catchable", lambda r: r.avg_catchable_occurrences, lambda v: fmt_float(v, decimals=1), justify="right", width=9
+        "Catchable",
+        lambda r: getattr(r, "total_catchable_occurrences", getattr(r, "n_catchable_occurrences", 0)),
+        lambda v: fmt_float(v, decimals=1),
+        justify="right",
+        width=9,
     ),
-    ColumnDef("✓", lambda r: r.n_successful, str, justify="right", width=4),
-    ColumnDef("S", lambda r: r.n_max_turns_exceeded, str, justify="right", width=3),
-    ColumnDef("C", lambda r: r.n_context_length_exceeded, str, justify="right", width=3),
+    *_STATUS_COLUMNS,
 ]
 
 
@@ -108,17 +158,19 @@ STATS_TABLE_LEGEND = """
     - ~84% confidence the true mean is above this value
   [cyan]N / {total}[/cyan]: Number of examples evaluated out of total available
   [cyan]Z[/cyan]: Count of examples with 0% recall
+  [cyan]✓[/cyan]: Count of completed runs
   [cyan]S[/cyan]: Count of runs that exceeded max turns (stuck)
   [cyan]C[/cyan]: Count of runs that exceeded context length
+  [cyan]F[/cyan]: Count of runs that reported failure
 
 [bold]Split Groups:[/bold]
   [cyan]Valid[/cyan]: Validation split (whole-snapshot only, terminal metric)
   [yellow]Tr-W[/yellow]: Train whole-snapshot (comprehensive full-repo review)
-  [magenta]Tr-P[/magenta]: Train partial (per-file and multi-file examples)
+  [magenta]Tr-P[/magenta]: Train partial (file-set examples)
 
 [bold]Notes:[/bold]
   - Results sorted by valid LCB, then train-whole LCB, then train-partial LCB, then age
-  - Success count is implicit from Z, S, C (their sum explains run distribution)
+  - Status columns show count distribution (✓=success, S=stuck, C=context, F=failure)
   - Green recall means fully evaluated (N = total available)
   - Many prompts have no valid data (— in Valid columns)
 """
@@ -367,8 +419,8 @@ class PromptStats:
 def _display_split_analysis(
     console: Console,
     split_name: str,
-    sample_results: dict[tuple[SnapshotSlug, str | None], dict[str, float]],
-    tp_counts_per_sample: dict[tuple[SnapshotSlug, str | None], int],
+    sample_results: dict[ExampleSpec, dict[str, float]],
+    tp_counts_per_sample: dict[ExampleSpec, int],
     total_available: int,
     show_all_prompts: bool = False,
 ) -> None:
@@ -377,8 +429,8 @@ def _display_split_analysis(
     Args:
         console: Rich console for output
         split_name: Name of the split (e.g., "Training", "Validation")
-        sample_results: Dict mapping (snapshot_slug, scope_hash) -> {prompt_sha: recall_pct}
-        tp_counts_per_sample: Dict mapping (snapshot_slug, scope_hash) -> TP count
+        sample_results: Dict mapping ExampleSpec -> {prompt_sha: recall_pct}
+        tp_counts_per_sample: Dict mapping ExampleSpec -> TP count
         total_available: Total number of examples available in this split
         show_all_prompts: If True, show all prompts instead of top 15
     """
@@ -493,17 +545,17 @@ def _add_split_columns(table: Table, split_name: str, color: str, total_examples
     table.add_column(f"[{color}]C[/{color}]", justify="right", width=4)
 
 
-@stats_app.command("prompt")
-def cmd_stats_prompt(
+@stats_app.command("critic-leaderboard")
+def cmd_stats_critic_leaderboard(
     split: Split | None = None,
     critic_model: str | None = None,
-    scope_kind: ScopeKind | None = None,
+    example_kind: ExampleKind | None = None,
     top: int | None = typer.Option(None, help="Show top N results by recall"),
     bottom: int | None = typer.Option(None, help="Show bottom N results by recall"),
 ) -> None:
-    """Query aggregated recall metrics by prompt.
+    """Query aggregated recall metrics by agent definition.
 
-    Shows recall metrics aggregated by (split, prompt_sha256, critic_model, scope_kind).
+    Shows recall metrics aggregated by (split, agent_definition_id, critic_model, example_kind).
     Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
@@ -515,58 +567,49 @@ def cmd_stats_prompt(
 
     with get_session() as session:
         # Build base query with filters
-        base_query = session.query(AggregatedRecallByPrompt)
+        base_query = session.query(AggregatedRecallByDefinition)
         if split:
-            base_query = base_query.filter(AggregatedRecallByPrompt.split == split)
+            base_query = base_query.filter(AggregatedRecallByDefinition.split == split)
         if critic_model:
-            base_query = base_query.filter(AggregatedRecallByPrompt.critic_model == critic_model)
-        if scope_kind:
-            base_query = base_query.filter(AggregatedRecallByPrompt.scope_kind == scope_kind)
+            base_query = base_query.filter(AggregatedRecallByDefinition.critic_model == critic_model)
+        if example_kind:
+            base_query = base_query.filter(AggregatedRecallByDefinition.example_kind == example_kind)
 
         # Fetch top and/or bottom results
-        sections_to_show: list[tuple[str, list[AggregatedRecallByPrompt]]] = []
+        sections_to_show: list[tuple[str, list[AggregatedRecallByDefinition]]] = []
 
         if top is not None:
-            # Order by computed recall: avg_occurrences_caught_overall / avg_catchable_occurrences
-            top_results: list[AggregatedRecallByPrompt] = (
-                base_query.order_by(
-                    (
-                        AggregatedRecallByPrompt.avg_occurrences_caught_overall
-                        / func.nullif(AggregatedRecallByPrompt.avg_catchable_occurrences, 0)
-                    ).desc()
-                )
-                .limit(top)
-                .all()
-            )
+            # Order by mean recall from occurrences_caught_stats
+            # Note: We fetch all and sort in Python since stats_with_ci is a composite type
+            all_results = base_query.all()
+            top_results: list[AggregatedRecallByDefinition] = sorted(
+                all_results,
+                key=lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0,
+                reverse=True,
+            )[:top]
             sections_to_show.append((f"Top {top} by Recall", top_results))
 
         if bottom is not None:
-            bottom_results: list[AggregatedRecallByPrompt] = (
-                base_query.order_by(
-                    (
-                        AggregatedRecallByPrompt.avg_occurrences_caught_overall
-                        / func.nullif(AggregatedRecallByPrompt.avg_catchable_occurrences, 0)
-                    ).asc()
-                )
-                .limit(bottom)
-                .all()
-            )
+            all_results = base_query.all()
+            bottom_results: list[AggregatedRecallByDefinition] = sorted(
+                all_results, key=lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0
+            )[:bottom]
             sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
 
         # Display each section
-        for section_title, prompt_results in sections_to_show:
+        for section_title, definition_results in sections_to_show:
             console.print(
-                f"\n[bold]Aggregated Recall by Prompt: {section_title}[/bold] ({len(prompt_results)} results)\n"
+                f"\n[bold]Aggregated Recall by Definition: {section_title}[/bold] ({len(definition_results)} results)\n"
             )
 
             columns: list[ColumnDef[Any, Any]] = [
-                ColumnDef("Prompt", lambda r: r.prompt_sha256, short_sha, width=SHORT_SHA_LENGTH),
-                ColumnDef("Scope", lambda r: r.scope_kind, width=15),
+                ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
+                ColumnDef("Example Kind", lambda r: r.example_kind, width=15),
                 *_DIMENSION_COLUMNS,
                 *_OCCURRENCE_COLUMNS,
             ]
 
-            table = build_table_from_schema(prompt_results, columns)
+            table = build_table_from_schema(definition_results, columns)
             console.print(table)
 
 
@@ -579,7 +622,7 @@ def cmd_stats_example(
 ) -> None:
     """Query aggregated recall metrics by example.
 
-    Shows recall metrics aggregated by (split, snapshot_slug, scope_hash, critic_model).
+    Shows recall metrics aggregated by (split, snapshot_slug, example_kind, trigger_set_id, critic_model).
     Aggregates over all grader models (occurrence-based weighting).
     By default shows top 50 results. Use --top/--bottom to customize.
     """
@@ -601,31 +644,20 @@ def cmd_stats_example(
         sections_to_show: list[tuple[str, list[AggregatedRecallByExample]]] = []
 
         if top is not None:
-            top_results = cast(
-                list[AggregatedRecallByExample],
-                base_query.order_by(
-                    (
-                        AggregatedRecallByExample.avg_occurrences_caught_overall
-                        / func.nullif(AggregatedRecallByExample.avg_catchable_occurrences, 0)
-                    ).desc()
-                )
-                .limit(top)
-                .all(),
-            )
+            # Fetch all and sort in Python since stats_with_ci is a composite type
+            all_results = base_query.all()
+            top_results = sorted(
+                all_results,
+                key=lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0,
+                reverse=True,
+            )[:top]
             sections_to_show.append((f"Top {top} by Recall", top_results))
 
         if bottom is not None:
-            bottom_results = cast(
-                list[AggregatedRecallByExample],
-                base_query.order_by(
-                    (
-                        AggregatedRecallByExample.avg_occurrences_caught_overall
-                        / func.nullif(AggregatedRecallByExample.avg_catchable_occurrences, 0)
-                    ).asc()
-                )
-                .limit(bottom)
-                .all(),
-            )
+            all_results = base_query.all()
+            bottom_results = sorted(
+                all_results, key=lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0
+            )[:bottom]
             sections_to_show.append((f"Bottom {bottom} by Recall", bottom_results))
 
         # Display each section
@@ -636,7 +668,7 @@ def cmd_stats_example(
 
             columns: list[ColumnDef[Any, Any]] = [
                 ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=25),
-                ColumnDef("Scope", lambda r: r.scope_hash, fmt_hash, width=10),
+                ColumnDef("Example", lambda r: f"{str(r.example_kind)[:4]}:{r.files_hash or '-'}", width=12),
                 *_DIMENSION_COLUMNS,
                 *_OCCURRENCE_COLUMNS,
             ]
@@ -678,17 +710,16 @@ def cmd_stats_occurrence(
         sections_to_show: list[tuple[str, list[OccurrenceStatistics]]] = []
 
         if top is not None:
-            top_results = cast(
-                list[OccurrenceStatistics],
-                base_query.order_by(OccurrenceStatistics.mean_credit.desc()).limit(top).all(),
-            )
+            # Fetch all and sort in Python since stats_with_ci is a composite type
+            all_results = base_query.all()
+            top_results = sorted(
+                all_results, key=lambda r: r.credit_stats.mean if r.credit_stats else 0.0, reverse=True
+            )[:top]
             sections_to_show.append((f"Top {top} by Mean Credit", top_results))
 
         if bottom is not None:
-            bottom_results = cast(
-                list[OccurrenceStatistics],
-                base_query.order_by(OccurrenceStatistics.mean_credit.asc()).limit(bottom).all(),
-            )
+            all_results = base_query.all()
+            bottom_results = sorted(all_results, key=lambda r: r.credit_stats.mean if r.credit_stats else 0.0)[:bottom]
             sections_to_show.append((f"Bottom {bottom} by Mean Credit", bottom_results))
 
         # Display each section
@@ -704,13 +735,41 @@ def cmd_stats_occurrence(
                 ColumnDef("Critic", lambda r: r.critic_model, fmt_model, width=12),
                 ColumnDef("Grader", lambda r: r.grader_model, fmt_model, width=12),
                 ColumnDef(
-                    "Mean", lambda r: r.mean_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=6
+                    "Mean",
+                    lambda r: r.credit_stats.mean if r.credit_stats else None,
+                    lambda v: fmt_float(v, decimals=2),
+                    justify="right",
+                    width=6,
                 ),
-                ColumnDef("σ", lambda r: r.stddev_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=6),
-                ColumnDef("Min", lambda r: r.min_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=5),
-                ColumnDef("Max", lambda r: r.max_credit, lambda v: fmt_float(v, decimals=2), justify="right", width=5),
-                ColumnDef("N Runs", lambda r: r.n_runs, str, justify="right", width=6),
-                ColumnDef("Catch%", lambda r: r.full_catch_rate, fmt_pct, justify="right", width=7),
+                ColumnDef(
+                    "Min",
+                    lambda r: r.credit_stats.min if r.credit_stats else None,
+                    lambda v: fmt_float(v, decimals=2),
+                    justify="right",
+                    width=5,
+                ),
+                ColumnDef(
+                    "Max",
+                    lambda r: r.credit_stats.max if r.credit_stats else None,
+                    lambda v: fmt_float(v, decimals=2),
+                    justify="right",
+                    width=5,
+                ),
+                ColumnDef(
+                    "LCB95",
+                    lambda r: r.credit_stats.lcb95 if r.credit_stats else None,
+                    lambda v: fmt_float(v, decimals=2),
+                    justify="right",
+                    width=6,
+                ),
+                ColumnDef(
+                    "UCB95",
+                    lambda r: r.credit_stats.ucb95 if r.credit_stats else None,
+                    lambda v: fmt_float(v, decimals=2),
+                    justify="right",
+                    width=6,
+                ),
+                ColumnDef("N", lambda r: r.credit_stats.n if r.credit_stats else 0, str, justify="right", width=4),
             ]
 
             table = build_table_from_schema(occurrence_results, columns)
@@ -737,12 +796,15 @@ def cmd_stats(ctx: typer.Context) -> None:
 
     console = Console()
     max_recalls_per_sample: dict[Split, list[float]] = defaultdict(list)
-    tp_counts_per_sample: dict[Split, dict[tuple[SnapshotSlug, str | None], int]] = defaultdict(dict)
+    tp_counts_per_sample: dict[Split, dict[ExampleSpec, int]] = defaultdict(dict)
 
     # Track run statuses by type
-    status_counts: dict[str, defaultdict[str | None, int]] = {"Critic": defaultdict(int), "Grader": defaultdict(int)}
-    # Track example counts by (split, scope_kind)
-    example_counts: dict[tuple[Split, ScopeKind], int] = {}
+    status_counts: dict[str, defaultdict[AgentRunStatus, int]] = {
+        "Critic": defaultdict(int),
+        "Grader": defaultdict(int),
+    }
+    # Track example counts by (split, example_kind)
+    example_counts: dict[tuple[Split, ExampleKind], int] = {}
 
     with get_session() as session:
         # Compute total available training examples per split using shared logic
@@ -761,7 +823,8 @@ def cmd_stats(ctx: typer.Context) -> None:
 
         # Compute best_count per split: how many samples each prompt is best on (or tied for best)
         # Query aggregated recall by example view (occurrence-weighted)
-        sample_results_by_split: dict[Split, dict[tuple[SnapshotSlug, str | None], dict[str, float]]] = {
+        # Key: ExampleSpec (frozen Pydantic union, hashable)
+        sample_results_by_split: dict[Split, dict[ExampleSpec, dict[str, float]]] = {
             Split.TRAIN: defaultdict(dict),
             Split.VALID: defaultdict(dict),
             Split.TEST: defaultdict(dict),
@@ -772,23 +835,28 @@ def cmd_stats(ctx: typer.Context) -> None:
             results = query_recall_by_example(session, split=split)
 
             for recall_row in results:
-                sample_key = (recall_row.snapshot_slug, recall_row.scope_hash)
-                sample_results_by_split[split][sample_key][recall_row.prompt_sha256] = recall_row.recall
+                # Use ExampleSpec directly as key (frozen, hashable)
+                sample_results_by_split[split][recall_row.example][recall_row.critic_definition_id] = recall_row.recall
 
             # Get TP counts per sample (constant per example, not per prompt/run)
             tp_count_results = (
                 session.query(
                     OccurrenceCredit.snapshot_slug,
-                    OccurrenceCredit.scope_hash,
+                    OccurrenceCredit.example_kind,
+                    OccurrenceCredit.files_hash,
                     func.count(func.distinct(OccurrenceCredit.occurrence_id)).label("n_occurrences"),
                 )
                 .filter(OccurrenceCredit.split == split)
-                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.scope_hash)
+                .group_by(OccurrenceCredit.snapshot_slug, OccurrenceCredit.example_kind, OccurrenceCredit.files_hash)
                 .all()
             )
 
             for result in tp_count_results:
-                sample_key = (result.snapshot_slug, result.scope_hash)
+                # Build ExampleSpec from query result
+                if result.example_kind == ExampleKind.WHOLE_SNAPSHOT:
+                    sample_key: ExampleSpec = WholeSnapshotExample(snapshot_slug=result.snapshot_slug)
+                else:
+                    sample_key = SingleFileSetExample(snapshot_slug=result.snapshot_slug, files_hash=result.files_hash)
                 tp_counts_per_sample[split][sample_key] = result.n_occurrences
 
         # For each split and sample, find which prompt(s) achieved max recall
@@ -807,50 +875,57 @@ def cmd_stats(ctx: typer.Context) -> None:
 
         # Count run statuses using SQL aggregation
         # Filter to same scope as per-prompt stats: TRAIN + VALID (all examples)
-        critic_status_rows = (
-            session.query(CriticRun.status, func.count(CriticRun.id))
-            .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
-            .filter((Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
-            .group_by(CriticRun.status)
-            .all()
-        )
-        for status, count in critic_status_rows:
+        # Two-phase for unified AgentRun model
+        critic_status_counts: Counter[AgentRunStatus] = Counter()
+        for cr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC).all():
+            if not isinstance(cr.type_config, CriticTypeConfig):
+                continue
+            snapshot_slug = cr.type_config.example.snapshot_slug
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+            if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
+                critic_status_counts[cr.status] += 1
+
+        for status, count in critic_status_counts.items():
             status_counts["Critic"][status] = count
 
-        grader_status_rows = (
-            session.query(GraderRun.status, func.count(GraderRun.id))
-            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
-            .join(Snapshot, Snapshot.slug == CriticRun.snapshot_slug)
-            .filter((Snapshot.split == Split.TRAIN) | (Snapshot.split == Split.VALID))
-            .group_by(GraderRun.status)
-            .all()
-        )
-        for status, count in grader_status_rows:
+        grader_status_counts: Counter[AgentRunStatus] = Counter()
+        for gr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER).all():
+            grader_config = gr.grader_config()
+            graded_run_id = grader_config.graded_agent_run_id
+            # Check if graded run is in TRAIN or VALID split
+            graded_run = session.get(AgentRun, graded_run_id)
+            if graded_run:
+                snapshot_slug = graded_run.critic_config().example.snapshot_slug
+                snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+                if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
+                    grader_status_counts[gr.status] += 1
+
+        for status, count in grader_status_counts.items():
             status_counts["Grader"][status] = count
 
     # Use query builder to get comprehensive prompt performance stats (already sorted by created_at DESC)
-    prompt_perf_rows = query_prompt_performance_stats(session, limit=100)
+    prompt_perf_rows = query_definition_performance_stats(session, limit=100)
 
     # Display summary
-    console.print(f"\n[bold]Prompt Statistics[/bold] ({len(prompt_perf_rows)} prompts)\n")
+    console.print(f"\n[bold]Agent Definition Statistics[/bold] ({len(prompt_perf_rows)} definitions)\n")
 
     # Create new table with requested columns
     table = Table(show_header=True, header_style="bold cyan", box=box.HORIZONTALS, show_edge=False, padding=(0, 0))
-    table.add_column("SHA", style="dim", width=SHORT_SHA_LENGTH)
+    table.add_column("Definition", style="dim", width=12)
     table.add_column("Age", justify="right", width=4)
 
     # Define canonical split/scope ordering with colors
     split_scope_config = [
-        ((Split.VALID, ScopeKind.ENTIRE_SNAPSHOT), "cyan"),
-        ((Split.VALID, ScopeKind.SPECIFIC_FILES), "blue"),
-        ((Split.TRAIN, ScopeKind.ENTIRE_SNAPSHOT), "yellow"),
-        ((Split.TRAIN, ScopeKind.SPECIFIC_FILES), "magenta"),
+        ((Split.VALID, ExampleKind.WHOLE_SNAPSHOT), "cyan"),
+        ((Split.VALID, ExampleKind.FILE_SET), "blue"),
+        ((Split.TRAIN, ExampleKind.WHOLE_SNAPSHOT), "yellow"),
+        ((Split.TRAIN, ExampleKind.FILE_SET), "magenta"),
     ]
 
     # Helper to compute label from split and scope kind
-    def make_label(split: Split, scope_kind: ScopeKind) -> str:
-        split_abbrev = {"valid": "Val", "train": "Tr", "test": "Test"}[split.value]
-        scope_abbrev = {"entire_snapshot": "W", "specific_files": "P"}[scope_kind.value]
+    def make_label(split: Split, scope_kind: ExampleKind) -> str:
+        split_abbrev = {Split.VALID: "Val", Split.TRAIN: "Tr", Split.TEST: "Test"}[split]
+        scope_abbrev = {ExampleKind.WHOLE_SNAPSHOT: "W", ExampleKind.FILE_SET: "P"}[scope_kind]
         return f"{split_abbrev}-{scope_abbrev}"
 
     # Add split columns using canonical order
@@ -859,7 +934,7 @@ def cmd_stats(ctx: typer.Context) -> None:
         _add_split_columns(table, label, color, example_counts[key])
 
     for row in prompt_perf_rows:
-        sha_short = short_sha(row.prompt_sha256)
+        definition_id = row.critic_definition_id
         age_str = format_age(row.created_at)
 
         # Format stats for all split/scope combinations using canonical order
@@ -871,7 +946,7 @@ def cmd_stats(ctx: typer.Context) -> None:
             formatted_stats.append(format_split_stats(stats, fully_computed=fully_computed))
 
         table.add_row(
-            sha_short,
+            definition_id,
             age_str,
             # Unpack all formatted stats in canonical order
             *[field for stats in formatted_stats for field in stats.as_row_fields()],
@@ -883,29 +958,29 @@ def cmd_stats(ctx: typer.Context) -> None:
     console.print(STATS_TABLE_LEGEND)
 
     console.print("[bold]Summary:[/bold]")
-    console.print(f"  Total prompts: {len(prompt_perf_rows)}")
+    console.print(f"  Total definitions: {len(prompt_perf_rows)}")
     console.print("\n  Available examples per split:")
     for split in [Split.VALID, Split.TRAIN]:
         console.print(
             f"    {split.value.capitalize()}: {total_samples_by_split[split]} total "
-            f"(whole: {example_counts[(split, ScopeKind.ENTIRE_SNAPSHOT)]}, "
-            f"partial: {example_counts[(split, ScopeKind.SPECIFIC_FILES)]})"
+            f"(whole: {example_counts[(split, ExampleKind.WHOLE_SNAPSHOT)]}, "
+            f"partial: {example_counts[(split, ExampleKind.FILE_SET)]})"
         )
     console.print(f"    Test: {total_samples_by_split[Split.TEST]}")
 
-    # Find best prompt by valid whole-snapshot recall (terminal metric)
-    valid_whole_prompts = []
+    # Find best definition by valid whole-snapshot recall (terminal metric)
+    valid_whole_definitions = []
     for row in prompt_perf_rows:
-        stats = row.stats.get((Split.VALID, ScopeKind.ENTIRE_SNAPSHOT))
+        stats = row.stats.get((Split.VALID, ExampleKind.WHOLE_SNAPSHOT))
         if stats is not None:
-            valid_whole_prompts.append((row, stats))
+            valid_whole_definitions.append((row, stats))
 
-    if valid_whole_prompts:
-        best = max(valid_whole_prompts, key=lambda x: x[1].mean_recall)
+    if valid_whole_definitions:
+        best = max(valid_whole_definitions, key=lambda x: x[1].mean_recall)
         best_row, best_valid_stats = best
         console.print(
-            f"\n[bold green]Best prompt (valid whole-snapshot):[/bold green] "
-            f"{short_sha(best_row.prompt_sha256)} with {best_valid_stats.mean_recall:.1%} recall "
+            f"\n[bold green]Best definition (valid whole-snapshot):[/bold green] "
+            f"{best_row.critic_definition_id} with {best_valid_stats.mean_recall:.1%} recall "
             f"({best_valid_stats.success_count}/{best_valid_stats.total_count} runs)"
         )
 
@@ -924,7 +999,7 @@ def cmd_stats(ctx: typer.Context) -> None:
     status_table.add_column("Total", justify="right")
 
     for status in all_statuses:
-        label = "(no tag)" if status is None else status
+        label = status.value
         status_table.add_column(label, justify="right")
 
     # Add rows for each run type
@@ -982,25 +1057,49 @@ def cmd_stats(ctx: typer.Context) -> None:
 
     # Display tool call count distributions for successful runs
     with get_session() as session:
-        # Query tool call counts for successful critic runs
-        critic_tool_calls = (
-            session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
-            .join(CriticRun, CriticRun.transcript_id == Event.transcript_id)
-            .where(Event.event_type == "tool_call")
-            .where(CriticRun.status == CriticRunStatus.COMPLETED)  # Only successful runs
-            .group_by(Event.transcript_id)
+        # Query tool call counts for successful critic runs (events linked directly to agent_run_id)
+        critic_run_ids = [
+            cr.agent_run_id
+            for cr in session.query(AgentRun)
+            .filter(
+                AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
+                AgentRun.status == AgentRunStatus.COMPLETED,
+            )
             .all()
-        )
+        ]
 
-        # Query tool call counts for successful grader runs
-        grader_tool_calls = (
-            session.query(Event.transcript_id, func.count(Event.id).label("tool_call_count"))
-            .join(GraderRun, GraderRun.transcript_id == Event.transcript_id)
-            .where(Event.event_type == "tool_call")
-            .where(GraderRun.status == GraderRunStatus.COMPLETED)  # Only successful runs
-            .group_by(Event.transcript_id)
+        if critic_run_ids:
+            critic_tool_calls = (
+                session.query(Event.agent_run_id, func.count(Event.id).label("tool_call_count"))
+                .where(Event.event_type == "tool_call")
+                .where(Event.agent_run_id.in_(critic_run_ids))
+                .group_by(Event.agent_run_id)
+                .all()
+            )
+        else:
+            critic_tool_calls = []
+
+        # Query tool call counts for successful grader runs (events linked directly to agent_run_id)
+        grader_run_ids = [
+            gr.agent_run_id
+            for gr in session.query(AgentRun)
+            .filter(
+                AgentRun.type_config["agent_type"].astext == AgentType.GRADER,
+                AgentRun.status == AgentRunStatus.COMPLETED,
+            )
             .all()
-        )
+        ]
+
+        if grader_run_ids:
+            grader_tool_calls = (
+                session.query(Event.agent_run_id, func.count(Event.id).label("tool_call_count"))
+                .where(Event.event_type == "tool_call")
+                .where(Event.agent_run_id.in_(grader_run_ids))
+                .group_by(Event.agent_run_id)
+                .all()
+            )
+        else:
+            grader_tool_calls = []
 
     # Display critic tool call distribution
     if critic_tool_calls:
@@ -1022,7 +1121,9 @@ def cmd_stats(ctx: typer.Context) -> None:
     console.print("\n[bold cyan]Grader Run Staleness Check[/bold cyan]")
     console.print("=" * 60)
 
-    total_runs, stale_runs, by_snapshot = check_staleness()
+    stale_run_ids, by_snapshot = identify_stale_runs()
+    stale_runs = len(stale_run_ids)
+    total_runs = sum(stats["total"] for stats in by_snapshot.values())
 
     if total_runs == 0:
         console.print("No grader runs found in database")

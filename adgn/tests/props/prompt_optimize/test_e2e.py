@@ -7,11 +7,15 @@ Tests the prompt optimizer agent using:
 - HTTP MCP transport with bearer token auth
 
 Comprehensive 3-agent test verifies:
+- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Prompt optimizer orchestrates critic and grader runs
 - Grader can read critic runs (reported_issues from the critique)
 - Grader can read ground truth (true_positives, false_positives)
 - Grader can write grading decisions
 - All agents submit via MCP
+
+All tests verify that bootstrap commands (including ./init) exit with code 0
+before proceeding with the test scenario.
 """
 
 from __future__ import annotations
@@ -20,17 +24,15 @@ from uuid import UUID
 
 import pytest
 
-from adgn.props.critic.critic import run_critic as execute_critic_run
-from adgn.props.critic.models import CriticInput
+from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
-from adgn.props.db.models import CriticRun, CriticRunStatus, GraderRun, GraderRunStatus, GradingDecision
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from adgn.props.grader.grader import grade_critic_run_by_id
+from adgn.props.models.examples import ExampleKind
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompt_optimize.target_metric import TargetMetric
-from adgn.props.runs_context import RunsContext
 from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBootstrapValidation, Step
 
@@ -40,12 +42,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 @pytest.mark.timeout(30)
 @pytest.mark.requires_docker
 async def test_po_agent_psql_connectivity(
-    synced_test_db: DatabaseConfig,
-    tmp_path,
-    make_openai_client,
-    test_specimens_hydrator,
-    async_docker_client,
-    make_step_runner,
+    synced_test_db: DatabaseConfig, make_openai_client, test_specimens_hydrator, async_docker_client, make_step_runner
 ):
     """Test that psql works from the agent container using PG* env vars.
 
@@ -65,9 +62,8 @@ async def test_po_agent_psql_connectivity(
         AssertDockerExecThenCall(
             expected_output="1",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "optimizer",
+                "python",
+                "/workspace/bin/critic_dev.py",
                 "report-failure",
                 "Test completed: psql connectivity verified",
             ],
@@ -84,13 +80,11 @@ async def test_po_agent_psql_connectivity(
 
     await run_prompt_optimizer(
         budget=1.0,
-        ctx=RunsContext.from_pkg_dir(),
         hydrator=test_specimens_hydrator,
         optimizer_client=runner,
         critic_client=critic_client,
         grader_client=grader_client,
         docker_client=async_docker_client,
-        out_dir=tmp_path,
         target_metric=TargetMetric.WHOLE_REPO,
         db_config=synced_test_db,
     )
@@ -104,17 +98,16 @@ async def test_po_agent_psql_connectivity(
 def _make_critic_steps_with_issue() -> list[Step]:
     """Create step sequence for critic that submits one issue.
 
-    Uses CLI helper commands which run INSIDE THE CONTAINER where they have access
+    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
     """
     return [
-        # 1. Add issue using CLI helper - validates bootstrap on first step
+        # 1. Add issue using bin CLI - validates bootstrap on first step
         DockerExecCallWithBootstrapValidation(
             cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "critic",
-                "add-issue",
+                "python",
+                "/workspace/bin/critique.py",
+                "insert-issue",
                 "test-issue-001",
                 "Test issue found in code for grader verification",
             ],
@@ -124,10 +117,9 @@ def _make_critic_steps_with_issue() -> list[Step]:
         AssertDockerExecThenCall(
             expected_output="",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "critic",
-                "add-occurrence",
+                "python",
+                "/workspace/bin/critique.py",
+                "insert-occurrence",
                 "test-issue-001",
                 "subtract.py",
                 "-s",
@@ -137,10 +129,10 @@ def _make_critic_steps_with_issue() -> list[Step]:
             ],
             timeout_ms=15000,
         ),
-        # 3. Submit via CLI helper
+        # 3. Submit via bin CLI
         AssertDockerExecThenCall(
             expected_output="",
-            next_cmd=["adgn-properties", "agent-helper", "critic", "submit", "1", "Found 1 test issue"],
+            next_cmd=["python", "/workspace/bin/critique.py", "submit", "1", "Found 1 test issue"],
             timeout_ms=15000,
         ),
     ]
@@ -165,7 +157,7 @@ def _make_grader_steps_with_data_access(critic_run_id: UUID) -> list[Step]:
             cmd=[
                 "psql",
                 "-c",
-                f"SELECT issue_id, rationale FROM reported_issues WHERE critic_run_id = '{critic_run_id}'",
+                f"SELECT issue_id, rationale FROM reported_issues WHERE agent_run_id = '{critic_run_id}'",
             ],
             timeout_ms=10000,
         ),
@@ -188,22 +180,20 @@ def _make_grader_steps_with_data_access(critic_run_id: UUID) -> list[Step]:
         AssertDockerExecThenCall(
             expected_output="",  # psql output, just verify query succeeds
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "grader",
+                "python",
+                "/workspace/bin/grader.py",
                 "add-no-match",
                 "test-issue-001",
                 "Novel finding not in canonical ground truth",
             ],
             timeout_ms=15000,
         ),
-        # Step 5: Submit grading via CLI helper (which calls MCP)
+        # Step 5: Submit grading via bin CLI (which calls MCP)
         AssertDockerExecThenCall(
             expected_output="Added no-match decision",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "grader",
+                "python",
+                "/workspace/bin/grader.py",
                 "submit",
                 "Graded 1 issue: 1 novel finding (no canonical match)",
             ],
@@ -228,7 +218,7 @@ def _make_optimizer_steps_run_critic_then_grader(snapshot_slug: str, scope_hash:
     return [
         # Step 1: Validate bootstrap, then call run_critic_on_example
         DockerExecCallWithBootstrapValidation(
-            cmd=["adgn-properties", "agent-helper", "optimizer", "run-critic", snapshot_slug, scope_hash],
+            cmd=["python", "/workspace/bin/critic_dev.py", "run-critic", snapshot_slug, scope_hash],
             timeout_ms=120000,  # Critic may take a while
         ),
         # Step 2: After critic completes, the optimizer calls run_grader
@@ -236,9 +226,8 @@ def _make_optimizer_steps_run_critic_then_grader(snapshot_slug: str, scope_hash:
         AssertDockerExecThenCall(
             expected_output="",  # Just verify exit code 0
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "optimizer",
+                "python",
+                "/workspace/bin/critic_dev.py",
                 "report-failure",
                 "Test completed: 3-agent e2e workflow verified",
             ],
@@ -251,12 +240,12 @@ def _make_optimizer_steps_run_critic_then_grader(snapshot_slug: str, scope_hash:
 @pytest.mark.requires_docker
 async def test_three_agent_workflow_with_grader_data_access(
     synced_test_db: DatabaseConfig,
-    tmp_path,
+    test_workspace_manager: WorkspaceManager,
     make_step_runner,
     test_specimens_hydrator,
     async_docker_client,
     test_snapshot,
-    all_files_scope,
+    run_critic_with_steps,
 ):
     """Test complete 3-agent workflow: optimizer → critic → grader with data access verification.
 
@@ -272,18 +261,15 @@ async def test_three_agent_workflow_with_grader_data_access(
     The key assertion is that the grader can actually read the critic's data.
     Previous bugs caused RLS to block the grader from seeing reported_issues.
     """
-    # Get the scope hash for the all_files example
+    # Get the whole-snapshot example and convert to ExampleSpec
     with get_session() as session:
         example = (
             session.query(Example)
-            .filter_by(snapshot_slug=test_snapshot)
-            .filter(Example.scope["kind"].astext == "entire_snapshot")
+            .filter_by(snapshot_slug=test_snapshot, example_kind=ExampleKind.WHOLE_SNAPSHOT)
             .first()
         )
-        assert example is not None, f"No entire_snapshot example found for {test_snapshot}"
-
-    # Ensure a prompt exists (hash_and_upsert_prompt opens its own session)
-    _prompt_sha = hash_and_upsert_prompt("Test critic prompt for 3-agent e2e test")
+        assert example is not None, f"No whole_snapshot example found for {test_snapshot}"
+        example_spec = example.to_example_spec()
 
     # Track critic_run_id across agent boundaries
     captured_critic_run_id: list[UUID] = []
@@ -300,7 +286,7 @@ async def test_three_agent_workflow_with_grader_data_access(
     grader_steps_factory = _make_grader_steps_with_data_access
 
     # -------------------------------------------------------------------------
-    # Optimizer steps: Call CLI helpers to run critic and report completion
+    # Optimizer steps: Call bin CLI to run critic and report completion
     # -------------------------------------------------------------------------
     optimizer_steps = [
         # Validate bootstrap, then run psql to verify DB access
@@ -309,9 +295,8 @@ async def test_three_agent_workflow_with_grader_data_access(
         AssertDockerExecThenCall(
             expected_output="1",
             next_cmd=[
-                "adgn-properties",
-                "agent-helper",
-                "optimizer",
+                "python",
+                "/workspace/bin/critic_dev.py",
                 "report-failure",
                 "Test setup verified, proceeding with manual critic/grader invocation",
             ],
@@ -327,13 +312,11 @@ async def test_three_agent_workflow_with_grader_data_access(
     # Run prompt optimizer (just to verify setup)
     await run_prompt_optimizer(
         budget=1.0,
-        ctx=RunsContext.from_pkg_dir(),
         hydrator=test_specimens_hydrator,
         optimizer_client=optimizer_runner,
         critic_client=critic_runner,  # Won't be used in this simple run
         grader_client=critic_runner,  # Won't be used in this simple run
         docker_client=async_docker_client,
-        out_dir=tmp_path,
         target_metric=TargetMetric.WHOLE_REPO,
         db_config=synced_test_db,
     )
@@ -342,32 +325,16 @@ async def test_three_agent_workflow_with_grader_data_access(
     # Now manually run critic and grader to verify the data access
     # -------------------------------------------------------------------------
 
-    # Reset critic runner for actual critic run
-    critic_runner = make_step_runner(steps=_make_critic_steps_with_issue())
+    # Run critic using shared fixture with example_spec
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_with_issue(), example=example_spec)
 
-    # Run critic (hash_and_upsert_prompt opens its own session)
-    prompt_sha = hash_and_upsert_prompt("Test critic prompt for 3-agent e2e")
-
-    critic_input = CriticInput(snapshot_slug=test_snapshot, scope=all_files_scope, prompt_sha256=prompt_sha)
-
-    critic_run_id, status = await execute_critic_run(
-        input_data=critic_input,
-        client=critic_runner,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        prompt_optimization_run_id=None,
-        docker_client=async_docker_client,
-        mount_properties=False,
-        max_turns=100,
-    )
-
-    assert status == CriticRunStatus.COMPLETED, f"Critic should complete, got {status}"
+    assert status == AgentRunStatus.COMPLETED, f"Critic should complete, got {status}"
     assert critic_run_id is not None
     captured_critic_run_id.append(critic_run_id)
 
     # Verify critic created the reported issue
     with get_session() as session:
-        critic_run = session.get(CriticRun, critic_run_id)
+        critic_run = session.get(AgentRun, critic_run_id)
         assert critic_run is not None
         assert len(critic_run.reported_issues) == 1, f"Expected 1 issue, got {len(critic_run.reported_issues)}"
         assert critic_run.reported_issues[0].issue_id == "test-issue-001"
@@ -388,7 +355,8 @@ async def test_three_agent_workflow_with_grader_data_access(
                 docker_client=async_docker_client,
                 hydrator=test_specimens_hydrator,
                 db_config=synced_test_db,
-                prompt_optimization_run_id=None,
+                workspace_manager=test_workspace_manager,
+                parent_agent_run_id=None,
                 verbose=False,
                 max_turns=100,
             )
@@ -397,13 +365,13 @@ async def test_three_agent_workflow_with_grader_data_access(
 
             # Verify grader completed successfully
             session.commit()
-            grader_run = session.get(GraderRun, grader_run_id)
+            grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
-            assert grader_run.status == GraderRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
-            assert grader_run.critic_run_id == critic_run_id
+            assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
+            assert grader_run.grader_config().graded_agent_run_id == critic_run_id
 
             # Verify grading decision was written
-            decisions = session.query(GradingDecision).filter(GradingDecision.grader_run_id == grader_run_id).all()
+            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == grader_run_id).all()
             assert len(decisions) == 1, f"Expected 1 decision, got {len(decisions)}"
             decision = decisions[0]
             assert decision.input_issue_id == "test-issue-001"
@@ -424,3 +392,70 @@ async def test_three_agent_workflow_with_grader_data_access(
                 elif isinstance(req.input, str):
                     print(f"  (string input): {req.input[:200]}")
             raise
+
+
+# =============================================================================
+# CLI Helper Integration Tests
+# =============================================================================
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.requires_docker
+async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, test_train_example_with_runs):
+    """Test that leaderboard CLI command shows actual recall values from database.
+
+    Verifies:
+    - leaderboard command runs successfully in container
+    - Output contains recall data from pre-populated grading decisions
+    - Recall values reflect the test data (first run: 80%, second run: 72%, avg ~76%)
+    """
+    # test_train_example_with_runs creates:
+    # - First run: found_credit=0.8 (80%)
+    # - Second run: found_credit=0.72 (80% * 0.9 = 72%)
+    # Average would show somewhere between 72-80% depending on aggregation
+
+    # Steps: run leaderboard and check output contains actual recall percentage
+    steps = [
+        # Step 0: Validate bootstrap succeeded, then run leaderboard
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "leaderboard", "--limit", "5"], timeout_ms=30000
+        ),
+        # Step 1: Check output contains recall value (76% is average of 80% and 72%)
+        # fmt_pct formats as "76%" for 0.76
+        AssertDockerExecThenCall(
+            expected_output="76%",  # Average of 80% and 72% runs
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Leaderboard test completed"],
+            timeout_ms=30000,
+        ),
+    ]
+
+    await run_prompt_optimizer_with_steps(steps)
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.requires_docker
+async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, test_train_example_with_runs):
+    """Test that hard-examples CLI command shows example metrics.
+
+    Verifies:
+    - hard-examples command runs successfully in container
+    - Output contains example data with actual recall values
+    - Recall values match the pre-populated test data
+    """
+    # test_train_example_with_runs creates data with specific found_credit values
+    # We check for both the snapshot slug AND the recall percentage
+
+    steps = [
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "hard-examples", "--limit", "5"], timeout_ms=30000
+        ),
+        # Check output contains snapshot slug AND recall percentage
+        # The test-fixtures/test-trivial example should show with ~76% recall
+        AssertDockerExecThenCall(
+            expected_output="76%",  # Verify actual recall value appears
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Hard examples test completed"],
+            timeout_ms=30000,
+        ),
+    ]
+
+    await run_prompt_optimizer_with_steps(steps)

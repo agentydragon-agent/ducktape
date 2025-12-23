@@ -5,17 +5,17 @@ from __future__ import annotations
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
+from uuid import UUID
 
 import canonicaljson
-from sqlalchemy import select
 
+from adgn.props.agent_types import AgentType
 from adgn.props.db import get_session
-from adgn.props.db.examples import Example
 from adgn.props.db.models import (
+    AgentRun,
     CanonicalIssuesSnapshot,
-    CriticRun,
     FalsePositive,
-    GraderRun,
+    FileSet,
     Snapshot as DBSnapshot,
     TruePositive,
 )
@@ -27,7 +27,35 @@ from adgn.props.db.snapshots import (
 )
 from adgn.props.grader.persistence import convert_files_dict_to_db
 from adgn.props.ids import SnapshotSlug
-from adgn.props.scope_utils import resolve_scope_files
+from adgn.props.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
+
+
+def resolve_scope_files(snapshot_slug: SnapshotSlug, example_spec: ExampleSpec) -> set[Path]:
+    """Resolve an ExampleSpec to concrete file set.
+
+    Args:
+        snapshot_slug: Snapshot identifier (for validation, already in example_spec)
+        example_spec: The example specification (discriminated union)
+
+    Returns:
+        Set of file paths in the scope
+    """
+    if isinstance(example_spec, WholeSnapshotExample):
+        # Load files with issues from database
+        with get_session() as session:
+            snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
+            return snapshot.files_with_issues()
+    elif isinstance(example_spec, SingleFileSetExample):
+        # Look up file set to get files
+        with get_session() as session:
+            file_set = (
+                session.query(FileSet)
+                .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
+                .one()
+            )
+            return {Path(m.file_path) for m in file_set.members}
+    else:
+        raise ValueError(f"Unknown scope type: {type(example_spec)}")
 
 
 def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
@@ -114,46 +142,61 @@ def load_current_canonical_issues_from_db(snapshot_slug: SnapshotSlug, targeted_
         return current_snapshot.model_dump(mode="json")
 
 
-def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
-    """Check for stale grader runs by comparing stored canonical snapshots with current issues.
+def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]]]:
+    """Identify stale grader runs by comparing stored canonical snapshots with current issues.
 
     Returns:
-        Tuple of (total_runs, stale_runs, by_snapshot_stats)
+        Tuple of (stale_run_ids, by_snapshot_stats)
+        - stale_run_ids: List of grader run UUIDs
+        - by_snapshot_stats: Dict mapping snapshot_slug -> {"total": N, "stale": M}
 
     Note: All grader runs now have canonical_issues_snapshot (NOT NULL constraint enforced).
     Legacy runs without snapshots were cleaned up in Dec 2025.
     """
-    total = 0
-    stale = 0
+    stale_run_ids: list[UUID] = []
     by_snapshot: dict[SnapshotSlug, dict[str, int]] = defaultdict(lambda: {"total": 0, "stale": 0})
-    current_canonical_cache: dict[tuple[SnapshotSlug, str], dict[str, Any]] = {}
+    current_canonical_cache: dict[ExampleSpec, dict[str, Any]] = {}
 
     with get_session() as session:
-        # Query GraderRun with CriticRun and Example for scope (no Event join needed)
-        query = (
-            select(GraderRun.snapshot_slug, GraderRun.canonical_issues_snapshot, CriticRun.scope_hash, Example.scope)
-            .join(CriticRun, CriticRun.id == GraderRun.critic_run_id)
-            .join(
-                Example,
-                (Example.snapshot_slug == CriticRun.snapshot_slug) & (Example.scope_hash == CriticRun.scope_hash),
-            )
-            .order_by(GraderRun.created_at.desc())
+        # Two-phase approach: first get grader runs with their linked critic runs
+        # Query AgentRun for graders
+        grader_runs = (
+            session.query(AgentRun)
+            .filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER)
+            .order_by(AgentRun.created_at.desc())
+            .all()
         )
 
-        for snapshot_slug, stored_snapshot, scope_hash, scope_spec in session.execute(query):
-            total += 1
+        for grader_run in grader_runs:
+            grader_config = grader_run.grader_config()
+            stored_snapshot = grader_config.canonical_issues_snapshot
+            graded_critic_run_id = grader_config.graded_agent_run_id
+
+            # Get the critic run to find example specification
+            critic_run = session.get(AgentRun, graded_critic_run_id)
+            if not critic_run:
+                raise ValueError(f"Critic run {graded_critic_run_id} not found for grader {grader_run.agent_run_id}")
+
+            critic_config = critic_run.critic_config()
+            example_spec = critic_config.example
+            snapshot_slug = example_spec.snapshot_slug
+
             by_snapshot[snapshot_slug]["total"] += 1
 
             # All grader runs must have canonical_issues_snapshot (enforced by NOT NULL constraint)
             # This assertion documents the database invariant
-            assert stored_snapshot is not None, f"Grader run {snapshot_slug} missing canonical_issues_snapshot"
+            if stored_snapshot is None:
+                continue  # Skip runs without canonical snapshot
+
+            # Parse stored snapshot from dict to model
+            stored_snapshot_model = CanonicalIssuesSnapshot.model_validate(stored_snapshot)
 
             # Resolve scope specification to file set
-            targeted_files = resolve_scope_files(snapshot_slug, scope_spec)
+            targeted_files = resolve_scope_files(snapshot_slug, example_spec)
 
             # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
-            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot.true_positives, targeted_files)
-            relevant_stored_fps = filter_relevant_db_fps(stored_snapshot.false_positives, targeted_files)
+            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot_model.true_positives, targeted_files)
+            relevant_stored_fps = filter_relevant_db_fps(stored_snapshot_model.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize
             filtered_stored = CanonicalIssuesSnapshot(
@@ -161,20 +204,20 @@ def check_staleness() -> tuple[int, int, dict[SnapshotSlug, dict[str, int]]]:
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 
-            # Load current canonical issues (cached by snapshot+scope_hash)
-            cache_key = (snapshot_slug, scope_hash)
-            if cache_key not in current_canonical_cache:
-                current_canonical_cache[cache_key] = load_current_canonical_issues_from_db(
+            # Load current canonical issues (cached by example spec)
+            # ExampleSpec is frozen/hashable so we can use it directly as cache key
+            if example_spec not in current_canonical_cache:
+                current_canonical_cache[example_spec] = load_current_canonical_issues_from_db(
                     snapshot_slug, targeted_files
                 )
-            current_canonical = current_canonical_cache[cache_key]
+            current_canonical = current_canonical_cache[example_spec]
 
             # Compare canonical JSON representations
             stored_bytes = canonicaljson.encode_canonical_json(stored_canonical)
             current_bytes = canonicaljson.encode_canonical_json(current_canonical)
 
             if stored_bytes != current_bytes:
-                stale += 1
+                stale_run_ids.append(grader_run.agent_run_id)
                 by_snapshot[snapshot_slug]["stale"] += 1
 
-    return total, stale, by_snapshot
+    return stale_run_ids, by_snapshot

@@ -30,7 +30,7 @@ class DBLineRange(BaseModel):
 class DBLocationAnchor(BaseModel):
     """Database representation of a location anchor for reported issues.
 
-    Matches the libsonnet ground truth format:
+    Matches the YAML ground truth format:
     - file: required file path
     - start_line: optional line number (1-based)
     - end_line: optional end line (inclusive)
@@ -190,69 +190,6 @@ DBCriticOutput = Annotated[
     ),
 ]
 """Discriminated union of critic outcomes for database persistence."""
-
-
-class DBIssueCoverageEntry(BaseModel):
-    """Database representation of single input issue's contribution to canonical coverage."""
-
-    input_id: str = Field(description="Input issue ID (stored as string)")
-    credit: float = Field(ge=0.0, le=1.0, description="Individual recall credit contribution")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCanonicalTPCoverage(BaseModel):
-    """Database representation of coverage of a canonical TP."""
-
-    covered_by: list[DBIssueCoverageEntry] = Field(description="Input issue contributions")
-    recall_credit: float = Field(ge=0.0, le=1.0, description="Total recall credit")
-    rationale: str = Field(description="Rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBTPCoverageEntry(BaseModel):
-    """Database representation of coverage for one canonical true positive."""
-
-    canonical_id: str = Field(description="Canonical TP ID (stored as string)")
-    coverage: DBCanonicalTPCoverage
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCanonicalFPCoverage(BaseModel):
-    """Database representation of coverage of a known FP."""
-
-    covered_by: list[str] = Field(description="Input issue IDs that matched this known FP (stored as strings)")
-    rationale: str = Field(description="Rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBFPCoverageEntry(BaseModel):
-    """Database representation of coverage for one known false positive."""
-
-    canonical_id: str = Field(description="Known FP ID (stored as string)")
-    coverage: DBCanonicalFPCoverage
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBNovelIssueReasoning(BaseModel):
-    """Database representation of rationale for novel aspects."""
-
-    rationale: str = Field(description="Rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBNovelIssueEntry(BaseModel):
-    """Database representation of novel aspects for one input issue."""
-
-    input_id: str = Field(description="Input issue ID (stored as string)")
-    reasoning: DBNovelIssueReasoning
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
 
 
 class DBOccurrenceMatch(BaseModel):

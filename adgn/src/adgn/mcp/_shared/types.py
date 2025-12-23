@@ -118,7 +118,6 @@ class ContainerInfo(BaseModel):
     working_dir: str | None = None
     network_mode: str | None = None
     image_history: list[ContainerImageHistoryEntry] | None = None
-    ephemeral: bool | None = None
 
 
 class SimpleOk(BaseModel):

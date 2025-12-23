@@ -52,7 +52,7 @@ async def test_trigger_mirror_sync_success(
     monkeypatch.setattr(server.requests, "post", fake_post)
     monkeypatch.setattr(server, "_resolve_owner", lambda *_: "mirror-user")
 
-    async with make_typed_mcp(gitea_mirror_server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(gitea_mirror_server) as (client, _):
         await client.trigger_mirror_sync(TriggerMirrorSyncArgs(url="https://example.com/org/repo.git"))
 
     assert [call[0] for call in post_calls] == [
@@ -79,7 +79,7 @@ async def test_trigger_sync_bubbles_mirror_error(
 
     monkeypatch.setattr(server.requests, "get", unexpected_get)
 
-    async with make_typed_mcp(gitea_mirror_server, "gitea_mirror") as (client, _):
+    async with make_typed_mcp(gitea_mirror_server) as (client, _):
         # Error assertion path: expect tool error and capture message
         err_msg = await client.error("trigger_mirror_sync")(TriggerMirrorSyncArgs(url="https://example.com/org/repo"))
         assert "boom" in err_msg or "HTTP 500" in err_msg

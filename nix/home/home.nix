@@ -321,6 +321,7 @@ in {
       direnv
       devenv
       alejandra # Nix formatter
+      opencode # AI coding agent for terminal
 
       # Tree-sitter CLI for manual parser management
       tree-sitter # Used by nvim-treesitter auto_install
@@ -454,6 +455,8 @@ in {
     ++ [
       # CLI utilities (no GUI needed)
       yt-dlp # YouTube downloader
+      pdftk # PDF manipulation toolkit
+      qpdf # PDF transformation/inspection tool
 
       # TODO: comby is marked as broken in nixpkgs 25.11
       # Previously we got it from oldPkgs (nixos-23.11) but removed during 25.11 migration

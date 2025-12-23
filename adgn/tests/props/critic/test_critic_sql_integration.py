@@ -15,25 +15,25 @@ from sqlalchemy import text
 
 from adgn.props.critic.submit_server import CriticSubmitInput
 from adgn.props.db import get_session
-from adgn.props.db.models import CriticRun, CriticRunStatus, ReportedIssue, ReportedIssueOccurrence
-from adgn.props.db.prompts import hash_and_upsert_prompt
+from adgn.props.db.examples import Example
+from adgn.props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from adgn.props.db.snapshots import DBLocationAnchor, DBReportedIssue
-from adgn.props.models.critic_scopes import ExplicitFileScope
-from tests.props.conftest import get_or_create_example, make_critic_run
+from adgn.props.ids import SnapshotSlug
+from tests.props.conftest import make_critic_run
 from tests.props.critic.conftest import insert_issue, insert_occurrence
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
-async def test_critic_sql_basic_workflow(test_critic_run, snapshot_mount, temp_engine, submit_server):
+async def test_critic_sql_basic_workflow(test_critic_run, temp_engine, submit_server):
     """Test basic critic SQL workflow with single-location occurrence."""
     # Simulate agent actions using temp user credentials
     with temp_engine.connect() as conn:
         # Agent inserts reported issue
         insert_issue(conn, "dead-code-utils", "Function cleanup() is never called")
 
-        # Agent inserts occurrence with locations JSONB array
-        insert_occurrence(conn, "dead-code-utils", '[{"file": "test.py", "start_line": 10, "end_line": 20}]')
+        # Agent inserts occurrence with locations (uses actual fixture file)
+        insert_occurrence(conn, "dead-code-utils", [DBLocationAnchor(file="add.py", start_line=1, end_line=3)])
         conn.commit()
 
     # Agent calls submit tool
@@ -50,40 +50,38 @@ async def test_critic_sql_basic_workflow(test_critic_run, snapshot_mount, temp_e
 
     # Verify database state
     with get_session() as session:
-        critic_run = session.get(CriticRun, test_critic_run)
+        critic_run = session.get(AgentRun, test_critic_run)
         assert critic_run is not None
-        assert critic_run.status == CriticRunStatus.COMPLETED
+        assert critic_run.status == AgentRunStatus.COMPLETED
         assert critic_run.completion_summary == "Found 1 dead code issue"
 
         # Verify reported issue exists
-        issue = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run, issue_id="dead-code-utils").one()
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="dead-code-utils").one()
         assert issue.rationale == "Function cleanup() is never called"
 
         # Verify occurrence exists with locations
         occ = (
             session.query(ReportedIssueOccurrence)
-            .filter_by(critic_run_id=test_critic_run, reported_issue_id="dead-code-utils")
+            .filter_by(agent_run_id=test_critic_run, reported_issue_id="dead-code-utils")
             .one()
         )
-        assert occ.locations == [DBLocationAnchor(file="test.py", start_line=10, end_line=20)]
+        assert occ.locations == [DBLocationAnchor(file="add.py", start_line=1, end_line=3)]
 
 
-async def test_critic_sql_multi_location_occurrence(test_critic_run, snapshot_mount, temp_engine, submit_server):
+async def test_critic_sql_multi_location_occurrence(test_critic_run, temp_engine, submit_server):
     """Test critic SQL workflow with multi-location occurrence (e.g., duplicated code)."""
-
-    # Create additional test files
-    (snapshot_mount / "client.py").write_text("# client\n")
-    (snapshot_mount / "server.py").write_text("# server\n")
-
     with temp_engine.connect() as conn:
         # Insert issue with multi-location occurrence
         insert_issue(conn, "duplicated-enum", "Status enum duplicated across files")
 
-        # Multi-location occurrence (duplicated code in two files)
+        # Multi-location occurrence (duplicated code in two fixture files)
         insert_occurrence(
             conn,
             "duplicated-enum",
-            '[{"file": "client.py", "start_line": 10, "end_line": 15}, {"file": "server.py", "start_line": 20, "end_line": 25}]',
+            [
+                DBLocationAnchor(file="add.py", start_line=1, end_line=3),
+                DBLocationAnchor(file="subtract.py", start_line=1, end_line=3),
+            ],
         )
         conn.commit()
 
@@ -101,35 +99,38 @@ async def test_critic_sql_multi_location_occurrence(test_critic_run, snapshot_mo
     with get_session() as session:
         occ = (
             session.query(ReportedIssueOccurrence)
-            .filter_by(critic_run_id=test_critic_run, reported_issue_id="duplicated-enum")
+            .filter_by(agent_run_id=test_critic_run, reported_issue_id="duplicated-enum")
             .one()
         )
         assert occ.locations == [
-            DBLocationAnchor(file="client.py", start_line=10, end_line=15),
-            DBLocationAnchor(file="server.py", start_line=20, end_line=25),
+            DBLocationAnchor(file="add.py", start_line=1, end_line=3),
+            DBLocationAnchor(file="subtract.py", start_line=1, end_line=3),
         ]
 
 
-async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, snapshot_mount, temp_engine):
+async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_engine):
     """Test RLS isolation - agents can only see their own run's data."""
 
-    # Create another critic run (different agent)
+    # Create another critic run (different agent) using a different example
     other_run_id = None
-    other_prompt_sha = hash_and_upsert_prompt("test prompt for other agent")
-    other_scope = ExplicitFileScope(files=["other.py"])
     with get_session() as session:
-        other_example = get_or_create_example(session, test_snapshot, other_scope)
-
-        other_run = make_critic_run(
-            example=other_example, prompt_sha256=other_prompt_sha, status=CriticRunStatus.IN_PROGRESS
+        # Get a different example (any one from test fixtures will do)
+        other_example = (
+            session.query(Example)
+            .filter_by(snapshot_slug=SnapshotSlug("test-fixtures/test-trivial"))
+            .filter(Example.files_hash.isnot(None))  # Get a file_set example
+            .first()
         )
+        assert other_example is not None, "Need another example for RLS test"
+
+        other_run = make_critic_run(example=other_example, status=AgentRunStatus.IN_PROGRESS)
         session.add(other_run)
         session.commit()
-        other_run_id = other_run.id
+        other_run_id = other_run.agent_run_id
 
     # Insert data from other run (using admin credentials)
     with get_session() as session:
-        issue = ReportedIssue(critic_run_id=other_run_id, issue_id="other-issue", rationale="Other agent's issue")
+        issue = ReportedIssue(agent_run_id=other_run_id, issue_id="other-issue", rationale="Other agent's issue")
         session.add(issue)
         session.commit()
 
@@ -146,7 +147,7 @@ async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, snapshot
         assert issue_ids == ["my-issue"]
 
 
-async def test_critic_sql_validation_on_submit(test_critic_run, snapshot_mount, temp_engine, submit_server):
+async def test_critic_sql_validation_on_submit(test_critic_run, temp_engine, submit_server):
     """Test validation occurs on submit (invalid file path caught)."""
 
     with temp_engine.connect() as conn:
@@ -156,7 +157,7 @@ async def test_critic_sql_validation_on_submit(test_critic_run, snapshot_mount, 
         insert_occurrence(
             conn,
             "bad-issue",
-            '[{"file": "nonexistent.py"}]',  # File doesn't exist!
+            [DBLocationAnchor(file="nonexistent.py")],  # File doesn't exist!
         )
         conn.commit()
 
@@ -167,14 +168,12 @@ async def test_critic_sql_validation_on_submit(test_critic_run, snapshot_mount, 
 
     # Verify run status NOT changed to completed
     with get_session() as session:
-        critic_run = session.get(CriticRun, test_critic_run)
+        critic_run = session.get(AgentRun, test_critic_run)
         assert critic_run is not None
-        assert (
-            critic_run.status != CriticRunStatus.COMPLETED
-        )  # Should not be marked completed due to validation failure
+        assert critic_run.status != AgentRunStatus.COMPLETED  # Should not be marked completed due to validation failure
 
 
-async def test_critic_sql_issue_without_occurrence_fails(test_critic_run, snapshot_mount, temp_engine, submit_server):
+async def test_critic_sql_issue_without_occurrence_fails(test_critic_run, temp_engine, submit_server):
     """Test that submitting an issue without occurrences fails validation.
 
     Every reported issue must have at least one occurrence showing where it occurs in the code.
@@ -190,42 +189,37 @@ async def test_critic_sql_issue_without_occurrence_fails(test_critic_run, snapsh
 
     # Verify run status NOT changed to completed
     with get_session() as session:
-        critic_run = session.get(CriticRun, test_critic_run)
+        critic_run = session.get(AgentRun, test_critic_run)
         assert critic_run is not None
-        assert critic_run.status != CriticRunStatus.COMPLETED
+        assert critic_run.status != AgentRunStatus.COMPLETED
 
         # Verify issue was created but has no occurrences
-        issue = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run, issue_id="dead-code").first()
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="dead-code").first()
         assert issue is not None
         assert issue.rationale == "Unused import"
 
         occurrences = (
             session.query(ReportedIssueOccurrence)
-            .filter_by(critic_run_id=test_critic_run, reported_issue_id="dead-code")
+            .filter_by(agent_run_id=test_critic_run, reported_issue_id="dead-code")
             .all()
         )
         assert len(occurrences) == 0
 
 
-async def test_critic_sql_multiple_issues_and_occurrences(test_critic_run, snapshot_mount, temp_engine, submit_server):
+async def test_critic_sql_multiple_issues_and_occurrences(test_critic_run, temp_engine, submit_server):
     """Test workflow with multiple issues and multiple occurrences per issue."""
-
-    # Create test files
-    (snapshot_mount / "utils.py").write_text("# utils\n")
-    (snapshot_mount / "helpers.py").write_text("# helpers\n")
-
     with temp_engine.connect() as conn:
-        # Issue 1: Dead code with 2 occurrences
+        # Issue 1: Dead code with 2 occurrences (in fixture files)
         insert_issue(conn, "dead-code", "Multiple unused functions")
 
-        insert_occurrence(conn, "dead-code", '[{"file": "utils.py", "start_line": 10, "end_line": 15}]')
+        insert_occurrence(conn, "dead-code", [DBLocationAnchor(file="add.py", start_line=1, end_line=3)])
 
-        insert_occurrence(conn, "dead-code", '[{"file": "helpers.py", "start_line": 20, "end_line": 25}]')
+        insert_occurrence(conn, "dead-code", [DBLocationAnchor(file="subtract.py", start_line=1, end_line=3)])
 
-        # Issue 2: Type error with 1 occurrence (whole-file, no line numbers)
+        # Issue 2: Type error with 1 occurrence
         insert_issue(conn, "type-error", "Missing type annotation")
 
-        insert_occurrence(conn, "type-error", '[{"file": "test.py", "start_line": 5}]')
+        insert_occurrence(conn, "type-error", [DBLocationAnchor(file="multiply.py", start_line=1)])
 
         conn.commit()
 
@@ -241,13 +235,13 @@ async def test_critic_sql_multiple_issues_and_occurrences(test_critic_run, snaps
 
     # Verify all issues and occurrences
     with get_session() as session:
-        issues = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run).all()
+        issues = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run).all()
         assert len(issues) == 2
 
         # Check occurrences for dead-code
         dead_occs = (
             session.query(ReportedIssueOccurrence)
-            .filter_by(critic_run_id=test_critic_run, reported_issue_id="dead-code")
+            .filter_by(agent_run_id=test_critic_run, reported_issue_id="dead-code")
             .all()
         )
         assert len(dead_occs) == 2
@@ -255,7 +249,7 @@ async def test_critic_sql_multiple_issues_and_occurrences(test_critic_run, snaps
         # Check occurrence for type-error
         type_occs = (
             session.query(ReportedIssueOccurrence)
-            .filter_by(critic_run_id=test_critic_run, reported_issue_id="type-error")
+            .filter_by(agent_run_id=test_critic_run, reported_issue_id="type-error")
             .all()
         )
         assert len(type_occs) == 1
@@ -270,7 +264,7 @@ async def test_insert_issue_string_format(test_critic_run, temp_engine):
 
     # Verify issue was inserted correctly using ORM
     with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run, issue_id="issue-string").one()
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-string").one()
         assert issue.rationale == "String style rationale"
 
 
@@ -283,7 +277,7 @@ async def test_insert_issue_dict_format(test_critic_run, temp_engine):
 
     # Verify issue was inserted correctly using ORM
     with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run, issue_id="issue-dict").one()
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-dict").one()
         assert issue.rationale == "Dict style rationale"
 
 
@@ -297,7 +291,7 @@ async def test_insert_issue_pydantic_format(test_critic_run, temp_engine):
 
     # Verify issue was inserted correctly using ORM
     with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(critic_run_id=test_critic_run, issue_id="issue-pydantic").one()
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-pydantic").one()
         assert issue.rationale == "Pydantic style rationale"
 
 

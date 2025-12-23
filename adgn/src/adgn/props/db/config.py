@@ -56,7 +56,7 @@ class DbConnectionConfig:
         """Return a copy with different user credentials.
 
         For host-side access with temporary credentials:
-            async with ClusteringUserManager(config.admin, run_id) as creds:
+            async with TempUserManager(config.admin, run_id) as creds:
                 user_config = config.admin.with_user(creds)
 
         For container access, use DatabaseConfig.for_container_user() instead.
@@ -136,7 +136,7 @@ class DatabaseConfig:
         Use this for scoped agents (prompt optimizer, clustering, improvement).
 
         Example:
-            async with PromptOptimizerUserManager(config, run_id) as creds:
+            async with TempUserManager(config.admin, run_id) as creds:
                 container_config = config.for_container_user(creds)
                 env.update(container_config.to_env_dict())
 

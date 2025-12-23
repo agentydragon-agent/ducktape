@@ -1,20 +1,26 @@
-"""Tests for train/valid/test split definitions."""
+"""Tests for train/valid/test split definitions.
+
+These tests validate production specimen data and require syncing the full
+production specimens repository. They are marked with requires_production_specimens
+and can be skipped with: pytest -m 'not requires_production_specimens'
+"""
 
 from __future__ import annotations
 
 from collections import Counter
 
 from hamcrest import assert_that, greater_than_or_equal_to, is_in
+import pytest
 
 from adgn.props.db import get_session
 from adgn.props.db.models import Snapshot
 from adgn.props.splits import Split
 
-# Note: synced_test_db fixture syncs TEST fixtures (minimal data)
-# Use synced_production_db for tests that need production specimens
+pytestmark = [pytest.mark.requires_production_specimens, pytest.mark.integration]
 
 
-def test_specimen_has_valid_split(synced_test_db):
+@pytest.mark.requires_production_specimens
+def test_specimen_has_valid_split(synced_production_db):
     """Verify all specimens have valid splits in manifests."""
     with get_session() as session:
         snapshots = session.query(Snapshot).all()
@@ -22,22 +28,22 @@ def test_specimen_has_valid_split(synced_test_db):
             assert_that(snapshot.split, is_in([Split.TRAIN, Split.VALID, Split.TEST]))
 
 
-def test_unknown_specimen_raises(test_db):
+def test_unknown_specimen_raises(synced_production_db):
     """Verify query raises for unknown specimens."""
     with get_session() as session:
         result = session.get(Snapshot, "nonexistent/specimen")
         assert result is None, "Expected nonexistent specimen to return None"
 
 
-def test_split_distribution(synced_test_db):
+def test_split_distribution(synced_production_db):
     """Verify train/valid/test distribution by specimen count (non-strict bounds).
 
     Note: This tests specimen count, not issue count. The split is optimized for
     minimum issue counts (>=60 for valid and test), so specimen counts may vary widely.
     This test just ensures all splits have at least one specimen.
     """
-    # Each split should have at least one specimen
     with get_session() as session:
+        # Each split should have at least one specimen
         train_count = session.query(Snapshot).filter_by(split=Split.TRAIN.value).count()
         valid_count = session.query(Snapshot).filter_by(split=Split.VALID.value).count()
         # test_count = session.query(Snapshot).filter_by(split=Split.TEST.value).count()

@@ -57,7 +57,7 @@ EXIT_CODE_SIGTERM: Final[int] = signal_exit_code(SIGTERM)
 EXIT_CODE_SIGKILL: Final[int] = signal_exit_code(SIGKILL)
 
 # Cap for stdout/stderr/stdin bytes in exec-like servers
-MAX_BYTES_CAP = 20_000
+MAX_BYTES_CAP = 150_000
 
 # Cap for execution timeout across exec-like servers (milliseconds)
 # Keep reasonably low to avoid runaway processes; tune per product needs.
