@@ -20,6 +20,7 @@ from .cli.common import DryRunDefaultTrueOption, TokenFileOption, get_client
 from .cli.filters import filters_app
 from .cli.labels import labels_app
 from .event_classifier import EmailTemplateExtractor
+from .gmail_api_models import SystemLabel
 from .inbox import GmailInbox
 from .models import Email
 from .plan import Plan
@@ -88,16 +89,42 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
     if not dry_run and combined.count_operations() > 0:
         console.print("Executing label operations...")
 
+        # Resolve label names -> IDs once (creating missing user labels) so batchModify
+        # receives label IDs as required by the Gmail API. Previously we passed label
+        # *names*, which triggered HttpError 400 "Invalid label: ..." when Gmail
+        # validated the request body.
+        label_name_to_id: dict[str, str] = {}
+
+        system_label_ids = set(SystemLabel)
+
+        def ensure_label_id(label_name: str) -> str:
+            if label_name in label_name_to_id:
+                return label_name_to_id[label_name]
+            # System labels are already IDs; user labels need to exist to obtain an ID
+            if label_name in system_label_ids:
+                label_name_to_id[label_name] = label_name
+            else:
+                label_name_to_id[label_name] = client.get_or_create_label(label_name)
+            return label_name_to_id[label_name]
+
+        # Pre-resolve all labels we plan to touch to avoid surprises mid-batch
+        for planned_action in combined.actions.values():
+            for lbl in planned_action.action.labels_to_add | planned_action.action.labels_to_remove:
+                ensure_label_id(lbl)
+
         # Execute each unique action signature in batches
         total_processed = 0
         for sig, msg_ids in combined.group_by_signature().items():
             batch_size = 1000
+            add_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_add]
+            remove_ids = [ensure_label_id(lbl) for lbl in sig.labels_to_remove]
+
             for batch in itertools.batched(msg_ids, batch_size):
                 body: dict = {"ids": list(batch)}
-                if sig.labels_to_add:
-                    body["addLabelIds"] = list(sig.labels_to_add)
-                if sig.labels_to_remove:
-                    body["removeLabelIds"] = list(sig.labels_to_remove)
+                if add_ids:
+                    body["addLabelIds"] = add_ids
+                if remove_ids:
+                    body["removeLabelIds"] = remove_ids
 
                 client.service.users().messages().batchModify(userId="me", body=body).execute()
                 total_processed += len(batch)
