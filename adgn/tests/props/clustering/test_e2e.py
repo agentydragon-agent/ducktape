@@ -109,6 +109,9 @@ def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[
     return steps
 
 
+# This test spawns multiple docker execs with heavy Python startup (~6s/exec)
+# Keep timeout generous to avoid flakes when CI is contended.
+@pytest.mark.timeout(45)
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_cluster(
@@ -200,6 +203,9 @@ def _make_clustering_steps_with_tp_mapping(grader_run_id: UUID, unknown_ids: lis
     ]
 
 
+# This test also runs multiple docker execs with heavy Python startup (~6s/exec)
+# Keep timeout generous to avoid flakes when CI is contended.
+@pytest.mark.timeout(45)
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
 async def test_clustering_http_mode_assign_to_existing(

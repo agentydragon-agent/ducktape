@@ -10,7 +10,7 @@ import hashlib
 
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.db.models import FileSet, FileSetMember, Snapshot, SnapshotFile, TruePositive, TruePositiveOccurrenceORM
+from adgn.props.db.models import Snapshot
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.examples import ExampleKind, SingleFileSetExample, WholeSnapshotExample
 from adgn.props.splits import Split
@@ -87,79 +87,27 @@ def test_generate_examples_valid_test_split(synced_test_db):
         # TEST split behavior is well-defined: only generate full-specimen example
 
 
-def test_generate_examples_unique_file_sets(test_db):
-    """Test that duplicate file sets are deduplicated by the VIEW."""
+def test_generate_examples_unique_file_sets(synced_test_db):
+    """Test that duplicate file sets are deduplicated by the VIEW using git fixtures."""
     with get_session() as session:
-        # Create a test snapshot with duplicate file sets
-        slug = SnapshotSlug("test/example-generation")
+        slug = SnapshotSlug("test-fixtures/test-trivial")
 
-        # Clean up any existing test data
-        session.query(FileSet).filter_by(snapshot_slug=slug).delete()
-        session.query(TruePositive).filter_by(snapshot_slug=slug).delete()
-        session.query(Snapshot).filter_by(slug=slug).delete()
-        session.commit()
-
-        # Create snapshot
-        snapshot = Snapshot(slug=slug, split=Split.TRAIN, source={"vcs": "local", "root": "."}, bundle=None)
-        session.add(snapshot)
-
-        # Add TP (occurrences are added via the relationship using ORM model)
-        tp = TruePositive(
-            snapshot_slug=slug,
-            tp_id="test-dup",
-            rationale="Test issue with duplicate file sets",
-            occurrences=[
-                TruePositiveOccurrenceORM(
-                    snapshot_slug=slug,
-                    tp_id="test-dup",
-                    occurrence_id="occ-dup-1",
-                    files={"file1.py": None},  # JSONB: dict with str keys
-                    expect_caught_from=[["file1.py"], ["file1.py"]],  # JSONB: list[list[str]] - duplicates!
-                ),
-                TruePositiveOccurrenceORM(
-                    snapshot_slug=slug,
-                    tp_id="test-dup",
-                    occurrence_id="occ-dup-2",
-                    files={"file2.py": None},
-                    expect_caught_from=[["file1.py"]],  # Same file set as above
-                ),
-            ],
-        )
-        session.add(tp)
-        session.commit()
-
-        # Add files to snapshot_files (required for FK validation)
-        session.add(SnapshotFile(snapshot_slug=slug, relative_path="file1.py", line_count=10))
-        session.add(SnapshotFile(snapshot_slug=slug, relative_path="file2.py", line_count=10))
-        session.commit()
-
-        # Manually create file sets (normally done by sync)
-        # The deduplication happens in the VIEW's GROUP BY
-        files_hash = _compute_files_hash(["file1.py"])
-        file_set1 = FileSet(snapshot_slug=slug, files_hash=files_hash)
-        session.add(file_set1)
-        session.flush()
-
-        fs_file1 = FileSetMember(snapshot_slug=slug, files_hash=files_hash, file_path="file1.py")
-        session.add(fs_file1)
-        session.commit()
-
-        # Query examples from VIEW
+        # test-trivial fixture already has multiple file sets; the view should deduplicate them
         examples = session.query(Example).filter_by(snapshot_slug=slug).all()
+        assert examples, "Expected examples for test-trivial fixture"
 
-        # Should deduplicate: 1 unique file set + 1 full-specimen = 2 examples
-        assert len(examples) == 2
+        file_set_examples = [ex for ex in examples if ex.example_kind == ExampleKind.FILE_SET]
+        whole_snapshot_examples = [ex for ex in examples if ex.example_kind == ExampleKind.WHOLE_SNAPSHOT]
 
-        # One example should be the single unique file set
-        file_set_found = False
-        full_specimen_found = False
-        for example in examples:
-            if example.example_kind == ExampleKind.WHOLE_SNAPSHOT:
-                full_specimen_found = True
-            elif example.example_kind == ExampleKind.FILE_SET:
-                # Check if this is the file1.py file set
-                # (We can't easily check the files without querying file_sets table)
-                file_set_found = True
+        assert whole_snapshot_examples, "Whole-snapshot example not found"
+        assert file_set_examples, "Expected at least one file-set example"
 
-        assert file_set_found, "Single-file-set example not found"
-        assert full_specimen_found, "Whole-snapshot example not found"
+        # Deduplication: file_set_examples should have unique (snapshot_slug, files_hash)
+        file_set_keys = {(ex.snapshot_slug, ex.files_hash) for ex in file_set_examples}
+        assert len(file_set_keys) == len(file_set_examples), "File-set examples should already be deduplicated"
+
+        # Expect exactly one whole-snapshot row
+        assert len(whole_snapshot_examples) == 1, "Expected exactly one whole-snapshot example"
+
+        # Total examples = unique file sets + one whole-snapshot
+        assert len(examples) == len(file_set_examples) + 1

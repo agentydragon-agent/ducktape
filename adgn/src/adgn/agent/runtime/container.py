@@ -112,7 +112,21 @@ class AgentContainerCompositor(Compositor):
 
             # Runtime exec server
             runtime_image = resolve_runtime_image()
-            opts = ContainerOptions(image=runtime_image, binds=None, ephemeral=True)
+            preset_label = None
+            if self._persistence is not None:
+                row = await self._persistence.get_agent(self._agent_id)
+                if row and row.metadata is not None:
+                    preset_label = row.metadata.preset
+            opts = ContainerOptions(
+                image=runtime_image,
+                binds=None,
+                labels={
+                    "adgn.project": "agent-runtime",
+                    "adgn.role": "runtime",
+                    "adgn.agent_id": str(self._agent_id),
+                    **({"adgn.preset": preset_label} if preset_label else {}),
+                },
+            )
             self.runtime = await self.mount_inproc(
                 "runtime", RuntimeServer(self._async_docker_client, opts), pinned=True
             )
@@ -205,9 +219,6 @@ class AgentContainer:
     client_factory: Callable[[str], OpenAIModelProto]
     async_docker_client: aiodocker.Docker
     with_ui: bool = True
-    # Runtime exec server characteristics (wired during attach)
-    # Default: runtime is not treated as ephemeral for status purposes
-    runtime_ephemeral: bool = False
 
     # Populated after Start
     approval_engine: PolicyEngine | None = None
@@ -366,9 +377,6 @@ class AgentContainer:
 
         # Mount external servers from config (compositor is in ACTIVE state)
         await self._compositor.mount_servers_from_config(mcp_config)
-
-        # Persist runtime ephemerality for status reporting (explicit)
-        self.runtime_ephemeral = False
 
         # Notifications buffer for MCP events
         notif_buffer = NotificationsBuffer(compositor=self._compositor)

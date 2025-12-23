@@ -32,6 +32,21 @@ from tests.llm.support.openai_mock import LIVE, make_mock
 if TYPE_CHECKING:
     from tests.support.steps import Step
 
+
+@pytest.fixture
+def make_step_runner(responses_factory):
+    """Factory fixture that creates step runners.
+
+    Returns a factory function that creates _StepRunner instances. Each runner is a
+    context manager that validates all steps completed.
+    """
+
+    def _make(steps: Sequence[Step]) -> _StepRunner:
+        return _StepRunner(factory=responses_factory, steps=steps)
+
+    return _make
+
+
 logger = logging.getLogger(__name__)
 
 

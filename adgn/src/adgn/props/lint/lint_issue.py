@@ -177,7 +177,6 @@ class LintIssueCompositor(PropertiesDockerCompositor):
         - Read-only workspace (workspace_mode="ro")
         - No database connection
         - No extra binds
-        - Persistent container (ephemeral=False)
 
         Args:
             workspace_root: Path to workspace directory to mount in container.
@@ -192,7 +191,7 @@ class LintIssueCompositor(PropertiesDockerCompositor):
             workspace_mode="ro",
             network_mode="none",
             extra_env=None,
-            ephemeral=False,
+            labels={"adgn.project": "props", "adgn.role": "lint"},
         )
         self._submit_state = submit_state
 

@@ -31,6 +31,7 @@ from adgn.props.db.models import (
     AgentRun,
     AgentRunStatus,
     CanonicalIssuesSnapshot,
+    FalsePositiveOccurrenceORM,
     GradingDecision,
     ReportedIssue,
     ReportedIssueOccurrence,
@@ -1303,6 +1304,145 @@ def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExampl
         )
         assert fs is not None, "No file set found for subtract.py in test-trivial"
         return SingleFileSetExample(snapshot_slug=slug, files_hash=fs.files_hash)
+
+
+# ---------------------------------------------------------------------------
+# Shared ORM fixtures for real TP/FP occurrences from git fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def example_subtract_orm(synced_test_session: Session) -> Example:
+    """ORM Example for subtract.py (single TP occurrence) from git-synced fixture."""
+    slug = SnapshotSlug("test-fixtures/test-trivial")
+    example = (
+        synced_test_session.query(Example)
+        .filter_by(snapshot_slug=slug)
+        .filter(Example.files_hash.isnot(None))
+        .filter(Example.n_catchable_occurrences == 1)
+        .first()
+    )
+    assert example is not None, "Expected single-file-set example with 1 catchable TP in test-trivial"
+    return example
+
+
+@pytest.fixture
+def example_multi_tp_orm(synced_test_session: Session) -> Example:
+    """ORM Example with multiple TP occurrences from git-synced fixture (e.g., add.py)."""
+    slug = SnapshotSlug("test-fixtures/test-trivial")
+    example = (
+        synced_test_session.query(Example)
+        .filter_by(snapshot_slug=slug)
+        .filter(Example.files_hash.isnot(None))
+        .filter(Example.n_catchable_occurrences > 1)
+        .first()
+    )
+    assert example is not None, "Expected file-set example with multiple TP occurrences in test-trivial"
+    return example
+
+
+@pytest.fixture
+def tp_occurrence_single(synced_test_session: Session, example_subtract_orm: Example) -> tuple[str, str]:
+    """(tp_id, occurrence_id) for a real single-occurrence TP in test-trivial."""
+    tp_occ = (
+        synced_test_session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=example_subtract_orm.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert tp_occ is not None, "Expected at least one TP occurrence in test-trivial"
+    return tp_occ.tp_id, tp_occ.occurrence_id
+
+
+@pytest.fixture
+def tp_single_id(tp_occurrence_single: tuple[str, str]) -> str:
+    """TP id for the single-occurrence TP in test-trivial."""
+    return tp_occurrence_single[0]
+
+
+@pytest.fixture
+def tp_single_occurrence_id(tp_occurrence_single: tuple[str, str]) -> str:
+    """Occurrence id for the single-occurrence TP in test-trivial."""
+    return tp_occurrence_single[1]
+
+
+@pytest.fixture
+def tp_occurrences_multi(synced_test_session: Session, example_multi_tp_orm: Example) -> list[tuple[str, str]]:
+    """List of (tp_id, occurrence_id) for a multi-occurrence example in test-trivial."""
+    rows = (
+        synced_test_session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .filter_by(snapshot_slug=example_multi_tp_orm.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .all()
+    )
+    assert rows, "Expected TP occurrences for multi-TP example in test-trivial"
+    return [(row.tp_id, row.occurrence_id) for row in rows]
+
+
+@pytest.fixture
+def fp_occurrence(synced_test_session: Session) -> tuple[str, str]:
+    """FP occurrence (fp_id, occurrence_id) from git fixtures (fail fast if missing)."""
+    row = (
+        synced_test_session.query(FalsePositiveOccurrenceORM.fp_id, FalsePositiveOccurrenceORM.occurrence_id)
+        .order_by(FalsePositiveOccurrenceORM.fp_id, FalsePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert row is not None, "Expected at least one FP occurrence in git fixtures"
+    return row.fp_id, row.occurrence_id
+
+
+@pytest.fixture
+def fp_id(fp_occurrence: tuple[str, str]) -> str:
+    """FP id from git fixtures."""
+    return fp_occurrence[0]
+
+
+@pytest.fixture
+def fp_occurrence_id(fp_occurrence: tuple[str, str]) -> str:
+    """FP occurrence id from git fixtures."""
+    return fp_occurrence[1]
+
+
+def make_grader_run_with_credit(
+    *,
+    session: Session,
+    critic_run: AgentRun,
+    tp_occurrence: tuple[str, str],
+    credit: float,
+    input_idx: int = 0,
+    model: str = "test-grader-model",
+) -> AgentRun:
+    """Create grader run + grading_decision for a critic run using real TP occurrence IDs."""
+
+    tp_id, occ_id = tp_occurrence
+
+    # Create reported issue for this grader run
+    make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=[f"input-{input_idx}"], session=session)
+
+    grader_run = make_grader_run(
+        critic_run=critic_run, model=model, canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT
+    )
+    session.add(grader_run)
+    session.flush()
+
+    grader_success = GraderSuccess(
+        occurrence_results=[
+            OccurrenceResult(
+                tp_id=TruePositiveID(tp_id),
+                occurrence_id=occ_id,
+                found_credit=credit,
+                matched_by=[OccurrenceMatch(input_id=InputIssueID(f"input-{input_idx}"), credit=credit)],
+                rationale=Rationale(f"Credit {credit}"),
+            )
+        ],
+        unknowns=[],
+        summary=Rationale(f"Summary {credit}"),
+    )
+
+    populate_grading_decisions(
+        grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
+    )
+    return grader_run
 
 
 def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Example, AgentRun, AgentRun]:

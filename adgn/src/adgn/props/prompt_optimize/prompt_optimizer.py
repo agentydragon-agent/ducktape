@@ -276,6 +276,13 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
             db_config=db_config,
             workspace_manager=workspace_manager,
             snapshot_slugs=snapshot_slugs,
+            container_name=f"promptopt-{short_uuid(optimizer_run_id)}",
+            labels={
+                "adgn.project": "props",
+                "adgn.role": "prompt_optimize",
+                "adgn.agent_run_id": str(optimizer_run_id),
+            },
+            auto_remove=True,
         )
 
     @property

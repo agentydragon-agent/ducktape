@@ -82,8 +82,10 @@ class PropertiesDockerCompositor(Compositor):
         workspace_mode: str = "ro",
         network_mode: str = "none",
         extra_env: dict[str, str] | None = None,
-        ephemeral: bool = True,
         snapshot_slugs: Sequence[SnapshotSlug] = (),
+        labels: dict[str, str] | None = None,
+        auto_remove: bool = False,
+        container_name: str | None = None,
     ):
         """Initialize properties compositor with Docker configuration.
 
@@ -96,7 +98,6 @@ class PropertiesDockerCompositor(Compositor):
             workspace_mode: Mount mode for workspace ("ro" or "rw").
             network_mode: Docker network mode (default "none" for isolation).
             extra_env: Additional environment variables to inject.
-            ephemeral: Whether container should be removed after use.
             snapshot_slugs: Snapshot slugs to hydrate and mount (if empty, hydrator is not used).
 
         Note:
@@ -113,7 +114,9 @@ class PropertiesDockerCompositor(Compositor):
         self._workspace_mode = workspace_mode
         self._network_mode = network_mode
         self._extra_env = extra_env
-        self._ephemeral = ephemeral
+        self._labels = labels or {"adgn.project": "props", "adgn.role": "properties-runtime"}
+        self._container_name = container_name
+        self._auto_remove = auto_remove
         self._hydrator = hydrator
         self._snapshot_slugs = snapshot_slugs
         self._snapshot_stack: AsyncExitStack | None = None
@@ -205,6 +208,8 @@ class PropertiesDockerCompositor(Compositor):
             env.update(self._extra_env)
             logger.info(f"Injecting extra environment variables: {list(self._extra_env.keys())}")
 
+        # TODO: if we ever need fully stateless containers (new container per call),
+        # add an explicit strategy switch instead of reintroducing a boolean.
         return ContainerExecServer(
             self._docker_client,
             ContainerOptions(
@@ -212,8 +217,10 @@ class PropertiesDockerCompositor(Compositor):
                 working_dir=WORKING_DIR,
                 binds=binds,
                 environment=env,
-                ephemeral=self._ephemeral,
                 network_mode=self._network_mode,
+                labels=self._labels,
+                name=self._container_name,
+                auto_remove=self._auto_remove,
             ),
         )
 

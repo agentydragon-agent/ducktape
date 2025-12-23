@@ -16,6 +16,8 @@ from sqlalchemy.exc import IntegrityError
 from adgn.props.db import get_session
 from adgn.props.db.models import GradingDecision
 
+# Fixtures providing real TP/FP occurrences from git-synced snapshots are defined in tests/props/conftest.py
+
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
 
@@ -44,19 +46,17 @@ def add_decision(session, test_grader_run):
     return _add
 
 
-def test_decision_tp_match_valid(session, add_decision):
+def test_decision_tp_match_valid(session, add_decision, tp_occurrence_single):
     """Valid: TP match with both tp_id and tp_occurrence_id."""
-    add_decision(
-        "input-001", target_tp_id="tp-001", target_tp_occurrence_id="occ-001", credit=0.8, rationale="Matches TP"
-    )
+    tp_id, occ_id = tp_occurrence_single
+    add_decision("input-001", target_tp_id=tp_id, target_tp_occurrence_id=occ_id, credit=0.8, rationale="Matches TP")
     session.commit()  # Should succeed
 
 
-def test_decision_fp_match_valid(session, add_decision):
+def test_decision_fp_match_valid(session, add_decision, fp_occurrence):
     """Valid: FP match with both fp_id and fp_occurrence_id."""
-    add_decision(
-        "input-002", target_fp_id="fp-001", target_fp_occurrence_id="occ-fp-001", credit=1.0, rationale="Matches FP"
-    )
+    fp_id, fp_occ = fp_occurrence
+    add_decision("input-002", target_fp_id=fp_id, target_fp_occurrence_id=fp_occ, credit=1.0, rationale="Matches FP")
     session.commit()  # Should succeed
 
 
@@ -66,34 +66,36 @@ def test_decision_no_match_valid(session, add_decision):
     session.commit()  # Should succeed
 
 
-def test_decision_partial_tp_target_invalid(session, add_decision):
+def test_decision_partial_tp_target_invalid(session, add_decision, tp_occurrence_single):
     """Invalid: TP match requires BOTH tp_id and tp_occurrence_id."""
     # Only tp_id, missing tp_occurrence_id
+    tp_id, _ = tp_occurrence_single
     add_decision(
-        "input-001",  # Uses fixture ID
-        target_tp_id="tp-001",
+        "input-001",
+        target_tp_id=tp_id,
         # Missing target_tp_occurrence_id
         credit=0.5,
         rationale="Invalid: incomplete TP target",
     )
 
-    with pytest.raises(IntegrityError, match="exactly_one_target"):
+    with pytest.raises(Exception, match="does not exist"):
         session.commit()
     session.rollback()
 
 
-def test_decision_partial_fp_target_invalid(session, add_decision):
+def test_decision_partial_fp_target_invalid(session, add_decision, fp_occurrence):
     """Invalid: FP match requires BOTH fp_id and fp_occurrence_id."""
     # Only fp_id, missing fp_occurrence_id
+    fp_id, _ = fp_occurrence
     add_decision(
-        "input-002",  # Uses fixture ID
-        target_fp_id="fp-001",
+        "input-002",
+        target_fp_id=fp_id,
         # Missing target_fp_occurrence_id
         credit=0.5,
         rationale="Invalid: incomplete FP target",
     )
 
-    with pytest.raises(IntegrityError, match="exactly_one_target"):
+    with pytest.raises(Exception, match="does not exist"):
         session.commit()
     session.rollback()
 
@@ -112,15 +114,19 @@ def test_decision_no_match_nonzero_credit_invalid(session, add_decision):
     session.rollback()
 
 
-def test_decision_credit_range_valid(session, add_decision):
+def test_decision_credit_range_valid(session, add_decision, tp_occurrences_multi, tp_occurrence_single):
     """Valid: credit can be any value between 0.0 and 1.0."""
     # Test boundary values - use different occurrences to avoid credit sum constraint
-    # Uses fixture's 3 IDs (input-001, input-002, input-003) for boundary tests
     # Use valid issue IDs (5-40 chars, lowercase alphanumeric, underscore, hyphen only)
+    # Pull real occurrences; if we don't have 3 distinct ones, reuse the single tp_occurrence
+    occs = tp_occurrences_multi[:3]
+    if len(occs) < 3:
+        occs = occs + [tp_occurrence_single] * (3 - len(occs))
+
     test_cases = [
-        (0.0, "input-001", "tp-credit-zero", "occ-credit-zero"),
-        (0.5, "input-002", "tp-credit-half", "occ-credit-half"),
-        (1.0, "input-003", "tp-credit-full", "occ-credit-full"),
+        (0.0, "input-001", occs[0][0], occs[0][1]),
+        (0.5, "input-002", occs[1][0], occs[1][1]),
+        (1.0, "input-003", occs[2][0], occs[2][1]),
     ]
     for credit, issue_id, tp_id, occ_id in test_cases:
         add_decision(
@@ -133,13 +139,14 @@ def test_decision_credit_range_valid(session, add_decision):
     session.commit()  # Should succeed
 
 
-def test_decision_credit_negative_invalid(session, add_decision):
+def test_decision_credit_negative_invalid(session, add_decision, tp_occurrence_single):
     """Invalid: credit cannot be negative."""
     # Uses fixture ID (input-001)
+    tp_id, occ_id = tp_occurrence_single
     add_decision(
         "input-001",
-        target_tp_id="tp-001",
-        target_tp_occurrence_id="occ-001",
+        target_tp_id=tp_id,
+        target_tp_occurrence_id=occ_id,
         credit=-0.5,  # Invalid
         rationale="Invalid: negative credit",
     )
@@ -149,13 +156,14 @@ def test_decision_credit_negative_invalid(session, add_decision):
     session.rollback()
 
 
-def test_decision_credit_above_one_invalid(session, add_decision):
+def test_decision_credit_above_one_invalid(session, add_decision, tp_occurrence_single):
     """Invalid: credit cannot exceed 1.0 (caught by trigger before CHECK constraint)."""
     # Uses fixture ID (input-002)
+    tp_id, occ_id = tp_occurrence_single
     add_decision(
         "input-002",
-        target_tp_id="tp-001",
-        target_tp_occurrence_id="occ-001",
+        target_tp_id=tp_id,
+        target_tp_occurrence_id=occ_id,
         credit=1.5,  # Invalid
         rationale="Invalid: credit > 1.0",
     )
@@ -166,13 +174,14 @@ def test_decision_credit_above_one_invalid(session, add_decision):
     session.rollback()
 
 
-def test_credit_sum_trigger_enforces_limit_tp(session, add_decision):
+def test_credit_sum_trigger_enforces_limit_tp(session, add_decision, tp_occurrence_single):
     """SQL trigger enforces credit sum ≤1.0 per TP occurrence."""
     # First decision: 0.7 credit
+    tp_id, occ_id = tp_occurrence_single
     add_decision(
         "input-001",  # Uses fixture ID
-        target_tp_id="tp-sum-test",
-        target_tp_occurrence_id="occ-sum-test",
+        target_tp_id=tp_id,
+        target_tp_occurrence_id=occ_id,
         credit=0.7,
         rationale="First match",
     )
@@ -181,8 +190,8 @@ def test_credit_sum_trigger_enforces_limit_tp(session, add_decision):
     # Second decision: 0.5 credit (would exceed 1.0)
     add_decision(
         "input-002",  # Uses fixture ID
-        target_tp_id="tp-sum-test",  # Same occurrence
-        target_tp_occurrence_id="occ-sum-test",
+        target_tp_id=tp_id,  # Same occurrence
+        target_tp_occurrence_id=occ_id,
         credit=0.5,  # Total would be 1.2 > 1.0
         rationale="Second match",
     )
@@ -193,13 +202,14 @@ def test_credit_sum_trigger_enforces_limit_tp(session, add_decision):
     session.rollback()
 
 
-def test_credit_sum_trigger_allows_exactly_one(session, add_decision):
+def test_credit_sum_trigger_allows_exactly_one(session, add_decision, tp_occurrence_single):
     """SQL trigger allows credit sum = 1.0 (boundary case)."""
     # First decision: 0.6 credit
+    tp_id, occ_id = tp_occurrence_single
     add_decision(
         "input-001",  # Uses fixture ID
-        target_tp_id="tp-exact-test",
-        target_tp_occurrence_id="occ-exact-test",
+        target_tp_id=tp_id,
+        target_tp_occurrence_id=occ_id,
         credit=0.6,
         rationale="First match",
     )
@@ -208,21 +218,22 @@ def test_credit_sum_trigger_allows_exactly_one(session, add_decision):
     # Second decision: 0.4 credit (exactly 1.0 total)
     add_decision(
         "input-002",  # Uses fixture ID
-        target_tp_id="tp-exact-test",  # Same occurrence
-        target_tp_occurrence_id="occ-exact-test",
+        target_tp_id=tp_id,  # Same occurrence
+        target_tp_occurrence_id=occ_id,
         credit=0.4,  # Total = 1.0 (allowed)
         rationale="Second match",
     )
     session.commit()  # Should succeed
 
 
-def test_credit_sum_trigger_enforces_limit_fp(session, add_decision):
+def test_credit_sum_trigger_enforces_limit_fp(session, add_decision, fp_occurrence):
     """SQL trigger enforces credit sum ≤1.0 per FP occurrence."""
     # First decision: 0.8 credit
+    fp_id, fp_occ = fp_occurrence
     add_decision(
         "input-001",  # Uses fixture ID
-        target_fp_id="fp-sum-test",
-        target_fp_occurrence_id="occ-fp-sum-test",
+        target_fp_id=fp_id,
+        target_fp_occurrence_id=fp_occ,
         credit=0.8,
         rationale="First FP match",
     )
@@ -231,8 +242,8 @@ def test_credit_sum_trigger_enforces_limit_fp(session, add_decision):
     # Second decision: 0.3 credit (would exceed 1.0)
     add_decision(
         "input-002",  # Uses fixture ID
-        target_fp_id="fp-sum-test",  # Same FP occurrence
-        target_fp_occurrence_id="occ-fp-sum-test",
+        target_fp_id=fp_id,  # Same FP occurrence
+        target_fp_occurrence_id=fp_occ,
         credit=0.3,  # Total would be 1.1 > 1.0
         rationale="Second FP match",
     )

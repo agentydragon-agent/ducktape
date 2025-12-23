@@ -43,6 +43,29 @@ def ensure_database_exists(base_config: DatabaseConfig, database_name: str, *, d
 
     with engine.connect() as conn:
         if drop_existing:
+            # Fail fast if other sessions are connected to the target DB to surface
+            # cross-test interference instead of a vague DROP failure.
+            active_sessions = conn.execute(
+                text(
+                    """
+                    select pid, usename, application_name, client_addr
+                    from pg_stat_activity
+                    where datname = :dbname and pid <> pg_backend_pid()
+                    """
+                ),
+                {"dbname": database_name},
+            ).fetchall()
+
+            if active_sessions:
+                details = ", ".join(
+                    f"pid={pid} user={user} app={app or '-'} addr={addr or '-'}"
+                    for pid, user, app, addr in active_sessions
+                )
+                raise RuntimeError(
+                    "Test database in use by other sessions; aborting drop. "
+                    f"database={database_name}; sessions=[{details}]"
+                )
+
             # Idempotent drop (for test setup)
             conn.execute(text(f'DROP DATABASE IF EXISTS "{database_name}"'))
 

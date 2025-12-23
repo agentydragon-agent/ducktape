@@ -547,6 +547,9 @@ class GraderAgentEnvironment(AgentEnvironment):
             db_config=db_config,
             workspace_manager=workspace_manager,
             snapshot_slugs=[snapshot_slug],
+            container_name=f"grader-{short_uuid(grader_run_id)}",
+            labels={"adgn.project": "props", "adgn.role": "grader", "adgn.agent_run_id": str(grader_run_id)},
+            auto_remove=True,
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:

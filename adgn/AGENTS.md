@@ -233,7 +233,7 @@ handlers = [bootstrap, ...other handlers...]
 
 Runtime exec
 - Runtime Docker MCP server name/tool: `runtime/exec` (shared constants).
-- Host-side timeouts enforced for both ephemeral-per-call and per-session containers; timeouts surface and per-session containers are restarted when needed.
+- Host-side timeouts are enforced; if a command times out the session container is restarted before the next call.
 
 Approval Policy
 - Policies are standalone Python programs executed in Docker. They read a JSON request from stdin and write a JSON response to stdout.

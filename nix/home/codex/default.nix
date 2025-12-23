@@ -26,6 +26,7 @@
         "/nix"
         "/nix/var/nix"
         "/home/agentydragon/.cache/pre-commit"
+        # Allow Codex sandboxed pre-commit runs to write their hook log.
         "/home/agentydragon/.cache/pre-commit/pre-commit.log"
       ];
       network_access = true;

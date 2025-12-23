@@ -81,7 +81,7 @@
             ? `Container ${$agentStatusStore.container.id}`
             : 'Runtime container'}
         >
-          Runtime: {$agentStatusStore.container.ephemeral ? 'ephemeral' : 'session'}
+          Runtime: {$agentStatusStore.container.id ? 'active' : 'starting'}
         </span>
       {/if}
     </div>

@@ -57,6 +57,13 @@ def _assert_docker_exec_success(
         raise AssertionError(f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}")
 
     stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+    logger.info(
+        "docker_exec succeeded: exit=%s stdout_bytes=%d stderr_bytes=%d sample=%r",
+        output.exit,
+        len(stdout_text.encode("utf-8")) if stdout_text else 0,
+        len(output.stderr.encode("utf-8")) if isinstance(output.stderr, str) else 0,
+        (stdout_text or "")[:120],
+    )
 
     # Use matchers if provided, otherwise fall back to simple substring check
     if stdout_matchers:

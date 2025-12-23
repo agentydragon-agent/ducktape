@@ -35,6 +35,7 @@ from adgn.props.db import get_session
 from adgn.props.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import AgentRun, AgentRunStatus
+from adgn.props.display import short_uuid
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
 from adgn.props.models.examples import ExampleSpec
 from adgn.props.prompt_improve.reminder_handler import ImprovementReminderHandler
@@ -183,6 +184,9 @@ class ImprovementAgentEnvironment(AgentEnvironment):
             db_config=db_config,
             workspace_manager=workspace_manager,
             snapshot_slugs=snapshot_slugs,
+            container_name=f"improve-{short_uuid(improvement_run_id)}",
+            labels={"adgn.project": "props", "adgn.role": "improve", "adgn.agent_run_id": str(improvement_run_id)},
+            auto_remove=True,
         )
 
     @property

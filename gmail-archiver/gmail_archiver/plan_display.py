@@ -1,5 +1,10 @@
 """Plan display and formatting functions."""
 
+from collections import defaultdict
+from collections.abc import Iterable
+import contextlib
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from rich.console import Console
@@ -9,6 +14,7 @@ from gmail_archiver.gmail_api_models import SystemLabel
 from gmail_archiver.plan import Plan, PlannedAction
 
 if TYPE_CHECKING:
+    from gmail_archiver.gmail_api_models import GmailMessageWithHeaders
     from gmail_archiver.inbox import GmailInbox
 
 
@@ -32,11 +38,11 @@ def gmail_link(message_id: str) -> str:
     return f"[link={url}]{message_id}[/link]"
 
 
-def _collect_display_columns(plan: Plan) -> list[tuple[str, str]]:
-    """Collect display columns from all Displayable custom_data in plan."""
+def _collect_display_columns(actions: Iterable[PlannedAction]) -> list[tuple[str, str]]:
+    """Collect display columns from all Displayable custom_data in the given actions."""
     seen_keys: set[str] = set()
     columns: list[tuple[str, str]] = []
-    for planned_action in plan.actions.values():
+    for planned_action in actions:
         data = planned_action.action.custom_data
         if isinstance(data, Displayable):
             for key, label in data.display_columns():
@@ -44,6 +50,44 @@ def _collect_display_columns(plan: Plan) -> list[tuple[str, str]]:
                     seen_keys.add(key)
                     columns.append((key, label))
     return columns
+
+
+def _create_table(title: str | None, custom_columns: list[tuple[str, str]]) -> Table:
+    """Build a Rich table with base and custom columns."""
+    table = Table(title=title)
+    table.add_column("Action", style="cyan")
+    table.add_column("Gmail Link", style="blue", no_wrap=True)
+    table.add_column("Date", style="magenta")
+    table.add_column("Subject", style="green")
+
+    for _key, label in custom_columns:
+        table.add_column(label, style="yellow")
+
+    return table
+
+
+def _format_date(metadata: "GmailMessageWithHeaders") -> str:
+    """Render date as YYYY-MM-DD HH:MM using Date header or internal_date."""
+    dt: datetime | None = None
+
+    if metadata.date_header:
+        with contextlib.suppress((TypeError, ValueError, OverflowError)):  # malformed or unsupported dates
+            dt = parsedate_to_datetime(metadata.date_header)
+
+    if dt is None:
+        with contextlib.suppress((TypeError, ValueError, OverflowError)):  # missing/invalid internal_date
+            millis = int(metadata.internal_date)
+            dt = datetime.fromtimestamp(millis / 1000, tz=UTC)
+
+    if dt is None:
+        return ""
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+
+    # Display in local time for readability
+    local_dt = dt.astimezone()
+    return local_dt.strftime("%Y-%m-%d %H:%M")
 
 
 def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: bool, group_by_category: bool = False):
@@ -54,47 +98,33 @@ def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: boo
     # Batch fetch metadata for all messages not already cached
     inbox.ensure_metadata_cached(plan.actions.keys())
 
-    # Build table
-    table = Table(title="Inbox Cleanup - Action Plan")
-    table.add_column("Action", style="cyan")
-    table.add_column("Gmail Link", style="blue", no_wrap=True)
-    table.add_column("Date", style="magenta")
-    table.add_column("Subject", style="green")
-
-    # Collect custom columns from Displayable models
-    custom_columns = _collect_display_columns(plan)
-
-    # Add custom columns
-    for _key, label in custom_columns:
-        table.add_column(label, style="yellow")
-
-    # Group by planner if requested
+    # When grouping by category on a merged plan, render one table per planner so
+    # columns only appear when that planner's emails provide data for them.
     if group_by_category and plan.planner_name is None:
-        # Merged plan - group by planner
-        by_planner: dict[str, list[tuple[str, PlannedAction]]] = {}
+        by_planner: defaultdict[str, list[tuple[str, PlannedAction]]] = defaultdict(list)
         for message_id, planned_action in plan.actions.items():
-            planner_name = planned_action.planner_name
-            if planner_name not in by_planner:
-                by_planner[planner_name] = []
+            planner_name = planned_action.planner_name or "Unknown planner"
             by_planner[planner_name].append((message_id, planned_action))
 
-        # Display grouped
-        for planner_name, items in by_planner.items():
-            # Add planner header row
-            table.add_row(f"[bold]{planner_name}[/bold]", "", "", "", *[""] * len(custom_columns))
+        for planner_name in sorted(by_planner):
+            items = by_planner[planner_name]
+            custom_columns = _collect_display_columns(pa for _, pa in items)
+            table = _create_table(planner_name, custom_columns)
 
-            # Add items for this planner
             for message_id, planned_action in items:
                 _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
 
-            # Add blank separator row
-            table.add_row("", "", "", "", *[""] * len(custom_columns))
+            console.print(table)
+            console.print()
     else:
-        # Single planner or no grouping - just list all
+        # Single planner or explicit flat display
+        custom_columns = _collect_display_columns(plan.actions.values())
+        table = _create_table("Inbox Cleanup - Action Plan", custom_columns)
+
         for message_id, planned_action in plan.actions.items():
             _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
 
-    console.print(table)
+        console.print(table)
 
 
 def _add_table_row(
@@ -120,11 +150,11 @@ def _add_table_row(
     else:
         action_icon = "🏷️  label"
 
-    # Format Gmail link (just show message ID)
-    link = message_id[:16]
+    # Format Gmail link (keep short label but clickable)
+    link = gmail_link(message_id)
 
     # Format date and subject from metadata
-    date_str = (metadata.date_header or "")[:20]
+    date_str = _format_date(metadata)
     subject = (metadata.subject or "")[:40]
 
     # Format custom data values using protocol

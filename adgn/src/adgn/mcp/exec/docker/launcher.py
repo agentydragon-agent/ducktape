@@ -59,9 +59,6 @@ async def main(
     label: Annotated[
         list[str] | None, typer.Option(help="Docker label to apply to the container (key=value). May be repeated.")
     ] = None,
-    ephemeral: Annotated[
-        bool, typer.Option(help="Run each command in a fresh ephemeral container with host-enforced timeouts")
-    ] = False,
 ) -> None:
     """Run docker_exec MCP server over stdio transport."""
     docker_client = aiodocker.Docker()
@@ -78,7 +75,6 @@ async def main(
             binds=parsed_binds,
             network_mode=network_mode,
             labels=labels_dict,
-            ephemeral=ephemeral,
         )
 
         server = ContainerExecServer(docker_client, opts)

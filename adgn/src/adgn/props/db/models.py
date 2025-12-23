@@ -947,8 +947,8 @@ class AggregatedRecallByDefinition(Base):
     # Status breakdown (JSONB: {"completed": 5, "max_turns_exceeded": 2})
     status_counts: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False)
 
-    # Occurrence statistics across all critic runs (failed runs count as 0 credit)
-    # .n = total run count, .mean = average credit, .lcb95/.ucb95 = 95% CI bounds
+    # Recall statistics across all critic runs (failed runs count as 0 recall via 0 credit)
+    # .n = total run count, .mean = average recall, .lcb95/.ucb95 = 95% CI bounds
     occurrences_caught_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -984,8 +984,8 @@ class AggregatedRecallByExample(Base):
     # Status breakdown (JSONB: {"completed": 5, "max_turns_exceeded": 2})
     status_counts: Mapped[dict[str, int]] = mapped_column(JSONB, nullable=False)
 
-    # Occurrence statistics across all critic runs (failed runs count as 0 credit)
-    # .n = total run count, .mean = average credit, .lcb95/.ucb95 = 95% CI bounds
+    # Recall statistics across all critic runs (failed runs count as 0 recall via 0 credit)
+    # .n = total run count, .mean = average recall, .lcb95/.ucb95 = 95% CI bounds
     occurrences_caught_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 

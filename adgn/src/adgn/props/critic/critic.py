@@ -19,13 +19,13 @@ from uuid import UUID, uuid4
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.server.auth import AuthProvider
-from openai import BadRequestError
 import typer
 
 from adgn.agent.display import CompactDisplayHandler
 from adgn.agent.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from adgn.agent.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from adgn.mcp.enhanced import EnhancedFastMCP
+from adgn.openai_utils.errors import ContextLengthExceededError
 from adgn.openai_utils.model import OpenAIModelProto
 from adgn.props.agent_handle import AgentHandle, ensure_definition_unpacked
 from adgn.props.agent_setup import AgentEnvironment
@@ -86,6 +86,9 @@ class CriticAgentEnvironment(AgentEnvironment):
         agent_run_id: UUID,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        *,
+        definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+        container_name: str | None = None,
     ):
         """Create critic agent environment.
 
@@ -100,14 +103,24 @@ class CriticAgentEnvironment(AgentEnvironment):
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
         self._example = example
 
+        name = container_name or f"critic-{definition_id[:12]}-{short_uuid(agent_run_id)}"
+
         super().__init__(
-            definition_id=CRITIC_AGENT_DEFINITION_ID,
+            definition_id=definition_id,
             agent_run_id=agent_run_id,
             docker_client=docker_client,
             hydrator=hydrator,
             db_config=db_config,
             workspace_manager=workspace_manager,
             snapshot_slugs=[example.snapshot_slug],
+            container_name=name,
+            labels={
+                "adgn.project": "props",
+                "adgn.role": "critic",
+                "adgn.definition_id": definition_id,
+                "adgn.agent_run_id": str(agent_run_id),
+            },
+            auto_remove=True,
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
@@ -289,16 +302,11 @@ async def run_critic(
                 f"Critic hit max turns limit ({max_turns}) for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}"
             )
             agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
-        except BadRequestError as e:
-            # OpenAI BadRequestError with code='context_length_exceeded'
-            if e.code == "context_length_exceeded":
-                logger.warning(
-                    f"Critic hit context length limit for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}: {e}"
-                )
-                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
-            else:
-                # Other BadRequestError - re-raise
-                raise
+        except ContextLengthExceededError as e:
+            logger.warning(
+                f"Critic hit context length limit for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}: {e}"
+            )
+            agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
         else:
             # Agent completed normally - check database
             with get_session() as session:

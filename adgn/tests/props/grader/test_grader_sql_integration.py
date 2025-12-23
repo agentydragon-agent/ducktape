@@ -46,7 +46,16 @@ def grader_submit_server(test_grader_run, test_grader_critic_run):
     return GraderSubmitServer(grader_run_id=test_grader_run, critic_run_id=test_grader_critic_run)
 
 
-async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, test_db, temp_grader_engine):
+async def test_grader_sql_basic_workflow(
+    grader_submit_server,
+    test_grader_run,
+    test_db,
+    temp_grader_engine,
+    tp_single_id,
+    tp_single_occurrence_id,
+    fp_id,
+    fp_occurrence_id,
+):
     """Test basic grader SQL workflow with TP, FP, and no-match decisions."""
     # Simulate agent actions using temp user credentials
 
@@ -61,8 +70,8 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
             """),
             {
                 "input_id": "input-001",
-                "tp_id": "tp-001",
-                "occ_id": "occ-001",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.8,
                 "rationale": "Matches TP occurrence partially",
             },
@@ -78,8 +87,8 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
             """),
             {
                 "input_id": "input-002",
-                "fp_id": "fp-001",
-                "occ_id": "occ-fp-001",
+                "fp_id": fp_id,
+                "occ_id": fp_occurrence_id,
                 "credit": 1.0,
                 "rationale": "Matches known FP pattern",
             },
@@ -115,13 +124,13 @@ async def test_grader_sql_basic_workflow(grader_submit_server, test_grader_run, 
         assert len(decisions) == 3
 
         tp_decision = next(d for d in decisions if d.input_issue_id == "input-001")
-        assert tp_decision.target_tp_id == "tp-001"
-        assert tp_decision.target_tp_occurrence_id == "occ-001"
+        assert tp_decision.target_tp_id == tp_single_id
+        assert tp_decision.target_tp_occurrence_id == tp_single_occurrence_id
         assert tp_decision.credit == 0.8
 
         fp_decision = next(d for d in decisions if d.input_issue_id == "input-002")
-        assert fp_decision.target_fp_id == "fp-001"
-        assert fp_decision.target_fp_occurrence_id == "occ-fp-001"
+        assert fp_decision.target_fp_id == fp_id
+        assert fp_decision.target_fp_occurrence_id == fp_occurrence_id
         assert fp_decision.credit == 1.0
 
         no_match = next(d for d in decisions if d.input_issue_id == "input-003")
@@ -161,7 +170,13 @@ async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grad
 
 
 async def test_grader_sql_multiple_decisions_allowed(
-    grader_submit_server, test_grader_run, test_db, temp_grader_engine
+    grader_submit_server,
+    test_grader_run,
+    test_db,
+    temp_grader_engine,
+    tp_occurrences_multi,
+    tp_single_id,
+    tp_single_occurrence_id,
 ):
     """Test that multiple decisions per input issue are allowed (partial credit to multiple TPs)."""
 
@@ -196,8 +211,8 @@ async def test_grader_sql_multiple_decisions_allowed(
             """),
             {
                 "input_id": "input-003",
-                "tp_id": "tp-001",
-                "occ_id": "occ-001",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.3,
                 "rationale": "Partially matches tp-001",
             },
@@ -212,8 +227,8 @@ async def test_grader_sql_multiple_decisions_allowed(
             """),
             {
                 "input_id": "input-003",
-                "tp_id": "tp-002",
-                "occ_id": "occ-002",
+                "tp_id": tp_occurrences_multi[0][0],
+                "occ_id": tp_occurrences_multi[0][1],
                 "credit": 0.5,
                 "rationale": "Also partially matches tp-002",
             },
@@ -282,7 +297,7 @@ async def test_grader_sql_rls_isolation(
 
 
 async def test_grader_sql_credit_sum_trigger_enforcement(
-    test_grader_run, test_grader_critic_run, test_db, temp_grader_engine
+    test_grader_run, test_grader_critic_run, test_db, temp_grader_engine, tp_single_id, tp_single_occurrence_id
 ):
     """Test SQL trigger prevents credit sum > 1.0 for same TP occurrence."""
     with temp_grader_engine.connect() as conn:
@@ -296,8 +311,8 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
             """),
             {
                 "input_id": "input-001",
-                "tp_id": "tp-shared",
-                "occ_id": "occ-shared",
+                "tp_id": tp_single_id,
+                "occ_id": tp_single_occurrence_id,
                 "credit": 0.7,
                 "rationale": "First match",
             },
@@ -316,8 +331,8 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
                 """),
                 {
                     "input_id": "input-002",
-                    "tp_id": "tp-shared",
-                    "occ_id": "occ-shared",
+                    "tp_id": tp_single_id,
+                    "occ_id": tp_single_occurrence_id,
                     "credit": 0.5,
                     "rationale": "Second match (would exceed 1.0)",
                 },

@@ -27,6 +27,7 @@ from collections.abc import Sequence
 from contextlib import AsyncExitStack, suppress
 import logging
 from pathlib import Path
+import re
 import secrets
 from typing import TYPE_CHECKING
 from uuid import UUID
@@ -56,6 +57,21 @@ from adgn.props.docker_env import (
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.util.net import pick_free_port, wait_for_port
+
+
+def _make_container_name(definition_id: str, agent_run_id: UUID) -> str:
+    """Create a deterministic container name for props agents.
+
+    Format: <roleprefix>-<runprefix>, where roleprefix is a sanitized
+    definition_id (alnum/underscore/dash only) capped to 20 chars, and
+    runprefix is the first segment of the run UUID.
+    """
+
+    role_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
+    role_part = role_slug[:20]
+    run_part = str(agent_run_id).split("-")[0]
+    return f"{role_part}-{run_part}"
+
 
 if TYPE_CHECKING:
     import aiodocker
@@ -162,6 +178,9 @@ class AgentEnvironment:
         workspace_manager: WorkspaceManager,
         *,
         snapshot_slugs: Sequence[SnapshotSlug] = (),
+        container_name: str | None = None,
+        labels: dict[str, str] | None = None,
+        auto_remove: bool = False,
     ):
         """Create agent environment.
 
@@ -181,6 +200,9 @@ class AgentEnvironment:
         self._db_config = db_config
         self._snapshot_slugs = snapshot_slugs
         self._workspace_manager = workspace_manager
+        self._container_name = container_name
+        self._labels = labels or {}
+        self._auto_remove = auto_remove
 
         ensure_definition_unpacked(definition_id, self.workspace_root)
 
@@ -257,6 +279,11 @@ class AgentEnvironment:
             hydrator=self._hydrator,
             snapshot_slugs=self._snapshot_slugs,
             db_conn=container_db,
+            definition_id=self._definition_id,
+            agent_run_id=self._agent_run_id,
+            container_name=self._container_name,
+            labels=self._labels,
+            auto_remove=self._auto_remove,
         )
         self._compositor = compositor
 
@@ -361,7 +388,20 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
         hydrator: SnapshotHydrator,
         snapshot_slugs: Sequence[SnapshotSlug],
         db_conn,
+        *,
+        definition_id: str,
+        agent_run_id: UUID,
+        container_name: str | None,
+        labels: dict[str, str],
+        auto_remove: bool,
     ):
+        merged_labels = {
+            "adgn.project": "props",
+            "adgn.role": definition_id,
+            "adgn.agent_run_id": str(agent_run_id),
+            **labels,
+        }
+        name = container_name or _make_container_name(definition_id, agent_run_id)
         super().__init__(
             workspace_root,
             docker_client,
@@ -371,5 +411,7 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
             workspace_mode="rw",  # HTTP mode always RW
             network_mode=PROPS_NETWORK_NAME,  # Must allow container→host communication
             extra_env=None,  # Will be set by AgentEnvironment after HTTP server starts
-            ephemeral=False,  # HTTP mode always persistent
+            labels=merged_labels,
+            container_name=name,
+            auto_remove=auto_remove,
         )

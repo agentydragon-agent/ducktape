@@ -1756,34 +1756,59 @@ For failed critics: synthesizes zero-credit rows for catchable occurrences.'
             JOIN grading_decisions gd ON gd.agent_run_id = gr.agent_run_id
             WHERE get_agent_type_config(gr.agent_run_id)->>'agent_type' = 'grader'
             GROUP BY gr.agent_run_id
+        ),
+        per_run AS (
+            SELECT
+                -- Example identification
+                cr.type_config->'example'->>'snapshot_slug' AS snapshot_slug,
+                e.example_kind,
+                e.files_hash,
+                s.split,
+                e.n_catchable_occurrences,
+                -- Critic-specific columns
+                cr.agent_run_id AS critic_run_id,
+                cr.agent_definition_id AS critic_definition_id,
+                cr.model AS critic_model,
+                cr.status AS critic_status,
+                -- Totals-space stats over grader credits; failed critics default to 0 credit
+                compute_stats_with_ci(
+                    COALESCE(
+                        array_agg(gs.total_credit) FILTER (WHERE cr.status = 'completed'),
+                        ARRAY[0.0]::double precision[]
+                    )
+                ) AS credit_stats
+            FROM agent_runs cr
+            JOIN examples e ON (
+                cr.type_config->'example'->>'snapshot_slug' = e.snapshot_slug
+                AND (cr.type_config->'example'->>'kind')::example_kind_enum = e.example_kind
+                AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(e.files_hash, '')
+            )
+            JOIN snapshots s ON cr.type_config->'example'->>'snapshot_slug' = s.slug
+            LEFT JOIN grader_stats gs ON gs.critic_run_id = cr.agent_run_id
+            WHERE cr.type_config->>'agent_type' = 'critic'
+            GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.n_catchable_occurrences
         )
         SELECT
-            -- Example identification
-            cr.type_config->'example'->>'snapshot_slug' AS snapshot_slug,
-            e.example_kind,
-            e.files_hash,
-            s.split,
-            e.n_catchable_occurrences,
-            -- Critic-specific columns
-            cr.agent_run_id AS critic_run_id,
-            cr.agent_definition_id AS critic_definition_id,
-            cr.model AS critic_model,
-            cr.status AS critic_status,
-            -- Grader statistics: raw total_credit per grader run (not ratio)
-            -- To get recall: divide stats.mean by n_catchable_occurrences
-            compute_stats_with_ci(
-                array_agg(gs.total_credit) FILTER (WHERE cr.status = 'completed')
-            ) AS occurrences_caught_stats
-        FROM agent_runs cr
-        JOIN examples e ON (
-            cr.type_config->'example'->>'snapshot_slug' = e.snapshot_slug
-            AND (cr.type_config->'example'->>'kind')::example_kind_enum = e.example_kind
-            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(e.files_hash, '')
-        )
-        JOIN snapshots s ON cr.type_config->'example'->>'snapshot_slug' = s.slug
-        LEFT JOIN grader_stats gs ON gs.critic_run_id = cr.agent_run_id
-        WHERE cr.type_config->>'agent_type' = 'critic'
-        GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.n_catchable_occurrences
+            snapshot_slug,
+            example_kind,
+            files_hash,
+            split,
+            n_catchable_occurrences,
+            critic_run_id,
+            critic_definition_id,
+            critic_model,
+            critic_status,
+            credit_stats AS occurrences_caught_stats,
+            -- Occurrence-weighted recall derived on the compound stats type
+            ROW(
+                (credit_stats).n,
+                (credit_stats).mean / NULLIF(n_catchable_occurrences::double precision, 0.0),
+                (credit_stats).min / NULLIF(n_catchable_occurrences::double precision, 0.0),
+                (credit_stats).max / NULLIF(n_catchable_occurrences::double precision, 0.0),
+                (credit_stats).lcb95 / NULLIF(n_catchable_occurrences::double precision, 0.0),
+                (credit_stats).ucb95 / NULLIF(n_catchable_occurrences::double precision, 0.0)
+            )::stats_with_ci AS recall_stats
+        FROM per_run
     """)
 
     op.execute("""
@@ -1794,9 +1819,9 @@ Columns grouped by: example identification, then critic-specific, then grader st
 
 - n_catchable_occurrences: Ground truth count (same for all runs on this example)
 - critic_status: Critic run status (completed, max_turns_exceeded, etc.)
-- occurrences_caught_stats: Recall RATIO statistics across graders (stats_with_ci).
-  Each grader run contributes total_credit / n_catchable (0.0-1.0 range).
-  .n is grader count, .mean is average recall ratio across graders.'
+- occurrences_caught_stats: Stats over grader total credits (totals space; not normalized)
+- recall_stats: stats_with_ci over occurrence-weighted recall (total-credit stats divided by n_catchable_occurrences).
+  Use recall_stats for recall/ordering; failed critics contribute 0 credit via COALESCE.'
     """)
 
     # aggregated_recall_by_definition view
@@ -1829,7 +1854,7 @@ Columns grouped by: example identification, then critic-specific, then grader st
                AND pe.example_kind = cros.example_kind) AS total_catchable_occurrences,
             agg_status_counts(array_agg(cros.critic_status)) AS status_counts,
             compute_stats_with_ci(array_agg(
-                COALESCE((cros.occurrences_caught_stats).mean, 0.0)
+                COALESCE((cros.recall_stats).mean, 0.0)
             )) AS occurrences_caught_stats
         FROM critic_run_occurrence_stats cros
         GROUP BY cros.split, cros.example_kind, cros.critic_definition_id, cros.critic_model
@@ -1858,7 +1883,7 @@ Columns grouped: grouping keys, then example/run counts, then occurrence stats.
             COUNT(*)::integer AS n_runs,
             agg_status_counts(array_agg(cros.critic_status)) AS status_counts,
             compute_stats_with_ci(array_agg(
-                COALESCE((cros.occurrences_caught_stats).mean, 0.0)
+                COALESCE((cros.recall_stats).mean, 0.0)
             )) AS occurrences_caught_stats
         FROM critic_run_occurrence_stats cros
         GROUP BY cros.snapshot_slug, cros.example_kind, cros.files_hash, cros.split, cros.critic_model

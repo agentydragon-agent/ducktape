@@ -9,8 +9,10 @@ import httpx
 import openai
 from openai import AsyncOpenAI
 from openai.types.chat import ChatCompletion, CompletionCreateParams
+from openai.types.responses import Response
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential_jitter
 
+from .errors import translate_context_length
 from .model import OpenAIModelProto, ResponsesRequest, ResponsesResult
 
 if TYPE_CHECKING:
@@ -63,7 +65,8 @@ def retry_decorator(
 
 @retry_decorator()
 async def responses_create_with_retries(client: AsyncOpenAI, **kwargs: Any) -> ResponsesResult:
-    sdk_resp = await client.responses.create(**kwargs)
+    create: Callable[..., Awaitable[Response]] = cast(Callable[..., Awaitable[Response]], client.responses.create)
+    sdk_resp = await translate_context_length(create, **kwargs)
     return ResponsesResult.from_sdk(sdk_resp)
 
 
@@ -84,7 +87,10 @@ async def chat_create_with_retries(client: AsyncOpenAI, params: CompletionCreate
     if params.get("stream"):
         raise ValueError("chat_create_with_retries does not support streaming (stream=True)")
     # Explicit stream=False ensures we get ChatCompletion (non-streaming) overload
-    return await client.chat.completions.create(stream=False, **params)
+    create: Callable[..., Awaitable[ChatCompletion]] = cast(
+        Callable[..., Awaitable[ChatCompletion]], client.chat.completions.create
+    )
+    return await translate_context_length(create, stream=False, **params)
 
 
 @dataclass

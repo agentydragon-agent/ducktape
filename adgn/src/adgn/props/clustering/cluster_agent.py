@@ -40,6 +40,7 @@ from adgn.props.db.agent_definition_ids import CLUSTERING_AGENT_DEFINITION_ID
 from adgn.props.db.clustering_models import UnknownAssignment, UnknownCluster
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
+from adgn.props.display import short_uuid
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 
@@ -295,6 +296,9 @@ class ClusteringAgentEnvironment(AgentEnvironment):
             db_config=db_config,
             workspace_manager=workspace_manager,
             snapshot_slugs=[],  # Clustering doesn't need specific snapshots mounted
+            container_name=f"clustering-{short_uuid(agent_run_id)}",
+            labels={"adgn.project": "props", "adgn.role": "clustering", "adgn.agent_run_id": str(agent_run_id)},
+            auto_remove=True,
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:

@@ -13,14 +13,14 @@ Workflow:
 import asyncio
 from uuid import UUID
 
+from adgn.props.agent_defs.prompt_optimizer.helpers import create_critic_definition, run_critic, run_grader
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from adgn.props.agent_defs.prompt_optimizer.helpers import create_critic_definition, run_critic, run_grader
+from adgn.props.models.examples import ExampleSpec
 
 
-async def evaluate_example(example: Example, definition_id: str) -> tuple[str, UUID, UUID]:
+async def evaluate_example(example_spec: ExampleSpec, definition_id: str) -> tuple[str, UUID, UUID]:
     """Run critic + grader on a single example, return IDs."""
-    example_spec = example.to_example_spec()
     critic_output = await run_critic(
         definition_id=definition_id,
         example=example_spec,
@@ -50,12 +50,13 @@ async def main():
         train_examples = (
             session.query(Example).join(Example.snapshot_obj).filter(Example.snapshot_obj.has(split="train")).limit(5).all()
         )
+        train_example_specs = [ex.to_example_spec() for ex in train_examples]
 
-    print(f"\nFound {len(train_examples)} training examples")
+    print(f"\nFound {len(train_example_specs)} training examples")
 
     # 3. Run critic+grader on all examples in parallel
     print("\nRunning evaluations in parallel...")
-    tasks = [evaluate_example(example, definition_id) for example in train_examples]
+    tasks = [evaluate_example(example_spec, definition_id) for example_spec in train_example_specs]
     results = await asyncio.gather(*tasks)
 
     # 4. Print results

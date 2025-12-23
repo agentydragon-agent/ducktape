@@ -213,7 +213,9 @@ async def test_compute_outcome_incomplete(synced_test_session: Session, test_db:
     assert updated_run.status == AgentRunStatus.IN_PROGRESS
 
 
-async def test_compute_outcome_with_mapped_to_existing(synced_test_session: Session, test_db: DatabaseConfig):
+async def test_compute_outcome_with_mapped_to_existing(
+    synced_test_session: Session, test_db: DatabaseConfig, tp_single_id: str, fp_id: str
+):
     """Test _compute_outcome counts mapped_to_existing correctly."""
     # Setup: Create clustering run with mixed assignments
     example = synced_test_session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
@@ -261,7 +263,7 @@ async def test_compute_outcome_with_mapped_to_existing(synced_test_session: Sess
             agent_run_id=run.agent_run_id,
             grader_run_id=grader_run.agent_run_id,
             unknown_id="unknown-3",
-            mapped_tp_id="existing-tp-123",
+            mapped_tp_id=tp_single_id,
             rationale="Maps to existing TP",
         )
     )
@@ -270,7 +272,7 @@ async def test_compute_outcome_with_mapped_to_existing(synced_test_session: Sess
             agent_run_id=run.agent_run_id,
             grader_run_id=grader_run.agent_run_id,
             unknown_id="unknown-4",
-            mapped_fp_id="existing-fp-456",
+            mapped_fp_id=fp_id,
             rationale="Maps to existing FP",
         )
     )

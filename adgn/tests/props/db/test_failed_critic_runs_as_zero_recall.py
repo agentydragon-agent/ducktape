@@ -149,13 +149,22 @@ def create_critic_run_with_multiple_grader_runs(session: Session, example: Examp
     session.add(critic_run)
     session.flush()
 
+    # Pick a real TP occurrence from this snapshot (avoid synthetic IDs that violate FK trigger)
+    tp_occ = (
+        session.query(TruePositiveOccurrenceORM)
+        .filter_by(snapshot_slug=example.snapshot_slug)
+        .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
+        .first()
+    )
+    assert tp_occ is not None, "Expected at least one TP occurrence for example snapshot"
+
     # Create multiple grader runs with different credits
     for idx, credit in enumerate(credits):
         grader_success = GraderSuccess(
             occurrence_results=[
                 OccurrenceResult(
-                    tp_id=TruePositiveID("test-tp-001"),
-                    occurrence_id="occ-1",
+                    tp_id=TruePositiveID(tp_occ.tp_id),
+                    occurrence_id=tp_occ.occurrence_id,
                     found_credit=credit,
                     matched_by=[OccurrenceMatch(input_id=InputIssueID(f"input-{idx}"), credit=credit)],
                     rationale=Rationale(f"Credit {credit}"),

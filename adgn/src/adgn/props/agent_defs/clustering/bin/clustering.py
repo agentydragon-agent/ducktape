@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
+from time import perf_counter
 
 # Add workspace to path for local imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,8 +45,10 @@ def clustering_create_cluster(
     description: str = typer.Argument(..., help="Description of what this cluster represents"),
 ) -> None:
     """Create a new cluster for grouping unknown issues."""
+    start = perf_counter()
     cluster_id = create_cluster(cluster_name=cluster_name, description=description)
-    typer.echo(f"Created cluster '{cluster_name}' with ID: {cluster_id}")
+    elapsed = perf_counter() - start
+    typer.echo(f"Created cluster '{cluster_name}' with ID: {cluster_id} (elapsed={elapsed:.3f}s)")
 
 
 @app.command("assign-to-cluster")
@@ -56,10 +59,12 @@ def clustering_assign_to_cluster(
     rationale: str = typer.Argument(..., help="Explanation for this assignment"),
 ) -> None:
     """Assign an unknown issue to a cluster."""
+    start = perf_counter()
     assign_to_cluster(
         grader_run_id=grader_run_id, unknown_id=unknown_id, cluster_name=cluster_name, rationale=rationale
     )
-    typer.echo(f"Assigned {unknown_id} to cluster '{cluster_name}'")
+    elapsed = perf_counter() - start
+    typer.echo(f"Assigned {unknown_id} to cluster '{cluster_name}' (elapsed={elapsed:.3f}s)")
 
 
 @app.command("assign-to-tp")
