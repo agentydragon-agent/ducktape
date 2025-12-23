@@ -11,6 +11,7 @@ import logging
 from pathlib import Path
 
 from pydantic import TypeAdapter
+from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 import yaml
@@ -383,8 +384,10 @@ async def sync_snapshot_files_to_db(session: Session, base_path: Path, hydrator:
     """
     manifests = load_manifests_from_yaml(base_path)
 
-    # Get existing files from DB
-    existing_by_key = {(sf.snapshot_slug, sf.relative_path): sf for sf in session.query(SnapshotFile).all()}
+    # Get existing files from DB (primitive tuples to avoid detached ORM access)
+    existing_keys: set[tuple[SnapshotSlug, str]] = {
+        (row[0], row[1]) for row in session.execute(select(SnapshotFile.snapshot_slug, SnapshotFile.relative_path))
+    }
     seen_keys: set[tuple[SnapshotSlug, str]] = set()
 
     total = 0
@@ -407,20 +410,26 @@ async def sync_snapshot_files_to_db(session: Session, base_path: Path, hydrator:
                 content = file_path.read_text(encoding="utf-8", errors="replace")
                 line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
 
-                if key not in existing_by_key:
-                    session.add(SnapshotFile(snapshot_slug=slug, relative_path=relative, line_count=line_count))
-                    added += 1
+                # Upsert line_count via ON CONFLICT to avoid ORM instance usage
+                stmt = (
+                    insert(SnapshotFile)
+                    .values(snapshot_slug=slug, relative_path=relative, line_count=line_count)
+                    .on_conflict_do_update(
+                        index_elements=[SnapshotFile.snapshot_slug, SnapshotFile.relative_path],
+                        set_={"line_count": line_count},
+                    )
+                )
+                session.execute(stmt)
+                if key in existing_keys:
+                    updated += 1
                 else:
-                    existing = existing_by_key[key]
-                    if existing.line_count != line_count:
-                        existing.line_count = line_count
-                        updated += 1
+                    added += 1
 
                 total += 1
 
     # Delete orphaned files
-    for key in set(existing_by_key.keys()) - seen_keys:
-        session.delete(existing_by_key[key])
+    for snapshot_slug, relative_path in existing_keys - seen_keys:
+        session.query(SnapshotFile).filter_by(snapshot_slug=snapshot_slug, relative_path=relative_path).delete()
         deleted += 1
 
     session.commit()
@@ -462,17 +471,8 @@ def sync_file_sets_to_db(session: Session, base_path: Path) -> SyncStats:
     """
     manifests = load_manifests_from_yaml(base_path)
 
-    # Delete all existing file sets (simpler than incremental update)
-    # CASCADE will delete file_set_members and occurrence_triggers
-    deleted_file_sets = session.query(FileSet).delete()
-    deleted_occurrence_triggers = session.query(OccurrenceTrigger).delete()
-    session.flush()
-
-    file_sets_added = 0
-    occurrence_triggers_added = 0
-
-    # Track created file sets to avoid duplicates within same snapshot
-    created_file_sets: set[tuple[SnapshotSlug, str]] = set()
+    desired_file_sets: dict[tuple[SnapshotSlug, str], list[str]] = {}
+    desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
     for slug in manifests:
         snapshot = session.query(Snapshot).filter_by(slug=slug).one()
@@ -484,38 +484,78 @@ def sync_file_sets_to_db(session: Session, base_path: Path) -> SyncStats:
                     file_paths = [str(f) for f in trigger_files]
                     files_hash = _compute_files_hash(file_paths)
 
-                    # Create file set if not already exists for this snapshot
-                    file_set_key = (slug, files_hash)
-                    if file_set_key not in created_file_sets:
-                        file_set = FileSet(snapshot_slug=slug, files_hash=files_hash)
-                        session.add(file_set)
-                        session.flush()
+                    key = (slug, files_hash)
+                    desired_file_sets.setdefault(key, file_paths)
+                    desired_triggers.add((slug, tp.tp_id, occurrence.occurrence_id, files_hash))
 
-                        # Add file members
-                        for file_path in file_paths:
-                            member = FileSetMember(snapshot_slug=slug, files_hash=files_hash, file_path=file_path)
-                            session.add(member)
+    # Current state from DB
+    existing_file_sets: set[tuple[SnapshotSlug, str]] = {
+        (slug, h) for slug, h in session.query(FileSet.snapshot_slug, FileSet.files_hash).all()
+    }
+    existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
+        (slug, tp_id, occ_id, h)
+        for slug, tp_id, occ_id, h in session.query(
+            OccurrenceTrigger.snapshot_slug,
+            OccurrenceTrigger.tp_id,
+            OccurrenceTrigger.occurrence_id,
+            OccurrenceTrigger.files_hash,
+        ).all()
+    }
 
-                        created_file_sets.add(file_set_key)
-                        file_sets_added += 1
+    # Diff file sets
+    to_add = desired_file_sets.keys() - existing_file_sets
+    to_delete = existing_file_sets - desired_file_sets.keys()
 
-                    # Create occurrence trigger linking occurrence to file set
-                    occurrence_trigger = OccurrenceTrigger(
-                        snapshot_slug=slug,
-                        tp_id=tp.tp_id,
-                        occurrence_id=occurrence.occurrence_id,
-                        files_hash=files_hash,
-                    )
-                    session.add(occurrence_trigger)
-                    occurrence_triggers_added += 1
+    file_sets_added = 0
+    file_sets_deleted = 0
+
+    for slug, files_hash in to_add:
+        file_paths = desired_file_sets[(slug, files_hash)]
+        fs = FileSet(snapshot_slug=slug, files_hash=files_hash)
+        session.add(fs)
+        session.flush()  # ensure FK for members
+        for file_path in file_paths:
+            session.add(FileSetMember(snapshot_slug=slug, files_hash=files_hash, file_path=file_path))
+        file_sets_added += 1
+
+    for slug, files_hash in to_delete:
+        session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
+        file_sets_deleted += 1
+
+    # Diff occurrence triggers
+    triggers_to_add = desired_triggers - existing_triggers
+    triggers_to_delete = existing_triggers - desired_triggers
+
+    occurrence_triggers_added = 0
+    occurrence_triggers_deleted = 0
+
+    for slug, tp_id, occurrence_id, files_hash in triggers_to_add:
+        session.add(
+            OccurrenceTrigger(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
+        )
+        occurrence_triggers_added += 1
+
+    if triggers_to_delete:
+        session.query(OccurrenceTrigger).filter(
+            tuple_(
+                OccurrenceTrigger.snapshot_slug,
+                OccurrenceTrigger.tp_id,
+                OccurrenceTrigger.occurrence_id,
+                OccurrenceTrigger.files_hash,
+            ).in_(list(triggers_to_delete))
+        ).delete(synchronize_session=False)
+        occurrence_triggers_deleted = len(triggers_to_delete)
 
     session.commit()
     logger.info(
-        f"File sets synced: +{file_sets_added} file_sets added, "
-        f"+{occurrence_triggers_added} occurrence_triggers added, "
-        f"-{deleted_file_sets} file_sets deleted, -{deleted_occurrence_triggers} occurrence_triggers deleted"
+        "File sets synced: +%d added, -%d deleted; occurrence_triggers +%d, -%d",
+        file_sets_added,
+        file_sets_deleted,
+        occurrence_triggers_added,
+        occurrence_triggers_deleted,
     )
-    return SyncStats(total=file_sets_added, added=file_sets_added, updated=0, deleted=deleted_file_sets)
+    total = len(desired_file_sets)
+    return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
 
 
 # ============================================================================

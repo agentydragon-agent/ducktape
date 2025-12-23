@@ -88,6 +88,9 @@ def _collect_files_from_dir(
     """
     for path in sorted(source_dir.iterdir()):
         name = path.name
+        if name == "__pycache__":
+            # TODO: centralize pack/sync ignore rules instead of ad-hoc skips.
+            continue
         rel_path = f"{rel_prefix}{name}" if rel_prefix else name
 
         # Check for external symlinks
@@ -117,6 +120,8 @@ def _collect_files_from_dir(
 
         # Handle files
         if path.is_file():
+            if rel_path.endswith(".pyc"):
+                continue
             # Check if it's a symlink pointing outside the definition directory
             if is_external:
                 # Outside definition - use resolved path (will copy content, not symlink)
