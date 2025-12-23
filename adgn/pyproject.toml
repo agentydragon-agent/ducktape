@@ -195,6 +195,7 @@ markers = [
     "requires_docker: tests that require Docker to run",
     "requires_sandbox_exec: tests that require local sandbox exec capabilities",
     "requires_postgres: tests that require PostgreSQL database to run",
+    "requires_production_specimens: tests that sync production specimens (slow, use -m 'not requires_production_specimens' to skip)",
 ]
 # Ensure hermetic git by default via pytest-env plugin
 # These are static-safe; dynamic HOME/XDG are set by autouse fixture

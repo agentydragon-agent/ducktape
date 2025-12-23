@@ -20,9 +20,8 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.props.agent_workspace import WorkspaceManager
-from adgn.props.critic.critic import run_critic
 from adgn.props.db import get_session
+from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.models import AgentRun, AgentRunStatus, Event
 from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBootstrapValidation, Step
 
@@ -44,16 +43,7 @@ def _make_critic_steps_zero_issues_minimal() -> list[Step]:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_http_mode_zero_issues(
-    synced_test_db,
-    test_trivial_specimen,
-    make_step_runner,
-    test_snapshot,
-    subtract_file_scope,
-    async_docker_client,
-    test_specimens_hydrator,
-    tmp_path,
-):
+async def test_critic_http_mode_zero_issues(run_critic_with_steps, test_snapshot):
     """Test critic successfully submits zero issues using HTTP MCP mode.
 
     This tests the MCP-over-HTTP transport with:
@@ -62,26 +52,7 @@ async def test_critic_http_mode_zero_issues(
     - Mocked OpenAI responses
     - HTTP MCP server with bearer token auth
     """
-    # Create step runner with bootstrap validation - implements OpenAIModelProto directly
-    runner = make_step_runner(steps=_make_critic_steps_zero_issues_minimal())
-
-    # Create workspace manager pointing to temp path
-    workspace_manager = WorkspaceManager(tmp_path)
-
-    # Run critic using AgentHandle-based flow
-    critic_run_id, status = await run_critic(
-        definition_id="critic",
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=runner,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        workspace_manager=workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_zero_issues_minimal())
 
     # Verify status
     assert status == AgentRunStatus.COMPLETED, "Critic should succeed in HTTP mode"
@@ -91,7 +62,7 @@ async def test_critic_http_mode_zero_issues(
     with get_session() as session:
         run = session.get(AgentRun, critic_run_id)
         assert run is not None
-        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
         # Check issues in normalized tables (not JSONB)
         assert len(run.reported_issues) == 0
@@ -111,16 +82,7 @@ async def test_critic_http_mode_zero_issues(
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_does_not_infinite_loop_on_zero_issues(
-    synced_test_db,
-    test_trivial_specimen,
-    make_step_runner,
-    test_snapshot,
-    subtract_file_scope,
-    async_docker_client,
-    test_specimens_hydrator,
-    tmp_path,
-):
+async def test_critic_does_not_infinite_loop_on_zero_issues(run_critic_with_steps):
     """Verify critic doesn't get stuck in infinite loop when finding zero issues.
 
     Regression test: Before the fix, RequireAnyTool() would force dummy docker_exec
@@ -129,25 +91,7 @@ async def test_critic_does_not_infinite_loop_on_zero_issues(
 
     This test verifies the agent can successfully complete without unnecessary exploratory calls.
     """
-    # Use step runner with bootstrap validation - implements OpenAIModelProto directly
-    runner = make_step_runner(steps=_make_critic_steps_zero_issues_minimal())
-
-    # Create workspace manager pointing to temp path
-    workspace_manager = WorkspaceManager(tmp_path)
-
-    _, status = await run_critic(
-        definition_id="critic",
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=runner,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        workspace_manager=workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
+    _critic_run_id, status, runner = await run_critic_with_steps(_make_critic_steps_zero_issues_minimal())
 
     assert status == AgentRunStatus.COMPLETED, "Critic should succeed"
     # Step runner validates via bootstrap check; verify single step was used
@@ -201,42 +145,14 @@ def _make_critic_steps_with_issues() -> list[Step]:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_http_mode_submit_with_issues(
-    synced_test_db,
-    test_trivial_specimen,
-    make_step_runner,
-    test_snapshot,
-    subtract_file_scope,
-    async_docker_client,
-    test_specimens_hydrator,
-    tmp_path,
-):
+async def test_critic_http_mode_submit_with_issues(run_critic_with_steps, test_snapshot):
     """Test critic HTTP mode with actual issue submission.
 
     Verifies that the critic can:
     1. Write issues to database using RLS-scoped credentials from container env
     2. Submit via MCP HTTP server with correct file path validation
     """
-    # Create step runner with bootstrap validation - implements OpenAIModelProto directly
-    runner = make_step_runner(steps=_make_critic_steps_with_issues())
-
-    # Create workspace manager pointing to temp path
-    workspace_manager = WorkspaceManager(tmp_path)
-
-    # Run critic - bootstrap validation happens on first step
-    critic_run_id, status = await run_critic(
-        definition_id="critic",
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=runner,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        workspace_manager=workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_with_issues())
 
     # Verify status
     assert status == AgentRunStatus.COMPLETED, "Critic should succeed in HTTP mode with issues"
@@ -246,7 +162,7 @@ async def test_critic_http_mode_submit_with_issues(
     with get_session() as session:
         run = session.get(AgentRun, critic_run_id)
         assert run is not None
-        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
 
         # Check that the issue was actually stored
@@ -283,16 +199,7 @@ def _make_critic_v2_steps_zero_issues() -> list[Step]:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_v2_zero_issues(
-    synced_test_db,
-    test_trivial_specimen,
-    make_step_runner,
-    test_snapshot,
-    subtract_file_scope,
-    async_docker_client,
-    test_specimens_hydrator,
-    tmp_path,
-):
+async def test_critic_v2_zero_issues(run_critic_with_steps, test_snapshot):
     """Test run_critic with AgentHandle-based flow.
 
     Tests the definition-based flow that uses:
@@ -301,26 +208,7 @@ async def test_critic_v2_zero_issues(
     - init script for bootstrap context injection
     - Same CriticAgentEnvironment for temp user and MCP server
     """
-    # Create step runner with bootstrap validation
-    runner = make_step_runner(steps=_make_critic_v2_steps_zero_issues())
-
-    # Create workspace manager pointing to temp path
-    workspace_manager = WorkspaceManager(tmp_path)
-
-    # Run critic using AgentHandle-based flow
-    critic_run_id, status = await run_critic(
-        definition_id="critic",  # The base critic definition
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=runner,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        workspace_manager=workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_v2_steps_zero_issues())
 
     # Verify status
     assert status == AgentRunStatus.COMPLETED, "Critic v2 should succeed"
@@ -330,9 +218,9 @@ async def test_critic_v2_zero_issues(
     with get_session() as session:
         run = session.get(AgentRun, critic_run_id)
         assert run is not None
-        assert run.critic_config().snapshot_slug == test_snapshot
+        assert run.critic_config().example.snapshot_slug == test_snapshot
         assert run.status == AgentRunStatus.COMPLETED
         # Definition ID is stored in agent_definition_id
-        assert run.agent_definition_id == "critic"
+        assert run.agent_definition_id == CRITIC_AGENT_DEFINITION_ID
         # Check issues in normalized tables
         assert len(run.reported_issues) == 0

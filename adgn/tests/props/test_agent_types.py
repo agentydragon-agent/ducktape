@@ -8,7 +8,6 @@ import pytest
 from adgn.props.agent_types import (
     AgentConfig,
     AgentType,
-    AllowedExample,
     ClusteringTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
@@ -18,6 +17,7 @@ from adgn.props.agent_types import (
     TypeConfig,
 )
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import WholeSnapshotExample
 
 
 @pytest.fixture
@@ -32,16 +32,32 @@ class TestTypeConfigDiscriminatedUnion:
     @pytest.mark.parametrize(
         ("data", "expected_type"),
         [
-            ({"agent_type": "critic", "snapshot_slug": "test/2025-01-01-00", "scope_hash": "y"}, CriticTypeConfig),
+            (
+                {"agent_type": "critic", "example": {"kind": "whole_snapshot", "snapshot_slug": "test/2025-01-01-00"}},
+                CriticTypeConfig,
+            ),
             ({"agent_type": "grader", "graded_agent_run_id": "550e8400-e29b-41d4-a716-446655440000"}, GraderTypeConfig),
             ({"agent_type": "freeform"}, FreeformTypeConfig),
-            ({"agent_type": "prompt_optimizer", "target_metric": "whole-repo"}, PromptOptimizerTypeConfig),
+            (
+                {
+                    "agent_type": "prompt_optimizer",
+                    "target_metric": "whole-repo",
+                    "optimizer_model": "test-optimizer",
+                    "critic_model": "test-critic",
+                    "grader_model": "test-grader",
+                    "budget_limit": 100.0,
+                },
+                PromptOptimizerTypeConfig,
+            ),
             ({"agent_type": "clustering", "snapshot_slug": "test/2025-01-01-00"}, ClusteringTypeConfig),
             (
                 {
                     "agent_type": "improvement",
                     "baseline_definition_ids": ["critic-v1"],
-                    "allowed_examples": [{"snapshot_slug": "test/2025-01-01-00", "scope_hash": "abc"}],
+                    "allowed_examples": [{"kind": "whole_snapshot", "snapshot_slug": "test/2025-01-01-00"}],
+                    "improvement_model": "test-improvement",
+                    "critic_model": "test-critic",
+                    "grader_model": "test-grader",
                 },
                 ImprovementTypeConfig,
             ),
@@ -100,24 +116,39 @@ class TestImprovementTypeConfig:
         """ImprovementTypeConfig accepts valid data."""
         config = ImprovementTypeConfig(
             baseline_definition_ids=["critic-v1"],
-            allowed_examples=[AllowedExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc")],
+            allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
+            improvement_model="test-model",
+            critic_model="test-critic-model",
+            grader_model="test-grader-model",
         )
         assert config.baseline_definition_ids == ["critic-v1"]
         assert len(config.allowed_examples) == 1
         assert config.agent_type == AgentType.IMPROVEMENT
+        assert config.improvement_model == "test-model"
+        assert config.critic_model == "test-critic-model"
+        assert config.grader_model == "test-grader-model"
 
     def test_baseline_definition_ids_required_nonempty(self) -> None:
         """baseline_definition_ids must have at least one element."""
         with pytest.raises(ValidationError, match="at least 1"):
             ImprovementTypeConfig(
                 baseline_definition_ids=[],
-                allowed_examples=[AllowedExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc")],
+                allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
+                improvement_model="test-model",
+                critic_model="test-critic-model",
+                grader_model="test-grader-model",
             )
 
     def test_allowed_examples_required_nonempty(self) -> None:
         """allowed_examples must have at least one element."""
         with pytest.raises(ValidationError, match="at least 1"):
-            ImprovementTypeConfig(baseline_definition_ids=["critic-v1"], allowed_examples=[])
+            ImprovementTypeConfig(
+                baseline_definition_ids=["critic-v1"],
+                allowed_examples=[],
+                improvement_model="test-model",
+                critic_model="test-critic-model",
+                grader_model="test-grader-model",
+            )
 
     def test_both_fields_required(self) -> None:
         """Both baseline_definition_ids and allowed_examples are required."""
@@ -128,7 +159,10 @@ class TestImprovementTypeConfig:
         """Multiple baseline definition IDs can be provided."""
         config = ImprovementTypeConfig(
             baseline_definition_ids=["critic-v1", "critic-v2", "critic-experimental"],
-            allowed_examples=[AllowedExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc")],
+            allowed_examples=[WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))],
+            improvement_model="test-model",
+            critic_model="test-critic-model",
+            grader_model="test-grader-model",
         )
         assert len(config.baseline_definition_ids) == 3
 
@@ -137,9 +171,12 @@ class TestImprovementTypeConfig:
         config = ImprovementTypeConfig(
             baseline_definition_ids=["critic-v1"],
             allowed_examples=[
-                AllowedExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc"),
-                AllowedExample(snapshot_slug=SnapshotSlug("test/2025-01-02-00"), scope_hash="def"),
+                WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00")),
+                WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-02-00")),
             ],
+            improvement_model="test-model",
+            critic_model="test-critic-model",
+            grader_model="test-grader-model",
         )
         assert len(config.allowed_examples) == 2
 
@@ -152,7 +189,9 @@ class TestAgentConfig:
         config = AgentConfig(
             definition_id="critic",
             model="claude-sonnet-4-20250514",
-            type_config=CriticTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc"),
+            type_config=CriticTypeConfig(
+                example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
+            ),
         )
         assert config.definition_id == "critic"
         assert config.model == "claude-sonnet-4-20250514"
@@ -164,7 +203,9 @@ class TestAgentConfig:
         config = AgentConfig(
             definition_id="critic",
             model="claude-sonnet-4-20250514",
-            type_config=CriticTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc"),
+            type_config=CriticTypeConfig(
+                example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
+            ),
         )
         assert config.agent_type == AgentType.CRITIC
 
@@ -223,7 +264,9 @@ class TestAgentConfig:
             definition_id="critic",
             model="claude-sonnet-4-20250514",
             parent_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000"),
-            type_config=CriticTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00"), scope_hash="abc"),
+            type_config=CriticTypeConfig(
+                example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))
+            ),
         )
         json_str = original.model_dump_json()
         restored = AgentConfig.model_validate_json(json_str)

@@ -57,7 +57,7 @@ from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope, ScopeKind
+from adgn.props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
 from adgn.props.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from adgn.props.splits import Split
 
@@ -80,7 +80,7 @@ _VALIDATION_FUNCTION_NAME = "get_validation_run_aggregates()"
 
 # Split-based access restriction messages
 _VALID_TEST_FULL_SNAPSHOT_ONLY = (
-    "'valid' split only allows full-snapshot evaluations (scope_hash must be None). "
+    "'valid' split only allows full-snapshot evaluations (example_kind must be 'whole_snapshot'). "
     "Run critic on whole-snapshot examples to measure terminal metric."
 )
 
@@ -203,16 +203,17 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
 
     Usage:
         async with PromptOptimizerAgentEnvironment(
-            workspace_root=Path("/workspace"),
             docker_client=docker_client,
             hydrator=hydrator,
             optimizer_run_id=uuid4(),
+            optimizer_model=optimizer_client.model,
             critic_client=critic_client,
             grader_client=grader_client,
             db_config=config,
             optimizer_state=state,
             target_metric=TargetMetric.WHOLE_REPO,
             budget_limit=1.0,
+            workspace_manager=WorkspaceManager.from_env(),
             snapshot_slugs=[...],
         ) as compositor:
             # Run prompt optimizer agent
@@ -228,6 +229,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         docker_client: aiodocker.Docker,
         hydrator: SnapshotHydrator,
         optimizer_run_id: UUID,
+        optimizer_model: str,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
         db_config: DatabaseConfig,
@@ -244,6 +246,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
             docker_client: Async Docker client
             hydrator: Snapshot hydrator
             optimizer_run_id: UUID of the optimizer agent run (for RLS scoping)
+            optimizer_model: Model name for the optimizer agent itself
             critic_client: OpenAI client for running critic evaluations
             grader_client: OpenAI client for running grader evaluations
             db_config: Database configuration (passed via DI)
@@ -256,6 +259,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         """
         # Store parameters for server factory and external access
         self._optimizer_run_id = optimizer_run_id
+        self._optimizer_model = optimizer_model
         self._critic_client = critic_client
         self._grader_client = grader_client
         self._db_config = db_config
@@ -277,7 +281,13 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
     @property
     def type_config(self) -> PromptOptimizerTypeConfig:
         """Get the type config for creating the AgentRun record."""
-        return PromptOptimizerTypeConfig(target_metric=self._target_metric)
+        return PromptOptimizerTypeConfig(
+            target_metric=self._target_metric,
+            optimizer_model=self._optimizer_model,
+            critic_model=self._critic_client.model,
+            grader_model=self._grader_client.model,
+            budget_limit=self._budget_limit,
+        )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
         """Create prompt eval server.
@@ -345,22 +355,18 @@ class RunCriticInput(OpenAIStrictModeBaseModel):
     Returns critic_run_id for subsequent grading.
 
     Mode-specific restrictions (enforced by RLS + MCP):
-    - Whole-Repo Mode: VALID split requires scope_hash for entire-snapshot examples only
-    - Targeted Mode: VALID split allows scope_hash for both per-file and entire-snapshot examples
-    - TRAIN split: All example scope_hash values allowed in all modes
+    - Whole-Repo Mode: VALID split requires whole_snapshot examples only
+    - Targeted Mode: VALID split allows both file_set and whole_snapshot examples
+    - TRAIN split: All example types allowed in all modes
 
-    Query the examples table to find valid (snapshot_slug, scope_hash) pairs:
-    SELECT snapshot_slug, scope_hash, scope FROM examples WHERE snapshot_slug='...'
+    Query the examples table to find valid examples:
+    SELECT snapshot_slug, example_kind, files_hash FROM examples WHERE snapshot_slug='...'
     """
 
     definition_id: str = Field(
         description="Agent definition ID (from create_critic_definition or 'critic' for baseline)"
     )
-    snapshot_slug: SnapshotSlug = Field(description="Snapshot slug (e.g., ducktape/2025-11-26-00)")
-    scope_hash: str = Field(
-        description="Example scope hash (64-char hex string) - identifies which files to review. "
-        "Query examples table to find valid scope_hash values for a snapshot."
-    )
+    example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
     max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
 
 
@@ -586,11 +592,11 @@ class PromptEvalServer(EnhancedFastMCP):
             """Run critic agent using an agent definition.
 
             Loads critic definition from database (AGENT.md, init script) and runs
-            the critic on the specified snapshot/scope.
+            the critic on the specified example.
 
             Validates split-based access restrictions:
-            - TRAIN split: all scopes allowed
-            - VALID split: only entire_snapshot scope allowed (no per-file examples)
+            - TRAIN split: all example types allowed
+            - VALID split: restrictions depend on target_metric mode
             - TEST split: completely off-limits
 
             Returns critic_run_id for subsequent grading with run_grader.
@@ -605,70 +611,66 @@ class PromptEvalServer(EnhancedFastMCP):
                     )
 
                 # Load and validate snapshot
-                db_snapshot = session.query(Snapshot).filter_by(slug=payload.snapshot_slug).one_or_none()
+                snapshot_slug = payload.example.snapshot_slug
+                db_snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
                 if not db_snapshot:
-                    raise ToolError(f"Snapshot {payload.snapshot_slug} not found")
+                    raise ToolError(f"Snapshot {snapshot_slug} not found")
 
                 # Validate split-based access restrictions
                 if db_snapshot.split == Split.TEST:
                     raise ToolError(
                         f"Access denied: 'test' split is completely off-limits. "
                         f"You can only run evaluations on 'train' and 'valid' splits. "
-                        f"Snapshot {payload.snapshot_slug} is in 'test' split."
+                        f"Snapshot {snapshot_slug} is in 'test' split."
                     )
 
-                # Look up example by (snapshot_slug, scope_hash)
-                example = (
-                    session.query(Example)
-                    .filter_by(snapshot_slug=payload.snapshot_slug, scope_hash=payload.scope_hash)
-                    .one_or_none()
-                )
+                # Look up example from database to validate it exists
+                example = Example.from_spec_or_none(session, payload.example)
 
                 if not example:
                     # List available examples for this snapshot
-                    available = session.query(Example).filter_by(snapshot_slug=payload.snapshot_slug).all()
+                    available = session.query(Example).filter_by(snapshot_slug=snapshot_slug).all()
                     example_list = "\n".join(
-                        f"  - scope_hash={ex.scope_hash[:16]}... scope={ex.scope}" for ex in available[:10]
+                        f"  - kind={ex.example_kind.value}, files_hash={ex.files_hash}" for ex in available[:10]
                     )
                     if len(available) > 10:
                         example_list += f"\n  ... and {len(available) - 10} more"
 
                     raise ToolError(
-                        f"No example found with scope_hash={payload.scope_hash} in snapshot {payload.snapshot_slug}.\n"
+                        f"No example found matching {payload.example.kind} "
+                        f"(files_hash={getattr(payload.example, 'files_hash', None)}) "
+                        f"in snapshot {snapshot_slug}.\n"
                         f"Available examples ({len(available)} total):\n{example_list}\n\n"
-                        f"Query the examples table to find valid (snapshot_slug, scope_hash) pairs:\n"
-                        f"SELECT snapshot_slug, scope_hash, scope FROM examples WHERE snapshot_slug='{payload.snapshot_slug}';"
+                        f"Query the examples table to find valid examples:\n"
+                        f"SELECT snapshot_slug, example_kind, files_hash FROM examples WHERE snapshot_slug='{snapshot_slug}';"
                     )
 
-                # Get scope from example
-                scope = example.scope
-
-                # Check if this is a per-file example (ExplicitFileScope) or whole-snapshot (AllFilesScope)
-                is_per_file = isinstance(scope, ExplicitFileScope)
+                # Check if this is a per-file example (SingleFileSetExample) or whole-snapshot (WholeSnapshotExample)
+                is_per_file = isinstance(payload.example, SingleFileSetExample)
 
                 # Check VALID scope restrictions based on target metric mode
                 if db_snapshot.split == Split.VALID and is_per_file and self._target_metric == TargetMetric.WHOLE_REPO:
+                    # Access files_hash only for SingleFileSetExample (type narrowing)
+                    assert isinstance(payload.example, SingleFileSetExample)
                     raise ToolError(
-                        f"valid split in whole-repo mode requires entire-snapshot examples only. "
-                        f"You requested scope_hash={payload.scope_hash} which is a per-file example. "
+                        f"valid split in whole-repo mode requires whole-snapshot examples only. "
+                        f"You requested a file_set example (files_hash={payload.example.files_hash}). "
                         f"Query for whole-snapshot examples: "
-                        f"SELECT scope_hash FROM examples WHERE snapshot_slug='{payload.snapshot_slug}' "
-                        f"AND (scope->>'kind')='entire_snapshot';"
+                        f"SELECT snapshot_slug, example_kind, files_hash FROM examples "
+                        f"WHERE snapshot_slug='{snapshot_slug}' AND example_kind='whole_snapshot';"
                     )
 
             # Execute critic run using definition-based run_critic
             try:
                 (critic_run_id, status) = await execute_critic_run(
                     definition_id=payload.definition_id,
-                    snapshot_slug=payload.snapshot_slug,
-                    scope=scope,
+                    example=payload.example,
                     client=self._critic_client,
                     parent_agent_run_id=self._optimizer_run_id,
                     docker_client=self._docker_client,
                     hydrator=self._hydrator,
                     db_config=self._db_config,
                     workspace_manager=self._workspace_manager,
-                    mount_properties=False,
                     extra_handlers=(),
                     verbose=self._verbose,
                     max_turns=payload.max_turns,
@@ -676,13 +678,13 @@ class PromptEvalServer(EnhancedFastMCP):
             except CriticExecutionError as e:
                 raise ToolError(
                     f"Critic agent failed during execution: {e}\n\n"
-                    f"{_trace_query_advice(snapshot_slug=payload.snapshot_slug)}"
+                    f"{_trace_query_advice(snapshot_slug=str(snapshot_slug))}"
                 ) from e
             except CriticDidNotSubmitError as e:
                 raise ToolError(
                     f"Critic agent did not call submit(): {e}\n\n"
                     f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_query_advice(snapshot_slug=payload.snapshot_slug)}"
+                    f"{_trace_query_advice(snapshot_slug=str(snapshot_slug))}"
                 ) from e
 
             # Check status to provide specific error messages
@@ -709,7 +711,7 @@ class PromptEvalServer(EnhancedFastMCP):
 
             Saves grader run to database with per-occurrence credits.
 
-            To get recall metrics, query aggregate views (see system_overview.md for details):
+            To get recall metrics, query aggregate views (see docs/db/evaluation_flow.md):
             - aggregated_recall_by_definition: Recall per (agent_definition_id, models, split)
             - aggregated_recall_by_example: Recall per (example, models, split)
 
@@ -769,27 +771,22 @@ class PromptEvalServer(EnhancedFastMCP):
                     )
 
                 # Determine split and whether this is a full-snapshot run
-                # Get snapshot_slug from the graded critic run
+                # Get example spec from the graded critic run
                 graded_critic_run_id = grader_run.grader_config().graded_agent_run_id
                 critic_run = session.get(AgentRun, graded_critic_run_id)
                 if not critic_run:
                     raise ToolError(f"Grader run {grader_run_id} has no associated critic run")
                 critic_config = critic_run.critic_config()
-                snapshot_slug = critic_config.snapshot_slug
+                example_spec = critic_config.example
+                snapshot_slug = example_spec.snapshot_slug
                 snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
                 split = snapshot.split
 
                 # Find matching example to check scope kind
-                critic_scope_hash = critic_config.scope_hash
-                example = (
-                    session.query(Example)
-                    .filter_by(snapshot_slug=snapshot_slug, scope_hash=critic_scope_hash)
-                    .one()  # Raise if not found - this is a data integrity error
-                )
+                example = Example.from_spec(session, example_spec)  # Raises if not found - data integrity error
 
-                scope_kind = (
-                    ScopeKind.ENTIRE_SNAPSHOT if isinstance(example.scope, AllFilesScope) else ScopeKind.SPECIFIC_FILES
-                )
+                # Get example kind from the example itself
+                scope_kind = example.example_kind
 
                 # Compute immediate feedback from this grader run (direct query to grading_decisions)
                 # Pattern 1: Total credit (recall numerator)
@@ -819,7 +816,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 # Add query advice based on split, example type, and optimization mode
                 if (
                     split == Split.VALID
-                    and scope_kind == ScopeKind.ENTIRE_SNAPSHOT
+                    and scope_kind == ExampleKind.WHOLE_SNAPSHOT
                     and self._target_metric == TargetMetric.WHOLE_REPO
                 ):
                     # VALID full-snapshot in whole-repo mode: use validation function
@@ -830,7 +827,7 @@ class PromptEvalServer(EnhancedFastMCP):
                     )
                 elif (
                     split == Split.VALID
-                    and scope_kind == ScopeKind.ENTIRE_SNAPSHOT
+                    and scope_kind == ExampleKind.WHOLE_SNAPSHOT
                     and self._target_metric == TargetMetric.TARGETED
                 ):
                     # VALID full-snapshot in targeted mode: use aggregate views
@@ -839,7 +836,7 @@ class PromptEvalServer(EnhancedFastMCP):
                         "IMPORTANT: Check n_examples >= 5 before trusting metrics (small samples have high variance). "
                         "Use UCB/LCB bounds to quantify uncertainty. "
                         f"Example: SELECT recall, n_examples, ucb, lcb FROM aggregated_recall_by_definition "
-                        f"WHERE agent_definition_id='...' AND split='valid' AND scope_kind='{ScopeKind.ENTIRE_SNAPSHOT}'; "
+                        f"WHERE agent_definition_id='...' AND split='valid' AND scope_kind='{ExampleKind.WHOLE_SNAPSHOT}'; "
                         f"For full details: SELECT * FROM agent_runs WHERE agent_run_id = '{grader_run_id}';"
                     )
                 else:
@@ -917,13 +914,13 @@ async def run_prompt_optimizer(
 
     # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
-        # Build type_config for prompt optimizer using Pydantic model
-        type_config = PromptOptimizerTypeConfig(target_metric=target_metric).model_dump()
-        # Add additional config fields
-        type_config["budget_limit"] = budget
-        type_config["optimizer_model"] = optimizer_client.model
-        type_config["critic_model"] = critic_client.model
-        type_config["grader_model"] = grader_client.model
+        type_config = PromptOptimizerTypeConfig(
+            target_metric=target_metric,
+            optimizer_model=optimizer_client.model,
+            critic_model=critic_client.model,
+            grader_model=grader_client.model,
+            budget_limit=budget,
+        )
 
         agent_run = AgentRun(
             agent_run_id=agent_run_id,
@@ -945,6 +942,7 @@ async def run_prompt_optimizer(
         docker_client=docker_client,
         hydrator=hydrator,
         optimizer_run_id=agent_run_id,
+        optimizer_model=optimizer_client.model,
         critic_client=critic_client,
         grader_client=grader_client,
         db_config=db_config,

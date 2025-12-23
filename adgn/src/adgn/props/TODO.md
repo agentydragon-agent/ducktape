@@ -8,26 +8,8 @@
 - Target Python version detection/guidance: how agents/graders/reviewers determine target (crawl pyproject.toml/tooling, parse runtime markers, else infer from code/CI); decide where this lives in the framework.
 - Property naming mismatch: 'self-describing names' vs guidance 'use datetime for datetimes'. Decide: either scope the property strictly to naming/units and create a separate 'time APIs and units' property (datetime vs time.monotonic, absolute vs interval), or rename/split. Update specimens and docs accordingly.
 
-## Codex Property Enforcer and Analyzer
-
-Observation (to investigate)
-- Enforcer added a local import justification in a test that already imports the module at top of file.
-  - File: project/ditto/ditto_chat/ditto_chat/tools/tests/test_sandboxed_shell_tool.py
-  - Symptom: Inserted a comment asserting "Local import in test to avoid heavy module import … heavy import justified," but a top-level import for the same module already exists.
-  - Action: Re-run against this file with a "find-only" analyzer and ask whether the state is correct; capture the agent's argument.
-
-## CLI consolidation TODOs
-
-- Unify specimen-discover into the `run` command
-  - Add `--embed-specimen-notes` to `run` (specimen mode) to auto-embed `covered.md` and `not_covered_yet.md` as supplemental context.
-  - For structured runs, keep the critic_submit gating; for `--dry-run`, render with minimal wiring and save the prompt like other presets.
-  - Remove the `specimen-discover` command after migration; update docs to use:
-    - `adgn-properties run --snapshot <slug> --preset discover --structured true --embed-specimen-notes`
-  - Tests: port any `specimen-discover` dry-run tests to run with `--preset discover --dry-run --embed-specimen-notes`.
-
 ## Database/Schema TODOs
 
-- Add critic_scope_id FK to critic_scopes table to track which scope was used (db/models.py)
 - Add optional per-range note/context field (models/true_positive.py)
 
 ## Testing TODOs
@@ -38,26 +20,16 @@ Observation (to investigate)
 
 ## Code Quality/Refactoring TODOs
 
-- Refactor display config threading; currently verbose and max_lines are passed through multiple layers (agent_setup.py)
-- Clean up path propagation; reviewed_files is extracted and passed through unnecessarily (grader/grader.py)
 - Deduplicate Docker container creation logic with docker_env.py and MCP server wiring (cli/cmd_snapshot.py)
-- Auto-infer prompt_optimization_run_id in MCP server tools instead of manually passing it (prompt_optimize/prompt_optimizer.py)
 
-## Documentation TODOs
+## Feature TODOs
 
-- Make system_overview.md a proper Jinja2 template (docs/system_overview.md)
-  - Currently hardcodes `/snapshots` path instead of using `SNAPSHOTS_BASE_DIR` constant
-  - Would need mechanism to render package resources as templates at agent startup
-  - Low priority - agents can read from package resources as-is
-
-- Consider SQL schema inspection instead of hand-maintained table docs
-  - Current: system_overview.md manually documents table schemas
-  - Alternative: Show agents SQL schema directly via psql inspection (e.g., `\d reported_issues`)
-  - Could add SQL comments to tables/columns as documentation source of truth
-  - Would eliminate sync burden between migrations and docs
-  - Evaluate after Phase 2 implementation is complete
+- Reimplement `fix` command as critic-driven loop:
+  1. Run critic on workspace to find issues
+  2. Fix flagged issues with rw-mounted workspace
+  3. Rerun critic to verify fixes and catch any new issues
+  4. Loop until critic finds no issues or max iterations reached
 
 ## Migration TODOs
 
 - Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc (lint_issue.py)
-- Migrate git tags from specimen-* to snapshot-* prefix (if still relevant for remote repos)

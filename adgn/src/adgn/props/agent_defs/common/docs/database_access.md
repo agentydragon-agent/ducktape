@@ -100,9 +100,11 @@ Run `\d+ table_name` before writing queries to understand the schema.
 
 | Table | SELECT | INSERT | UPDATE |
 |-------|--------|--------|--------|
-| unknown_issues | All | Own run | Own run |
-| clusters | All | Own run | Own run |
+| unknown_clusters | Own run | Own run | Own run |
+| unknown_assignments | Own run | Own run | Own run |
 | true_positives | All | - | - |
 | false_positives | All | - | - |
+| snapshots | All | - | - |
+| events | All | - | - |
 
-**Note:** Clustering sees all ground truth to identify novel unknowns.
+**Note:** Clustering agent can create clusters and assign unknowns within its own run. Sees all ground truth to identify novel unknowns.

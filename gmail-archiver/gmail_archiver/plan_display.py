@@ -51,6 +51,9 @@ def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: boo
         console.print("[yellow]No actions planned[/yellow]")
         return
 
+    # Batch fetch metadata for all messages not already cached
+    inbox.ensure_metadata_cached(plan.actions.keys())
+
     # Build table
     table = Table(title="Inbox Cleanup - Action Plan")
     table.add_column("Action", style="cyan")
@@ -102,10 +105,8 @@ def _add_table_row(
     dry_run: bool,
     custom_columns: list[tuple[str, str]],
 ):
-    # Look up message metadata from inbox cache
+    # Look up message metadata from inbox cache (fetches on demand if not cached)
     metadata = inbox.get_metadata(message_id)
-    if not metadata:
-        raise RuntimeError(f"Missing metadata for message {message_id} - not found in inbox cache")
 
     # Compute action icon
     action = planned_action.action

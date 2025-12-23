@@ -6,13 +6,15 @@ See docs/test_scenario_steps.md for detailed usage guide.
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import logging
 import os
 from pathlib import Path
 from typing import Protocol, TypeVar
 
+from hamcrest import all_of, assert_that
+from hamcrest.core.matcher import Matcher
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, TypeAdapter
 
@@ -33,6 +35,35 @@ logger = logging.getLogger(__name__)
 
 # Directory for bootstrap output dumps (under tests/props/)
 BOOTSTRAP_DUMPS_DIR = Path(__file__).parent.parent / "props" / "bootstrap_dumps"
+
+
+def _assert_docker_exec_success(
+    output: BaseExecResult, stdout_matchers: list[Matcher[str]], expected_output: str
+) -> None:
+    """Assert docker exec succeeded with exit code 0 and stdout matches expectations.
+
+    Args:
+        output: The exec result to validate
+        stdout_matchers: PyHamcrest matchers for stdout (if provided, takes precedence)
+        expected_output: Substring to check in stdout (legacy, used if no matchers)
+
+    Raises:
+        AssertionError: If exit code is not 0 or stdout doesn't match
+    """
+    # Assert exit code is 0
+    if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
+        stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
+        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+        raise AssertionError(f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}")
+
+    stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
+
+    # Use matchers if provided, otherwise fall back to simple substring check
+    if stdout_matchers:
+        assert_that(stdout_text, all_of(*stdout_matchers))  # type: ignore[arg-type]
+    elif expected_output and expected_output not in stdout_text:
+        raise AssertionError(f"Expected stdout to contain {expected_output!r}, got {stdout_text!r}")
+
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -325,71 +356,74 @@ class AssistantMessage:
 
 @dataclass
 class AssertDockerExecThenFinish:
-    """Assert docker exec succeeded and stdout contains expected text, then finish.
+    """Assert docker exec succeeded and stdout matches expectations, then finish.
 
     Use to validate that a command executed successfully and produced expected output.
     Fails if:
     - Previous call was not docker_exec
     - Exit code is not 0
-    - stdout doesn't contain expected_output
+    - stdout doesn't match stdout_matchers (if provided)
+    - stdout doesn't contain expected_output (legacy support)
+
+    Examples:
+        # Simple substring check (legacy)
+        AssertDockerExecThenFinish(expected_output="76%")
+
+        # Multiple matchers using all_of
+        AssertDockerExecThenFinish(
+            expected_output="",  # Required but not used when stdout_matchers provided
+            stdout_matchers=[
+                contains_string("76%"),
+                contains_string("Recall"),
+                contains_string("test-fixtures"),
+            ]
+        )
     """
 
     expected_output: str
     message: str = "Done"
+    stdout_matchers: list[Matcher[str]] = field(default_factory=list)
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         assert_last_call(req, "docker_exec")
         output = assert_and_extract(req, "docker_exec", BaseExecResult)
-
-        # Assert exit code is 0
-        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
-            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
-            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-            raise AssertionError(
-                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
-            )
-
-        # Assert stdout contains expected text
-        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-        if self.expected_output not in stdout_text:
-            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
-
+        _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
         return factory.make_assistant_message(self.message)
 
 
 @dataclass
 class AssertDockerExecThenCall:
-    """Assert docker exec succeeded and stdout contains expected text, then make another call.
+    """Assert docker exec succeeded and stdout matches expectations, then make another call.
 
     Use when you need to chain docker exec calls with validation between them.
     Fails if:
     - Previous call was not docker_exec
     - Exit code is not 0
-    - stdout doesn't contain expected_output
+    - stdout doesn't match stdout_matchers (if provided)
+    - stdout doesn't contain expected_output (legacy support)
+
+    Examples:
+        # Simple substring check
+        AssertDockerExecThenCall(expected_output="76%", next_cmd=[...])
+
+        # Multiple matchers
+        AssertDockerExecThenCall(
+            expected_output="",
+            stdout_matchers=[contains_string("76%"), contains_string("critic")],
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Done"],
+        )
     """
 
     expected_output: str
     next_cmd: list[str]
     timeout_ms: int = 30000
     tool_name: str = "exec"
+    stdout_matchers: list[Matcher[str]] = field(default_factory=list)
 
     def execute(self, req: ResponsesRequest, factory: ResponsesFactory) -> ResponsesResult:
         assert_last_call(req, "docker_exec")
         output = assert_and_extract(req, "docker_exec", BaseExecResult)
-
-        # Assert exit code is 0
-        if not isinstance(output.exit, Exited) or output.exit.exit_code != 0:
-            stderr_text = output.stderr if isinstance(output.stderr, str) else output.stderr.truncated_text
-            stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-            raise AssertionError(
-                f"Expected exit code 0, got {output.exit}\nstdout: {stdout_text}\nstderr: {stderr_text}"
-            )
-
-        # Assert stdout contains expected text
-        stdout_text = output.stdout if isinstance(output.stdout, str) else output.stdout.truncated_text
-        if self.expected_output not in stdout_text:
-            raise AssertionError(f"Expected stdout to contain {self.expected_output!r}, got {stdout_text!r}")
-
+        _assert_docker_exec_success(output, self.stdout_matchers, self.expected_output)
         return factory.make(factory.docker_exec(self.next_cmd, timeout_ms=self.timeout_ms, tool_name=self.tool_name))
 
 

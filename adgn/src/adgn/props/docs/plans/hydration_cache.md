@@ -443,3 +443,17 @@ await run_critic(..., hydrated=hydrated)
 3. **Measure performance improvement** on prompt optimization runs
 4. **Consider threading HydratedSnapshot** to simplify function signatures
 5. **Evaluate persistent cache** if we see repeated hydration across process invocations
+
+## Update (2025-12-22): LocalSource Optimization
+
+**Change**: `resolve_source_root()` now returns `tuple[Path, bool]` where the bool indicates `needs_cleanup`.
+
+For `LocalSource` snapshots, the hydrator now returns the original path directly instead of copying to a temp directory. This is safe because all usages are read-only (Docker bind mounts with `mode="ro"`, file existence checks).
+
+**Implications for caching**:
+- LocalSource hydration is now essentially free (no I/O)
+- Git/GitHub sources still extract from cached archive (fast from local tar.gz)
+- The benefit of a `HydrationCache` is reduced but still useful for Git sources in batch operations
+- Current explicit `AsyncExitStack` pattern in prompt optimizer may be sufficient
+
+**Recommendation**: Keep current pattern (explicit session-scoped via `AsyncExitStack`) rather than adding refcounting complexity. The main performance win was eliminating LocalSource copies; Git extraction from cached archives is already fast.

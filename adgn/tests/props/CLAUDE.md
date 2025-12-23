@@ -12,22 +12,22 @@ Located in `tests/props/fixtures/specimens/`:
 
 - **test-fixtures/test-trivial** (TRAIN split)
   - Files: add.py, subtract.py, multiply.py, divide.py
-  - Issues: 4 TPs (test-issue.libsonnet through test-issue-4.libsonnet)
+  - Issues: 4 TPs (test-issue.yaml through test-issue-4.yaml)
   - Use for: Multi-file tests, duplication detection, RLS train split
 
 - **test-fixtures/test-validation** (VALID split)
   - Files: subtract.py
-  - Issues: 1 TP (test-issue.libsonnet)
+  - Issues: 1 TP (test-issue.yaml)
   - Use for: RLS valid split, warm-start validation
 
 - **test-fixtures/test-validation-2** (VALID split)
   - Files: calculator.py
-  - Issues: 1 TP (validation-issue.libsonnet)
+  - Issues: 1 TP (test-issue.yaml)
   - Use for: Warm-start with multiple validation examples
 
 - **test-fixtures/test-split-test** (TEST split)
   - Files: example_module.py
-  - Issues: 1 TP (test-split-issue.libsonnet)
+  - Issues: 1 TP (test-issue.yaml)
   - Use for: RLS test split verification
 
 ## Using Git Fixtures in Tests

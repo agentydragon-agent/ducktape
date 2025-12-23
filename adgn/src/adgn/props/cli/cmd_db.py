@@ -17,11 +17,13 @@ from adgn.props.db.sync import (
     SyncStats,
     get_specimens_base_path,
     sync_agent_definitions_to_db,
-    sync_examples_to_db,
+    sync_file_sets_to_db,
     sync_issues_to_db,
     sync_model_metadata_with_session,
+    sync_snapshot_files_to_db,
     sync_snapshots_to_db,
 )
+from adgn.props.hydration import SnapshotHydrator
 
 # Database subcommand group
 db_app = typer.Typer(help="Database management commands")
@@ -29,28 +31,47 @@ db_app = typer.Typer(help="Database management commands")
 
 @dataclass
 class FullSyncResult:
-    """Combined result from syncing snapshots, issues, examples, model metadata, and agent definitions."""
+    """Combined result from syncing snapshots, issues, files, file sets, model metadata, and agent definitions."""
 
     snapshot_stats: SyncStats
     issue_stats: SyncStats
-    example_stats: SyncStats
+    snapshot_file_stats: SyncStats
+    file_set_stats: SyncStats
     model_metadata_stats: ModelMetadataSyncStats
     agent_definition_stats: SyncStats
 
 
-def sync_all() -> FullSyncResult:
-    """Sync snapshots, issues, examples, model metadata, and agent definitions in a single operation.
+async def sync_all() -> FullSyncResult:
+    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions.
 
     All sync operations happen within a single database session for consistency.
+    Note: examples are now a VIEW derived from file_sets + snapshots, no separate sync needed.
+
+    Sync order is critical:
+    1. snapshots (no dependencies)
+    2. snapshot_files (depends on snapshots via FK)
+    3. issues (depends on snapshots)
+    4. file_sets (depends on snapshot_files and issues via FK)
+    5. model_metadata (independent)
+    6. agent_definitions (independent)
 
     Returns:
         Combined results from all sync operations
     """
     with get_session() as session:
         base_path = get_specimens_base_path()
+        hydrator = SnapshotHydrator(base_path)
         snapshot_stats = sync_snapshots_to_db(session, base_path)
+
+        # Sync snapshot files BEFORE issues (needed for FK validation in file_set_members)
+        snapshot_file_stats = await sync_snapshot_files_to_db(session, base_path, hydrator)
+
+        # Sync issues (true_positives/false_positives)
         issue_stats = sync_issues_to_db(session, base_path)
-        example_stats = sync_examples_to_db(session, base_path)
+
+        # Sync file sets (examples VIEW is derived from these automatically)
+        # Depends on both snapshot_files (FK) and true_positives (FK)
+        file_set_stats = sync_file_sets_to_db(session, base_path)
 
         # Sync model metadata
         model_metadata_stats = sync_model_metadata_with_session(session)
@@ -61,7 +82,8 @@ def sync_all() -> FullSyncResult:
         return FullSyncResult(
             snapshot_stats=snapshot_stats,
             issue_stats=issue_stats,
-            example_stats=example_stats,
+            snapshot_file_stats=snapshot_file_stats,
+            file_set_stats=file_set_stats,
             model_metadata_stats=model_metadata_stats,
             agent_definition_stats=agent_definition_stats,
         )
@@ -77,7 +99,7 @@ def ensure_databases_exist(config: DatabaseConfig) -> None:
     ensure_database_exists(config, config.admin.database, drop_existing=False)
 
 
-def recreate_database_and_sync() -> FullSyncResult:
+async def recreate_database_and_sync() -> FullSyncResult:
     """Recreate database from scratch (destructive).
 
     Drops all tables/views/policies, creates fresh schema, and syncs all data
@@ -90,7 +112,7 @@ def recreate_database_and_sync() -> FullSyncResult:
     recreate_database()
 
     # Sync all data sources into fresh database
-    return sync_all()
+    return await sync_all()
 
 
 def print_sync_result(console: Console, result: FullSyncResult) -> None:
@@ -105,7 +127,8 @@ def print_sync_result(console: Console, result: FullSyncResult) -> None:
     table.add_column("Stats")
     table.add_row("Snapshots", result.snapshot_stats.summary_text)
     table.add_row("Issues", result.issue_stats.summary_text)
-    table.add_row("Examples", result.example_stats.summary_text)
+    table.add_row("Snapshot files", result.snapshot_file_stats.summary_text)
+    table.add_row("File sets", result.file_set_stats.summary_text)
     table.add_row("Model metadata", result.model_metadata_stats.summary_text)
     table.add_row("Agent definitions", result.agent_definition_stats.summary_text)
     console.print(table)
@@ -113,10 +136,10 @@ def print_sync_result(console: Console, result: FullSyncResult) -> None:
 
 @async_run
 async def cmd_sync() -> None:
-    """Sync snapshots, issues, examples, model metadata, and agent definitions from source to DB."""
+    """Sync snapshots, issues, files, file sets, model metadata, and agent definitions from source to DB."""
     console = Console()
     console.print("Syncing data from filesystem...")
-    result = sync_all()
+    result = await sync_all()
     print_sync_result(console, result)
 
 
@@ -128,7 +151,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     1. Ensure database exists (eval_results)
     2. Drop all existing schema objects (tables, views, RLS policies, functions)
     3. Run Alembic migrations to recreate schema
-    4. Sync all data from filesystem (snapshots, issues, examples, model metadata, agent definitions)
+    4. Sync all data from filesystem (snapshots, issues, files, file sets, model metadata, agent definitions)
 
     Note: Temporary database users are created per-agent instead of a shared agent_user role.
           Schema creation (step 3) runs all Alembic migrations, which define tables, views, RLS, etc.
@@ -150,7 +173,7 @@ async def cmd_db_recreate(yes: bool = typer.Option(False, "--yes", "-y", help="S
     # Connect and recreate (includes full sync)
     console = Console()
     console.print("Recreating database schema...")
-    result = recreate_database_and_sync()
+    result = await recreate_database_and_sync()
     console.print("✓ Database recreated:")
 
     print_sync_result(console, result)

@@ -188,7 +188,7 @@ class TestQueryBuilders:
             )
             assert train_snapshot, "No TRAIN snapshot with TPs found"
 
-            result = session.execute(qb.list_true_positives_for_snapshot(train_snapshot.slug)).fetchall()
+            result = session.execute(qb.list_true_positives_for_snapshot(train_snapshot.slug)).scalars().all()
 
             # Should have at least 1 TP
             assert len(result) >= 1
@@ -208,7 +208,9 @@ class TestQueryBuilders:
             )
 
             if train_snapshot_with_fps:
-                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot_with_fps.slug)).fetchall()
+                result = (
+                    session.execute(qb.list_false_positives_for_snapshot(train_snapshot_with_fps.slug)).scalars().all()
+                )
                 # Should have at least 1 FP
                 assert len(result) >= 1
                 assert result[0].fp_id is not None
@@ -218,7 +220,7 @@ class TestQueryBuilders:
                 # If no FPs, just verify empty result for any TRAIN snapshot
                 train_snapshot = session.query(Snapshot).filter(Snapshot.split == Split.TRAIN).first()
                 assert train_snapshot, "No TRAIN snapshot found"
-                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot.slug)).fetchall()
+                result = session.execute(qb.list_false_positives_for_snapshot(train_snapshot.slug)).scalars().all()
                 assert len(result) == 0
 
     def test_valid_aggregates_view(self, query_test_data):
@@ -237,26 +239,31 @@ class TestQueryBuilders:
 
             # Check first row has expected structure (occurrence-based metrics)
             row = result[0]
-            # Check occurrence counts are non-negative
-            assert row.avg_occurrences_caught_overall >= 0.0
-            assert row.avg_catchable_occurrences >= 0.0
+            # Check occurrence stats are present (StatsWithCI type)
+            if row.occurrences_caught_stats is not None:
+                assert row.occurrences_caught_stats.mean >= 0.0
             assert row.total_catchable_occurrences >= 0
-            # Check count fields
-            assert row.n_successful >= 0
-            assert row.n_max_turns_exceeded >= 0
-            assert row.n_context_length_exceeded >= 0
+            # Check status counts are present (dict from JSONB)
+            assert row.status_counts is not None
+            n_completed = row.status_counts.get("completed", 0)
+            n_max_turns = row.status_counts.get("max_turns_exceeded", 0)
+            n_context = row.status_counts.get("context_length_exceeded", 0)
+            assert n_completed >= 0
+            assert n_max_turns >= 0
+            assert n_context >= 0
 
     def test_critic_runs_for_snapshot(self, query_test_data):
         """critic_runs_for_snapshot() returns critic runs for a specific snapshot."""
         with get_session() as session:
-            # Find a TRAIN snapshot that has critic runs
+            # Find a TRAIN file-set example (with files_hash) that has critic runs
             train_example = (
                 session.query(Example)
                 .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
                 .filter(Snapshot.split == Split.TRAIN)
+                .filter(Example.files_hash.isnot(None))  # File-set example only
                 .first()
             )
-            assert train_example, "No TRAIN example found"
+            assert train_example, "No TRAIN file-set example found"
 
             result = session.execute(qb.critic_runs_for_snapshot(train_example.snapshot_slug, limit=5)).fetchall()
 
@@ -268,7 +275,7 @@ class TestQueryBuilders:
             assert row.agent_run_id is not None  # Primary key is agent_run_id now
             assert row.status is not None  # AgentRunStatus enum value
             assert row.created_at is not None
-            assert row.scope_hash is not None  # From type_config JSONB
+            # files_hash may be None for whole-snapshot examples, or a string for file-set examples
             assert row.model == "test-model"
 
     def test_tools_used_by_transcript(self, query_test_data):

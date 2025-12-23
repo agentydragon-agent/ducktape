@@ -126,7 +126,7 @@ class ClusteringHandler(BaseHandler):
                     AgentRun.status == AgentRunStatus.COMPLETED,
                     exists().where(
                         critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
-                        critic_ref.type_config["snapshot_slug"].astext == snapshot_slug,
+                        critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
                     ),
                 )
                 .all()
@@ -192,7 +192,7 @@ class ClusteringHandler(BaseHandler):
                 AgentRun.status == AgentRunStatus.COMPLETED,
                 exists().where(
                     critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
-                    critic_ref.type_config["snapshot_slug"].astext == snapshot_slug,
+                    critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
                 ),
             )
             .all()
@@ -474,7 +474,7 @@ def _compute_outcome(agent_run_id: UUID, snapshot_slug: SnapshotSlug, db_config:
                     AgentRun.status == AgentRunStatus.COMPLETED,
                     exists().where(
                         critic_ref.agent_run_id == AgentRun.type_config["graded_agent_run_id"].astext.cast(PG_UUID),
-                        critic_ref.type_config["snapshot_slug"].astext == snapshot_slug,
+                        critic_ref.type_config["example"]["snapshot_slug"].astext == snapshot_slug,
                     ),
                 )
                 .all()

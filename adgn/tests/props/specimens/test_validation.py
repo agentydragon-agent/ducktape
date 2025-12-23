@@ -1,3 +1,10 @@
+"""Validation tests for production specimens.
+
+These tests validate production specimen data and require syncing the full
+production specimens repository. They are marked with requires_production_specimens
+and can be skipped with: pytest -m 'not requires_production_specimens'
+"""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -12,10 +19,10 @@ from adgn.props.db.models import Snapshot
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.models.snapshot import LocalSource
 
-# Note: synced_test_db syncs TEST fixtures (minimal data)
-# Use synced_production_db for tests that need production specimens
+pytestmark = [pytest.mark.requires_production_specimens, pytest.mark.integration]
 
 
+@pytest.mark.requires_production_specimens
 async def test_specimen_issues_and_false_positives_load(
     production_specimens_hydrator: SnapshotHydrator, synced_production_db
 ) -> None:
@@ -62,6 +69,7 @@ async def test_specimen_issues_and_false_positives_load(
         pytest.fail("\n\n".join(failures))
 
 
+@pytest.mark.requires_production_specimens
 async def test_specimen_references_are_valid(
     production_specimens_hydrator: SnapshotHydrator, synced_production_db
 ) -> None:

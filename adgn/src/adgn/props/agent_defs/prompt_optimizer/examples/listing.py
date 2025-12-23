@@ -37,7 +37,7 @@ from adgn.props.db import get_session
 from adgn.props.db.examples import Example, count_available_examples_by_scope_all
 from adgn.props.db.models import Snapshot
 from adgn.props.display import ColumnDef, build_table_from_schema, short_sha
-from adgn.props.models.critic_scopes import ScopeKind
+from adgn.props.models.examples import ExampleKind
 from adgn.props.splits import Split
 
 
@@ -54,16 +54,16 @@ def format_files_preview(files: list[str]) -> str:
 def list_train_examples(limit: int = 10) -> None:
     """List training examples for critic evaluation.
 
-    Shows snapshot_slug, scope_hash pairs that can be passed to run_critic_on_example.
+    Shows snapshot_slug, example_kind, files_hash that can be used to build ExampleSpec.
     """
     console = Console()
 
     with get_session() as session:
         query = (
-            session.query(Example.snapshot_slug, Example.scope_hash, Example.scope)
+            session.query(Example.snapshot_slug, Example.example_kind, Example.files_hash)
             .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
             .filter(Snapshot.split == Split.TRAIN)
-            .order_by(Example.snapshot_slug, Example.scope_hash)
+            .order_by(Example.snapshot_slug, Example.example_kind, Example.files_hash.nullsfirst())
             .limit(limit)
         )
 
@@ -79,8 +79,8 @@ def list_train_examples(limit: int = 10) -> None:
 
         columns: list[ColumnDef[Any, Any]] = [
             ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=30),
-            ColumnDef("Hash", lambda r: r.scope_hash, short_sha, width=8),
-            ColumnDef("Scope", lambda r: r.scope, str, width=60),
+            ColumnDef("Kind", lambda r: r.example_kind.value, width=18),
+            ColumnDef("FileSet", lambda r: str(r.files_hash) if r.files_hash else "-", width=10),
         ]
 
         console.print(build_table_from_schema(examples, columns))
@@ -119,9 +119,9 @@ def list_full_snapshot_train_examples() -> None:
     with get_session() as session:
         full_snapshot_examples = (
             session.query(Example)
-            .join(Snapshot)
+            .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
             .filter(Snapshot.split == Split.TRAIN)
-            .filter(Example.scope["kind"].astext == ScopeKind.ENTIRE_SNAPSHOT.value)
+            .filter(Example.example_kind == ExampleKind.WHOLE_SNAPSHOT)
             .order_by(Example.snapshot_slug)
             .all()
         )
@@ -130,7 +130,7 @@ def list_full_snapshot_train_examples() -> None:
 
         columns: list[ColumnDef[Any, Any]] = [
             ColumnDef("Snapshot", lambda r: r.snapshot_slug, width=50),
-            ColumnDef("Scope Hash", lambda r: r.scope_hash[:16], width=18),
+            ColumnDef("Kind", lambda r: r.example_kind.value, width=18),
         ]
 
         console.print(build_table_from_schema(full_snapshot_examples, columns))
@@ -140,11 +140,11 @@ def list_full_snapshot_train_examples() -> None:
             console.print("\n[bold]Usage with run_critic:[/bold]")
             console.print(f"""
 from helpers import run_critic
+from adgn.props.models.examples import WholeSnapshotExample
 
 output = await run_critic(
     definition_id="critic",  # or your custom definition ID
-    snapshot_slug="{first_example.snapshot_slug}",
-    scope_hash="{first_example.scope_hash}",  # Full-snapshot scope
+    example=WholeSnapshotExample(snapshot_slug="{first_example.snapshot_slug}"),
     max_turns=30
 )
 print(f"Critic run: {{output.critic_run_id}}")
@@ -152,12 +152,12 @@ print(f"Critic run: {{output.critic_run_id}}")
 
 
 def show_dataset_scale() -> None:
-    """Count examples grouped by split and scope kind.
+    """Count examples grouped by split and example kind.
 
     Key schema details:
-    - Example has composite primary key: (snapshot_slug, scope_hash)
+    - Example has composite primary key: (snapshot_slug, example_kind, files_hash)
     - Split information comes from the related Snapshot (via snapshot_obj.split)
-    - Scope kind extracted from JSONB: scope->>'kind' (entire_snapshot or specific_files)
+    - Example kind: whole_snapshot or file_set
     """
     with get_session() as session:
         counts = count_available_examples_by_scope_all(

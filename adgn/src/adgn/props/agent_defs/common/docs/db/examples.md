@@ -6,31 +6,39 @@ Training/validation examples define what a critic reviews.
 
 !psql -c "\d+ examples"
 
-## Scope Types
+## Example Types
 
-Each example has a `scope` JSON field with one of two kinds:
+Each example has an `example_kind` field with one of two values:
 
-**Entire snapshot** (`kind: "entire_snapshot"`):
+**Whole snapshot** (`example_kind = 'whole_snapshot'`):
 - Critic reviews ALL files in the snapshot
 - Used for comprehensive whole-repo evaluation
 - Terminal metric for validation
+- `files_hash` is NULL
 
-**Specific files** (`kind: "specific_files"`):
-- Critic reviews only the listed files
-- `files` array contains relative paths (e.g., `["src/foo.py", "src/bar.py"]`)
+**File set** (`example_kind = 'file_set'`):
+- Critic reviews only specific files
+- `files` array in scope JSON contains relative paths (e.g., `["src/foo.py", "src/bar.py"]`)
 - Used for focused per-file training
+- `files_hash` is a hash of the sorted file list
 
 ## Querying Examples
 
 ```sql
 -- All examples for a snapshot
-SELECT scope_hash, scope FROM examples WHERE snapshot_slug = 'ducktape/2025-11-26-00';
+SELECT example_kind, files_hash, scope FROM examples WHERE snapshot_slug = 'ducktape/2025-11-26-00';
 
--- Full-snapshot examples only
-SELECT * FROM examples WHERE scope->>'kind' = 'entire_snapshot';
+-- Whole-snapshot examples only
+SELECT * FROM examples WHERE example_kind = 'whole_snapshot';
 
--- Per-file examples
-SELECT * FROM examples WHERE scope->>'kind' = 'specific_files';
+-- File-set examples only
+SELECT * FROM examples WHERE example_kind = 'file_set';
+
+-- Specific example by composite key
+SELECT * FROM examples
+WHERE snapshot_slug = 'ducktape/2025-11-26-00'
+  AND example_kind = 'file_set'
+  AND files_hash = 'abc123...';
 ```
 
 ## Example Generation

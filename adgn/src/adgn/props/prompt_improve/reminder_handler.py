@@ -25,6 +25,7 @@ from adgn.openai_utils.model import UserMessage
 from adgn.props.agent_types import ImprovementTypeConfig
 from adgn.props.db import get_session
 from adgn.props.db.config import DatabaseConfig
+from adgn.props.models.examples import SingleFileSetExample
 
 logger = logging.getLogger(__name__)
 
@@ -93,39 +94,55 @@ def check_termination_condition(
             missing_evals_count=0,
         )
 
-    # Build list of (snapshot_slug, scope_hash) tuples for SQL
-    example_tuples = [(ex.snapshot_slug, ex.scope_hash) for ex in allowed_examples]
-    n_examples = len(example_tuples)
+    # Build list of ExampleSpec for SQL queries
+    # ExampleSpec is frozen and hashable - use directly
+    n_examples = len(allowed_examples)
 
     # Query 1: Get baseline average issues found
     # Uses occurrence_credits view to compute total issues (sum of credits) per definition
     # then average across baseline definitions
+    # Note: Uses (snapshot_slug, example_kind, files_hash) composite key
     baseline_query = text("""
-        WITH baseline_issues AS (
+        WITH allowed_examples AS (
             SELECT
-                agent_definition_id,
-                SUM(found_credit) as total_issues
-            FROM occurrence_credits
-            WHERE agent_definition_id = ANY(:baseline_ids)
-              AND (snapshot_slug, scope_hash) IN (
-                  SELECT unnest(:snapshot_slugs), unnest(:scope_hashes)
-              )
-            GROUP BY agent_definition_id
+                unnest(:snapshot_slugs) AS snapshot_slug,
+                unnest(:example_kinds) AS example_kind,
+                unnest(:files_hashes) AS files_hash
+        ),
+        baseline_issues AS (
+            SELECT
+                oc.critic_definition_id AS agent_definition_id,
+                SUM(oc.found_credit) as total_issues
+            FROM occurrence_credits oc
+            JOIN allowed_examples ae ON (
+                oc.snapshot_slug = ae.snapshot_slug
+                AND oc.example_kind::text = ae.example_kind
+                AND COALESCE(oc.files_hash, '') = COALESCE(ae.files_hash, '')
+            )
+            WHERE oc.critic_definition_id = ANY(:baseline_ids)
+            GROUP BY oc.critic_definition_id
         )
         SELECT AVG(total_issues) as avg_issues
         FROM baseline_issues
     """).bindparams(
         bindparam("baseline_ids", type_=ARRAY(String)),
         bindparam("snapshot_slugs", type_=ARRAY(String)),
-        bindparam("scope_hashes", type_=ARRAY(String)),
+        bindparam("example_kinds", type_=ARRAY(String)),
+        bindparam("files_hashes", type_=ARRAY(String)),
     )
+
+    # Build parallel lists for the composite key (snapshot_slug, example_kind, files_hash)
+    snapshot_slugs = [str(ex.snapshot_slug) for ex in allowed_examples]
+    example_kinds = [ex.kind for ex in allowed_examples]  # "whole_snapshot" or "file_set"
+    files_hashes = [ex.files_hash if isinstance(ex, SingleFileSetExample) else "" for ex in allowed_examples]
 
     baseline_result = session.execute(
         baseline_query,
         {
             "baseline_ids": baseline_ids,
-            "snapshot_slugs": [str(ex.snapshot_slug) for ex in allowed_examples],
-            "scope_hashes": [ex.scope_hash for ex in allowed_examples],
+            "snapshot_slugs": snapshot_slugs,
+            "example_kinds": example_kinds,
+            "files_hashes": files_hashes,
         },
     ).fetchone()
 
@@ -133,8 +150,15 @@ def check_termination_condition(
 
     # Query 2: Get definitions created by this improvement run
     # and their total issues found on allowed_examples
+    # Note: Uses (snapshot_slug, example_kind, files_hash) composite key
     candidate_query = text("""
-        WITH candidate_defs AS (
+        WITH allowed_examples AS (
+            SELECT
+                unnest(:snapshot_slugs) AS snapshot_slug,
+                unnest(:example_kinds) AS example_kind,
+                unnest(:files_hashes) AS files_hash
+        ),
+        candidate_defs AS (
             SELECT id as agent_definition_id
             FROM agent_definitions
             WHERE created_by_agent_run_id = :improvement_run_id
@@ -143,13 +167,16 @@ def check_termination_condition(
             -- For each candidate, count how many of the allowed examples have evals
             SELECT
                 cd.agent_definition_id,
-                COUNT(DISTINCT (oc.snapshot_slug, oc.scope_hash)) as covered_examples,
+                COUNT(DISTINCT (oc.snapshot_slug, oc.example_kind, COALESCE(oc.files_hash, ''))) as covered_examples,
                 SUM(oc.found_credit) as total_issues
             FROM candidate_defs cd
-            LEFT JOIN occurrence_credits oc ON oc.agent_definition_id = cd.agent_definition_id
-                AND (oc.snapshot_slug, oc.scope_hash) IN (
-                    SELECT unnest(:snapshot_slugs), unnest(:scope_hashes)
-                )
+            LEFT JOIN occurrence_credits oc ON oc.critic_definition_id = cd.agent_definition_id
+            LEFT JOIN allowed_examples ae ON (
+                oc.snapshot_slug = ae.snapshot_slug
+                AND oc.example_kind::text = ae.example_kind
+                AND COALESCE(oc.files_hash, '') = COALESCE(ae.files_hash, '')
+            )
+            WHERE ae.snapshot_slug IS NOT NULL OR oc.snapshot_slug IS NULL
             GROUP BY cd.agent_definition_id
         )
         SELECT
@@ -158,14 +185,19 @@ def check_termination_condition(
             total_issues
         FROM candidate_coverage
         ORDER BY total_issues DESC NULLS LAST
-    """).bindparams(bindparam("snapshot_slugs", type_=ARRAY(String)), bindparam("scope_hashes", type_=ARRAY(String)))
+    """).bindparams(
+        bindparam("snapshot_slugs", type_=ARRAY(String)),
+        bindparam("example_kinds", type_=ARRAY(String)),
+        bindparam("files_hashes", type_=ARRAY(String)),
+    )
 
     candidate_results = session.execute(
         candidate_query,
         {
             "improvement_run_id": str(improvement_run_id),
-            "snapshot_slugs": [str(ex.snapshot_slug) for ex in allowed_examples],
-            "scope_hashes": [ex.scope_hash for ex in allowed_examples],
+            "snapshot_slugs": snapshot_slugs,
+            "example_kinds": example_kinds,
+            "files_hashes": files_hashes,
         },
     ).fetchall()
 
@@ -194,44 +226,51 @@ def check_termination_condition(
             best_partial_coverage = covered
 
     # Check missing baseline evals
+    # Note: Uses (snapshot_slug, example_kind, files_hash) composite key
     missing_baseline_query = text("""
-        WITH required_pairs AS (
-            SELECT unnest(:snapshot_slugs) as snapshot_slug,
-                   unnest(:scope_hashes) as scope_hash
+        WITH required_examples AS (
+            SELECT
+                unnest(:snapshot_slugs) as snapshot_slug,
+                unnest(:example_kinds) as example_kind,
+                unnest(:files_hashes) as files_hash
         ),
         baseline_coverage AS (
             SELECT
-                agent_definition_id,
+                critic_definition_id AS agent_definition_id,
                 snapshot_slug,
-                scope_hash
+                example_kind,
+                files_hash
             FROM occurrence_credits
-            WHERE agent_definition_id = ANY(:baseline_ids)
-            GROUP BY agent_definition_id, snapshot_slug, scope_hash
+            WHERE critic_definition_id = ANY(:baseline_ids)
+            GROUP BY critic_definition_id, snapshot_slug, example_kind, files_hash
         )
         SELECT COUNT(*) as missing_count
         FROM (
-            SELECT b.agent_definition_id, r.snapshot_slug, r.scope_hash
+            SELECT b.agent_definition_id, r.snapshot_slug, r.example_kind, r.files_hash
             FROM unnest(:baseline_ids) as b(agent_definition_id)
-            CROSS JOIN required_pairs r
+            CROSS JOIN required_examples r
             WHERE NOT EXISTS (
                 SELECT 1 FROM baseline_coverage bc
                 WHERE bc.agent_definition_id = b.agent_definition_id
                   AND bc.snapshot_slug = r.snapshot_slug
-                  AND bc.scope_hash = r.scope_hash
+                  AND bc.example_kind::text = r.example_kind
+                  AND COALESCE(bc.files_hash, '') = COALESCE(r.files_hash, '')
             )
         ) missing
     """).bindparams(
         bindparam("baseline_ids", type_=ARRAY(String)),
         bindparam("snapshot_slugs", type_=ARRAY(String)),
-        bindparam("scope_hashes", type_=ARRAY(String)),
+        bindparam("example_kinds", type_=ARRAY(String)),
+        bindparam("files_hashes", type_=ARRAY(String)),
     )
 
     missing_result = session.execute(
         missing_baseline_query,
         {
             "baseline_ids": baseline_ids,
-            "snapshot_slugs": [str(ex.snapshot_slug) for ex in allowed_examples],
-            "scope_hashes": [ex.scope_hash for ex in allowed_examples],
+            "snapshot_slugs": snapshot_slugs,
+            "example_kinds": example_kinds,
+            "files_hashes": files_hashes,
         },
     ).fetchone()
 

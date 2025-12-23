@@ -9,7 +9,6 @@ import asyncio
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-import tempfile
 from typing import Annotated
 from uuid import UUID
 
@@ -25,7 +24,7 @@ from typer_di import Depends, TyperDI
 from adgn.cli.logging_callback import make_logging_callback
 from adgn.cli_utils import async_run
 from adgn.openai_utils.client_factory import build_client
-from adgn.props.agent_types import AgentType, AllowedExample
+from adgn.props.agent_types import AgentType
 from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli import common_options as opt
 from adgn.props.cli.cmd_agent_definition import app as agent_definition_app
@@ -39,8 +38,7 @@ from adgn.props.cli.cmd_snapshot import snapshot_app
 from adgn.props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from adgn.props.cli.cmd_stats import stats_app
 from adgn.props.cli.resources import get_hydrator
-from adgn.props.cli.shared import BuildOptions, build_cmd, filter_files
-from adgn.props.cluster_unknowns import cluster_unknowns
+from adgn.props.cli.shared import make_example_from_files
 from adgn.props.critic.critic import run_critic
 from adgn.props.critic.persistence import load_critic_submit_payload_mcp
 from adgn.props.db import get_session, init_db
@@ -52,13 +50,12 @@ from adgn.props.db.query_builders import (
     query_recall_by_example,
 )
 from adgn.props.display import short_sha
-from adgn.props.docker_env import PropertiesDockerCompositor
 from adgn.props.eval_harness import run_all_evals
 from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.lint_issue import run_specimen_lint_issue_async
-from adgn.props.models.true_positive import LineRange, Occurrence
+from adgn.props.lint import run_specimen_lint_issue_async
+from adgn.props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from adgn.props.prompt_improve.improve_agent import (
     OutcomeExhausted,
     OutcomeSuccess,
@@ -67,8 +64,6 @@ from adgn.props.prompt_improve.improve_agent import (
 )
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompt_optimize.target_metric import TargetMetric
-from adgn.props.prompts.builder import build_enforce_prompt
-from adgn.props.prompts.schemas import build_input_schemas_json
 from adgn.props.runs_context import RunsContext
 from adgn.props.splits import Split
 
@@ -161,17 +156,6 @@ def read_embedded_paths(paths: list[Path]) -> str:
     )
 
 
-@app.command("cluster-unknowns")
-@async_run
-async def cmd_cluster_unknowns(model: str = opt.OPT_MODEL, out_dir: Path | None = opt.OPT_OUTPUT_DIR) -> None:
-    """Cluster all 'unknown' issues across all prompt_optimize runs via an in-proc MCP tool.
-
-    The agent must submit a single payload of clusters: [{name: str, true_positives: [uid,...]}].
-    """
-    root = await cluster_unknowns(model=model, out_dir=out_dir, ctx=RunsContext.from_pkg_dir())
-    typer.echo(f"Clusters written to: {root}/<snapshot>/clusters.json")
-
-
 @app.command("prompt-optimize")
 @async_run
 async def prompt_optimize(
@@ -234,19 +218,16 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[AllowedExample]:
+    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[ExampleSpec]:
         """Select Pareto-optimal training examples for an agent definition."""
         # Query occurrence-weighted recall per example using helper
-        results = query_recall_by_example(session, split=Split.TRAIN, agent_definition_id=agent_definition_id_param)
+        results = query_recall_by_example(session, split=Split.TRAIN, critic_definition_id=agent_definition_id_param)
 
         if not results:
             raise ValueError(f"No grader runs found for definition {short_sha(agent_definition_id_param)}")
 
-        # Build example scores dict
-        example_scores: dict[AllowedExample, float] = {}
-        for row in results:
-            key = AllowedExample(snapshot_slug=row.snapshot_slug, scope_hash=row.scope_hash)
-            example_scores[key] = row.recall
+        # Build example scores dict (RecallByExampleRow already has ExampleSpec)
+        example_scores: dict[ExampleSpec, float] = {row.example: row.recall for row in results}
 
         # Sort by recall descending and take top N
         sorted_examples = sorted(example_scores.items(), key=lambda x: x[1], reverse=True)
@@ -280,13 +261,13 @@ async def prompt_improve_cmd(
             .all()
         )
 
-        # Build index: agent_definition_id -> set of (snapshot_slug, scope_hash) for examples that have grader runs
+        # Build index: agent_definition_id -> set of ExampleSpec for examples that have grader runs
         # NOTE: Originally indexed by prompt_sha256, but prompts were replaced by agent_definitions
-        definition_to_examples: dict[str, set[tuple[str, str]]] = {}
+        definition_to_examples: dict[str, set[ExampleSpec]] = {}
         for cr in critic_runs:
             critic_config = cr.critic_config()
-            snapshot_slug = critic_config.snapshot_slug
-            scope_hash = critic_config.scope_hash
+            example_spec = critic_config.example
+            snapshot_slug = example_spec.snapshot_slug
             definition_id = cr.agent_definition_id
 
             # Check if this snapshot is in TRAIN split
@@ -306,7 +287,7 @@ async def prompt_improve_cmd(
             if has_grader:
                 if definition_id not in definition_to_examples:
                     definition_to_examples[definition_id] = set()
-                definition_to_examples[definition_id].add((snapshot_slug, scope_hash))
+                definition_to_examples[definition_id].add(example_spec)
 
         # Filter to definitions with enough examples
         definition_example_counts = [
@@ -324,11 +305,11 @@ async def prompt_improve_cmd(
         # Get performance stats for eligible definitions
         stats = query_definition_performance_stats(session, limit=100)
         # Get validation stats for whole-snapshot examples
-        valid_stats_key = (Split.VALID, "entire_snapshot")
+        valid_stats_key = (Split.VALID, ExampleKind.WHOLE_SNAPSHOT)
         eligible_stats = [
             s
             for s in stats
-            if s.agent_definition_id in eligible_definition_ids
+            if s.critic_definition_id in eligible_definition_ids
             and valid_stats_key in s.stats
             and s.stats[valid_stats_key].success_count > 0
         ]
@@ -343,7 +324,7 @@ async def prompt_improve_cmd(
             return lcb if lcb is not None else -1.0
 
         best = max(eligible_stats, key=get_lcb)
-        definition_id = best.agent_definition_id
+        definition_id = best.critic_definition_id
 
         example_count = next(count for d, count in definition_example_counts if d == definition_id)
         console.print(f"[green]✓[/green] Selected best definition: {definition_id} ({example_count} training examples)")
@@ -378,9 +359,16 @@ async def prompt_improve_cmd(
 
         table = Table(title="Training Examples")
         table.add_column("Snapshot", style="cyan")
-        table.add_column("Scope Hash", style="dim")
+        table.add_column("Scope", style="dim")
         for ex in allowed_examples[:5]:
-            table.add_row(str(ex.snapshot_slug), short_sha(ex.scope_hash))
+            # Use isinstance to match discriminated union variants
+            if isinstance(ex, WholeSnapshotExample):
+                scope_desc = "whole_snapshot"
+            elif isinstance(ex, SingleFileSetExample):
+                scope_desc = f"file_set_{ex.files_hash}"
+            else:
+                raise ValueError(f"Unknown example type: {type(ex)}")
+            table.add_row(str(ex.snapshot_slug), scope_desc)
         if len(allowed_examples) > 5:
             table.add_row("[dim]...[/dim]", f"[dim](+{len(allowed_examples) - 5} more)[/dim]")
         console.print(table)
@@ -495,7 +483,7 @@ async def snapshot_grade(
             graded_critic_run = session.get(AgentRun, grader_config.graded_agent_run_id)
             if graded_critic_run is None:
                 raise RuntimeError(f"Graded critic run {grader_config.graded_agent_run_id} not found in database")
-            snapshot_slug = graded_critic_run.critic_config().snapshot_slug
+            snapshot_slug = graded_critic_run.critic_config().example.snapshot_slug
             typer.echo(f"Graded critic run {critic_run_id}")
             typer.echo(f"Grader run ID: {grader_run_id}")
             typer.echo(f"Snapshot: {snapshot_slug}")
@@ -623,53 +611,6 @@ async def cmd_grade_missing(
         await docker_client.close()
 
 
-@app.command("fix")
-@async_run
-async def cmd_fix(
-    workdir: Path = opt.ARG_WORKDIR,
-    scope: str = typer.Argument(..., help="Freeform scope description to enforce"),
-    model: str = opt.OPT_MODEL,
-    final_only: bool = opt.OPT_FINAL_ONLY,
-    output_final_message: Path | None = opt.OPT_OUTPUT_FINAL_MESSAGE,
-    skip_git_repo_check: bool = opt.OPT_SKIP_GIT_REPO_CHECK,
-    full_auto: bool = opt.OPT_FULL_AUTO,
-) -> None:
-    """Refactor code within scope to satisfy property definitions (workspace-write sandbox)."""
-    docker_client = aiodocker.Docker()
-    try:
-        schemas_json = build_input_schemas_json([Occurrence, LineRange])
-        compositor = PropertiesDockerCompositor(
-            workdir, docker_client, mount_properties=True, hydrator=SnapshotHydrator.from_env()
-        )
-        prompt = build_enforce_prompt(scope, compositor=compositor, schemas_json=schemas_json)
-        cmd = build_cmd(
-            model,
-            workdir,
-            BuildOptions(
-                sandbox="workspace-write",
-                skip_git_repo_check=skip_git_repo_check,
-                full_auto=full_auto,
-                extra_configs=['sandbox_permissions=["disk-full-read-access"]'],
-            ),
-        )
-        if output_final_message:
-            cmd.extend(["--output-last-message", str(output_final_message)])
-        elif final_only:
-            with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                last_path = Path(tmp.name)
-            cmd.extend(["--output-last-message", str(last_path)])
-
-        # Use async subprocess to avoid blocking in async function
-        proc = await asyncio.create_subprocess_exec(
-            *cmd, stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        _stdout, _stderr = await proc.communicate(input=prompt.encode("utf-8"))
-        rc = proc.returncode if proc.returncode is not None else 1
-        raise typer.Exit(code=rc)
-    finally:
-        await docker_client.close()
-
-
 @app.command("lint-issue")
 @async_run
 async def cmd_lint_issue(
@@ -763,9 +704,9 @@ async def cmd_run(
             snapshot_obj = session.query(Snapshot).filter_by(slug=snapshot).one()
             available_files = snapshot_obj.files_with_issues()
 
-        # Filter files if requested
+        # Create example spec from file filter
         available_files_dict = dict.fromkeys(available_files)
-        files_spec = filter_files(available_files_dict, files)
+        example_spec = make_example_from_files(snapshot, available_files_dict, files)
 
         # Create workspace manager for this CLI run
         workspace_manager = WorkspaceManager.from_env()
@@ -773,15 +714,13 @@ async def cmd_run(
         # Run critic using AgentHandle-based flow
         critic_run_id, status = await run_critic(
             definition_id=definition_id,
-            snapshot_slug=snapshot,
-            scope=files_spec,
+            example=example_spec,
             client=build_client(model),
             parent_agent_run_id=None,
             docker_client=docker_client,
             hydrator=hydrator,
             db_config=db_config,
             workspace_manager=workspace_manager,
-            mount_properties=True,
             verbose=True,
             max_lines=max_lines,
             max_turns=100,

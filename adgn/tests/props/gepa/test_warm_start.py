@@ -12,8 +12,7 @@ import pytest
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
 from adgn.props.gepa.warm_start import build_historical_gepa_state
-from adgn.props.ids import SnapshotSlug
-from tests.props.conftest import get_example, make_critic_and_grader_run, make_grader_output
+from tests.props.conftest import get_tp_occurrences_for_snapshot, make_critic_and_grader_run, make_grader_output
 
 pytestmark = pytest.mark.skip(reason="GEPA warm-start broken: needs migration from prompts to agent_definitions")
 
@@ -27,8 +26,8 @@ def standard_valset(synced_test_db, sample_subtract_py_scope, calculator_py_scop
     - test-validation-2/calculator.py (index 1)
     """
     with get_session() as session:
-        example1 = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
-        example2 = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
+        example1 = Example.from_spec(session, sample_subtract_py_scope)
+        example2 = Example.from_spec(session, calculator_py_scope)
         session.expunge_all()
         return [example1, example2]
 
@@ -37,7 +36,7 @@ def standard_valset(synced_test_db, sample_subtract_py_scope, calculator_py_scop
 def validation_subtract_valset(synced_test_db, sample_subtract_py_scope) -> list[Example]:
     """Valset containing test-validation/sample_subtract.py (matches db_with_historical_runs example1)."""
     with get_session() as session:
-        example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
+        example = Example.from_spec(session, sample_subtract_py_scope)
         session.expunge(example)
         return [example]
 
@@ -46,7 +45,7 @@ def validation_subtract_valset(synced_test_db, sample_subtract_py_scope) -> list
 def validation_calculator_valset(synced_test_db, calculator_py_scope) -> list[Example]:
     """Valset containing test-validation-2/calculator.py (matches db_with_historical_runs example2)."""
     with get_session() as session:
-        example = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
+        example = Example.from_spec(session, calculator_py_scope)
         session.expunge(example)
         return [example]
 
@@ -55,7 +54,7 @@ def validation_calculator_valset(synced_test_db, calculator_py_scope) -> list[Ex
 def train_add_valset(synced_test_db, add_py_scope) -> list[Example]:
     """Valset containing test-trivial/add.py (TRAIN split, has runs in db_with_historical_runs)."""
     with get_session() as session:
-        example = get_example(session, SnapshotSlug("test-fixtures/test-trivial"), add_py_scope)
+        example = Example.from_spec(session, add_py_scope)
         session.expunge(example)
         return [example]
 
@@ -71,27 +70,38 @@ def db_with_historical_runs(synced_test_db, sample_subtract_py_scope, calculator
     """
     with get_session() as session:
         # Get specific VALID examples
-        example1 = get_example(session, SnapshotSlug("test-fixtures/test-validation"), sample_subtract_py_scope)
-        example2 = get_example(session, SnapshotSlug("test-fixtures/test-validation-2"), calculator_py_scope)
+        example1 = Example.from_spec(session, sample_subtract_py_scope)
+        example2 = Example.from_spec(session, calculator_py_scope)
 
         # Get specific TRAIN example for exclusion test
-        train_example = get_example(session, SnapshotSlug("test-fixtures/test-trivial"), add_py_scope)
+        train_example = Example.from_spec(session, add_py_scope)
 
         # Create critic + grader runs using convenience factory
         # example1 (test-validation/subtract.py) - evaluated with both prompts
+        tp_occs1 = get_tp_occurrences_for_snapshot(example1.snapshot_slug, session)
         make_critic_and_grader_run(
-            example=example1, grader_output=make_grader_output(tp_count=1, found_credit=0.8), session=session
+            example=example1,
+            grader_output=make_grader_output(tp_occurrences=tp_occs1, found_credit=0.8),
+            session=session,
         )
         make_critic_and_grader_run(
-            example=example1, grader_output=make_grader_output(tp_count=1, found_credit=0.9), session=session
+            example=example1,
+            grader_output=make_grader_output(tp_occurrences=tp_occs1, found_credit=0.9),
+            session=session,
         )
         # example2 (test-validation-2/calculator.py) - evaluated with prompt_a only
+        tp_occs2 = get_tp_occurrences_for_snapshot(example2.snapshot_slug, session)
         make_critic_and_grader_run(
-            example=example2, grader_output=make_grader_output(tp_count=1, found_credit=0.6), session=session
+            example=example2,
+            grader_output=make_grader_output(tp_occurrences=tp_occs2, found_credit=0.6),
+            session=session,
         )
         # train_example (test-trivial/add.py) - evaluated but in TRAIN split
+        tp_occs_train = get_tp_occurrences_for_snapshot(train_example.snapshot_slug, session)
         make_critic_and_grader_run(
-            example=train_example, grader_output=make_grader_output(tp_count=1, found_credit=0.5), session=session
+            example=train_example,
+            grader_output=make_grader_output(tp_occurrences=tp_occs_train, found_credit=0.5),
+            session=session,
         )
 
         session.commit()
@@ -218,7 +228,7 @@ def test_scope_hash_matching(db_with_historical_runs, validation_calculator_vals
 def test_critic_scope_spec_all(db_with_historical_runs, synced_test_db, all_files_scope):
     """Test that CriticScopeSpec 'all' is handled correctly in index mapping."""
     with get_session() as session:
-        all_files_example = get_example(session, SnapshotSlug("test-fixtures/test-validation"), all_files_scope)
+        all_files_example = Example.from_spec(session, all_files_scope)
         session.expunge(all_files_example)
         valset = [all_files_example]
 

@@ -6,7 +6,7 @@ The grader agent reviews each input issue manually and calls these functions as 
 Prerequisites:
 - Database credentials are set via PG* environment variables (automatic from temporary user)
 - grader_run_id is accessible via current_grader_run_id() SQL function (RLS scoping)
-- system_overview.md is available in bootstrap materials (database schema reference)
+- Database schema docs available in /workspace/docs/db/ (see evaluation_flow.md, grading.md)
 """
 
 from __future__ import annotations

@@ -51,6 +51,7 @@ from adgn.props.docker_env import (
     PropertiesDockerCompositor,
     ensure_critic_image_async,
     get_docker_network_gateway_async,
+    snapshot_container_path,
 )
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
@@ -181,10 +182,8 @@ class AgentEnvironment:
         self._snapshot_slugs = snapshot_slugs
         self._workspace_manager = workspace_manager
 
-        # Unpack definition BEFORE container starts
         ensure_definition_unpacked(definition_id, self.workspace_root)
 
-        # Managed resources (created in __aenter__, cleaned up in __aexit__)
         self._user_manager: TempUserManager | None = None
         self._exit_stack: AsyncExitStack | None = None
         self._snapshot_stack: AsyncExitStack | None = None
@@ -241,24 +240,17 @@ class AgentEnvironment:
         """
         logger.info(f"Using workspace: {self.workspace_root}")
 
-        # Create temporary database user with scoped access
         self._user_manager = TempUserManager(self._db_config.admin, self._agent_run_id)
         temp_creds = await self._user_manager.__aenter__()
-
         logger.info(f"Created temporary database user: {temp_creds.username}")
 
-        # Get container DB config with temp user credentials (use injected config, not environment)
         container_db = self._db_config.for_container_user(temp_creds)
 
-        # Initialize exit stack for HTTP server lifecycle
         self._exit_stack = AsyncExitStack()
         await self._exit_stack.__aenter__()
 
-        # Compute gateway IP for the props network (async)
         container_host = await get_docker_network_gateway_async(self._docker_client, PROPS_NETWORK_NAME)
 
-        # Create base compositor (inheriting from PropertiesDockerCompositor but not using its __aenter__)
-        # We manually orchestrate the steps to inject HTTP server between hydration and Docker server creation
         compositor = _AgentDockerCompositor(
             workspace_root=self.workspace_root,
             docker_client=self._docker_client,
@@ -268,11 +260,9 @@ class AgentEnvironment:
         )
         self._compositor = compositor
 
-        # Step 1: Mount resources and compositor_meta (call grandparent Compositor.__aenter__)
         await Compositor.__aenter__(compositor)
 
-        # Step 2: Hydrate snapshots
-        if self._hydrator and self._snapshot_slugs:
+        if self._snapshot_slugs:
             self._snapshot_stack = AsyncExitStack()
             await self._snapshot_stack.__aenter__()
 
@@ -280,9 +270,7 @@ class AgentEnvironment:
             for slug in self._snapshot_slugs:
                 hydrated = await self._snapshot_stack.enter_async_context(self._hydrator.hydrate(slug))
                 bind = BindMount(
-                    host_path=hydrated.content_root.resolve(),
-                    container_path=compositor.snapshot_container_path(slug),
-                    mode="ro",
+                    host_path=hydrated.content_root.resolve(), container_path=snapshot_container_path(slug), mode="ro"
                 )
                 extra_snapshot_binds.append(bind)
                 self._hydrated_paths[slug] = bind.host_path
@@ -291,7 +279,6 @@ class AgentEnvironment:
             compositor._extra_binds = [*compositor._extra_binds, *extra_snapshot_binds]
             logger.info(f"Mounted {len(extra_snapshot_binds)} snapshots (read-only)")
 
-        # Step 3: Start MCP HTTP server (needs hydrated paths for _make_mcp_server)
         token = secrets.token_hex(32)
         auth = StaticTokenVerifier({token: {"client_id": "mcp_agent", "scopes": []}})
         port = pick_free_port(host="127.0.0.1")
@@ -301,7 +288,6 @@ class AgentEnvironment:
         uv_server = uvicorn.Server(config)
         server_task = asyncio.create_task(uv_server.serve())
 
-        # Register cleanup for HTTP server
         async def _shutdown_http_server():
             uv_server.should_exit = True
             try:
@@ -317,17 +303,12 @@ class AgentEnvironment:
 
         self._exit_stack.push_async_callback(lambda: _shutdown_http_server())
 
-        # Wait for server to start
         await asyncio.to_thread(wait_for_port, "127.0.0.1", port, timeout_secs=10.0)
         url = f"http://{container_host}:{port}/mcp"
         logger.info(f"MCP HTTP server started at {url}")
 
-        # Step 4: Set container environment with MCP server credentials
-        # Note: Agent run ID is available via current_agent_run_id() which extracts
-        # it from the database username pattern (agent_{uuid})
         compositor._extra_env = {"MCP_SERVER_URL": url, "MCP_SERVER_TOKEN": token}
 
-        # Step 5: Create Docker exec server
         image_id = await ensure_critic_image_async(self._docker_client)
         docker_server = compositor._create_docker_server(image_id)
         compositor.runtime = await compositor.mount_inproc(DOCKER_MOUNT_PREFIX, docker_server, pinned=True)
@@ -341,26 +322,22 @@ class AgentEnvironment:
         logger.info("AgentEnvironment.__aexit__: starting cleanup")
 
         try:
-            # Clean up exit stack (HTTP server)
             if self._exit_stack:
                 logger.info("AgentEnvironment.__aexit__: cleaning up HTTP server")
                 await self._exit_stack.__aexit__(exc_type, exc_val, exc_tb)
                 self._exit_stack = None
 
-            # Clean up hydrated snapshots
             if self._snapshot_stack is not None:
                 logger.info("AgentEnvironment.__aexit__: cleaning up snapshots")
                 await self._snapshot_stack.__aexit__(exc_type, exc_val, exc_tb)
                 self._snapshot_stack = None
 
-            # Clean up compositor (Compositor base class)
             if self._compositor is not None:
                 logger.info("AgentEnvironment.__aexit__: cleaning up compositor")
                 await Compositor.__aexit__(self._compositor, exc_type, exc_val, exc_tb)
                 self._compositor = None
 
         finally:
-            # Clean up temporary database user (always, even on error)
             if self._user_manager is not None:
                 logger.info("AgentEnvironment.__aexit__: cleaning up temp user")
                 await self._user_manager.__aexit__(exc_type, exc_val, exc_tb)
@@ -388,7 +365,6 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
         super().__init__(
             workspace_root,
             docker_client,
-            mount_properties=False,  # Props are in agent definition, not separate mount
             hydrator=hydrator,
             snapshot_slugs=snapshot_slugs,
             db_conn=db_conn,

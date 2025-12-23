@@ -17,13 +17,24 @@ import yaml
 
 from adgn.openai_utils.model_metadata import MODEL_METADATA
 from adgn.props.db import get_session
-from adgn.props.db.examples import Example
-from adgn.props.db.models import AgentDefinition, FalsePositive, ModelMetadata, Snapshot, TruePositive
+from adgn.props.db.models import (
+    AgentDefinition,
+    FalsePositive,
+    FalsePositiveOccurrenceORM,
+    FileSet,
+    FileSetMember,
+    ModelMetadata,
+    OccurrenceTrigger,
+    Snapshot,
+    SnapshotFile,
+    TruePositive,
+    TruePositiveOccurrenceORM,
+)
 from adgn.props.definition_utils import pack_definition, validate_packed_definition
+from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
 from adgn.props.models.snapshot import SnapshotDoc
 from adgn.props.prop_utils import specimens_definitions_root
-from adgn.props.splits import Split
 
 from ._loader import FilesystemLoader
 
@@ -224,15 +235,26 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
             seen_issue_keys.add(key)
 
             if key not in existing_issues:
-                # New issue - create ORM instance directly from Pydantic
+                # New issue - create ORM instance and occurrences
                 logger.debug(f"Adding issue: {issue.snapshot_slug}/{issue.tp_id}")
                 orm_issue = TruePositive(
-                    snapshot_slug=issue.snapshot_slug,
-                    tp_id=issue.tp_id,
-                    rationale=issue.rationale,
-                    occurrences=issue.occurrences,  # PydanticColumn handles serialization
+                    snapshot_slug=issue.snapshot_slug, tp_id=issue.tp_id, rationale=issue.rationale
                 )
                 session.add(orm_issue)
+                # Add occurrences to normalized table
+                for occ in issue.occurrences:
+                    orm_occ = TruePositiveOccurrenceORM(
+                        snapshot_slug=issue.snapshot_slug,
+                        tp_id=issue.tp_id,
+                        occurrence_id=occ.occurrence_id,
+                        files={
+                            str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
+                            for p, ranges in occ.files.items()
+                        },
+                        note=occ.note,
+                        expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
+                    )
+                    session.add(orm_occ)
                 added += 1
                 total += 1
             else:
@@ -244,14 +266,26 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
                     logger.debug(f"Updating issue rationale: {key}")
                     needs_update = True
 
-                # Compare occurrences (PydanticColumn returns typed objects)
-                if existing.occurrences != issue.occurrences:
-                    logger.debug(f"Updating issue occurrences: {key}")
-                    needs_update = True
-
+                # For now, always update occurrences if any change detected
+                # TODO: Implement proper occurrence comparison
                 if needs_update:
                     existing.rationale = issue.rationale
-                    existing.occurrences = issue.occurrences
+                    # Delete existing occurrences and re-add (cascade handles this)
+                    for occ_orm in list(existing.occurrences):
+                        session.delete(occ_orm)
+                    for occ in issue.occurrences:
+                        orm_occ = TruePositiveOccurrenceORM(
+                            snapshot_slug=issue.snapshot_slug,
+                            tp_id=issue.tp_id,
+                            occurrence_id=occ.occurrence_id,
+                            files={
+                                str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
+                                for p, ranges in occ.files.items()
+                            },
+                            note=occ.note,
+                            expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
+                        )
+                        session.add(orm_occ)
                     updated += 1
                     total += 1
                 else:
@@ -259,38 +293,59 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
 
         # Sync false positives
         for fp in false_positives:
-            key = (fp.snapshot_slug, fp.fp_id)
-            seen_fp_keys.add(key)
+            fp_key = (fp.snapshot_slug, fp.fp_id)
+            seen_fp_keys.add(fp_key)
 
-            if key not in existing_fps:
-                # New FP - create ORM instance directly from Pydantic
+            if fp_key not in existing_fps:
+                # New FP - create ORM instance and occurrences
                 logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
-                orm_fp = FalsePositive(
-                    snapshot_slug=fp.snapshot_slug,
-                    fp_id=fp.fp_id,
-                    rationale=fp.rationale,
-                    occurrences=fp.occurrences,  # PydanticColumn handles serialization
-                )
+                orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
                 session.add(orm_fp)
+                # Add occurrences to normalized table
+                for fp_occ in fp.occurrences:
+                    fp_orm_occ = FalsePositiveOccurrenceORM(
+                        snapshot_slug=fp.snapshot_slug,
+                        fp_id=fp.fp_id,
+                        occurrence_id=fp_occ.occurrence_id,
+                        files={
+                            str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
+                            for p, ranges in fp_occ.files.items()
+                        },
+                        note=fp_occ.note,
+                        relevant_files=[str(p) for p in fp_occ.relevant_files],
+                    )
+                    session.add(fp_orm_occ)
                 added += 1
                 total += 1
             else:
                 # Existing FP - check if update needed
-                existing_fp = existing_fps[key]
-                needs_update = False
+                existing_fp = existing_fps[fp_key]
+                fp_needs_update = False
 
                 if existing_fp.rationale != fp.rationale:
-                    logger.debug(f"Updating FP rationale: {key}")
-                    needs_update = True
+                    logger.debug(f"Updating FP rationale: {fp_key}")
+                    fp_needs_update = True
 
-                # Compare occurrences (PydanticColumn returns typed objects)
-                if existing_fp.occurrences != fp.occurrences:
-                    logger.debug(f"Updating FP occurrences: {key}")
-                    needs_update = True
-
-                if needs_update:
+                # For now, always update occurrences if any change detected
+                # TODO: Implement proper occurrence comparison
+                if fp_needs_update:
                     existing_fp.rationale = fp.rationale
-                    existing_fp.occurrences = fp.occurrences
+                    # Delete existing occurrences and re-add (cascade handles this)
+                    for fp_occ_orm in list(existing_fp.occurrences):
+                        session.delete(fp_occ_orm)
+                    for fp_occ in fp.occurrences:
+                        fp_orm_occ = FalsePositiveOccurrenceORM(
+                            snapshot_slug=fp.snapshot_slug,
+                            fp_id=fp.fp_id,
+                            occurrence_id=fp_occ.occurrence_id,
+                            files={
+                                str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
+                                for p, ranges in fp_occ.files.items()
+                            },
+                            note=fp_occ.note,
+                            relevant_files=[str(p) for p in fp_occ.relevant_files],
+                        )
+                        session.add(fp_orm_occ)
                     updated += 1
                     total += 1
                 else:
@@ -313,79 +368,90 @@ def sync_issues_to_db(session: Session, base_path: Path) -> SyncStats:
     return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def generate_examples_for_snapshot(session: Session, slug: SnapshotSlug, split: Split) -> list[Example]:
-    """Generate training examples for a snapshot from expect_caught_from data.
+async def sync_snapshot_files_to_db(session: Session, base_path: Path, hydrator: SnapshotHydrator) -> SyncStats:
+    """Sync snapshot_files table from hydrated snapshot content.
 
-    For TRAIN snapshots:
-        - One example per unique expect_caught_from trigger set
-        - Plus one full-specimen example (all files with issues)
-
-    For VALID/TEST snapshots:
-        - Only full-specimen example
+    Populates snapshot_files with all files in each snapshot for FK validation.
 
     Args:
         session: SQLAlchemy session
-        slug: Snapshot slug
-        split: Train/valid/test split
+        base_path: Specimens base directory (used to load snapshot manifests)
+        hydrator: SnapshotHydrator instance for extracting source code
 
     Returns:
-        List of Example ORM objects (not yet added to session).
-        Unordered - GEPA handles ordering when loading from DB
+        Statistics about what changed (total, added, updated, deleted)
     """
-    # Get all issues for this snapshot
-    snapshot = session.query(Snapshot).filter_by(slug=slug).one()
-    true_positives = snapshot.true_positives
-    false_positives = snapshot.false_positives
+    manifests = load_manifests_from_yaml(base_path)
 
-    # Collect all files with issues (for detecting full-specimen example)
-    all_files: set[Path] = set()
-    for tp in true_positives:
-        for tp_occ in tp.occurrences:
-            all_files.update(tp_occ.files.keys())
-    for fp in false_positives:
-        for fp_occ in fp.occurrences:
-            all_files.update(fp_occ.files.keys())
+    # Get existing files from DB
+    existing_by_key = {(sf.snapshot_slug, sf.relative_path): sf for sf in session.query(SnapshotFile).all()}
+    seen_keys: set[tuple[SnapshotSlug, str]] = set()
 
-    # Generate scopes directly from domain logic (not file set comparison)
-    examples: list[Example] = []
+    total = 0
+    added = 0
+    updated = 0
+    deleted = 0
 
-    # 1. Always create whole-snapshot example (terminal metric)
-    whole_example = Example.from_all_files(slug)
-    examples.append(whole_example)
-    logger.debug(f"Creating whole-snapshot example: slug={slug}, scope_hash={whole_example.scope_hash[:8]}...")
+    for slug, _manifest in manifests.items():
+        # Hydrate snapshot to get file listing
+        async with hydrator.hydrate(slug) as hydrated:
+            for file_path in hydrated.content_root.rglob("*"):
+                if not file_path.is_file():
+                    continue
 
-    # 2. For TRAIN/VALID: Add per-trigger-set examples
-    if split in (Split.TRAIN, Split.VALID):
-        # Collect unique trigger sets from expect_caught_from
-        trigger_sets: set[frozenset[Path]] = set()
-        for tp in true_positives:
-            for occurrence in tp.occurrences:
-                for trigger_set in occurrence.expect_caught_from:
-                    trigger_sets.add(trigger_set)
+                relative = str(file_path.relative_to(hydrated.content_root))
+                key = (slug, relative)
+                seen_keys.add(key)
 
-        # Create ExplicitFileScope example for each trigger set
-        # Note: Even if a trigger_set contains all files, it produces a different scope_hash
-        # than AllFilesScope (different discriminated union variants), so no deduplication needed
-        for trigger_set in trigger_sets:
-            sorted_files = sorted(str(p) for p in trigger_set)
-            example = Example.from_explicit_files(slug, sorted_files)
-            examples.append(example)
-            logger.debug(
-                f"Creating file-set example: slug={slug}, scope_hash={example.scope_hash[:8]}... ({len(sorted_files)} files)"
-            )
+                # Count lines (errors="replace" handles encoding issues, let other errors crash)
+                content = file_path.read_text(encoding="utf-8", errors="replace")
+                line_count = content.count("\n") + (1 if content and not content.endswith("\n") else 0)
 
-    logger.debug(f"Generated {len(examples)} examples for {slug} (split={split})")
-    return examples
+                if key not in existing_by_key:
+                    session.add(SnapshotFile(snapshot_slug=slug, relative_path=relative, line_count=line_count))
+                    added += 1
+                else:
+                    existing = existing_by_key[key]
+                    if existing.line_count != line_count:
+                        existing.line_count = line_count
+                        updated += 1
+
+                total += 1
+
+    # Delete orphaned files
+    for key in set(existing_by_key.keys()) - seen_keys:
+        session.delete(existing_by_key[key])
+        deleted += 1
+
+    session.commit()
+    logger.info(f"Snapshot files synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
+    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
 
 
-def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
-    """Sync training examples to database (auto-generated from expect_caught_from data).
+def _compute_files_hash(file_paths: list[str]) -> str:
+    """Compute content-addressable hash for a file set.
 
-    For each snapshot:
-    - TRAIN: One example per unique expect_caught_from trigger set + full-specimen example
-    - VALID/TEST: Only full-specimen example (terminal metric)
+    Args:
+        file_paths: List of relative file paths
 
-    No YAML loading - examples are purely derived from issue definitions.
+    Returns:
+        MD5 hash of sorted, newline-joined file paths
+    """
+    import hashlib
+
+    sorted_paths = sorted(file_paths)
+    content = "\n".join(sorted_paths)
+    return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def sync_file_sets_to_db(session: Session, base_path: Path) -> SyncStats:
+    """Sync file_sets, file_set_members, and occurrence_triggers from true_positives.expect_caught_from.
+
+    Populates content-addressable file sets from JSONB expect_caught_from data.
+    Examples are derived automatically via the examples VIEW.
+
+    The file_sets table uses (snapshot_slug, files_hash) as primary key where
+    files_hash is the MD5 hash of sorted file paths - content-addressable.
 
     Args:
         session: SQLAlchemy session
@@ -394,56 +460,62 @@ def sync_examples_to_db(session: Session, base_path: Path) -> SyncStats:
     Returns:
         Statistics about what changed (total, added, updated, deleted)
     """
-    # Load snapshot manifests to get slugs and splits
     manifests = load_manifests_from_yaml(base_path)
 
-    # Get existing examples from DB (key by composite PK: snapshot_slug, scope_hash)
-    existing_by_key = {(ex.snapshot_slug, ex.scope_hash): ex for ex in session.query(Example).all()}
+    # Delete all existing file sets (simpler than incremental update)
+    # CASCADE will delete file_set_members and occurrence_triggers
+    deleted_file_sets = session.query(FileSet).delete()
+    deleted_occurrence_triggers = session.query(OccurrenceTrigger).delete()
+    session.flush()
 
-    # Track which examples we've seen (to detect deletions)
-    seen_keys: set[tuple[SnapshotSlug, str]] = set()
+    file_sets_added = 0
+    occurrence_triggers_added = 0
 
-    # Track stats
-    total = 0
-    added = 0
-    updated = 0
-    deleted = 0
+    # Track created file sets to avoid duplicates within same snapshot
+    created_file_sets: set[tuple[SnapshotSlug, str]] = set()
 
-    # Process each snapshot
-    for slug, manifest in manifests.items():
-        # Generate examples for this snapshot
-        examples = generate_examples_for_snapshot(session, slug, manifest.split)
+    for slug in manifests:
+        snapshot = session.query(Snapshot).filter_by(slug=slug).one()
 
-        for example in examples:
-            key = (example.snapshot_slug, example.scope_hash)
-            seen_keys.add(key)
+        for tp in snapshot.true_positives:
+            for occurrence in tp.occurrences:
+                for trigger_files in occurrence.expect_caught_from:
+                    # Convert to strings and compute hash
+                    file_paths = [str(f) for f in trigger_files]
+                    files_hash = _compute_files_hash(file_paths)
 
-            if key not in existing_by_key:
-                # New example
-                scope_kind = example.scope.kind if hasattr(example.scope, "kind") else type(example.scope).__name__
-                logger.debug(f"Adding example: {slug} (scope_hash={example.scope_hash[:8]}..., kind={scope_kind})")
-                session.add(example)
-                added += 1
-            else:
-                # Existing example - check if scope needs update
-                existing = existing_by_key[key]
-                if existing.scope != example.scope:
-                    logger.debug(f"Updating example scope: {slug} (scope_hash={example.scope_hash[:8]}...)")
-                    existing.scope = example.scope
-                    updated += 1
+                    # Create file set if not already exists for this snapshot
+                    file_set_key = (slug, files_hash)
+                    if file_set_key not in created_file_sets:
+                        file_set = FileSet(snapshot_slug=slug, files_hash=files_hash)
+                        session.add(file_set)
+                        session.flush()
 
-            total += 1
+                        # Add file members
+                        for file_path in file_paths:
+                            member = FileSetMember(snapshot_slug=slug, files_hash=files_hash, file_path=file_path)
+                            session.add(member)
 
-    # Delete orphaned examples
-    orphaned_keys = set(existing_by_key.keys()) - seen_keys
-    for slug, scope_hash in orphaned_keys:
-        logger.info(f"Deleting orphaned example: {slug} (scope_hash={scope_hash[:8]}...)")
-        session.delete(existing_by_key[(slug, scope_hash)])
-        deleted += 1
+                        created_file_sets.add(file_set_key)
+                        file_sets_added += 1
+
+                    # Create occurrence trigger linking occurrence to file set
+                    occurrence_trigger = OccurrenceTrigger(
+                        snapshot_slug=slug,
+                        tp_id=tp.tp_id,
+                        occurrence_id=occurrence.occurrence_id,
+                        files_hash=files_hash,
+                    )
+                    session.add(occurrence_trigger)
+                    occurrence_triggers_added += 1
 
     session.commit()
-    logger.info(f"Examples synced: +{added} added, ~{updated} updated, -{deleted} deleted, ={total} total")
-    return SyncStats(total=total, added=added, updated=updated, deleted=deleted)
+    logger.info(
+        f"File sets synced: +{file_sets_added} file_sets added, "
+        f"+{occurrence_triggers_added} occurrence_triggers added, "
+        f"-{deleted_file_sets} file_sets deleted, -{deleted_occurrence_triggers} occurrence_triggers deleted"
+    )
+    return SyncStats(total=file_sets_added, added=file_sets_added, updated=0, deleted=deleted_file_sets)
 
 
 # ============================================================================

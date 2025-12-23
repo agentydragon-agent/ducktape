@@ -12,7 +12,7 @@ SELECT current_agent_run_id();
 SELECT * FROM agent_runs WHERE agent_run_id = current_agent_run_id();
 
 -- Get your snapshot slug
-SELECT type_config->>'snapshot_slug' AS snapshot_slug
+SELECT type_config->'example'->>'snapshot_slug' AS snapshot_slug
 FROM agent_runs
 WHERE agent_run_id = current_agent_run_id();
 
@@ -27,8 +27,8 @@ WHERE ar.type_config->>'agent_type' = 'grader'
   AND EXISTS (
     SELECT 1 FROM agent_runs critic
     WHERE critic.agent_run_id::text = ar.type_config->>'graded_agent_run_id'
-      AND critic.type_config->>'snapshot_slug' = (
-        SELECT type_config->>'snapshot_slug' FROM agent_runs WHERE agent_run_id = current_agent_run_id()
+      AND critic.type_config->'example'->>'snapshot_slug' = (
+        SELECT type_config->'example'->>'snapshot_slug' FROM agent_runs WHERE agent_run_id = current_agent_run_id()
       )
   );
 

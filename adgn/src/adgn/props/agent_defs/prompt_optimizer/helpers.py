@@ -8,6 +8,8 @@ Import from /workspace when running in an agent container:
     from helpers import create_critic_definition, run_critic, run_grader, report_failure
 
 Usage:
+    from adgn.props.models.examples import WholeSnapshotExample
+
     # Create a critic definition from a directory (returns Pydantic model)
     output = await create_critic_definition("/workspace/my_critic/")
     definition_id = output.definition_id
@@ -15,8 +17,7 @@ Usage:
     # Run critic on an example using the definition (returns Pydantic model)
     critic_output = await run_critic(
         definition_id=definition_id,
-        snapshot_slug="test-fixtures/test-trivial",
-        scope_hash=example.scope_hash,
+        example=WholeSnapshotExample(snapshot_slug="test-fixtures/test-trivial"),
         max_turns=200
     )
 
@@ -32,7 +33,7 @@ from uuid import UUID
 from mcp.types import TextContent
 
 from adgn.props.agent_helpers import mcp_client_from_env
-from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import ExampleSpec
 from adgn.props.prompt_optimize.prompt_optimizer import (
     CreateCriticDefinitionInput,
     CreateCriticDefinitionOutput,
@@ -74,13 +75,12 @@ async def create_critic_definition(definition_dir: str) -> CreateCriticDefinitio
         return CreateCriticDefinitionOutput.model_validate(result.structured_content)
 
 
-async def run_critic(definition_id: str, snapshot_slug: str, scope_hash: str, max_turns: int = 200) -> RunCriticOutput:
+async def run_critic(definition_id: str, example: ExampleSpec, max_turns: int = 200) -> RunCriticOutput:
     """Run critic on an example using an agent definition.
 
     Args:
         definition_id: Agent definition ID (from create_critic_definition or 'critic' for baseline)
-        snapshot_slug: Snapshot identifier (e.g., "test-fixtures/test-trivial")
-        scope_hash: Scope hash identifying which files to review
+        example: ExampleSpec (WholeSnapshotExample or SingleTriggerSetExample)
         max_turns: Maximum number of turns for the critic agent (default: 200)
 
     Returns:
@@ -90,21 +90,17 @@ async def run_critic(definition_id: str, snapshot_slug: str, scope_hash: str, ma
         ToolError: If the MCP call fails (raised automatically by fastmcp)
 
     Example:
+        from adgn.props.models.examples import WholeSnapshotExample
+
         output = await run_critic(
             definition_id="critic_abc123",
-            snapshot_slug="test-fixtures/test-trivial",
-            scope_hash=example.scope_hash,
+            example=WholeSnapshotExample(snapshot_slug="test-fixtures/test-trivial"),
             max_turns=200
         )
         print(f"Critic run: {output.critic_run_id}")
     """
     async with mcp_client_from_env() as (client, _):
-        input_model = RunCriticInput(
-            definition_id=definition_id,
-            snapshot_slug=SnapshotSlug(snapshot_slug),
-            scope_hash=scope_hash,
-            max_turns=max_turns,
-        )
+        input_model = RunCriticInput(definition_id=definition_id, example=example, max_turns=max_turns)
         result = await client.call_tool("run_critic", input_model.model_dump(mode="json"))
         return RunCriticOutput.model_validate(result.structured_content)
 

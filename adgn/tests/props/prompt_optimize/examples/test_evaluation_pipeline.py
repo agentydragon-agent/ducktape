@@ -25,5 +25,7 @@ def test_example_data_accessible(synced_test_db):
         # Verify examples have required attributes
         for example in train_examples:
             assert example.snapshot_slug
-            assert example.scope_hash
-            assert example.scope is not None
+            assert example.example_kind  # whole_snapshot or file_set
+            # files_hash may be None for whole_snapshot examples
+            # scope is a computed property from example_kind + files
+            assert example.example_kind in ("whole_snapshot", "file_set")

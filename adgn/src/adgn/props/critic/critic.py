@@ -14,7 +14,6 @@ TODO: Do not install adgn package into critic container - snapshots contain past
 """
 
 import logging
-from pathlib import Path
 from uuid import UUID, uuid4
 
 import aiodocker
@@ -34,58 +33,16 @@ from adgn.props.agent_types import CriticTypeConfig
 from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
-from adgn.props.critic.models import ResolvedFileScope
 from adgn.props.critic.submit_server import CriticSubmitServer
 from adgn.props.db import get_session
 from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.examples import Example
 from adgn.props.db.models import AgentRun, AgentRunStatus, Snapshot
 from adgn.props.display import short_uuid
 from adgn.props.hydration import SnapshotHydrator
-from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
+from adgn.props.models.examples import ExampleSpec
 
 logger = logging.getLogger(__name__)
-
-
-# =============================================================================
-# Critic Scope Resolution
-# =============================================================================
-
-
-async def resolve_critic_scope(snapshot_slug: SnapshotSlug, files: CriticScopeSpec) -> ResolvedFileScope:
-    """Resolve file scope for critic, handling discriminated union.
-
-    Loads files with issues from database (no jsonnet evaluation).
-
-    Args:
-        snapshot_slug: Target snapshot
-        files: Discriminated union of ExplicitFileScope or AllFilesScope
-
-    Returns:
-        Resolved file set (guaranteed non-empty)
-
-    Raises:
-        ValueError: If AllFilesScope is used but snapshot has no files with issues
-    """
-    resolved_files: set[Path]
-    if isinstance(files, AllFilesScope):
-        # Load files with issues from database (not from jsonnet!)
-        with get_session() as session:
-            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
-            resolved_files = snapshot.files_with_issues()
-            if not resolved_files:
-                raise ValueError(
-                    f"Snapshot '{snapshot_slug}' has no files with ground truth issues. "
-                    "Cannot use AllFilesScope sentinel."
-                )
-    else:
-        # Type narrowing: must be ExplicitFileScope
-        assert isinstance(files, ExplicitFileScope)
-        resolved_files = {Path(f) for f in files.files}
-
-    return resolved_files
 
 
 # =============================================================================
@@ -110,11 +67,10 @@ class CriticAgentEnvironment(AgentEnvironment):
 
     Usage:
         async with CriticAgentEnvironment(
-            snapshot_slug="ducktape/2025-11-26-00",
+            example=WholeSnapshotExample(snapshot_slug="ducktape/2025-11-26-00"),
             docker_client=docker_client,
             hydrator=hydrator,
             agent_run_id=run_id,
-            scope=input_data.scope,
             db_config=db_config,
             workspace_manager=workspace_manager,
         ) as compositor:
@@ -124,28 +80,25 @@ class CriticAgentEnvironment(AgentEnvironment):
 
     def __init__(
         self,
-        snapshot_slug: SnapshotSlug,
+        example: ExampleSpec,
         docker_client: aiodocker.Docker,
         hydrator: SnapshotHydrator,
         agent_run_id: UUID,
-        scope: CriticScopeSpec,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
     ):
         """Create critic agent environment.
 
         Args:
-            snapshot_slug: Snapshot slug to hydrate and mount
+            example: Example specification (snapshot + scope)
             docker_client: Async Docker client
             hydrator: Snapshot hydrator
             agent_run_id: UUID of the agent run (for RLS scoping)
-            scope: Critic scope specification (AllFilesScope or ExplicitFileScope)
             db_config: Database configuration (passed via DI)
             workspace_manager: Workspace manager for agent workspace paths
         """
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
-        self._snapshot_slug = snapshot_slug
-        self._scope = scope
+        self._example = example
 
         super().__init__(
             definition_id=CRITIC_AGENT_DEFINITION_ID,
@@ -154,7 +107,7 @@ class CriticAgentEnvironment(AgentEnvironment):
             hydrator=hydrator,
             db_config=db_config,
             workspace_manager=workspace_manager,
-            snapshot_slugs=[snapshot_slug],
+            snapshot_slugs=[example.snapshot_slug],
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
@@ -169,11 +122,11 @@ class CriticAgentEnvironment(AgentEnvironment):
         Returns:
             CriticSubmitServer configured with actual hydrated host path
         """
-        hydrated_path = self._hydrated_paths[self._snapshot_slug]
+        hydrated_path = self._hydrated_paths[self._example.snapshot_slug]
         return CriticSubmitServer(
             agent_run_id=self._agent_run_id,
-            snapshot_slug=self._snapshot_slug,
-            scope=self._scope,
+            snapshot_slug=self._example.snapshot_slug,
+            example=self._example,
             snapshot_hydrated_path=hydrated_path,
             auth=auth,
         )
@@ -187,15 +140,13 @@ class CriticAgentEnvironment(AgentEnvironment):
 async def run_critic(
     *,
     definition_id: str,
-    snapshot_slug: SnapshotSlug,
-    scope: CriticScopeSpec,
+    example: ExampleSpec,
     client: OpenAIModelProto,
     parent_agent_run_id: UUID | None,
     docker_client: aiodocker.Docker,
     hydrator: SnapshotHydrator,
     db_config: DatabaseConfig,
     workspace_manager: WorkspaceManager,
-    mount_properties: bool = False,
     extra_handlers: tuple[BaseHandler, ...] = (),
     verbose: bool = False,
     max_lines: int = DEFAULT_MAX_LINES,
@@ -214,15 +165,13 @@ async def run_critic(
 
     Args:
         definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
-        snapshot_slug: Snapshot to review
-        scope: Files to review (AllFilesScope or ExplicitFileScope)
+        example: Example specification (snapshot + scope)
         client: OpenAI-compatible model client
         parent_agent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
         docker_client: Async Docker client
         hydrator: Snapshot hydrator
         db_config: Database configuration
         workspace_manager: Workspace manager for agent workspace paths
-        mount_properties: Whether to mount property definitions at /props
         extra_handlers: Additional handlers to add
         verbose: Whether to enable verbose display
         max_lines: Max lines per event in verbose display
@@ -236,8 +185,8 @@ async def run_critic(
         - Uses AgentHandle for definition loading, AGENT.md system prompt, init script
         - Definition's init script runs bootstrap (prints schema, helpers, scope)
     """
-    # Compute scope hash for content-addressed example lookup
-    scope_hash = Example.from_scope(snapshot_slug, scope).scope_hash
+    # Extract snapshot_slug for convenience
+    snapshot_slug = example.snapshot_slug
 
     # Generate unique ID for this run
     agent_run_id = uuid4()
@@ -249,7 +198,7 @@ async def run_critic(
         snapshot_split = snapshot.split
 
         # Store critic-specific config in type_config JSONB
-        type_config = CriticTypeConfig(snapshot_slug=snapshot_slug, scope_hash=scope_hash)
+        type_config = CriticTypeConfig(example=example)
 
         agent_run = AgentRun(
             agent_run_id=agent_run_id,
@@ -275,11 +224,10 @@ async def run_critic(
     # - Docker container with docker_exec
     # - Hydrated snapshot mounted at /snapshots/<slug>/
     comp_ctx = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example,
         docker_client=docker_client,
         hydrator=hydrator,
         agent_run_id=agent_run_id,
-        scope=scope,
         db_config=db_config,
         workspace_manager=workspace_manager,
     )

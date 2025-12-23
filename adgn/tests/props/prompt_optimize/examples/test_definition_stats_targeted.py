@@ -15,8 +15,8 @@ from adgn.props.agent_defs.prompt_optimizer.examples.definition_stats_targeted i
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
 from adgn.props.db.models import Snapshot
-from adgn.props.models.critic_scopes import AllFilesScope
-from tests.props.conftest import make_critic_and_grader_run, make_grader_output
+from adgn.props.models.examples import ExampleKind, WholeSnapshotExample
+from tests.props.conftest import get_tp_occurrences_for_snapshot, make_critic_and_grader_run, make_grader_output
 
 
 @pytest.fixture
@@ -60,37 +60,32 @@ def test_show_top_definitions_with_synced_data(synced_test_db, capsys, wide_cons
     use synced_test_db, not synced_test_db.
     """
     with get_session() as session:
-        # Query valid examples - use subquery to avoid detached instance issues
-        # First get the keys we need
-        valid_example_rows = (
-            session.query(Example.snapshot_slug, Example.scope_hash, Example.scope)
+        # Query valid whole_snapshot examples - test fixtures only have whole_snapshot for valid
+        valid_examples = (
+            session.query(Example)
             .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
             .filter(Snapshot.split == "valid")
+            .filter(Example.example_kind == ExampleKind.WHOLE_SNAPSHOT)
+            .limit(2)
             .all()
         )
-        # Filter for non-AllFilesScope and take first 2
-        filtered_keys = [
-            (row.snapshot_slug, row.scope_hash)
-            for row in valid_example_rows
-            if not isinstance(row.scope, AllFilesScope)
-        ][:2]
 
-        assert len(filtered_keys) >= 2, "Expected at least 2 valid ExplicitFileScope examples"
+        assert len(valid_examples) >= 2, "Expected at least 2 valid whole_snapshot examples"
 
-        # Create runs for each example - fetch fresh ORM objects
-        for (slug, scope_hash), recall in zip(filtered_keys, [0.9, 0.8], strict=True):
-            example = session.get(Example, (slug, scope_hash))
+        # Create runs for each example
+        for example, recall in zip(valid_examples, [0.9, 0.8], strict=True):
+            tp_occs = get_tp_occurrences_for_snapshot(example.snapshot_slug, session)
             make_critic_and_grader_run(
                 example=example,
-                grader_output=make_grader_output(found_credit=recall),
+                grader_output=make_grader_output(tp_occurrences=tp_occs, found_credit=recall),
                 session=session,
             )
 
         # Create bad prompt run for first example
-        example_0 = session.get(Example, filtered_keys[0])
+        tp_occs = get_tp_occurrences_for_snapshot(valid_examples[0].snapshot_slug, session)
         make_critic_and_grader_run(
-            example=example_0,
-            grader_output=make_grader_output(found_credit=0.2),
+            example=valid_examples[0],
+            grader_output=make_grader_output(tp_occurrences=tp_occs, found_credit=0.2),
             session=session,
         )
 

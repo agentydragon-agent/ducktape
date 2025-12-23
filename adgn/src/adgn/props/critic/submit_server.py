@@ -20,9 +20,9 @@ from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from adgn.props.db import get_session
 from adgn.props.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from adgn.props.db.snapshots import DBLocationAnchor
+from adgn.props.docker_env import snapshot_container_path
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import CriticScopeSpec
-from adgn.props.snapshot_paths import snapshot_container_path
+from adgn.props.models.examples import ExampleSpec
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +73,7 @@ class CriticSubmitServer(EnhancedFastMCP):
         *,
         agent_run_id: UUID,
         snapshot_slug: SnapshotSlug,
-        scope: CriticScopeSpec,
+        example: ExampleSpec,
         snapshot_hydrated_path: Path,
         auth: AuthProvider | None = None,
     ):
@@ -81,18 +81,18 @@ class CriticSubmitServer(EnhancedFastMCP):
 
         Args:
             agent_run_id: UUID of the agent run to finalize
-            snapshot_slug: Snapshot slug (for resource URIs)
-            scope: Scope specification (files to review)
+            snapshot_slug: Snapshot slug (for resource URIs and file validation)
+            example: Example specification (snapshot + scope)
             snapshot_hydrated_path: Actual hydrated host path for file validation (required)
             auth: Auth provider for HTTP mode (optional)
         """
         super().__init__("Critic Submit", instructions="Submit completed critic review with validation", auth=auth)
         self._agent_run_id = agent_run_id
         self._snapshot_slug = snapshot_slug
-        self._scope = scope
+        self._example = example
         self._snapshot_mount_path = snapshot_hydrated_path
 
-        # Note: Agent discovers snapshot_slug and scope from its agent_run row via database.
+        # Note: Agent discovers example (snapshot_slug + scope) from its agent_run row via database.
         # No MCP resources needed for these values.
 
         def submit(input: CriticSubmitInput) -> CriticSubmitResult:

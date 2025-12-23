@@ -10,7 +10,8 @@ import tempfile
 import tiktoken
 import typer
 
-from adgn.props.models.critic_scopes import AllFilesScope, CriticScopeSpec, ExplicitFileScope
+from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import ExampleSpec, WholeSnapshotExample
 from adgn.props.runs_context import format_timestamp_session
 
 
@@ -49,39 +50,31 @@ def build_cmd(model: str, workdir: Path, opts: BuildOptions) -> list[str]:
     return cmd
 
 
-def filter_files(all_files: Mapping[Path, object], requested_files: list[str] | None) -> CriticScopeSpec:
-    """Filter available files to requested subset, with validation.
+def make_example_from_files(
+    snapshot_slug: SnapshotSlug, all_files: Mapping[Path, object], requested_files: list[str] | None
+) -> ExampleSpec:
+    """Create an ExampleSpec from file filter, with validation.
 
     Args:
+        snapshot_slug: Snapshot identifier
         all_files: All available files from snapshot
         requested_files: Optional list of relative paths to filter to
 
     Returns:
-        AllFilesScope if no filter requested, otherwise ExplicitFileScope with validated paths
+        WholeSnapshotExample if no filter requested.
+        Currently only supports whole-snapshot; per-file requires trigger_set_id from database.
 
     Raises:
         typer.Exit: If requested files are invalid or not found
+        NotImplementedError: If requested_files is not None (per-file not yet supported in CLI)
     """
-    # No filter → return AllFilesScope sentinel for downstream resolution
+    # No filter → return WholeSnapshotExample
     if requested_files is None:
-        return AllFilesScope()
+        return WholeSnapshotExample(snapshot_slug=snapshot_slug)
 
-    # Validate requested files exist (work with Path internally)
-    available: set[Path] = set(all_files.keys())
-    requested_set: set[Path] = {Path(f) for f in requested_files}
-    invalid: set[Path] = requested_set - available
-
-    if invalid:
-        typer.echo("Error: The following files are not in the snapshot:", err=True)
-        for f in sorted(str(p) for p in invalid):
-            typer.echo(f"  - {f}", err=True)
-        typer.echo(f"\nAvailable files ({len(all_files)}):", err=True)
-        for f in sorted(str(p) for p in all_files)[:10]:
-            typer.echo(f"  - {f}", err=True)
-        if len(all_files) > 10:
-            typer.echo(f"  ... and {len(all_files) - 10} more", err=True)
-        raise typer.Exit(1)
-
-    # Convert validated Path set to ExplicitFileScope
-    validated: set[Path] = requested_set & available
-    return ExplicitFileScope(files=[str(p) for p in sorted(validated)])
+    # Per-file filtering requires database lookup to get/create trigger_set_id
+    # This would require session access and trigger set creation
+    # For now, CLI only supports whole-snapshot review
+    typer.echo("Error: Per-file filtering is not yet supported in CLI", err=True)
+    typer.echo("Use --files without arguments to review entire snapshot", err=True)
+    raise typer.Exit(1)

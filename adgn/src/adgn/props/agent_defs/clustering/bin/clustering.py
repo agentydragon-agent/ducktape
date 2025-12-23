@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Clustering agent CLI helper commands.
-
-Provides CLI access to clustering helper functions.
-
-Usage:
-    python /workspace/bin/clustering.py create-cluster "unused-imports" "Unused imports that add no value"
-    python /workspace/bin/clustering.py assign-to-cluster "12345678-1234-..." "input-issue-5" "unused-imports" "Rationale"
-    python /workspace/bin/clustering.py assign-to-tp "12345678-1234-..." "input-issue-10" "dead-code-utils" "Rationale"
-    python /workspace/bin/clustering.py assign-to-fp "12345678-1234-..." "input-issue-15" "acceptable-duplication" "Rationale"
-    python /workspace/bin/clustering.py cancel-assignment "12345678-1234-..." "input-issue-5" "Reassigning to different cluster"
-"""
+"""Clustering agent CLI helper commands."""
 
 from __future__ import annotations
 
@@ -29,7 +19,23 @@ from helpers import (  # type: ignore[import-not-found]
 )
 import typer
 
-app = typer.Typer(help="Clustering agent helper commands")
+HELP_TEXT = """Clustering agent commands for categorizing unknown issues.
+
+Common workflows:
+
+  Create a new cluster and assign issues:
+    /workspace/bin/clustering.py create-cluster "unused-imports" "Imports with no usage"
+    /workspace/bin/clustering.py assign-to-cluster "grader-run-uuid" "issue-5" "unused-imports" "Rationale"
+
+  Link to existing ground truth:
+    /workspace/bin/clustering.py assign-to-tp "grader-run-uuid" "issue-10" "dead-code-utils" "Same as TP"
+    /workspace/bin/clustering.py assign-to-fp "grader-run-uuid" "issue-15" "acceptable-dup" "Known pattern"
+
+  Correct a mistake:
+    /workspace/bin/clustering.py cancel-assignment "grader-run-uuid" "issue-5" "Reassigning"
+"""
+
+app = typer.Typer(name="clustering", help=HELP_TEXT, add_completion=False)
 
 
 @app.command("create-cluster")

@@ -1,14 +1,5 @@
 #!/usr/bin/env python3
-"""Critic CLI for reporting issues. Run 'critique --help' for all commands.
-
-Usage:
-    critique insert-issue <id> <rationale>
-    critique insert-occurrence <id> <file> [-s START] [-e END]
-    critique insert-occurrence-multi <id> <file:start:end> [...]
-    critique delete-issue <id>
-    critique submit <count> <summary>
-    critique list-issues
-"""
+"""Critic CLI for reporting issues."""
 
 import asyncio
 import sys
@@ -30,7 +21,27 @@ from adgn.props.agent_helpers import get_current_agent_run_id
 from adgn.props.db import get_session
 from adgn.props.db.models import ReportedIssue, ReportedIssueOccurrence
 
-app = typer.Typer(name="critique", help="Critic agent helper commands for reporting issues.", add_completion=False)
+HELP_TEXT = """Critic agent commands for reporting code review findings.
+
+Common workflow:
+
+  Report an issue with a single location:
+    /workspace/bin/critique.py insert-issue dead-import "Unused import detected"
+    /workspace/bin/critique.py insert-occurrence dead-import server.py -s 10 -e 10
+
+  Report duplication across multiple files:
+    /workspace/bin/critique.py insert-issue dup-enum "Enum duplicated in two files"
+    /workspace/bin/critique.py insert-occurrence-multi dup-enum types.py:20:25 persist.py:54:58
+
+  Fix a mistake:
+    /workspace/bin/critique.py delete-issue wrong-issue
+
+  Finalize and submit:
+    /workspace/bin/critique.py list-issues
+    /workspace/bin/critique.py submit 3 "Found 1 dead code and 2 duplication issues"
+"""
+
+app = typer.Typer(name="critique", help=HELP_TEXT, add_completion=False)
 
 
 @app.command("insert-issue")

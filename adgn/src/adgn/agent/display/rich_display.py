@@ -21,7 +21,6 @@ from adgn.mcp._shared.naming import parse_tool_name
 from adgn.mcp._shared.types import MCPMountPrefix
 from adgn.mcp.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from adgn.openai_utils.model import ReasoningItem
-from adgn.props.grader.models import GradeSubmitInput
 
 from ..handler import AssistantText, BaseHandler, Response, ToolCall, ToolCallOutput, UserText
 from ..tool_schemas import extract_tool_input_schemas, extract_tool_schemas
@@ -475,65 +474,6 @@ class CompactDisplayHandler(BaseHandler):
 
         return "  ".join(parts)
 
-    def _format_grader_metadata(self, grader_output: GradeSubmitInput) -> str:
-        """Format grader result metadata (counts) for inline display."""
-        parts = []
-
-        # Counts
-        tp_count = len(grader_output.canonical_tp_coverage)
-        fp_count = len(grader_output.canonical_fp_coverage)
-        novel_count = len(grader_output.novel_critique_issues)
-        parts.append(f"[{tp_count} TPs, {fp_count} FPs, {novel_count} novel]")
-
-        return "  ".join(parts)
-
-    def _format_list_preview[T](self, items: list[T], max_items: int, overflow_label: str) -> str:
-        """Format a list with truncation indicator.
-
-        Args:
-            items: List of items (will be string-formatted)
-            max_items: Maximum items to show
-            overflow_label: Label for overflow (e.g., "more TPs")
-
-        Returns:
-            Formatted string with items and optional overflow indicator
-        """
-        lines = [f"  - {item}" for item in items[:max_items]]
-        if len(items) > max_items:
-            lines.append(f"  ... ({len(items) - max_items} {overflow_label})")
-        return "\n".join(lines)
-
-    def _format_grader_details(self, grader_output: GradeSubmitInput) -> str:
-        """Format grader result detailed content (coverage, novel issues, summary).
-
-        Note: Caller should apply _truncate_lines to the result.
-        """
-        detail_parts = []
-
-        # Show canonical TP coverage
-        if tp_coverage := grader_output.canonical_tp_coverage:
-            tp_items = [
-                f"{entry.canonical_id}: {len(entry.coverage.covered_by)} covered, credit={entry.coverage.recall_credit:.2f}"
-                for entry in tp_coverage
-            ]
-            detail_parts.append(f"Canonical TPs:\n{self._format_list_preview(tp_items, 3, 'more TPs')}")
-
-        # Show canonical FP coverage
-        if fp_coverage := grader_output.canonical_fp_coverage:
-            fp_items = [f"{entry.canonical_id}: {len(entry.coverage.covered_by)} covered" for entry in fp_coverage]
-            detail_parts.append(f"Canonical FPs:\n{self._format_list_preview(fp_items, 3, 'more FPs')}")
-
-        # Show novel issues
-        if novel_issues := grader_output.novel_critique_issues:
-            novel_items = [entry.input_id for entry in novel_issues]
-            detail_parts.append(f"Novel issues:\n{self._format_list_preview(novel_items, 3, 'more novel')}")
-
-        # Show summary (no manual truncation - let caller handle it)
-        if summary := grader_output.summary:
-            detail_parts.append(f"Summary: {summary}")
-
-        return "\n\n".join(detail_parts)
-
     def _truncate_lines(self, text: str, max_lines: int, indent: int = 0) -> str:
         """Truncate text to max_lines with indicator.
 
@@ -685,22 +625,6 @@ class CompactDisplayHandler(BaseHandler):
             display_data = parsed_data if parsed_data is not None else (result.content or {"isError": result.isError})
 
             text = Text()
-
-            # Special handling for grader results
-            if isinstance(display_data, GradeSubmitInput):
-                metadata = self._format_grader_metadata(display_data)
-                text.append(self._TOOL_RESULT_PREFIX)
-                text.append(metadata, style="dim")
-
-                # Format the detailed content
-                detail_text = self._format_grader_details(display_data)
-                truncated = self._truncate_lines(
-                    detail_text, self._max_lines - 1, indent=self._TOOL_RESULT_INDENT
-                )  # -1 for metadata line
-                text.append("\n")
-                text.append(self._indent(truncated, self._TOOL_RESULT_INDENT))
-
-                return text
 
             # Special handling for exec results
             if isinstance(display_data, BaseExecResult):

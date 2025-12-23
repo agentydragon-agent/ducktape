@@ -48,11 +48,11 @@ def test_occurrence_single_location_valid(test_critic_run):
         session.add(issue)
         session.flush()
 
-        # Valid: single location with file and line range
+        # Valid: single location with file and line range (use real fixture file)
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-1",
-            locations=[DBLocationAnchor(file="test.py", start_line=10, end_line=20)],
+            locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=3)],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -66,9 +66,11 @@ def test_occurrence_single_location_whole_file_valid(test_critic_run):
         session.add(issue)
         session.flush()
 
-        # Valid: whole-file location (no line numbers)
+        # Valid: whole-file location (no line numbers, use real fixture file)
         occ = ReportedIssueOccurrence(
-            agent_run_id=test_critic_run, reported_issue_id="test-issue-2", locations=[DBLocationAnchor(file="test.py")]
+            agent_run_id=test_critic_run,
+            reported_issue_id="test-issue-2",
+            locations=[DBLocationAnchor(file="subtract.py")],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -82,13 +84,13 @@ def test_occurrence_multiple_locations_valid(test_critic_run):
         session.add(issue)
         session.flush()
 
-        # Valid: multiple locations (cross-file duplication)
+        # Valid: multiple locations (cross-file duplication, use real fixture files)
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-3",
             locations=[
-                DBLocationAnchor(file="a.py", start_line=10, end_line=20),
-                DBLocationAnchor(file="b.py", start_line=30, end_line=40),
+                DBLocationAnchor(file="multiply.py", start_line=1, end_line=3),
+                DBLocationAnchor(file="divide.py", start_line=1, end_line=3),
             ],
         )
         session.add(occ)
@@ -139,7 +141,7 @@ def test_line_range_start_line_zero_invalid(test_critic_run):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-6",
-                locations=[DBLocationAnchor(file="test.py", start_line=0)],
+                locations=[DBLocationAnchor(file="add.py", start_line=0)],
             )
 
 
@@ -156,7 +158,7 @@ def test_line_range_start_line_negative_invalid(test_critic_run):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-7",
-                locations=[DBLocationAnchor(file="test.py", start_line=-5)],
+                locations=[DBLocationAnchor(file="add.py", start_line=-5)],
             )
 
 
@@ -173,7 +175,7 @@ def test_line_range_end_line_zero_invalid(test_critic_run):
             ReportedIssueOccurrence(
                 agent_run_id=test_critic_run,
                 reported_issue_id="test-issue-8",
-                locations=[DBLocationAnchor(file="test.py", start_line=10, end_line=0)],
+                locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=0)],
             )
 
 
@@ -185,11 +187,11 @@ def test_line_range_valid_single_line(test_critic_run):
         session.add(issue)
         session.flush()
 
-        # Valid: single line
+        # Valid: single line (use real fixture file)
         occ = ReportedIssueOccurrence(
             agent_run_id=test_critic_run,
             reported_issue_id="test-issue-9",
-            locations=[DBLocationAnchor(file="test.py", start_line=15, end_line=15)],
+            locations=[DBLocationAnchor(file="add.py", start_line=1, end_line=1)],
         )
         session.add(occ)
         session.commit()  # Should succeed
@@ -221,13 +223,13 @@ def test_duplicate_issue_id_not_allowed(test_critic_run):
 def test_foreign_key_cascade_delete(test_critic_run):
     """Deleting reported_issue cascades to occurrences."""
     with get_session() as session:
-        # Create issue with occurrence
+        # Create issue with occurrence (use real fixture file)
         issue = ReportedIssue(agent_run_id=test_critic_run, issue_id="cascade-test", rationale="Test issue")
         session.add(issue)
         session.flush()
 
         occ = ReportedIssueOccurrence(
-            agent_run_id=test_critic_run, reported_issue_id="cascade-test", locations=[DBLocationAnchor(file="test.py")]
+            agent_run_id=test_critic_run, reported_issue_id="cascade-test", locations=[DBLocationAnchor(file="add.py")]
         )
         session.add(occ)
         session.commit()

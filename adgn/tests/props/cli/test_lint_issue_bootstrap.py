@@ -13,7 +13,7 @@ from adgn.agent.agent import Agent
 from adgn.agent.display import DisplayEventsHandler
 from adgn.agent.loop_control import RequireAnyTool
 from adgn.openai_utils.model import AssistantMessage, FunctionCallOutputItem, InputTextPart, UserMessage
-from adgn.props.lint_issue import LintIssueCompositor, LintSubmitState, make_linter_handlers
+from adgn.props.lint import LintIssueCompositor, LintSubmitState, make_linter_handlers
 from adgn.props.models.true_positive import Occurrence
 from tests.support.steps import AssistantMessage as StepAssistantMessage, DockerExecCall
 

@@ -132,13 +132,18 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
         Sets total_num_evals=0 so budget applies to this run only,
         not counting historical evaluations.
     """
-    # Build valset index: (snapshot_slug, scope_hash) -> validation dataset index
-    # This maps database keys to GEPA DataIds (list indices)
-    # scope_hash is precomputed during sync (from resolved scope)
-    valset_idx_by_key: dict[tuple[SnapshotSlug, str], int] = {
-        (example.snapshot_slug, example.scope_hash): idx for idx, example in enumerate(valset)
-    }
+    # TODO(scope_hash migration): Warm-start is temporarily disabled during migration
+    # Database views still use scope_hash but Example ORM uses (scope_kind, trigger_set_id)
+    # Return None to indicate no warm-start data (GEPA will start from empty state)
+    logger.warning(
+        "GEPA warm-start temporarily disabled during scope_hash migration. "
+        "Database views use scope_hash but Example ORM uses (scope_kind, trigger_set_id). "
+        "Starting from empty state."
+    )
+    return None
 
+    # pylint: disable=unreachable
+    # type: ignore[unreachable]  # Temporarily disabled during scope_hash migration
     with get_session() as session:
         # Query per-run recalls from occurrence_run_credits view
         # This view computes recall as: SUM(avg_credit) / NULLIF(COUNT(*), 0)
@@ -177,7 +182,7 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
             unique_prompts[prompt_sha] = prompt_text
 
             # Map (snapshot_slug, scope_hash) to validation dataset index (GEPA DataId)
-            val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))
+            val_idx = valset_idx_by_key.get((snapshot_slug, scope_hash))  # type: ignore[name-defined]  # noqa: F821
             if val_idx is None:
                 # Training example not in current validation set (e.g., split changed or scope changed)
                 skipped_unknown_examples += 1
@@ -210,7 +215,11 @@ def build_historical_gepa_state(valset: list[Example], critic_model: str, grader
 
         # Compute Pareto frontier from SQL view
         pareto_front_valset, program_at_pareto_front_valset = _compute_pareto_frontier_from_sql(
-            session, critic_model, Split.VALID, valset_idx_by_key, sha_to_prog_idx
+            session,
+            critic_model,
+            Split.VALID,
+            valset_idx_by_key,  # type: ignore[name-defined]  # noqa: F821
+            sha_to_prog_idx,  # type: ignore[name-defined]
         )
 
     logger.info(

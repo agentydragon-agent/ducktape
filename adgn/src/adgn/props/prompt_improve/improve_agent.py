@@ -28,7 +28,7 @@ from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.openai_utils.model import OpenAIModelProto, UserMessage
 from adgn.props.agent_handle import AgentHandle
 from adgn.props.agent_setup import AgentEnvironment
-from adgn.props.agent_types import AllowedExample, ImprovementTypeConfig
+from adgn.props.agent_types import ImprovementTypeConfig
 from adgn.props.agent_workspace import WorkspaceManager
 from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.db import get_session
@@ -36,6 +36,7 @@ from adgn.props.db.agent_definition_ids import IMPROVEMENT_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.models import AgentRun, AgentRunStatus
 from adgn.props.hydration import SnapshotHydrator, SnapshotSlug
+from adgn.props.models.examples import ExampleSpec
 from adgn.props.prompt_improve.reminder_handler import ImprovementReminderHandler
 from adgn.props.prompt_improve.token_budget_handler import TokenBudgetHandler
 from adgn.props.prompt_optimize.prompt_optimizer import PromptEvalServer, PromptOptimizerState
@@ -110,6 +111,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
             improvement_run_id=uuid4(),
             baseline_definition_ids=[...],
             allowed_examples=[...],
+            improvement_model=improvement_client.model,
             critic_client=critic_client,
             grader_client=grader_client,
             db_config=config,
@@ -130,7 +132,8 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         hydrator: SnapshotHydrator,
         improvement_run_id: UUID,
         baseline_definition_ids: list[str],
-        allowed_examples: list[AllowedExample],
+        allowed_examples: list[ExampleSpec],
+        improvement_model: str,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
         db_config: DatabaseConfig,
@@ -145,7 +148,8 @@ class ImprovementAgentEnvironment(AgentEnvironment):
             hydrator: Snapshot hydrator
             improvement_run_id: UUID of the improvement run (for RLS scoping)
             baseline_definition_ids: Agent definition IDs to study and improve
-            allowed_examples: List of AllowedExample specifying which examples agent can access
+            allowed_examples: List of ExampleSpec specifying which examples agent can access
+            improvement_model: Model name for the improvement agent itself
             critic_client: OpenAI client for running critic evaluations
             grader_client: OpenAI client for running grader evaluations
             db_config: Database configuration (passed via DI)
@@ -155,7 +159,11 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         """
         # Build type_config with allowed_examples for RLS
         type_config = ImprovementTypeConfig(
-            baseline_definition_ids=baseline_definition_ids, allowed_examples=allowed_examples
+            baseline_definition_ids=baseline_definition_ids,
+            allowed_examples=allowed_examples,
+            improvement_model=improvement_model,
+            critic_model=critic_client.model,
+            grader_model=grader_client.model,
         )
         self._type_config = type_config
 
@@ -211,7 +219,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
 
 
 async def run_improvement_agent(
-    examples: list[AllowedExample],
+    examples: list[ExampleSpec],
     baseline_definition_ids: list[str],
     token_budget: int,
     model: str,
@@ -234,7 +242,7 @@ async def run_improvement_agent(
     of baseline definitions on total issues found across all allowed_examples.
 
     Args:
-        examples: List of AllowedExample (snapshot_slug, scope_hash) to analyze
+        examples: List of ExampleSpec (snapshot + scope) to analyze
         baseline_definition_ids: Agent definition IDs to study and improve
         token_budget: Maximum tokens (e.g., 200_000)
         model: LLM model for improvement agent (e.g., "o1-mini")
@@ -252,7 +260,7 @@ async def run_improvement_agent(
 
     Example:
         result = await run_improvement_agent(
-            examples=[AllowedExample(snapshot_slug="ducktape/2025-11-20-00", scope_hash="abc123")],
+            examples=[SingleTriggerSetExample(snapshot_slug="ducktape/2025-11-20-00", trigger_set_id=1)],
             baseline_definition_ids=["critic-v1"],
             token_budget=200_000,
             model="o1-mini",
@@ -287,7 +295,13 @@ async def run_improvement_agent(
     logger.info(f"Will mount {len(unique_slugs)} unique snapshot(s) (environment will handle hydration)")
 
     # Build type_config for AgentRun (same as used by ImprovementAgentEnvironment)
-    type_config = ImprovementTypeConfig(baseline_definition_ids=baseline_definition_ids, allowed_examples=examples)
+    type_config = ImprovementTypeConfig(
+        baseline_definition_ids=baseline_definition_ids,
+        allowed_examples=examples,
+        improvement_model=model,
+        critic_model=critic_client.model,
+        grader_model=grader_client.model,
+    )
 
     # Phase 1: Write initial AgentRun to DB (BEFORE agent runs - FK constraint!)
     with get_session() as session:
@@ -312,6 +326,7 @@ async def run_improvement_agent(
         improvement_run_id=run_id,
         baseline_definition_ids=baseline_definition_ids,
         allowed_examples=examples,
+        improvement_model=model,
         critic_client=critic_client,
         grader_client=grader_client,
         db_config=db_config,

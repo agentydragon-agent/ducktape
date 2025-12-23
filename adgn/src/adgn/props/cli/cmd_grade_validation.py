@@ -9,7 +9,7 @@ import logging
 from uuid import UUID
 
 import aiodocker
-from sqlalchemy import func, select
+from sqlalchemy import func
 import typer
 from typer_di import Depends
 
@@ -28,7 +28,7 @@ from adgn.props.db.query_builders import query_definition_performance_stats
 from adgn.props.display import short_uuid
 from adgn.props.grader.grader import grade_critic_run_by_id
 from adgn.props.hydration import SnapshotHydrator
-from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import ExampleSpec
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,7 @@ logger = logging.getLogger(__name__)
 class ValidationWorkItem:
     """Work item for validation grading."""
 
-    snapshot_slug: SnapshotSlug
-    scope_hash: str
+    example: ExampleSpec
     parent_agent_run_id: UUID | None
 
 
@@ -79,7 +78,7 @@ async def cmd_grade_validation(
                 session.query(Example)
                 .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
                 .where(Snapshot.split == Split.VALID)
-                .order_by(Example.snapshot_slug, Example.scope_hash)
+                .order_by(Example.snapshot_slug, Example.example_kind, Example.files_hash.nullsfirst())
                 .all()
             )
 
@@ -92,7 +91,7 @@ async def cmd_grade_validation(
             # Get all critic definitions in the same order as stats command displays them
             # (ordered by valid LCB desc, train LCB desc, created_at desc)
             perf_rows = query_definition_performance_stats(session, limit=1000)
-            ordered_definition_ids = [row.agent_definition_id for row in perf_rows]
+            ordered_definition_ids = [row.critic_definition_id for row in perf_rows]
 
             # Also get any critic definitions not yet evaluated (not in perf stats)
             all_critic_defs = (
@@ -116,15 +115,17 @@ async def cmd_grade_validation(
             work_items_by_definition: dict[str, list[ValidationWorkItem]] = defaultdict(list)
 
             for example in validation_examples:
+                example_spec = example.to_example_spec()
                 for definition_id in all_definition_ids:
                     # Check if successful critic run exists for (example, definition)
                     # Query AgentRun by agent_definition_id and type_config fields
+                    # Note: type_config['example'] is the full ExampleSpec JSON
                     critic_run = (
                         session.query(AgentRun)
                         .filter(
                             AgentRun.agent_definition_id == definition_id,
-                            AgentRun.type_config["snapshot_slug"].astext == example.snapshot_slug,
-                            AgentRun.type_config["scope_hash"].astext == example.scope_hash,
+                            AgentRun.type_config["example"]["snapshot_slug"].astext == example.snapshot_slug,
+                            AgentRun.type_config["example"]["kind"].astext == example.example_kind.value,
                             AgentRun.status == AgentRunStatus.COMPLETED,
                         )
                         .order_by(AgentRun.created_at.desc())
@@ -134,11 +135,7 @@ async def cmd_grade_validation(
                     if critic_run is None:
                         # No successful critic run exists, need to run critic then grader
                         work_items_by_definition[definition_id].append(
-                            ValidationWorkItem(
-                                snapshot_slug=example.snapshot_slug,
-                                scope_hash=example.scope_hash,
-                                parent_agent_run_id=None,
-                            )
+                            ValidationWorkItem(example=example_spec, parent_agent_run_id=None)
                         )
                         continue
 
@@ -157,11 +154,7 @@ async def cmd_grade_validation(
                     if not successful_grader_exists:
                         # Critic succeeded, need to run grader
                         work_items_by_definition[definition_id].append(
-                            ValidationWorkItem(
-                                snapshot_slug=example.snapshot_slug,
-                                scope_hash=example.scope_hash,
-                                parent_agent_run_id=critic_run.agent_run_id,
-                            )
+                            ValidationWorkItem(example=example_spec, parent_agent_run_id=critic_run.agent_run_id)
                         )
                     # else: both critic and grader succeeded - nothing to do
 
@@ -185,8 +178,7 @@ async def cmd_grade_validation(
         typer.echo(f"\n=== Processing {need_critic + need_grader_only} items with {max_parallel} workers ===\n")
 
         async def process_one(
-            snapshot_slug: SnapshotSlug,
-            scope_hash: str,
+            example: ExampleSpec,
             definition_id: str,
             critic_run_id_or_none: UUID | None,
             worker_id: int,
@@ -199,36 +191,21 @@ async def cmd_grade_validation(
             critic_success = True
             grader_success = True
             grader_run_id: UUID | None = None
+            snapshot_slug = example.snapshot_slug
 
             # Step 1: Run critic if needed
             if critic_run_id is None:
                 try:
-                    # Get scope from DB
-                    with get_session() as session:
-                        snapshot_obj = session.execute(
-                            select(Snapshot).where(
-                                Snapshot.slug == snapshot_slug  # type: ignore[arg-type]
-                            )
-                        ).scalar_one()
-
-                        matching_example = next((e for e in snapshot_obj.examples if e.scope_hash == scope_hash), None)
-                        if not matching_example:
-                            raise RuntimeError(f"Example not found for scope_hash={scope_hash}")
-
-                        example_scope = matching_example.scope
-
                     # Run critic using definition-based run_critic()
                     (critic_run_id, status) = await run_critic(
                         definition_id=definition_id,
-                        snapshot_slug=snapshot_slug,
-                        scope=example_scope,
+                        example=example,
                         client=critic_client,
                         docker_client=docker_client,
                         hydrator=hydrator,
                         db_config=db_config,
                         workspace_manager=workspace_manager,
                         parent_agent_run_id=None,
-                        mount_properties=True,
                         verbose=verbose,
                         max_turns=100,
                     )
@@ -338,13 +315,7 @@ async def cmd_grade_validation(
                     item_index = items_processed
 
                 result = await process_one(
-                    work_item.snapshot_slug,
-                    work_item.scope_hash,
-                    definition_id,
-                    work_item.parent_agent_run_id,
-                    worker_id,
-                    item_index,
-                    total_items,
+                    work_item.example, definition_id, work_item.parent_agent_run_id, worker_id, item_index, total_items
                 )
 
                 async with results_lock:

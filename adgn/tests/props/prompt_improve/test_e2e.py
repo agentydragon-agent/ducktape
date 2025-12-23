@@ -16,14 +16,13 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+from hamcrest import contains_string
 import pytest
 
-from adgn.props.agent_types import AllowedExample
 from adgn.props.db import get_session
 from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.examples import Example
 from adgn.props.db.models import AgentRun
-from adgn.props.hydration import SnapshotSlug
 from adgn.props.prompt_improve.improve_agent import run_improvement_agent
 from adgn.props.prompt_improve.reminder_handler import TerminationStatus
 from tests.llm.support.openai_mock import FakeOpenAIModel
@@ -129,9 +128,7 @@ async def test_prompt_improve_e2e_success(
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=test_snapshot).first()
         assert example is not None, "Expected example not found in test fixtures"
-        allowed_example = AllowedExample(
-            snapshot_slug=SnapshotSlug(example.snapshot_slug), scope_hash=example.scope_hash
-        )
+        allowed_example = example.to_example_spec()
 
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_improvement_steps())
@@ -205,9 +202,7 @@ async def test_prompt_improve_e2e_multiple_examples(
     with get_session() as session:
         examples = session.query(Example).filter_by(snapshot_slug=test_snapshot).limit(2).all()
         assert len(examples) >= 2, "Need at least 2 examples for this test"
-        allowed_examples = [
-            AllowedExample(snapshot_slug=SnapshotSlug(e.snapshot_slug), scope_hash=e.scope_hash) for e in examples
-        ]
+        allowed_examples = [e.to_example_spec() for e in examples]
 
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_improvement_steps())
@@ -257,3 +252,96 @@ async def test_prompt_improve_e2e_multiple_examples(
     with get_session() as session:
         agent_run = session.query(AgentRun).filter_by(agent_run_id=result.run_id).first()
         assert agent_run is not None, "AgentRun should exist"
+
+
+# =============================================================================
+# CLI Helper Integration Tests
+# =============================================================================
+
+
+def _make_leaderboard_check_steps() -> list[Step]:
+    """Create step sequence that runs leaderboard and terminates.
+
+    test_train_example_with_runs creates:
+    - First run: found_credit=0.8 (80%)
+    - Second run: found_credit=0.72 (80% * 0.9 = 72%)
+    Average: ~76%
+
+    We verify multiple indicators of health:
+    - Contains "76%" (the computed average recall)
+    - Contains "Recall" (table header showing metrics present)
+    - Contains "critic" (definition ID present)
+    - Contains "Runs" (column header showing run count present)
+    """
+    return [
+        # 1. Run leaderboard command - validates bootstrap first
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "leaderboard", "--limit", "5"], timeout_ms=30000
+        ),
+        # 2. Check multiple indicators of health using hamcrest matchers
+        AssertDockerExecThenFinish(
+            expected_output="",  # Not used when stdout_matchers provided
+            stdout_matchers=[
+                contains_string("76%"),  # Average recall value
+                contains_string("Recall"),  # Table header
+                contains_string("critic"),  # Definition ID
+                contains_string("Runs"),  # Run count column
+            ],
+            message="Leaderboard test completed successfully.",
+        ),
+    ]
+
+
+def _make_hard_examples_check_steps() -> list[Step]:
+    """Create step sequence that runs hard-examples and terminates.
+
+    test_train_example_with_runs creates runs with ~76% average recall.
+
+    We verify multiple indicators of health:
+    - Contains "76%" (the computed average recall)
+    - Contains "test-fixtures" (snapshot slug present - shows all examples)
+    - Contains "Recall" (table header showing metrics present)
+    """
+    return [
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "hard-examples", "--limit", "5"], timeout_ms=30000
+        ),
+        # Multiple indicators of health
+        AssertDockerExecThenFinish(
+            expected_output="",  # Not used when stdout_matchers provided
+            stdout_matchers=[
+                contains_string("76%"),  # Average recall value
+                contains_string("test-fixtures"),  # Snapshot slug (shows all examples)
+                contains_string("Recall"),  # Table header
+            ],
+            message="Hard examples test completed successfully.",
+        ),
+    ]
+
+
+@pytest.mark.requires_docker
+@pytest.mark.requires_postgres
+async def test_cli_leaderboard_in_improvement_agent(run_improvement_agent_with_steps, test_train_example_with_runs):
+    """Test that leaderboard CLI command works from improvement agent container.
+
+    Verifies:
+    - leaderboard command runs successfully with RLS-scoped credentials
+    - Output contains recall data from pre-populated grading decisions
+    - Recall values reflect test data (first run: 80%, second run: 72%, avg ~76%)
+    """
+    result = await run_improvement_agent_with_steps(_make_leaderboard_check_steps())
+    assert result.tokens_used >= 0
+
+
+@pytest.mark.requires_docker
+@pytest.mark.requires_postgres
+async def test_cli_hard_examples_in_improvement_agent(run_improvement_agent_with_steps, test_train_example_with_runs):
+    """Test that hard-examples CLI command works from improvement agent container.
+
+    Verifies:
+    - hard-examples command runs successfully with RLS-scoped credentials
+    - Output contains example data with actual recall values
+    - Recall values reflect test data (~76% average)
+    """
+    result = await run_improvement_agent_with_steps(_make_hard_examples_check_steps())
+    assert result.tokens_used >= 0

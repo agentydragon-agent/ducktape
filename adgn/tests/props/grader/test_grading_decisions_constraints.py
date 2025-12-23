@@ -116,11 +116,17 @@ def test_decision_credit_range_valid(session, add_decision):
     """Valid: credit can be any value between 0.0 and 1.0."""
     # Test boundary values - use different occurrences to avoid credit sum constraint
     # Uses fixture's 3 IDs (input-001, input-002, input-003) for boundary tests
-    for credit, issue_id in [(0.0, "input-001"), (0.5, "input-002"), (1.0, "input-003")]:
+    # Use valid issue IDs (5-40 chars, lowercase alphanumeric, underscore, hyphen only)
+    test_cases = [
+        (0.0, "input-001", "tp-credit-zero", "occ-credit-zero"),
+        (0.5, "input-002", "tp-credit-half", "occ-credit-half"),
+        (1.0, "input-003", "tp-credit-full", "occ-credit-full"),
+    ]
+    for credit, issue_id, tp_id, occ_id in test_cases:
         add_decision(
             issue_id,
-            target_tp_id=f"tp-{credit}",  # Different TP for each
-            target_tp_occurrence_id=f"occ-{credit}",  # Different occurrence for each
+            target_tp_id=tp_id,
+            target_tp_occurrence_id=occ_id,
             credit=credit,
             rationale=f"Valid credit: {credit}",
         )

@@ -28,8 +28,7 @@ from adgn.props.cli.common_options import DEFAULT_MAX_LINES
 from adgn.props.db import get_session
 from adgn.props.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
-from adgn.props.db.examples import Example
-from adgn.props.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, Snapshot
+from adgn.props.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from adgn.props.display import short_uuid
 from adgn.props.grader.exceptions import GraderDidNotSubmitError
 from adgn.props.grader.models import FalsePositiveID, GraderInput, KnownFalsePositive, TruePositiveID, TruePositiveIssue
@@ -37,8 +36,8 @@ from adgn.props.grader.persistence import fp_to_db, tp_to_db
 from adgn.props.grader.submit_server import GraderSubmitServer as GraderSubmitServerSQL
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope, ExplicitFileScope
-from adgn.props.models.true_positive import should_catch_occurrence, should_show_fp_occurrence
+from adgn.props.models.examples import SingleFileSetExample, WholeSnapshotExample
+from adgn.props.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from adgn.props.rationale import Rationale
 
 logger = logging.getLogger(__name__)
@@ -49,17 +48,59 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 
+def _convert_files_jsonb(files_jsonb: dict) -> dict[Path, list[LineRange] | None]:
+    """Convert JSONB files dict to Pydantic-typed dict.
+
+    JSONB format: {path_str: [{start_line: int, end_line: int}, ...] | null}
+    Each element is a LineRange serialized as dict.
+
+    Output format: {Path: list[LineRange] | None}
+    """
+    result: dict[Path, list[LineRange] | None] = {}
+    for path_str, ranges in files_jsonb.items():
+        if ranges is None:
+            result[Path(path_str)] = None
+        else:
+            # Each element is a dict with start_line/end_line
+            result[Path(path_str)] = [LineRange(**r) for r in ranges]
+    return result
+
+
+def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
+    """Convert ORM TruePositiveOccurrenceORM to Pydantic TruePositiveOccurrence."""
+    return TruePositiveOccurrence(
+        occurrence_id=orm_occ.occurrence_id,
+        files=_convert_files_jsonb(orm_occ.files),
+        note=orm_occ.note,
+        expect_caught_from=orm_occ.expect_caught_from_set,  # Already converts to set[frozenset[Path]]
+    )
+
+
+def _fp_occ_from_orm(orm_occ) -> FalsePositiveOccurrence:
+    """Convert ORM FalsePositiveOccurrenceORM to Pydantic FalsePositiveOccurrence."""
+    return FalsePositiveOccurrence(
+        occurrence_id=orm_occ.occurrence_id,
+        files=_convert_files_jsonb(orm_occ.files),
+        note=orm_occ.note,
+        relevant_files=orm_occ.relevant_files_set,  # Already converts to set[Path]
+    )
+
+
 def _tp_from_orm(orm_tp) -> TruePositiveIssue:
     """Convert ORM TruePositive to grader representation (module-private)."""
     return TruePositiveIssue(
-        id=TruePositiveID(orm_tp.tp_id), rationale=Rationale(orm_tp.rationale), occurrences=orm_tp.occurrences
+        id=TruePositiveID(orm_tp.tp_id),
+        rationale=Rationale(orm_tp.rationale),
+        occurrences=[_tp_occ_from_orm(occ) for occ in orm_tp.occurrences],
     )
 
 
 def _fp_from_orm(orm_fp) -> KnownFalsePositive:
     """Convert ORM FalsePositive to grader representation (module-private)."""
     return KnownFalsePositive(
-        id=FalsePositiveID(orm_fp.fp_id), rationale=Rationale(orm_fp.rationale), occurrences=orm_fp.occurrences
+        id=FalsePositiveID(orm_fp.fp_id),
+        rationale=Rationale(orm_fp.rationale),
+        occurrences=[_fp_occ_from_orm(occ) for occ in orm_fp.occurrences],
     )
 
 
@@ -115,7 +156,7 @@ async def _run_grader_agent(
             raise ValueError(
                 f"Critic run {input_data.critic_run_id} has wrong type_config type: {type(critic_run.type_config)}"
             )
-        snapshot_slug = critic_run.type_config.snapshot_slug
+        snapshot_slug = critic_run.type_config.example.snapshot_slug
 
         snapshot = session.get(Snapshot, snapshot_slug)
         if snapshot is None:
@@ -282,7 +323,7 @@ async def run_grader(
             raise ToolError(
                 f"Critic run {input_data.critic_run_id} has unexpected type_config: {type(critic_run.type_config)}"
             )
-        snapshot_slug = critic_run.type_config.snapshot_slug
+        snapshot_slug = critic_run.type_config.example.snapshot_slug
 
         # Build canonical issues snapshot for tracking (convert MCP models to DB models)
         canonical_snapshot = CanonicalIssuesSnapshot(
@@ -370,49 +411,46 @@ async def grade_critic_run_by_id(
     if critic_run is None:
         raise ValueError(f"Critic run {critic_run_id} not found in database")
 
-    # Get snapshot_slug from critic's type_config
+    # Get snapshot_slug and example from critic's type_config
     if not isinstance(critic_run.type_config, CriticTypeConfig):
         raise ValueError(f"Critic run {critic_run_id} has wrong type_config type: {type(critic_run.type_config)}")
-    snapshot_slug = critic_run.type_config.snapshot_slug
+
+    example_spec = critic_run.type_config.example
+    snapshot_slug = example_spec.snapshot_slug
 
     # Load snapshot and issues from database (no jsonnet!)
     snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
 
-    # Get critic scope from type_config and resolve to file set for filtering
-    # CriticTypeConfig has scope_hash - look up Example to get actual scope
-    scope_hash = critic_run.type_config.scope_hash
-    example = session.query(Example).filter_by(snapshot_slug=snapshot_slug, scope_hash=scope_hash).first()
-    if example is None:
-        raise ValueError(
-            f"Example not found for snapshot_slug={snapshot_slug}, scope_hash={scope_hash}. "
-            f"Critic run {critic_run_id} references a non-existent example."
-        )
-    critic_scope = example.scope
-
     # Resolve scope to file set for TP/FP filtering
-    if isinstance(critic_scope, AllFilesScope):
+    if isinstance(example_spec, WholeSnapshotExample):
         # Load all files with issues from snapshot
         reviewed_files = snapshot.files_with_issues()
         if not reviewed_files:
             raise ValueError(
-                f"Snapshot '{snapshot_slug}' has no files with ground truth issues. Cannot use AllFilesScope."
+                f"Snapshot '{snapshot_slug}' has no files with ground truth issues. Cannot use whole snapshot scope."
             )
     else:
-        # Type narrowing: must be ExplicitFileScope
-        assert isinstance(critic_scope, ExplicitFileScope)
-        reviewed_files = {Path(f) for f in critic_scope.files}
+        # Type narrowing: must be SingleFileSetExample
+        assert isinstance(example_spec, SingleFileSetExample)
+        # Look up file set to get files
+        file_set = (
+            session.query(FileSet)
+            .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
+            .one()
+        )
+        reviewed_files = {Path(m.file_path) for m in file_set.members}
 
-    # Filter ORM models - ORM occurrences are domain models, so we can use domain model helpers directly
+    # Filter ORM models using ORM occurrence properties for type conversion
     original_tp_count = len(snapshot.true_positives)
     filtered_orm_tps = [
         tp
         for tp in snapshot.true_positives
-        if any(should_catch_occurrence(occ, reviewed_files) for occ in tp.occurrences)
+        if any(any(alt.issubset(reviewed_files) for alt in occ.expect_caught_from_set) for occ in tp.occurrences)
     ]
     filtered_orm_fps = [
         fp
         for fp in snapshot.false_positives
-        if any(should_show_fp_occurrence(occ, reviewed_files) for occ in fp.occurrences)
+        if any(bool(occ.relevant_files_set & reviewed_files) for occ in fp.occurrences)
     ]
 
     # Raise error if no TPs are catchable from reviewed files

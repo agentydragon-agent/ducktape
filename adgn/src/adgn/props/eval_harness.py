@@ -24,11 +24,10 @@ from adgn.openai_utils.model import (
 )
 from adgn.props.hydration import SnapshotHydrator
 from adgn.props.ids import BaseIssueID, SnapshotSlug
+from adgn.props.lint import lint_issue_run
 from adgn.props.models.lint import extract_corrections
 from adgn.props.models.true_positive import IssueCore, Occurrence
 from adgn.props.runs_context import RunsContext, format_timestamp_session
-
-from .lint_issue import lint_issue_run
 
 
 # ---------- Expectations / Assertions ----------

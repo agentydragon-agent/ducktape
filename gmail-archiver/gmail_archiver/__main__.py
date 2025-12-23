@@ -73,12 +73,8 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
 
     plans = []
     for planner in planners:
-        try:
-            plan = planner.plan(inbox)
-            plans.append(plan)
-        except Exception as e:
-            console.print(f"[bold red]Error in {planner.name}:[/bold red] {e}")
-            continue
+        plan = planner.plan(inbox)
+        plans.append(plan)
 
     combined = Plan.merge(plans)
 

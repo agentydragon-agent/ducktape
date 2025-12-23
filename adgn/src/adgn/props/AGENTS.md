@@ -8,13 +8,18 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 
 ## Key Documentation
 
-**System documentation (in adgn/props):**
+**Agent-facing documentation (SSOT - transcluded below):**
 
-@docs/system_overview.md
+@agent_defs/common/docs/db/ground_truth.md
+@agent_defs/common/docs/db/examples.md
+@agent_defs/common/docs/db/evaluation_flow.md
+@agent_defs/common/docs/database_access.md
+@agent_defs/common/docs/writing_agent_definitions.md
 
-- @docs/training_strategy.md — Dataset model, per-file examples, optimization strategy
-- @docs/agent_infrastructure.md — Infrastructure strategy, helper patterns, bootstrap layering
-- @README.md — Package overview, conventions, workflow
+**Developer documentation (implementation notes):**
+- `docs/training_strategy.md` — Implementation files for training pipeline
+- `docs/agent_infrastructure.md` — Directory structure, testing requirements
+- `README.md` — Package overview, conventions, workflow
 
 **Specimen authoring (in specimens repo):**
 - Specimens repository has its own CLAUDE.md with format specs, authoring guide, and quality checklist

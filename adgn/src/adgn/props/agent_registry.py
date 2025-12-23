@@ -1,12 +1,44 @@
 """Agent registry - manages agent lifecycle and tracking.
 
+WARNING: This module is currently NOT WIRED UP to any runners. It exists as a
+skeleton for future sub-agent spawning functionality. See TODOs below.
+
 AgentRegistry provides centralized management for:
 - Creating new agent runs (with database records)
 - Running agents to completion or interactively
 - Tracking active agents
 - Restoring agents from database after restart
 
-Usage:
+TODO: This module needs significant work before it can be used:
+
+1. TASK TRACKING: Add asyncio.Task tracking for concurrent agent runs.
+   Currently only tracks AgentHandle refs, but can't await/cancel running agents.
+   ```python
+   _active_tasks: dict[UUID, asyncio.Task]  # To await/cancel
+   ```
+
+2. LIFECYCLE INTEGRATION: Integrate with AgentEnvironment context lifecycle.
+   The real lifecycle (compositor, Docker container, temp DB user) is managed by
+   AgentEnvironment, not the registry. Options:
+   - Registry owns AgentEnvironment contexts, or
+   - Registry receives lifecycle notifications from environments
+
+3. PARENT-CHILD TRACKING: Add tree tracking for sub-agent hierarchies.
+   ```python
+   _parent_children: dict[UUID, set[UUID]]  # For cancel_subtree()
+   ```
+
+4. WIRE TO RUNNERS: Integrate with run_critic(), grade_critic_run(), etc.
+   Each runner would need to register/unregister with the registry.
+
+5. BUDGET-BASED CANCELLATION: For prompt optimizer parallel runs, implement
+   cancellation across all running agents when budget exceeded.
+
+See also:
+- docs/design/agent-definitions.md "Future Work" section
+- Sub-agent spawning (FREEFORM type) design
+
+Usage (when implemented):
     registry = AgentRegistry(
         docker_client=docker,
         model_client=openai_client,

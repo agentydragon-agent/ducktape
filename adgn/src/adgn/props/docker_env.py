@@ -20,16 +20,32 @@ from adgn.mcp.compositor.server import Compositor
 from adgn.mcp.exec.docker.server import ContainerExecServer
 from adgn.props.db.config import DbConnectionConfig
 from adgn.props.ids import SnapshotSlug
-from adgn.props.prop_utils import props_definitions_root
-from adgn.props.snapshot_paths import snapshot_container_path
 
 logger = logging.getLogger(__name__)
 
-# Container filesystem path where property definitions are mounted
-PROPS_DIR: Path = Path("/props")
-
 PROPERTIES_DOCKER_IMAGE = "adgn-llm/properties-critic:latest"
 DOCKER_MOUNT_PREFIX = MCPMountPrefix("docker")  # Mount prefix for properties Docker exec server
+
+# Base directory for all snapshot mounts in containers
+SNAPSHOTS_BASE_DIR = Path("/snapshots")
+
+
+def snapshot_container_path(slug: SnapshotSlug) -> Path:
+    """Get the container path for a snapshot's source code.
+
+    Pattern: /snapshots/<slug>
+
+    Agents should NOT know which split (train/valid/test) a snapshot belongs to.
+    The split is internal to the training system and should not leak into agent prompts.
+
+    Args:
+        slug: Snapshot slug (e.g., "ducktape/2025-11-26-00")
+
+    Returns:
+        Container path (e.g., Path("/snapshots/ducktape/2025-11-26-00"))
+    """
+    return SNAPSHOTS_BASE_DIR / slug
+
 
 # Docker network name for properties containers
 # - Shared with postgres container (container-to-container communication)
@@ -60,7 +76,6 @@ class PropertiesDockerCompositor(Compositor):
         workspace_root: Path,
         docker_client: aiodocker.Docker,
         *,
-        mount_properties: bool,
         hydrator: SnapshotHydrator,
         db_conn: DbConnectionConfig | None = None,
         extra_binds: Sequence[BindMount] = (),
@@ -75,7 +90,6 @@ class PropertiesDockerCompositor(Compositor):
         Args:
             workspace_root: Path to workspace directory to mount in container.
             docker_client: Async Docker client (managed by caller).
-            mount_properties: Whether to mount property definitions at /props.
             hydrator: Snapshot hydrator for automatic snapshot mounting (always required; use SnapshotHydrator.from_env() if not hydrating).
             db_conn: Database connection config (sets PG* env vars).
             extra_binds: Additional bind mounts to mount (default empty tuple).
@@ -94,7 +108,6 @@ class PropertiesDockerCompositor(Compositor):
         super().__init__()
         self._workspace_root = workspace_root
         self._docker_client = docker_client
-        self._mount_properties = mount_properties
         self._db_conn = db_conn
         self._extra_binds = extra_binds
         self._workspace_mode = workspace_mode
@@ -125,16 +138,14 @@ class PropertiesDockerCompositor(Compositor):
                 hydrated = await self._snapshot_stack.enter_async_context(self._hydrator.hydrate(slug))
 
                 # Add bind mount for this snapshot
-                bind = BindMount(
-                    host_path=hydrated.content_root.resolve(),
-                    container_path=self.snapshot_container_path(slug),
-                    mode="ro",
+                container_path = snapshot_container_path(slug)
+                extra_snapshot_binds.append(
+                    BindMount(host_path=hydrated.content_root.resolve(), container_path=container_path, mode="ro")
                 )
-                extra_snapshot_binds.append(bind)
 
                 # Store hydrated host path for MCP servers to access
-                self._hydrated_paths[slug] = bind.host_path
-                logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as {bind.container_path})")
+                self._hydrated_paths[slug] = hydrated.content_root.resolve()
+                logger.debug(f"Hydrated {slug} → {hydrated.content_root} (mount as {container_path})")
 
             # Merge snapshot binds with user-provided extra_binds
             self._extra_binds = [*self._extra_binds, *extra_snapshot_binds]
@@ -159,21 +170,6 @@ class PropertiesDockerCompositor(Compositor):
         # Clean up parent compositor
         return await super().__aexit__(exc_type, exc_val, exc_tb)
 
-    def snapshot_container_path(self, slug: SnapshotSlug) -> Path:
-        """Get container path for a snapshot's source code.
-
-        Pattern: /snapshots/<slug>
-
-        Delegates to snapshot_paths.snapshot_container_path (canonical SSOT).
-
-        Args:
-            slug: Snapshot slug (e.g., "ducktape/2025-11-26-00")
-
-        Returns:
-            Container path (e.g., Path("/snapshots/ducktape/2025-11-26-00"))
-        """
-        return snapshot_container_path(slug)
-
     def _create_docker_server(self, image_id: str) -> ContainerExecServer:
         """Create ContainerExecServer with standard properties configuration.
 
@@ -186,9 +182,6 @@ class PropertiesDockerCompositor(Compositor):
         ]
         if self._extra_binds:
             binds.extend(self._extra_binds)
-        if self._mount_properties:
-            defs_dir = props_definitions_root().resolve()
-            binds.append(BindMount(host_path=defs_dir, container_path=PROPS_DIR, mode="ro"))
 
         # Build container environment variables
         env = {
@@ -224,31 +217,10 @@ class PropertiesDockerCompositor(Compositor):
             ),
         )
 
-    def container_path_for_prop_rel(self, rel: str) -> Path:
-        """Get container path for a property definition relative path.
-
-        Args:
-            rel: Relative path within property definitions
-
-        Returns:
-            Absolute container path (/props/...)
-
-        Raises:
-            RuntimeError: If property definitions not mounted in container
-        """
-        if not self._mount_properties:
-            raise RuntimeError("Property definitions not mounted in container")
-        return PROPS_DIR / rel
-
     @property
     def working_dir(self) -> Path:
         """Get the container path where workspace is mounted."""
         return WORKING_DIR
-
-    @property
-    def definitions_container_dir(self) -> Path | None:
-        """Get the container path where property definitions are mounted (or None if not mounted)."""
-        return PROPS_DIR if self._mount_properties else None
 
 
 def build_critic_build_hint() -> str:
@@ -309,26 +281,16 @@ async def get_docker_network_gateway_async(docker_client: aiodocker.Docker, netw
 
 
 def build_critic_binds(
-    workspace_root: Path,
-    *,
-    mount_properties: bool,
-    workspace_mode: str = "ro",
-    extra_binds: dict[str, dict[str, str]] | None = None,
-) -> tuple[dict[str, dict[str, str]], Path | None]:
+    workspace_root: Path, *, workspace_mode: str = "ro", extra_binds: dict[str, dict[str, str]] | None = None
+) -> dict[str, dict[str, str]]:
     """Build standard bind mounts map for properties critic containers.
 
     - Mounts workspace_root at /workspace with the provided workspace_mode ("ro" or "rw")
-    - Optionally mounts property definitions at /props (always read-only)
     - Allows extra bind mounts to be merged in
-    Returns (binds, definitions_container_dir|None)
     """
     binds: dict[str, dict[str, str]] = {
         str(workspace_root.resolve()): {"bind": str(WORKING_DIR), "mode": str(workspace_mode)}
     }
     if extra_binds:
         binds.update(extra_binds)
-    if not mount_properties:
-        return binds, None
-    defs_dir = props_definitions_root().resolve()
-    binds[str(defs_dir)] = {"bind": str(PROPS_DIR), "mode": "ro"}
-    return binds, PROPS_DIR
+    return binds

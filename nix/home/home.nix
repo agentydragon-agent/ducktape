@@ -455,6 +455,8 @@ in {
     ++ [
       # CLI utilities (no GUI needed)
       yt-dlp # YouTube downloader
+      pdftk # PDF manipulation toolkit
+      qpdf # PDF transformation/inspection tool
 
       # TODO: comby is marked as broken in nixpkgs 25.11
       # Previously we got it from oldPkgs (nixos-23.11) but removed during 25.11 migration

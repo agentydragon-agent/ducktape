@@ -15,21 +15,24 @@ sys.path.insert(0, "/workspace")
 from init_helpers import print_bootstrap, print_section, verify_db_access
 
 # Print standard bootstrap (tree, docs, env)
-print_bootstrap("Grader", [
-    # Infrastructure (how to connect)
-    "database_access.md",
-    "mcp_http_connection.md",
-    # Domain data in topo order
-    "db/ground_truth.md",
-    "db/critiques.md",
-    "db/grading.md",
-])
+print_bootstrap(
+    "Grader",
+    [
+        # Infrastructure (how to connect)
+        "database_access.md",
+        "mcp_http_connection.md",
+        # Domain data in topo order
+        "db/ground_truth.md",
+        "db/critiques.md",
+        "db/grading.md",
+    ],
+)
 
-# Print CLI usage from bin/grader module docstring
+# Print CLI usage via --help
 print_section("Grader CLI Commands")
-from bin import grader as grader_cli  # noqa: E402
+from init_helpers import run_command
 
-print(grader_cli.__doc__)
+run_command(["/workspace/bin/grader.py", "--help"])
 
 verify_db_access()
 

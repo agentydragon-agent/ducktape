@@ -65,7 +65,6 @@ from adgn.props.db.snapshots import DBCriticSubmitPayload
 from adgn.props.display import short_sha
 from adgn.props.gepa.warm_start import build_historical_gepa_state
 from adgn.props.hydration import SnapshotHydrator
-from adgn.props.ids import SnapshotSlug
 from adgn.props.splits import Split
 
 logger = logging.getLogger(__name__)
@@ -510,13 +509,8 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                 .all()
             )
 
-            # Index critic runs by (snapshot_slug, scope_hash)
-            critic_by_key: dict[tuple[SnapshotSlug, str], AgentRun] = {}
-            for critic in critic_runs:
-                critic_config = critic.critic_config()
-                snapshot_slug = critic_config.snapshot_slug
-                scope_hash = critic_config.scope_hash
-                critic_by_key[(snapshot_slug, scope_hash)] = critic
+            # Index critics by their frozen ExampleSpec (hashable discriminated union)
+            critic_by_key = {c.critic_config().example: c for c in critic_runs}
 
             # Query completed grader runs for these critic runs
             critic_run_ids = [c.agent_run_id for c in critic_runs]
@@ -541,13 +535,13 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 
             # Process each specimen using indexed results
             for idx, specimen_input in enumerate(batch):
-                scope_hash = specimen_input.scope_hash
-                cache_key = (specimen_input.snapshot_slug, scope_hash)
+                # Use frozen ExampleSpec as cache key (hashable discriminated union)
+                cache_key = specimen_input.to_example_spec()
 
                 critic_run = critic_by_key.get(cache_key)
                 if not critic_run:
                     logger.info(
-                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                        f"Cache MISS: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                     )
                     uncached_inputs.append((idx, specimen_input))
                     continue
@@ -561,7 +555,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
                 if critic_run.status == AgentRunStatus.COMPLETED:
                     if not grader_run:
                         logger.info(
-                            f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                            f"Cache MISS (no grader): {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                         )
                         uncached_inputs.append((idx, specimen_input))
                         continue
@@ -569,7 +563,7 @@ class CriticAdapter(gepa.GEPAAdapter[Example, CriticTrajectory, CriticOutput]):
 
                 # Cache hit
                 logger.info(
-                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, scope={short_sha(scope_hash)})"
+                    f"Cache HIT: {specimen_input.snapshot_slug} (prompt={short_sha(prompt_sha256)}, example_kind={specimen_input.example_kind})"
                 )
                 cached_results[idx] = self._make_evaluation_result(
                     critic_run_id, critic_run_id, grader_run_id, capture_traces

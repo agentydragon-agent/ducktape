@@ -16,9 +16,8 @@ from adgn.props.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from adgn.props.db.snapshots import DBGraderOutput, DBReportedIssue
 from adgn.props.grader.decision_helpers import insert_fp_match, insert_no_match, insert_tp_match
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import AllFilesScope
-from tests.props.conftest import get_example, make_critic_run, make_grader_output, make_grader_run
-from tests.support.responses import ResponsesFactory
+from adgn.props.models.examples import WholeSnapshotExample
+from tests.props.conftest import make_critic_run, make_grader_output, make_grader_run
 
 __all__ = [
     "insert_fp_match",
@@ -90,7 +89,7 @@ def make_test_grader_run(
         grader_run_id (UUID)
     """
     if output is None:
-        output = make_grader_output(tp_count=0, summary="Test grader")
+        output = make_grader_output(tp_occurrences=[], summary="Test grader")
 
     if status is None:
         status = AgentRunStatus.COMPLETED
@@ -112,25 +111,6 @@ def make_test_grader_run(
 
 
 @pytest.fixture
-def zero_issues_critic_responses(make_openai_client):
-    """Mock critic client for zero-issues scenario (HTTP mode).
-
-    Uses bin CLI: python /workspace/bin/critique.py submit <count> <summary>
-    """
-    factory = ResponsesFactory("gpt-5-nano")
-    responses = [
-        # Use bin CLI to submit zero issues
-        factory.make(
-            factory.docker_exec(
-                ["python", "/workspace/bin/critique.py", "submit", "0", "Reviewed code, no issues found"],
-                timeout_ms=15000,
-            )
-        )
-    ]
-    return make_openai_client(responses)
-
-
-@pytest.fixture
 def test_grader_critic_run(test_db, test_snapshot):
     """Create test critic run with 3 input issues.
 
@@ -139,7 +119,7 @@ def test_grader_critic_run(test_db, test_snapshot):
     """
     # Get example from git fixtures
     with get_session() as session:
-        example = get_example(session, test_snapshot, AllFilesScope())
+        example = Example.from_spec(session, WholeSnapshotExample(snapshot_slug=test_snapshot))
     return make_test_critic_run(example, num_issues=3)
 
 

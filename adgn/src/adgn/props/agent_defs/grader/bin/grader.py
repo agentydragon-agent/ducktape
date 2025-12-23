@@ -1,15 +1,5 @@
 #!/usr/bin/env python3
-"""Grader agent CLI helper commands.
-
-Provides CLI access to grader helper functions.
-
-Usage:
-    python /workspace/bin/grader.py add-tp-match "input-001" "tp-042" "occ-001" 1.0 "Exact match"
-    python /workspace/bin/grader.py add-fp-match "input-003" "fp-015" "occ-001" "Known acceptable pattern"
-    python /workspace/bin/grader.py add-no-match "input-099" "Novel architectural suggestion"
-    python /workspace/bin/grader.py delete-decision "input-002"
-    python /workspace/bin/grader.py submit "Graded 5 inputs: 3 TP matches, 2 novel findings"
-"""
+"""Grader agent CLI helper commands."""
 
 from __future__ import annotations
 
@@ -30,7 +20,27 @@ from adgn.props.grader.decision_helpers import (
     submit_grading,
 )
 
-app = typer.Typer(help="Grader agent helper commands")
+HELP_TEXT = """Grader agent commands for matching critique findings to ground truth.
+
+Common workflow:
+
+  Match input to a True Positive (found a real issue):
+    /workspace/bin/grader.py add-tp-match "input-001" "tp-042" "occ-001" 1.0 "Exact match"
+
+  Match input to a False Positive (triggered known acceptable pattern):
+    /workspace/bin/grader.py add-fp-match "input-003" "fp-015" "occ-001" "Known pattern"
+
+  Mark as novel finding (no ground truth match):
+    /workspace/bin/grader.py add-no-match "input-099" "Novel architectural suggestion"
+
+  Fix a mistake:
+    /workspace/bin/grader.py delete-decision "input-002"
+
+  Finalize and submit:
+    /workspace/bin/grader.py submit "Graded 5 inputs: 3 TP matches, 2 novel"
+"""
+
+app = typer.Typer(name="grader", help=HELP_TEXT, add_completion=False)
 
 
 @app.command("add-tp-match")

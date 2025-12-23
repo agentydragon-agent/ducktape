@@ -25,11 +25,12 @@ from pydantic import BaseModel
 from rich.console import Console
 from sqlalchemy import select
 
-from adgn.props.cli.cmd_stats import STATS_TABLE_LEGEND
+from adgn.props.cli.cmd_stats import STATS_TABLE_LEGEND, _STATUS_COLUMNS, fmt_pct1
 from adgn.props.db import get_session
 from adgn.props.db.models import AggregatedRecallByDefinition
 from adgn.props.db.query_builders import SplitPerformanceStats, query_definition_performance_stats
 from adgn.props.display import ColumnDef, build_table_from_schema
+from adgn.props.models.examples import ExampleKind
 from adgn.props.splits import Split
 
 
@@ -52,32 +53,33 @@ def _build_performance_columns() -> list[ColumnDef[Any, Any]]:
     """Build column definitions for combined train/valid performance table."""
     return [
         ColumnDef("Split", lambda r: r.split, width=6),
-        ColumnDef("Definition", lambda r: r.agent_definition_id, width=20),
+        ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
         ColumnDef("Model", lambda r: r.critic_model[:12], width=15),
-        ColumnDef("Scope", lambda r: r.scope_kind, width=18),
+        ColumnDef("Scope", lambda r: r.example_kind, width=18),
         ColumnDef("N", lambda r: r.n_examples, str, justify="right", width=5),
         ColumnDef("Runs", lambda r: r.n_runs, str, justify="right", width=5),
-        ColumnDef("Recall", lambda r: r.recall, lambda v: f"{v:.1%}" if v is not None else "-", justify="right", width=7),
-        ColumnDef("UCB", lambda r: r.ucb, lambda v: f"{v:.1%}" if v is not None else "-", justify="right", width=7),
-        ColumnDef("LCB", lambda r: r.lcb, lambda v: f"{v:.1%}" if v is not None else "-", justify="right", width=7),
+        ColumnDef("Recall", lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
+        ColumnDef("UCB", lambda r: r.occurrences_caught_stats.ucb95 if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
+        ColumnDef("LCB", lambda r: r.occurrences_caught_stats.lcb95 if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
+        *_STATUS_COLUMNS,
         ColumnDef("", lambda r: " ⚠️" if r.split == Split.VALID and r.n_examples < 5 else "", width=3),
     ]
 
 
 class _ExpandedStatsRow(BaseModel):
-    """Row for expanded stats display (one row per definition/split/scope_kind)."""
+    """Row for expanded stats display (one row per definition/split/example_kind)."""
 
-    agent_definition_id: str
+    critic_definition_id: str
     created_at: datetime
     split: Split
-    scope_kind: str
+    example_kind: ExampleKind
     stats: SplitPerformanceStats
 
 
 def show_comprehensive_stats(console: Console, limit: int = 50) -> None:
-    """Display comprehensive definition statistics across splits and scope kinds.
+    """Display comprehensive definition statistics across splits and example kinds.
 
-    Shows for each (definition, split, scope_kind) combination:
+    Shows for each (definition, split, example_kind) combination:
     - Created timestamp
     - Split and scope kind
     - Performance metrics: mean recall, LCB, success/total counts, zero%, stuck%, context%
@@ -92,16 +94,16 @@ def show_comprehensive_stats(console: Console, limit: int = 50) -> None:
     with get_session() as session:
         results = query_definition_performance_stats(session, limit=limit)
 
-        # Expand rows: one per (definition, split, scope_kind)
+        # Expand rows: one per (definition, split, example_kind)
         expanded_rows: list[_ExpandedStatsRow] = []
         for row in results:
-            for (split, scope_kind), stats in row.stats.items():
+            for (split, example_kind), stats in row.stats.items():
                 expanded_rows.append(
                     _ExpandedStatsRow(
-                        agent_definition_id=row.agent_definition_id,
+                        critic_definition_id=row.critic_definition_id,
                         created_at=row.created_at,
                         split=split,
-                        scope_kind=scope_kind,
+                        example_kind=example_kind,
                         stats=stats,
                     )
                 )
@@ -112,10 +114,10 @@ def show_comprehensive_stats(console: Console, limit: int = 50) -> None:
         )
 
         columns: list[ColumnDef[Any, Any]] = [
-            ColumnDef("Definition", lambda r: r.agent_definition_id, width=20),
+            ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
             ColumnDef("Created", lambda r: r.created_at.strftime("%m-%d %H:%M"), width=12),
             ColumnDef("Split", lambda r: r.split.value, width=6),
-            ColumnDef("Scope", lambda r: r.scope_kind[:15], width=16),
+            ColumnDef("Scope", lambda r: r.example_kind.value[:15], width=16),
             ColumnDef("Stats", lambda r: _format_split_stats(r.stats), width=45),
         ]
 
@@ -145,9 +147,9 @@ def show_train_vs_valid(console: Console, limit: int = 40) -> None:
             session.query(AggregatedRecallByDefinition)
             .filter(AggregatedRecallByDefinition.split.in_([Split.TRAIN, Split.VALID]))
             .order_by(
-                AggregatedRecallByDefinition.agent_definition_id,
+                AggregatedRecallByDefinition.critic_definition_id,
                 AggregatedRecallByDefinition.critic_model,
-                AggregatedRecallByDefinition.scope_kind,
+                AggregatedRecallByDefinition.example_kind,
                 AggregatedRecallByDefinition.split,
             )
             .limit(limit)
@@ -179,34 +181,32 @@ def show_top_definitions(console: Console, limit: int = 10) -> None:
     """
 
     with get_session() as session:
-        query = (
-            select(
-                AggregatedRecallByDefinition.agent_definition_id,
-                AggregatedRecallByDefinition.recall,
-                AggregatedRecallByDefinition.avg_occurrences_caught_overall,
-                AggregatedRecallByDefinition.avg_catchable_occurrences,
-                AggregatedRecallByDefinition.total_catchable_occurrences,
-                AggregatedRecallByDefinition.n_successful,
-            )
-            .where(AggregatedRecallByDefinition.split == Split.VALID)
-            .order_by(AggregatedRecallByDefinition.recall.desc().nulls_last())
+        # Query aggregated stats - use occurrences_caught_stats.mean for recall
+        results = (
+            session.query(AggregatedRecallByDefinition)
+            .filter(AggregatedRecallByDefinition.split == Split.VALID)
             .limit(limit)
+            .all()
         )
-
-        top_definitions = session.execute(query).fetchall()
+        # Sort in Python since occurrences_caught_stats is a composite type
+        results = sorted(
+            results,
+            key=lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else 0.0,
+            reverse=True,
+        )
 
         console.print(f"\n[bold]Top {limit} definitions on validation (by occurrence-weighted recall):[/bold]")
 
         columns: list[ColumnDef[Any, Any]] = [
-            ColumnDef("Definition", lambda r: r.agent_definition_id, width=20),
-            ColumnDef("Recall", lambda r: r.recall,
-                      lambda v: f"{v:.1%}" if v is not None else "-", justify="right"),
-            ColumnDef("Caught", lambda r: r.avg_occurrences_caught_overall, lambda v: f"{v:.1f}", justify="right"),
+            ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
+            ColumnDef("Recall", lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else None,
+                      fmt_pct1, justify="right"),
+            ColumnDef("Caught", lambda r: (r.occurrences_caught_stats.mean * r.total_catchable_occurrences) if r.occurrences_caught_stats else 0.0, lambda v: f"{v:.1f}", justify="right"),
             ColumnDef("Catchable", lambda r: r.total_catchable_occurrences, str, justify="right"),
-            ColumnDef("Runs", lambda r: r.n_successful, str, justify="right"),
+            ColumnDef("Runs", lambda r: r.status_counts.get("completed", 0), str, justify="right"),
         ]
 
-        console.print(build_table_from_schema(top_definitions, columns))
+        console.print(build_table_from_schema(results, columns))
 
 
 def main():

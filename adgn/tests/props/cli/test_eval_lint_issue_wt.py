@@ -6,7 +6,7 @@ import pytest
 
 from adgn.openai_utils.client_factory import build_client
 from adgn.props.ids import SnapshotSlug
-from adgn.props.lint_issue import lint_issue_run
+from adgn.props.lint import lint_issue_run
 from adgn.props.models.true_positive import IssueCore, LineRange, Occurrence
 
 

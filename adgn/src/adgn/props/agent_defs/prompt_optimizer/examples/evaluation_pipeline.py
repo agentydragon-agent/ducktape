@@ -11,27 +11,28 @@ Workflow:
 """
 
 import asyncio
+from uuid import UUID
 
 from adgn.props.db import get_session
 from adgn.props.db.examples import Example
-from helpers import create_critic_definition, run_critic, run_grader
+from adgn.props.agent_defs.prompt_optimizer.helpers import create_critic_definition, run_critic, run_grader
 
 
-async def evaluate_example(example: Example, definition_id: str) -> tuple[str, str, str]:
+async def evaluate_example(example: Example, definition_id: str) -> tuple[str, UUID, UUID]:
     """Run critic + grader on a single example, return IDs."""
+    example_spec = example.to_example_spec()
     critic_output = await run_critic(
         definition_id=definition_id,
-        snapshot_slug=example.snapshot_slug,
-        scope_hash=example.scope_hash,
+        example=example_spec,
         max_turns=15,
     )
 
     grader_output = await run_grader(str(critic_output.critic_run_id), max_turns=200)
 
     return (
-        f"{example.snapshot_slug}/{example.scope_hash[:8]}",
-        str(critic_output.critic_run_id),
-        str(grader_output.grader_run_id),
+        str(example_spec),
+        critic_output.critic_run_id,
+        grader_output.grader_run_id,
     )
 
 

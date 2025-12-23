@@ -1,22 +1,22 @@
 """Tests for the runs example module (runs.py).
 
-Tests functions for run status, execution traces, and failure analysis.
+Tests functions for run status, execution traces, and grading summary.
 Consolidated from: test_query_run_status, test_query_execution_traces, test_analyzing_critic_failures.
 """
 
 from datetime import UTC, datetime
-
 import re
+from uuid import uuid4
 
 from mcp.types import CallToolResult, TextContent
 from sqlalchemy.orm import Session
 
 from adgn.agent.events import ToolCall, ToolCallOutput
-from adgn.props.agent_types import AgentType, CriticTypeConfig
+from adgn.props.agent_types import AgentType
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
 from adgn.props.db.models import AgentRun, AgentRunStatus, Event, Snapshot
-from adgn.props.examples.runs import analyze_critic_failure, show_execution_traces, show_run_status
+from adgn.props.examples.runs import show_execution_traces, show_grading_summary, show_run_status
 from adgn.props.ids import SnapshotSlug
 from tests.props.conftest import make_critic_run, make_grader_run
 
@@ -147,8 +147,8 @@ def test_show_execution_traces_empty_database(test_db: DatabaseConfig, capsys):
     assert "Recent critic runs" in output
 
 
-def test_analyze_critic_failure_with_data(synced_test_session: Session, capsys):
-    """Test that analyze_critic_failure displays critic run data correctly."""
+def test_show_grading_summary_with_data(synced_test_session: Session, capsys):
+    """Test that show_grading_summary displays critic/grader run data correctly."""
     slug = SnapshotSlug("test-fixtures/test-trivial")
     example = synced_test_session.query(Example).filter_by(snapshot_slug=slug).first()
     assert example, "test-trivial fixture not found"
@@ -166,28 +166,22 @@ def test_analyze_critic_failure_with_data(synced_test_session: Session, capsys):
     synced_test_session.add(grader_run)
     synced_test_session.commit()
 
-    # Access scope_hash directly from Pydantic model
-    if isinstance(critic_run.type_config, CriticTypeConfig):
-        test_scope_hash = critic_run.type_config.scope_hash
-    else:
-        raise ValueError(f"Expected CriticTypeConfig, got {type(critic_run.type_config)}")
-
-    # Call with actual values
-    analyze_critic_failure(str(slug), test_scope_hash)
+    # Call with critic run ID - should find associated grader
+    show_grading_summary(critic_run.agent_run_id)
 
     captured = capsys.readouterr()
     output = captured.out
 
-    assert "critic runs for" in output
+    assert "Critic:" in output
     assert "Definition:" in output
 
 
-def test_analyze_critic_failure_no_data(test_db: DatabaseConfig, capsys):
-    """Test that analyze_critic_failure handles missing critic runs gracefully."""
-    # Use a fake example that doesn't exist
-    analyze_critic_failure("nonexistent/2025-01-01-00", "0" * 64)
+def test_show_grading_summary_not_found(test_db: DatabaseConfig, capsys):
+    """Test that show_grading_summary handles missing runs gracefully."""
+    # Use a random UUID that doesn't exist
+    show_grading_summary(uuid4())
 
     captured = capsys.readouterr()
     output = captured.out
 
-    assert "No critic runs found" in output
+    assert "Run not found" in output

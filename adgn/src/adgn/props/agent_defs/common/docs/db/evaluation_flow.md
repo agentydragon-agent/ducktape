@@ -65,8 +65,8 @@ The prompt optimizer supports two modes that control validation data access.
 
 **Query method:**
 ```sql
-SELECT * FROM get_validation_run_aggregates()
-WHERE agent_definition_id = '<def_id>';
+SELECT * FROM get_validation_full_snapshot_aggregates()
+WHERE critic_definition_id = '<def_id>';
 ```
 
 **Use case:** Final evaluation, measuring true generalization without risk of overfitting.
@@ -83,9 +83,10 @@ WHERE agent_definition_id = '<def_id>';
 
 **Query method:**
 ```sql
-SELECT recall, n_examples, ucb, lcb
+SELECT (occurrences_caught_stats).mean AS recall, n_examples,
+       (occurrences_caught_stats).ucb95 AS ucb, (occurrences_caught_stats).lcb95 AS lcb
 FROM aggregated_recall_by_definition
-WHERE agent_definition_id = '<def_id>' AND split = 'valid';
+WHERE critic_definition_id = '<def_id>' AND split = 'valid';
 ```
 
 **Use case:** Rapid iteration, debugging specific patterns.
@@ -102,7 +103,7 @@ Full access to everything:
 examples = session.query(Example).join(Snapshot).filter(Snapshot.split == "train").all()
 
 # Get critic runs with grader results
-critic_run = session.query(CriticRun).get(critic_run_id)
+critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
 
 # Access ground truth
 tps = session.query(TruePositive).filter_by(snapshot_slug=slug).all()
@@ -118,16 +119,18 @@ Access varies by mode:
 **Whole-Repo Mode:**
 ```python
 # Can run critic on validation whole-snapshot only
-result = await run_critic_on_example(
+# Query for whole-snapshot example
+example = session.query(Example).filter_by(
     snapshot_slug="ducktape/2025-11-26-01",
-    scope_hash=None,  # whole-snapshot required
-    ...
-)
+    example_kind=ExampleKind.WHOLE_SNAPSHOT
+).one()
+
+result = await run_critic_on_example(example=example, ...)
 
 # Query aggregate metrics via SECURITY DEFINER function
 results = session.execute(text("""
-    SELECT * FROM get_validation_run_aggregates()
-    WHERE agent_definition_id = :def_id
+    SELECT * FROM get_validation_full_snapshot_aggregates()
+    WHERE critic_definition_id = :def_id
 """), {"def_id": definition_id})
 
 # CANNOT see examples table (RLS blocked)
@@ -140,17 +143,16 @@ results = session.execute(text("""
 examples = session.query(Example).join(Snapshot).filter(Snapshot.split == "valid").all()
 
 # Can run per-file evaluations
-result = await run_critic_on_example(
-    snapshot_slug="ducktape/2025-11-26-01",
-    scope_hash=example.scope_hash,  # per-file allowed
-    ...
-)
+# Choose a specific example from the list
+example = examples[0]  # Example with (snapshot_slug, example_kind, files_hash) composite key
+result = await run_critic_on_example(example=example, ...)
 
 # Query metrics via views
 results = session.execute(text("""
-    SELECT recall, n_examples, ucb, lcb
+    SELECT (occurrences_caught_stats).mean AS recall, n_examples,
+           (occurrences_caught_stats).ucb95 AS ucb, (occurrences_caught_stats).lcb95 AS lcb
     FROM aggregated_recall_by_definition
-    WHERE agent_definition_id = :def_id AND split = 'valid'
+    WHERE critic_definition_id = :def_id AND split = 'valid'
 """), {"def_id": definition_id})
 
 # Can see filenames but CANNOT inspect ground truth or traces

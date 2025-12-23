@@ -13,6 +13,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import ExampleSpec
 from adgn.props.prompt_optimize.target_metric import TargetMetric
 
 
@@ -38,12 +39,11 @@ class CriticTypeConfig(BaseModel):
     """Critic-specific configuration.
 
     Critics analyze code snapshots and report issues.
-    The full scope can be retrieved from the examples table via (snapshot_slug, scope_hash).
+    The example specifies which snapshot and scope (whole-snapshot or single-trigger-set) to evaluate.
     """
 
     agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
-    snapshot_slug: SnapshotSlug  # Which snapshot to analyze
-    scope_hash: str  # Identifies the scope (files to analyze), lookup via examples table
+    example: ExampleSpec  # Complete example specification (snapshot_slug + scope)
 
 
 class GraderTypeConfig(BaseModel):
@@ -92,6 +92,10 @@ class PromptOptimizerTypeConfig(BaseModel):
 
     agent_type: Literal[AgentType.PROMPT_OPTIMIZER] = AgentType.PROMPT_OPTIMIZER
     target_metric: TargetMetric
+    optimizer_model: str = Field(description="Model used for the optimizer agent itself")
+    critic_model: str = Field(description="Model used for critic evaluations")
+    grader_model: str = Field(description="Model used for grader evaluations")
+    budget_limit: float = Field(description="Dollar budget limit for optimization")
 
 
 class ClusteringTypeConfig(BaseModel):
@@ -104,19 +108,6 @@ class ClusteringTypeConfig(BaseModel):
 
     agent_type: Literal[AgentType.CLUSTERING] = AgentType.CLUSTERING
     snapshot_slug: SnapshotSlug  # Which snapshot's unknowns to cluster
-
-
-class AllowedExample(BaseModel, frozen=True):
-    """A training example the improvement agent can access.
-
-    Used in ImprovementTypeConfig.allowed_examples to specify which
-    (snapshot_slug, scope_hash) pairs the agent can query via RLS.
-
-    Frozen for use as dict keys/set members.
-    """
-
-    snapshot_slug: SnapshotSlug
-    scope_hash: str
 
 
 class ImprovementTypeConfig(BaseModel):
@@ -134,9 +125,12 @@ class ImprovementTypeConfig(BaseModel):
     baseline_definition_ids: list[str] = Field(
         min_length=1, description="One or more agent definition IDs to study and improve"
     )
-    allowed_examples: list[AllowedExample] = Field(
-        min_length=1, description="One or more (snapshot_slug, scope_hash) pairs to evaluate on"
+    allowed_examples: list[ExampleSpec] = Field(
+        min_length=1, description="Training examples this agent can access (snapshot + scope)"
     )
+    improvement_model: str = Field(description="Model used for the improvement agent itself")
+    critic_model: str = Field(description="Model used for critic evaluations")
+    grader_model: str = Field(description="Model used for grader evaluations")
 
 
 # Discriminated union for type-specific config

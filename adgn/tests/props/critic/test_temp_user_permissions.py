@@ -31,7 +31,6 @@ from adgn.props.db.examples import Example
 from adgn.props.db.models import ReportedIssue
 from adgn.props.db.temp_user_manager import TempUserManager
 from adgn.props.ids import SnapshotSlug
-from adgn.props.models.critic_scopes import ExplicitFileScope
 from tests.props.conftest import make_critic_run
 
 
@@ -199,12 +198,12 @@ async def test_docker_container_env_vars(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
-    # Create test critic run
+    # Create test critic run with a whole-snapshot example
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example, f"Need example for {snapshot_slug}"
+        example_spec = example.to_example_spec()
 
         critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
@@ -213,11 +212,10 @@ async def test_docker_container_env_vars(
     # Create agent environment
     workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         agent_run_id=run_id,
-        scope=scope,
         db_config=synced_test_db,
         workspace_manager=workspace_manager,
     )
@@ -280,12 +278,12 @@ async def test_docker_connection_info(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
         critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
@@ -293,11 +291,10 @@ async def test_docker_connection_info(
 
     workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         agent_run_id=run_id,
-        scope=scope,
         db_config=synced_test_db,
         workspace_manager=workspace_manager,
     )
@@ -386,12 +383,12 @@ async def test_docker_minimal_insert(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
         critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
@@ -399,11 +396,10 @@ async def test_docker_minimal_insert(
 
     workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         agent_run_id=run_id,
-        scope=scope,
         db_config=synced_test_db,
         workspace_manager=workspace_manager,
     )
@@ -582,12 +578,12 @@ async def test_docker_with_retry_loop(
     """
     run_id = uuid4()
     snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
-    scope = ExplicitFileScope(files=["add.py"])
 
     # Create test critic run
     with get_session() as session:
         example = session.query(Example).filter_by(snapshot_slug=snapshot_slug).first()
         assert example
+        example_spec = example.to_example_spec()
 
         critic_run = make_critic_run(example=example, agent_run_id=run_id)
         session.add(critic_run)
@@ -595,11 +591,10 @@ async def test_docker_with_retry_loop(
 
     workspace_manager = WorkspaceManager(tmp_path)
     agent_env = CriticAgentEnvironment(
-        snapshot_slug=snapshot_slug,
+        example=example_spec,
         docker_client=async_docker_client,
         hydrator=test_specimens_hydrator,
         agent_run_id=run_id,
-        scope=scope,
         db_config=synced_test_db,
         workspace_manager=workspace_manager,
     )

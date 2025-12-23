@@ -15,15 +15,24 @@ from datetime import datetime
 from uuid import UUID
 
 from pydantic import BaseModel
-from sqlalchemy import Select, bindparam, cast, func, literal, select, text, type_coerce, union_all
+from sqlalchemy import Select, bindparam, func, literal, select, text, union_all
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.orm import Session
 
+from adgn.props.agent_defs.prompt_optimizer.examples.rollout_analysis import (
+    failed_tools_by_agent_run,
+    tool_sequence_by_agent_run,
+    tools_used_by_agent_run,
+)
 from adgn.props.agent_types import AgentType
 from adgn.props.db.examples import Example
 from adgn.props.db.models import AgentRun, Event, FalsePositive, OccurrenceCredit, RunCost, Snapshot, TruePositive
 from adgn.props.ids import SnapshotSlug
+from adgn.props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from adgn.props.splits import Split
+
+# Re-export for backwards compatibility
+__all__ = ["failed_tools_by_agent_run", "tool_sequence_by_agent_run", "tools_used_by_agent_run"]
 
 
 class SplitPerformanceStats(BaseModel):
@@ -39,13 +48,13 @@ class SplitPerformanceStats(BaseModel):
 
 
 class DefinitionPerformanceRow(BaseModel):
-    """Performance statistics for a single agent definition across splits."""
+    """Performance statistics for a single critic definition across splits."""
 
-    agent_definition_id: str
+    critic_definition_id: str
     created_at: datetime
-    # Map from (split, scope_kind) to statistics
-    # Keys: (Split.VALID, 'entire_snapshot'), (Split.VALID, 'specific_files'), etc.
-    stats: dict[tuple[Split, str], SplitPerformanceStats]
+    # Map from (split, example_kind) to statistics
+    # Keys: (Split.VALID, ExampleKind.WHOLE_SNAPSHOT), (Split.VALID, ExampleKind.FILE_SET), etc.
+    stats: dict[tuple[Split, ExampleKind], SplitPerformanceStats]
 
 
 def compile_to_sql(query: Select, *, literal_binds: bool = True) -> str:
@@ -123,10 +132,10 @@ def list_true_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
         snapshot_slug: Snapshot slug to query
 
     Returns:
-        Query selecting (tp_id, rationale, occurrences) for given snapshot
+        Query selecting TruePositive ORM objects (access .occurrences via relationship)
     """
     return (
-        select(TruePositive.tp_id, TruePositive.rationale, TruePositive.occurrences)
+        select(TruePositive)
         .where(TruePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .order_by(TruePositive.tp_id)
     )
@@ -140,10 +149,10 @@ def list_false_positives_for_snapshot(snapshot_slug: SnapshotSlug) -> Select:
         snapshot_slug: Snapshot slug to query
 
     Returns:
-        Query selecting (fp_id, rationale, occurrences) for given snapshot
+        Query selecting FalsePositive ORM objects (access .occurrences via relationship)
     """
     return (
-        select(FalsePositive.fp_id, FalsePositive.rationale, FalsePositive.occurrences)
+        select(FalsePositive)
         .where(FalsePositive.snapshot_slug == snapshot_slug)  # type: ignore[arg-type]
         .order_by(FalsePositive.fp_id)
     )
@@ -291,7 +300,7 @@ def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Sel
     """Get recent critic agent runs for a specific snapshot.
 
     Uses AgentRun with JSONB filtering on type_config->>'agent_type' = 'critic'
-    and type_config->>'snapshot_slug' = snapshot_slug.
+    and type_config->'example'->>'snapshot_slug' = snapshot_slug.
 
     Args:
         snapshot_slug: Snapshot to query
@@ -306,11 +315,11 @@ def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Sel
             AgentRun.status,
             AgentRun.created_at,
             AgentRun.model,
-            AgentRun.type_config["scope_hash"].astext.label("scope_hash"),
+            AgentRun.type_config["example"]["files_hash"].astext.label("files_hash"),
         )
         .where(
             AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-            AgentRun.type_config["snapshot_slug"].astext == snapshot_slug,  # type: ignore[arg-type]
+            AgentRun.type_config["example"]["snapshot_slug"].astext == snapshot_slug,  # type: ignore[arg-type]
         )
         .order_by(AgentRun.created_at.desc())
         .limit(limit)
@@ -320,77 +329,10 @@ def critic_runs_for_snapshot(snapshot_slug: SnapshotSlug, limit: int = 5) -> Sel
 # ============================================================================
 # Event trajectory queries (require agent_run_id parameter)
 # ============================================================================
-
-
-# TODO: Consider removing - no usages found (only parameterized version compiled)
-def tools_used_by_agent_run(agent_run_id: UUID) -> Select:
-    """Count tool usage by name for a given agent run.
-
-    Args:
-        agent_run_id: Agent run UUID to query
-
-    Returns:
-        Query selecting (tool_name, count) ordered by count descending
-    """
-    return (
-        select(Event.payload["name"].astext.label("tool_name"), func.count().label("count"))
-        .where(Event.agent_run_id == agent_run_id, Event.event_type == "tool_call")
-        .group_by(Event.payload["name"].astext)
-        .order_by(func.count().desc())
-    )
-
-
-# TODO: Consider removing - no usages found (only parameterized version compiled)
-def tool_sequence_by_agent_run(agent_run_id: UUID) -> Select:
-    """Get tool call sequence for an agent run.
-
-    Args:
-        agent_run_id: Agent run UUID to query
-
-    Returns:
-        Query selecting (sequence_num, timestamp, tool_name) ordered by sequence
-    """
-    return (
-        select(Event.sequence_num, Event.timestamp, Event.payload["name"].astext.label("tool_name"))
-        .where(Event.agent_run_id == agent_run_id, Event.event_type == "tool_call")
-        .order_by(Event.sequence_num)
-    )
-
-
-# TODO: Consider removing - no usages found (only parameterized version compiled)
-def failed_tools_by_agent_run(agent_run_id: UUID) -> Select:
-    """Get failed tool calls for an agent run.
-
-    Args:
-        agent_run_id: Agent run UUID to query
-
-    Returns:
-        Query selecting (tool_name, is_error, result) for failed tools
-    """
-    # Alias tables for the join
-    e1 = Event.__table__.alias("e1")
-    e2 = Event.__table__.alias("e2")
-
-    return (
-        select(
-            e1.c.payload["name"].astext.label("tool_name"),
-            e2.c.payload["result"]["isError"].astext.label("is_error"),
-            # Use type_coerce to treat as plain JSONB (bypasses PydanticColumn validation)
-            type_coerce(e2.c.payload["result"], postgresql.JSONB).label("result"),
-        )
-        .select_from(e1)
-        .join(
-            e2,
-            (e1.c.agent_run_id == e2.c.agent_run_id)
-            & (e1.c.payload["call_id"].astext == e2.c.payload["call_id"].astext),
-        )
-        .where(
-            e1.c.agent_run_id == agent_run_id,
-            e1.c.event_type == "tool_call",
-            e2.c.event_type == "function_call_output",
-            cast(e2.c.payload["result"]["isError"].astext, postgresql.BOOLEAN),
-        )
-    )
+#
+# These functions have moved to agent_defs/prompt_optimizer/examples/rollout_analysis.py
+# Re-exported at module level for backwards compatibility with existing code and tests.
+# See imports at top of file.
 
 
 # ============================================================================
@@ -450,7 +392,7 @@ def po_run_costs(po_run_id: UUID) -> Select:
     # Child runs have parent_agent_run_id = po_run_id
     child_runs = select(
         AgentRun.agent_run_id,
-        AgentRun.type_config["snapshot_slug"].astext.label("snapshot_slug"),
+        AgentRun.type_config["example"]["snapshot_slug"].astext.label("snapshot_slug"),
         AgentRun.type_config["agent_type"].astext.label("run_type"),
         AgentRun.created_at,
     ).where(AgentRun.parent_agent_run_id == po_run_id)
@@ -513,9 +455,9 @@ def blocked_valid_grader_runs() -> Select:
         Query attempting to select grader agent runs for valid split snapshots
     """
     # Grader runs: get snapshot_slug from the graded critic via a subquery
-    # graded_agent_run_id -> lookup critic's type_config->>'snapshot_slug'
+    # graded_agent_run_id -> lookup critic's type_config->'example'->>'snapshot_slug'
     graded_critic_snapshot = (
-        select(AgentRun.type_config["snapshot_slug"].astext)
+        select(AgentRun.type_config["example"]["snapshot_slug"].astext)
         .where(AgentRun.agent_run_id == func.cast(AgentRun.type_config["graded_agent_run_id"].astext, postgresql.UUID))
         .correlate(AgentRun)
         .scalar_subquery()
@@ -540,7 +482,7 @@ def blocked_valid_events() -> Select:
         select(AgentRun.agent_run_id)
         .where(
             AgentRun.type_config["agent_type"].astext == AgentType.CRITIC,
-            AgentRun.type_config["snapshot_slug"].astext.in_(
+            AgentRun.type_config["example"]["snapshot_slug"].astext.in_(
                 select(Snapshot.slug).where(Snapshot.split == Split.VALID)
             ),
         )
@@ -561,13 +503,13 @@ def list_train_scopes() -> Select:
     """List all examples for train split snapshots.
 
     Returns:
-        Query selecting (snapshot_slug, scope_hash) for train snapshots
+        Query selecting (snapshot_slug, example_kind, files_hash) for train snapshots
     """
     return (
-        select(Example.snapshot_slug, Example.scope_hash)
+        select(Example.snapshot_slug, Example.example_kind, Example.files_hash)
         .join(Snapshot, Example.snapshot_slug == Snapshot.slug)
         .where(Snapshot.split == Split.TRAIN)
-        .order_by(Example.snapshot_slug, Example.scope_hash)
+        .order_by(Example.snapshot_slug, Example.example_kind, Example.files_hash)
     )
 
 
@@ -608,11 +550,11 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
             -- First: average credits per occurrence across runs
             -- Then: sum occurrence averages and divide by count
             SELECT
-                agent_definition_id,
+                critic_definition_id,
                 split,
-                scope_kind,
+                example_kind,
                 snapshot_slug,
-                scope_hash,
+                files_hash,
                 SUM(avg_credit) / NULLIF(COUNT(*), 0) as recall,
                 COUNT(DISTINCT critic_run_id) as n_critic_runs,
                 COUNT(DISTINCT CASE
@@ -625,11 +567,11 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
                 END) as n_context
             FROM (
                 SELECT
-                    agent_definition_id,
+                    critic_definition_id,
                     split,
-                    scope_kind,
+                    example_kind,
                     snapshot_slug,
-                    scope_hash,
+                    files_hash,
                     tp_id,
                     occurrence_id,
                     critic_run_id,
@@ -638,17 +580,17 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
                     AVG(found_credit) as avg_credit
                 FROM occurrence_credits
                 WHERE split = 'train' OR split = 'valid'
-                GROUP BY agent_definition_id, split, scope_kind, snapshot_slug, scope_hash,
+                GROUP BY critic_definition_id, split, example_kind, snapshot_slug, files_hash,
                          tp_id, occurrence_id, critic_run_id, grader_run_id, grader_rationale
             ) occurrence_avg
-            GROUP BY agent_definition_id, split, scope_kind, snapshot_slug, scope_hash
+            GROUP BY critic_definition_id, split, example_kind, snapshot_slug, files_hash
         ),
         split_stats AS (
-            -- Aggregate statistics per (definition, split, scope_kind)
+            -- Aggregate statistics per (definition, split, example_kind)
             SELECT
-                agent_definition_id,
+                critic_definition_id,
                 split,
-                scope_kind,
+                example_kind,
                 AVG(recall) as mean_recall,
                 -- Lower confidence bound: mean - 1.0 * (stddev / sqrt(n))
                 -- NULL if n < 2 (can't compute stddev with single sample)
@@ -667,13 +609,13 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
                 -- Context count: total runs that exceeded context
                 SUM(n_context) as context_count
             FROM per_example_recall
-            GROUP BY agent_definition_id, split, scope_kind
+            GROUP BY critic_definition_id, split, example_kind
         )
         SELECT
-            d.id as agent_definition_id,
+            d.id as critic_definition_id,
             d.created_at,
             s.split,
-            s.scope_kind,
+            s.example_kind,
             s.mean_recall,
             s.recall_lcb,
             s.success_count,
@@ -682,7 +624,7 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
             s.stuck_count,
             s.context_count
         FROM agent_definitions d
-        LEFT JOIN split_stats s ON s.agent_definition_id = d.id
+        LEFT JOIN split_stats s ON s.critic_definition_id = d.id
         ORDER BY
             d.created_at DESC
         LIMIT :limit
@@ -691,31 +633,33 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
 
     results = session.execute(query_text, {"limit": limit}).fetchall()
 
-    # Group results by agent_definition_id and build stats dictionaries
+    # Group results by critic_definition_id and build stats dictionaries
     definition_data: dict[str, dict] = {}
-    definition_stats: dict[str, dict[tuple[Split, str], SplitPerformanceStats]] = defaultdict(dict)
+    definition_stats: dict[str, dict[tuple[Split, ExampleKind], SplitPerformanceStats]] = defaultdict(dict)
 
     for row in results:
         # Store definition metadata (same for all rows of same definition)
-        if row.agent_definition_id not in definition_data:
-            definition_data[row.agent_definition_id] = {"created_at": row.created_at}
+        if row.critic_definition_id not in definition_data:
+            definition_data[row.critic_definition_id] = {"created_at": row.created_at}
 
-        # Add stats for this (split, scope_kind) combination if available
-        if row.split is not None and row.scope_kind is not None and row.mean_recall is not None:
-            definition_stats[row.agent_definition_id][(Split(row.split), row.scope_kind)] = SplitPerformanceStats(
-                mean_recall=row.mean_recall,
-                lcb=row.recall_lcb,
-                success_count=row.success_count,
-                total_count=row.total_count,
-                zero_count=row.zero_count or 0,
-                stuck_count=row.stuck_count or 0,
-                context_count=row.context_count or 0,
+        # Add stats for this (split, example_kind) combination if available
+        if row.split is not None and row.example_kind is not None and row.mean_recall is not None:
+            definition_stats[row.critic_definition_id][(Split(row.split), ExampleKind(row.example_kind))] = (
+                SplitPerformanceStats(
+                    mean_recall=row.mean_recall,
+                    lcb=row.recall_lcb,
+                    success_count=row.success_count,
+                    total_count=row.total_count,
+                    zero_count=row.zero_count or 0,
+                    stuck_count=row.stuck_count or 0,
+                    context_count=row.context_count or 0,
+                )
             )
 
     # Convert to Pydantic models
     return [
         DefinitionPerformanceRow(
-            agent_definition_id=definition_id, created_at=data["created_at"], stats=definition_stats[definition_id]
+            critic_definition_id=definition_id, created_at=data["created_at"], stats=definition_stats[definition_id]
         )
         for definition_id, data in definition_data.items()
     ]
@@ -729,22 +673,22 @@ def query_definition_performance_stats(session: Session, limit: int = 50) -> lis
 class RecallByExampleRow(BaseModel):
     """Single row from recall-by-example query."""
 
-    snapshot_slug: SnapshotSlug
-    scope_hash: str
-    agent_definition_id: str
+    example: ExampleSpec
+    critic_definition_id: str
     recall: float
+    snapshot_slug: SnapshotSlug  # For backwards compatibility with existing code
 
 
 def query_recall_by_example(
     session: Session,
     split: Split | None = None,
-    agent_definition_id: str | None = None,
+    critic_definition_id: str | None = None,
     snapshot_slugs: list[SnapshotSlug] | None = None,
 ) -> list[RecallByExampleRow]:
-    """Query occurrence-weighted recall grouped by (example, agent_definition).
+    """Query occurrence-weighted recall grouped by (example, critic_definition).
 
     Computes AVG(found_credit) from occurrence_credits view, grouped by
-    (snapshot_slug, scope_hash, agent_definition_id).
+    (snapshot_slug, example_kind, files_hash, critic_definition_id).
 
     This is the canonical way to compute recall for cross-run aggregation.
     Single-run recall can be computed inline from occurrence_results.
@@ -752,50 +696,67 @@ def query_recall_by_example(
     Args:
         session: SQLAlchemy session
         split: Optional split filter (TRAIN, VALID, TEST)
-        agent_definition_id: Optional definition filter (get recall for specific definition)
+        critic_definition_id: Optional definition filter (get recall for specific definition)
         snapshot_slugs: Optional list of snapshot slugs to filter
 
     Returns:
-        List of RecallByExampleRow (snapshot, scope_hash, agent_definition_id, recall)
+        List of RecallByExampleRow (example, critic_definition_id, recall)
 
     Example:
         # Get recall for all train examples with a specific definition
         results = query_recall_by_example(
             session,
             split=Split.TRAIN,
-            agent_definition_id="critic/v1"
+            critic_definition_id="critic/v1"
         )
         for row in results:
-            print(f"{row.snapshot_slug}: {row.recall * 100:.1f}%")
+            print(f"{row.example}: {row.recall * 100:.1f}%")
     """
+    # Query OccurrenceCredit VIEW (uses example_kind + files_hash composite key)
     query = session.query(
         OccurrenceCredit.snapshot_slug,
-        OccurrenceCredit.scope_hash,
-        OccurrenceCredit.agent_definition_id,
+        OccurrenceCredit.example_kind,
+        OccurrenceCredit.files_hash,
+        OccurrenceCredit.critic_definition_id,
         func.avg(OccurrenceCredit.found_credit).label("avg_credit_per_occurrence"),
     )
 
     if split is not None:
         query = query.filter(OccurrenceCredit.split == split)
-    if agent_definition_id is not None:
-        query = query.filter(OccurrenceCredit.agent_definition_id == agent_definition_id)
+    if critic_definition_id is not None:
+        query = query.filter(OccurrenceCredit.critic_definition_id == critic_definition_id)
     if snapshot_slugs is not None:
         query = query.filter(OccurrenceCredit.snapshot_slug.in_(snapshot_slugs))
 
     query = query.group_by(
-        OccurrenceCredit.snapshot_slug, OccurrenceCredit.scope_hash, OccurrenceCredit.agent_definition_id
+        OccurrenceCredit.snapshot_slug,
+        OccurrenceCredit.example_kind,
+        OccurrenceCredit.files_hash,
+        OccurrenceCredit.critic_definition_id,
     )
 
     results = query.all()
-    return [
-        RecallByExampleRow(
-            snapshot_slug=r.snapshot_slug,
-            scope_hash=r.scope_hash,
-            agent_definition_id=r.agent_definition_id,
-            recall=r.avg_credit_per_occurrence,
+    rows: list[RecallByExampleRow] = []
+    for r in results:
+        # Build ExampleSpec from query result
+        if r.example_kind == ExampleKind.WHOLE_SNAPSHOT:
+            example_spec: ExampleSpec = WholeSnapshotExample(snapshot_slug=r.snapshot_slug)
+        elif r.example_kind == ExampleKind.FILE_SET:
+            if r.files_hash is None:
+                raise ValueError(f"example_kind=file_set but files_hash is NULL for {r.snapshot_slug}")
+            example_spec = SingleFileSetExample(snapshot_slug=r.snapshot_slug, files_hash=r.files_hash)
+        else:
+            raise ValueError(f"Unknown example_kind: {r.example_kind}")
+
+        rows.append(
+            RecallByExampleRow(
+                example=example_spec,
+                critic_definition_id=r.critic_definition_id,
+                recall=r.avg_credit_per_occurrence,
+                snapshot_slug=r.snapshot_slug,
+            )
         )
-        for r in results
-    ]
+    return rows
 
 
 # ============================================================================
@@ -807,16 +768,17 @@ def query_recall_by_example(
 # Example 1: Query aggregated_recall_by_definition view
 #   from adgn.props.db.models import AggregatedRecallByDefinition
 #   from adgn.props.splits import Split
-#   from adgn.props.models.critic_scopes import ScopeKind
+#   from adgn.props.models.examples import ExampleKind
 #
 #   result = session.query(AggregatedRecallByDefinition).filter(
 #       AggregatedRecallByDefinition.split == Split.TRAIN,
 #       AggregatedRecallByDefinition.critic_model == "gpt-4o",
-#       AggregatedRecallByDefinition.scope_kind == ScopeKind.SPECIFIC_FILES,
+#       AggregatedRecallByDefinition.example_kind == ExampleKind.SINGLE_TRIGGER_SET,
 #   ).first()
 #
 #   if result:
-#       print(f"Recall: {result.recall}, Total credit: {result.total_credit}, Occurrences: {result.n_occurrences}")
+#       stats = result.occurrences_caught_stats  # StatsWithCI
+#       print(f"Mean: {stats.mean:.2f}, n_occurrences: {result.total_catchable_occurrences}")
 #
 # Example 2: Query aggregated_recall_by_example view
 #   from adgn.props.db.models import AggregatedRecallByExample
@@ -832,7 +794,7 @@ def query_recall_by_example(
 #   stats = session.query(OccurrenceStatistics).filter(
 #       OccurrenceStatistics.split == Split.TRAIN,
 #       OccurrenceStatistics.full_catch_rate > 0.8,
-#   ).order_by(OccurrenceStatistics.mean_credit.desc()).all()
+#   ).order_by(OccurrenceStatistics.credit_stats.mean.desc()).all()
 #
 # The views handle all JSONB extraction and aggregation logic.
 # No separate query builder functions are needed.

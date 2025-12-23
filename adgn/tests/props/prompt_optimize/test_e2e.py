@@ -25,13 +25,12 @@ from uuid import UUID
 import pytest
 
 from adgn.props.agent_workspace import WorkspaceManager
-from adgn.props.critic.critic import run_critic as execute_critic_run
 from adgn.props.db import get_session
-from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.config import DatabaseConfig
 from adgn.props.db.examples import Example
 from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from adgn.props.grader.grader import grade_critic_run_by_id
+from adgn.props.models.examples import ExampleKind
 from adgn.props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from adgn.props.prompt_optimize.target_metric import TargetMetric
 from tests.llm.support.openai_mock import CapturingOpenAIModel
@@ -246,7 +245,7 @@ async def test_three_agent_workflow_with_grader_data_access(
     test_specimens_hydrator,
     async_docker_client,
     test_snapshot,
-    all_files_scope,
+    run_critic_with_steps,
 ):
     """Test complete 3-agent workflow: optimizer → critic → grader with data access verification.
 
@@ -262,15 +261,15 @@ async def test_three_agent_workflow_with_grader_data_access(
     The key assertion is that the grader can actually read the critic's data.
     Previous bugs caused RLS to block the grader from seeing reported_issues.
     """
-    # Get the scope hash for the all_files example
+    # Get the whole-snapshot example and convert to ExampleSpec
     with get_session() as session:
         example = (
             session.query(Example)
-            .filter_by(snapshot_slug=test_snapshot)
-            .filter(Example.scope["kind"].astext == "entire_snapshot")
+            .filter_by(snapshot_slug=test_snapshot, example_kind=ExampleKind.WHOLE_SNAPSHOT)
             .first()
         )
-        assert example is not None, f"No entire_snapshot example found for {test_snapshot}"
+        assert example is not None, f"No whole_snapshot example found for {test_snapshot}"
+        example_spec = example.to_example_spec()
 
     # Track critic_run_id across agent boundaries
     captured_critic_run_id: list[UUID] = []
@@ -326,23 +325,8 @@ async def test_three_agent_workflow_with_grader_data_access(
     # Now manually run critic and grader to verify the data access
     # -------------------------------------------------------------------------
 
-    # Reset critic runner for actual critic run
-    critic_runner = make_step_runner(steps=_make_critic_steps_with_issue())
-
-    # Run critic using definition-based flow
-    critic_run_id, status = await execute_critic_run(
-        definition_id=CRITIC_AGENT_DEFINITION_ID,
-        snapshot_slug=test_snapshot,
-        scope=all_files_scope,
-        client=critic_runner,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        workspace_manager=test_workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
+    # Run critic using shared fixture with example_spec
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_with_issue(), example=example_spec)
 
     assert status == AgentRunStatus.COMPLETED, f"Critic should complete, got {status}"
     assert critic_run_id is not None
@@ -408,3 +392,70 @@ async def test_three_agent_workflow_with_grader_data_access(
                 elif isinstance(req.input, str):
                     print(f"  (string input): {req.input[:200]}")
             raise
+
+
+# =============================================================================
+# CLI Helper Integration Tests
+# =============================================================================
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.requires_docker
+async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, test_train_example_with_runs):
+    """Test that leaderboard CLI command shows actual recall values from database.
+
+    Verifies:
+    - leaderboard command runs successfully in container
+    - Output contains recall data from pre-populated grading decisions
+    - Recall values reflect the test data (first run: 80%, second run: 72%, avg ~76%)
+    """
+    # test_train_example_with_runs creates:
+    # - First run: found_credit=0.8 (80%)
+    # - Second run: found_credit=0.72 (80% * 0.9 = 72%)
+    # Average would show somewhere between 72-80% depending on aggregation
+
+    # Steps: run leaderboard and check output contains actual recall percentage
+    steps = [
+        # Step 0: Validate bootstrap succeeded, then run leaderboard
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "leaderboard", "--limit", "5"], timeout_ms=30000
+        ),
+        # Step 1: Check output contains recall value (76% is average of 80% and 72%)
+        # fmt_pct formats as "76%" for 0.76
+        AssertDockerExecThenCall(
+            expected_output="76%",  # Average of 80% and 72% runs
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Leaderboard test completed"],
+            timeout_ms=30000,
+        ),
+    ]
+
+    await run_prompt_optimizer_with_steps(steps)
+
+
+@pytest.mark.timeout(60)
+@pytest.mark.requires_docker
+async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, test_train_example_with_runs):
+    """Test that hard-examples CLI command shows example metrics.
+
+    Verifies:
+    - hard-examples command runs successfully in container
+    - Output contains example data with actual recall values
+    - Recall values match the pre-populated test data
+    """
+    # test_train_example_with_runs creates data with specific found_credit values
+    # We check for both the snapshot slug AND the recall percentage
+
+    steps = [
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critic_dev.py", "hard-examples", "--limit", "5"], timeout_ms=30000
+        ),
+        # Check output contains snapshot slug AND recall percentage
+        # The test-fixtures/test-trivial example should show with ~76% recall
+        AssertDockerExecThenCall(
+            expected_output="76%",  # Verify actual recall value appears
+            next_cmd=["python", "/workspace/bin/critic_dev.py", "report-failure", "Hard examples test completed"],
+            timeout_ms=30000,
+        ),
+    ]
+
+    await run_prompt_optimizer_with_steps(steps)

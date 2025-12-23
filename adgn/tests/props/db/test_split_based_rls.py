@@ -67,7 +67,13 @@ async def prompt_optimizer_creds(synced_test_db: DatabaseConfig) -> AsyncGenerat
     # This must happen BEFORE the temp user is created, so RLS policies can
     # identify this user as a prompt_optimizer via current_agent_type()
     with get_session() as session:
-        type_config = PromptOptimizerTypeConfig(target_metric=TargetMetric.TARGETED)
+        type_config = PromptOptimizerTypeConfig(
+            target_metric=TargetMetric.TARGETED,
+            optimizer_model="test-optimizer-model",
+            critic_model="test-critic-model",
+            grader_model="test-grader-model",
+            budget_limit=100.0,
+        )
         agent_run = AgentRun(
             agent_run_id=run_id,
             agent_definition_id=PROMPT_OPTIMIZER_AGENT_DEFINITION_ID,
@@ -259,7 +265,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
     train_runs = prompt_optimizer_session.query(AgentRun).filter(AgentRun.agent_run_id == train_agent_run_id).all()
 
     assert len(train_runs) == 1, "prompt optimizer user should see train split critic_runs via RLS"
-    assert train_runs[0].critic_config().snapshot_slug == "test-fixtures/test-trivial"
+    assert train_runs[0].critic_config().example.snapshot_slug == "test-fixtures/test-trivial"
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(

@@ -18,48 +18,29 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.props.critic.critic import run_critic
 from adgn.props.db import get_session
-from adgn.props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from adgn.props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from adgn.props.grader.grader import grade_critic_run_by_id
 from tests.llm.support.openai_mock import CapturingOpenAIModel
 from tests.support.steps import AssertDockerExecThenCall, DockerExecCallWithBootstrapValidation, Step
 
-# Using fixtures from conftest.py:
-# - test_snapshot: snapshot slug
-# - subtract_file_scope: ExplicitFileScope for subtract.py
-# - zero_issues_critic_responses: configured critic client
+
+def _make_critic_steps_zero_issues() -> list[Step]:
+    """Create minimal step sequence for critic that finds zero issues."""
+    return [
+        DockerExecCallWithBootstrapValidation(
+            cmd=["python", "/workspace/bin/critique.py", "submit", "0", "Reviewed code, no issues found"],
+            timeout_ms=15000,
+        )
+    ]
 
 
 @pytest.fixture
-async def zero_issue_critic_run(
-    synced_test_db,
-    test_trivial_specimen,
-    test_snapshot,
-    subtract_file_scope,
-    zero_issues_critic_responses,
-    async_docker_client,
-    test_specimens_hydrator,
-    test_workspace_manager,
-):
+async def zero_issue_critic_run(run_critic_with_steps):
     """Create a zero-issue critic run for grader testing."""
-    critic_run_id, status = await run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID,
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=zero_issues_critic_responses,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        workspace_manager=test_workspace_manager,
-        max_turns=100,
-    )
-
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_zero_issues())
     assert status == AgentRunStatus.COMPLETED
     assert critic_run_id is not None
-
     return critic_run_id
 
 
@@ -133,7 +114,7 @@ async def test_grader_http_mode_zero_issues(
             grader_config = grader_run.grader_config()
             graded_critic = session.get(AgentRun, grader_config.graded_agent_run_id)
             assert graded_critic is not None
-            assert graded_critic.critic_config().snapshot_slug == test_snapshot
+            assert graded_critic.critic_config().example.snapshot_slug == test_snapshot
             assert grader_config.graded_agent_run_id == zero_issue_critic_run
 
             # Verify the grader completed successfully
@@ -238,33 +219,9 @@ def _make_critic_steps_with_issue() -> list[Step]:
 
 
 @pytest.fixture
-async def critic_run_with_issue(
-    synced_test_db,
-    test_trivial_specimen,
-    test_snapshot,
-    subtract_file_scope,
-    make_step_runner,
-    async_docker_client,
-    test_specimens_hydrator,
-    test_workspace_manager,
-):
+async def critic_run_with_issue(run_critic_with_steps):
     """Create a critic run with one reported issue for grader testing."""
-    runner = make_step_runner(steps=_make_critic_steps_with_issue())
-
-    critic_run_id, status = await run_critic(
-        definition_id=CRITIC_AGENT_DEFINITION_ID,
-        snapshot_slug=test_snapshot,
-        scope=subtract_file_scope,
-        client=runner,
-        hydrator=test_specimens_hydrator,
-        db_config=synced_test_db,
-        parent_agent_run_id=None,
-        docker_client=async_docker_client,
-        workspace_manager=test_workspace_manager,
-        mount_properties=False,
-        max_turns=100,
-    )
-
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_with_issue())
     assert status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {status}"
     assert critic_run_id is not None
 
@@ -396,7 +353,7 @@ async def test_grader_comprehensive_data_access(
             grader_config2 = grader_run.grader_config()
             graded_critic = session.get(AgentRun, grader_config2.graded_agent_run_id)
             assert graded_critic is not None
-            assert graded_critic.critic_config().snapshot_slug == test_snapshot
+            assert graded_critic.critic_config().example.snapshot_slug == test_snapshot
             assert grader_config2.graded_agent_run_id == critic_run_with_issue
 
             # Verify the grader completed successfully

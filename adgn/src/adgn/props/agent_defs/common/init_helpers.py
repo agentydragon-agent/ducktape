@@ -14,6 +14,7 @@ import subprocess
 
 from sqlalchemy import text
 
+from adgn.props.agent_helpers import get_current_agent_run
 from adgn.props.db import get_session
 
 WORKSPACE = Path("/workspace")
@@ -175,3 +176,18 @@ def print_bootstrap(agent_name: str, docs_order: list[str], docs_skip: list[str]
     print_workspace_tree()
     print_docs(docs_order, docs_skip)
     print_env_info(agent_name)
+
+
+def print_agent_config() -> object:
+    """Print agent configuration as JSON and return the type_config.
+
+    Fetches the current agent run from the session and prints its type_config.
+
+    Returns:
+        The type_config Pydantic model for further use if needed.
+    """
+    with get_session() as session:
+        agent_run = get_current_agent_run(session)
+        print("\n=== AGENT CONFIGURATION ===")
+        print(agent_run.type_config.model_dump_json(indent=2))
+        return agent_run.type_config
