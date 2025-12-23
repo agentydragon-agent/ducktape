@@ -11,8 +11,12 @@ server {
     ssl_certificate /etc/letsencrypt/live/atlas.agentydragon.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/atlas.agentydragon.com/privkey.pem;
 
+    # Use Tailscale's DNS for dynamic resolution
+    resolver 100.100.100.100 valid=30s;
+    set $upstream_atlas atlas;
+
     location / {
-        proxy_pass https://atlas:8006;
+        proxy_pass https://$upstream_atlas:8006;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
