@@ -156,7 +156,7 @@ def run_info_cmd() -> None:
             typer.echo(f"  parent_agent_run_id: {agent_run.parent_agent_run_id}")
         typer.echo()
         typer.echo("Type Config:")
-        typer.echo(json.dumps(agent_run.type_config, indent=2, default=str))
+        typer.echo(json.dumps(agent_run.type_config.model_dump(mode="json"), indent=2))
 
 
 @dataclass

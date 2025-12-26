@@ -169,7 +169,9 @@ def get_agent_config() -> str:
     """
     with get_session() as session:
         agent_run = get_current_agent_run(session)
-        return json.dumps(agent_run.type_config, indent=2)
+        config = agent_run.type_config
+        # type_config is a Pydantic model - use model_dump for JSON serialization
+        return json.dumps(config.model_dump(mode="json"), indent=2)
 
 
 def get_grading_context() -> str:

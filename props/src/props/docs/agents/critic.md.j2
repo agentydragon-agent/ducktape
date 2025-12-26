@@ -37,7 +37,7 @@ Use descriptive kebab-case slugs:
 ## Important Constraints
 
 - **NO access to ground truth** - You cannot see `true_positives` or `false_positives`
-- **File paths must exist** in the mounted snapshot
+- **File paths must be RELATIVE to snapshot root** - Use `src/utils.py`, NOT `/workspace/src/utils.py`
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)
 
 {{ include_doc("props/docs/database_access.md") }}

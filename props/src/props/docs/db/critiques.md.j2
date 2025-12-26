@@ -12,13 +12,15 @@ This document describes how critic output is stored in the database.
 
 ## Writing Issues
 
+**IMPORTANT:** File paths must be RELATIVE to snapshot root (e.g., `src/utils.py`), NOT absolute paths like `/workspace/src/utils.py`.
+
 **SQL workflow:**
 ```sql
 -- 1. Insert the issue
 INSERT INTO reported_issues (critic_run_id, issue_id, rationale)
 VALUES (current_agent_run_id(), 'dead-code-1', 'Function never called');
 
--- 2. Insert occurrences
+-- 2. Insert occurrences (note: file_path is RELATIVE)
 INSERT INTO reported_issue_occurrences
   (critic_run_id, issue_id, occurrence_id, file_path, start_line, end_line)
 VALUES
