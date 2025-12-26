@@ -224,6 +224,40 @@ in {
     settings = {
       theme = "dark";
       includeCoAuthoredBy = false;
+      cleanupPeriodDays = 0; # Disable transcript cleanup (retain indefinitely)
+      statusLine = {
+        type = "command";
+        command = "/home/agentydragon/.claude/statusline.py";
+      };
+
+      # Sandbox configuration for bash commands
+      # Uses Bubblewrap (Linux) or Seatbelt (macOS) for OS-level isolation.
+      #
+      # When enabled:
+      # - Filesystem writes restricted to CWD and subdirs
+      # - Network filtered through proxy (domain-based allowlist)
+      # - Claude's system prompt instructs it to run commands sandboxed by default
+      #
+      # Escape hatch (dangerouslyDisableSandbox parameter):
+      # - Claude can set dangerouslyDisableSandbox: true on Bash tool calls
+      # - When set, command bypasses sandbox and goes through normal permission flow
+      # - User gets prompted unless command matches an allow rule
+      # - Can be disabled entirely with allowUnsandboxedCommands = false
+      #
+      # See: https://docs.anthropic.com/en/docs/claude-code/security#sandboxing
+      sandbox = {
+        enabled = true;
+        # Auto-allow sandboxed commands without prompting (non-sandboxed still prompt)
+        autoAllowBashIfSandboxed = true;
+        # Allow Claude to use dangerouslyDisableSandbox (triggers normal approval flow)
+        allowUnsandboxedCommands = true;
+        # Commands that cannot run in sandbox (e.g., need privileged access)
+        # excludedCommands = ["docker" "podman"];
+        # Network options (if needed):
+        # network.allowUnixSockets = ["/run/user/1000/docker.sock"];  # Allow specific sockets
+        # network.allowLocalBinding = true;  # Allow localhost port binding (macOS)
+      };
+
       permissions = {
         allow =
           [
@@ -255,7 +289,13 @@ in {
   # Deploy skills to ~/.claude/skills/
   # Skills are stored in nix/home/claude-code/skills/ and symlinked for declarative management
   home.file =
-    lib.mapAttrs' (
+    {
+      ".claude/statusline.py" = {
+        source = ./statusline.py;
+        executable = true;
+      };
+    }
+    // lib.mapAttrs' (
       skillName: skillType:
         lib.nameValuePair
         ".claude/skills/${skillName}"

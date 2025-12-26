@@ -2,15 +2,31 @@
 
 Local tools and libraries for my dev/worktree/LLM workflows.
 
-- Tana export: convert Tana JSON dumps to Markdown/TanaPaste
 - LLM utilities: Agent client/UI, properties/specimens, system rewriter, etc.
+- MCP servers and compositors
+- Docker-based agent execution
 
-Environment and setup (direnv + devenv)
-- Requirements: Nix + devenv, direnv; Python 3.11+
+## Workspace
+
+`adgn` is part of a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/):
+
+```
+ducktape/
+├── pyproject.toml          # Workspace root
+├── uv.lock                  # Shared lockfile
+├── adgn/                    # This package
+├── tana/                    # Tana export utilities
+└── agent_container_util/    # Thin container utilities
+```
+
+## Environment and setup (direnv + devenv)
+- Requirements: Nix + devenv, direnv; Python 3.12+
 - First time here: `direnv allow`
-  - This loads .envrc → devenv, creates a Python venv, and installs the package in editable mode with dev extras.
+  - This loads .envrc → devenv, creates a Python venv at `.devenv/state/venv`, and installs the package in editable mode with dev extras.
 - With devenv active, dev tools are on PATH automatically (pytest, ruff, pre-commit, wt, rspcache, …). Run them directly without prefixes when inside adgn/.
-- Running from outside this dir (or scripts): prefix commands with direnv exec adgn …
+- Running from outside this dir (or scripts): prefix commands with `direnv exec adgn …`
+
+Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv.
 
 ## Quick commands
 - Run all tests (tests live under `adgn/tests`):
@@ -38,13 +54,13 @@ Environment and setup (direnv + devenv)
 
 ## Console scripts
 - rspcache → adgn.rspcache.cli:main
-- LLM: adgn-agent, adgn-llm-edit, adgn-sysrw, adgn-properties, sandbox-jupyter
+- LLM: adgn-agent, adgn-llm-edit, adgn-sysrw, props, sandbox-jupyter
 - Worktree tooling (`wt`, `wt-install`) now lives in the sibling `wt/` project
 
 ## More details
 - See ./CLAUDE.md for a deeper guide (test config, module map, LLM toolkit notes).
 
 ## Runtime container image (container mode)
-- Build the base image used for both runtime exec and policy evaluation:
+- Build the base image used for both runtime exec and policy evaluation (run from workspace root `ducktape/`):
   - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
   - Set `ADGN_RUNTIME_IMAGE=adgn-runtime:latest` to use this image everywhere.

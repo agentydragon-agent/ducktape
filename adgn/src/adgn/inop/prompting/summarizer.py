@@ -7,9 +7,9 @@ from adgn.inop.engine.models import FileInfo, GradedRollout
 from adgn.inop.io.logging_utils import DualOutputLogging
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
 from adgn.inop.prompting.truncation_utils import TruncationManager
-from adgn.openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
-from adgn.openai_utils.model_metadata import get_model_metadata
-from adgn.openai_utils.text_extraction import first_assistant_text
+from openai_utils.model import InputTextPart, OpenAIModelProto, ResponsesRequest, SystemMessage, UserMessage
+from openai_utils.model_metadata import get_model_metadata
+from openai_utils.text_extraction import first_assistant_text
 
 logger = DualOutputLogging.get_logger()
 

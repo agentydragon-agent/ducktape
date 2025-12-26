@@ -47,24 +47,29 @@ def _settings() -> EmberSettings:
 
 def create_app(settings: EmberSettings | None = None) -> FastAPI:
     settings = settings or _settings()
-    runtime = EmberRuntime(settings)
+
+    # Runtime holder - created during startup
+    runtime_holder: dict[str, EmberRuntime] = {}
 
     app = FastAPI(title="Ember", version="0.0.1")
 
     @app.on_event("startup")
     async def _startup() -> None:
+        runtime = await EmberRuntime.create(settings)
+        runtime_holder["runtime"] = runtime
         await runtime.start()
 
     @app.on_event("shutdown")
     async def _shutdown() -> None:
-        await runtime.stop()
+        if "runtime" in runtime_holder:
+            await runtime_holder["runtime"].stop()
 
     @app.get("/healthz")
     async def healthz() -> HealthResponse:
         return HealthResponse(status="ok")
 
     async def _get_runtime() -> EmberRuntime:
-        return runtime
+        return runtime_holder["runtime"]
 
     runtime_dep_annotation = Annotated[EmberRuntime, Depends(_get_runtime)]
 

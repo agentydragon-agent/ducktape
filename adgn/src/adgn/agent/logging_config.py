@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from adgn.llm.logging_config import configure_logging
+from cli_util import configure_logging
 
 
 def configure_logging_info(*, set_stream_handler_level: bool = True) -> None:

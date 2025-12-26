@@ -69,7 +69,7 @@ approval_policy: |
     SystemRule,
     TraceConfig,
   )
-  from adgn.agent.approvals import (
+  from agent_server.approvals import (
     ApprovalContext,
     PolicyDecision,
     WellKnownServers,

@@ -1,15 +1,3 @@
 build
 scratch
-
-# Built frontend assets (generated from src/adgn/agent/web)
-# Keep the directory in Git, but ignore generated contents
-src/adgn/agent/server/static/**
-
-# Prompt evaluation runs
-src/adgn/props/runs/
-
-# Generated TypeScript types
-src/adgn/agent/web/src/generated/*
-
-# Bootstrap output dumps from e2e tests
-tests/props/bootstrap_dumps/
+logs/

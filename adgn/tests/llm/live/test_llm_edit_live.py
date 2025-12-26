@@ -7,13 +7,11 @@ from typing import Any
 
 import pytest
 
-from adgn.llm.llm_edit import _execute
-from adgn.mcp._shared.naming import build_mcp_function
+from adgn.llm_edit import _execute
 from adgn.mcp.editor_server import EditorServer
-from adgn.openai_utils.model import ResponsesRequest
-from tests.support.responses import ResponsesFactory
-
-from ..support.openai_mock import LIVE
+from agent_core.testing import LIVE, ResponsesFactory
+from mcp_infra.naming import build_mcp_function
+from openai_utils.model import ResponsesRequest
 
 EDITOR_PREFIX = EditorServer.DEFAULT_MOUNT_PREFIX
 
@@ -75,12 +73,7 @@ async def test_llm_edit_obvious_replace(openai_client_param, tmp_path: Path) -> 
     )
 
     code = await _execute(
-        file_path=p,
-        prompt=prompt,
-        model=os.getenv("OPENAI_MODEL", "o4-mini"),
-        reasoning_effort=None,
-        reasoning_summary=None,
-        client=openai_client_param,
+        file_path=p, prompt=prompt, reasoning_effort=None, reasoning_summary=None, client=openai_client_param
     )
     assert code == 0
     text = p.read_text(encoding="utf-8")

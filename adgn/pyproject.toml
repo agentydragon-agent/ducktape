@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "adgn"
@@ -8,6 +8,12 @@ version = "0.0.0"
 authors = [{name = "Rai"}]
 requires-python = ">=3.12,<3.14"
 dependencies = [
+  "agent-container-util",
+  "agent-core",
+  "cli-util",
+  "mcp-infra",
+  "net-util",
+  "openai-utils",
   "pydantic>=2.0.0",
   "fastapi>=0.115.0",
   "httpx>=0.27.0",
@@ -15,57 +21,29 @@ dependencies = [
   "typer>=0.12.0",
   "typer-di>=0.1.3",
   "uvicorn>=0.30.0",
-  "click",
-  "psutil",
   "platformdirs",
   "aiohttp>=3.9.0",
-  "colorama",
   "PyYAML",
-  "PyGithub>=1.77",
   "pygit2>=1.18",
   "types-pygit2>=1.15.0",
-  "tabulate",
-  "watchdog",
-  "pluggy>=1.3.0",
-  "punq>=0.6.2",
-  # LLM stack (merged from former adgn-llm)
   "openai>=1.40.0",
   "tenacity>=8.2.0",
   "docker>=7.0.0",
   "aiodocker>=0.22.0",
   "pandas>=2.2.0",
   "tiktoken>=0.7.0",
-  "sqlalchemy[asyncio]>=2.0.32",
-  "alembic>=1.13.0",
-  "psycopg[binary]>=3.1",
-  "psycopg2-binary>=2.9",
   "plotnine>=0.13.0",
   "claude-code-sdk>=0.0.21,<0.1",
-  "ipykernel>=6",
-  "jupyter-mcp-server>=0.11.0",
-  "jupyter-server",
-  "jupyter-core",
   "structlog",
   "anthropic",
-  "numpy",
   "pathspec",
   "anyio>=4.4",
   "mcp[cli]>=1.13.1",
-  "jsonschema>=4.0",
   "requests>=2.32.5",
-  "aiolimiter>=1.1.0",
-  "pyhamcrest>=2.1",
   "rich>=13.0.0",
-  "textual>=0.78.0",
-  "plotext>=5.2.0",
-  "canonicaljson>=1.6.0",
-  "asyncpg>=0.29.0",
   "unidiff>=0.7.5",
   "fastmcp>=2.13",
   "jinja2>=3.1",
-  "kubernetes>=29.0.0",
-  "filelock>=3.13.0",
-  "compact-json>=1.4.0",
 ]
 
 [project.optional-dependencies]
@@ -82,35 +60,25 @@ dev = [
   'pytest-playwright>=0.5.0',
   'playwright>=1.45.0',
   "ruff>=0.5",
+  # Agent runtimes packages (for testing container utilities)
+  "editor-util",
+  "props",
   # Pin to match .pre-commit-config.yaml (v1.18.2)
   # TODO: Ensure mypy versions stay consistent across all tool configs in the repo
   "mypy==1.18.2",
-  "sqlalchemy[mypy]>=2.0.32",
-  "click>=8.0",
-  "pygit2>=1.18",
   "pre-commit>=3.5",
-  'types-colorama',
-  'types-psutil',
   'types-PyYAML',
   'types-requests',
-  'types-tabulate',
   'types-docker',
-  'asyncpg-stubs',
   'pandas-stubs',
   'types-Jinja2',
-  'types-jsonschema',
 ]
 typing = [
-    'types-colorama',
-    'types-psutil',
     'types-PyYAML',
     'types-requests',
-    'types-tabulate',
     'types-docker',
-    'asyncpg-stubs',
     'pandas-stubs',
     'types-Jinja2',
-    'types-jsonschema',
 ]
 # GNOME console script deps (install when needed)
 gnome = [
@@ -127,34 +95,15 @@ gepa = [
   "nest-asyncio>=1.5.0",
 ]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["adgn*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/adgn"]
 
-[tool.setuptools.package-data]
-"adgn.props" = [
-  "definitions/*.md",
-  "definitions/**/*.md",
-  "docs/*.md",
-  "docs/**/*.md",
-  "prompts/*.j2",
-  "prompts/**/*.j2",
-  "prompts/*.j2.md",
-  "prompts/**/*.j2.md",
-]
-"adgn.props.critic" = [
-  "prompts/*.md",
-  "prompts/*.j2.md",
-]
-"adgn.agent.server" = [
-  "static/*",
-  "static/**/*",
-]
-"adgn.agent.templates" = [
-  "*.j2",
-]
-"adgn.mcp.approval_policy" = [
-  "instructions.md",
+[tool.hatch.build]
+exclude = [
+  "*.pyc",
+  "__pycache__",
+  "node_modules",
+  ".git",
 ]
 
 [tool.pytest.ini_options]
@@ -216,26 +165,31 @@ testpaths = ["tests"]
 skip-globs = ["tests/detectors/fixtures/**"]
 
 [project.scripts]
-rspcache = "adgn.rspcache.cli:app"
 # LLM console scripts
-adgn-sysrw = "adgn.llm.sysrw.cli:app"
+adgn-sysrw = "adgn.sysrw.cli:app"
 adgn-agent = "adgn.agent.cli:main"
-adgn-properties = "adgn.props.cli.main:app"
 git-commit-ai = "adgn.git_commit_ai.cli:main"
-sandbox-jupyter = "adgn.mcp.sandboxed_jupyter.wrapper:main"
-adgn-sandboxer = "adgn.llm.sandboxer:main"
-adgn-llm-edit = "adgn.llm.llm_edit:app"
-adgn-openai-probe = "adgn.openai_utils.probe:main"
+adgn-llm-edit = "adgn.llm_edit:app"
+adgn-openai-probe = "openai_utils.probe:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
 adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
-adgn-matrix-bot = "adgn.agent.matrix_bot:main"
-adgn-detectors-custom = "adgn.props.detectors.cli_custom:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
 adgn-generate-frontend-code = "adgn.scripts.generate_frontend_code:main"
+adgn-editor-docker = "adgn.mcp.editor_docker.cli:main"
 
 # Mypy configuration moved to central /mypy.ini at repo root
+
+[tool.uv.sources]
+agent-container-util = { workspace = true }
+agent-core = { workspace = true }
+cli-util = { workspace = true }
+mcp-infra = { workspace = true }
+net-util = { workspace = true }
+openai-utils = { workspace = true }
+props = { workspace = true }
+editor-util = { workspace = true }
 
 [[tool.mypy.overrides]]
 module = ["tests.detectors.fixtures.*"]

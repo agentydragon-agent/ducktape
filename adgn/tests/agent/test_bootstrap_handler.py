@@ -5,11 +5,11 @@ from __future__ import annotations
 from mcp.types import CallToolResult, TextContent
 import pytest
 
-from adgn.agent.events import ToolCallOutput
-from adgn.agent.handler import BootstrapHandler, InitFailedError
-from adgn.agent.loop_control import InjectItems, NoAction
-from adgn.mcp.exec.models import BaseExecResult, Exited
-from adgn.openai_utils.model import FunctionCallItem
+from adgn.agent.bootstrap_handler import BootstrapHandler, InitFailedError
+from agent_core.events import ToolCallOutput
+from agent_core.loop_control import InjectItems, NoAction
+from mcp_infra.exec.models import BaseExecResult, Exited
+from openai_utils.model import FunctionCallItem
 
 
 @pytest.fixture
@@ -37,7 +37,6 @@ class TestBootstrapHandlerInit:
     def test_initial_state(self, bootstrap_handler: BootstrapHandler) -> None:
         """Handler starts in uncompleted state."""
         assert not bootstrap_handler.init_complete
-        assert not bootstrap_handler.init_failed
 
 
 class TestBootstrapHandlerOnBeforeSample:
@@ -58,10 +57,11 @@ class TestBootstrapHandlerOnBeforeSample:
         # Inject init call
         bootstrap_handler.on_before_sample()
 
-        # Simulate successful init result
+        # Simulate successful init result with valid exec result
+        exec_result = BaseExecResult(exit=Exited(exit_code=0), stdout="Init complete", stderr="", duration_ms=100)
         success_result = ToolCallOutput(
             call_id=init_call.call_id,
-            result=CallToolResult(content=[TextContent(type="text", text="Init complete")], isError=False),
+            result=CallToolResult(content=[], structuredContent=exec_result.model_dump(mode="json"), isError=False),
         )
         bootstrap_handler.on_tool_result_event(success_result)
 
@@ -70,20 +70,17 @@ class TestBootstrapHandlerOnBeforeSample:
         assert isinstance(decision, NoAction)
 
     def test_raises_on_init_failure(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
-        """After failed init, raises InitFailedError."""
+        """Failed init raises InitFailedError immediately in on_tool_result_event."""
         # Inject init call
         bootstrap_handler.on_before_sample()
 
-        # Simulate failed init result
+        # Simulate failed init result - should raise immediately
         error_result = ToolCallOutput(
             call_id=init_call.call_id,
             result=CallToolResult(content=[TextContent(type="text", text="Database connection failed")], isError=True),
         )
-        bootstrap_handler.on_tool_result_event(error_result)
-
-        # Next call should raise InitFailedError
         with pytest.raises(InitFailedError, match="Database connection failed"):
-            bootstrap_handler.on_before_sample()
+            bootstrap_handler.on_tool_result_event(error_result)
 
 
 class TestBootstrapHandlerToolResultTracking:
@@ -101,29 +98,26 @@ class TestBootstrapHandlerToolResultTracking:
 
         # Should still not be complete
         assert not bootstrap_handler.init_complete
-        assert not bootstrap_handler.init_failed
 
     def test_tracks_success(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
         """Handler correctly tracks successful init."""
+        exec_result = BaseExecResult(exit=Exited(exit_code=0), stdout="Success", stderr="", duration_ms=100)
         success_result = ToolCallOutput(
             call_id=init_call.call_id,
-            result=CallToolResult(content=[TextContent(type="text", text="Success")], isError=False),
+            result=CallToolResult(content=[], structuredContent=exec_result.model_dump(mode="json"), isError=False),
         )
         bootstrap_handler.on_tool_result_event(success_result)
 
         assert bootstrap_handler.init_complete
-        assert not bootstrap_handler.init_failed
 
-    def test_tracks_failure(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
-        """Handler correctly tracks failed init."""
+    def test_raises_on_failure(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
+        """Handler raises InitFailedError immediately on failure."""
         error_result = ToolCallOutput(
             call_id=init_call.call_id,
             result=CallToolResult(content=[TextContent(type="text", text="Error: something wrong")], isError=True),
         )
-        bootstrap_handler.on_tool_result_event(error_result)
-
-        assert bootstrap_handler.init_complete
-        assert bootstrap_handler.init_failed
+        with pytest.raises(InitFailedError, match="Error: something wrong"):
+            bootstrap_handler.on_tool_result_event(error_result)
 
     def test_extracts_error_message(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
         """Handler extracts error message from TextContent."""
@@ -131,19 +125,14 @@ class TestBootstrapHandlerToolResultTracking:
             call_id=init_call.call_id,
             result=CallToolResult(content=[TextContent(type="text", text="Detailed error message here")], isError=True),
         )
-        bootstrap_handler.on_tool_result_event(error_result)
-
-        # Error message should be captured
         with pytest.raises(InitFailedError, match="Detailed error message here"):
-            bootstrap_handler.on_before_sample()
+            bootstrap_handler.on_tool_result_event(error_result)
 
     def test_handles_empty_content(self, bootstrap_handler: BootstrapHandler, init_call: FunctionCallItem) -> None:
         """Handler handles error with no content gracefully."""
         error_result = ToolCallOutput(call_id=init_call.call_id, result=CallToolResult(content=[], isError=True))
-        bootstrap_handler.on_tool_result_event(error_result)
-
-        with pytest.raises(InitFailedError, match="no output captured"):
-            bootstrap_handler.on_before_sample()
+        with pytest.raises(InitFailedError, match="error flagged"):
+            bootstrap_handler.on_tool_result_event(error_result)
 
 
 class TestInitFailedError:

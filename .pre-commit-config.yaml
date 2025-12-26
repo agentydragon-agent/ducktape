@@ -71,6 +71,162 @@ repos:
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
     hooks:
+      # agent_container_util: Per-package config, minimal deps
+      - id: mypy
+        alias: mypy-agent-container-util
+        name: mypy (agent_container_util)
+        files: "^agent_runtimes/agent_container_util/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=agent_runtimes/agent_container_util/pyproject.toml"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "jinja2>=3.0"
+          - types-Jinja2
+
+      # critic_util: Uses mypy.ini (has mypy_path for workspace packages)
+      # Needs same deps as adgn since it imports from adgn
+      - id: mypy
+        alias: mypy-critic-util
+        name: mypy (critic_util)
+        files: "^agent_runtimes/critic_util/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=mypy.ini"]
+        additional_dependencies:
+          # Same as adgn (imports from adgn.props.db, adgn.props.agent_helpers)
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "docker>=7.0.0"
+          - "sqlalchemy[mypy]>=2.0"
+          - "fastmcp>=2.13"
+          - "openai>=1.40.0"
+          - "pygit2>=1.18"
+          - "tenacity>=8.2.0"
+          - structlog
+          - "jinja2>=3.1"
+          - alembic
+          - aiodocker
+          # Type stubs
+          - types-psycopg2
+          - types-PyYAML
+
+      # editor_util: Per-package config with mypy_path to workspace deps
+      # Needs fastmcp for both direct use and for type-checking agent_container_util imports
+      - id: mypy
+        alias: mypy-editor-util
+        name: mypy (editor_util)
+        files: "^agent_runtimes/editor_util/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=agent_runtimes/editor_util/pyproject.toml"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - typer>=0.9
+          - "jinja2>=3.0"
+          - types-Jinja2
+
+      # py_detectors: Standalone AST-based detectors package
+      - id: mypy
+        alias: mypy-py-detectors
+        name: mypy (py_detectors)
+        files: "^py_detectors/.*\\.py$"
+        exclude: "/fixtures/"
+        language_version: python3.12
+        args: ["--config-file=py_detectors/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+
+      # rspcache: OpenAI Responses API caching proxy
+      - id: mypy
+        alias: mypy-rspcache
+        name: mypy (rspcache)
+        files: "^rspcache/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=rspcache/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "sqlalchemy[mypy]>=2.0"
+          - "openai>=1.40.0"
+          - "asyncpg>=0.29.0"
+          - asyncpg-stubs
+          - typer>=0.12
+          - httpx>=0.27.0
+          - canonicaljson>=1.6.0
+          - uvicorn>=0.30.0
+          - types-PyYAML
+
+      # mcp_infra: MCP infrastructure (compositor, exec, enhanced)
+      - id: mypy
+        alias: mypy-mcp-infra
+        name: mypy (mcp_infra)
+        files: "^mcp_infra/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=mcp_infra/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - "fastmcp>=2.13"
+          - "mcp>=1.13"
+          - aiodocker
+          - jinja2>=3.1
+          - anyio>=4.0
+          - typer>=0.12
+          - typer-di
+          - pyhamcrest>=2.1
+          - "openai>=1.40.0"
+          - "syrupy>=4.0"
+          - "compact-json>=1.4.0"
+          - structlog
+
+      # sandboxed_jupyter: Sandboxed Jupyter execution with seatbelt and Docker
+      - id: mypy
+        alias: mypy-sandboxed-jupyter
+        name: mypy (sandboxed_jupyter)
+        files: "^sandboxed_jupyter/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=sandboxed_jupyter/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - PyYAML
+          - ipykernel
+          - jupyter-server
+          - "docker>=7.0.0"
+          - "fastmcp>=2.13"
+          - "mcp>=1.13"
+          - "tenacity>=8.2.0"
+          - types-docker
+          - types-PyYAML
+          - aiodocker
+
+      # agent_server: FastAPI backend, runtime, MCP infrastructure
+      - id: mypy
+        alias: mypy-agent-server
+        name: mypy (agent_server)
+        files: "^agent_server/src/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=agent_server/pyproject.toml"]
+        additional_dependencies:
+          - pydantic>=2
+          - fastapi>=0.115.0
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - aiodocker
+          - aiosqlite
+          - jinja2>=3.1
+          - "rich>=13.0"
+          - "textual>=0.78.0"
+          - "docker>=7.0.0"
+          - typer>=0.12
+          - structlog
+          - anyio>=4.0
+          - "openai>=1.40.0"
+          - "tenacity>=8.2.0"
+          - "compact-json>=1.4.0"
+          - pyhamcrest>=2.1
+          - types-docker
+          - types-PyYAML
+          - mautrix
+
+      # adgn: Full monolith with all dependencies
       - id: mypy
         alias: mypy-adgn
         name: mypy (adgn)

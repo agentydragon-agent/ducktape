@@ -1,0 +1,79 @@
+# Grading: Decisions and Metrics
+
+This document describes how grading output is stored and how to query metrics.
+
+## grading_decisions
+
+{{ run_command('psql -c "\\d+ grading_decisions"') }}
+
+**SQL trigger:** Enforces `SUM(found_credit) <= 1.0` per occurrence across all decisions.
+
+## Writing Decisions
+
+**Python helpers:**
+```python
+from props.grader.helpers import insert_tp_match, insert_fp_match, insert_no_match
+
+# TP match with full credit
+insert_tp_match(session, grader_run_id,
+    input_issue_id="dead-code-1",
+    tp_id="tp-dead-utils",
+    occurrence_id=1,
+    found_credit=1.0,
+    rationale="Exact match"
+)
+
+# FP match
+insert_fp_match(session, grader_run_id,
+    input_issue_id="dup-1",
+    fp_id="fp-visual-consistency",
+    rationale="This duplication is intentional for visual consistency"
+)
+
+# No match (novel issue)
+insert_no_match(session, grader_run_id,
+    input_issue_id="style-1",
+    rationale="Style issue not in ground truth"
+)
+```
+
+## Metrics
+
+### Per-Run Recall
+
+```python
+# From grader output
+if isinstance(grader_run.output, DBGraderSuccess):
+    results = grader_run.output.occurrence_results
+    recall = sum(r.found_credit for r in results) / len(results)
+```
+
+### Aggregate Views
+
+**recall_by_definition_split_kind:**
+
+{{ run_command('psql -c "\\d+ recall_by_definition_split_kind"') }}
+
+**recall_by_example:**
+
+{{ run_command('psql -c "\\d+ recall_by_example"') }}
+
+### Weighting
+
+Cross-run recall is weighted by occurrence, not by example:
+- Formula: `SUM(AVG(found_credit) per occurrence) / COUNT(occurrences)`
+- Examples with more TP occurrences naturally weight more
+- This measures "total issues found / total issues in dataset"
+
+### Failure Handling
+
+When a critic exceeds max_turns or context limits:
+- No valid critique is produced
+- Counts as zero-recall for that example
+
+## Common Pitfalls
+
+### Validation Inspection
+
+❌ **Wrong:** Reading validation ground truth or execution traces
+✅ **Right:** Only run evaluations and see aggregate metrics (recall)

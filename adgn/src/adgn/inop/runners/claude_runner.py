@@ -4,7 +4,6 @@ from pathlib import Path
 import shutil
 import tempfile
 import time
-from typing import Any
 import uuid
 
 from claude_code_sdk import (
@@ -55,13 +54,6 @@ class ClaudeRunner(AgentRunner):
         # Docker image will be set from task setup during setup()
         # TODO: Consider supporting (task, runner) specific Docker configs in the future
         self.docker_image: str | None = None
-        self.docker_container: Any | None = None  # For git clone support
-
-        # Historical note: containerized_claude.py previously used a separate
-        # git volume mounted at /git for pre-cloned repositories. This was an
-        # optimization for large repos to avoid repeated cloning. With shallow
-        # clones (--depth 1) to specific commits, this optimization is no longer
-        # necessary for most use cases.
 
     async def setup(self, task: TaskDefinition, task_type_config: dict) -> None:
         """Set up workspace for task execution.

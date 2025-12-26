@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+# TODO: Consider using pydantic-settings for cleaner env var + file config loading
 from datetime import timedelta
 import os
 from pathlib import Path
@@ -7,8 +8,9 @@ import tomllib
 from typing import Annotated, Any, Literal, cast
 
 from openai.types.responses import ResponseIncludable
-from openai.types.shared.reasoning_effort import ReasoningEffort
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+
+from openai_utils.types import ReasoningEffort
 
 from .secrets import ProjectedSecret
 from .system_prompt import load_system_prompt
@@ -41,7 +43,15 @@ class EnforcedSleepUntilUserMessagePolicy(_SleepPolicyBase):
 SleepUntilUserMessagePolicy = Annotated[
     LegacySleepUntilUserMessagePolicy | EnforcedSleepUntilUserMessagePolicy, Field(discriminator="kind")
 ]
-_SLEEP_POLICY_ADAPTER = TypeAdapter(SleepUntilUserMessagePolicy)
+
+
+def _parse_sleep_policy(cfg: dict[str, Any]) -> SleepUntilUserMessagePolicy:
+    """Parse sleep policy config dict into typed model."""
+    if not cfg:
+        return LegacySleepUntilUserMessagePolicy()
+    if cfg.get("kind") == "enforced":
+        return EnforcedSleepUntilUserMessagePolicy.model_validate(cfg)
+    return LegacySleepUntilUserMessagePolicy.model_validate(cfg)
 
 
 class MatrixSettings(BaseModel):
@@ -63,23 +73,13 @@ class MatrixSettings(BaseModel):
         return bool(self.base_url and self.access_token_secret.value())
 
 
-class ObjectStoreSettings(BaseModel):
-    endpoint: str
-    bucket: str
-    access_key_secret: ProjectedSecret
-    secret_key_secret: ProjectedSecret
-    secure: bool = True
-    url_expiry_seconds: int = Field(default=120, ge=1)
-    model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
-
-
 class OpenAISettings(BaseModel):
     api_key_secret: ProjectedSecret
     model: str
     system_prompt: str
     sleep_tool_policy: SleepUntilUserMessagePolicy = LegacySleepUntilUserMessagePolicy()
     api_base: str | None = None
-    reasoning_effort: ReasoningEffort = "medium"
+    reasoning_effort: ReasoningEffort = ReasoningEffort.MEDIUM
     include_encrypted_reasoning: bool = True
     model_config = ConfigDict(frozen=True, extra="forbid", arbitrary_types_allowed=True)
 
@@ -97,7 +97,6 @@ class EmberSettings(BaseModel):
     history_path: Path
     state_dir: Path
     workspace_path: Path
-    object_store: ObjectStoreSettings | None = None
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -115,9 +114,6 @@ def load_settings() -> EmberSettings:
     matrix_cfg = config_data.get("matrix", {}) if isinstance(config_data.get("matrix"), dict) else {}
     state_cfg = config_data.get("state", {}) if isinstance(config_data.get("state"), dict) else {}
     openai_cfg = config_data.get("openai", {}) if isinstance(config_data.get("openai"), dict) else {}
-
-    object_store_cfg = config_data.get("object_store", {}) if isinstance(config_data.get("object_store"), dict) else {}
-
     sleep_tool_cfg = openai_cfg.get("sleep_tool", {}) if isinstance(openai_cfg.get("sleep_tool"), dict) else {}
 
     if "kind" not in sleep_tool_cfg and "mode" in sleep_tool_cfg:
@@ -132,37 +128,9 @@ def load_settings() -> EmberSettings:
     matrix_access_token = ProjectedSecret(name="matrix_access_token", env_var="MATRIX_ACCESS_TOKEN")
     openai_api_key = ProjectedSecret(name="openai_api_key", env_var="OPENAI_API_KEY")
 
-    sleep_policy = (
-        _SLEEP_POLICY_ADAPTER.validate_python(sleep_tool_cfg) if sleep_tool_cfg else LegacySleepUntilUserMessagePolicy()
-    )
-
     api_base = openai_cfg.get("api_base")
     if api_base and "OPENAI_API_BASE" not in os.environ:
         os.environ["OPENAI_API_BASE"] = str(api_base)
-
-    object_store_settings: ObjectStoreSettings | None = None
-    object_store_env_endpoint = os.getenv("OBJECT_STORE_ENDPOINT")
-    object_store_env_bucket = os.getenv("OBJECT_STORE_BUCKET")
-    if object_store_cfg or object_store_env_endpoint or object_store_env_bucket:
-        endpoint = object_store_env_endpoint or object_store_cfg.get("endpoint")
-        bucket = object_store_env_bucket or object_store_cfg.get("bucket")
-        if not endpoint or not bucket:
-            raise RuntimeError("Object store configuration missing endpoint or bucket")
-
-        access_secret_name = object_store_cfg.get("access_key_secret", "object_store_access_key")
-        secret_secret_name = object_store_cfg.get("secret_key_secret", "object_store_secret_key")
-        object_store_settings = ObjectStoreSettings(
-            endpoint=endpoint,
-            bucket=bucket,
-            access_key_secret=ProjectedSecret(
-                name=access_secret_name, env_var=object_store_cfg.get("access_key_env", "OBJECT_STORE_ACCESS_KEY")
-            ),
-            secret_key_secret=ProjectedSecret(
-                name=secret_secret_name, env_var=object_store_cfg.get("secret_key_env", "OBJECT_STORE_SECRET_KEY")
-            ),
-            secure=bool(object_store_cfg.get("secure", True)),
-            url_expiry_seconds=int(object_store_cfg.get("url_expiry_seconds", 120)),
-        )
 
     try:
         return EmberSettings(
@@ -188,12 +156,11 @@ def load_settings() -> EmberSettings:
                     "OPENAI_INCLUDE_ENCRYPTED_REASONING",
                     default=bool(openai_cfg.get("include_encrypted_reasoning", True)),
                 ),
-                sleep_tool_policy=sleep_policy,
+                sleep_tool_policy=_parse_sleep_policy(sleep_tool_cfg),
             ),
             history_path=history_path,
             state_dir=state_dir,
             workspace_path=workspace_path,
-            object_store=object_store_settings,
         )
     except ValidationError as exc:  # pragma: no cover - configuration errors should surface loudly
         raise RuntimeError(f"Invalid pilot configuration: {exc}") from exc

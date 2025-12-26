@@ -7,10 +7,10 @@ from pydantic import BaseModel
 import pytest
 
 from adgn.agent.bootstrap import TypedBootstrapBuilder
-from adgn.agent.handler import SequenceHandler
-from adgn.agent.loop_control import InjectItems, NoAction
-from adgn.mcp._shared.types import MCPMountPrefix
-from tests.support.assertions import is_all_function_calls
+from agent_core.handler import SequenceHandler
+from agent_core.loop_control import InjectItems, NoAction
+from agent_core.testing import is_all_function_calls
+from mcp_infra.prefix import MCPMountPrefix
 
 TEST_SERVER_PREFIX = MCPMountPrefix("test_server")
 

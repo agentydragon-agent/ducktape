@@ -69,16 +69,5 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
-adgn/src/adgn/rspcache/admin_ui_dist/
-adgn/rspcache_admin_ui/src/generated/
 adgn/openai_openapi.yaml
 worktrees
-
-# Stopgap against mess trying to mix RCM & non-RCM dotfiles
-# (Those are supposed to be non-RCM)
-dotfiles/config/cronomix/**
-dotfiles/config/OrcaSlicer/**
-
-# GEPA outputs and logs
-adgn/src/adgn/props/gepa/**/*.log
-adgn/src/adgn/props/gepa/gepa_output/

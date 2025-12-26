@@ -8,15 +8,7 @@ from fastmcp.client import Client
 from pydantic import BaseModel, Field
 import pygit2
 
-from adgn.agent.agent import Agent
 from adgn.agent.bootstrap import TypedBootstrapBuilder
-from adgn.agent.display import DisplayEventsHandler
-from adgn.agent.handler import BaseHandler, SequenceHandler
-from adgn.agent.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
-from adgn.mcp._shared.mounted import Mounted
-from adgn.mcp._shared.types import MCPMountPrefix, SimpleOk
-from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.enhanced import EnhancedFastMCP
 from adgn.mcp.git_ro.server import (
     GIT_RO_SERVER_NAME,
     DiffFormat,
@@ -27,8 +19,17 @@ from adgn.mcp.git_ro.server import (
     StatusInput,
     TextSlice,
 )
-from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import FunctionCallItem, UserMessage
+from agent_core.agent import Agent
+from agent_core.handler import BaseHandler, SequenceHandler
+from agent_core.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.display import DisplayEventsHandler
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.mounted import Mounted
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.types import SimpleOk
+from openai_utils.client_factory import build_client
+from openai_utils.model import FunctionCallItem, UserMessage
 
 
 def make_commit_bootstrap_calls(

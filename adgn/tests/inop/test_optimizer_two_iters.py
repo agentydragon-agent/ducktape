@@ -31,10 +31,10 @@ import adgn.inop.engine.optimizer
 import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
-from adgn.openai_utils.types import ReasoningEffort
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
+from openai_utils.types import ReasoningEffort
 
 
 class FakeModelLayer(OpenAIModelProto):
@@ -129,7 +129,7 @@ async def test_optimize_prompts_two_iterations_async(
         def get_environment(self) -> RunnerEnvironment | None:
             return getattr(self, "_env", None)
 
-    def _fake_create_runner(runner_name: str, runner_configs: dict, _openai_model=None, _docker_client=None):
+    def _fake_create_runner(runner_name: str, runner_configs: dict, openai_model=None, docker_client=None):
         return FakeRunner(runner_id=runner_name, config=runner_configs.get(runner_name, {}).get("config", {}))
 
     monkeypatch.setattr(adgn.inop.engine.runner_factory, "create_runner", _fake_create_runner)

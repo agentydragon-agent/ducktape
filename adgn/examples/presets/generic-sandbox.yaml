@@ -42,7 +42,7 @@ approval_policy: |
     FileOp,
     SBPLPolicy,
   )
-  from adgn.agent.approvals import (
+  from agent_server.approvals import (
     ApprovalContext,
     PolicyDecision,
     WellKnownServers,
@@ -215,7 +215,7 @@ approval_policy: |
         return (PolicyDecision.ALLOW, 'UI/approval/resources')
       # Auto-allow macOS seatbelt sandboxed exec
       if ctx.server == WellKnownServers.SEATBELT_EXEC and ctx.tool == WellKnownTools.SANDBOX_EXEC:
-        args = ctx.args or {}
+        args = ctx.arguments or {}
         argv = args.get('argv') or []
         policy = ctx.seatbelt_policy  # runtime guarantees resolution for seatbelt_exec
         if _is_http_get(argv):

@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from adgn.inop.config import OptimizerConfig
-from adgn.openai_utils.client_factory import build_client
-from adgn.openai_utils.model import OpenAIModelProto
-from adgn.openai_utils.types import ReasoningEffort
+from openai_utils.client_factory import build_client
+from openai_utils.model import OpenAIModelProto
+from openai_utils.types import ReasoningEffort
 
 
 @dataclass

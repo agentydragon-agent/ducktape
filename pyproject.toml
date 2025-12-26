@@ -1,0 +1,18 @@
+[tool.uv.workspace]
+members = [
+    "adgn",
+    "props",
+    "agent_core",
+    "agent_server",
+    "mcp_infra",
+    "sandboxed_jupyter",
+    "tana",
+    "openai_utils",
+    "py_detectors",
+    "rspcache",
+    "ember",
+    "cli_util",
+    "net_util",
+    "agent_runtimes/agent_container_util",
+    "agent_runtimes/editor_util",
+]

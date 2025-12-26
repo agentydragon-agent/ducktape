@@ -14,7 +14,7 @@ as tar archives with database-level access control.
 
 ## Directory Structure
 
-Agent definitions in `src/adgn/props/agent_defs/`:
+Agent definitions in `props/src/props/agent_defs/`:
 
 ```
 agent_defs/
@@ -92,14 +92,14 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 
 ## Agent CLI Commands
 
-| Agent | Script | Subcommands |
-|-------|--------|-------------|
-| Critic | `critique.py` | `insert-issue`, `insert-occurrence`, `submit`, `list-issues`, `delete-issue` |
-| Grader | `grader.py` | `add-tp-match`, `add-fp-match`, `add-no-match`, `delete-decision`, `submit` |
-| Clustering | `clustering.py` | `create-cluster`, `assign-to-cluster`, `assign-to-tp`, `assign-to-fp` |
-| Prompt Optimizer | `optimizer.py` | `create-critic-definition`, `run-critic`, `run-grader` |
+| Agent | CLI | Subcommands |
+|-------|-----|-------------|
+| Critic | `critique` | `insert-issue`, `insert-occurrence`, `submit`, `list-issues`, `delete-issue` |
+| Grader | `grade` | `add-tp-match`, `add-fp-match`, `add-no-match`, `delete-decision`, `submit` |
+| Clustering | `clustering` | `create-cluster`, `assign-to-cluster`, `assign-to-tp`, `assign-to-fp` |
+| Prompt Optimizer | `critic-dev` | `definition create`, `run-critic`, `run-grader`, `leaderboard`, `hard-examples` |
 
-Usage: `python /workspace/bin/<script>.py <command> [args]`
+Usage: `<cli> <command> [args]` (CLIs are pip-installed console scripts)
 
 ## Future Work
 
@@ -125,8 +125,6 @@ CLI commands under `agent_defs/*/bin/`.
 
 ## References
 
-- Agent definitions: `src/adgn/props/agent_defs/`
-- AgentHandle: `src/adgn/props/agent_handle.py`
-- AgentRegistry: `src/adgn/props/agent_registry.py`
-- TempUserManager: `src/adgn/props/db/temp_user_manager.py`
-- E2E tests: `tests/props/critic/test_e2e.py`, `tests/props/grader/test_e2e.py`
+- Agent definitions: `props/src/props/agent_defs/`
+- Agent runtime utilities: `agent_runtimes/` (critic_util, grader_util, etc.)
+- E2E tests: `props/tests/` (if available)

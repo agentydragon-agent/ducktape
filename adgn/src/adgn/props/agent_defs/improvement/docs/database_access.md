@@ -1,1 +1,0 @@
-../../common/docs/database_access.md

@@ -28,15 +28,8 @@ async def test_responses_nonstreaming_live(tmp_path):
     # Non-streaming call
     resp = await client.responses.create(model=model, input=cast(ResponseInputParam, inp))
 
-    # Try to normalize to dict for assertions
-    data: dict[str, Any] | None
-    try:
-        data = resp.model_dump(exclude_none=True)
-    except Exception:
-        # If model_dump not present, assume dict-like
-        data = resp if isinstance(resp, dict) else None
-
-    assert data is not None, "Response payload missing"
+    # OpenAI SDK returns Pydantic models with model_dump
+    data = resp.model_dump(exclude_none=True)
     # Expect an 'id' or 'object' token from Responses API
     assert ("id" in data) or (data.get("object") is not None)
 
@@ -62,14 +55,8 @@ async def test_responses_streaming_live(tmp_path):
     # AsyncOpenAI with stream=True returns an async iterator
     stream = await client.responses.create(model=model, input=cast(ResponseInputParam, inp), stream=True)
 
-    got_any = False
-    items: list[dict[str, Any] | None] = []
+    items: list[dict[str, Any]] = []
     async for event in stream:
-        got_any = True
-        try:
-            items.append(event.model_dump(exclude_none=True))
-        except Exception:
-            items.append(event if isinstance(event, dict) else None)
+        items.append(event.model_dump(exclude_none=True))
 
-    assert got_any, "No stream events received"
-    assert any(it is not None for it in items), "Stream events contained no usable payload"
+    assert items, "No stream events received"

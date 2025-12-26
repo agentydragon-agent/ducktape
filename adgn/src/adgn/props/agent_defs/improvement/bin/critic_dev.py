@@ -1,1 +1,0 @@
-../../common/bin/critic_dev.py

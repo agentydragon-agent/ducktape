@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
-import git
+import pygit2
 import pytest
 import yaml
 
@@ -24,9 +24,9 @@ def git_repo(tmp_path):
     repo_path = tmp_path / "repo"
     repo_path.mkdir()
 
-    repo = git.Repo.init(repo_path)
-    repo.config_writer().set_value("user", "name", "Test User").release()
-    repo.config_writer().set_value("user", "email", "test@example.com").release()
+    repo = pygit2.init_repository(str(repo_path))
+    repo.config["user.name"] = "Test User"
+    repo.config["user.email"] = "test@example.com"
 
     return repo_path
 
@@ -76,10 +76,16 @@ sys.exit(1 if changed else 0)
     config_file = git_repo / ".pre-commit-config.yaml"
     config_file.write_text(yaml.dump(precommit_config))
 
-    # Create initial commit
-    repo = git.Repo(git_repo)
-    repo.index.add([str(config_file), str(fixer_script)])
-    repo.index.commit("Initial commit with pre-commit config")
+    # Create initial commit using pygit2
+    repo = pygit2.Repository(str(git_repo))
+    # Add files to index (paths relative to repo root)
+    repo.index.add(".pre-commit-config.yaml")
+    repo.index.add("test_fixer.py")
+    repo.index.write()
+    # Create tree and commit
+    tree = repo.index.write_tree()
+    sig = pygit2.Signature("Test User", "test@example.com")
+    repo.create_commit("HEAD", sig, sig, "Initial commit with pre-commit config", tree, [])
 
     return git_repo
 

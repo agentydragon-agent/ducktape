@@ -1,1 +1,0 @@
-../../../common/docs/db/ground_truth.md

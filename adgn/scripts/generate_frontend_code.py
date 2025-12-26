@@ -20,12 +20,13 @@ from typing import Any
 
 from pydantic import TypeAdapter
 
+from agent_core.events import ToolCall
+
 # Import models to export
-from adgn.agent.approvals import ApprovalRequest
-from adgn.agent.events import ToolCall
-from adgn.agent.mcp_bridge.agents import AgentInfo
-from adgn.agent.persist import ApprovalOutcome, EventType
-from adgn.agent.server.protocol import AgentStatus
+from agent_server.approvals import ApprovalRequest
+from agent_server.mcp_bridge.agents import AgentInfo
+from agent_server.persist import ApprovalOutcome, EventType
+from agent_server.server.protocol import AgentStatus
 
 # ============================================================================
 # MCP Constants Generation

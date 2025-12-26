@@ -56,7 +56,6 @@ class MatrixClient:
         self._queue: asyncio.Queue[RoomMessageText] = asyncio.Queue()
         self._debounce = max(debounce_seconds, 0.1)
         self._control_rooms: set[RoomID] = set()
-        self._control_rooms: set[RoomID] = set()
         self._token_secret = settings.access_token_secret
         self._store_dir = settings.store_dir
         self._device_id = settings.device_id
@@ -182,13 +181,11 @@ class MatrixClient:
         return self._client
 
     async def _initialise_control_rooms(self) -> set[RoomID]:
-        assert self._client is not None
         return await self._fetch_joined_rooms()
 
     async def _fetch_joined_rooms(self) -> set[RoomID]:
-        assert self._client is not None
         try:
-            response = await self._client.joined_rooms()
+            response = await self.client.joined_rooms()
         except Exception as exc:
             logger.warning("Failed to fetch joined rooms: %s", exc)
             return set()
@@ -202,7 +199,6 @@ class MatrixClient:
         return {RoomID(room_id) for room_id in (response.rooms or [])}
 
     async def _sync_loop(self) -> None:
-        assert self._client is not None
         try:
             while not self._stop_event.is_set():
                 if (response := await self._sync_once()) is None:
@@ -277,7 +273,7 @@ class MatrixClient:
                 await self._mark_read(room_id, last_event_id)
 
     async def _record_message_event(self, room_id: RoomID, event: RoomMessageText) -> None:
-        timestamp = _event_timestamp(event)
+        timestamp = datetime.fromtimestamp(event.server_timestamp / 1000.0, tz=UTC)
         async with self._status_lock:
             tracker = self._room_status.setdefault(room_id, ConversationStatus())
             if self._user_id is not None and event.sender == self._user_id:
@@ -347,9 +343,8 @@ class MatrixClient:
         return False
 
     async def _accept_invite(self, room_id: RoomID) -> None:
-        assert self._client is not None
         try:
-            response = await self._client.join(str(room_id))
+            response = await self.client.join(str(room_id))
         except Exception as exc:
             logger.warning("Failed to join invited room %s: %s", room_id, exc)
             return
@@ -411,6 +406,8 @@ class MatrixClient:
         return client
 
     async def _sync_once(self) -> SyncResponse | None:
+        if self._client is None:
+            return None
         self._apply_access_token()
         try:
             response = await self._client.sync(timeout=30_000, since=self._since)
@@ -507,18 +504,5 @@ class MatrixClient:
             logger.debug("Matrix crypto maintenance skipped: %s", exc)
 
 
-# MatrixSession removed - MatrixClient now serves this role directly
-
-
-def _event_timestamp(event: RoomMessageText) -> datetime:
-    return datetime.fromtimestamp(event.server_timestamp / 1000.0, tz=UTC)
-
-
 def _latest_timestamp(values: Iterable[datetime | None]) -> datetime | None:
-    latest: datetime | None = None
-    for value in values:
-        if value is None:
-            continue
-        if latest is None or value > latest:
-            latest = value
-    return latest
+    return max((v for v in values if v is not None), default=None)

@@ -5,19 +5,22 @@ description = "Minimal containerised agent pilot (Matrix + OpenAI)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "agent-core",
+    "openai-utils",
+    "mcp-infra",
     "fastapi>=0.110",
     "uvicorn>=0.22",
     "matrix-nio>=0.23",
     "mautrix>=0.20.0",
     "openai>=1.62",
     "pydantic>=2.0",
-    "minio>=7.2",
     "ipykernel>=6.29",
     "jupyter-client>=8.6",
     "ipython>=8.26",
     "requests>=2.32",
     "jinja2>=3.1",
     "kubernetes-asyncio>=26.1",
+    "fastmcp>=2.13",
 ]
 
 [project.optional-dependencies]
@@ -50,3 +53,8 @@ include = ["ember*" ]
     "resources/examples/python-session/*",
     "resources/examples/matrix-client/*",
 ]
+
+[tool.uv.sources]
+agent-core = { workspace = true }
+openai-utils = { workspace = true }
+mcp-infra = { workspace = true }

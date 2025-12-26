@@ -37,9 +37,12 @@ coverage.xml
 .pytest_cache/
 
 # Large data directories
-llm/adgn_llm/agent_output/
-llm/adgn_llm/data/
-cio_old_data/
+adgn_logs/
+adgn_db_backups/
+investigations/
+rspcache/
+worktrees/
+logs/
 
 # Node modules and build artifacts
 node_modules/

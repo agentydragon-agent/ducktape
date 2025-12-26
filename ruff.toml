@@ -76,7 +76,7 @@ keep-runtime-typing = false
 
 [lint.isort]
 # Teach Ruff which packages are first-party so sectioning stays stable
-known-first-party = ["adgn", "tana", "wt", "ducktape", "claude_hooks", "homeassistant", "llm"]
+known-first-party = ["adgn", "tana", "wt", "ducktape", "claude_hooks", "homeassistant", "llm", "openai_utils", "py_detectors", "agent_container_util", "clustering_util", "critic_dev_util", "critic_util", "editor_util", "grader_util", "props_agent_util", "sandboxed_jupyter"]
 force-sort-within-sections = true
 combine-as-imports = true
 # Compatible with format.skip-magic-trailing-comma
@@ -85,11 +85,13 @@ split-on-trailing-comma = false
 [lint.per-file-ignores]
 # Project-specific ignores (consolidated from individual pyproject.toml files)
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
-"adgn/src/adgn/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
+"rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
 "adgn/src/adgn/props/cli/*.py" = ["B008"]  # typer-di dependency injection pattern (like FastAPI)
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
-"adgn/src/adgn/props/detectors/det_*.py" = ["N802"]
+"py_detectors/src/py_detectors/det_*.py" = ["N802"]
+# Test fixtures are intentionally bad code for detector testing
+"py_detectors/tests/fixtures/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]

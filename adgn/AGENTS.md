@@ -3,6 +3,21 @@
 This file helps AI agents work on the `adgn` package: environment setup, common commands, testing, module map, LLM tooling (Agent), MCP/approvals, and conventions.
 See `README.md` for a shorter overview.
 
+## Workspace Structure
+
+`adgn` is part of a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) at the ducktape repo root:
+
+```
+ducktape/
+├── pyproject.toml          # Workspace root
+├── uv.lock                  # Single lockfile for all packages
+├── adgn/                    # This package
+├── tana/                    # Tana export utilities
+└── agent_container_util/    # Thin utilities for container init scripts
+```
+
+`agent_container_util` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
+
 ## Environment and Setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv, Python 3.12+. Node 20 is available in the dev shell for the UI.
 - First time here: `cd adgn`, `direnv allow`
@@ -18,6 +33,8 @@ See `README.md` for a shorter overview.
 - Refresh after edits:
   - `devenv.nix`/`.envrc` changes → `direnv reload`
   - `pyproject.toml` dependency changes → `direnv reload` (reinstalls dev extras on entry)
+
+Note: The workspace `uv.lock` at `ducktape/` shares dependency resolution across packages. The per-package devenv still manages the local venv at `.devenv/state/venv`.
 
 ### Devenv Helper Scripts
 - `ui-dev` → run Vite dev server for Agent UI (`http://127.0.0.1:5173`)
@@ -90,7 +107,7 @@ See `[project.scripts]` in `pyproject.toml` for the full list of CLI entry point
 **For detailed props-specific documentation, see:**
 - @src/adgn/props/AGENTS.md — Complete guide to specimens, models, database, tooling, and workflows
 - @src/adgn/props/CLAUDE.md — Props package conventions and authoring
-- Quick start: `adgn-properties run --snapshot <slug>` or `adgn-properties snapshot exec <snapshot-slug>`
+- Quick start: `props run --snapshot <slug>` or `props snapshot exec <snapshot-slug>`
 
 ### Testing LLM Code
 - Typical: `direnv exec adgn pytest -q -m "not live_llm"`
@@ -123,7 +140,7 @@ handlers = [bootstrap, ...other handlers...]
 - Auto-generates call_ids (no manual management needed)
 - Type-safe: Pydantic payloads validated via introspection
 - Immediate construction (not factories/lambdas)
-- Standalone helpers: `docker_exec_call()`, `read_package_file_call()`, `read_package_files_call()`
+- Standalone helper: `docker_exec_call()`
 - Builder method: `builder.read_resource()` for resources server reads
 
 **Future enhancement:** See `src/adgn/agent/docs/bootstrap_type_safety.md` for plans to eliminate string literals via generic/typed stubs
@@ -135,7 +152,7 @@ handlers = [bootstrap, ...other handlers...]
   - Example: Changing a function's type from `set[Path]` to `list[str]` requires updating all test callsites that pass data to that function.
   - Run mypy on both `src/` and `tests/` to catch type mismatches after interface changes.
 - MCP naming
-  - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` from `adgn.mcp._shared.naming`.
+  - When composing MCP tool names programmatically, use `build_mcp_function(server, tool)` from `mcp_infra.naming`.
   - Avoid hard-coded strings like `server_tool` in code. Literal forms in docs/examples are illustrative only.
 - FastMCP error handling
   - Do not wrap tool bodies in broad try/except. Uncaught exceptions become MCP errors (`isError=true`) with messages.
@@ -154,7 +171,7 @@ handlers = [bootstrap, ...other handlers...]
   - Prefer working with `pathlib.Path` objects directly; only call
     `str(path)` when an external API requires a string.
 - MCP CallToolResult handling
-  - Normalize FastMCP client results immediately by calling `fastmcp_to_mcp_result`. Downstream helpers should only accept `mcp.types.CallToolResult`.
+  - FastMCP client returns `fastmcp.client.client.CallToolResult` (snake_case fields: `is_error`, `structured_content`). MCP Pydantic uses `mcp.types.CallToolResult` (camelCase aliases: `isError`, `structuredContent`). Use the appropriate type at each layer.
 - Typing discipline
   - Handle exact runtime types. When an external API returns a loose object, convert it at the boundary so the rest of the code sees a single concrete type.
   - During typing passes, scan for broad annotations (`Any`, `object`, large `Union`, untyped `dict`) with `rg` and tighten or document each occurrence. Treat unexplained permissive types as findings.
@@ -178,7 +195,7 @@ handlers = [bootstrap, ...other handlers...]
 - Imports at top
   - Keep all imports at module top. Only import inside a function to break a proven circular dependency; add a one‑line comment at that import explaining the cycle. Do not add per‑file linters or mypy excludes without explicit approval.
 - URI helpers, no literals
-  - Use canonical constants/format strings from `adgn.mcp._shared.constants` instead of hard-coded strings:
+  - Use canonical constants/format strings from `mcp_infra.constants` instead of hard-coded strings:
     - `COMPOSITOR_META_STATE_URI_FMT.format(server=...)`, `.INSTRUCTIONS_URI_FMT`, `.CAPABILITIES_URI_FMT`
     - When matching state URIs, compare with `COMPOSITOR_META_STATE_URI_FMT`/`COMPOSITOR_META_URI_PREFIX`
   - Use `COMPOSITOR_ADMIN_SERVER_NAME` instead of the literal `"compositor_admin"`.
@@ -218,17 +235,12 @@ handlers = [bootstrap, ...other handlers...]
 
 ### CallToolResult Conventions (MCP)
 - Typed vs. client results
-  - The FastMCP client returns a lightweight `CallToolResult` (not a Pydantic model).
-  - Pydantic MCP types live under `mcp.types` (e.g., `mcp.types.CallToolResult`). Use these when you need typed validation/serialization.
-- Central helpers
-  - Use `adgn.mcp._shared.calltool.as_minimal_json(res)` to serialize a client `CallToolResult` for UI/logging/persistence. It returns:
-    - `{structured_content?: Any, is_error: bool}` (snake_case keys; `structured_content` is JSON‑dumped if it was a Pydantic model).
-  - Use `adgn.mcp._shared.calltool.fastmcp_to_mcp_result(res)` when you need a typed `mcp.types.CallToolResult` (uses alias names `structuredContent`/`isError`).
-- Do not call `.model_dump()` on FastMCP’s client `CallToolResult` — it isn’t a Pydantic model. Either:
-  - Serialize via `as_minimal_json(...)` for UI/logging, or
-  - Adapt to `mcp.types.CallToolResult` via `fastmcp_to_mcp_result(...)` (or `TypeAdapter(mcp.types.CallToolResult).validate_python(...)` on an alias‑keyed dict).
+  - The FastMCP client returns a lightweight `CallToolResult` dataclass (not a Pydantic model) with snake_case fields (`is_error`, `structured_content`).
+  - Pydantic MCP types live under `mcp.types` (e.g., `mcp.types.CallToolResult`) with camelCase aliases (`isError`, `structuredContent`). Use these when you need typed validation/serialization.
+- No central conversion helper
+  - Convert between types at boundaries as needed. For simple cases, construct `mcp.types.CallToolResult(content=..., structuredContent=..., isError=...)` directly.
+- Do not call `.model_dump()` on FastMCP's client `CallToolResult` — it isn't a Pydantic model.
 - UI/tests convention
-  - Prefer the minimal JSON shape in server→UI messages unless the full typed MCP result is required.
   - When tests need to validate structure, construct/validate against `mcp.types.CallToolResult` explicitly.
 
 Runtime exec
@@ -267,26 +279,10 @@ Implicit Definition of Done (DoD)
 - These rules apply to all tasks unless the user explicitly overrides them. They include all DoD items provided by the user during collaboration, plus the project defaults.
 
 General
-- No suspicious nullability: If a field is optional, it must be for a clear transitional reason or represent an intentional, valid state with defined behavior. Otherwise, model as non‑nullable and remove guards.
-- No dead code: Remove unused code, unused imports, and historical comments that no longer reflect the behavior.
-- Imports at module top unless a documented circular dependency requires deferring (must be commented at the call site).
- - Place all imports at the top of files. Only use in‑function imports to break a proven circular dependency, and add a one‑line comment at that import explaining the cycle it avoids. Do not move imports into functions for scoping/perf.
+@../../STYLE.md
 
-- Avoid unnecessary renamed imports. Prefer `import foo` over `import foo as foo`/`import foo as bar` unless disambiguation is required; include a comment when the alias prevents a collision.
-- No getattr/hasattr/setattr probing unless justified and documented.
-- Tests should not use getattr/hasattr. Prefer direct attribute access with precise expectations; adjust fixtures or assertions instead of dynamic probing.
-- Do not swallow exceptions. Either allow the framework to surface them or raise domain errors with structured details. Use narrow exception handling (catch specific exception types) and never use broad `except Exception:` unless you immediately re‑raise after adding context.
- - Never use bare `except:` or broad `except Exception:` as a silent fallback. When an operation fails (including snapshot/header building, server status assembly, or compositor queries), let the exception propagate or re‑raise with precise context. Do not "default" to empty values on error — these hide real faults and make failures harder to diagnose.
- - Data mapping must be strict. When parsing enums/typed values from persistence or inputs, do not ignore invalid values. Either validate early or raise; do not `continue` on exceptions.
-  - Do not add redundant try/except that simply re‑raises. If you want failures to surface, call the typed function directly and let exceptions bubble. Example: when enriching sampling snapshots (e.g., calling `list_tools()` on a child server), do not wrap in a `try/except: raise`; omit the wrapper entirely.
-- Prefer concise comprehensions and idiomatic patterns; keep public interfaces typed with Pydantic where appropriate.
 - Full test suite passing; ruff + mypy clean.
  - Run `trivial-patterns --scope tests tests` alongside `ruff` and `mypy`; add scope entries for every directory you touched (`--scope tests --scope src/adgn`) or omit the flag to cover the whole project. Update `[tool.adgn.trivial-patterns]` in `pyproject.toml` if you need additional skip globs. Review both trivial alias and renamed import warnings before sending patches.
- - Prefer precise types. When values are heterogeneous, use discriminated unions, Protocols, TypedDicts, or concrete Pydantic models. For arbitrary JSON fields, use Pydantic’s `JsonValue` inline (do not create a project‑level alias). Using `Any`/`object` is acceptable only when a field truly allows any value (including non‑JSON types) and no stronger contract exists; document such cases.
- - Concurrency messages must be typed. Actor/mailbox patterns should use explicit dataclasses (or Pydantic models) for messages and result types — never `dict[str, T]`. This keeps cross‑task communication precise and verifiable.
- - Antipattern: do not use `dict.get(...)` on Pydantic/typed models. Access fields directly (`model.field`). If data starts as a dict, parse it into a typed model at the boundary and operate on typed fields. Only use `dict.get(...)` for truly untyped external payloads (e.g., raw DB rows, HTTP headers, environment vars), and prefer explicit `is None` checks over "or []" defaulting.
- - Antipattern: do not `model_dump()` just to re‑parse fields for logic. Use the typed attributes on the Pydantic object (e.g., `ReadResourceResult.contents`, `InitializeResult.capabilities`). Dump only at I/O boundaries (logging/serialization).
-- Instantiate Pydantic models with keyword arguments (`Model(field=value)`) rather than passing dictionaries. When validating external payloads, prefer `Model.model_validate(data)` to `TypeAdapter(...).validate_python(...)` unless you explicitly need adapter semantics.
 
 Runtime containerization / approval policy specifics
 - Evaluation ALWAYS runs in Docker using a one‑off container. No `/trusted` or `/rw` mounts are used.
@@ -307,8 +303,9 @@ Docker images
 - Do not silently ignore missing Docker images. Image lookups must raise when an image is not present (e.g., `docker.errors.ImageNotFound`). Avoid `try/except: pass` around image checks.
 
 ### Building images
+**Important:** Run all docker build commands from the workspace root (`ducktape/`), not from `adgn/`.
 - Runtime/policy container image (required for `container` mode):
-- Build the shared base: `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
+  - `docker build -t adgn-runtime:latest -f docker/runtime/Dockerfile .`
 - Properties critic image:
   - `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
 - Override the runtime/policy image via `ADGN_RUNTIME_IMAGE` if you tag it differently.

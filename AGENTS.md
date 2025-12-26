@@ -1,5 +1,7 @@
 This file provides guidance to LLM agents for working with this repository.
 
+@STYLE.md
+
 ## Before Hand-off
 
 If you touch anything in `ansible/`, follow the dedicated checklist in `ansible/AGENTS.md` (manual yamllint + `ansible-playbook --syntax-check`, optional focused linting) first.  
@@ -121,14 +123,40 @@ These components exist but see minimal recent changes:
 
 ## Build Systems
 
-### Python (Most Common)
-```bash
-pip install -r requirements.txt
-python -m pytest
-pre-commit install  # For development
+### Python / UV Workspace
+
+The repository uses a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/) for Python packages:
+
 ```
-- Target runtime version: Python 3.11+ (most projects use 3.11+, with some targeting 3.12).
-- Each active project directory has a `.envrc`; run `direnv allow` so the expected Python/UV environments and PATH customisations load automatically before running tooling.
+ducktape/
+├── pyproject.toml          # Workspace root (defines members)
+├── uv.lock                  # Single lockfile for all packages
+├── adgn/                    # Main LLM/agent package
+├── tana/                    # Tana export utilities
+└── agent_container_util/    # Thin container utilities (no adgn deps)
+```
+
+**Key points:**
+- Single `uv.lock` at repo root with all resolved dependencies
+- Run `uv sync` from `ducktape/` to install all workspace members
+- Each package has its own `pyproject.toml` but shares the lockfile
+- `agent_container_util` is designed for Docker containers (minimal deps)
+
+**Development workflow:**
+- Each package (adgn, tana) has its own `.envrc` + `devenv.nix` that manages a local venv
+- Run `direnv allow` in the package directory to set up the environment
+- The workspace `uv.lock` ensures consistent dependency versions across packages
+- devenv uses `uv sync` under the hood to install from the shared lockfile
+
+```bash
+# Per-package (recommended):
+cd adgn && direnv allow      # Sets up venv at .devenv/state/venv
+
+# Or workspace-level:
+cd ducktape && uv sync       # Installs all members
+```
+
+- Target runtime version: Python 3.12+.
 
 ### Rust (Finance tools)
 ```bash

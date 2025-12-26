@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-import json
 from pathlib import Path
 
 import pytest
@@ -29,26 +28,6 @@ def test_is_python_path() -> None:
     assert is_python_path(Path("bar.pyi"))
     assert not is_python_path(Path("README.md"))
     assert not is_python_path(Path("Makefile"))
-
-
-def _extract_result(res):
-    payload = getattr(res, "structured_content", None)
-    if isinstance(payload, str):
-        try:
-            payload = json.loads(payload)
-        except Exception:
-            payload = None
-    if not payload:
-        # Fallback: parse first text content block as JSON
-        content = getattr(res, "content", None) or []
-        if content and getattr(content[0], "text", None):
-            try:
-                payload = json.loads(content[0].text)
-            except Exception:
-                payload = {}
-    if not isinstance(payload, dict):
-        payload = {}
-    return payload.get("result", payload)
 
 
 async def test_done_for_non_python_no_syntax_check(tmp_path: Path, editor_session) -> None:

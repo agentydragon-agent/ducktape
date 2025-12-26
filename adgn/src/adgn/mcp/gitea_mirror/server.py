@@ -11,7 +11,7 @@ from fastmcp.tools import FunctionTool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import requests
 
-from adgn.mcp.enhanced import EnhancedFastMCP
+from mcp_infra.enhanced import EnhancedFastMCP
 
 
 @dataclass

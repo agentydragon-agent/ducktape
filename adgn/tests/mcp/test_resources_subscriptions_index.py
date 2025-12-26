@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from hamcrest import assert_that, empty, has_item, has_properties
 
-from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.mcp.resources.server import ResourcesSubscribeArgs
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.resources.server import ResourcesSubscribeArgs
 
 
 async def test_subscriptions_index_updates_on_unmount(compositor, origin_with_recorder, typed_resources_client):

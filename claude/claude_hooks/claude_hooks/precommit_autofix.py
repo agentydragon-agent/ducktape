@@ -7,8 +7,8 @@ import subprocess
 import textwrap
 import traceback
 
-import git
 from platformdirs import user_state_dir
+import pygit2
 
 from claude_hooks.actions import PostToolAction, PostToolContinue, PostToolFeedbackToClaude
 from claude_hooks.base import PostToolUseHook
@@ -254,27 +254,24 @@ class PreCommitAutoFixerHook(PostToolUseHook):
             raise
 
     def _get_precommit_root(self, file_path: Path) -> Path:
-        """Get pre-commit configuration root directory using GitPython."""
+        """Get pre-commit configuration root directory using pygit2."""
         search_dir = file_path.parent if file_path.is_file() else file_path
 
-        try:
-            # Use GitPython to find repository root, starting from file's directory
-            self.logger.info(f"Looking for git repo starting from: {search_dir}")
-            repo = git.Repo(search_dir, search_parent_directories=True)
-            repo_root = Path(repo.working_dir)
-            self.logger.info(f"Found git repo root: {repo_root}")
-            if (repo_root / PRECOMMIT_CONFIG_FILE).exists():
-                self.logger.info(f"Found pre-commit config at: {repo_root / PRECOMMIT_CONFIG_FILE}")
-                return repo_root
-
-            raise RuntimeError(f"No pre-commit config in git repo root: {repo_root}")
-        except git.InvalidGitRepositoryError:
+        # Use pygit2 to find repository root, starting from file's directory
+        self.logger.info(f"Looking for git repo starting from: {search_dir}")
+        git_path = pygit2.discover_repository(str(search_dir))
+        if git_path is None:
             self.logger.info(f"Not in git repo: {search_dir}")
-            # TODO: default precommit config path somewhere
-            raise
-        except Exception as e:
-            self.logger.exception(f"Unexpected error finding pre-commit root: {e}")
-            raise
+            raise RuntimeError(f"Not in a git repository: {search_dir}")
+
+        repo = pygit2.Repository(git_path)
+        repo_root = Path(repo.workdir).resolve()
+        self.logger.info(f"Found git repo root: {repo_root}")
+        if (repo_root / PRECOMMIT_CONFIG_FILE).exists():
+            self.logger.info(f"Found pre-commit config at: {repo_root / PRECOMMIT_CONFIG_FILE}")
+            return repo_root
+
+        raise RuntimeError(f"No pre-commit config in git repo root: {repo_root}")
 
 
 def main():

@@ -30,11 +30,11 @@ from typing import Any
 import claude_code_sdk
 from claude_code_sdk import ClaudeCodeOptions, ClaudeSDKClient
 from claude_code_sdk._internal.transport.subprocess_cli import SubprocessCLITransport
-import docker
-from docker.models.containers import Container
 import pathspec
 
 from adgn.inop.engine.models import SeedTask
+import docker
+from docker.models.containers import Container
 
 
 @contextmanager

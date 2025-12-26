@@ -7,7 +7,7 @@ from typing import TypeVar
 from pydantic import BaseModel, Field
 import pygit2
 
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # -------------------------- pagination models -------------------------------
 

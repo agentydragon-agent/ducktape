@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 import yaml
 
-from adgn.openai_utils.types import ReasoningEffort
+from openai_utils.types import ReasoningEffort
 
 
 class RolloutConfig(BaseModel):

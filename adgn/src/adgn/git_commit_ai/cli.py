@@ -227,7 +227,7 @@ class TaskState:
             return TaskStatus.SUCCESS
         except asyncio.CancelledError:
             return TaskStatus.CANCELLED
-        except Exception:
+        except BaseException:  # Task raised - includes Exception and edge cases like KeyboardInterrupt
             return TaskStatus.FAILED
 
     @property

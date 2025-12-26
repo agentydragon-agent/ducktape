@@ -1,1 +1,0 @@
-../../common/docs/writing_agent_definitions.md

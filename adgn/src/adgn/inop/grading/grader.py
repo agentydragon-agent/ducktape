@@ -19,14 +19,14 @@ from adgn.inop.engine.models import (
 )
 from adgn.inop.grading.strategies import ComparisonGradingStrategy, GradingStrategy, create_grading_strategy
 from adgn.inop.io.logging_utils import DualOutputLogging
-from adgn.openai_utils.model import (
+from openai_utils.model import (
     FunctionCallItem,
     FunctionToolParam,
     OpenAIModelProto,
     ResponsesRequest,
     ToolChoiceFunction,
 )
-from adgn.openai_utils.types import build_reasoning_params
+from openai_utils.types import build_reasoning_params
 
 logger = DualOutputLogging.get_logger()
 

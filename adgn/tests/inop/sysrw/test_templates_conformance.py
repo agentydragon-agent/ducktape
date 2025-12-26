@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.llm.sysrw.templates import iter_templates, validate_template_text
+from adgn.sysrw.templates import iter_templates, validate_template_text
 
 
 def _iter_templates_from_package() -> list[tuple[str, str]]:

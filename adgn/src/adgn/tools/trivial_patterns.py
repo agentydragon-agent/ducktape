@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from fnmatch import fnmatch
 from functools import lru_cache
 from pathlib import Path
+import sys
 import tomllib
 
 
@@ -39,7 +40,7 @@ class Config:
 
 
 class FileAnalyzer(ast.NodeVisitor):
-    def __init__(self, path: str) -> None:
+    def __init__(self, path: Path) -> None:
         self.path = path
         self.findings: list[str] = []
         self.stack: list[FunctionContext] = []
@@ -257,7 +258,7 @@ class FileAnalyzer(ast.NodeVisitor):
 
         try:
             func_expr = ast.unparse(call.func)
-        except Exception:  # pragma: no cover
+        except (ValueError, RecursionError):  # pragma: no cover - malformed AST
             func_expr = call.func.id if isinstance(call.func, ast.Name) else "<call>"
 
         name = node.name if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) else "<lambda>"
@@ -329,12 +330,12 @@ class FileAnalyzer(ast.NodeVisitor):
 
 
 def detect_file(path: Path) -> list[str]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-    except Exception:
-        return []
+    """Analyze a Python file for trivial patterns.
 
-    analyzer = FileAnalyzer(str(path))
+    Raises on I/O or parse errors - caller must handle.
+    """
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    analyzer = FileAnalyzer(path)
     analyzer.visit(tree)
     return analyzer.findings
 
@@ -377,17 +378,25 @@ def run(paths: Iterable[str], scope: tuple[str, ...], *, config: Config | None =
     cfg = config or load_config()
     files = collect_files(paths)
     results: list[str] = []
+    errors: list[str] = []
     for file_path in files:
         if not _in_scope(file_path, scope, cfg.project_root):
             continue
         if _should_skip(file_path, cfg):
             continue
-        results.extend(detect_file(file_path))
+        try:
+            results.extend(detect_file(file_path))
+        except SyntaxError as e:
+            errors.append(f"{file_path}: SyntaxError: {e.msg} (line {e.lineno})")
+        except OSError as e:
+            errors.append(f"{file_path}: {e}")
 
     for line in results:
         print(line)
+    for err in errors:
+        print(f"ERROR: {err}", file=sys.stderr)
 
-    return 1 if results else 0
+    return 1 if results or errors else 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -459,10 +468,7 @@ def load_config() -> Config:
     skip: list[str] = []
     pyproject = root / "pyproject.toml"
     if pyproject.is_file():
-        try:
-            data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
-        except Exception:  # pragma: no cover - config errors fall back to defaults
-            data = {}
+        data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
         tool_cfg = data.get("tool") or {}
         adgn_cfg = tool_cfg.get("adgn") or {}
         trivial_cfg = adgn_cfg.get("trivial-patterns") or adgn_cfg.get("trivial_patterns") or {}

@@ -1,1 +1,0 @@
-../../common/docs/mcp_http_connection.md

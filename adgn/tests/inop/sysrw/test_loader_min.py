@@ -7,16 +7,17 @@ from pathlib import Path
 from hamcrest import any_of, assert_that, contains_string, equal_to, has_entries, has_item
 import pytest
 
-from adgn.llm.sysrw.run_eval import read_dataset  # type: ignore
-from adgn.llm.sysrw.schemas import CCRSample, CrushSample
+import adgn.sysrw
+from adgn.sysrw.run_eval import read_dataset  # type: ignore
+from adgn.sysrw.schemas import CCRSample, CrushSample
 
-ROOT = Path(str(resources.files("adgn.llm.sysrw")))
+ROOT = Path(str(resources.files(adgn.sysrw)))
 DATA = ROOT / "data" / "_test"
 
 # TODO: Add test datasets to repo
 # Currently these tests are skipped because test datasets (ccr_min.jsonl, crush_min.jsonl)
 # are not checked into the repository. Need to add minimal test datasets to
-# adgn/src/adgn/llm/sysrw/data/_test/ directory and ensure they're included in package.
+# adgn/src/adgn/sysrw/data/_test/ directory and ensure they're included in package.
 
 
 def text_block_contains(fragment: str):

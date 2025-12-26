@@ -4,10 +4,9 @@ from dataclasses import dataclass
 import logging
 from typing import Any, Protocol
 
-from fastmcp.server import FastMCP
-
 from adgn.inop.prompting.prompt_engineer import FeedbackProvider
-from adgn.mcp.compositor.server import Compositor
+from mcp_infra.enhanced import EnhancedFastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # ---- Dependencies and state -------------------------------------------------
 
@@ -28,38 +27,37 @@ class PromptFeedbackState:
 logger = logging.getLogger(__name__)
 
 
+class ProposePromptInput(OpenAIStrictModeBaseModel):
+    """Input for propose_prompt tool."""
+
+    prompt: str
+
+
 def make_prompt_feedback_server_with_state(
     deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider
-) -> tuple[FastMCP, PromptFeedbackState]:
+) -> tuple[EnhancedFastMCP, PromptFeedbackState]:
     """FastMCP with closure state (tools-builder style). No lifespan/ContextVar.
 
     Returns (server, state). Attach via mcp.attach_inproc.
     """
     state = PromptFeedbackState()
-    mcp = FastMCP("Prompt Evaluation MCP Server", instructions="Prompt evaluation (rollouts+grading+persistence)")
+    mcp = EnhancedFastMCP(
+        "Prompt Evaluation MCP Server", instructions="Prompt evaluation (rollouts+grading+persistence)"
+    )
 
-    @mcp.tool()
-    async def propose_prompt(prompt: str) -> dict[str, str]:
-        logger.info("propose_prompt: start", extra={"prompt": prompt})
+    @mcp.flat_model()
+    async def propose_prompt(input: ProposePromptInput) -> dict[str, str]:
+        logger.info("propose_prompt: start", extra={"prompt": input.prompt})
         state.iteration += 1
-        state.last_prompt = prompt
+        state.last_prompt = input.prompt
         tasks = await deps.select_seed_tasks()
-        rollouts = await deps.run_rollouts_with_prompt(prompt, tasks)
+        rollouts = await deps.run_rollouts_with_prompt(input.prompt, tasks)
         # Let the configured provider compute feedback (may grade/aggregate internally)
         feedback = await feedback_provider.provide_feedback(rollouts)
         logger.info("propose_prompt: about to persist", extra={"iter": state.iteration})
-        deps.persist_all(iteration=state.iteration, prompt=prompt, rollouts=rollouts, feedback=feedback)
+        deps.persist_all(iteration=state.iteration, prompt=input.prompt, rollouts=rollouts, feedback=feedback)
         logger.info("propose_prompt: persisted", extra={"iter": state.iteration})
         state.last_feedback = feedback
         return {"feedback": feedback}
 
     return mcp, state
-
-
-async def attach_prompt_feedback(
-    comp: Compositor, deps: PromptEvaluationDeps, feedback_provider: FeedbackProvider, *, name: str = "prompt_feedback"
-):
-    """Attach prompt_feedback in-proc; return (server, state)."""
-    server, state = make_prompt_feedback_server_with_state(deps, feedback_provider)
-    await comp.mount_inproc(name, server)
-    return server, state

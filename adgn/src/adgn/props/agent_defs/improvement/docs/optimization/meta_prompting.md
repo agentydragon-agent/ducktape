@@ -1,1 +1,0 @@
-../../../prompt_optimizer/docs/optimization/meta_prompting.md

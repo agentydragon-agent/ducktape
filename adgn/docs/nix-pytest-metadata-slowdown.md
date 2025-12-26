@@ -6,7 +6,7 @@ Tests using `EnhancedFastMCP` fixtures were timing out (30+ seconds) when runnin
 
 ## Workaround (Implemented)
 
-Added optional `version: str | None = None` parameter to `EnhancedFastMCP` and `_CapturingServer` in `src/adgn/mcp/enhanced/server.py`.
+Added optional `version: str | None = None` parameter to `EnhancedFastMCP` and `_CapturingServer` in `mcp_infra/src/mcp_infra/enhanced/server.py`.
 
 Applied `version="test"` in specific test fixtures to bypass slow `importlib.metadata.version()` lookups:
 - `tests/mcp/conftest.py`: `origin_with_recorder` fixture
@@ -15,7 +15,7 @@ Applied `version="test"` in specific test fixtures to bypass slow `importlib.met
 ### Code Changes
 
 ```python
-# src/adgn/mcp/enhanced/server.py
+# mcp_infra/src/mcp_infra/enhanced/server.py
 class EnhancedFastMCP(FastMCP):
     def __init__(
         self,
@@ -130,7 +130,7 @@ pip install -e /path/to/adgn
 python /tmp/test_enhanced.py  # Result: 0.003s
 
 # Profile import timing
-python -X importtime -c "from adgn.mcp.enhanced import EnhancedFastMCP"
+python -X importtime -c "from mcp_infra.enhanced import EnhancedFastMCP"
 
 # Compare sys.path
 python /tmp/compare_sys_path.py
@@ -195,9 +195,9 @@ The workaround is:
 
 ## Files Modified
 
-- `src/adgn/mcp/enhanced/server.py` - Added `version` parameter support
-- `tests/mcp/conftest.py` - Applied `version="test"` to `origin_with_recorder`
-- `tests/agent/conftest.py` - Applied `version="test"` to `failing_server`
+- `mcp_infra/src/mcp_infra/enhanced/server.py` - Added `version` parameter support
+- `mcp_infra/tests/conftest.py` - Applied `version="test"` to relevant fixtures
+- `adgn/tests/agent/conftest.py` - Applied `version="test"` to `failing_server`
 
 ## Related Issues
 

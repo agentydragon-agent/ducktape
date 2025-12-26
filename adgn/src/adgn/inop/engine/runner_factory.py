@@ -7,7 +7,7 @@ import aiodocker
 from adgn.inop.runners.base import AgentRunner
 from adgn.inop.runners.claude_runner import ClaudeRunner
 from adgn.inop.runners.openai_runner import OpenAIRunner
-from adgn.openai_utils.model import OpenAIModelProto
+from openai_utils.model import OpenAIModelProto
 
 
 def create_runner(

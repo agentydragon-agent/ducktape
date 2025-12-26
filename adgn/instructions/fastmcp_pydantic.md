@@ -11,8 +11,8 @@
 ```python
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
-from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from mcp_infra.enhanced import EnhancedFastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 class MyInput(OpenAIStrictModeBaseModel):
     """Input for my_tool."""
@@ -53,7 +53,7 @@ class MyServer(EnhancedFastMCP):
 **Default:** All MCP tool inputs should use `OpenAIStrictModeBaseModel`
 
 ```python
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 class MyToolInput(OpenAIStrictModeBaseModel):
     # str not Path (format="path" not allowed)
@@ -166,8 +166,8 @@ asyncio.run(main())
 ```python
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
-from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from mcp_infra.enhanced import EnhancedFastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Input: OpenAI strict mode required
 class ProcessInput(OpenAIStrictModeBaseModel):

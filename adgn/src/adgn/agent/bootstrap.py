@@ -8,35 +8,32 @@ without requiring the agent to explicitly request it.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from contextlib import suppress
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from fastmcp.client import Client
+from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 from pydantic.networks import AnyUrl
 import pydantic_core
 
-from adgn.mcp._shared.naming import build_mcp_function
-from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.mcp.exec.models import ExecInput
-from adgn.mcp.resources.server import ResourcesReadArgs, ResourcesServer
-from adgn.mcp.stubs.typed_stubs import _resolve_output_type
-from adgn.openai_utils.model import FunctionCallItem
+from adgn.agent.bootstrap_handler import InitFailedError
+from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited, TruncatedStream
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
+from mcp_infra.resources.server import ResourcesReadArgs, ResourcesServer
+from mcp_infra.stubs.typed_stubs import _resolve_output_type
+from openai_utils.model import FunctionCallItem
 
 if TYPE_CHECKING:
     from fastmcp.server import FastMCP
-    from fastmcp.tools import FunctionTool
 
-    from adgn.mcp._shared.mounted import Mounted
-    from adgn.mcp.exec.docker.server import ContainerExecServer
+    from mcp_infra.exec.docker.server import ContainerExecServer
+    from mcp_infra.mounted import Mounted
 
 # Default timeout for bootstrap docker exec calls (1 second).
 # Bootstrap commands should complete quickly - failing fast reveals issues.
 DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS = 1000
-
-# Timeout for Python-based bootstrap commands (5 seconds).
-# Python commands have cold start overhead (import time), so need longer timeout.
-DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS = 5000
 
 
 def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel] | None, type]]:
@@ -57,55 +54,27 @@ def introspect_server_models(server: FastMCP) -> dict[str, tuple[type[BaseModel]
 
     models: dict[str, tuple[type[BaseModel] | None, type]] = {}
 
-    for t in tools_by_name.values():
-        try:
-            fm = t.fn_metadata  # type: ignore[attr-defined]
-        except AttributeError:
-            fm = None
-        try:
-            fn = t.fn  # type: ignore[attr-defined]
-        except AttributeError:
-            fn = None
+    for tool in tools_by_name.values():
+        if not isinstance(tool, FunctionTool):
+            continue
 
-        hinted_input = None
-        hinted_output = None
-        if fn is not None:
-            with suppress(AttributeError):
-                hinted_input = fn._mcp_flat_input_model  # type: ignore[attr-defined]
-            with suppress(AttributeError):
-                hinted_output = fn._mcp_flat_output_model  # type: ignore[attr-defined]
+        fn = tool.fn
 
-        if fm is None:
-            arg_model = hinted_input
-            out_model = hinted_output
-            if not (isinstance(arg_model, type) and issubclass(arg_model, BaseModel)):
-                continue
-        else:
-            arg_model = fm.arg_model  # type: ignore[attr-defined]
-            out_model = fm.output_model  # type: ignore[attr-defined]
-            if out_model is None or arg_model is None:
-                continue
+        # Check for flat-model metadata (our custom attributes, may not exist)
+        hinted_input = getattr(fn, "_mcp_flat_input_model", None)
+        hinted_output = getattr(fn, "_mcp_flat_output_model", None)
+
+        # Skip tools without flat-model metadata
+        if hinted_input is None:
+            continue
 
         if isinstance(hinted_input, type) and issubclass(hinted_input, BaseModel):
             input_type: type[BaseModel] | None = hinted_input
-        elif isinstance(arg_model, type) and issubclass(arg_model, BaseModel):
-            input_type = arg_model
         else:
             input_type = None
 
-        try:
-            tool_key = t.key  # type: ignore[attr-defined]
-        except AttributeError:
-            try:
-                tool_key = t.name  # type: ignore[attr-defined]
-            except AttributeError:
-                continue
-
-        if not isinstance(tool_key, str) or not tool_key:
-            continue
-
-        output_type = _resolve_output_type(hinted_output, out_model)
-        models[tool_key] = (input_type, output_type)
+        output_type = _resolve_output_type(hinted_output, hinted_output)
+        models[tool.key] = (input_type, output_type)
 
     return models
 
@@ -165,34 +134,6 @@ class TypedBootstrapBuilder:
             name=build_mcp_function(server, tool),
             arguments=pydantic_core.to_json(payload.model_dump(mode="json"), fallback=str).decode("utf-8"),
         )
-
-    def call_mounted(
-        self, mounted: Mounted[FastMCP], tool: FunctionTool, payload: BaseModel, *, call_id: str | None = None
-    ) -> FunctionCallItem:
-        """Create typed MCP tool call from Mounted server.
-
-        This is a convenience wrapper over call() that extracts the prefix and tool name
-        from the Mounted wrapper.
-
-        Args:
-            mounted: Mounted server with prefix + server instance
-            tool: FunctionTool from mounted.server.some_tool
-            payload: Pydantic model instance with call arguments
-            call_id: Optional explicit call_id (auto-generated if not provided)
-
-        Returns:
-            FunctionCallItem ready for bootstrap injection
-
-        Example:
-            builder = TypedBootstrapBuilder()
-            async with LintIssueCompositor(docker) as comp:
-                call = builder.call_mounted(
-                    comp.runtime,
-                    comp.runtime.server.exec_tool,
-                    ExecInput(command=["ls", "-la"])
-                )
-        """
-        return self.call(mounted.prefix, tool.name, payload, call_id=call_id)
 
     @classmethod
     def for_server(cls, server: FastMCP, *, call_id_prefix: str = "bootstrap") -> TypedBootstrapBuilder:
@@ -279,87 +220,69 @@ def docker_exec_call(
     )
 
 
-def read_package_file_call(
-    builder: TypedBootstrapBuilder,
-    runtime: Mounted[ContainerExecServer],
-    package: str,
-    file_path: str,
-    *,
-    timeout_ms: int | None = None,
-) -> FunctionCallItem:
-    """Bootstrap helper for reading a file from a Python package using importlib.resources.
-
-    Uses DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS (5 seconds) by default to account for
-    Python cold start overhead during import.
-
-    Args:
-        builder: Bootstrap builder for generating typed tool calls
-        runtime: Mounted runtime server (e.g., comp.runtime)
-        package: Python package name (e.g., 'adgn.props.critic')
-        file_path: Path to file within package (e.g., 'prompts/critic_system.j2.md')
-        timeout_ms: Optional timeout override (default: DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS)
-
-    Example:
-        call = read_package_file_call(
-            builder, comp.runtime,
-            'adgn.props.critic', 'prompts/critic_system.j2.md'
-        )
-    """
-    python_code = (
-        f"from importlib import resources; print(resources.files('{package}').joinpath('{file_path}').read_text())"
-    )
-    return docker_exec_call(
-        builder, runtime, ["python", "-c", python_code], timeout_ms=timeout_ms or DEFAULT_PYTHON_BOOTSTRAP_TIMEOUT_MS
-    )
+# Default timeout for init script (1 minute)
+DEFAULT_INIT_TIMEOUT_MS = 60_000
 
 
-def read_package_files_call(
-    builder: TypedBootstrapBuilder,
-    runtime: Mounted[ContainerExecServer],
-    packages_and_files: list[tuple[str, list[str]]],
-    *,
-    timeout_ms: int = 30000,
-) -> FunctionCallItem:
-    """Bootstrap helper for reading multiple files from Python packages in a single call.
+async def run_init_script(
+    mcp_client: Client, runtime: Mounted[ContainerExecServer], *, timeout_ms: int = DEFAULT_INIT_TIMEOUT_MS
+) -> str:
+    """Run /init script and return stdout as system prompt.
 
-    More efficient than multiple read_package_file_call() invocations when reading
-    several files during bootstrap.
+    Executes the init script in the container before the agent loop starts.
+    The init script should print the complete system prompt to stdout.
 
     Args:
-        builder: Bootstrap builder for generating typed tool calls
-        runtime: Mounted runtime server (e.g., comp.runtime)
-        packages_and_files: List of (package, files) tuples. Each tuple specifies
-            a package name and list of files to read from that package.
-            Example: [("adgn.props.docs", ["system_overview.md"]),
-                     ("adgn.props.db", ["models.py", "examples.py"])]
-        timeout_ms: Timeout in milliseconds (default: 30 seconds for multiple files)
+        mcp_client: MCP client connected to the compositor
+        runtime: Mounted container exec server
+        timeout_ms: Timeout in milliseconds (default: 10s)
 
     Returns:
-        Single FunctionCallItem that reads all specified files
+        stdout from init script (becomes system prompt)
 
-    Example:
-        call = read_package_files_call(
-            builder, comp.runtime,
-            [("adgn.props.db", ["models.py", "examples.py"]),
-             ("adgn.props.docs", ["system_overview.md"])]
-        )
+    Raises:
+        InitFailedError: If init fails (non-zero exit, truncated, timeout, error)
     """
-    # Flatten to list of (package, file) tuples
-    files_spec: list[tuple[str, str]] = []
-    for package, files in packages_and_files:
-        for file in files:
-            files_spec.append((package, file))
+    from adgn.definition_builder import IMAGE_INIT_PATH
 
-    # Generate Python code that reads all files
-    python_code_lines = ["import importlib.resources"]
-    for package, file in files_spec:
-        python_code_lines.append(f"print('=== {package}/{file} ===')")
-        python_code_lines.append(f"print(importlib.resources.read_text({package!r}, {file!r}))")
+    # Build the tool call name
+    tool_name = build_mcp_function(runtime.prefix, runtime.server.exec_tool.name)
 
-    python_code = "\n".join(python_code_lines)
-    return docker_exec_call(builder, runtime, cmd=["python", "-c", python_code], timeout_ms=timeout_ms)
+    # Call the exec tool directly
+    result = await mcp_client.call_tool(
+        tool_name,
+        ExecInput(cmd=[IMAGE_INIT_PATH], cwd=None, env=None, user=None, timeout_ms=timeout_ms).model_dump(mode="json"),
+    )
 
+    # Check for MCP-level errors
+    if result.is_error:
+        error_text = str(result.structured_content) if result.structured_content else "unknown error"
+        raise InitFailedError(f"Init script MCP error: {error_text}")
 
-# TODO: Add more helper functions for common patterns as needed (git_diff_call, etc.)
-# Scope these appropriately (e.g., in conftest for tests, per-module for specific domains)
-# Do not pollute global scope with domain-specific helpers
+    # Parse structured result
+    if not result.structured_content:
+        raise InitFailedError("Init script returned no structured content")
+
+    exec_result = BaseExecResult.model_validate(result.structured_content)
+
+    # Validate exit code
+    if not (isinstance(exec_result.exit, Exited) and exec_result.exit.exit_code == 0):
+        stderr_text = (
+            exec_result.stderr.truncated_text if isinstance(exec_result.stderr, TruncatedStream) else exec_result.stderr
+        )
+        stderr_preview = stderr_text[:500] if stderr_text else ""
+        raise InitFailedError(
+            f"Init script failed: {exec_result.exit.model_dump()}\nstderr: {stderr_preview}", exec_result=exec_result
+        )
+
+    # Check for truncation
+    if isinstance(exec_result.stdout, TruncatedStream):
+        raise InitFailedError(
+            f"Init script stdout truncated: {exec_result.stdout.model_dump()}", exec_result=exec_result
+        )
+    if isinstance(exec_result.stderr, TruncatedStream):
+        raise InitFailedError(
+            f"Init script stderr truncated: {exec_result.stderr.model_dump()}", exec_result=exec_result
+        )
+
+    return exec_result.stdout

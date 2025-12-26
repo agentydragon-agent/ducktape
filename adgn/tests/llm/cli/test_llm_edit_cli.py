@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from adgn.llm.llm_edit import main
-from adgn.openai_utils import client_factory
-from tests.support.steps import AssistantMessage
+from adgn.llm_edit import main
+from agent_core.testing import AssistantMessage
+from openai_utils import client_factory
 
 
 def test_typer_cli_invokes_execute_without_sys(

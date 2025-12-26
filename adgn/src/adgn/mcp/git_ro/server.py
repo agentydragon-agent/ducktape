@@ -26,10 +26,10 @@ from pydantic import BaseModel, Field
 import pygit2
 from pygit2.enums import BranchType
 
-from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.mcp.compositor.server import Compositor
-from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 from .formatting import (
     ChangedFilesPage,

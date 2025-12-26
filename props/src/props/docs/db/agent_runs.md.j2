@@ -1,0 +1,17 @@
+# Agent Runs Table
+
+The `agent_runs` table tracks all agent executions.
+
+## agent_runs
+
+{{ run_command('psql -c "\\d+ agent_runs"') }}
+
+## RLS Context
+
+All agents use `current_agent_run_id()` to get their run ID:
+
+```sql
+SELECT current_agent_run_id();  -- Returns UUID from username
+```
+
+RLS policies filter writes by this function.

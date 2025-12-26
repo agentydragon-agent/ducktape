@@ -9,9 +9,9 @@ from typing import Literal
 from fastmcp.tools import FunctionTool
 from pydantic import BaseModel
 
-from adgn.mcp._shared.types import MCPMountPrefix
-from adgn.mcp.enhanced import EnhancedFastMCP
-from adgn.openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 PYTHON_SUFFIXES = {".py", ".pyi"}
 

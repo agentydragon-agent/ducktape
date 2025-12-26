@@ -2,7 +2,7 @@
 name = "gmail-archiver"
 version = "0.1.0"
 description = "Auto-archive old Gmail emails based on extracted dates"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "google-api-python-client>=2.0.0",
     "google-auth-oauthlib>=1.0.0",

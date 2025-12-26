@@ -1,1 +1,0 @@
-../../../common/docs/db/costs.md

@@ -1,0 +1,36 @@
+# syntax=docker/dockerfile:1
+# Grader agent definition image
+# Built from the packed definition tar as context
+
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# System dependencies
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y --no-install-recommends \
+    postgresql-client
+
+# Copy build context (populated by MANIFEST)
+COPY . /build/
+
+# Install packages in dependency order
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install \
+    /build/openai_utils \
+    /build/agent_runtimes/agent_container_util \
+    /build/agent_core \
+    /build/cli_util \
+    /build/mcp_infra \
+    /build/net_util \
+    /build/adgn \
+    /build/props
+
+# Required: /init (image contract - runs bootstrap, outputs system prompt)
+RUN printf '#!/bin/sh\nexec props grader-agent init\n' > /init && chmod +x /init
+
+WORKDIR /workspace
+
+CMD ["sleep", "infinity"]

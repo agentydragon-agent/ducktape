@@ -1,0 +1,184 @@
+"""Pytest fixtures for mcp_infra testing.
+
+Register in downstream packages via:
+    pytest_plugins = ["mcp_infra.testing.fixtures"]
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+from pathlib import Path
+import sys
+
+import aiodocker
+from fastmcp.client import Client
+from fastmcp.client.messages import MessageHandler
+from fastmcp.mcp_config import StdioMCPServer
+from fastmcp.server import FastMCP
+from mcp import types
+from pydantic import AnyUrl
+import pytest
+
+from mcp_infra.compositor.server import Compositor
+from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.exec.docker.server import ContainerOptions
+from mcp_infra.resources.server import ResourcesServer
+from mcp_infra.stubs.resources_stub import ResourcesServerStub
+from mcp_infra.stubs.typed_stubs import TypedClient
+from mcp_infra.testing.notifications import SubscriptionRecorder, enable_resources_caps, install_subscription_recorder
+from mcp_infra.testing.simple_servers import make_simple_mcp as _make_simple_mcp
+
+
+def make_container_opts(image: str, *, working_dir: Path = Path("/workspace")) -> ContainerOptions:
+    """Create standard ContainerOptions for tests."""
+    return ContainerOptions(image=image, working_dir=working_dir, binds=None)
+
+
+class ResourceUpdatedCapture(MessageHandler):
+    """MessageHandler that captures resource updated notifications."""
+
+    def __init__(self) -> None:
+        self.updated: list[AnyUrl] = []
+
+    async def on_resource_updated(self, message: types.ResourceUpdatedNotification) -> None:  # type: ignore[override]
+        self.updated.append(message.params.uri)
+
+
+@pytest.fixture
+async def compositor():
+    """Fresh Compositor instance for each test with automatic lifecycle management.
+
+    The compositor is entered as a context manager automatically, so tests can
+    mount servers and use it immediately without explicit 'async with'.
+    """
+    async with Compositor() as comp:
+        yield comp
+
+
+@pytest.fixture
+async def compositor_client(compositor):
+    """Client connected to the compositor."""
+    async with Client(compositor) as client:
+        yield client
+
+
+@pytest.fixture
+async def async_docker_client():
+    """Async Docker client for container tests."""
+    client = aiodocker.Docker()
+    try:
+        yield client
+    finally:
+        await client.close()
+
+
+@pytest.fixture
+def make_simple_mcp():
+    """Lightweight FastMCP backend with simple tools for tests."""
+    return _make_simple_mcp()
+
+
+@pytest.fixture
+def make_typed_mcp():
+    """Global typed MCP helper yielding (TypedClient, session) for a FastMCP server.
+
+    Usage:
+        async with make_typed_mcp(server) as (client, sess):
+            ...
+    """
+
+    @asynccontextmanager
+    async def _open(server: FastMCP):
+        async with Client(server) as sess:
+            client = TypedClient.from_server(server, sess)
+            yield client, sess
+
+    return _open
+
+
+@pytest.fixture
+def resource_capture() -> ResourceUpdatedCapture:
+    """Fresh ResourceUpdatedCapture instance for each test."""
+    return ResourceUpdatedCapture()
+
+
+@pytest.fixture
+async def resources_server(compositor):
+    """Resources server for the compositor."""
+    return ResourcesServer(compositor=compositor)
+
+
+@pytest.fixture
+async def resources_client(resources_server):
+    """Client for the resources server."""
+    async with Client(resources_server) as client:
+        yield client
+
+
+@pytest.fixture
+async def typed_resources_client(resources_server, resources_client):
+    """Typed stub for the resources server."""
+    return ResourcesServerStub.from_server(resources_server, resources_client)
+
+
+@pytest.fixture
+def stdio_echo_spec() -> StdioMCPServer:
+    """Launch packaged echo server module via -m as a stdio spec."""
+    return StdioMCPServer(command=sys.executable, args=["-m", "mcp_infra.testing.stdio_app"])
+
+
+@pytest.fixture
+def origin_with_recorder() -> tuple[FastMCP, SubscriptionRecorder]:
+    """Origin server with subscription recorder attached."""
+    # Workaround: Pass version="test" to skip slow importlib.metadata.version() lookup
+    # that hangs on os.stat() in Nix environment. Without this, MCP server initialization
+    # would call pkg_version("mcp") which triggers filesystem operations that timeout.
+    m = EnhancedFastMCP("origin", version="test")
+    recorder = install_subscription_recorder(m)
+
+    @m.resource("resource://foo/bar", name="dummy", mime_type="text/plain", description="dummy")
+    async def foo_bar() -> str:
+        return "ok"
+
+    # Ensure this origin advertises resources.subscribe for gating and
+    # registers explicit handlers so subscribe/unsubscribe calls succeed.
+    enable_resources_caps(m, subscribe=True)
+    return m, recorder
+
+
+@pytest.fixture
+def make_compositor():
+    """Async helper to open a Compositor and yield (Client, Compositor).
+
+    Usage:
+        async with make_compositor({"name": server, ...}) as (client, comp):
+            ...
+    """
+
+    @asynccontextmanager
+    async def _open(servers: dict[str, FastMCP]):
+        async with Compositor() as comp:
+            for name, srv in servers.items():
+                await comp.mount_inproc(name, srv)
+            async with Client(comp) as sess:
+                yield sess, comp
+
+    return _open
+
+
+__all__ = [
+    "ResourceUpdatedCapture",
+    "async_docker_client",
+    "compositor",
+    "compositor_client",
+    "make_compositor",
+    "make_container_opts",
+    "make_simple_mcp",
+    "make_typed_mcp",
+    "origin_with_recorder",
+    "resource_capture",
+    "resources_client",
+    "resources_server",
+    "stdio_echo_spec",
+    "typed_resources_client",
+]
