@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-import json
 import logging
 from pathlib import Path
 from typing import Annotated
@@ -45,9 +44,15 @@ from props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.cli.cmd_stats import stats_app
 from props.cli.shared import make_example_from_files
 from props.critic.critic import run_critic
-from props.critic.persistence import load_critic_submit_payload_mcp
 from props.db.config import get_database_config
-from props.db.models import AgentRun, AgentRunStatus, GradingDecision, RecallByDefinitionSplitKind, Snapshot
+from props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    GradingDecision,
+    RecallByDefinitionSplitKind,
+    ReportedIssue,
+    Snapshot,
+)
 from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session, init_db
 from props.display import fmt_pct, short_sha
@@ -64,22 +69,6 @@ from props.runs_context import RunsContext
 from props.splits import Split
 
 logger = logging.getLogger(__name__)
-
-
-def _get_critique_payload(critic_run_id: UUID | None):
-    """Query critique payload from critic run (reconstructed from normalized tables).
-
-    Returns MCP CriticSubmitPayload with issues loaded from normalized tables.
-    """
-    assert critic_run_id is not None, "Critic run ID must not be None"
-    with get_session() as session:
-        critic_run = session.get(AgentRun, critic_run_id)
-        assert critic_run is not None, f"Critic run {critic_run_id} not found"
-        assert critic_run.status == AgentRunStatus.COMPLETED, (
-            f"Critic run {critic_run_id} did not complete successfully (status: {critic_run.status})"
-        )
-        # Load MCP payload from normalized tables
-        return load_critic_submit_payload_mcp(session, critic_run_id, notes_md=critic_run.completion_summary)
 
 
 app = TyperDI(help="props — properties tooling", add_completion=False)
@@ -156,7 +145,7 @@ def run_info_cmd() -> None:
             typer.echo(f"  parent_agent_run_id: {agent_run.parent_agent_run_id}")
         typer.echo()
         typer.echo("Type Config:")
-        typer.echo(json.dumps(agent_run.type_config.model_dump(mode="json"), indent=2))
+        typer.echo(agent_run.type_config.model_dump_json(indent=2))
 
 
 @dataclass
@@ -750,9 +739,19 @@ async def cmd_run(
         typer.echo("\n=== Critique Complete ===")
         typer.echo(f"Critic Run ID: {critic_run_id}")
         if status == AgentRunStatus.COMPLETED:
-            critique_payload = _get_critique_payload(critic_run_id)
-            typer.echo(f"Issues found: {len(critique_payload.issues)}")
-            typer.echo(f"\n{critique_payload.model_dump_json(indent=2)}")
+            with get_session() as session:
+                issues = session.query(ReportedIssue).filter_by(agent_run_id=critic_run_id).all()
+                typer.echo(f"Issues found: {len(issues)}")
+                for issue in issues:
+                    typer.echo(f"\n[{issue.issue_id}] {issue.rationale}")
+                    for occ in issue.occurrences:
+                        for loc in occ.locations:
+                            loc_str = loc.file
+                            if loc.start_line:
+                                loc_str += f":{loc.start_line}"
+                                if loc.end_line and loc.end_line != loc.start_line:
+                                    loc_str += f"-{loc.end_line}"
+                            typer.echo(f"  - {loc_str}")
         else:
             typer.echo(f"Critic run ended with status: {status.value}", err=True)
     finally:

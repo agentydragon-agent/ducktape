@@ -21,8 +21,6 @@ from enum import StrEnum
 
 
 class Split(StrEnum):
-    """Train/validation/test split enumeration."""
-
     TRAIN = "train"
     VALID = "valid"
     TEST = "test"

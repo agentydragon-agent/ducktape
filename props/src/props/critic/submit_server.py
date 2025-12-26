@@ -12,7 +12,6 @@ from uuid import UUID
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
-from pydantic import BaseModel
 
 from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -32,22 +31,8 @@ class CriticSubmitInput(OpenAIStrictModeBaseModel):
     summary: str
 
 
-class CriticSubmitResult(BaseModel):
-    """Result of submit tool."""
-
-    message: str
-    issues_count: int
-    occurrences_count: int
-
-
 class ReportFailureInput(OpenAIStrictModeBaseModel):
     """Input for report_failure tool."""
-
-    message: str
-
-
-class ReportFailureResult(BaseModel):
-    """Result of report_failure."""
 
     message: str
 
@@ -85,7 +70,7 @@ class CriticSubmitServer(EnhancedFastMCP):
         # Note: Agent discovers example (snapshot_slug + scope) from its agent_run row via database.
         # No MCP resources needed for these values.
 
-        def submit(input: CriticSubmitInput) -> CriticSubmitResult:
+        def submit(input: CriticSubmitInput) -> None:
             """Finalize critic review and validate reported issues.
 
             Call this when you're done reviewing code. This will:
@@ -97,14 +82,57 @@ class CriticSubmitServer(EnhancedFastMCP):
             - Issues count must match actual reported issues in database
             - Every issue must have at least one occurrence
             - Each occurrence must have at least one location
-            - File paths must exist in the mounted snapshot
             - Line ranges must be valid (start_line > 0, end_line >= start_line)
             """
-            return self._submit_critique(input.issues_count, input.summary)
+            with get_session() as session:
+                agent_run = session.get(AgentRun, self._agent_run_id)
+                if agent_run is None:
+                    raise ToolError(f"Agent run {self._agent_run_id} not found")
+
+                if agent_run.status == AgentRunStatus.COMPLETED:
+                    raise ToolError(f"Agent run {self._agent_run_id} already completed")
+
+                issues = session.query(ReportedIssue).filter_by(agent_run_id=self._agent_run_id).all()
+
+                actual_issues_count = len(issues)
+                if input.issues_count != actual_issues_count:
+                    raise ToolError(
+                        f"Issues count mismatch: expected {input.issues_count} but found {actual_issues_count} in database"
+                    )
+
+                total_occurrences = 0
+                for issue in issues:
+                    occurrences = (
+                        session.query(ReportedIssueOccurrence)
+                        .filter_by(agent_run_id=self._agent_run_id, reported_issue_id=issue.issue_id)
+                        .all()
+                    )
+
+                    if len(occurrences) == 0:
+                        raise ToolError(
+                            f"Issue '{issue.issue_id}' has no occurrences. "
+                            f"Every issue must have at least one occurrence showing where it occurs in the code."
+                        )
+
+                    total_occurrences += len(occurrences)
+
+                    for occ in occurrences:
+                        self._validate_occurrence(occ)
+
+                agent_run.status = AgentRunStatus.COMPLETED
+                agent_run.completion_summary = input.summary
+                session.commit()
+
+                logger.info(
+                    "Agent run %s completed: %d issues, %d occurrences",
+                    self._agent_run_id,
+                    len(issues),
+                    total_occurrences,
+                )
 
         self.submit_tool = self.flat_model()(submit)
 
-        def report_failure(input: ReportFailureInput) -> ReportFailureResult:
+        def report_failure(input: ReportFailureInput) -> None:
             """Report that critique could not be completed.
 
             Call this when you encounter blocking issues that prevent review completion
@@ -112,89 +140,24 @@ class CriticSubmitServer(EnhancedFastMCP):
 
             This marks the run as failed and stores the error message.
             """
-            return self._report_failure(input.message)
+            with get_session() as session:
+                agent_run = session.get(AgentRun, self._agent_run_id)
+                if agent_run is None:
+                    raise ToolError(f"Agent run {self._agent_run_id} not found")
+
+                if agent_run.status == AgentRunStatus.COMPLETED:
+                    raise ToolError(f"Agent run {self._agent_run_id} already completed")
+
+                if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
+                    raise ToolError(f"Agent run {self._agent_run_id} already reported failure")
+
+                agent_run.status = AgentRunStatus.REPORTED_FAILURE
+                agent_run.completion_summary = input.message
+                session.commit()
+
+                logger.info("Agent run %s reported failure: %s", self._agent_run_id, input.message)
 
         self.report_failure_tool = self.flat_model()(report_failure)
-
-    def _submit_critique(self, issues_count: int, summary: str) -> CriticSubmitResult:
-        """Submit critique with validation."""
-        with get_session() as session:
-            # Load agent run
-            agent_run = session.get(AgentRun, self._agent_run_id)
-            if agent_run is None:
-                raise ToolError(f"Agent run {self._agent_run_id} not found")
-
-            if agent_run.status == AgentRunStatus.COMPLETED:
-                raise ToolError(f"Agent run {self._agent_run_id} already completed")
-
-            # Load reported issues and occurrences
-            issues = session.query(ReportedIssue).filter_by(agent_run_id=self._agent_run_id).all()
-
-            # Validate issues count matches
-            actual_issues_count = len(issues)
-            if issues_count != actual_issues_count:
-                raise ToolError(
-                    f"Issues count mismatch: expected {issues_count} but found {actual_issues_count} in database"
-                )
-
-            total_occurrences = 0
-            for issue in issues:
-                occurrences = (
-                    session.query(ReportedIssueOccurrence)
-                    .filter_by(agent_run_id=self._agent_run_id, reported_issue_id=issue.issue_id)
-                    .all()
-                )
-
-                # Validate that issue has at least one occurrence
-                if len(occurrences) == 0:
-                    raise ToolError(
-                        f"Issue '{issue.issue_id}' has no occurrences. "
-                        f"Every issue must have at least one occurrence showing where it occurs in the code."
-                    )
-
-                total_occurrences += len(occurrences)
-
-                # Validate each occurrence
-                for occ in occurrences:
-                    self._validate_occurrence(occ)
-
-            # Mark run as completed
-            agent_run.status = AgentRunStatus.COMPLETED
-            agent_run.completion_summary = summary
-            session.commit()
-
-            logger.info(
-                "Agent run %s completed: %d issues, %d occurrences", self._agent_run_id, len(issues), total_occurrences
-            )
-
-            return CriticSubmitResult(
-                message=f"Review completed successfully with {len(issues)} issues",
-                issues_count=len(issues),
-                occurrences_count=total_occurrences,
-            )
-
-    def _report_failure(self, message: str) -> ReportFailureResult:
-        """Report critique failure with message."""
-        with get_session() as session:
-            # Load agent run
-            agent_run = session.get(AgentRun, self._agent_run_id)
-            if agent_run is None:
-                raise ToolError(f"Agent run {self._agent_run_id} not found")
-
-            if agent_run.status == AgentRunStatus.COMPLETED:
-                raise ToolError(f"Agent run {self._agent_run_id} already completed")
-
-            if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
-                raise ToolError(f"Agent run {self._agent_run_id} already reported failure")
-
-            # Mark run as failed with message
-            agent_run.status = AgentRunStatus.REPORTED_FAILURE
-            agent_run.completion_summary = message
-            session.commit()
-
-            logger.info("Agent run %s reported failure: %s", self._agent_run_id, message)
-
-            return ReportFailureResult(message=f"Failure reported: {message}")
 
     def _validate_occurrence(self, occ: ReportedIssueOccurrence) -> None:
         """Validate a single occurrence.

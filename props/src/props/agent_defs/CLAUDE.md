@@ -7,9 +7,8 @@ This directory contains agent definition packages synced to the database and dep
 **How docs reach agents:** CLI init commands use `render_agent_prompt()` to render Jinja2 templates that include docs from Python packages via `{{ include_doc("package/path") }}`. These docs get printed to the agent's transcript.
 
 **Audience is determined by which packages are bundled:**
-- `props_agent_util/docs/` → shared docs for props agents (critic, grader, etc.)
-- `critic_util/docs/` → critic-specific docs (if any)
-- `agent_container_util/docs/` → container runtime docs
+- `props/docs/` → shared docs for props agents (critic, grader, etc.)
+- `agent_container_util/docs/` → container runtime docs (MCP connection, etc.)
 
 **Write for agents.** Don't include infrastructure details agents can't act on.
 
@@ -41,8 +40,6 @@ agent_core
 mcp_infra
 openai_utils
 agent_runtimes/agent_container_util
-agent_runtimes/props_agent_util
-agent_runtimes/critic_util
 ```
 
 The `db sync` process:

@@ -58,7 +58,7 @@ class CriticAgentEnvironment(AgentEnvironment):
     - Docker container with docker_exec
 
     Snapshots are fetched by the agent at init time via fetch_snapshot()
-    from props_agent_util. No bind mounts for snapshots.
+    from props.agent_helpers. No bind mounts for snapshots.
 
     Agent workflow:
     1. Init script fetches snapshot to /snapshots/<slug>/
@@ -90,15 +90,6 @@ class CriticAgentEnvironment(AgentEnvironment):
         definition_id: str = CRITIC_AGENT_DEFINITION_ID,
         container_name: str | None = None,
     ):
-        """Create critic agent environment.
-
-        Args:
-            example: Example specification (snapshot + scope)
-            docker_client: Async Docker client
-            agent_run_id: UUID of the agent run (for RLS scoping)
-            db_config: Database configuration (passed via DI)
-            workspace_manager: Workspace manager for agent workspace paths
-        """
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)
         self._example = example
 
@@ -121,14 +112,6 @@ class CriticAgentEnvironment(AgentEnvironment):
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
-        """Create critic submit server.
-
-        Args:
-            auth: Auth provider for HTTP authentication
-
-        Returns:
-            CriticSubmitServer configured for this agent run
-        """
         return CriticSubmitServer(
             agent_run_id=self._agent_run_id, snapshot_slug=self._example.snapshot_slug, example=self._example, auth=auth
         )
@@ -165,7 +148,7 @@ async def run_critic(
     truth for prompt content.
 
     Snapshots are fetched by the agent at init time via fetch_snapshot() from
-    props_agent_util. No external dependencies at runtime except the database.
+    props.agent_helpers. No external dependencies at runtime except the database.
 
     Args:
         definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
@@ -252,12 +235,8 @@ async def run_critic(
             [
                 RedirectOnTextMessageHandler(
                     reminder_message=(
-                        "You are a code review critic agent. The critique has not yet been submitted "
-                        "(critique_submit tool has not been called), so your task is unfinished. "
-                        "Use the provided MCP tools to mark all issues and occurrences you want to report, "
-                        "then either submit the critique or report failure if you encounter unrecoverable problems. "
-                        "This is not an interactive workflow with a user - issues must be reported via MCP tools, "
-                        "not via text messages. Once all issues are marked, submit the critique via the MCP tool."
+                        "Text messages won't be delivered. Mark issues via MCP tools, then call submit. "
+                        "If you encounter unrecoverable problems, call report_failure instead."
                     )
                 ),
                 AbortIf(should_abort=_ready_state),

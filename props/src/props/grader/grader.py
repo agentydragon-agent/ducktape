@@ -43,13 +43,6 @@ logger = logging.getLogger(__name__)
 
 
 def _convert_files_jsonb(files_jsonb: dict) -> dict[Path, list[LineRange] | None]:
-    """Convert JSONB files dict to Pydantic-typed dict.
-
-    JSONB format: {path_str: [{start_line: int, end_line: int}, ...] | null}
-    Each element is a LineRange serialized as dict.
-
-    Output format: {Path: list[LineRange] | None}
-    """
     result: dict[Path, list[LineRange] | None] = {}
     for path_str, ranges in files_jsonb.items():
         if ranges is None:
@@ -61,7 +54,6 @@ def _convert_files_jsonb(files_jsonb: dict) -> dict[Path, list[LineRange] | None
 
 
 def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
-    """Convert ORM TruePositiveOccurrenceORM to Pydantic TruePositiveOccurrence."""
     return TruePositiveOccurrence(
         occurrence_id=orm_occ.occurrence_id,
         files=_convert_files_jsonb(orm_occ.files),
@@ -71,7 +63,6 @@ def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
 
 
 def _fp_occ_from_orm(orm_occ) -> FalsePositiveOccurrence:
-    """Convert ORM FalsePositiveOccurrenceORM to Pydantic FalsePositiveOccurrence."""
     return FalsePositiveOccurrence(
         occurrence_id=orm_occ.occurrence_id,
         files=_convert_files_jsonb(orm_occ.files),
@@ -81,7 +72,6 @@ def _fp_occ_from_orm(orm_occ) -> FalsePositiveOccurrence:
 
 
 def _tp_from_orm(orm_tp) -> TruePositiveIssue:
-    """Convert ORM TruePositive to grader representation (module-private)."""
     return TruePositiveIssue(
         id=TruePositiveID(orm_tp.tp_id),
         rationale=Rationale(orm_tp.rationale),
@@ -90,7 +80,6 @@ def _tp_from_orm(orm_tp) -> TruePositiveIssue:
 
 
 def _fp_from_orm(orm_fp) -> KnownFalsePositive:
-    """Convert ORM FalsePositive to grader representation (module-private)."""
     return KnownFalsePositive(
         id=FalsePositiveID(orm_fp.fp_id),
         rationale=Rationale(orm_fp.rationale),
@@ -120,7 +109,7 @@ async def _run_grader_agent(
     - Docker container with docker_exec
 
     Snapshots are fetched by the agent at init time via fetch_snapshot() from
-    props_agent_util.
+    props.agent_helpers.
 
     Args:
         docker_client: Async Docker client
@@ -195,11 +184,8 @@ async def _run_grader_agent(
             [
                 RedirectOnTextMessageHandler(
                     reminder_message=(
-                        "You are a grader agent. Your grading has not yet been submitted to the MCP server. "
-                        "Your task is to evaluate the given input critique by comparing it against canonical findings "
-                        "using the provided MCP tools, then submit your grading. "
-                        "This is not an interactive workflow - complete your analysis and submit the grading via the MCP tool. "
-                        "Do not attempt to submit your grade by sending a text message - use the tool."
+                        "Text messages won't be delivered. Complete your grading decisions via MCP tools, "
+                        "then call submit. If you encounter unrecoverable problems, call report_failure instead."
                     )
                 ),
                 *extra_handlers,
@@ -272,7 +258,7 @@ async def run_grader(
     - Docker container with docker_exec
 
     Snapshots are fetched by the agent at init time via fetch_snapshot() from
-    props_agent_util.
+    props.agent_helpers.
 
     Args:
         input_data: Grader input with critic_run_id
@@ -373,7 +359,7 @@ async def grade_critic_run_by_id(
     """Grade critic run by ID, return grader_run_id.
 
     Snapshots are fetched by the agent at init time via fetch_snapshot() from
-    props_agent_util.
+    props.agent_helpers.
 
     Args:
         session: Database session (caller manages transaction)
@@ -478,7 +464,7 @@ class GraderAgentEnvironment(AgentEnvironment):
     - Docker container with docker_exec
 
     Snapshots are fetched by the agent at init time via fetch_snapshot() from
-    props_agent_util. No bind mounts for snapshots.
+    props.agent_helpers. No bind mounts for snapshots.
 
     Agent workflow:
     1. Init script fetches snapshot to /snapshots/<slug>/
@@ -507,16 +493,6 @@ class GraderAgentEnvironment(AgentEnvironment):
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
     ):
-        """Create grader agent environment.
-
-        Args:
-            snapshot_slug: Snapshot slug (stored for init script access)
-            docker_client: Async Docker client
-            grader_run_id: UUID of the grader run (for RLS scoping)
-            critic_run_id: UUID of the critic run being graded
-            db_config: Database configuration (passed via DI)
-            workspace_manager: Workspace manager for agent workspace paths
-        """
         # Store params needed by _make_mcp_server
         self._grader_run_id = grader_run_id
         self._critic_run_id = critic_run_id
@@ -535,12 +511,4 @@ class GraderAgentEnvironment(AgentEnvironment):
         )
 
     def _make_mcp_server(self, auth: AuthProvider) -> EnhancedFastMCP:
-        """Create grader submit server.
-
-        Args:
-            auth: Auth provider for HTTP authentication
-
-        Returns:
-            GraderSubmitServer configured for this grader run
-        """
         return GraderSubmitServer(grader_run_id=self._grader_run_id, critic_run_id=self._critic_run_id, auth=auth)

@@ -128,11 +128,6 @@ class LintSubmitServer(EnhancedFastMCP):
     submit_result_tool: FunctionTool
 
     def __init__(self, state: LintSubmitState):
-        """Create lint submit server with state container.
-
-        Args:
-            state: Lint submit state container
-        """
         super().__init__("Lint Submit MCP Server", instructions="Final result submission for linting run")
 
         # Register tool - name derived from function name
@@ -163,19 +158,6 @@ class LintIssueCompositor(PropertiesDockerCompositor):
     lint_submit: Mounted[LintSubmitServer]
 
     def __init__(self, workspace_root: Path, docker_client: aiodocker.Docker, submit_state: LintSubmitState):
-        """Create compositor with lint issue dependencies.
-
-        Configuration is fixed for lint issue use case:
-        - Network isolated (network_mode="none")
-        - Read-only workspace (workspace_mode="ro")
-        - No database connection
-        - No extra binds
-
-        Args:
-            workspace_root: Path to workspace directory to mount in container.
-            docker_client: Async Docker client (managed by caller).
-            submit_state: Lint submit state container (shared with caller).
-        """
         super().__init__(
             workspace_root,
             docker_client,
@@ -218,19 +200,6 @@ BIG_THRESHOLD = 20480
 def make_linter_bootstrap_calls(
     compositor: PropertiesDockerCompositor, occ: Occurrence, content_root: Path
 ) -> list[FunctionCallItem]:
-    """Build bootstrap function calls for linter agent.
-
-    Returns initial function calls providing context about the container,
-    workspace structure, and source files to review.
-
-    Args:
-        compositor: Properties compositor with Docker configuration
-        occ: TruePositive occurrence with files to inspect
-        content_root: Host path to specimen content
-
-    Returns:
-        List of FunctionCallItem objects for bootstrap injection
-    """
     builder = TypedBootstrapBuilder(call_id_prefix="bootstrap")
     calls: list[FunctionCallItem] = []
 
@@ -464,5 +433,5 @@ async def run_specimen_lint_issue_async(
     raise NotImplementedError(
         "lint-issue command is temporarily disabled. "
         "Hydration was removed - snapshots are now stored in PostgreSQL. "
-        "Reimplement using extract_snapshot_to_temp() from props_agent_util or delete this command."
+        "Reimplement using extract_snapshot_to_temp() from props.agent_helpers or delete this command."
     )

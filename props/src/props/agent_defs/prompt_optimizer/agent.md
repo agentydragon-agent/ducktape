@@ -29,6 +29,7 @@ The only requirement: Dockerfile must produce an image with executable `/init`.
 |--------|--------|
 | Fetch/create definitions | CLI: `props agent-definition fetch/create` |
 | Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
+| View metrics | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples` |
 | Report failures | CLI: `props critic-dev report-failure "message"` |
 
 ## Starting Point

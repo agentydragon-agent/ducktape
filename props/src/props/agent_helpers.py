@@ -34,7 +34,6 @@ Usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import subprocess
 from uuid import UUID
@@ -170,8 +169,7 @@ def get_agent_config() -> str:
     with get_session() as session:
         agent_run = get_current_agent_run(session)
         config = agent_run.type_config
-        # type_config is a Pydantic model - use model_dump for JSON serialization
-        return json.dumps(config.model_dump(mode="json"), indent=2)
+        return config.model_dump_json(indent=2)
 
 
 def get_grading_context() -> str:

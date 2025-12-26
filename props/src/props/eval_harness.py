@@ -43,7 +43,7 @@ class RationaleExpectation(BaseModel):
 
 class FindingsMatcherExpectation(BaseModel):
     kind: Literal["findings_matcher"] = "findings_matcher"
-    matcher: Any
+    matcher: Any  # Accepts arbitrary matcher objects; protocol not yet defined
 
 
 Expectation = Annotated[

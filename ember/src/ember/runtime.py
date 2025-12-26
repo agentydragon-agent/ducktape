@@ -25,9 +25,8 @@ from .runtime.python_session import ensure_kernel
 
 # Reminder injected when agent sends text instead of using tools
 TEXT_REMINDER = (
-    "You are not interactive - users cannot see your text responses directly. "
-    "Use the available tools to accomplish your tasks. "
-    "When done, call sleep_until_user_message to yield control back."
+    "Text messages won't be delivered to users. Use MCP tools to accomplish tasks, "
+    "then call sleep_until_user_message to yield control."
 )
 
 logger = logging.getLogger(__name__)

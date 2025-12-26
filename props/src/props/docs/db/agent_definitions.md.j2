@@ -1,0 +1,19 @@
+# Agent Definitions Table
+
+The `agent_definitions` table stores agent definition archives (Docker build contexts).
+
+## agent_definitions
+
+{{ run_command('psql -c "\\d+ agent_definitions"') }}
+
+## CLI Commands
+
+Use the CLI to fetch and create definitions:
+
+```bash
+# Fetch existing definition to a directory
+props agent-definition fetch <definition_id> /workspace/my_def/
+
+# Create new definition from a directory
+props agent-definition create /workspace/my_def/
+```

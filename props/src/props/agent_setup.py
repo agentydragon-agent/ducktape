@@ -19,11 +19,12 @@ The base class handles:
 - Init script execution via BootstrapHandler (when using AgentHandle)
 
 Snapshots are fetched by agents themselves at init time via fetch_snapshot() from
-props_agent_util. No external dependencies at runtime except the database.
+props.agent_helpers. No external dependencies at runtime except the database.
 """
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 import asyncio
 from contextlib import AsyncExitStack, suppress
 import logging
@@ -52,13 +53,6 @@ from props.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, Properties
 
 
 def _make_container_name(definition_id: str, agent_run_id: UUID) -> str:
-    """Create a deterministic container name for props agents.
-
-    Format: <roleprefix>-<runprefix>, where roleprefix is a sanitized
-    definition_id (alnum/underscore/dash only) capped to 20 chars, and
-    runprefix is the first segment of the run UUID.
-    """
-
     role_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
     role_part = role_slug[:20]
     run_part = str(agent_run_id).split("-")[0]
@@ -107,7 +101,7 @@ async def build_props_handlers(
     return handlers
 
 
-class AgentEnvironment:
+class AgentEnvironment(ABC):
     """Base class for definition-based agent environments with HTTP MCP server.
 
     Manages complete agent lifecycle:
@@ -122,7 +116,7 @@ class AgentEnvironment:
     5. Cleans up in reverse order on exit
 
     Snapshots are fetched by agents at init time via fetch_snapshot() from
-    props_agent_util. No bind mounts for snapshots - agents extract them
+    props.agent_helpers. No bind mounts for snapshots - agents extract them
     directly from the database.
 
     Agent definition structure (in workspace):
@@ -172,15 +166,6 @@ class AgentEnvironment:
         labels: dict[str, str] | None = None,
         auto_remove: bool = False,
     ):
-        """Create agent environment.
-
-        Args:
-            definition_id: Agent definition ID (e.g., "critic", "grader")
-            agent_run_id: UUID for this agent run (used for workspace path and RLS scoping)
-            docker_client: Async Docker client (managed by caller)
-            db_config: Database configuration (includes correct database name for test isolation)
-            workspace_manager: Workspace manager for definition unpacking (passed via DI)
-        """
         self._definition_id = definition_id
         self._agent_run_id = agent_run_id
         self._docker_client = docker_client
@@ -215,18 +200,9 @@ class AgentEnvironment:
         """Workspace manager for this environment."""
         return self._workspace_manager
 
+    @abstractmethod
     def _make_mcp_server(self, auth: AuthProvider) -> FastMCP:
-        """Create MCP server for this agent.
-
-        Subclasses override to provide agent-specific MCP servers.
-
-        Args:
-            auth: Auth provider for HTTP authentication
-
-        Returns:
-            FastMCP server instance
-        """
-        raise NotImplementedError("Subclasses must implement _make_mcp_server")
+        """Subclasses override to provide agent-specific MCP servers."""
 
     async def __aenter__(self) -> PropertiesDockerCompositor:
         """Start agent environment: user, HTTP server, container.
@@ -240,7 +216,7 @@ class AgentEnvironment:
         6. Create Docker exec server (uses environment)
 
         Snapshots are not mounted - agents fetch them at init time via
-        fetch_snapshot() from props_agent_util.
+        fetch_snapshot() from props.agent_helpers.
 
         Returns:
             PropertiesDockerCompositor with docker_exec tool available
@@ -370,7 +346,7 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
             docker_client,
             image_id=image_id,
             db_conn=db_conn,
-            workspace_mode="rw",  # HTTP mode always RW
+            workspace_mode="rw",
             network_mode=PROPS_NETWORK_NAME,  # Must allow container→host communication
             extra_env=None,  # Will be set by AgentEnvironment after HTTP server starts
             labels=merged_labels,

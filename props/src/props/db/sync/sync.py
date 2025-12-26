@@ -190,6 +190,8 @@ def pack_repo_definition(definition_dir: Path, *, use_staged: bool = False) -> b
     buffer = io.BytesIO()
     with tarfile.open(fileobj=buffer, mode="w") as tar:
         # Add definition files (flattened to root)
+        # TODO: Consider excluding MANIFEST from the packed tar - it's only needed for
+        # packing, not at runtime. Currently included which may confuse agents.
         def_prefix = def_relative + "/"
         for entry_path, blob in _collect_tree_entries(repo, tree, "", def_relative):
             # Strip definition prefix to flatten

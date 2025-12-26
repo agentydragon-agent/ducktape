@@ -60,15 +60,6 @@ class WholeSnapshotExample(OpenAIStrictModeBaseModel):
 
 
 ExampleSpec = Annotated[WholeSnapshotExample | SingleFileSetExample, Field(discriminator="kind")]
-"""Example specification - discriminated union matching database Example rows.
-
-Two variants:
-- WholeSnapshotExample: Review entire snapshot
-- SingleFileSetExample: Review specific file set
-
-This is the Pydantic representation of the database Example table's composite key:
-(snapshot_slug, example_kind, files_hash).
-"""
 
 
 def example_abbrev(ex: WholeSnapshotExample | SingleFileSetExample) -> str:

@@ -91,7 +91,7 @@ addopts = [
     "-n=4",
     "--dist=loadscope",
     "-m",
-    "not live_llm",
+    "not live_llm and not requires_production_specimens",
     "-v",
     "--tb=short",
     "--strict-markers",

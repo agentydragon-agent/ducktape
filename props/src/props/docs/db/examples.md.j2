@@ -4,7 +4,7 @@ Training/validation examples define what a critic reviews.
 
 ## examples
 
-{{ run_command('psql -c "\\d+ examples"') }}
+{{ describe_table("examples") }}
 
 ## Example Types
 
@@ -46,3 +46,24 @@ WHERE snapshot_slug = 'ducktape/2025-11-26-00'
 Examples are auto-generated from `expect_caught_from` in ground truth:
 - Each unique trigger set becomes a per-file example
 - Plus one full-snapshot example per snapshot
+
+## Using Examples for Optimization
+
+**File-set examples are your proxy metric** - easier to iterate on:
+- Smaller scope (1-5 catchable occurrences)
+- Easier to debug failures ("why did I miss 1 thing?" vs "why did I miss 259 things?")
+- Full access to ground truth and traces on TRAIN split
+
+**Whole-snapshot is your terminal metric** - what you ultimately optimize for:
+- Comprehensive review (all files)
+- Harder to debug (many occurrences)
+- Use for validation after file-set improvements
+
+**Hill-climbing query:**
+```sql
+-- Find easiest examples to start with
+SELECT snapshot_slug, files_hash, n_catchable_occurrences
+FROM examples
+WHERE example_kind = 'file_set' AND n_catchable_occurrences <= 3
+ORDER BY n_catchable_occurrences;
+```

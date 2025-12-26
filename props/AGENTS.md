@@ -251,25 +251,26 @@ Database persistence models should NOT use MCP I/O protocol types directly. Usin
   - Stable schema independent of protocol changes
 - Examples: `DBCriticSubmitPayload`, `DBReportedIssue`, `DBOccurrence`, `DBGraderOutput`
 
-**Conversion Functions** (in `critic/persistence.py`, `grader/persistence.py`):
+**Conversion Functions** (in `grader/persistence.py`):
 - Purpose: Bridge between MCP and DB models
-- Live in the application layer (critic/grader), not the database layer
+- Live in the application layer (grader), not the database layer
 - Conversion patterns:
   - **TO DB (when writing)**: `grader_output_to_db()`
-  - **FROM DB (when reading)**: `load_critic_submit_payload_mcp()` for critic runs
   - Only convert DB → MCP when you need MCP-specific behavior
 
 ### Usage Patterns
 
 **When reading critic data from database:**
 ```python
-# Use load_critic_submit_payload_mcp to reconstruct MCP types from normalized tables
-from props.critic.persistence import load_critic_submit_payload_mcp
+# Use ORM directly - no conversion needed
+from props.db.models import ReportedIssue
 
 with get_session() as session:
-    payload = load_critic_submit_payload_mcp(session, critic_run_id, notes_md=summary)
-    for issue in payload.issues:
-        # ... work with MCP ReportedIssue objects
+    issues = session.query(ReportedIssue).filter_by(agent_run_id=critic_run_id).all()
+    for issue in issues:
+        print(issue.issue_id, issue.rationale)
+        for occ in issue.occurrences:
+            print(occ.locations)
 ```
 
 **When reading grader data from database:**

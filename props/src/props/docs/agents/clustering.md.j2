@@ -10,10 +10,24 @@ You group "unknown issues" (critic findings that don't match known TPs or FPs) i
 
 Assign ALL unknown issues to clusters or map them to existing TPs/FPs.
 
-**Unknowns** have:
-- `grader_run_id` (UUID) — which grader run found it
-- `unknown_id` (string) — identifier within that run
-- Issue content in grader output JSON
+**Unknowns are grading decisions with no TP/FP match.** Query them:
+
+```sql
+-- Find all unknowns for a snapshot (grader decisions with no match)
+SELECT
+    gd.grader_run_id,
+    gd.input_issue_id AS unknown_id,
+    gd.rationale,
+    ri.rationale AS issue_description
+FROM grading_decisions gd
+JOIN agent_runs ar ON ar.agent_run_id = gd.grader_run_id
+JOIN reported_issues ri ON ri.agent_run_id = (ar.type_config->>'graded_agent_run_id')::uuid
+    AND ri.issue_id = gd.input_issue_id
+WHERE ar.type_config->>'agent_type' = 'grader'
+  AND ar.type_config->'example'->>'snapshot_slug' = '<your_snapshot_slug>'
+  AND gd.target_tp_id IS NULL
+  AND gd.target_fp_id IS NULL;
+```
 
 **For each unknown:**
 1. Inspect code at `/snapshots/{snapshot_slug}/`
@@ -49,6 +63,7 @@ Your task is complete when all unknowns are assigned. The agent automatically st
 - **SQL constraints validate** — UNIQUE, CHECK, FOREIGN KEY constraints enforce rules
 - **Snapshot code** at `/snapshots/{snapshot_slug}/` (read-only)
 
-{{ include_doc("agent_container_util/docs/mcp_http_connection.md") }}
+{{ include_doc("agent_container_util/docs/mcp_http_connection.md.j2") }}
 {{ include_doc("props/docs/database_access.md") }}
 {{ include_doc("props/docs/db/ground_truth.md.j2") }}
+{{ include_doc("props/docs/db/rollouts.md.j2") }}

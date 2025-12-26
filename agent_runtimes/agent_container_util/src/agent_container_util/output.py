@@ -78,8 +78,8 @@ def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) ->
     Helpers:
     - run_command(cmd) - execute shell command
     - describe_table(name) - psql \\d+ output
-    - include_doc(pkg/path) - include from package resources
-    - include_file(path) - include from filesystem
+    - include_doc(pkg/path, raw=False) - include from package resources
+    - include_file(path, raw=False) - include from filesystem
     """
     env = Environment()
     env.globals["workspace_dir"] = str(WORKSPACE)
@@ -91,15 +91,19 @@ def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) ->
         rendered = env.from_string(content).render()
         return f'<doc source="{source}">\n{rendered}\n</doc>'
 
-    def include_doc(pkg_path: str) -> str:
-        """Include doc from package resources (supports nested Jinja2)."""
+    def include_doc(pkg_path: str, *, raw: bool = False) -> str:
+        """Include doc from package resources."""
         pkg, _, p = pkg_path.partition("/")
         content = (importlib.resources.files(pkg) / p).read_text()
+        if raw:
+            return f'<doc source="{pkg_path}">\n{content}\n</doc>'
         return _include(content, pkg_path)
 
-    def include_file(file_path: str) -> str:
-        """Include file from filesystem (supports nested Jinja2)."""
+    def include_file(file_path: str, *, raw: bool = False) -> str:
+        """Include file from filesystem."""
         content = Path(file_path).read_text()
+        if raw:
+            return f'<doc source="{file_path}">\n{content}\n</doc>'
         return _include(content, file_path)
 
     env.globals["include_doc"] = include_doc

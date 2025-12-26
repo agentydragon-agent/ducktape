@@ -12,11 +12,13 @@
 
 {{ run_command("props critic-dev --help") }}
 
+{{ run_command("props snapshot fetch --help") }}
+
 {{ include_doc("agent_container_util/docs/exploring_source.md") }}
 
 ## Infrastructure
 
-{{ include_doc("agent_container_util/docs/mcp_http_connection.md") }}
+{{ include_doc("agent_container_util/docs/mcp_http_connection.md.j2") }}
 {{ include_doc("props/docs/database_access.md") }}
 
 ## Database Schema
@@ -30,6 +32,7 @@
 {{ include_doc("props/docs/db/rollouts.md.j2") }}
 {{ include_doc("props/docs/db/costs.md.j2") }}
 {{ include_doc("props/docs/db/events.md.j2") }}
+{{ include_doc("props/docs/db/agent_definitions.md.j2") }}
 
 ## Task Context
 

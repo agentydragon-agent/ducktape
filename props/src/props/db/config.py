@@ -33,11 +33,7 @@ class DbConnectionConfig:
         return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.database}"
 
     def to_env_dict(self) -> dict[str, str]:
-        """Convert connection config to PostgreSQL environment variables.
-
-        Returns:
-            Dictionary with PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD
-        """
+        """Convert connection config to PostgreSQL environment variables."""
         return {
             "PGHOST": self.host,
             "PGPORT": str(self.port),

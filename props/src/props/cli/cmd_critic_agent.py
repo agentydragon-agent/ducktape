@@ -13,6 +13,7 @@ import typer
 
 from agent_container_util.mcp import mcp_client_from_env
 from props.agent_helpers import get_current_agent_run_id
+from props.critic.submit_server import CriticSubmitInput
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
 from props.db.snapshots import DBLocationAnchor
@@ -156,8 +157,9 @@ def submit_cmd(
     """
 
     async def _submit() -> None:
+        payload = CriticSubmitInput(issues_count=issues_count, summary=summary)
         async with mcp_client_from_env() as (client, _init_result):
-            await client.call_tool("submit", {"issues_count": issues_count, "summary": summary})
+            await client.call_tool("submit", payload.model_dump())
 
     asyncio.run(_submit())
     typer.echo(f"Submitted critique: {issues_count} issues")

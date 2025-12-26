@@ -44,7 +44,7 @@ class PropertiesDockerCompositor(Compositor):
         Task compositors (Critic/Grader/Lint) → mount task-specific servers
 
     Snapshots are NOT pre-mounted. Agents fetch and extract their own snapshots at init time
-    via fetch_snapshot() from props_agent_util. This eliminates external dependencies at runtime.
+    via fetch_snapshot() from props.agent_helpers. This eliminates external dependencies at runtime.
 
     Attributes:
         runtime: Mounted Docker exec server (populated in __aenter__)
@@ -67,18 +67,6 @@ class PropertiesDockerCompositor(Compositor):
         auto_remove: bool = False,
         container_name: str | None = None,
     ):
-        """Initialize properties compositor with Docker configuration.
-
-        Args:
-            workspace_root: Path to workspace directory to mount in container.
-            docker_client: Async Docker client (managed by caller).
-            image_id: Docker image ID to use (e.g., "sha256:abc123..." from definition_builder).
-            db_conn: Database connection config (sets PG* env vars).
-            extra_binds: Additional bind mounts to mount (default empty tuple).
-            workspace_mode: Mount mode for workspace ("ro" or "rw").
-            network_mode: Docker network mode (default "none" for isolation).
-            extra_env: Additional environment variables to inject.
-        """
         super().__init__()
         self._workspace_root = workspace_root
         self._docker_client = docker_client
@@ -103,11 +91,6 @@ class PropertiesDockerCompositor(Compositor):
         return self
 
     def _create_docker_server(self, image_id: str) -> ContainerExecServer:
-        """Create ContainerExecServer with standard properties configuration.
-
-        Args:
-            image_id: Immutable Docker image ID (e.g., "sha256:abc123...")
-        """
         # Build Docker volume binds
         binds: list[BindMount] = [
             BindMount(host_path=self._workspace_root.resolve(), container_path=WORKING_DIR, mode=self._workspace_mode)

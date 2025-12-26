@@ -22,6 +22,8 @@ from props.agent_types import AgentType
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.db.session import get_session
 from props.display import ColumnDef, build_table_from_schema
+from props.models.examples import SingleFileSetExample, WholeSnapshotExample
+from props.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
 from props.splits import Split
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
@@ -55,7 +57,9 @@ async def run_critic_cmd(
         str, typer.Argument(help="Agent definition ID (from 'props agent-definition create', or 'critic' for baseline)")
     ],
     snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/test-trivial')")],
-    scope_hash: Annotated[str, typer.Argument(help="Scope hash identifying which files to review")],
+    files_hash: Annotated[
+        str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
+    ] = None,
     max_turns: Annotated[int, typer.Option("--max-turns", "-t", help="Maximum agent turns before timeout")] = 200,
 ) -> None:
     """Run critic on an example using an agent definition.
@@ -63,19 +67,22 @@ async def run_critic_cmd(
     Returns the critic_run_id which can be used with run-grader.
 
     Examples:
-        props critic-dev run-critic critic "test-fixtures/test-trivial" "abc123..."
-        props critic-dev run-critic my-custom-def "ducktape/2025-11-26-00" "def456..." --max-turns 100
+        # Whole snapshot review
+        props critic-dev run-critic critic "test-fixtures/test-trivial"
+
+        # File set review (specific files)
+        props critic-dev run-critic critic "ducktape/2025-11-26-00" "abc123..."
     """
+    # Construct example spec based on whether files_hash is provided
+    if files_hash:
+        example = SingleFileSetExample(snapshot_slug=snapshot_slug, files_hash=files_hash)
+    else:
+        example = WholeSnapshotExample(snapshot_slug=snapshot_slug)
+
+    payload = RunCriticInput(definition_id=definition_id, example=example, max_turns=max_turns)
+
     async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool(
-            "run_critic",
-            {
-                "definition_id": definition_id,
-                "snapshot_slug": snapshot_slug,
-                "scope_hash": scope_hash,
-                "max_turns": max_turns,
-            },
-        )
+        result = await client.call_tool("run_critic", payload.model_dump())
         typer.echo(f"Critic run ID: {result}")
 
 
@@ -94,8 +101,10 @@ async def run_grader_cmd(
         props critic-dev run-grader "12345678-1234-1234-1234-123456789abc"
         props critic-dev run-grader "12345678-..." --max-turns 100
     """
+    payload = RunGraderInput(critic_run_id=UUID(critic_run_id), max_turns=max_turns)
+
     async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool("run_grader", {"critic_run_id": critic_run_id, "max_turns": max_turns})
+        result = await client.call_tool("run_grader", payload.model_dump(mode="json"))
         typer.echo(f"Grader run result: {result}")
 
 
@@ -113,8 +122,10 @@ async def report_failure_cmd(
         props critic-dev report-failure "Budget exceeded after 50 evaluations"
         props critic-dev report-failure "No examples available for this split"
     """
+    payload = ReportFailureInput(message=message)
+
     async with mcp_client_from_env() as (client, _init_result):
-        result = await client.call_tool("report_failure", {"message": message})
+        result = await client.call_tool("report_failure", payload.model_dump())
         typer.echo(result)
 
 

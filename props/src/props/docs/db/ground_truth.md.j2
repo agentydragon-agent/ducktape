@@ -16,15 +16,22 @@ The ground truth issues (true positives and false positives) were hand-labeled b
 
 **Learning strategy:** Don't assume you know what "good code" means. Study the labeled examples, read the rationales, internalize the subjective standards. The goal is to replicate THIS person's judgment, not to apply generic rules.
 
+**Sparse labeling:** The ground truth is a SUBSET of real issues in the codebase. When the grader marks a reported issue as "novel" (no matching TP), it means:
+- The issue wasn't in the labeled set
+- It might still be a legitimate finding the labeler would agree with
+- OR it might be something the labeler doesn't care about
+
+"Novel" findings don't contribute to recall - only matching labeled TPs counts. Your goal is to find the issues the labeler DID label (without hitting labeled FPs), not to discover new ones.
+
 ## true_positives
 
-{{ run_command('psql -c "\\d+ true_positives"') }}
+{{ describe_table("true_positives") }}
 
 **Detection logic:** `expect_caught_from: [[A], [B]]` means seeing EITHER file A or B should trigger finding this issue. `expect_caught_from: [[A, B]]` means you need BOTH files.
 
 ## false_positives
 
-{{ run_command('psql -c "\\d+ false_positives"') }}
+{{ describe_table("false_positives") }}
 
 **Purpose:** Teach agents to avoid flagging patterns this person considers acceptable.
 
