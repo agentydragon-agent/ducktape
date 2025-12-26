@@ -1,0 +1,8 @@
+# Build output
+dist/
+
+# Dependencies
+node_modules/
+
+# Generated types (regenerate with pnpm generate)
+/src/lib/api/schema.d.ts
