@@ -166,7 +166,7 @@ async def test_critic_http_mode_submit_with_issues(run_critic_with_steps, test_s
 # =============================================================================
 
 
-def _make_critic_v2_steps_zero_issues() -> list[Step]:
+def _make_critic_steps_zero_issues() -> list[Step]:
     """Create step sequence for run_critic that finds zero issues.
 
     Uses the AgentHandle-based infrastructure which loads system prompt
@@ -180,7 +180,7 @@ def _make_critic_v2_steps_zero_issues() -> list[Step]:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_critic_v2_zero_issues(run_critic_with_steps, test_snapshot):
+async def test_critic_zero_issues(run_critic_with_steps, test_snapshot):
     """Test run_critic with AgentHandle-based flow.
 
     Tests the definition-based flow that uses:
@@ -189,10 +189,10 @@ async def test_critic_v2_zero_issues(run_critic_with_steps, test_snapshot):
     - init script for bootstrap context injection
     - Same CriticAgentEnvironment for temp user and MCP server
     """
-    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_v2_steps_zero_issues())
+    critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_zero_issues())
 
     # Verify status
-    assert status == AgentRunStatus.COMPLETED, "Critic v2 should succeed"
+    assert status == AgentRunStatus.COMPLETED, "Critic should succeed"
     assert critic_run_id is not None
 
     # Verify database records

@@ -197,7 +197,7 @@ async def run_critic(
         session.add(agent_run)
         session.commit()
         logger.info(f"Created initial agent run in DB: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
-        typer.echo(f"[critic_v2] agent_run_id={short_uuid(agent_run_id)}", err=True)
+        typer.echo(f"[critic] agent_run_id={short_uuid(agent_run_id)}", err=True)
 
     # Use CriticAgentEnvironment for:
     # - Temporary database user with RLS scoping
