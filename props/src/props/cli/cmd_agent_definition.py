@@ -16,6 +16,7 @@ import shutil
 from typing import Annotated
 from uuid import uuid4
 
+from sqlalchemy import text
 import typer
 
 from props.agent_types import AgentType
@@ -61,11 +62,12 @@ def cmd_create(
                 typer.echo("Use --force to overwrite", err=True)
                 raise typer.Exit(1)
 
+        # Get agent run ID if running inside an agent context (None for admin users)
+        result = session.execute(text("SELECT current_agent_run_id()"))
+        agent_run_id = result.scalar()
+
         definition = AgentDefinition(
-            id=definition_id,
-            agent_type=agent_type,
-            archive=archive,
-            created_by_agent_run_id=None,  # CLI-created, not agent-created
+            id=definition_id, agent_type=agent_type, archive=archive, created_by_agent_run_id=agent_run_id
         )
         session.add(definition)
         session.commit()

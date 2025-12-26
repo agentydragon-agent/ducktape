@@ -33,7 +33,7 @@ from uuid import UUID
 
 from adgn.agent.bootstrap import run_init_script
 from agent_core.agent import Agent, AgentResult, Message
-from agent_core.handler import BaseHandler, CaptureTextHandler
+from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
@@ -78,7 +78,6 @@ class AgentHandle:
     definition_id: str
     agent: Agent
     compositor: PropertiesDockerCompositor
-    text_capture: CaptureTextHandler
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
     def insert_message(self, message: Message) -> None:
@@ -90,12 +89,9 @@ class AgentHandle:
         self.agent.insert_message(message)
 
     async def run(self) -> AgentResult:
-        """Run the agent loop until completion or text response.
+        """Run the agent loop until completion.
 
-        For agents using CaptureTextHandler, this returns after the agent
-        produces a text message. For run-to-completion agents, this returns
-        after the agent finishes (submit tool, max turns, etc.).
-
+        Returns after the agent finishes (submit tool, max turns, abort, etc.).
         Turn limits are controlled by MaxTurnsHandler passed to create().
 
         Thread-safe: only one run() call can execute at a time.
@@ -125,7 +121,7 @@ class AgentHandle:
             model_client: OpenAI-compatible model client
             mcp_client: FastMCP client connected to compositor
             compositor: MCP compositor with mounted Docker runtime server (has .runtime attribute)
-            handlers: Additional handlers beyond the defaults (DatabaseEventHandler, CaptureTextHandler)
+            handlers: Additional handlers beyond the default (DatabaseEventHandler)
             dynamic_instructions: Optional callable that returns dynamic instructions string
             parallel_tool_calls: Whether to allow parallel tool calls (default False)
             reasoning_summary: Optional reasoning summary mode for the agent
@@ -136,52 +132,22 @@ class AgentHandle:
         Raises:
             InitFailedError: If init script fails
         """
-        # 1. Run init script - its stdout becomes the system prompt
-        system_prompt = await run_init_script(mcp_client, compositor.runtime)
-        logger.debug(f"Init script returned {len(system_prompt)} bytes")
-
-        # 2. Build handlers - start with defaults
-        text_capture = CaptureTextHandler()
-        all_handlers: list[BaseHandler] = [DatabaseEventHandler(agent_run_id=agent_run_id), text_capture]
-
-        # Add caller-provided handlers
-        all_handlers.extend(handlers)
-
-        # 3. Create Agent with optional customization
+        # TODO: For conversational sub-agents (agent that returns text to parent),
+        # add CaptureTextHandler here. Currently all agents use RedirectOnTextMessageHandler
+        # or custom handlers that remind and continue on text.
         agent = await Agent.create(
             mcp_client=mcp_client,
             client=model_client,
-            handlers=all_handlers,
+            handlers=[DatabaseEventHandler(agent_run_id=agent_run_id), *handlers],
             tool_policy=AllowAnyToolOrTextMessage(),
             dynamic_instructions=dynamic_instructions,
             parallel_tool_calls=parallel_tool_calls,
             reasoning_summary=reasoning_summary,
         )
 
-        # 4. Insert system message from init output
-        if system_prompt:
-            agent.insert_message(SystemMessage.text(system_prompt))
+        # Insert system message from init output
+        system_prompt = await run_init_script(mcp_client, compositor.runtime)
+        logger.debug(f"Init script returned {len(system_prompt)} bytes")
+        agent.insert_message(SystemMessage.text(system_prompt))
 
-        return cls(
-            agent_run_id=agent_run_id,
-            definition_id=definition_id,
-            agent=agent,
-            compositor=compositor,
-            text_capture=text_capture,
-        )
-
-    def get_captured_text(self) -> str | None:
-        """Get captured text if available, without consuming it.
-
-        Returns None if no text was captured yet.
-        """
-        if self.text_capture.has_text:
-            return self.text_capture._captured
-        return None
-
-    def take_captured_text(self) -> str:
-        """Take captured text, clearing the capture state.
-
-        Raises ValueError if no text was captured.
-        """
-        return self.text_capture.take()
+        return cls(agent_run_id=agent_run_id, definition_id=definition_id, agent=agent, compositor=compositor)

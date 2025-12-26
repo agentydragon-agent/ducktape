@@ -175,7 +175,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
 
 class RunCriticInput(OpenAIStrictModeBaseModel):
     definition_id: str = Field(
-        description="Agent definition ID (from 'critic-dev definition create' or 'critic' for baseline)"
+        description="Agent definition ID (from 'props critic-dev definition create' or 'critic' for baseline)"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
     max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
@@ -234,7 +234,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 "Agent definition evaluation tools: "
                 "run_critic(definition_id, example) - run critic agent on example, "
                 "run_grader(critic_run_id) - grade critiques against ground truth. "
-                "Create definitions via CLI: critic-dev definition create /workspace/my_critic/."
+                "Create definitions via CLI: props critic-dev definition create /workspace/my_critic/."
                 "Query the database for results, costs, and metrics. "
                 "Use report_failure to declare the run unsuccessful and abort."
             ),
@@ -255,7 +255,7 @@ class PromptEvalServer(EnhancedFastMCP):
 
         # Note: Agent run ID is available via current_agent_run_id() SQL function
         # which extracts it from the database username pattern (agent_{uuid}).
-        # Create definitions via CLI: critic-dev definition create /workspace/my_critic/
+        # Create definitions via CLI: props critic-dev definition create /workspace/my_critic/
 
         async def run_critic(payload: RunCriticInput) -> RunCriticOutput:
             """Run critic agent using an agent definition.
@@ -276,7 +276,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 if not definition:
                     raise ToolError(
                         f"Agent definition not found: {payload.definition_id}. "
-                        f"Use CLI: critic-dev definition create /workspace/my_critic/"
+                        f"Use CLI: props critic-dev definition create /workspace/my_critic/"
                     )
 
                 # Load and validate snapshot

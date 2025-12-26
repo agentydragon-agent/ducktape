@@ -13,9 +13,9 @@ You analyze training examples, identify patterns in critic failures, and create 
 
 | Output | Method |
 |--------|--------|
-| Create improved definition | CLI: `critic-dev definition create /workspace/improved/` |
-| Run evaluations | CLI: `critic-dev run-critic ...`, `critic-dev run-grader ...` |
-| Report failures | CLI: `critic-dev report-failure "message"` |
+| Create improved definition | CLI: `props critic-dev definition create /workspace/improved/` |
+| Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
+| Report failures | CLI: `props critic-dev report-failure "message"` |
 
 ## Starting Point
 
@@ -25,11 +25,11 @@ You analyze training examples, identify patterns in critic failures, and create 
 
 ```bash
 # Fetch and unpack a base critic to get sane defaults
-critic-dev definition get critic /workspace/improved/
+props critic-dev definition get critic /workspace/improved/
 
 # Edit agent.md with your improvements based on failure analysis
 # Submit your improved definition
-critic-dev definition create /workspace/improved/
+props critic-dev definition create /workspace/improved/
 ```
 
 ## Workflow
