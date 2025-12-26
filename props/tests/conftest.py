@@ -79,6 +79,12 @@ EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], fal
 TEST_FIXTURES_PATH = Path(__file__).parent / "fixtures" / "specimens"
 
 
+@pytest.fixture
+def test_specimens_base() -> Path:
+    """Path to test specimens directory (git-tracked fixtures)."""
+    return TEST_FIXTURES_PATH
+
+
 def pytest_addoption(parser: pytest.Parser) -> None:
     """Add custom pytest command-line options."""
     parser.addoption(

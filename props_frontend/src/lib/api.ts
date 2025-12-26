@@ -1,12 +1,3 @@
-import type { OverviewResponse } from './types';
-
-const API_BASE = '/api';
-
-/** Fetch overview stats from backend */
-export async function fetchOverview(): Promise<OverviewResponse> {
-  const response = await fetch(`${API_BASE}/stats/overview`);
-  if (!response.ok) {
-    throw new Error(`API error: ${response.status} ${response.statusText}`);
-  }
-  return response.json();
-}
+// Re-export from typed client
+export { api, fetchOverview } from './api/client';
+export type { components, paths } from './api/schema';

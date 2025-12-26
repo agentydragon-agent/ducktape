@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -71,8 +71,9 @@ def get_overview() -> OverviewResponse:
 
         metadata = {d.id: d for d in session.query(AgentDefinition).filter(AgentDefinition.id.in_(by_def.keys())).all()}
 
+        min_dt = datetime.min.replace(tzinfo=UTC)
         sorted_ids = sorted(
-            by_def.keys(), key=lambda d: metadata[d].created_at if d in metadata else datetime.min, reverse=True
+            by_def.keys(), key=lambda d: metadata[d].created_at if d in metadata else min_dt, reverse=True
         )[:100]
 
         def build_stats(def_id: str) -> SplitStats:
@@ -84,7 +85,7 @@ def get_overview() -> OverviewResponse:
         rows = [
             DefinitionRow(
                 definition_id=def_id,
-                created_at=metadata[def_id].created_at if def_id in metadata else datetime.min,
+                created_at=metadata[def_id].created_at if def_id in metadata else min_dt,
                 stats=build_stats(def_id),
             )
             for def_id in sorted_ids

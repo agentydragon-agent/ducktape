@@ -19,6 +19,13 @@
 in {
   # Python/uv managed by root devenv.nix - this file only handles props-specific infra
 
+  # Node.js for frontend development
+  languages.javascript = {
+    enable = true;
+    package = pkgs.nodejs_22;
+    pnpm.enable = true;
+  };
+
   # PostgreSQL Docker container (managed via processes)
   # Network: props_default (created in enterShell, shared with agent containers)
   # Container name: props-postgres (accessible from other containers on props_default network)
@@ -43,6 +50,13 @@ in {
       postgres:16 \
       -c max_connections=200
   '';
+
+  # Backend dev server (FastAPI with auto-reload)
+  # Watch both props and props_backend source directories for changes
+  processes.backend.exec = "uvicorn props_backend.app:app --reload --host 127.0.0.1 --port 8000 --reload-dir ../props_backend/src --reload-dir src";
+
+  # Frontend dev server (Vite)
+  processes.frontend.exec = "pnpm --dir ../props_frontend dev --port 5173";
 
   # Environment variables (database connection parameters - single source of truth)
   env = {
@@ -82,6 +96,11 @@ in {
       fi
     fi
 
-    echo "Props setup ready. Start PostgreSQL with: devenv up"
+    echo ""
+    echo "Props dev environment ready"
+    echo "  devenv up  → starts postgres + backend + frontend"
+    echo "  Backend:   http://localhost:8000"
+    echo "  Frontend:  http://localhost:5173"
+    echo ""
   '';
 }

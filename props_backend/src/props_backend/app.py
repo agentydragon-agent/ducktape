@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 from pathlib import Path
+import traceback
 from typing import TYPE_CHECKING
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from props_backend.routes import stats
@@ -33,6 +35,7 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
         description="Training and evaluation metrics dashboard",
         version="0.1.0",
         lifespan=lifespan,
+        debug=True,
     )
 
     # CORS for development (Vite dev server on different port)
@@ -51,6 +54,13 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    # Dev mode: show full tracebacks in responses
+    @app.exception_handler(Exception)
+    async def debug_exception_handler(request: Request, exc: Exception) -> PlainTextResponse:
+        return PlainTextResponse(
+            content="".join(traceback.format_exception(type(exc), exc, exc.__traceback__)), status_code=500
+        )
 
     # Mount static files if directory provided
     if static_dir and static_dir.exists():

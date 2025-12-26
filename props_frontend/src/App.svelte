@@ -19,15 +19,17 @@
   });
 </script>
 
-<h1>Props Dashboard</h1>
+<div class="min-h-screen bg-gray-50 p-6">
+  <h1 class="text-2xl font-bold mb-4">Props Dashboard</h1>
 
-{#if loading}
-  <p>Loading...</p>
-{:else if error}
-  <p style="color: red;">Error: {error}</p>
-{:else if data}
-  <p>
-    {data.total_definitions} definitions
-  </p>
-  <DefinitionsTable definitions={data.definitions} />
-{/if}
+  {#if loading}
+    <p class="text-gray-500">Loading...</p>
+  {:else if error}
+    <p class="text-red-600">Error: {error}</p>
+  {:else if data}
+    <p class="text-gray-600 mb-4">{data.total_definitions} definitions</p>
+    <div class="bg-white rounded-lg shadow">
+      <DefinitionsTable definitions={data.definitions} />
+    </div>
+  {/if}
+</div>
