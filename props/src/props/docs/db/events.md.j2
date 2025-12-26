@@ -2,8 +2,6 @@
 
 The `events` table stores agent execution traces for analysis.
 
-## events
-
-{{ run_command('psql -c "\\d+ events"') }}
+{{ describe_relation("events") }}
 
 Use this table to analyze how critic runs proceeded, identify patterns in tool usage, and debug failures.

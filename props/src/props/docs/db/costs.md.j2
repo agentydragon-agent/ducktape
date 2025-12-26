@@ -14,17 +14,8 @@ Where rates are per-token prices from `model_metadata` (USD per 1M tokens, divid
 
 ## Views
 
-### event_costs
-
-Per-LLM-response cost breakdown:
-
-{{ run_command('psql -c "\\d+ event_costs"') }}
-
-### run_costs
-
-Aggregated costs per run **including all child runs transitively**, grouped by model:
-
-{{ run_command('psql -c "\\d+ run_costs"') }}
+{{ describe_relation("event_costs") }}
+{{ describe_relation("run_costs") }}
 
 ## Queries
 

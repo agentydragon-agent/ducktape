@@ -24,30 +24,9 @@ The `ADGN_PROPS_SPECIMENS_ROOT` environment variable points to the specimens rep
 **Specimen authoring (in specimens repo):**
 - Specimens repository has its own CLAUDE.md with format specs, authoring guide, and quality checklist
 
-## Documentation SSOT Principle
+## Documentation Guidelines
 
-**Agent-facing documentation lives in `props/src/props/docs/` and is the single source of truth.**
-
-When writing documentation that agents could also use:
-- Write it ONCE in `props/src/props/docs/`
-- Reference or transclude it into production docs and developer-facing documentation
-- Do NOT duplicate content between agent docs and other locations
-
-**Rationale:**
-- Agents see docs at runtime via init scripts (Jinja2 templating)
-- If the same information exists elsewhere, it will drift and become inconsistent
-
-**What goes in agent docs:**
-- Database schema documentation
-- RLS mechanism explanations
-- MCP/database access patterns
-- Workflow guides and examples
-- Any reference material agents need during execution
-
-**What does NOT go in agent docs:**
-- Developer tooling instructions (IDE setup, local testing)
-- Infrastructure deployment details
-- Internal architecture decisions not relevant to agent execution
+@src/props/docs/AGENTS.md
 
 ## MCP Wiring & Prompt Authoring
 

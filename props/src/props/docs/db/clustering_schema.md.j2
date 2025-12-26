@@ -4,13 +4,8 @@
 
 The clustering subsystem uses **Row-Level Security (RLS)** to isolate data access per clustering run. Each agent runs as a temporary PostgreSQL user whose username encodes the agent_run_id, enabling automatic query scoping.
 
-## unknown_clusters
-
-{{ describe_table("unknown_clusters") }}
-
-## unknown_assignments
-
-{{ describe_table("unknown_assignments") }}
+{{ describe_relation("unknown_clusters") }}
+{{ describe_relation("unknown_assignments") }}
 
 **Soft Delete Workflow:**
 1. To cancel an assignment: UPDATE `cancelled_at = now()`, `cancellation_reason = '...'`

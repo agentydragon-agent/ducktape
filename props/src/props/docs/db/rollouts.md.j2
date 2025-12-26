@@ -4,13 +4,8 @@ This document explains how to query and analyze agent execution traces (rollouts
 
 ## Schema
 
-### agent_runs
-
-{{ run_command('psql -c "\\d+ agent_runs"') }}
-
-### events
-
-{{ run_command('psql -c "\\d+ events"') }}
+{{ describe_relation("agent_runs") }}
+{{ describe_relation("events") }}
 
 ## Event Types
 

@@ -23,17 +23,10 @@ The ground truth issues (true positives and false positives) were hand-labeled b
 
 "Novel" findings don't contribute to recall - only matching labeled TPs counts. Your goal is to find the issues the labeler DID label (without hitting labeled FPs), not to discover new ones.
 
-## true_positives
-
-{{ describe_table("true_positives") }}
-
-**Detection logic:** `expect_caught_from: [[A], [B]]` means seeing EITHER file A or B should trigger finding this issue. `expect_caught_from: [[A, B]]` means you need BOTH files.
-
-## false_positives
-
-{{ describe_table("false_positives") }}
-
-**Purpose:** Teach agents to avoid flagging patterns this person considers acceptable.
+{{ describe_relation("true_positives") }}
+{{ describe_relation("true_positive_occurrences") }}
+{{ describe_relation("false_positives") }}
+{{ describe_relation("false_positive_occurrences") }}
 
 ## Query Examples
 

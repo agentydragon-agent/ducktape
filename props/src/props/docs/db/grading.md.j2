@@ -2,11 +2,7 @@
 
 This document describes how grading output is stored and how to query metrics.
 
-## grading_decisions
-
-{{ run_command('psql -c "\\d+ grading_decisions"') }}
-
-**SQL trigger:** Enforces `SUM(found_credit) <= 1.0` per occurrence across all decisions.
+{{ describe_relation("grading_decisions") }}
 
 ## Writing Decisions
 
@@ -50,13 +46,8 @@ if isinstance(grader_run.output, DBGraderSuccess):
 
 ### Aggregate Views
 
-**recall_by_definition_split_kind:**
-
-{{ run_command('psql -c "\\d+ recall_by_definition_split_kind"') }}
-
-**recall_by_example:**
-
-{{ run_command('psql -c "\\d+ recall_by_example"') }}
+{{ describe_relation("recall_by_definition_split_kind") }}
+{{ describe_relation("recall_by_example") }}
 
 ### Weighting
 

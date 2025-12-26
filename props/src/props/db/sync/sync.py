@@ -493,6 +493,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 )
                 session.add(orm_issue)
                 # Add occurrences to normalized table
+                # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as column
                 for occ in issue.occurrences:
                     orm_occ = TruePositiveOccurrenceORM(
                         snapshot_slug=issue.snapshot_slug,
@@ -503,7 +504,6 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             for p, ranges in occ.files.items()
                         },
                         note=occ.note,
-                        expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
                     )
                     session.add(orm_occ)
                 added += 1
@@ -524,6 +524,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     # Delete existing occurrences and re-add (cascade handles this)
                     for occ_orm in list(existing.occurrences):
                         session.delete(occ_orm)
+                    # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as column
                     for occ in issue.occurrences:
                         orm_occ = TruePositiveOccurrenceORM(
                             snapshot_slug=issue.snapshot_slug,
@@ -534,7 +535,6 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                                 for p, ranges in occ.files.items()
                             },
                             note=occ.note,
-                            expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
                         )
                         session.add(orm_occ)
                     updated += 1
@@ -699,15 +699,20 @@ def compute_files_hash(file_paths: list[str]) -> str:
     return hashlib.md5(content.encode("utf-8")).hexdigest()
 
 
-def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug]) -> SyncStats:
-    """Sync file_sets, file_set_members, and occurrence_triggers from true_positives.expect_caught_from."""
+def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
+    """Sync file_sets, file_set_members, and occurrence_triggers from YAML sources.
+
+    Reads expect_caught_from from YAML files (the source of truth), not from ORM.
+    """
     desired_file_sets: dict[tuple[SnapshotSlug, str], list[str]] = {}
     desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
-    for slug in slugs:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).one()
+    # Load canonical TPs from YAML to get expect_caught_from
 
-        for tp in snapshot.true_positives:
+    for slug in slugs:
+        true_positives, _ = load_yaml_issues(slug, specimens_dir)
+
+        for tp in true_positives:
             for occurrence in tp.occurrences:
                 for trigger_files in occurrence.expect_caught_from:
                     # Convert to strings and compute hash
@@ -1082,7 +1087,7 @@ def sync_all(session: Session, *, use_staged: bool = False) -> FullSyncResult:
 
     # 4. Sync file sets (examples VIEW is derived from these automatically)
     print("Syncing file sets...")
-    file_set_stats = sync_file_sets_to_db(session, slugs)
+    file_set_stats = sync_file_sets_to_db(session, slugs, specimens_dir)
     print(f"  {file_set_stats.summary_text}")
 
     # 5. Sync model metadata

@@ -17,23 +17,7 @@
   };
   passwordFile = ".devenv/state/pg_password";
 in {
-  # Basic packages available in the shell
-  # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, etc.
-  packages = [pkgs.git pkgs.stdenv.cc.cc.lib pkgs.zlib];
-
-  # Python (devenv-managed venv)
-  languages.python = {
-    enable = true;
-    package = pkgs.python312;
-    uv = {
-      enable = true;
-      sync = {
-        enable = true;
-        # orchestration: adgn/net-util for image building and agent orchestration
-        extras = ["dev" "gepa" "orchestration"];
-      };
-    };
-  };
+  # Python/uv managed by root devenv.nix - this file only handles props-specific infra
 
   # PostgreSQL Docker container (managed via processes)
   # Network: props_default (created in enterShell, shared with agent containers)
@@ -78,9 +62,6 @@ in {
   enterShell = ''
     set -euo pipefail
 
-    # Add native library paths for Python C extensions (numpy, etc.)
-    export LD_LIBRARY_PATH="${pkgs.stdenv.cc.cc.lib}/lib:${pkgs.zlib}/lib''${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
-
     # Generate PostgreSQL password if not exists
     mkdir -p .devenv/state
     if [[ ! -f ${passwordFile} ]]; then
@@ -101,7 +82,6 @@ in {
       fi
     fi
 
-    python --version
     echo "Props setup ready. Start PostgreSQL with: devenv up"
   '';
 }

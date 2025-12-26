@@ -516,6 +516,45 @@ SECURITY DEFINER to bypass RLS.'
         'Returns agent_run_ids for critic/grader runs on TRAIN snapshots. SECURITY DEFINER to bypass RLS.'
     """)
 
+    # DRY helper: can_access_snapshot - unified snapshot access check for RLS policies
+    op.execute("""
+        CREATE FUNCTION can_access_snapshot(p_slug text) RETURNS boolean
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
+        AS $$
+        BEGIN
+            RETURN (
+                (current_agent_type() = 'prompt_optimizer' AND is_train_snapshot(p_slug))
+                OR (current_agent_type() = 'grader' AND p_slug = get_graded_snapshot_slug(current_agent_run_id()))
+                OR (current_agent_type() = 'improvement' AND is_improvement_snapshot_allowed(p_slug))
+                OR (current_agent_type() = 'clustering' AND p_slug = current_agent_type_config()->>'snapshot_slug')
+            );
+        END;
+        $$
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION can_access_snapshot(text) IS
+        'Unified snapshot access check for RLS policies. Returns TRUE if current agent can access the given snapshot.
+Used by true_positives, false_positives, and their occurrence tables.'
+    """)
+
+    # DRY helper: is_own_run_as - check if run belongs to current agent with specific type
+    op.execute("""
+        CREATE FUNCTION is_own_run_as(p_run_id uuid, p_type text) RETURNS boolean
+        LANGUAGE plpgsql STABLE
+        AS $$
+        BEGIN
+            RETURN p_run_id = current_agent_run_id() AND current_agent_type() = p_type;
+        END;
+        $$
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION is_own_run_as(uuid, text) IS
+        'Returns TRUE if the given run_id belongs to current agent AND agent is of the specified type.
+Used for critic/grader write policies.'
+    """)
+
     # Catchability functions - check if TP/FP is catchable/relevant given a scope
     op.execute("""
         CREATE FUNCTION is_tp_catchable_from_scope(
@@ -1095,6 +1134,10 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     op.execute(
         "COMMENT ON TABLE snapshot_files IS 'All files in each snapshot. Used for FK validation of file paths in occurrences and trigger sets.'"
     )
+    op.execute(
+        "COMMENT ON COLUMN snapshot_files.relative_path IS "
+        "'Path relative to snapshot root (e.g., \"src/utils.py\"). NOT absolute paths.'"
+    )
 
     # True positives table (issue header - occurrences are in separate table)
     op.create_table(
@@ -1122,7 +1165,13 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         issue_id_constraint("fp_id", "fp_id_format"),
     )
 
+    op.execute(
+        "COMMENT ON TABLE false_positives IS "
+        "'Patterns the labeler considers acceptable - teaches agents what NOT to flag.'"
+    )
+
     # True positive occurrences table (normalized from JSONB)
+    # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as JSONB column
     op.create_table(
         "true_positive_occurrences",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
@@ -1130,7 +1179,6 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("files", postgresql.JSONB(), nullable=False),  # {path: [line_ranges] | null}
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("expect_caught_from", postgresql.JSONB(), nullable=False),  # [[path, ...], ...]
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
@@ -1394,6 +1442,10 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
 
     op.execute(
         "COMMENT ON COLUMN grading_decisions.agent_run_id IS 'FK to agent_runs - identifies which grader agent run created this decision'"
+    )
+    op.execute(
+        "COMMENT ON TABLE grading_decisions IS "
+        "'Matches input issues to TPs/FPs. Trigger enforces SUM(credit) <= 1.0 per occurrence.'"
     )
 
     # Events table
@@ -2235,6 +2287,9 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("ALTER TABLE snapshots ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positives ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positives ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE true_positive_occurrences ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE false_positive_occurrences ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE occurrence_triggers ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE events ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE grading_decisions ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues ENABLE ROW LEVEL SECURITY")
@@ -2253,6 +2308,15 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("CREATE POLICY admin_full_access_snapshots ON snapshots TO postgres USING (true) WITH CHECK (true)")
     op.execute(
         "CREATE POLICY admin_full_access_true_positives ON true_positives TO postgres USING (true) WITH CHECK (true)"
+    )
+    op.execute(
+        "CREATE POLICY admin_full_access_tp_occurrences ON true_positive_occurrences TO postgres USING (true) WITH CHECK (true)"
+    )
+    op.execute(
+        "CREATE POLICY admin_full_access_fp_occurrences ON false_positive_occurrences TO postgres USING (true) WITH CHECK (true)"
+    )
+    op.execute(
+        "CREATE POLICY admin_full_access_occ_triggers ON occurrence_triggers TO postgres USING (true) WITH CHECK (true)"
     )
     op.execute("CREATE POLICY admin_full_access_file_sets ON file_sets TO postgres USING (true) WITH CHECK (true)")
     op.execute(
@@ -2352,25 +2416,30 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         "CREATE POLICY snapshots_agent_select ON snapshots FOR SELECT USING (current_agent_run_id() IS NOT NULL)"
     )
 
-    # True positives - prompt optimizer sees TRAIN, grader sees graded snapshot, improvement sees allowed, clustering sees its snapshot
-    op.execute("""
-        CREATE POLICY true_positives_agent_select ON true_positives FOR SELECT USING (
-            (current_agent_type() = 'prompt_optimizer' AND is_train_snapshot(snapshot_slug))
-            OR (current_agent_type() = 'grader' AND snapshot_slug = get_graded_snapshot_slug(current_agent_run_id()))
-            OR (current_agent_type() = 'improvement' AND is_improvement_snapshot_allowed(snapshot_slug))
-            OR (current_agent_type() = 'clustering' AND snapshot_slug = current_agent_type_config()->>'snapshot_slug')
-        )
-    """)
+    # True positives - uses can_access_snapshot() helper
+    op.execute(
+        "CREATE POLICY true_positives_agent_select ON true_positives FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+    )
 
-    # False positives - prompt optimizer sees TRAIN, grader sees graded snapshot, improvement sees allowed, clustering sees its snapshot
-    op.execute("""
-        CREATE POLICY false_positives_agent_select ON false_positives FOR SELECT USING (
-            (current_agent_type() = 'prompt_optimizer' AND is_train_snapshot(snapshot_slug))
-            OR (current_agent_type() = 'grader' AND snapshot_slug = get_graded_snapshot_slug(current_agent_run_id()))
-            OR (current_agent_type() = 'improvement' AND is_improvement_snapshot_allowed(snapshot_slug))
-            OR (current_agent_type() = 'clustering' AND snapshot_slug = current_agent_type_config()->>'snapshot_slug')
-        )
-    """)
+    # False positives - uses can_access_snapshot() helper
+    op.execute(
+        "CREATE POLICY false_positives_agent_select ON false_positives FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+    )
+
+    # True positive occurrences - uses can_access_snapshot() helper
+    op.execute(
+        "CREATE POLICY tp_occurrences_agent_select ON true_positive_occurrences FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+    )
+
+    # False positive occurrences - uses can_access_snapshot() helper
+    op.execute(
+        "CREATE POLICY fp_occurrences_agent_select ON false_positive_occurrences FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+    )
+
+    # Occurrence triggers - uses can_access_snapshot() helper
+    op.execute(
+        "CREATE POLICY occ_triggers_agent_select ON occurrence_triggers FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+    )
 
     # Events policies
     op.execute("""
@@ -2387,19 +2456,19 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("""
         CREATE POLICY grading_decisions_agent_select ON grading_decisions FOR SELECT USING (
             (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
-            OR (agent_run_id = current_agent_run_id() AND current_agent_type() = 'grader')
+            OR is_own_run_as(agent_run_id, 'grader')
             OR (current_agent_type() = 'improvement'
                 AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
         )
     """)
     op.execute(
-        "CREATE POLICY grading_decisions_agent_insert ON grading_decisions FOR INSERT WITH CHECK (agent_run_id = current_agent_run_id() AND current_agent_type() = 'grader')"
+        "CREATE POLICY grading_decisions_agent_insert ON grading_decisions FOR INSERT WITH CHECK (is_own_run_as(agent_run_id, 'grader'))"
     )
     op.execute(
-        "CREATE POLICY grading_decisions_agent_update ON grading_decisions FOR UPDATE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'grader')"
+        "CREATE POLICY grading_decisions_agent_update ON grading_decisions FOR UPDATE USING (is_own_run_as(agent_run_id, 'grader'))"
     )
     op.execute(
-        "CREATE POLICY grading_decisions_agent_delete ON grading_decisions FOR DELETE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'grader')"
+        "CREATE POLICY grading_decisions_agent_delete ON grading_decisions FOR DELETE USING (is_own_run_as(agent_run_id, 'grader'))"
     )
 
     # Reported issues policies
@@ -2413,13 +2482,13 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         )
     """)
     op.execute(
-        "CREATE POLICY reported_issues_agent_insert ON reported_issues FOR INSERT WITH CHECK (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issues_agent_insert ON reported_issues FOR INSERT WITH CHECK (is_own_run_as(agent_run_id, 'critic'))"
     )
     op.execute(
-        "CREATE POLICY reported_issues_agent_update ON reported_issues FOR UPDATE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issues_agent_update ON reported_issues FOR UPDATE USING (is_own_run_as(agent_run_id, 'critic'))"
     )
     op.execute(
-        "CREATE POLICY reported_issues_agent_delete ON reported_issues FOR DELETE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issues_agent_delete ON reported_issues FOR DELETE USING (is_own_run_as(agent_run_id, 'critic'))"
     )
 
     # Reported issue occurrences policies
@@ -2433,13 +2502,13 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         )
     """)
     op.execute(
-        "CREATE POLICY reported_issue_occurrences_agent_insert ON reported_issue_occurrences FOR INSERT WITH CHECK (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issue_occurrences_agent_insert ON reported_issue_occurrences FOR INSERT WITH CHECK (is_own_run_as(agent_run_id, 'critic'))"
     )
     op.execute(
-        "CREATE POLICY reported_issue_occurrences_agent_update ON reported_issue_occurrences FOR UPDATE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issue_occurrences_agent_update ON reported_issue_occurrences FOR UPDATE USING (is_own_run_as(agent_run_id, 'critic'))"
     )
     op.execute(
-        "CREATE POLICY reported_issue_occurrences_agent_delete ON reported_issue_occurrences FOR DELETE USING (agent_run_id = current_agent_run_id() AND current_agent_type() = 'critic')"
+        "CREATE POLICY reported_issue_occurrences_agent_delete ON reported_issue_occurrences FOR DELETE USING (is_own_run_as(agent_run_id, 'critic'))"
     )
 
     # Unknown clusters policies (clustering agent)

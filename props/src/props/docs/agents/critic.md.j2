@@ -25,8 +25,8 @@ To review code, use paths like:
 
 ## Database Schema
 
-{{ describe_table("reported_issues") }}
-{{ describe_table("reported_issue_occurrences") }}
+{{ describe_relation("reported_issues") }}
+{{ describe_relation("reported_issue_occurrences") }}
 
 ## Issue IDs
 
@@ -37,7 +37,6 @@ Use descriptive kebab-case slugs:
 ## Important Constraints
 
 - **NO access to ground truth** - You cannot see `true_positives` or `false_positives`
-- **File paths must be RELATIVE to snapshot root** - Use `src/utils.py`, NOT `/workspace/src/utils.py`
 - **Line ranges must be valid** (start_line > 0, end_line >= start_line)
 
 {{ include_doc("agent_container_util/docs/mcp_http_connection.md.j2") }}

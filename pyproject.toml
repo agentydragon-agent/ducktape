@@ -2,6 +2,7 @@
 members = [
     "adgn",
     "props",
+    "props_backend",
     "agent_core",
     "agent_server",
     "mcp_infra",

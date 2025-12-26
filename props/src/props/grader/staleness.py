@@ -81,7 +81,8 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
                 occurrence_id=occ.occurrence_id,
                 files=_convert_orm_files_to_db(occ.files),
                 note=occ.note,
-                expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from],
+                # Derive from M:N relationship (occurrence_triggers -> file_sets)
+                expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from_set],
             )
             for occ in orm_tp.occurrences
         ],

@@ -2,17 +2,10 @@
 
 This document describes how critic output is stored in the database.
 
-## reported_issues
-
-{{ run_command('psql -c "\\d+ reported_issues"') }}
-
-## reported_issue_occurrences
-
-{{ run_command('psql -c "\\d+ reported_issue_occurrences"') }}
+{{ describe_relation("reported_issues") }}
+{{ describe_relation("reported_issue_occurrences") }}
 
 ## Writing Issues
-
-**IMPORTANT:** File paths must be RELATIVE to snapshot root (e.g., `src/utils.py`), NOT absolute paths like `/workspace/src/utils.py`.
 
 **SQL workflow:**
 ```sql

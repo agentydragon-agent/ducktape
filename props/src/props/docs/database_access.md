@@ -45,6 +45,8 @@ RLS policies automatically filter queries:
 - **SELECT:** Filtered based on your agent type (see access table below)
 - **DELETE:** Not granted; use soft deletes
 
+**View actual policies:** Run `\d+ table_name` to see the RLS policies for any table. Policies are the authoritative source for access rules.
+
 ## Schema Discovery
 
 ```bash
@@ -78,7 +80,10 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | reported_issues | Graded critic run | - | - |
 | reported_issue_occurrences | Graded critic run | - | - |
 | true_positives | Graded snapshot | - | - |
+| true_positive_occurrences | Graded snapshot | - | - |
 | false_positives | Graded snapshot | - | - |
+| false_positive_occurrences | Graded snapshot | - | - |
+| occurrence_triggers | Graded snapshot | - | - |
 
 **Note:** Graders see ground truth for the snapshot being graded only.
 
@@ -88,7 +93,10 @@ Run `\d+ table_name` before writing queries to understand the schema.
 |-------|--------|--------|--------|
 | examples | TRAIN split only* | - | - |
 | true_positives | TRAIN split | - | - |
+| true_positive_occurrences | TRAIN split | - | - |
 | false_positives | TRAIN split | - | - |
+| false_positive_occurrences | TRAIN split | - | - |
+| occurrence_triggers | TRAIN split | - | - |
 | critic_runs | TRAIN split | - | - |
 | grader_runs | TRAIN split | - | - |
 | recall_by_definition_split_kind | All splits (view) | - | - |
@@ -101,9 +109,12 @@ Run `\d+ table_name` before writing queries to understand the schema.
 |-------|--------|--------|--------|
 | unknown_clusters | Own run | Own run | Own run |
 | unknown_assignments | Own run | Own run | Own run |
-| true_positives | All | - | - |
-| false_positives | All | - | - |
+| true_positives | Its snapshot | - | - |
+| true_positive_occurrences | Its snapshot | - | - |
+| false_positives | Its snapshot | - | - |
+| false_positive_occurrences | Its snapshot | - | - |
+| occurrence_triggers | Its snapshot | - | - |
 | snapshots | All | - | - |
 | events | All | - | - |
 
-**Note:** Clustering agent can create clusters and assign unknowns within its own run. Sees all ground truth to identify novel unknowns.
+**Note:** Clustering agent can create clusters and assign unknowns within its own run. Sees ground truth for its configured snapshot.

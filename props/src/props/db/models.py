@@ -380,8 +380,8 @@ class TruePositive(Base):
     """True positive (expected findings).
 
     Composite primary key: (snapshot_slug, tp_id).
-    Each true positive has one or more occurrences with expect_caught_from semantics.
-    Occurrences are stored in the separate true_positive_occurrences table.
+    Each true positive has one or more occurrences stored in true_positive_occurrences.
+    Trigger file sets (expect_caught_from) are stored in occurrence_triggers M:N table.
     """
 
     __tablename__ = "true_positives"
@@ -428,6 +428,7 @@ class FalsePositive(Base):
     """
 
     __tablename__ = "false_positives"
+    __table_args__ = ({"comment": "Patterns the labeler considers acceptable - teaches agents what NOT to flag."},)
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="RESTRICT"), primary_key=True
@@ -466,7 +467,7 @@ class TruePositiveOccurrenceORM(Base):
     """Occurrence within a true positive issue.
 
     Each occurrence represents a specific location where the issue manifests.
-    Has expect_caught_from defining which file sets should trigger detection.
+    expect_caught_from is stored in the occurrence_triggers M:N table (linking to file_sets).
     """
 
     __tablename__ = "true_positive_occurrences"
@@ -476,7 +477,6 @@ class TruePositiveOccurrenceORM(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    expect_caught_from: Mapped[list] = mapped_column(JSONB, nullable=False)  # [[path, ...], ...]
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -487,10 +487,24 @@ class TruePositiveOccurrenceORM(Base):
 
     # Relationships
     true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
+    triggers: Mapped[list[OccurrenceTrigger]] = relationship(
+        back_populates="occurrence",
+        primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(OccurrenceTrigger.snapshot_slug), "
+        "TruePositiveOccurrenceORM.tp_id == foreign(OccurrenceTrigger.tp_id), "
+        "TruePositiveOccurrenceORM.occurrence_id == foreign(OccurrenceTrigger.occurrence_id))",
+    )
 
     @property
     def expect_caught_from_set(self) -> set[frozenset[Path]]:
-        return {frozenset(Path(p) for p in alt) for alt in self.expect_caught_from}
+        """Derive expect_caught_from from occurrence_triggers relationship."""
+        result: set[frozenset[Path]] = set()
+        for trigger in self.triggers:
+            # Each trigger links to a file_set via files_hash
+            # Get file paths from file_set_members
+            if trigger.file_set:
+                file_paths = frozenset(Path(m.file_path) for m in trigger.file_set.members)
+                result.add(file_paths)
+        return result
 
 
 class FalsePositiveOccurrenceORM(Base):
@@ -536,7 +550,9 @@ class SnapshotFile(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(
         SnapshotSlugColumn(), ForeignKey("snapshots.slug", ondelete="CASCADE"), primary_key=True
     )
-    relative_path: Mapped[str] = mapped_column(String, primary_key=True)
+    relative_path: Mapped[str] = mapped_column(
+        String, primary_key=True, comment='Path relative to snapshot root (e.g., "src/utils.py"). NOT absolute paths.'
+    )
     line_count: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Relationships
@@ -622,7 +638,9 @@ class OccurrenceTrigger(Base):
     )
 
     # Relationships
-    file_set: Mapped[FileSet] = relationship()
+    # overlaps needed because snapshot_slug is in both FKs (to occurrence and file_set)
+    file_set: Mapped[FileSet] = relationship(overlaps="triggers,occurrence")
+    occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(back_populates="triggers", overlaps="file_set")
 
 
 class ReportedIssue(Base):
@@ -715,6 +733,9 @@ class GradingDecision(Base):
     """
 
     __tablename__ = "grading_decisions"
+    __table_args__ = (
+        {"comment": "Matches input issues to TPs/FPs. Trigger enforces SUM(credit) <= 1.0 per occurrence."},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     agent_run_id: Mapped[UUID] = mapped_column(

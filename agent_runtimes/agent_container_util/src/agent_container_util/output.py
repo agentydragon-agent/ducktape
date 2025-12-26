@@ -59,14 +59,12 @@ def run_command_jinja(cmd: str) -> str:
     return f'<output command="{cmd}">\n{result.stdout}</output>'
 
 
-def describe_table_jinja(table_name: str) -> str:
-    """Return psql \\d+ output for a table.
+def describe_relation_jinja(relation_name: str) -> str:
+    """Return psql \\d+ output for a table or view.
 
-    DRY helper for schema documentation: {{ describe_table("reported_issues") }}
+    DRY helper for schema documentation: {{ describe_relation("reported_issues") }}
     """
-    cmd = f'psql -c "\\d+ {table_name}"'
-    result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=True)
-    return f'<output command="{cmd}">\n{result.stdout}</output>'
+    return run_command_jinja(f'psql -c "\\d+ {relation_name}"')
 
 
 def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) -> Environment:
@@ -77,14 +75,14 @@ def _setup_jinja_env(helpers: Mapping[str, Callable[..., Any]] | None = None) ->
 
     Helpers:
     - run_command(cmd) - execute shell command
-    - describe_table(name) - psql \\d+ output
+    - describe_relation(name) - psql \\d+ output for tables/views
     - include_doc(pkg/path, raw=False) - include from package resources
     - include_file(path, raw=False) - include from filesystem
     """
     env = Environment()
     env.globals["workspace_dir"] = str(WORKSPACE)
     env.globals["run_command"] = run_command_jinja
-    env.globals["describe_table"] = describe_table_jinja
+    env.globals["describe_relation"] = describe_relation_jinja
 
     def _include(content: str, source: str) -> str:
         """Include content with Jinja2 rendering and source annotation."""
@@ -199,7 +197,7 @@ def render_agent_prompt(template_path: str, helpers: Mapping[str, Callable[..., 
     Supports:
     - {{ include_doc("package/path") }} - include doc with source annotation
     - {{ include_file("/path") }} - include from filesystem
-    - {{ describe_table("table_name") }} - psql \\d+ output
+    - {{ describe_relation("name") }} - psql \\d+ output for tables/views
     - {{ run_command("cmd") }} - shell command output
 
     Args:

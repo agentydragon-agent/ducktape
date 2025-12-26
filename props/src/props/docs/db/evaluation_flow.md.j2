@@ -12,9 +12,8 @@ Source code ─┐
 System prompt┘   (reported_issues)  (grading_decisions)    (aggregate views)
 ```
 
-## snapshots
-
-{{ run_command('psql -c "\\d+ snapshots"') }}
+{{ describe_relation("snapshots") }}
+{{ describe_relation("snapshot_files") }}
 
 ## 1. Critic Run
 
