@@ -640,7 +640,7 @@ Prioritize recall.
                 RedirectOnTextMessageHandler(
                     reminder_message=(
                         "Text messages won't be delivered. Continue optimization work via MCP tools "
-                        "(run_critic, run_grader, upsert_prompt). Report completion or failure via tools."
+                        "(run_critic, run_grader). Report completion or failure via tools."
                     )
                 ),
                 AbortIf(should_abort=_optimizer_should_abort),
