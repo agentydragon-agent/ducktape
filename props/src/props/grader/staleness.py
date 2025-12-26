@@ -18,44 +18,57 @@ from props.db.models import (
     Snapshot as DBSnapshot,
     TruePositive,
 )
-from props.db.session import get_session
+from props.db.session import Session, get_session
 from props.db.snapshots import (
     DBFalsePositiveOccurrence,
     DBKnownFalsePositive,
+    DBLineRange,
     DBTruePositiveIssue,
     DBTruePositiveOccurrence,
 )
-from props.grader.persistence import convert_files_dict_to_db
 from props.ids import SnapshotSlug
 from props.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 
-def resolve_scope_files(snapshot_slug: SnapshotSlug, example_spec: ExampleSpec) -> set[Path]:
+def _convert_orm_files_to_db(files: dict[str, list[dict] | None]) -> dict[str, list[DBLineRange] | None]:
+    """Convert ORM JSONB files dict to DB persistence model format.
+
+    ORM stores files as raw JSONB: {path_str: [{start_line: N, end_line: M}, ...] | null}
+    DB model expects: {path_str: [DBLineRange, ...] | null}
+    """
+    return {
+        path: [DBLineRange.model_validate(lr) for lr in ranges] if ranges else None for path, ranges in files.items()
+    }
+
+
+def resolve_scope_files(
+    snapshot_slug: SnapshotSlug, example_spec: ExampleSpec, session: Session | None = None
+) -> set[Path]:
     """Resolve an ExampleSpec to concrete file set.
 
     Args:
         snapshot_slug: Snapshot identifier (for validation, already in example_spec)
         example_spec: The example specification (discriminated union)
+        session: Optional existing session (avoids nested session issues)
 
     Returns:
         Set of file paths in the scope
     """
+    if session is None:
+        with get_session() as new_session:
+            return resolve_scope_files(snapshot_slug, example_spec, new_session)
+
     if isinstance(example_spec, WholeSnapshotExample):
-        # Load files with issues from database
-        with get_session() as session:
-            snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
-            return snapshot.files_with_issues()
-    elif isinstance(example_spec, SingleFileSetExample):
-        # Look up file set to get files
-        with get_session() as session:
-            file_set = (
-                session.query(FileSet)
-                .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
-                .one()
-            )
-            return {Path(m.file_path) for m in file_set.members}
-    else:
-        raise ValueError(f"Unknown scope type: {type(example_spec)}")
+        snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
+        return snapshot.files_with_issues()
+    if isinstance(example_spec, SingleFileSetExample):
+        file_set = (
+            session.query(FileSet)
+            .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
+            .one()
+        )
+        return {Path(m.file_path) for m in file_set.members}
+    raise ValueError(f"Unknown scope type: {type(example_spec)}")
 
 
 def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
@@ -66,7 +79,7 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
         occurrences=[
             DBTruePositiveOccurrence(
                 occurrence_id=occ.occurrence_id,
-                files=convert_files_dict_to_db(occ.files),
+                files=_convert_orm_files_to_db(occ.files),
                 note=occ.note,
                 expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from],
             )
@@ -83,7 +96,7 @@ def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
         occurrences=[
             DBFalsePositiveOccurrence(
                 occurrence_id=occ.occurrence_id,
-                files=convert_files_dict_to_db(occ.files),
+                files=_convert_orm_files_to_db(occ.files),
                 note=occ.note,
                 relevant_files=[str(p) for p in occ.relevant_files],
             )
@@ -124,22 +137,33 @@ def filter_relevant_db_fps(
     return [fp for fp in fps if is_relevant(fp)]
 
 
-def load_current_canonical_issues_from_db(snapshot_slug: SnapshotSlug, targeted_files: set[Path]) -> dict[str, Any]:
-    """Load current canonical TPs+FPs from database, filtered to targeted_files."""
-    with get_session() as session:
-        snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
+def load_current_canonical_issues_from_db(
+    snapshot_slug: SnapshotSlug, targeted_files: set[Path], session: Session | None = None
+) -> dict[str, Any]:
+    """Load current canonical TPs+FPs from database, filtered to targeted_files.
 
-        # Convert ORM models to DB persistence models first
-        all_db_tps = [_orm_tp_to_db(tp) for tp in snapshot.true_positives]
-        all_db_fps = [_orm_fp_to_db(fp) for fp in snapshot.false_positives]
+    Args:
+        snapshot_slug: Snapshot to load issues from
+        targeted_files: Files to filter issues by
+        session: Optional existing session (avoids nested session issues)
+    """
+    if session is None:
+        with get_session() as new_session:
+            return load_current_canonical_issues_from_db(snapshot_slug, targeted_files, new_session)
 
-        # Filter DB persistence models (single implementation shared with staleness check)
-        catchable_db_tps = filter_catchable_db_tps(all_db_tps, targeted_files)
-        relevant_db_fps = filter_relevant_db_fps(all_db_fps, targeted_files)
+    snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
 
-        # Create snapshot from filtered DB persistence models
-        current_snapshot = CanonicalIssuesSnapshot(true_positives=catchable_db_tps, false_positives=relevant_db_fps)
-        return current_snapshot.model_dump(mode="json")
+    # Convert ORM models to DB persistence models first
+    all_db_tps = [_orm_tp_to_db(tp) for tp in snapshot.true_positives]
+    all_db_fps = [_orm_fp_to_db(fp) for fp in snapshot.false_positives]
+
+    # Filter DB persistence models (single implementation shared with staleness check)
+    catchable_db_tps = filter_catchable_db_tps(all_db_tps, targeted_files)
+    relevant_db_fps = filter_relevant_db_fps(all_db_fps, targeted_files)
+
+    # Create snapshot from filtered DB persistence models
+    current_snapshot = CanonicalIssuesSnapshot(true_positives=catchable_db_tps, false_positives=relevant_db_fps)
+    return current_snapshot.model_dump(mode="json")
 
 
 def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]]]:
@@ -191,8 +215,8 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             # Parse stored snapshot from dict to model
             stored_snapshot_model = CanonicalIssuesSnapshot.model_validate(stored_snapshot)
 
-            # Resolve scope specification to file set
-            targeted_files = resolve_scope_files(snapshot_slug, example_spec)
+            # Resolve scope specification to file set (pass session to avoid nested session issues)
+            targeted_files = resolve_scope_files(snapshot_slug, example_spec, session)
 
             # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
             catchable_stored_tps = filter_catchable_db_tps(stored_snapshot_model.true_positives, targeted_files)
@@ -204,11 +228,11 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 
-            # Load current canonical issues (cached by example spec)
+            # Load current canonical issues (cached by example spec, pass session)
             # ExampleSpec is frozen/hashable so we can use it directly as cache key
             if example_spec not in current_canonical_cache:
                 current_canonical_cache[example_spec] = load_current_canonical_issues_from_db(
-                    snapshot_slug, targeted_files
+                    snapshot_slug, targeted_files, session
                 )
             current_canonical = current_canonical_cache[example_spec]
 

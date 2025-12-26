@@ -4,7 +4,7 @@ Tests functions for whole-repo mode definition statistics (uses SECURITY DEFINER
 Consolidated from: test_query_train_vs_valid_performance_whole_repo.
 """
 
-from critic_dev_util.examples.definition_stats_whole_repo import show_train_vs_valid
+from props.examples.definition_stats_whole_repo import show_train_vs_valid
 
 
 def test_show_train_vs_valid_with_data(

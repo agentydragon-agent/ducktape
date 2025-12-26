@@ -20,7 +20,7 @@ This directory contains agent definition packages synced to the database and dep
 
 ## Definition Authoring
 
-@../../../../agent_runtimes/critic_dev_util/src/critic_dev_util/docs/writing_agent_definitions.md
+@../docs/writing_agent_definitions.md.j2
 
 ## Agent Types
 

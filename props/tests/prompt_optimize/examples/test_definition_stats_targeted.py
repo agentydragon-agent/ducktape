@@ -7,7 +7,7 @@ Consolidated from: test_query_train_vs_valid_performance_targeted, test_query_to
 import pytest
 from rich.console import Console
 
-from critic_dev_util.examples.definition_stats_targeted import (
+from props.examples.definition_stats_targeted import (
     show_comprehensive_stats,
     show_top_definitions,
     show_train_vs_valid,

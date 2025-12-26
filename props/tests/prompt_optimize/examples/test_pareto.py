@@ -3,7 +3,7 @@
 Tests functions for pareto frontier analysis.
 """
 
-from critic_dev_util.examples.pareto import (
+from props.examples.pareto import (
     show_definitions_by_wins,
     show_difficult_examples,
     show_winning_definitions_orm,

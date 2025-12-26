@@ -5,7 +5,6 @@ works when the helper functions are wired up.
 """
 
 import asyncio
-from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -14,7 +13,8 @@ import pytest
 from props.db.session import get_session
 from props.db.examples import Example
 from props.db.models import Snapshot
-from critic_dev_util.examples import evaluation_pipeline as ep
+from props.examples import evaluation_pipeline as ep
+from props.models.examples import ExampleSpec
 
 
 def test_example_data_accessible(synced_test_db):
@@ -36,13 +36,12 @@ def test_example_data_accessible(synced_test_db):
             assert example.snapshot_slug
             assert example.example_kind  # whole_snapshot or file_set
             # files_hash may be None for whole_snapshot examples
-            # scope is a computed property from example_kind + files
             assert example.example_kind in ("whole_snapshot", "file_set")
 
 
 @pytest.fixture
-def train_example_tuples(synced_test_db) -> list[tuple[str, str]]:
-    """Return (snapshot_slug, scope_hash) tuples for training examples."""
+def train_example_specs(synced_test_db) -> list[ExampleSpec]:
+    """Return ExampleSpec objects for training examples."""
     with get_session() as session:
         examples = (
             session.query(Example)
@@ -51,16 +50,16 @@ def train_example_tuples(synced_test_db) -> list[tuple[str, str]]:
             .limit(3)
             .all()
         )
-        return [(ex.snapshot_slug, ex.files_hash or "") for ex in examples]
+        return [ex.to_example_spec() for ex in examples]
 
 
-async def test_evaluate_example_calls_helpers(monkeypatch, train_example_tuples):
+async def test_evaluate_example_calls_helpers(monkeypatch, train_example_specs):
     """Test that evaluate_example correctly calls run_critic and run_grader."""
-    snapshot_slug, scope_hash = train_example_tuples[0]
+    example_spec = train_example_specs[0]
     calls: dict[str, list] = {}
 
-    async def fake_run_critic(*, definition_id: str, snapshot_slug: str, scope_hash: str, max_turns: int):
-        calls.setdefault("run_critic", []).append((definition_id, snapshot_slug, scope_hash, max_turns))
+    async def fake_run_critic(*, definition_id: str, example: ExampleSpec, max_turns: int):
+        calls.setdefault("run_critic", []).append((definition_id, example, max_turns))
         return SimpleNamespace(critic_run_id=uuid4())
 
     async def fake_run_grader(critic_run_id: str, max_turns: int):
@@ -70,30 +69,29 @@ async def test_evaluate_example_calls_helpers(monkeypatch, train_example_tuples)
     monkeypatch.setattr(ep, "run_critic", fake_run_critic)
     monkeypatch.setattr(ep, "run_grader", fake_run_grader)
 
-    example_id, critic_id, grader_id = await ep.evaluate_example(snapshot_slug, scope_hash, "def-123")
+    example_id, critic_id, grader_id = await ep.evaluate_example(example_spec, "def-123")
 
-    assert example_id == f"{snapshot_slug}:{scope_hash}"
+    assert example_id == str(example_spec)
     assert isinstance(critic_id, UUID)
     assert isinstance(grader_id, UUID)
     assert calls["run_critic"][0][0] == "def-123"
-    assert calls["run_critic"][0][1] == snapshot_slug
-    assert calls["run_critic"][0][2] == scope_hash
+    assert calls["run_critic"][0][1] == example_spec
     assert calls["run_grader"][0][0] == str(critic_id)
 
 
-async def test_main_runs_with_fakes(monkeypatch, capsys, train_example_tuples, tmp_path):
+async def test_main_runs_with_fakes(monkeypatch, capsys, train_example_specs, tmp_path):
     """Test that main() orchestrates definition creation and evaluation."""
     created_defs: list[str] = []
-    critic_calls: list[tuple[str, str, str]] = []
+    critic_calls: list[tuple[str, ExampleSpec]] = []
     grader_calls: list[str] = []
 
-    def fake_create_definition(definition_dir: Path, agent_type, agent_run_id: UUID) -> str:
+    async def fake_create_critic_definition(definition_dir: str):
         def_id = f"def-{uuid4().hex[:8]}"
         created_defs.append(def_id)
-        return def_id
+        return SimpleNamespace(definition_id=def_id)
 
-    async def fake_run_critic(*, definition_id: str, snapshot_slug: str, scope_hash: str, max_turns: int):
-        critic_calls.append((definition_id, snapshot_slug, scope_hash))
+    async def fake_run_critic(*, definition_id: str, example: ExampleSpec, max_turns: int):
+        critic_calls.append((definition_id, example))
         return SimpleNamespace(critic_run_id=uuid4())
 
     async def fake_run_grader(critic_run_id: str, max_turns: int):
@@ -101,26 +99,27 @@ async def test_main_runs_with_fakes(monkeypatch, capsys, train_example_tuples, t
         return SimpleNamespace(grader_run_id=uuid4())
 
     # Patch helpers
-    monkeypatch.setattr(ep, "create_definition", fake_create_definition)
+    monkeypatch.setattr(ep, "create_critic_definition", fake_create_critic_definition)
     monkeypatch.setattr(ep, "run_critic", fake_run_critic)
     monkeypatch.setattr(ep, "run_grader", fake_run_grader)
 
     # Mini-version of main that uses real example specs from the test DB but fakes the heavy helpers
     async def fake_main():
         print("Creating critic definition...")
-        definition_id = fake_create_definition(tmp_path, None, uuid4())
+        definition_output = await fake_create_critic_definition(str(tmp_path))
+        definition_id = definition_output.definition_id
         print(f"Created definition: {definition_id}")
 
-        specs = train_example_tuples
+        specs = train_example_specs
         print(f"\nFound {len(specs)} training examples")
 
-        tasks = [ep.evaluate_example(snapshot_slug, scope_hash, definition_id) for snapshot_slug, scope_hash in specs]
+        tasks = [ep.evaluate_example(example_spec, definition_id) for example_spec in specs]
         await asyncio.gather(*tasks)
 
     await fake_main()
 
     out = capsys.readouterr().out
-    assert created_defs, "expected create_definition to be called"
-    assert len(critic_calls) == len(train_example_tuples)
-    assert len(grader_calls) == len(train_example_tuples)
+    assert created_defs, "expected create_critic_definition to be called"
+    assert len(critic_calls) == len(train_example_specs)
+    assert len(grader_calls) == len(train_example_specs)
     assert "Created definition:" in out

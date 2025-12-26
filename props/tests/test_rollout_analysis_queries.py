@@ -1,6 +1,6 @@
 """Tests for rollout analysis query builders.
 
-Tests the query builders from critic_dev_util.examples.rollout_analysis.
+Tests the query builders from props.examples.rollout_analysis.
 """
 
 from __future__ import annotations
@@ -11,13 +11,13 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.orm import Session
 
-from critic_dev_util.examples.rollout_analysis import (
+from props.db.config import DatabaseConfig
+from props.db.session import get_session
+from props.examples.rollout_analysis import (
     failed_tools_by_agent_run,
     tool_sequence_by_agent_run,
     tools_used_by_agent_run,
 )
-from props.db.config import DatabaseConfig
-from props.db.session import get_session
 
 
 @pytest.fixture

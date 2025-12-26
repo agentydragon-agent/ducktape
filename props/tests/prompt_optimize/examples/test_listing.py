@@ -5,7 +5,7 @@ Consolidated from: test_query_train_examples, test_query_valid_examples,
 test_query_full_snapshot_train_examples, test_query_dataset_scale.
 """
 
-from critic_dev_util.examples.listing import (
+from props.examples.listing import (
     list_full_snapshot_train_examples,
     list_train_examples,
     list_valid_snapshots,
