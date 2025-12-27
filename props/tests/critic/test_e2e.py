@@ -9,19 +9,14 @@ Tests the critic agent end-to-end using:
 Covers:
 - Zero issues submission (clean code)
 - Issue submission workflow
-- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Infinite loop prevention (regression test)
-
-All tests verify that bootstrap commands (including ./init) exit with code 0
-before proceeding with the test scenario.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from adgn.testing.bootstrap import DockerExecCallWithBootstrapValidation
-from agent_core.testing import AssertDockerExecThenCall, Step
+from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 from props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props.db.models import AgentRun, AgentRunStatus, Event
 from props.db.session import get_session
@@ -31,14 +26,8 @@ def _make_critic_steps_zero_issues_minimal() -> list[Step]:
     """Create minimal step sequence for critic that finds zero issues.
 
     Uses critique CLI to submit directly (fastest path).
-    First step validates bootstrap succeeded.
     """
-    return [
-        # Submit via critique CLI (no issues to add) - also validates bootstrap
-        DockerExecCallWithBootstrapValidation(
-            cmd=["critique", "submit", "0", "Reviewed code, no issues found"], timeout_ms=15000
-        )
-    ]
+    return [DockerExecCall(cmd=["critique", "submit", "0", "Reviewed code, no issues found"], timeout_ms=15000)]
 
 
 @pytest.mark.requires_docker
@@ -103,12 +92,10 @@ def _make_critic_steps_with_issues() -> list[Step]:
 
     Uses critique CLI which runs INSIDE THE CONTAINER where it has access
     to the RLS-scoped credentials set up by the agent environment.
-    First step validates bootstrap succeeded.
     """
     return [
         # 1. Insert issue using critique CLI (agent_run_id auto-detected from env)
-        # Also validates bootstrap on first step
-        DockerExecCallWithBootstrapValidation(
+        DockerExecCall(
             cmd=["critique", "insert-issue", "dead-import", "Unused import detected in subtract.py"], timeout_ms=15000
         ),
         # 2. Insert occurrence with file location
@@ -172,10 +159,7 @@ def _make_critic_steps_zero_issues() -> list[Step]:
     Uses the AgentHandle-based infrastructure which loads system prompt
     from AGENT.md in the definition.
     """
-    return [
-        # Submit via critique CLI (no issues to add) - validates bootstrap worked
-        DockerExecCallWithBootstrapValidation(cmd=["critique", "submit", "0", "No issues found"], timeout_ms=15000)
-    ]
+    return [DockerExecCall(cmd=["critique", "submit", "0", "No issues found"], timeout_ms=15000)]
 
 
 @pytest.mark.requires_docker

@@ -3,25 +3,86 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import logging
+import os
 from pathlib import Path
+import sys
 import traceback
 from typing import TYPE_CHECKING
 
+import aiodocker
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
-from props_backend.routes import stats
+from props.agent_registry import AgentRegistry
+from props.agent_workspace import WorkspaceManager
+from props.cli.resources import get_database_config
+from props_backend.routes import runs, stats
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
+
+# --- Logging Configuration ---
+
+
+def configure_logging() -> None:
+    """Configure structured logging for the backend."""
+    log_level = os.environ.get("PROPS_LOG_LEVEL", "INFO").upper()
+    log_file = os.environ.get("PROPS_LOG_FILE")
+
+    # Create formatter
+    formatter = logging.Formatter(fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+    # Root logger
+    root = logging.getLogger()
+    root.setLevel(log_level)
+
+    # Console handler (always)
+    console = logging.StreamHandler(sys.stderr)
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    # File handler (if configured)
+    if log_file:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(formatter)
+        root.addHandler(file_handler)
+
+    # Quiet noisy loggers
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("aiodocker").setLevel(logging.WARNING)
+
+
+# Configure logging on module import
+configure_logging()
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
+    logger.info("Starting props backend...")
+
+    # Create resources
+    docker_client = aiodocker.Docker()
+    db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
+
+    # Registry owns resources and orchestrates agent runs
+    app.state.registry = AgentRegistry(
+        docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager
+    )
+
+    logger.info("Props backend ready")
     yield
+
+    # Cleanup
+    logger.info("Shutting down props backend...")
+    await app.state.registry.close()
+    logger.info("Props backend stopped")
 
 
 def create_app(*, static_dir: Path | None = None) -> FastAPI:
@@ -49,6 +110,7 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
 
     # API routes
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
+    app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
 
     # Health check
     @app.get("/health")

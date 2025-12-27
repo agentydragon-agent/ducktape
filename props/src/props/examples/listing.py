@@ -137,12 +137,13 @@ def list_full_snapshot_train_examples() -> None:
 
         if full_snapshot_examples:
             first_example = full_snapshot_examples[0]
-            console.print("\n[bold]Usage with run_critic:[/bold]")
+            console.print("\n[bold]Usage with AgentRegistry.run_critic:[/bold]")
             console.print(f"""
-from helpers import run_critic
+from props.agent_registry import AgentRegistry
 from props.models.examples import WholeSnapshotExample
 
-output = await run_critic(
+registry = AgentRegistry(...)
+output = await registry.run_critic(
     definition_id="critic",  # or your custom definition ID
     example=WholeSnapshotExample(snapshot_slug="{first_example.snapshot_slug}"),
     max_turns=30

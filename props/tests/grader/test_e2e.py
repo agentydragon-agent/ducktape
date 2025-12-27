@@ -4,34 +4,24 @@ Tests the new HTTP transport for grader_submit tools using real Docker container
 real PostgreSQL database, and mocked OpenAI responses.
 
 Comprehensive tests verify:
-- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Reading critic runs (reported_issues from the critique being graded)
 - Reading ground truth (true_positives, false_positives)
 - Writing grading decisions
 - Submitting via MCP
-
-All tests verify that bootstrap commands (including ./init) exit with code 0
-before proceeding with the test scenario.
 """
 
 from __future__ import annotations
 
 import pytest
 
-from adgn.testing.bootstrap import DockerExecCallWithBootstrapValidation
-from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, Step
+from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 from props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from props.db.session import get_session
-from props.grader.grader import grade_critic_run_by_id
 
 
 def _make_critic_steps_zero_issues() -> list[Step]:
     """Create minimal step sequence for critic that finds zero issues."""
-    return [
-        DockerExecCallWithBootstrapValidation(
-            cmd=["critique", "submit", "0", "Reviewed code, no issues found"], timeout_ms=15000
-        )
-    ]
+    return [DockerExecCall(cmd=["critique", "submit", "0", "Reviewed code, no issues found"], timeout_ms=15000)]
 
 
 @pytest.fixture
@@ -48,12 +38,10 @@ def _make_grader_steps() -> list[Step]:
 
     Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
-    First step validates bootstrap succeeded.
     """
     return [
         # For zero-issue critique: no input issues to grade, just submit via CLI
-        # Also validates bootstrap on first step
-        DockerExecCallWithBootstrapValidation(
+        DockerExecCall(
             cmd=["grade", "submit", "Graded zero-issue critique against ground truth. No issues to match."],
             timeout_ms=15000,
         )
@@ -62,9 +50,7 @@ def _make_grader_steps() -> list[Step]:
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_grader_http_mode_zero_issues(
-    zero_issue_critic_run, synced_test_db, make_step_runner, test_snapshot, async_docker_client, test_workspace_manager
-):
+async def test_grader_http_mode_zero_issues(zero_issue_critic_run, make_step_runner, test_snapshot, test_registry):
     """Test grader successfully grades zero-issue critique using HTTP MCP mode.
 
     This tests the MCP-over-HTTP transport with:
@@ -77,24 +63,15 @@ async def test_grader_http_mode_zero_issues(
     runner = make_step_runner(steps=_make_grader_steps())
     grader_client = CapturingOpenAIModel(runner)
 
-    with get_session() as session:
-        try:
-            grader_run_id = await grade_critic_run_by_id(
-                session=session,
-                critic_run_id=zero_issue_critic_run,
-                client=grader_client,
-                docker_client=async_docker_client,
-                db_config=synced_test_db,
-                workspace_manager=test_workspace_manager,
-                parent_agent_run_id=None,
-                verbose=False,
-                max_turns=100,
-            )
+    try:
+        grader_run_id = await test_registry.run_grader(
+            critic_run_id=zero_issue_critic_run, client=grader_client, max_turns=100
+        )
 
-            assert grader_run_id is not None
+        assert grader_run_id is not None
 
-            # Verify database records
-            session.commit()
+        # Verify database records
+        with get_session() as session:
             grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
             # For graders, snapshot_slug is derived from the graded critic's type_config
@@ -106,27 +83,25 @@ async def test_grader_http_mode_zero_issues(
 
             # Verify the grader completed successfully
             assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
-        except (RuntimeError, AssertionError):
-            # Print captured requests for debugging
-            print(f"\n=== Captured {len(grader_client.captured)} requests ===")
-            for i, req in enumerate(grader_client.captured):
-                print(f"\n--- Request {i + 1} ---")
-                if isinstance(req.input, list):
-                    for msg in req.input:
-                        msg_dict = msg.model_dump()
-                        role = msg_dict.get("role", str(type(msg).__name__))
-                        content_preview = str(msg_dict)[:200]
-                        print(f"  {role}: {content_preview}")
-                elif isinstance(req.input, str):
-                    print(f"  (string input): {req.input[:200]}")
-            raise
+    except (RuntimeError, AssertionError):
+        # Print captured requests for debugging
+        print(f"\n=== Captured {len(grader_client.captured)} requests ===")
+        for i, req in enumerate(grader_client.captured):
+            print(f"\n--- Request {i + 1} ---")
+            if isinstance(req.input, list):
+                for msg in req.input:
+                    msg_dict = msg.model_dump()
+                    role = msg_dict.get("role", str(type(msg).__name__))
+                    content_preview = str(msg_dict)[:200]
+                    print(f"  {role}: {content_preview}")
+            elif isinstance(req.input, str):
+                print(f"  (string input): {req.input[:200]}")
+        raise
 
 
 @pytest.mark.requires_docker
 @pytest.mark.requires_postgres
-async def test_grader_http_mode_sql_workflow(
-    zero_issue_critic_run, synced_test_db, make_step_runner, async_docker_client, test_workspace_manager
-):
+async def test_grader_http_mode_sql_workflow(zero_issue_critic_run, make_step_runner, test_registry):
     """Test grader HTTP mode with SQL workflow.
 
     Verifies that the agent can execute Python code that:
@@ -136,22 +111,11 @@ async def test_grader_http_mode_sql_workflow(
     # Create step runner with bootstrap validation - implements OpenAIModelProto directly
     runner = make_step_runner(steps=_make_grader_steps())
 
+    grader_run_id = await test_registry.run_grader(critic_run_id=zero_issue_critic_run, client=runner, max_turns=100)
+
+    assert grader_run_id is not None
+
     with get_session() as session:
-        grader_run_id = await grade_critic_run_by_id(
-            session=session,
-            critic_run_id=zero_issue_critic_run,
-            client=runner,
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            workspace_manager=test_workspace_manager,
-            parent_agent_run_id=None,
-            verbose=False,
-            max_turns=100,
-        )
-
-        assert grader_run_id is not None
-
-        session.commit()
         grader_run = session.get(AgentRun, grader_run_id)
         assert grader_run is not None
         assert grader_run.status == AgentRunStatus.COMPLETED
@@ -169,10 +133,8 @@ def _make_critic_steps_with_issue() -> list[Step]:
     to the RLS-scoped credentials set up by the agent environment.
     """
     return [
-        # 1. Add issue using bin CLI - validates bootstrap on first step
-        DockerExecCallWithBootstrapValidation(
-            cmd=["critique", "insert-issue", "test-issue-01", "Test issue found in code"], timeout_ms=15000
-        ),
+        # 1. Add issue using bin CLI
+        DockerExecCall(cmd=["critique", "insert-issue", "test-issue-01", "Test issue found in code"], timeout_ms=15000),
         # 2. Add occurrence with file location
         AssertDockerExecThenCall(
             expected_output="",
@@ -220,7 +182,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str, fp_id: str) -> list[Ste
     return [
         # Step 1: Read reported_issues from the critique being graded
         # This demonstrates grader can access critic run data
-        DockerExecCallWithBootstrapValidation(
+        DockerExecCall(
             cmd=[
                 "psql",
                 "-c",
@@ -265,13 +227,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str, fp_id: str) -> list[Ste
 @pytest.mark.requires_postgres
 @pytest.mark.timeout(60)  # Critic fixture + grader steps (~48s observed)
 async def test_grader_comprehensive_data_access(
-    critic_run_with_issue,
-    synced_test_db,
-    make_step_runner,
-    test_snapshot,
-    async_docker_client,
-    test_workspace_manager,
-    fp_id,
+    critic_run_with_issue, make_step_runner, test_snapshot, test_registry, fp_id
 ):
     """Test grader can read critic runs, ground truth, write decisions, and submit.
 
@@ -291,24 +247,15 @@ async def test_grader_comprehensive_data_access(
     runner = make_step_runner(steps=_make_grader_steps_comprehensive(str(critic_run_with_issue), fp_id))
     grader_client = CapturingOpenAIModel(runner)
 
-    with get_session() as session:
-        try:
-            grader_run_id = await grade_critic_run_by_id(
-                session=session,
-                critic_run_id=critic_run_with_issue,
-                client=grader_client,
-                docker_client=async_docker_client,
-                db_config=synced_test_db,
-                workspace_manager=test_workspace_manager,
-                parent_agent_run_id=None,
-                verbose=False,
-                max_turns=100,
-            )
+    try:
+        grader_run_id = await test_registry.run_grader(
+            critic_run_id=critic_run_with_issue, client=grader_client, max_turns=100
+        )
 
-            assert grader_run_id is not None
+        assert grader_run_id is not None
 
-            # Verify database records
-            session.commit()
+        # Verify database records
+        with get_session() as session:
             grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
             # For graders, snapshot_slug is derived from the graded critic's type_config
@@ -329,17 +276,17 @@ async def test_grader_comprehensive_data_access(
             assert decision.target_tp_id is None  # no-match decision has NULL target_tp_id
             assert decision.target_fp_id is None  # no-match decision has NULL target_fp_id
 
-        except (RuntimeError, AssertionError):
-            # Print captured requests for debugging
-            print(f"\n=== Captured {len(grader_client.captured)} requests ===")
-            for i, req in enumerate(grader_client.captured):
-                print(f"\n--- Request {i + 1} ---")
-                if isinstance(req.input, list):
-                    for msg in req.input:
-                        msg_dict = msg.model_dump()
-                        role = msg_dict.get("role", str(type(msg).__name__))
-                        content_preview = str(msg_dict)[:500]
-                        print(f"  {role}: {content_preview}")
-                elif isinstance(req.input, str):
-                    print(f"  (string input): {req.input[:200]}")
-            raise
+    except (RuntimeError, AssertionError):
+        # Print captured requests for debugging
+        print(f"\n=== Captured {len(grader_client.captured)} requests ===")
+        for i, req in enumerate(grader_client.captured):
+            print(f"\n--- Request {i + 1} ---")
+            if isinstance(req.input, list):
+                for msg in req.input:
+                    msg_dict = msg.model_dump()
+                    role = msg_dict.get("role", str(type(msg).__name__))
+                    content_preview = str(msg_dict)[:500]
+                    print(f"  {role}: {content_preview}")
+            elif isinstance(req.input, str):
+                print(f"  (string input): {req.input[:200]}")
+        raise

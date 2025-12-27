@@ -106,6 +106,7 @@ markers = [
     "requires_docker: tests that require Docker to run",
     "requires_postgres: tests that require PostgreSQL database to run",
     "requires_production_specimens: tests that sync production specimens",
+    "timeout: pytest-timeout marker for test duration limits",
 ]
 env = [
     "GIT_CONFIG_NOSYSTEM=1",

@@ -39,6 +39,10 @@ WHERE ar.type_config->>'agent_type' = 'grader'
 
 {{ include_doc("props/docs/db/clustering_schema.md.j2") }}
 
+## Grading Decisions (for finding unknowns)
+
+{{ describe_relation("grading_decisions") }}
+
 ## Clustering Guidelines
 
 **Cluster Names:** Kebab-case, specific, pattern-focused

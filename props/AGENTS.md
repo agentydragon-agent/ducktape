@@ -80,6 +80,65 @@ Examples
 - Properties critic image lives under `docker/llm/properties-critic/Dockerfile`.
 - Build locally: `docker build -f docker/llm/properties-critic/Dockerfile -t adgn-llm/properties-critic:latest .`
 
+## Development Server Management (devenv + process-compose)
+
+The backend, frontend, and PostgreSQL are managed by devenv via process-compose. **Never start these services manually.**
+
+### Starting All Services
+```bash
+cd props
+devenv up  # Starts postgres, backend, frontend
+```
+
+### Process Management Commands
+```bash
+# List processes and their status
+process-compose process list
+
+# Get detailed status of a process
+process-compose process get backend
+
+# View logs
+process-compose process logs backend
+
+# Restart a process (picks up code changes)
+process-compose process restart backend
+
+# Stop/start a process
+process-compose process stop backend
+process-compose process start backend
+```
+
+### Service URLs
+- Backend: http://localhost:8000
+- Frontend: http://localhost:5173
+- PostgreSQL: localhost:5433
+
+### What to NEVER Do
+- **NEVER** run `uvicorn` manually
+- **NEVER** run `pnpm dev` manually for the frontend
+- **NEVER** start the postgres container manually
+- **NEVER** kill service PIDs without checking if they're process-compose managed
+
+Manual service starts will:
+1. Block process-compose from starting (port conflict: "Address already in use")
+2. Watch wrong directories (code changes won't reload)
+3. Break the devenv-managed workflow
+
+### Regenerating OpenAPI Schema
+After backend API changes:
+```bash
+cd ../props_frontend
+pnpm generate  # Requires backend running
+```
+
+### Backend Watch Directories
+The devenv backend watches:
+- `../props_backend/src` - Backend route handlers
+- `src` - Props package
+
+Changes trigger automatic reload.
+
 ## Database Migrations (Alembic)
 
 **All schema changes must go through Alembic migrations.** Do not edit the database schema directly.
@@ -124,13 +183,13 @@ props db recreate  # Drops schema, runs migrations, creates RLS/views
   - **TRAIN split**: Full access
     - Examples: All examples visible (per-file and whole-snapshot)
     - Ground truth: `true_positives`, `false_positives` tables readable
-    - Individual runs: `critic_runs`, `critiques`, `grader_runs` readable with full details
+    - Individual runs: `agent_runs` (critic/grader via `type_config`), `reported_issues`, `grading_decisions` readable
     - Aggregate views: `recall_by_definition_split_kind`, `recall_by_example` for TRAIN
     - Agent can debug, inspect per-occurrence credits, iterate on specific failures
   - **VALID/TEST splits**: Restricted to prevent overfitting
     - Examples: Only whole-snapshot examples visible (per-file examples hidden)
     - Ground truth: `true_positives`, `false_positives` tables return 0 rows (RLS filtered)
-    - Individual runs: `critic_runs`, `critiques`, `grader_runs` hidden (RLS filtered)
+    - Individual runs: `agent_runs`, `reported_issues`, `grading_decisions` hidden (RLS filtered)
     - Aggregate views: `recall_by_definition_split_kind`, `recall_by_example` show VALID/TEST metrics
     - Agent can run evaluations on whole snapshots, but only sees scalar recall metrics
     - Cannot inspect which issues were missed or iterate on specific VALID failures
@@ -190,7 +249,7 @@ with engine.connect() as conn:
 - Database connection parameters come from environment variables set by devenv:
   - Standard `PG*` vars for admin access (PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE)
   - Custom `PROPS_DB_CONTAINER_NAME` for container routing
-- Always run from within the adgn devenv shell (`direnv allow && cd adgn` or `direnv exec adgn <command>`)
+- Always run from within the props devenv shell (`direnv allow` or `direnv exec . <command>`)
 - Tables are in the default `public` schema - direct queries work without qualification
 - Temporary users with scoped access are created automatically by specific agents (e.g., prompt optimizer)
 
@@ -199,8 +258,8 @@ with engine.connect() as conn:
 # Connect with psql (uses PG* environment variables set by devenv)
 direnv exec . psql
 
-# Or from outside adgn/:
-direnv exec adgn psql
+# Or from outside props/ (use path to props directory):
+cd /path/to/ducktape/props && direnv exec . psql
 ```
 
 ## Architecture: MCP I/O Models vs DB Persistence Models

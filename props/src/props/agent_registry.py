@@ -1,182 +1,596 @@
-"""Agent registry - manages agent lifecycle and tracking.
+"""Agent registry - unified orchestration layer for critic and grader runs.
 
-WARNING: This module is currently NOT WIRED UP to any runners. It exists as a
-skeleton for future sub-agent spawning functionality. See TODOs below.
+AgentRegistry is THE entry point for running agents. It owns shared resources
+(Docker client, database config, workspace manager) and manages concurrency
+via an internal semaphore.
 
-AgentRegistry provides centralized management for:
-- Creating new agent runs (with database records)
-- Running agents to completion or interactively
-- Tracking active agents
-- Restoring agents from database after restart
-
-TODO: This module needs significant work before it can be used:
-
-1. TASK TRACKING: Add asyncio.Task tracking for concurrent agent runs.
-   Currently only tracks AgentHandle refs, but can't await/cancel running agents.
-   ```python
-   _active_tasks: dict[UUID, asyncio.Task]  # To await/cancel
-   ```
-
-2. LIFECYCLE INTEGRATION: Integrate with AgentEnvironment context lifecycle.
-   The real lifecycle (compositor, Docker container, temp DB user) is managed by
-   AgentEnvironment, not the registry. Options:
-   - Registry owns AgentEnvironment contexts, or
-   - Registry receives lifecycle notifications from environments
-
-3. PARENT-CHILD TRACKING: Add tree tracking for sub-agent hierarchies.
-   ```python
-   _parent_children: dict[UUID, set[UUID]]  # For cancel_subtree()
-   ```
-
-4. WIRE TO RUNNERS: Integrate with run_critic(), grade_critic_run(), etc.
-   Each runner would need to register/unregister with the registry.
-
-5. BUDGET-BASED CANCELLATION: For prompt optimizer parallel runs, implement
-   cancellation across all running agents when budget exceeded.
-
-See also:
-- docs/design/agent-definitions.md "Future Work" section
-- Sub-agent spawning (FREEFORM type) design
-
-Usage (when implemented):
-    registry = AgentRegistry(workspace_manager=workspace_manager)
-
-    # Create and run interactively (sub-agents)
-    handle = await registry.create_agent(
-        definition_id="freeform",
-        type_config=FreeformTypeConfig(),
-        model_client=model_client,
-        mcp_client=mcp_client,
-        compositor=compositor,
-        parent_agent_run_id=None,
-    )
-    handle.insert_message(UserMessage.text("Hello"))
-    result = await handle.run()
+Usage:
+    registry = AgentRegistry(docker_client, db_config, workspace_manager)
+    async with registry:
+        critic_run_id = await registry.run_critic(
+            definition_id="critic",
+            example=example,
+            client=critic_client,
+        )
+        # Check status from DB
+        with get_session() as session:
+            critic_run = session.get(AgentRun, critic_run_id)
+            if critic_run.status == AgentRunStatus.COMPLETED:
+                grader_run_id = await registry.run_grader(
+                    critic_run_id=critic_run_id,
+                    client=grader_client,
+                )
 """
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
+from dataclasses import dataclass
+from datetime import datetime
 import logging
+from pathlib import Path
+from types import TracebackType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
+import aiodocker
+from fastmcp.client import Client
+
+from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
+from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+from mcp_infra.display import CompactDisplayHandler
+from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto
+from openai_utils.types import ReasoningSummary
 from props.agent_handle import AgentHandle
-from props.agent_types import TypeConfig
+from props.agent_types import CriticTypeConfig, GraderTypeConfig
 from props.agent_workspace import WorkspaceManager
-from props.db.models import AgentRun
+from props.cli.common_options import DEFAULT_MAX_LINES
+from props.critic.critic import CriticAgentEnvironment
+from props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
+from props.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
+from props.db.config import DatabaseConfig
+from props.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from props.db.session import get_session
+from props.display import short_uuid
+from props.grader.exceptions import GraderDidNotSubmitError
+from props.grader.grader import GraderAgentEnvironment, _fp_from_orm, _tp_from_orm
+from props.grader.persistence import fp_to_db, tp_to_db
+from props.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 if TYPE_CHECKING:
-    from fastmcp.client import Client
-
-    from agent_core.handler import BaseHandler
-    from props.docker_env import PropertiesDockerCompositor
+    pass
 
 logger = logging.getLogger(__name__)
 
 
-def _create_agent_run_record(
-    *, agent_run_id: UUID, definition_id: str, model: str, type_config: TypeConfig, parent_agent_run_id: UUID | None
-) -> None:
-    """Create agent_runs record in database."""
-    with get_session() as session:
-        run = AgentRun(
-            agent_run_id=agent_run_id,
-            agent_definition_id=definition_id,
-            parent_agent_run_id=parent_agent_run_id,
-            model=model,
-            type_config=type_config,
-        )
-        session.add(run)
-        session.commit()
-        logger.info(f"Created agent run record: {agent_run_id}")
+@dataclass
+class AgentRunView:
+    """Unified view of an agent run from memory or DB."""
+
+    agent_run_id: UUID
+    definition_id: str
+    model: str
+    status: AgentRunStatus
+    created_at: datetime
+    # Only set for active runs
+    handle: AgentHandle | None = None
+
+
+@dataclass
+class ActiveRun:
+    """Tracks an in-memory active run."""
+
+    handle: AgentHandle
+    task: asyncio.Task | None = None  # None if not yet rolling out
 
 
 class AgentRegistry:
-    """Manages agent lifecycle - creation, running, and tracking.
+    """Unified orchestration layer for critic and grader runs.
 
-    Provides two main workflows:
-
-    1. Run-to-completion: For agents that run autonomously until done
-       (critics, graders). Creates agent, runs it, returns result.
-
-    2. Interactive: For agents that exchange messages with a parent
-       (sub-agents, freeform). Returns handle for manual message/run cycles.
-
-    Tracks active agents and can restore from database after restart.
+    Owns shared resources and provides the single entry point for execution.
+    Manages concurrency via internal semaphore.
     """
 
-    def __init__(self, *, workspace_manager: WorkspaceManager):
+    def __init__(
+        self,
+        docker_client: aiodocker.Docker,
+        db_config: DatabaseConfig,
+        workspace_manager: WorkspaceManager,
+        max_parallel: int = 4,
+    ) -> None:
+        self._docker_client = docker_client
+        self._db_config = db_config
         self._workspace_manager = workspace_manager
-        self._active_handles: dict[UUID, AgentHandle] = {}
+        self._semaphore = asyncio.Semaphore(max_parallel)
+        self._active: dict[UUID, ActiveRun] = {}
+        self._lock = asyncio.Lock()
 
-    async def create_agent(
+    async def close(self) -> None:
+        """Clean up resources."""
+        await self._docker_client.close()
+
+    async def __aenter__(self) -> AgentRegistry:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc_val: BaseException | None, exc_tb: TracebackType | None
+    ) -> None:
+        await self.close()
+
+    # --- Execution Methods ---
+
+    async def run_critic(
         self,
         *,
         definition_id: str,
-        type_config: TypeConfig,
-        model_client: OpenAIModelProto,
-        mcp_client: Client,
-        compositor: PropertiesDockerCompositor,
-        parent_agent_run_id: UUID | None,
-        handlers: list[BaseHandler] | None = None,
-    ) -> AgentHandle:
-        """Create a new agent and return its handle for interactive use.
+        example: ExampleSpec,
+        client: OpenAIModelProto,
+        parent_run_id: UUID | None = None,
+        verbose: bool = False,
+        max_lines: int = DEFAULT_MAX_LINES,
+        max_turns: int = 100,
+        extra_handlers: tuple[BaseHandler, ...] = (),
+    ) -> UUID:
+        """Run a critic agent. Acquires semaphore slot.
 
-        Creates database record and unpacks definition to workspace.
-        Returns handle for insert_message()/run() cycles.
+        Args:
+            definition_id: Agent definition ID to load (e.g., "critic", "critic-v1")
+            example: Example specification (snapshot + scope)
+            client: OpenAI-compatible model client
+            parent_run_id: Optional parent agent run ID (e.g., prompt optimizer)
+            verbose: Whether to enable verbose display
+            max_lines: Max lines per event in verbose display
+            max_turns: Maximum agent turns before timeout
+            extra_handlers: Additional handlers to add
+
+        Returns:
+            Agent run ID (query DB for status)
         """
+        async with self._semaphore:
+            return await self._run_critic_impl(
+                definition_id=definition_id,
+                example=example,
+                client=client,
+                parent_run_id=parent_run_id,
+                verbose=verbose,
+                max_lines=max_lines,
+                max_turns=max_turns,
+                extra_handlers=extra_handlers,
+            )
+
+    async def _run_critic_impl(
+        self,
+        *,
+        definition_id: str,
+        example: ExampleSpec,
+        client: OpenAIModelProto,
+        parent_run_id: UUID | None,
+        verbose: bool,
+        max_lines: int,
+        max_turns: int,
+        extra_handlers: tuple[BaseHandler, ...],
+    ) -> UUID:
+        """Internal critic execution (semaphore already acquired)."""
+        snapshot_slug = example.snapshot_slug
         agent_run_id = uuid4()
 
-        # Create database record
-        _create_agent_run_record(
+        # Phase 1: Write initial AgentRun to DB
+        with get_session() as session:
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+            snapshot_split = snapshot.split
+
+            type_config = CriticTypeConfig(example=example)
+
+            agent_run = AgentRun(
+                agent_run_id=agent_run_id,
+                agent_definition_id=definition_id,
+                parent_agent_run_id=parent_run_id,
+                model=client.model,
+                type_config=type_config,
+                status=AgentRunStatus.IN_PROGRESS,
+            )
+            session.add(agent_run)
+            session.commit()
+            logger.info(f"Created critic run: agent_run_id={agent_run_id}, snapshot_slug={snapshot_slug}")
+
+        # Set up environment
+        comp_ctx = CriticAgentEnvironment(
+            example=example,
+            docker_client=self._docker_client,
             agent_run_id=agent_run_id,
-            definition_id=definition_id,
-            model=model_client.model,
-            type_config=type_config,
-            parent_agent_run_id=parent_agent_run_id,
+            db_config=self._db_config,
+            workspace_manager=self._workspace_manager,
         )
 
-        # Create AgentHandle - reads system prompt from container via MCP, runs init
-        handle = await AgentHandle.create(
-            agent_run_id=agent_run_id,
-            definition_id=definition_id,
-            model_client=model_client,
-            mcp_client=mcp_client,
-            compositor=compositor,
-            handlers=handlers or [],
+        agent_status: AgentRunStatus
+        async with comp_ctx as comp, Client(comp) as mcp_client:
+            # Build handlers
+            def _ready_state() -> bool:
+                with get_session() as session:
+                    run = session.get(AgentRun, agent_run_id)
+                    return run is not None and run.status in (AgentRunStatus.COMPLETED, AgentRunStatus.REPORTED_FAILURE)
+
+            handlers: list[BaseHandler] = []
+            if verbose:
+                display_handler = await CompactDisplayHandler.from_compositor(
+                    comp,
+                    max_lines=max_lines,
+                    prefix=f"[CRITIC {short_uuid(agent_run_id)} {snapshot_split} {snapshot_slug}] ",
+                )
+                handlers.append(display_handler)
+
+            handlers.extend(
+                [
+                    RedirectOnTextMessageHandler(
+                        reminder_message=(
+                            "Text messages won't be delivered. Mark issues via MCP tools, then call submit. "
+                            "If you encounter unrecoverable problems, call report_failure instead."
+                        )
+                    ),
+                    AbortIf(should_abort=_ready_state),
+                    *extra_handlers,
+                    MaxTurnsHandler(max_turns=max_turns),
+                ]
+            )
+
+            # Create AgentHandle
+            handle = await AgentHandle.create(
+                agent_run_id=agent_run_id,
+                definition_id=definition_id,
+                model_client=client,
+                mcp_client=mcp_client,
+                compositor=comp,
+                handlers=handlers,
+            )
+
+            # Track as active
+            async with self._lock:
+                self._active[agent_run_id] = ActiveRun(handle=handle, task=None)
+
+            try:
+                await handle.run()
+            except MaxTurnsExceededError:
+                logger.warning(
+                    f"Critic hit max turns limit ({max_turns}) for {snapshot_slug}, "
+                    f"agent_run_id={short_uuid(agent_run_id)}"
+                )
+                agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
+            except ContextLengthExceededError as e:
+                logger.warning(
+                    f"Critic hit context length limit for {snapshot_slug}, agent_run_id={short_uuid(agent_run_id)}: {e}"
+                )
+                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
+            else:
+                # Check database status
+                with get_session() as session:
+                    run = session.get(AgentRun, agent_run_id)
+                    if run is None:
+                        raise CriticExecutionError("Agent run not found in database")
+
+                    if run.status == AgentRunStatus.REPORTED_FAILURE:
+                        raise CriticExecutionError(f"Critic reported failure: {run.completion_summary or 'No message'}")
+
+                    if run.status != AgentRunStatus.COMPLETED:
+                        raise CriticDidNotSubmitError("Critic did not submit")
+
+                    agent_status = AgentRunStatus.COMPLETED
+            finally:
+                # Remove from active tracking
+                async with self._lock:
+                    self._active.pop(agent_run_id, None)
+
+        # Phase 2: Update run with status
+        with get_session() as session:
+            found_run = session.get(AgentRun, agent_run_id)
+            assert found_run is not None, f"Agent run {agent_run_id} not found in database"
+            found_run.status = agent_status
+            session.commit()
+            logger.info(f"Updated critic run: agent_run_id={agent_run_id}, status={agent_status}")
+
+        return agent_run_id
+
+    async def run_grader(
+        self,
+        *,
+        critic_run_id: UUID,
+        client: OpenAIModelProto,
+        parent_run_id: UUID | None = None,
+        verbose: bool = False,
+        max_lines: int = DEFAULT_MAX_LINES,
+        max_turns: int = 200,
+        extra_handlers: tuple[BaseHandler, ...] = (),
+    ) -> UUID:
+        """Run a grader on a critic run. Acquires semaphore slot.
+
+        Args:
+            critic_run_id: ID of the critic run to grade
+            client: OpenAI-compatible model client
+            parent_run_id: Optional parent agent run ID
+            verbose: Whether to enable verbose display
+            max_lines: Max lines per event in verbose display
+            max_turns: Maximum agent turns before timeout
+            extra_handlers: Additional handlers to add
+
+        Returns:
+            Grader run ID (query DB for status)
+        """
+        async with self._semaphore:
+            return await self._run_grader_impl(
+                critic_run_id=critic_run_id,
+                client=client,
+                parent_run_id=parent_run_id,
+                verbose=verbose,
+                max_lines=max_lines,
+                max_turns=max_turns,
+                extra_handlers=extra_handlers,
+            )
+
+    async def _run_grader_impl(
+        self,
+        *,
+        critic_run_id: UUID,
+        client: OpenAIModelProto,
+        parent_run_id: UUID | None,
+        verbose: bool,
+        max_lines: int,
+        max_turns: int,
+        extra_handlers: tuple[BaseHandler, ...],
+    ) -> UUID:
+        """Internal grader execution (semaphore already acquired)."""
+        grader_run_id = uuid4()
+
+        # Load critic run and prepare canonical issues
+        with get_session() as session:
+            critic_run = session.get(AgentRun, critic_run_id)
+            if critic_run is None:
+                raise ValueError(f"Critic run {critic_run_id} not found in database")
+
+            if not isinstance(critic_run.type_config, CriticTypeConfig):
+                raise ValueError(f"Critic run {critic_run_id} has wrong type_config type")
+
+            example_spec = critic_run.type_config.example
+            snapshot_slug = example_spec.snapshot_slug
+
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one()
+            snapshot_split = snapshot.split
+
+            # Resolve scope to file set for TP/FP filtering
+            if isinstance(example_spec, WholeSnapshotExample):
+                reviewed_files = snapshot.files_with_issues()
+                if not reviewed_files:
+                    raise ValueError(f"Snapshot '{snapshot_slug}' has no files with ground truth issues")
+            else:
+                assert isinstance(example_spec, SingleFileSetExample)
+                file_set = (
+                    session.query(FileSet)
+                    .filter_by(snapshot_slug=example_spec.snapshot_slug, files_hash=example_spec.files_hash)
+                    .one()
+                )
+                reviewed_files = {Path(m.file_path) for m in file_set.members}
+
+            # Filter TPs/FPs
+            original_tp_count = len(snapshot.true_positives)
+            filtered_orm_tps = [
+                tp
+                for tp in snapshot.true_positives
+                if any(
+                    any(alt.issubset(reviewed_files) for alt in occ.expect_caught_from_set) for occ in tp.occurrences
+                )
+            ]
+            filtered_orm_fps = [
+                fp
+                for fp in snapshot.false_positives
+                if any(bool(occ.relevant_files_set & reviewed_files) for occ in fp.occurrences)
+            ]
+
+            if original_tp_count > 0 and len(filtered_orm_tps) == 0:
+                raise ValueError(
+                    f"Cannot grade: 0/{original_tp_count} TPs catchable from reviewed files "
+                    f"{sorted(str(f) for f in reviewed_files)}"
+                )
+
+            canonical_tps = [_tp_from_orm(tp) for tp in filtered_orm_tps]
+            canonical_fps = [_fp_from_orm(fp) for fp in filtered_orm_fps]
+
+            # Build canonical issues snapshot
+            canonical_snapshot = CanonicalIssuesSnapshot(
+                true_positives=[tp_to_db(tp) for tp in canonical_tps],
+                false_positives=[fp_to_db(fp) for fp in canonical_fps],
+            )
+
+            type_config = GraderTypeConfig(
+                graded_agent_run_id=critic_run_id, canonical_issues_snapshot=canonical_snapshot.model_dump()
+            ).model_dump(mode="json")
+
+            # Write initial grader run
+            session.add(
+                AgentRun(
+                    agent_run_id=grader_run_id,
+                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    parent_agent_run_id=parent_run_id,
+                    model=client.model,
+                    type_config=type_config,
+                    status=AgentRunStatus.IN_PROGRESS,
+                )
+            )
+            session.commit()
+            logger.info(f"Created grader run: agent_run_id={grader_run_id}, snapshot_slug={snapshot_slug}")
+
+        # Set up environment
+        comp_ctx = GraderAgentEnvironment(
+            snapshot_slug=snapshot_slug,
+            docker_client=self._docker_client,
+            grader_run_id=grader_run_id,
+            critic_run_id=critic_run_id,
+            db_config=self._db_config,
+            workspace_manager=self._workspace_manager,
         )
 
-        self._active_handles[agent_run_id] = handle
-        return handle
+        agent_status: AgentRunStatus
 
-    def get_active_agent(self, agent_run_id: UUID) -> AgentHandle | None:
-        """Get an active agent handle by ID, or None if not found/active."""
-        return self._active_handles.get(agent_run_id)
+        async with comp_ctx as compositor, Client(compositor) as mcp_client:
+            # Build handlers
+            def _grader_ready_state() -> bool:
+                with get_session() as session:
+                    found_run = session.get(AgentRun, grader_run_id)
+                    return found_run is not None and found_run.status in (
+                        AgentRunStatus.COMPLETED,
+                        AgentRunStatus.MAX_TURNS_EXCEEDED,
+                        AgentRunStatus.REPORTED_FAILURE,
+                    )
 
-    def list_active_agents(self) -> list[UUID]:
-        """List IDs of all active agents."""
-        return list(self._active_handles.keys())
+            grader_handlers: list[BaseHandler] = [AbortIf(should_abort=_grader_ready_state)]
+            if verbose:
+                display_handler = await CompactDisplayHandler.from_compositor(
+                    compositor,
+                    max_lines=max_lines,
+                    prefix=f"[GRADER {short_uuid(grader_run_id)} {snapshot_split} {snapshot_slug}] ",
+                )
+                grader_handlers.append(display_handler)
 
-    def stop_agent(self, agent_run_id: UUID) -> bool:
-        """Remove an agent from active tracking.
+            grader_handlers.extend(
+                [
+                    RedirectOnTextMessageHandler(
+                        reminder_message=(
+                            "Text messages won't be delivered. Complete your grading decisions via MCP tools, "
+                            "then call submit. If you encounter unrecoverable problems, call report_failure instead."
+                        )
+                    ),
+                    *extra_handlers,
+                    MaxTurnsHandler(max_turns=max_turns),
+                ]
+            )
 
-        Returns True if agent was found and removed, False otherwise.
-        Note: This does not terminate any running agent.run() calls.
+            # Create AgentHandle
+            agent_handle = await AgentHandle.create(
+                agent_run_id=grader_run_id,
+                definition_id=GRADER_AGENT_DEFINITION_ID,
+                model_client=client,
+                mcp_client=mcp_client,
+                compositor=compositor,
+                handlers=grader_handlers,
+                dynamic_instructions=compositor.render_agent_dynamic_instructions,
+                parallel_tool_calls=True,
+                reasoning_summary=ReasoningSummary.DETAILED,
+            )
+
+            # Track as active
+            async with self._lock:
+                self._active[grader_run_id] = ActiveRun(handle=agent_handle, task=None)
+
+            try:
+                await agent_handle.run()
+
+                # Validate database status
+                with get_session() as session:
+                    found_run = session.get(AgentRun, grader_run_id)
+                    if found_run is None:
+                        raise GraderDidNotSubmitError(f"Grader run {grader_run_id} not found in database")
+                    if found_run.status != AgentRunStatus.COMPLETED:
+                        raise GraderDidNotSubmitError(
+                            f"Grader run {grader_run_id} completed but status is {found_run.status}"
+                        )
+                    agent_status = AgentRunStatus.COMPLETED
+
+            except MaxTurnsExceededError:
+                logger.warning(
+                    f"Grader hit max turns limit ({max_turns}) for {snapshot_slug}, "
+                    f"agent_run_id={short_uuid(grader_run_id)}"
+                )
+                with get_session() as session:
+                    found_run = session.get(AgentRun, grader_run_id)
+                    if found_run:
+                        found_run.status = AgentRunStatus.MAX_TURNS_EXCEEDED
+                        session.commit()
+                agent_status = AgentRunStatus.MAX_TURNS_EXCEEDED
+            finally:
+                # Remove from active tracking
+                async with self._lock:
+                    self._active.pop(grader_run_id, None)
+
+        logger.info(f"Grader run completed: agent_run_id={grader_run_id}, status={agent_status}")
+        return grader_run_id
+
+    # --- State Tracking ---
+
+    def get(self, run_id: UUID) -> AgentRunView | None:
+        """Get agent run view from memory (if active) or DB."""
+        if run_id in self._active:
+            active = self._active[run_id]
+            return AgentRunView(
+                agent_run_id=run_id,
+                definition_id=active.handle.definition_id,
+                model=active.handle.agent.model_client.model,
+                status=AgentRunStatus.RUNNING,
+                created_at=datetime.now(),
+                handle=active.handle,
+            )
+
+        with get_session() as session:
+            db_run = session.get(AgentRun, run_id)
+            if not db_run:
+                return None
+            return AgentRunView(
+                agent_run_id=db_run.agent_run_id,
+                definition_id=db_run.agent_definition_id,
+                model=db_run.model,
+                status=db_run.status,
+                created_at=db_run.created_at,
+                handle=None,
+            )
+
+    def list_active(self) -> list[AgentRunView]:
+        """List all active (in-memory) runs."""
+        result = []
+        for run_id, active in self._active.items():
+            result.append(
+                AgentRunView(
+                    agent_run_id=run_id,
+                    definition_id=active.handle.definition_id,
+                    model=active.handle.agent.model_client.model,
+                    status=AgentRunStatus.RUNNING,
+                    created_at=datetime.now(),
+                    handle=active.handle,
+                )
+            )
+        return result
+
+    def list_recent(self, limit: int = 50) -> list[AgentRunView]:
+        """List recent runs from database."""
+        with get_session() as session:
+            runs = session.query(AgentRun).order_by(AgentRun.created_at.desc()).limit(limit).all()
+            return [
+                AgentRunView(
+                    agent_run_id=r.agent_run_id,
+                    definition_id=r.agent_definition_id,
+                    model=r.model,
+                    status=r.status,
+                    created_at=r.created_at,
+                    handle=self._active.get(r.agent_run_id, ActiveRun(handle=None)).handle  # type: ignore
+                    if r.agent_run_id in self._active
+                    else None,
+                )
+                for r in runs
+            ]
+
+    async def cancel(self, run_id: UUID) -> bool:
+        """Cancel a running agent.
+
+        Returns True if cancelled, False if not found or not running.
         """
-        if agent_run_id in self._active_handles:
-            del self._active_handles[agent_run_id]
-            logger.info(f"Stopped tracking agent: {agent_run_id}")
-            return True
-        return False
+        if run_id not in self._active:
+            return False
 
-    def stop_all(self) -> int:
-        """Remove all agents from active tracking.
+        active = self._active[run_id]
+        if active.task is None or active.task.done():
+            return False
 
-        Returns number of agents stopped.
-        """
-        count = len(self._active_handles)
-        self._active_handles.clear()
-        logger.info(f"Stopped tracking {count} agents")
-        return count
+        active.task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await active.task
+
+        self._active.pop(run_id, None)
+        logger.info(f"Cancelled agent: {run_id}")
+        return True

@@ -2,9 +2,6 @@
 
 Tests the HTTP transport for clustering agent using real Docker containers,
 real PostgreSQL database, and mocked OpenAI responses.
-
-All tests verify that bootstrap commands (including ./init) exit with code 0
-before proceeding with the test scenario (via DockerExecCallWithBootstrapValidation).
 """
 
 from __future__ import annotations
@@ -20,8 +17,7 @@ from tests.conftest import (
     make_unknown_grading_decisions,
 )
 
-from adgn.testing.bootstrap import DockerExecCallWithBootstrapValidation
-from agent_core.testing import AssertDockerExecThenCall, Step
+from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 from props.clustering.cluster_agent import run_clustering_agent
 from props.db.clustering_models import UnknownAssignment, UnknownCluster
 from props.db.examples import Example
@@ -72,12 +68,11 @@ def _make_clustering_steps(grader_run_id: UUID, unknown_ids: list[str]) -> list[
 
     Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
-    First step validates bootstrap succeeded.
     """
     grader_run_str = str(grader_run_id)
     steps: list[Step] = [
-        # 1. Create cluster via bin CLI - also validates bootstrap
-        DockerExecCallWithBootstrapValidation(
+        # 1. Create cluster via bin CLI
+        DockerExecCall(
             cmd=["clustering", "create-cluster", "dead-imports", "Unused imports that add no value"], timeout_ms=15000
         )
     ]
@@ -161,12 +156,11 @@ def _make_clustering_steps_with_tp_mapping(
 
     Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
     to the RLS-scoped credentials set up by the agent environment.
-    First step validates bootstrap succeeded.
     """
     grader_run_str = str(grader_run_id)
     return [
-        # 1. Map first unknown to existing TP - also validates bootstrap
-        DockerExecCallWithBootstrapValidation(
+        # 1. Map first unknown to existing TP
+        DockerExecCall(
             cmd=[
                 "clustering",
                 "assign-to-tp",

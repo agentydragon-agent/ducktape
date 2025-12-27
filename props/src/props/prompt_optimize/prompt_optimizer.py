@@ -21,11 +21,11 @@ from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.types import ReasoningSummary
 from props.agent_handle import AgentHandle
+from props.agent_registry import AgentRegistry
 from props.agent_setup import AgentEnvironment
 from props.agent_types import PromptOptimizerTypeConfig
 from props.agent_workspace import WorkspaceManager
 from props.cli.common_options import DEFAULT_MAX_LINES
-from props.critic.critic import run_critic as execute_critic_run
 from props.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
 from props.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
 from props.db.config import DatabaseConfig
@@ -34,7 +34,6 @@ from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingDe
 from props.db.session import get_session
 from props.display import short_uuid
 from props.grader.exceptions import GraderDidNotSubmitError
-from props.grader.grader import grade_critic_run_by_id
 from props.ids import SnapshotSlug
 from props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
 from props.prompt_optimize.budget_handler import BudgetEnforcementHandler
@@ -118,6 +117,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         target_metric: TargetMetric,
         budget_limit: float,
         workspace_manager: WorkspaceManager,
+        registry: AgentRegistry,
         verbose: bool = False,
     ):
         self._optimizer_run_id = optimizer_run_id
@@ -128,6 +128,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         self.optimizer_state = optimizer_state  # Exposed for abort checking
         self._target_metric = target_metric
         self._budget_limit = budget_limit
+        self._registry = registry
         self._verbose = verbose
 
         super().__init__(
@@ -159,9 +160,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
         server = PromptEvalServer(
             critic_client=self._critic_client,
             grader_client=self._grader_client,
-            docker_client=self._docker_client,
-            db_config=self._db_config,
-            workspace_manager=self._workspace_manager,
+            registry=self._registry,
             optimizer_state=self.optimizer_state,
             target_metric=self._target_metric,
             optimizer_run_id=self._optimizer_run_id,
@@ -218,9 +217,7 @@ class PromptEvalServer(EnhancedFastMCP):
         *,
         critic_client: OpenAIModelProto,
         grader_client: OpenAIModelProto,
-        docker_client: aiodocker.Docker,
-        db_config: DatabaseConfig,
-        workspace_manager: WorkspaceManager,
+        registry: AgentRegistry,
         optimizer_state: PromptOptimizerState,
         target_metric: TargetMetric,
         optimizer_run_id: UUID,
@@ -243,9 +240,7 @@ class PromptEvalServer(EnhancedFastMCP):
         # Store parameters for use in tools
         self._critic_client = critic_client
         self._grader_client = grader_client
-        self._docker_client = docker_client
-        self._db_config = db_config
-        self._workspace_manager = workspace_manager
+        self._registry = registry
         self._optimizer_state = optimizer_state
         self._target_metric = target_metric
         self._optimizer_run_id = optimizer_run_id
@@ -327,17 +322,13 @@ class PromptEvalServer(EnhancedFastMCP):
                         f"WHERE snapshot_slug='{snapshot_slug}' AND example_kind='whole_snapshot';"
                     )
 
-            # Execute critic run using definition-based run_critic
+            # Execute critic run using registry
             try:
-                (critic_run_id, status) = await execute_critic_run(
+                critic_run_id = await self._registry.run_critic(
                     definition_id=payload.definition_id,
                     example=payload.example,
                     client=self._critic_client,
-                    parent_agent_run_id=self._optimizer_run_id,
-                    docker_client=self._docker_client,
-                    db_config=self._db_config,
-                    workspace_manager=self._workspace_manager,
-                    extra_handlers=(),
+                    parent_run_id=self._optimizer_run_id,
                     verbose=self._verbose,
                     max_turns=payload.max_turns,
                 )
@@ -354,6 +345,11 @@ class PromptEvalServer(EnhancedFastMCP):
                 ) from e
 
             # Check status to provide specific error messages
+            with get_session() as session:
+                critic_run = session.get(AgentRun, critic_run_id)
+                assert critic_run is not None
+                status = critic_run.status
+
             if status == AgentRunStatus.MAX_TURNS_EXCEEDED:
                 raise ToolError(
                     f"Critic agent exceeded maximum turns ({payload.max_turns}).\n\n"
@@ -384,20 +380,16 @@ class PromptEvalServer(EnhancedFastMCP):
             Returns grader_run_id and instructions for querying metrics.
             """
             # Execute GraderRun by critic_run_id (fetches critic run from DB, saves grader run to DB)
-            with get_session() as session:
-                try:
-                    grader_run_id = await grade_critic_run_by_id(
-                        session=session,
-                        critic_run_id=payload.critic_run_id,
-                        client=self._grader_client,
-                        docker_client=self._docker_client,
-                        db_config=self._db_config,
-                        workspace_manager=self._workspace_manager,
-                        parent_agent_run_id=self._optimizer_run_id,
-                        verbose=self._verbose,
-                        max_turns=payload.max_turns,
-                    )
-                except (GraderDidNotSubmitError, MaxTurnsExceededError) as e:
+            try:
+                grader_run_id = await self._registry.run_grader(
+                    critic_run_id=payload.critic_run_id,
+                    client=self._grader_client,
+                    parent_run_id=self._optimizer_run_id,
+                    verbose=self._verbose,
+                    max_turns=payload.max_turns,
+                )
+            except (GraderDidNotSubmitError, MaxTurnsExceededError) as e:
+                with get_session() as session:
                     # Try to find grader_run_id for better error messages
                     # (grader run is created in DB even if execution fails)
                     # Query AgentRun where type_config.graded_agent_run_id matches critic_run_id
@@ -424,9 +416,9 @@ class PromptEvalServer(EnhancedFastMCP):
                         f"{trace_advice}"
                     ) from e
 
-                # Verify grader run succeeded
-                # Note: grader_run_id is always UUID here - the except block always raises
-                assert grader_run_id is not None
+            # Verify grader run succeeded
+            # Note: grader_run_id is always UUID here - the except block always raises
+            with get_session() as session:
                 grader_run = session.get(AgentRun, grader_run_id)
                 if not grader_run:
                     raise ToolError(f"Grader run {grader_run_id} not found in database")
@@ -583,6 +575,10 @@ async def run_prompt_optimizer(
     # AgentEnvironment creates temporary database user with TRAIN-split-only access
     # AgentEnvironment handles HTTP server and container lifecycle (snapshots fetched by agents at init)
     workspace_manager = WorkspaceManager.from_env()
+
+    # Create registry for critic/grader runs initiated by the optimizer
+    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager)
+
     agent_env = PromptOptimizerAgentEnvironment(
         docker_client=docker_client,
         optimizer_run_id=agent_run_id,
@@ -594,6 +590,7 @@ async def run_prompt_optimizer(
         target_metric=target_metric,
         budget_limit=budget,
         workspace_manager=workspace_manager,
+        registry=registry,
         verbose=verbose,
     )
     async with agent_env as comp:
@@ -672,6 +669,9 @@ Prioritize recall.
             await handle.run()
             logger.debug("Agent run complete")
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
+
+    # Clean up registry resources
+    await registry.close()
 
     logger.info("Optimization session complete.")
     logger.info(f"Budget: ${budget:.2f}")

@@ -19,6 +19,7 @@ from mcp_infra.display import CompactDisplayHandler
 from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto
 from props.agent_handle import AgentHandle
+from props.agent_registry import AgentRegistry
 from props.agent_setup import AgentEnvironment
 from props.agent_types import ImprovementTypeConfig
 from props.agent_workspace import WorkspaceManager
@@ -72,6 +73,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         grader_client: OpenAIModelProto,
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
+        registry: AgentRegistry,
         verbose: bool = False,
     ):
         type_config = ImprovementTypeConfig(
@@ -85,6 +87,7 @@ class ImprovementAgentEnvironment(AgentEnvironment):
 
         self._critic_client = critic_client
         self._grader_client = grader_client
+        self._registry = registry
         self._verbose = verbose
         self.agent_state = PromptOptimizerState()
 
@@ -107,12 +110,10 @@ class ImprovementAgentEnvironment(AgentEnvironment):
         server = PromptEvalServer(
             critic_client=self._critic_client,
             grader_client=self._grader_client,
-            docker_client=self._docker_client,
-            db_config=self._db_config,
-            workspace_manager=self._workspace_manager,
+            registry=self._registry,
             optimizer_state=self.agent_state,
             target_metric=TargetMetric.TARGETED,
-            optimizer_run_id=self.agent_run_id,
+            optimizer_run_id=self._agent_run_id,
             workspace_root=self.workspace_root,
             budget_limit=float("inf"),
             verbose=self._verbose,
@@ -170,6 +171,7 @@ async def run_improvement_agent(
         session.commit()
 
     workspace_manager = WorkspaceManager.from_env()
+    registry = AgentRegistry(docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager)
     agent_env = ImprovementAgentEnvironment(
         docker_client=docker_client,
         improvement_run_id=run_id,
@@ -180,66 +182,70 @@ async def run_improvement_agent(
         grader_client=grader_client,
         db_config=db_config,
         workspace_manager=workspace_manager,
+        registry=registry,
         verbose=verbose,
     )
 
-    async with agent_env as comp:
-        token_handler = TokenBudgetHandler(max_tokens=token_budget)
-        reminder_handler = ImprovementReminderHandler(
-            improvement_run_id=run_id, type_config=type_config, db_config=db_config
-        )
-
-        handlers: list = []
-        if verbose:
-            display_handler = await CompactDisplayHandler.from_compositor(
-                comp, max_lines=DEFAULT_MAX_LINES, prefix=f"[IMPROVE {str(run_id)[:8]}] "
-            )
-            handlers.append(display_handler)
-        handlers.extend(
-            [
-                reminder_handler,
-                AbortIf(should_abort=lambda: agent_env.agent_state.error is not None),
-                token_handler,
-                MaxTurnsHandler(max_turns=200),
-            ]
-        )
-
-        async with Client(comp) as mcp_client:
-            # Create AgentHandle - reads system prompt from container via MCP, runs init
-            handle = await AgentHandle.create(
-                agent_run_id=run_id,
-                definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
-                model_client=client,
-                mcp_client=mcp_client,
-                compositor=comp,
-                handlers=handlers,
-                parallel_tool_calls=True,
+    try:
+        async with agent_env as comp:
+            token_handler = TokenBudgetHandler(max_tokens=token_budget)
+            reminder_handler = ImprovementReminderHandler(
+                improvement_run_id=run_id, type_config=type_config, db_config=db_config
             )
 
-            logger.info("Starting agent loop")
-            await handle.run()
-            logger.info("Agent loop completed")
-
-        tokens_used = token_handler.cumulative_tokens
-        last_result = reminder_handler.last_result
-
-        outcome: ImprovementOutcome
-        if isinstance(last_result, TerminationSuccess):
-            logger.info(
-                f"Improvement succeeded: definition '{last_result.definition_id}' "
-                f"with {last_result.total_credit:.1f} issues "
-                f"beats baseline avg {last_result.baseline_avg:.1f} (run_id={run_id})"
-            )
-            outcome = last_result
-        elif token_handler.percentage_used >= 1.0:
-            outcome = OutcomeExhausted()
-        elif agent_env.agent_state.error is not None:
-            outcome = OutcomeUnexpectedTermination(message=f"Agent reported failure: {agent_env.agent_state.error}")
-        else:
-            outcome = OutcomeUnexpectedTermination(
-                message=f"Agent terminated with {token_handler.percentage_used:.1%} "
-                f"budget used without beating baseline or exhaustion"
+            handlers: list = []
+            if verbose:
+                display_handler = await CompactDisplayHandler.from_compositor(
+                    comp, max_lines=DEFAULT_MAX_LINES, prefix=f"[IMPROVE {str(run_id)[:8]}] "
+                )
+                handlers.append(display_handler)
+            handlers.extend(
+                [
+                    reminder_handler,
+                    AbortIf(should_abort=lambda: agent_env.agent_state.error is not None),
+                    token_handler,
+                    MaxTurnsHandler(max_turns=200),
+                ]
             )
 
-        logger.info(f"Improvement agent completed: kind={outcome.kind}, tokens={tokens_used:,}/{token_budget:,}")
-        return ImprovementResult(tokens_used=tokens_used, run_id=run_id, outcome=outcome)
+            async with Client(comp) as mcp_client:
+                # Create AgentHandle - reads system prompt from container via MCP, runs init
+                handle = await AgentHandle.create(
+                    agent_run_id=run_id,
+                    definition_id=IMPROVEMENT_AGENT_DEFINITION_ID,
+                    model_client=client,
+                    mcp_client=mcp_client,
+                    compositor=comp,
+                    handlers=handlers,
+                    parallel_tool_calls=True,
+                )
+
+                logger.info("Starting agent loop")
+                await handle.run()
+                logger.info("Agent loop completed")
+
+            tokens_used = token_handler.cumulative_tokens
+            last_result = reminder_handler.last_result
+
+            outcome: ImprovementOutcome
+            if isinstance(last_result, TerminationSuccess):
+                logger.info(
+                    f"Improvement succeeded: definition '{last_result.definition_id}' "
+                    f"with {last_result.total_credit:.1f} issues "
+                    f"beats baseline avg {last_result.baseline_avg:.1f} (run_id={run_id})"
+                )
+                outcome = last_result
+            elif token_handler.percentage_used >= 1.0:
+                outcome = OutcomeExhausted()
+            elif agent_env.agent_state.error is not None:
+                outcome = OutcomeUnexpectedTermination(message=f"Agent reported failure: {agent_env.agent_state.error}")
+            else:
+                outcome = OutcomeUnexpectedTermination(
+                    message=f"Agent terminated with {token_handler.percentage_used:.1%} "
+                    f"budget used without beating baseline or exhaustion"
+                )
+
+            logger.info(f"Improvement agent completed: kind={outcome.kind}, tokens={tokens_used:,}/{token_budget:,}")
+            return ImprovementResult(tokens_used=tokens_used, run_id=run_id, outcome=outcome)
+    finally:
+        await registry.close()

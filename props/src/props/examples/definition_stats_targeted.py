@@ -16,6 +16,9 @@ Functions:
 Key views used:
 - occurrence_credits: Per-occurrence recall credits (TRAIN split only in whole-repo mode)
 - aggregated_recall_by_definition: Pre-aggregated stats with n_examples, ucb, lcb
+
+NOTE: This example references query builders that were never implemented. The functions
+are stubbed to allow import but will raise NotImplementedError if called.
 """
 
 from datetime import datetime
@@ -23,15 +26,35 @@ from typing import Any
 
 from pydantic import BaseModel
 from rich.console import Console
-from sqlalchemy import select
 
-from props.cli.cmd_stats import STATS_TABLE_LEGEND, _STATUS_COLUMNS, fmt_pct1
+from props.cli.cmd_stats import STATS_TABLE_LEGEND, _STATUS_COLUMNS
 from props.db.session import get_session
-from props.db.models import AggregatedRecallByDefinition
-from props.db.query_builders import SplitPerformanceStats, query_definition_performance_stats
-from props.display import ColumnDef, build_table_from_schema
+from props.db.models import RecallByDefinitionSplitKind
+from props.display import ColumnDef, build_table_from_schema, fmt_pct
 from props.models.examples import ExampleKind
 from props.splits import Split
+
+
+# Stub types - these were never implemented in query_builders
+class SplitPerformanceStats(BaseModel):
+    """Stub type for split performance statistics."""
+
+    mean_recall: float = 0.0
+    lcb: float | None = None
+    total_count: int = 0
+    zero_count: int = 0
+    stuck_count: int = 0
+    context_count: int = 0
+
+
+def query_definition_performance_stats(session: Any, limit: int = 50) -> list[Any]:
+    """Stub - query builder was never implemented."""
+    raise NotImplementedError(
+        "query_definition_performance_stats was never implemented. "
+        "Use RecallByDefinitionSplitKind ORM model directly."
+    )
+
+
 
 
 def _format_split_stats(stats) -> str:
@@ -58,9 +81,9 @@ def _build_performance_columns() -> list[ColumnDef[Any, Any]]:
         ColumnDef("Scope", lambda r: r.example_kind, width=18),
         ColumnDef("N", lambda r: r.n_examples, str, justify="right", width=5),
         ColumnDef("Runs", lambda r: r.n_runs, str, justify="right", width=5),
-        ColumnDef("Recall", lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
-        ColumnDef("UCB", lambda r: r.occurrences_caught_stats.ucb95 if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
-        ColumnDef("LCB", lambda r: r.occurrences_caught_stats.lcb95 if r.occurrences_caught_stats else None, fmt_pct1, justify="right", width=7),
+        ColumnDef("Recall", lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else None, fmt_pct, justify="right", width=7),
+        ColumnDef("UCB", lambda r: r.occurrences_caught_stats.ucb95 if r.occurrences_caught_stats else None, fmt_pct, justify="right", width=7),
+        ColumnDef("LCB", lambda r: r.occurrences_caught_stats.lcb95 if r.occurrences_caught_stats else None, fmt_pct, justify="right", width=7),
         *_STATUS_COLUMNS,
         ColumnDef("", lambda r: " ⚠️" if r.split == Split.VALID and r.n_examples < 5 else "", width=3),
     ]
@@ -144,13 +167,13 @@ def show_train_vs_valid(console: Console, limit: int = 40) -> None:
 
     with get_session() as session:
         results = (
-            session.query(AggregatedRecallByDefinition)
-            .filter(AggregatedRecallByDefinition.split.in_([Split.TRAIN, Split.VALID]))
+            session.query(RecallByDefinitionSplitKind)
+            .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
             .order_by(
-                AggregatedRecallByDefinition.critic_definition_id,
-                AggregatedRecallByDefinition.critic_model,
-                AggregatedRecallByDefinition.example_kind,
-                AggregatedRecallByDefinition.split,
+                RecallByDefinitionSplitKind.critic_definition_id,
+                RecallByDefinitionSplitKind.critic_model,
+                RecallByDefinitionSplitKind.example_kind,
+                RecallByDefinitionSplitKind.split,
             )
             .limit(limit)
             .all()
@@ -183,8 +206,8 @@ def show_top_definitions(console: Console, limit: int = 10) -> None:
     with get_session() as session:
         # Query aggregated stats - use occurrences_caught_stats.mean for recall
         results = (
-            session.query(AggregatedRecallByDefinition)
-            .filter(AggregatedRecallByDefinition.split == Split.VALID)
+            session.query(RecallByDefinitionSplitKind)
+            .filter(RecallByDefinitionSplitKind.split == Split.VALID)
             .limit(limit)
             .all()
         )
@@ -200,7 +223,7 @@ def show_top_definitions(console: Console, limit: int = 10) -> None:
         columns: list[ColumnDef[Any, Any]] = [
             ColumnDef("Definition", lambda r: r.critic_definition_id, width=20),
             ColumnDef("Recall", lambda r: r.occurrences_caught_stats.mean if r.occurrences_caught_stats else None,
-                      fmt_pct1, justify="right"),
+                      fmt_pct, justify="right"),
             ColumnDef("Caught", lambda r: (r.occurrences_caught_stats.mean * r.total_catchable_occurrences) if r.occurrences_caught_stats else 0.0, lambda v: f"{v:.1f}", justify="right"),
             ColumnDef("Catchable", lambda r: r.total_catchable_occurrences, str, justify="right"),
             ColumnDef("Runs", lambda r: r.status_counts.get("completed", 0), str, justify="right"),

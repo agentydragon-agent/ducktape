@@ -1,15 +1,11 @@
 """Test prompt improvement agent end-to-end with mocked OpenAI.
 
 Tests the improvement agent workflow:
-- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Creating improved definition directory via docker_exec
 - Submitting via `critic-dev definition create` CLI
 - Token budget handling
 - RLS-scoped database access
 - Termination when definition beats baseline average
-
-All tests verify that bootstrap commands (including ./init) exit with code 0
-before proceeding with the test scenario.
 """
 
 from __future__ import annotations
@@ -19,8 +15,7 @@ from unittest.mock import patch
 from hamcrest import contains_string
 import pytest
 
-from adgn.testing.bootstrap import DockerExecCallWithBootstrapValidation
-from agent_core.testing import AssertDockerExecThenFinish, Step
+from agent_core.testing import AssertDockerExecThenFinish, DockerExecCall, Step
 from props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props.db.examples import Example
 from props.db.models import AgentRun
@@ -65,12 +60,10 @@ def _make_improvement_steps() -> list[Step]:
     2. Writes AGENT.md and init script
     3. Makes init executable
     4. Calls `critic-dev definition create` CLI to submit
-
-    First step validates bootstrap succeeded.
     """
     return [
-        # 1. Create definition directory and write files - also validates bootstrap
-        DockerExecCallWithBootstrapValidation(
+        # 1. Create definition directory and write files
+        DockerExecCall(
             cmd=[
                 "sh",
                 "-c",
@@ -198,8 +191,8 @@ def _make_leaderboard_check_steps() -> list[Step]:
     - Contains "Runs" (column header showing run count present)
     """
     return [
-        # 1. Run leaderboard command - validates bootstrap first
-        DockerExecCallWithBootstrapValidation(cmd=["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000),
+        # 1. Run leaderboard command
+        DockerExecCall(cmd=["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000),
         # 2. Check multiple indicators of health using hamcrest matchers
         AssertDockerExecThenFinish(
             expected_output="",  # Not used when stdout_matchers provided
@@ -225,7 +218,7 @@ def _make_hard_examples_check_steps() -> list[Step]:
     - Contains "Recall" (table header showing metrics present)
     """
     return [
-        DockerExecCallWithBootstrapValidation(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),
+        DockerExecCall(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),
         # Multiple indicators of health
         AssertDockerExecThenFinish(
             expected_output="",  # Not used when stdout_matchers provided

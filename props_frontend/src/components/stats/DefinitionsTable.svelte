@@ -5,9 +5,16 @@
 
   interface Props {
     definitions: DefinitionRow[];
+    onSelectDefinition?: (definitionId: string) => void;
   }
 
-  let { definitions }: Props = $props();
+  let { definitions, onSelectDefinition }: Props = $props();
+
+  function handleDefinitionClick(definitionId: string) {
+    if (onSelectDefinition) {
+      onSelectDefinition(definitionId);
+    }
+  }
 
   function getStats(def: DefinitionRow, split: Split, kind: ExampleKind): SplitScopeStats | undefined {
     return def.stats[split]?.[kind];
@@ -115,7 +122,17 @@
       {#each table.rows as def (def.definition_id)}
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="px-3 py-2 font-mono text-xs">
-            {def.definition_id}
+            {#if onSelectDefinition}
+              <button
+                type="button"
+                class="text-blue-600 hover:text-blue-800 hover:underline"
+                onclick={() => handleDefinitionClick(def.definition_id)}
+              >
+                {def.definition_id}
+              </button>
+            {:else}
+              {def.definition_id}
+            {/if}
           </td>
           <td class="px-3 py-2 text-right text-gray-600">
             {formatAge(def.created_at)}

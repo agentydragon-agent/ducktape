@@ -16,9 +16,9 @@ from sqlalchemy.orm import Session
 
 from agent_core.testing import FakeOpenAIModel, Step
 from openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
+from props.agent_registry import AgentRegistry
 from props.agent_types import ClusteringTypeConfig, CriticTypeConfig, GraderTypeConfig
 from props.agent_workspace import WorkspaceManager
-from props.critic.critic import run_critic
 from props.critic.models import CriticSubmitPayload, CriticSuccess
 from props.db.agent_definition_ids import (
     CLUSTERING_AGENT_DEFINITION_ID,
@@ -1423,9 +1423,18 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
 
     Encapsulates common critic run setup so tests only need to provide steps.
 
+    Note: This factory creates its own AgentRegistry per invocation rather than using
+    the shared test_registry fixture. This is intentional because:
+    - Factory returns a callable that may be invoked multiple times per test
+    - Each invocation needs its own registry lifecycle with proper cleanup
+    - The try/finally pattern ensures cleanup even if assertions fail mid-test
+
+    For tests that need direct registry access (e.g., to call run_grader after
+    run_critic_with_steps), use the shared test_registry fixture instead.
+
     Usage:
         async def test_critic_behavior(run_critic_with_steps):
-            steps = [DockerExecCallWithBootstrapValidation(...)]
+            steps = [DockerExecCall(...)]
             # Must provide example parameter now
             with get_session() as session:
                 example = session.query(Example).filter_by(
@@ -1463,19 +1472,33 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
             example = WholeSnapshotExample(snapshot_slug=test_snapshot)
 
         runner = make_step_runner(steps=steps)
-        critic_run_id, status = await run_critic(
-            definition_id=definition_id,
-            example=example,
-            client=runner,
-            parent_agent_run_id=None,
-            docker_client=async_docker_client,
-            db_config=synced_test_db,
-            workspace_manager=test_workspace_manager,
-            max_turns=max_turns,
+        registry = AgentRegistry(
+            docker_client=async_docker_client, db_config=synced_test_db, workspace_manager=test_workspace_manager
         )
-        return critic_run_id, status, runner
+        try:
+            critic_run_id = await registry.run_critic(
+                definition_id=definition_id, example=example, client=runner, max_turns=max_turns
+            )
+            # Query DB for status
+            with get_session() as session:
+                critic_run = session.get(AgentRun, critic_run_id)
+                assert critic_run is not None
+                status = critic_run.status
+            return critic_run_id, status, runner
+        finally:
+            await registry.close()
 
     return _run
+
+
+@pytest_asyncio.fixture
+async def test_registry(synced_test_db, async_docker_client, test_workspace_manager):
+    """Provide AgentRegistry for tests, handling cleanup."""
+    registry = AgentRegistry(
+        docker_client=async_docker_client, db_config=synced_test_db, workspace_manager=test_workspace_manager
+    )
+    yield registry
+    await registry.close()
 
 
 # =============================================================================
@@ -1491,7 +1514,7 @@ def run_prompt_optimizer_with_steps(synced_test_db, make_step_runner, make_opena
 
     Usage:
         async def test_optimizer_behavior(run_prompt_optimizer_with_steps, test_train_example_with_runs):
-            steps = [DockerExecCallWithBootstrapValidation(...), AssertDockerExecThenCall(...)]
+            steps = [DockerExecCall(...), AssertDockerExecThenCall(...)]
             await run_prompt_optimizer_with_steps(steps)
             # Assertions...
 

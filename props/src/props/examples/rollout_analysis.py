@@ -21,7 +21,7 @@ from rich.console import Console
 from sqlalchemy import Select, cast, func, select, text, type_coerce
 from sqlalchemy.dialects import postgresql
 
-from adgn.agent.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.events import ApiRequest, AssistantText, ReasoningItem, Response, ToolCall, ToolCallOutput, UserText
 from props.agent_types import AgentType, CriticTypeConfig
 from props.db.session import get_session
 from props.db.models import AgentRun, AgentRunStatus, Event, GradingDecision

@@ -24,6 +24,9 @@ from typer_di import TyperDI
 from cli_util import async_run, make_logging_callback
 from openai_utils.client_factory import build_client
 from props.agent_helpers import get_current_agent_run
+
+# cmd_gepa imported lazily below (gepa is optional)
+from props.agent_registry import AgentRegistry
 from props.agent_types import AgentType
 from props.agent_workspace import WorkspaceManager
 from props.cli import common_options as opt
@@ -35,15 +38,12 @@ from props.cli.cmd_clustering_agent import app as clustering_agent_app
 from props.cli.cmd_critic_agent import app as critic_agent_app
 from props.cli.cmd_critic_dev import app as critic_dev_app
 from props.cli.cmd_db import db_app
-
-# cmd_gepa imported lazily below (gepa is optional)
 from props.cli.cmd_grade_validation import cmd_grade_validation
 from props.cli.cmd_grader_agent import app as grader_agent_app
 from props.cli.cmd_snapshot import snapshot_app
 from props.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props.cli.cmd_stats import stats_app
 from props.cli.shared import make_example_from_files
-from props.critic.critic import run_critic
 from props.db.config import get_database_config
 from props.db.models import (
     AgentRun,
@@ -57,7 +57,6 @@ from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session, init_db
 from props.display import fmt_pct, short_sha
 from props.eval_harness import run_all_evals
-from props.grader.grader import grade_critic_run_by_id
 from props.ids import SnapshotSlug
 from props.lint.lint_issue import run_specimen_lint_issue_async
 from props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -465,7 +464,7 @@ async def prompt_improve_cmd(
 
 @app.command("run-grader")
 @async_run
-async def run_grader(
+async def cmd_run_grader(
     critic_run_id: UUID = opt.ARG_CRITIC_RUN_ID, model: str = opt.OPT_MODEL, verbose: bool = opt.OPT_VERBOSE
 ) -> None:
     """Grade a critic run by database ID against canonical findings.
@@ -475,19 +474,15 @@ async def run_grader(
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
     workspace_manager = WorkspaceManager.from_env()
+
+    registry = AgentRegistry(docker_client, db_config, workspace_manager)
     try:
-        # Query database and grade critic run in single session
+        # Run grader via registry
+        grader_run_id = await registry.run_grader(
+            critic_run_id=critic_run_id, client=build_client(model), verbose=verbose, max_turns=200
+        )
+
         with get_session() as session:
-            grader_run_id = await grade_critic_run_by_id(
-                session,
-                critic_run_id,
-                build_client(model),
-                docker_client,
-                db_config,
-                workspace_manager=workspace_manager,
-                verbose=verbose,
-                max_turns=200,
-            )
             grader_run = session.get(AgentRun, grader_run_id)
             if grader_run is None:
                 raise RuntimeError(f"Grader run {grader_run_id} not found in database")
@@ -530,7 +525,7 @@ async def run_grader(
                 recall = total_credit / n_occurrences if n_occurrences > 0 else 0.0
                 typer.echo(f"Recall: {recall:.2%} ({total_credit:.1f} / {n_occurrences})")
     finally:
-        await docker_client.close()
+        await registry.close()
 
 
 @app.command("grade-missing")
@@ -546,6 +541,9 @@ async def cmd_grade_missing(
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
     workspace_manager = WorkspaceManager.from_env()
+
+    # Registry with caller-specified max_parallel
+    registry = AgentRegistry(docker_client, db_config, workspace_manager, max_parallel=max_parallel)
     try:
         # Find critic run IDs missing grader runs for this model
         with get_session() as session:
@@ -584,32 +582,20 @@ async def cmd_grade_missing(
             )
             typer.echo(f"Grading with max_parallel={max_parallel}...")
 
-        # Create semaphore for concurrency control
-        semaphore = asyncio.Semaphore(max_parallel)
-
         async def grade_one(critic_run_id: UUID) -> tuple[UUID, bool]:
             """Grade one critic run, returns (critic_run_id, success)"""
-            async with semaphore:
-                try:
-                    with get_session() as session:
-                        grader_run_id = await grade_critic_run_by_id(
-                            session,
-                            critic_run_id,
-                            build_client(grader_model),
-                            docker_client,
-                            db_config,
-                            workspace_manager=workspace_manager,
-                            verbose=verbose,
-                            max_turns=200,
-                        )
-                        if not verbose:
-                            typer.echo(f"✓ Graded critic run {critic_run_id} → grader_run {grader_run_id}")
-                        return (critic_run_id, True)
-                except Exception as e:
-                    typer.echo(f"✗ Failed to grade critic run {critic_run_id}: {e}", err=True)
-                    return (critic_run_id, False)
+            try:
+                grader_run_id = await registry.run_grader(
+                    critic_run_id=critic_run_id, client=build_client(grader_model), verbose=verbose, max_turns=200
+                )
+                if not verbose:
+                    typer.echo(f"✓ Graded critic run {critic_run_id} → grader_run {grader_run_id}")
+                return (critic_run_id, True)
+            except Exception as e:
+                typer.echo(f"✗ Failed to grade critic run {critic_run_id}: {e}", err=True)
+                return (critic_run_id, False)
 
-        # Grade all in parallel (semaphore limits concurrency)
+        # Grade all in parallel (registry semaphore limits concurrency)
         results = await asyncio.gather(*[grade_one(cid) for cid in ungraded_critic_run_ids])
 
         # Summary
@@ -618,7 +604,7 @@ async def cmd_grade_missing(
         typer.echo("")
         typer.echo(f"Completed: {successes} succeeded, {failures} failed")
     finally:
-        await docker_client.close()
+        await registry.close()
 
 
 @app.command("lint-issue")
@@ -708,6 +694,9 @@ async def cmd_run(
     """
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
+    workspace_manager = WorkspaceManager.from_env()
+
+    registry = AgentRegistry(docker_client, db_config, workspace_manager)
     try:
         # Get available files from database (no hydration)
         with get_session() as session:
@@ -718,18 +707,11 @@ async def cmd_run(
         available_files_dict = dict.fromkeys(available_files)
         example_spec = make_example_from_files(snapshot, available_files_dict, files)
 
-        # Create workspace manager for this CLI run
-        workspace_manager = WorkspaceManager.from_env()
-
-        # Run critic using AgentHandle-based flow
-        critic_run_id, status = await run_critic(
+        # Run critic via registry
+        critic_run_id = await registry.run_critic(
             definition_id=definition_id,
             example=example_spec,
             client=build_client(model),
-            parent_agent_run_id=None,
-            docker_client=docker_client,
-            db_config=db_config,
-            workspace_manager=workspace_manager,
             verbose=True,
             max_lines=max_lines,
             max_turns=100,
@@ -738,8 +720,13 @@ async def cmd_run(
         # Print results
         typer.echo("\n=== Critique Complete ===")
         typer.echo(f"Critic Run ID: {critic_run_id}")
-        if status == AgentRunStatus.COMPLETED:
-            with get_session() as session:
+
+        with get_session() as session:
+            critic_run = session.get(AgentRun, critic_run_id)
+            if critic_run is None:
+                raise RuntimeError(f"Critic run {critic_run_id} not found in database")
+
+            if critic_run.status == AgentRunStatus.COMPLETED:
                 issues = session.query(ReportedIssue).filter_by(agent_run_id=critic_run_id).all()
                 typer.echo(f"Issues found: {len(issues)}")
                 for issue in issues:
@@ -752,7 +739,7 @@ async def cmd_run(
                                 if loc.end_line and loc.end_line != loc.start_line:
                                     loc_str += f"-{loc.end_line}"
                             typer.echo(f"  - {loc_str}")
-        else:
-            typer.echo(f"Critic run ended with status: {status.value}", err=True)
+            else:
+                typer.echo(f"Critic run ended with status: {critic_run.status.value}", err=True)
     finally:
-        await docker_client.close()
+        await registry.close()

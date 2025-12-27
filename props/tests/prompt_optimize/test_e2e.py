@@ -7,15 +7,11 @@ Tests the prompt optimizer agent using:
 - HTTP MCP transport with bearer token auth
 
 Comprehensive 3-agent test verifies:
-- Bootstrap ./init script execution (validated via DockerExecCallWithBootstrapValidation)
 - Prompt optimizer orchestrates critic and grader runs
 - Grader can read critic runs (reported_issues from the critique)
 - Grader can read ground truth (true_positives, false_positives)
 - Grader can write grading decisions
 - All agents submit via MCP
-
-All tests verify that bootstrap commands (including ./init) exit with code 0
-before proceeding with the test scenario.
 """
 
 from __future__ import annotations
@@ -24,14 +20,11 @@ from uuid import UUID
 
 import pytest
 
-from adgn.testing.bootstrap import DockerExecCallWithBootstrapValidation
-from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, Step
-from props.agent_workspace import WorkspaceManager
+from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 from props.db.config import DatabaseConfig
 from props.db.examples import Example
 from props.db.models import AgentRun, AgentRunStatus, GradingDecision
 from props.db.session import get_session
-from props.grader.grader import grade_critic_run_by_id
 from props.models.examples import ExampleKind
 from props.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props.prompt_optimize.target_metric import TargetMetric
@@ -54,10 +47,9 @@ async def test_po_agent_psql_connectivity(
     5. psql respects the PG* env vars and connects without explicit arguments
     """
     # Define test steps using step runner pattern
-    # First step validates bootstrap succeeded, then executes psql connectivity check
     steps = [
-        # Step 0: Validate bootstrap succeeded, then check psql connectivity
-        DockerExecCallWithBootstrapValidation(cmd=["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
+        # Step 0: Check psql connectivity
+        DockerExecCall(cmd=["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
         # Step 1: Assert psql returned "1", then call report-failure to terminate
         AssertDockerExecThenCall(
             expected_output="1",
@@ -96,8 +88,8 @@ def _make_critic_steps_with_issue() -> list[Step]:
     to the RLS-scoped credentials set up by the agent environment.
     """
     return [
-        # 1. Add issue using bin CLI - validates bootstrap on first step
-        DockerExecCallWithBootstrapValidation(
+        # 1. Add issue using bin CLI
+        DockerExecCall(
             cmd=["critique", "insert-issue", "test-issue-001", "Test issue found in code for grader verification"],
             timeout_ms=15000,
         ),
@@ -129,7 +121,7 @@ def _make_grader_steps_with_data_access(critic_run_id: UUID) -> list[Step]:
     return [
         # Step 1: Read reported_issues from the critique being graded
         # This demonstrates grader can access critic run data via RLS-scoped credentials
-        DockerExecCallWithBootstrapValidation(
+        DockerExecCall(
             cmd=[
                 "psql",
                 "-c",
@@ -181,8 +173,8 @@ def _make_optimizer_steps_run_critic_then_grader(snapshot_slug: str, scope_hash:
     # We build these as static steps - the optimizer agent calls the tools
     # and the test infrastructure will capture the critic_run_id dynamically
     return [
-        # Step 1: Validate bootstrap, then call run_critic_on_example
-        DockerExecCallWithBootstrapValidation(
+        # Step 1: Call run_critic_on_example
+        DockerExecCall(
             cmd=["critic-dev", "run-critic", snapshot_slug, scope_hash],
             timeout_ms=120000,  # Critic may take a while
         ),
@@ -200,12 +192,12 @@ def _make_optimizer_steps_run_critic_then_grader(snapshot_slug: str, scope_hash:
 @pytest.mark.requires_docker
 async def test_three_agent_workflow_with_grader_data_access(
     synced_test_db: DatabaseConfig,
-    test_workspace_manager: WorkspaceManager,
     make_step_runner,
     async_docker_client,
     test_snapshot,
     run_critic_with_steps,
     noop_openai_client,
+    test_registry,
 ):
     """Test complete 3-agent workflow: optimizer → critic → grader with data access verification.
 
@@ -243,8 +235,8 @@ async def test_three_agent_workflow_with_grader_data_access(
     # Optimizer steps: Call bin CLI to run critic and report completion
     # -------------------------------------------------------------------------
     optimizer_steps = [
-        # Validate bootstrap, then run psql to verify DB access
-        DockerExecCallWithBootstrapValidation(cmd=["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
+        # Run psql to verify DB access
+        DockerExecCall(cmd=["psql", "-Atc", "SELECT 1"], timeout_ms=30000),
         # Then report_failure to terminate (we don't actually run the full workflow via CLI)
         AssertDockerExecThenCall(
             expected_output="1",
@@ -298,24 +290,13 @@ async def test_three_agent_workflow_with_grader_data_access(
     grader_runner = make_step_runner(steps=grader_steps)
     grader_client = CapturingOpenAIModel(grader_runner)
 
-    with get_session() as session:
-        try:
-            grader_run_id = await grade_critic_run_by_id(
-                session=session,
-                critic_run_id=critic_run_id,
-                client=grader_client,
-                docker_client=async_docker_client,
-                db_config=synced_test_db,
-                workspace_manager=test_workspace_manager,
-                parent_agent_run_id=None,
-                verbose=False,
-                max_turns=100,
-            )
+    try:
+        grader_run_id = await test_registry.run_grader(critic_run_id=critic_run_id, client=grader_client, max_turns=100)
 
-            assert grader_run_id is not None
+        assert grader_run_id is not None
 
-            # Verify grader completed successfully
-            session.commit()
+        # Verify grader completed successfully
+        with get_session() as session:
             grader_run = session.get(AgentRun, grader_run_id)
             assert grader_run is not None
             assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
@@ -329,20 +310,20 @@ async def test_three_agent_workflow_with_grader_data_access(
             assert decision.target_tp_id is None  # no-match decision has NULL target_tp_id
             assert decision.target_fp_id is None  # no-match decision has NULL target_fp_id
 
-        except (RuntimeError, AssertionError):
-            # Print captured requests for debugging
-            print(f"\n=== Captured {len(grader_client.captured)} grader requests ===")
-            for i, req in enumerate(grader_client.captured):
-                print(f"\n--- Request {i + 1} ---")
-                if isinstance(req.input, list):
-                    for msg in req.input:
-                        msg_dict = msg.model_dump()
-                        role = msg_dict.get("role", str(type(msg).__name__))
-                        content_preview = str(msg_dict)[:500]
-                        print(f"  {role}: {content_preview}")
-                elif isinstance(req.input, str):
-                    print(f"  (string input): {req.input[:200]}")
-            raise
+    except (RuntimeError, AssertionError):
+        # Print captured requests for debugging
+        print(f"\n=== Captured {len(grader_client.captured)} grader requests ===")
+        for i, req in enumerate(grader_client.captured):
+            print(f"\n--- Request {i + 1} ---")
+            if isinstance(req.input, list):
+                for msg in req.input:
+                    msg_dict = msg.model_dump()
+                    role = msg_dict.get("role", str(type(msg).__name__))
+                    content_preview = str(msg_dict)[:500]
+                    print(f"  {role}: {content_preview}")
+            elif isinstance(req.input, str):
+                print(f"  (string input): {req.input[:200]}")
+        raise
 
 
 # =============================================================================
@@ -373,8 +354,8 @@ async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, tes
 
     # Steps: run leaderboard and check output contains the expected 76% recall
     steps = [
-        # Step 0: Validate bootstrap succeeded, then run leaderboard
-        DockerExecCallWithBootstrapValidation(cmd=["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000),
+        # Step 0: Run leaderboard
+        DockerExecCall(cmd=["critic-dev", "leaderboard", "--limit", "5"], timeout_ms=30000),
         # Step 1: Check output contains 76% - the correct average of 80% and 72%
         AssertDockerExecThenCall(
             expected_output="76%",
@@ -408,7 +389,7 @@ async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, 
     assert example.n_catchable_occurrences == 4, "test-trivial should have 4 catchable occurrences"
 
     steps = [
-        DockerExecCallWithBootstrapValidation(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),
+        DockerExecCall(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),
         # Check output contains 76% - the correct average of 80% and 72%
         AssertDockerExecThenCall(
             expected_output="76%",

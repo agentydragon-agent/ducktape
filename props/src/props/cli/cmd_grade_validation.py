@@ -15,11 +15,11 @@ import typer
 
 from cli_util import async_run
 from openai_utils.client_factory import build_client
+from props.agent_registry import AgentRegistry
 from props.agent_types import AgentType
 from props.agent_workspace import WorkspaceManager
 from props.cli import common_options as opt
 from props.cli.resources import get_database_config
-from props.critic.critic import run_critic
 from props.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props.db.examples import Example
 from props.db.models import (
@@ -32,7 +32,6 @@ from props.db.models import (
 )
 from props.db.session import get_session
 from props.display import short_uuid
-from props.grader.grader import grade_critic_run_by_id
 from props.models.examples import ExampleKind, ExampleSpec
 from props.splits import Split
 
@@ -71,6 +70,9 @@ async def cmd_grade_validation(
     docker_client = aiodocker.Docker()
     db_config = get_database_config()
     workspace_manager = WorkspaceManager.from_env()
+    registry = AgentRegistry(
+        docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager, max_parallel=max_parallel
+    )
     try:
         critic_client = build_client(critic_model)
         grader_client = build_client(grader_model)
@@ -211,20 +213,21 @@ async def cmd_grade_validation(
             # Step 1: Run critic if needed
             if critic_run_id is None:
                 try:
-                    # Run critic using definition-based run_critic()
-                    (critic_run_id, status) = await run_critic(
+                    # Run critic using registry
+                    critic_run_id = await registry.run_critic(
                         definition_id=definition_id,
                         example=example,
                         client=critic_client,
-                        docker_client=docker_client,
-                        db_config=db_config,
-                        workspace_manager=workspace_manager,
-                        parent_agent_run_id=None,
                         verbose=verbose,
                         max_turns=100,
                     )
 
                     # Check if critic succeeded - if not, skip grading
+                    with get_session() as session:
+                        critic_run = session.get(AgentRun, critic_run_id)
+                        assert critic_run is not None
+                        status = critic_run.status
+
                     if status != AgentRunStatus.COMPLETED:
                         # Critic failed (max_turns_exceeded or context_length_exceeded)
                         if not verbose:
@@ -247,19 +250,12 @@ async def cmd_grade_validation(
 
             # Step 2: Run grader
             try:
-                with get_session() as session:
-                    grader_run_id = await grade_critic_run_by_id(
-                        session,
-                        critic_run_id,
-                        grader_client,
-                        docker_client,
-                        db_config,
-                        workspace_manager,
-                        verbose=verbose,
-                        max_turns=200,
-                    )
+                grader_run_id = await registry.run_grader(
+                    critic_run_id=critic_run_id, client=grader_client, verbose=verbose, max_turns=200
+                )
 
-                    # Fetch recall for progress message (direct query to grading_decisions)
+                # Fetch recall for progress message (direct query to grading_decisions)
+                with get_session() as session:
                     grader_run = session.get(AgentRun, grader_run_id)
                     assert grader_run is not None
 
@@ -354,4 +350,4 @@ async def cmd_grade_validation(
         typer.echo(f"Grader failures: {grader_failures}")
         typer.echo("\nFor recall metrics, query: aggregated_recall_by_definition or aggregated_recall_by_example views")
     finally:
-        await docker_client.close()
+        await registry.close()

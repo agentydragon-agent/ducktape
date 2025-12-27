@@ -5,15 +5,19 @@ Validates that:
 2. Example queries work with RLS-scoped user
 """
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.orm import Session
 from tests.conftest import make_clustering_run
 
-from clustering_util.helpers import list_clusters
 from props.agent_helpers import get_current_agent_run_id
 from props.db.clustering_models import UnknownCluster
 from props.db.session import get_session
 from props.db.temp_user_manager import TempUserManager
+
+
+def list_clusters(session: Session) -> list[UnknownCluster]:
+    """List all clusters visible to the current user (RLS-scoped)."""
+    return list(session.execute(select(UnknownCluster)).scalars().all())
 
 
 async def test_run_id_extraction(clustering_user_engine_factory, test_snapshot):
