@@ -11,7 +11,7 @@ export type ActiveRunInfo = components['schemas']['ActiveRunInfo'];
 export type ValidationRunRequest = components['schemas']['ValidationRunRequest'];
 export type ValidationRunResponse = components['schemas']['ValidationRunResponse'];
 export type AgentRunDetail = components['schemas']['AgentRunDetail'];
-export type EventInfo = components['schemas']['EventInfo'];
+export type EventInfo = components['schemas']['ParsedEventInfo'];
 export type EventsResponse = components['schemas']['EventsResponse'];
 export type AgentRunStatus = components['schemas']['AgentRunStatus'];
 export type JobInfo = components['schemas']['JobInfo'];
@@ -19,6 +19,45 @@ export type JobsResponse = components['schemas']['JobsResponse'];
 export type AgentType = components['schemas']['AgentType'];
 export type RunInfo = components['schemas']['RunInfo'];
 export type RunsListResponse = components['schemas']['RunsListResponse'];
+export type CriticTypeConfig = components['schemas']['CriticTypeConfig'];
+export type GraderTypeConfig = components['schemas']['GraderTypeConfig'];
+export type FreeformTypeConfig = components['schemas']['FreeformTypeConfig'];
+export type PromptOptimizerTypeConfig = components['schemas']['PromptOptimizerTypeConfig'];
+export type ClusteringTypeConfig = components['schemas']['ClusteringTypeConfig'];
+export type ImprovementTypeConfig = components['schemas']['ImprovementTypeConfig'];
+export type WholeSnapshotExample = components['schemas']['WholeSnapshotExample'];
+export type SingleFileSetExample = components['schemas']['SingleFileSetExample'];
+export type Split = components['schemas']['Split'];
+export type ExampleKind = components['schemas']['ExampleKind'];
+export type ChildRunInfo = components['schemas']['ChildRunInfo'];
+export type GraderRunInfo = components['schemas']['GraderRunInfo'];
+export type GradingSummary = components['schemas']['GradingSummary'];
+export type GradingDecisionInfo = components['schemas']['GradingDecisionInfo'];
+export type MissedOccurrenceInfo = components['schemas']['MissedOccurrenceInfo'];
+export type TpTarget = components['schemas']['TpTarget'];
+export type FpTarget = components['schemas']['FpTarget'];
+export type NoMatchTarget = components['schemas']['NoMatchTarget'];
+export type GradingTarget = TpTarget | FpTarget | NoMatchTarget;
+
+// Event payload types (discriminated union)
+export type DockerExecCallPayload = components['schemas']['DockerExecCallPayload'];
+export type DockerExecOutputPayload = components['schemas']['DockerExecOutputPayload'];
+export type GenericToolCallPayload = components['schemas']['GenericToolCallPayload'];
+export type GenericToolOutputPayload = components['schemas']['GenericToolOutputPayload'];
+export type UserText = components['schemas']['UserText'];
+export type AssistantText = components['schemas']['AssistantText'];
+export type ApiRequest = components['schemas']['ApiRequest'];
+export type Response = components['schemas']['Response'];
+export type ReasoningItem = components['schemas']['ReasoningItem'];
+
+// Docker exec types (from mcp_infra.exec.models)
+export type ExecInput = components['schemas']['ExecInput'];
+export type BaseExecResult = components['schemas']['BaseExecResult'];
+export type TruncatedStream = components['schemas']['TruncatedStream'];
+export type Exited = components['schemas']['Exited'];
+export type TimedOut = components['schemas']['TimedOut'];
+export type Killed = components['schemas']['Killed'];
+export type ExitStatus = Exited | TimedOut | Killed;
 
 // Enum value arrays for UI dropdowns (must match schema definitions)
 export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
@@ -115,6 +154,8 @@ export interface RunsFilters {
   status?: AgentRunStatus;
   definition_id?: string;
   agent_type?: AgentType;
+  split?: Split;
+  example_kind?: ExampleKind;
   offset?: number;
   limit?: number;
 }
@@ -124,5 +165,17 @@ export async function fetchRuns(filters?: RunsFilters) {
     params: { query: filters ?? {} },
   });
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch runs'));
+  return data;
+}
+
+// Fetch definition detail with per-example stats
+export type DefinitionDetailResponse = components['schemas']['DefinitionDetailResponse'];
+export type ExampleStats = components['schemas']['ExampleStats'];
+
+export async function fetchDefinitionDetail(definitionId: string) {
+  const { data, error } = await api.GET('/api/stats/definitions/{definition_id}', {
+    params: { path: { definition_id: definitionId } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch definition'));
   return data;
 }

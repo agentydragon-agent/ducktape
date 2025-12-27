@@ -120,7 +120,7 @@ class EmberRuntime:
         )
 
         # Insert system prompt into agent's transcript
-        self._agent.insert_message(SystemMessage.text(self._settings.openai.system_prompt))
+        self._agent.process_message(SystemMessage.text(self._settings.openai.system_prompt))
 
         # Ensure Python kernel is running
         ensure_kernel()
@@ -182,7 +182,7 @@ class EmberRuntime:
                     self._sleep_handler.reset()
 
                     # Add user message to persistent agent and run
-                    self._agent.insert_message(UserMessage.text(message_text))
+                    self._agent.process_message(UserMessage.text(message_text))
 
                     # Reset agent's finished state so it can run again
                     self._agent.finished = False

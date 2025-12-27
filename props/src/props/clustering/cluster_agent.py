@@ -176,7 +176,12 @@ class ClusteringHandler(BaseHandler):
         return NoAction()
 
     def _build_reminder(
-        self, session: Session, snapshot_slug: str, assigned_keys: set[tuple[UUID, str]], remaining: int, total: int
+        self,
+        session: Session,
+        snapshot_slug: SnapshotSlug,
+        assigned_keys: set[tuple[UUID, str]],
+        remaining: int,
+        total: int,
     ) -> str:
         """Build reminder message with progress and example IDs."""
         # Get example unassigned unknowns (just IDs)

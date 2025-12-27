@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from props.ids import SnapshotSlug
+from props.ids import DefinitionId, SnapshotSlug
 from props.models.examples import ExampleSpec
 from props.prompt_optimize.target_metric import TargetMetric
 
@@ -163,7 +163,7 @@ class AgentConfig(BaseModel):
         assert config.agent_type == AgentType.CRITIC
     """
 
-    definition_id: str = Field(description="Agent definition ID (references agent_definitions.id)")
+    definition_id: DefinitionId = Field(description="Agent definition ID (references agent_definitions.id)")
     model: str = Field(description="LLM model to use (e.g., 'claude-sonnet-4-20250514')")
     parent_agent_run_id: UUID | None = Field(
         default=None, description="Parent agent run ID for sub-agents (FK to agent_runs)"

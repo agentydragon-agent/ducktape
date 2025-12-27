@@ -109,7 +109,7 @@ async def test_notifications_pre_sampling_out_of_band(
 
         client = make_mock(_create)
         agent = await _make_agent_with_notifications(mcp_client, buf, client)
-        agent.insert_message(UserMessage.text("hello"))
+        agent.process_message(UserMessage.text("hello"))
         await agent.run()
 
         # Inspect the input passed to Responses.create; expect a system notification insert
@@ -142,7 +142,7 @@ async def test_notifications_within_turn_from_tool(
     async with make_buffered_client({"notifier": server}) as (mcp_client, _comp, buf):
         client = make_mock(_create)
         agent = await _make_agent_with_notifications(mcp_client, buf, client)
-        agent.insert_message(UserMessage.text("go"))
+        agent.process_message(UserMessage.text("go"))
         await agent.run()
 
         # The second create call (post-tool) should include the injected system notification
@@ -177,7 +177,7 @@ async def test_notifications_broadcast_outside_tool(responses_factory: Responses
 
         client = make_mock(_create)
         agent = await _make_agent_with_notifications(mcp_client, buf, client)
-        agent.insert_message(UserMessage.text("hello"))
+        agent.process_message(UserMessage.text("hello"))
         await agent.run()
 
         # Expect notification inserted before sampling

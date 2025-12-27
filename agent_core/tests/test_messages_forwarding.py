@@ -27,7 +27,7 @@ async def test_stateless_reasoning_forwarding(
         tool_policy=AllowAnyToolOrTextMessage(),
     )
 
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
     await agent.run()
 
     # Reasoning should be present in the agent transcript/messages for stateless forwarding
@@ -49,7 +49,7 @@ async def test_function_call_and_function_call_output_replay(
         tool_policy=AllowAnyToolOrTextMessage(),
     )
 
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
     await agent.run()
 
     # Check that the captured second input includes function_call and function_call_output
@@ -75,7 +75,7 @@ async def test_mixed_reasoning_fc_ordering(
         mcp_client_echo, [resp], handlers=[FinishOnTextMessageHandler()], tool_policy=AllowAnyToolOrTextMessage()
     )
 
-    agent.insert_message(UserMessage.text("start"))
+    agent.process_message(UserMessage.text("start"))
     await agent.run()
 
     # Agent finishes after first response (has assistant text), but should preserve message ordering
@@ -99,7 +99,7 @@ async def test_no_synthesized_reasoning_items(
         tool_policy=AllowAnyToolOrTextMessage(),
     )
 
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
     await agent.run()
 
     idx = min(1, len(client.captured) - 1)
@@ -125,7 +125,7 @@ async def test_model_provided_tool_output_records_without_execution(
         tool_policy=AllowAnyToolOrTextMessage(),
     )
 
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
     await agent.run()
 
     assert_items_include_instances(agent.to_openai_messages(), FunctionCallOutputItem)

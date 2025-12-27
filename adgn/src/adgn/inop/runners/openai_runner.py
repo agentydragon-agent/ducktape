@@ -154,7 +154,8 @@ class OpenAIRunner(AgentRunner):
         if not self._agent:
             raise RuntimeError("Runner not initialised; call setup() first")
 
-        self._agent.insert_messages([SystemMessage.text(agent_instructions), UserMessage.text(task.prompt)])
+        self._agent.process_message(SystemMessage.text(agent_instructions))
+        self._agent.process_message(UserMessage.text(task.prompt))
 
         start_time = time.perf_counter()
         result = await self._agent.run()

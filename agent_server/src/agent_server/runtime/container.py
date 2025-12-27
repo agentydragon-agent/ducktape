@@ -449,7 +449,7 @@ class AgentContainer:
             dynamic_instructions=self._compositor.render_agent_dynamic_instructions,
             tool_policy=RequireAnyTool(),
         )
-        agent.insert_message(SystemMessage.text(base_system))
+        agent.process_message(SystemMessage.text(base_system))
         # Note: Agent doesn't own resources, no cleanup needed
 
         # Session tracks the system used for persisted run metadata; store base system

@@ -326,7 +326,7 @@ async def optimize_prompts_mcp(args: OptimizeMcpArgs) -> Path:
             )
 
             # Insert user message with instructions
-            pe.insert_message(UserMessage.text(system_message))
+            pe.process_message(UserMessage.text(system_message))
             # Force N propose_prompt tool calls then abort (handled by ProposePromptNTimes registered above)
             await pe.run()
 

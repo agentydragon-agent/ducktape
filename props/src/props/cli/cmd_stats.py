@@ -427,13 +427,15 @@ def _add_split_columns(table: Table, split_name: str, color: str, total_examples
         color: Rich color name (e.g., "cyan", "yellow")
         total_examples: Total available examples for this split
     """
-    # Column order: Recall, LCB, N/{total}, Z, S, C
+    # Column order: Recall, LCB, N/{total}, Z, ✓, S, C, F
     table.add_column(f"[{color}]{split_name} Recall[/{color}]", justify="right", width=11)
     table.add_column(f"[{color}]LCB[/{color}]", justify="right", width=7)
     table.add_column(f"[{color}]N/{total_examples}[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]Z[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]✓[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]S[/{color}]", justify="right", width=4)
     table.add_column(f"[{color}]C[/{color}]", justify="right", width=4)
+    table.add_column(f"[{color}]F[/{color}]", justify="right", width=4)
 
 
 @stats_app.command("critic-leaderboard")
@@ -843,13 +845,13 @@ def cmd_stats(ctx: typer.Context) -> None:
         _add_split_columns(table, label, color, example_counts[key])
 
     def format_view_stats(stats: RecallByDefinitionSplitKind | None, fully_computed: bool = False) -> tuple[str, ...]:
-        """Format view stats for the multi-column-group table as (recall, lcb, n, zero, stuck, context).
+        """Format view stats for the multi-column-group table as (recall, lcb, n, zero, completed, stuck, context, failure).
 
         This is a local helper for the main stats table which uses a different layout
         than the row-per-item tables that use _OCCURRENCE_COLUMNS / _STATUS_COLUMNS.
         """
         if stats is None:
-            return ("—", "—", "—", "—", "—", "—")
+            return ("—", "—", "—", "—", "—", "—", "—", "—")
 
         # Use fmt_pct for percentage formatting (handles None -> "—")
         recall_val = stats.recall_stats.mean if stats.recall_stats else None
@@ -864,8 +866,10 @@ def cmd_stats(ctx: typer.Context) -> None:
             lcb_str,
             str(stats.n_examples or 0),
             str(stats.zero_count or 0),
+            str(stats.status_counts.get(AgentRunStatus.COMPLETED, 0)),
             str(stats.status_counts.get(AgentRunStatus.MAX_TURNS_EXCEEDED, 0)),
             str(stats.status_counts.get(AgentRunStatus.CONTEXT_LENGTH_EXCEEDED, 0)),
+            str(stats.status_counts.get(AgentRunStatus.REPORTED_FAILURE, 0)),
         )
 
     for definition_id in sorted_definition_ids:

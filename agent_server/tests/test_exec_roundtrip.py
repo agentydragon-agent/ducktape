@@ -45,7 +45,7 @@ async def test_live_llm_exec_echo(mcp_client_box) -> None:
     agent = await Agent.create(
         mcp_client=mcp_client_box, client=client, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
-    agent.insert_message(
+    agent.process_message(
         SystemMessage.text(
             "You are testing an MCP exec tool.\n"
             "Call the tool "
@@ -53,7 +53,7 @@ async def test_live_llm_exec_echo(mcp_client_box) -> None:
             f"with cmd={ECHO_CMD!r} and return exactly the stdout."
         )
     )
-    agent.insert_message(UserMessage.text("Run the command now and output exactly the stdout value."))
+    agent.process_message(UserMessage.text("Run the command now and output exactly the stdout value."))
     res: AgentResult = await agent.run()
     text = (res.text or "").strip()
     assert text == "hello"

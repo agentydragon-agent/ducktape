@@ -48,111 +48,138 @@ System prompt┘   (reported_issues)  (grading_decisions)    (aggregate views)
 
 **Aggregate:** Query views like `recall_by_definition_split_kind`
 
-## Optimization Modes
+## Recall Views
 
-The prompt optimizer supports two modes that control validation data access.
+{{ describe_relation("recall_by_definition_split_kind") }}
+{{ describe_relation("recall_by_definition_example") }}
 
-### Whole-Repo Mode
+### Weighting
 
-**Philosophy:** Black-box validation - agent only sees aggregate recall, no filenames.
+Cross-run recall is weighted by occurrence, not by example:
+- Formula: `SUM(AVG(found_credit) per occurrence) / COUNT(occurrences)`
+- Examples with more TP occurrences naturally weight more
+- This measures "total issues found / total issues in dataset"
 
-**Characteristics:**
-- Validation examples: Only full-snapshot (comprehensive review)
-- Examples table: RLS-blocked for VALID split (no filenames visible)
+### Failure Handling
+
+When a critic exceeds max_turns or context limits:
+- No valid critique is produced
+- Counts as zero-recall for that example
+
+### Pareto Frontier (Best Definitions per Example)
+
+{{ describe_relation("pareto_frontier_by_example") }}
+
+Use this to find:
+- Which definitions achieve best recall on each example
+- Difficult examples where even the best definition struggles
+- Definition specialization patterns
+
+```sql
+-- Find hardest examples (lowest best recall)
+SELECT snapshot_slug, files_hash, best_mean_credit
+FROM pareto_frontier_by_example
+WHERE split = 'train'
+ORDER BY best_mean_credit ASC
+LIMIT 10;
+
+-- Which definitions win most often on validation?
+SELECT unnest(winning_critic_definition_ids) AS def_id, COUNT(*) AS wins
+FROM pareto_frontier_by_example
+WHERE split = 'valid'
+GROUP BY def_id ORDER BY wins DESC;
+```
+
+## Your Optimization Mode
+{% if config.target_metric == "whole-repo" %}
+You are running in **whole-repo mode**.
+
+**Terminal metric:** Whole-snapshot recall on VALID split.
+
+**Validation access:**
+- Examples table: RLS-blocked (no filenames visible)
+- Can only run whole-snapshot evaluations
 - Ground truth: Hidden
 - Execution traces: Hidden
 
-**Query method:**
-```sql
-SELECT * FROM get_validation_full_snapshot_aggregates()
-WHERE critic_definition_id = '<def_id>';
-```
+**Query validation metrics:**
 
-**Use case:** Final evaluation, measuring true generalization without risk of overfitting.
+{{ describe_relation("validation_recall_by_definition") }}
+{% elif config.target_metric == "targeted" %}
+You are running in **targeted mode**.
 
-### Targeted Mode
+**Terminal metric:** Per-file and whole-snapshot recall on VALID split.
 
-**Philosophy:** White-box iteration - agent can see filenames and target specific files.
-
-**Characteristics:**
-- Validation examples: Both per-file and full-snapshot
-- Examples table: Accessible for VALID split (filenames visible)
+**Validation access:**
+- Examples table: Accessible (filenames visible)
+- Can run both per-file and whole-snapshot evaluations
 - Ground truth: Still hidden
 - Execution traces: Still hidden
 
-**Query method:**
+**Query validation metrics:**
 ```sql
+-- Aggregate by definition
 SELECT (credit_stats).mean AS recall, n_examples,
        (credit_stats).ucb95 AS ucb, (credit_stats).lcb95 AS lcb
 FROM recall_by_definition_split_kind
 WHERE critic_definition_id = '<def_id>' AND split = 'valid';
+
+-- Per-example breakdown
+SELECT snapshot_slug, files_hash, example_kind,
+       (credit_stats).mean AS recall,
+       (credit_stats).lcb95 AS lcb,
+       (credit_stats).ucb95 AS ucb
+FROM recall_by_definition_example
+WHERE critic_definition_id = '<def_id>'
+  AND split = 'valid'
+ORDER BY (credit_stats).mean DESC;
 ```
 
-**Use case:** Rapid iteration, debugging specific patterns.
-
 **IMPORTANT:** Always check `n_examples >= 5` before trusting metrics (small samples = high variance).
+{% else %}
+**Note:** No target_metric specified. See documentation for whole-repo vs targeted modes.
+{% endif %}
 
 ## Data Access Patterns
 
-### For Training Split
+### Training Split (Full Access)
 
-Full access to everything:
-```python
-# Get examples
-examples = session.query(Example).join(Snapshot).filter(Snapshot.split == "train").all()
+```sql
+-- Get examples
+SELECT * FROM examples e
+JOIN snapshots s ON e.snapshot_slug = s.slug
+WHERE s.split = 'train';
 
-# Get critic runs with grader results
-critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
+-- Access ground truth
+SELECT * FROM true_positives WHERE snapshot_slug = '<slug>';
 
-# Access ground truth
-tps = session.query(TruePositive).filter_by(snapshot_slug=slug).all()
-
-# Read execution traces
-events = session.query(Event).filter_by(agent_run_id=agent_run_id).order_by(Event.sequence_num).all()
+-- Read execution traces
+SELECT * FROM events WHERE agent_run_id = '<run_id>' ORDER BY sequence_num;
 ```
 
-### For Validation Split
+### Validation Split (Restricted)
 
-Access varies by mode:
+{% if config.target_metric == "whole-repo" %}
+```sql
+-- Query aggregate metrics only (examples table is RLS-blocked)
+SELECT * FROM get_validation_full_snapshot_aggregates()
+WHERE critic_definition_id = '<def_id>';
 
-**Whole-Repo Mode:**
-```python
-# Can run critic on validation whole-snapshot only
-# Query for whole-snapshot example
-example = session.query(Example).filter_by(
-    snapshot_slug="ducktape/2025-11-26-01",
-    example_kind=ExampleKind.WHOLE_SNAPSHOT
-).one()
-
-result = await run_critic_on_example(example=example, ...)
-
-# Query aggregate metrics via SECURITY DEFINER function
-results = session.execute(text("""
-    SELECT * FROM get_validation_full_snapshot_aggregates()
-    WHERE critic_definition_id = :def_id
-"""), {"def_id": definition_id})
-
-# CANNOT see examples table (RLS blocked)
-# CANNOT inspect ground truth or execution traces
+-- CANNOT query examples table directly
+-- CANNOT inspect ground truth or execution traces
 ```
+{% elif config.target_metric == "targeted" %}
+```sql
+-- Can see example filenames
+SELECT * FROM examples e
+JOIN snapshots s ON e.snapshot_slug = s.slug
+WHERE s.split = 'valid';
 
-**Targeted Mode:**
-```python
-# Can see example filenames
-examples = session.query(Example).join(Snapshot).filter(Snapshot.split == "valid").all()
+-- Query metrics via views
+SELECT (credit_stats).mean AS recall
+FROM recall_by_definition_split_kind
+WHERE critic_definition_id = '<def_id>' AND split = 'valid';
 
-# Can run per-file evaluations
-# Choose a specific example from the list
-example = examples[0]  # Example with (snapshot_slug, example_kind, files_hash) composite key
-result = await run_critic_on_example(example=example, ...)
-
-# Query metrics via views
-results = session.execute(text("""
-    SELECT (credit_stats).mean AS recall, n_examples,
-           (credit_stats).ucb95 AS ucb, (credit_stats).lcb95 AS lcb
-    FROM recall_by_definition_split_kind
-    WHERE critic_definition_id = :def_id AND split = 'valid'
-"""), {"def_id": definition_id})
-
-# Can see filenames but CANNOT inspect ground truth or traces
+-- CANNOT inspect ground truth or execution traces
 ```
+{% endif %}

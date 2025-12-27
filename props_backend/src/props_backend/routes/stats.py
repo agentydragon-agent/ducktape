@@ -5,13 +5,22 @@ from __future__ import annotations
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from props.agent_types import AgentType
-from props.db.examples import count_available_examples_by_scope_all
-from props.db.models import AgentDefinition, AgentRunStatus, RecallByDefinitionSplitKind
+from props.db.examples import Example, count_available_examples_by_scope_all
+from props.db.models import (
+    AgentDefinition,
+    AgentRunStatus,
+    FileSetMember,
+    RecallByDefinitionExample,
+    RecallByDefinitionSplitKind,
+    Snapshot,
+    StatsWithCI,
+)
 from props.db.session import get_session
+from props.ids import DefinitionId, SnapshotSlug
 from props.models.examples import ExampleKind
 from props.splits import Split
 
@@ -19,7 +28,7 @@ router = APIRouter()
 
 
 class DefinitionInfo(BaseModel):
-    id: str
+    definition_id: DefinitionId
     agent_type: AgentType
     created_at: datetime
 
@@ -29,8 +38,7 @@ class DefinitionsResponse(BaseModel):
 
 
 class SplitScopeStats(BaseModel):
-    recall_pct: float | None
-    lcb_pct: float | None
+    recall_stats: StatsWithCI | None
     n_examples: int
     zero_count: int
     status_counts: dict[AgentRunStatus, int]
@@ -42,7 +50,7 @@ SplitStats = dict[Split, dict[ExampleKind, SplitScopeStats]]
 
 
 class DefinitionRow(BaseModel):
-    definition_id: str
+    definition_id: DefinitionId
     created_at: datetime
     stats: SplitStats
 
@@ -53,11 +61,10 @@ class OverviewResponse(BaseModel):
     total_definitions: int
 
 
-def to_stats(row: RecallByDefinitionSplitKind, total_available: int) -> SplitScopeStats:
-    recall = row.recall_stats
+def to_split_scope_stats(row: RecallByDefinitionSplitKind, total_available: int) -> SplitScopeStats:
+    """Convert RecallByDefinitionSplitKind row to SplitScopeStats."""
     return SplitScopeStats(
-        recall_pct=recall.mean * 100 if recall else None,
-        lcb_pct=recall.lcb95 * 100 if recall and recall.lcb95 else None,
+        recall_stats=row.recall_stats,
         n_examples=row.n_examples or 0,
         zero_count=row.zero_count or 0,
         status_counts=Counter(row.status_counts or {}),
@@ -93,7 +100,7 @@ def get_overview() -> OverviewResponse:
             result: SplitStats = defaultdict(dict)
             if def_id in by_def:
                 for (split, kind), row in by_def[def_id].items():
-                    result[split][kind] = to_stats(row, example_counts.get((split, kind), 0))
+                    result[split][kind] = to_split_scope_stats(row, example_counts.get((split, kind), 0))
             return dict(result)
 
         rows = [
@@ -118,7 +125,224 @@ def list_definitions(agent_type: AgentType | None = None) -> DefinitionsResponse
         definitions = query.order_by(AgentDefinition.created_at.desc()).all()
         return DefinitionsResponse(
             definitions=[
-                DefinitionInfo(id=d.id, agent_type=AgentType(d.agent_type), created_at=d.created_at)
+                DefinitionInfo(definition_id=d.id, agent_type=AgentType(d.agent_type), created_at=d.created_at)
                 for d in definitions
             ]
+        )
+
+
+# Per-example stats for a definition
+class ExampleStats(BaseModel):
+    snapshot_slug: SnapshotSlug
+    example_kind: ExampleKind
+    files_hash: str | None
+    split: Split
+    n_catchable_occurrences: int
+    n_runs: int
+    status_counts: dict[AgentRunStatus, int]
+    credit_stats: StatsWithCI | None
+
+
+class DefinitionDetailResponse(BaseModel):
+    definition_id: DefinitionId
+    agent_type: AgentType
+    created_at: datetime
+    stats: SplitStats
+    examples: list[ExampleStats]
+
+
+@router.get("/definitions/{definition_id}")
+def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailResponse:
+    """Get detailed stats for a single definition including per-example breakdown."""
+    with get_session() as session:
+        definition = session.query(AgentDefinition).filter_by(id=definition_id).first()
+        if not definition:
+            raise HTTPException(status_code=404, detail=f"Definition not found: {definition_id}")
+
+        example_counts = count_available_examples_by_scope_all(session, [Split.TRAIN, Split.VALID])
+
+        # Get aggregate stats
+        agg_results = (
+            session.query(RecallByDefinitionSplitKind)
+            .filter(RecallByDefinitionSplitKind.critic_definition_id == definition_id)
+            .filter(RecallByDefinitionSplitKind.split.in_([Split.TRAIN, Split.VALID]))
+            .all()
+        )
+
+        stats: SplitStats = defaultdict(dict)
+        for row in agg_results:
+            stats[row.split][row.example_kind] = to_split_scope_stats(
+                row, example_counts.get((row.split, row.example_kind), 0)
+            )
+
+        # Get per-example breakdown
+        example_results = (
+            session.query(RecallByDefinitionExample)
+            .filter(RecallByDefinitionExample.critic_definition_id == definition_id)
+            .filter(RecallByDefinitionExample.split.in_([Split.TRAIN, Split.VALID]))
+            .order_by(
+                RecallByDefinitionExample.split,
+                RecallByDefinitionExample.snapshot_slug,
+                RecallByDefinitionExample.example_kind,
+            )
+            .all()
+        )
+
+        examples = [
+            ExampleStats(
+                snapshot_slug=r.snapshot_slug,
+                example_kind=r.example_kind,
+                files_hash=r.files_hash,
+                split=r.split,
+                n_catchable_occurrences=r.n_catchable_occurrences,
+                n_runs=r.n_runs,
+                status_counts=Counter(r.status_counts or {}),
+                credit_stats=r.credit_stats,
+            )
+            for r in example_results
+        ]
+
+        return DefinitionDetailResponse(
+            definition_id=definition.id,
+            agent_type=AgentType(definition.agent_type),
+            created_at=definition.created_at,
+            stats=dict(stats),
+            examples=examples,
+        )
+
+
+class DefinitionStatsForExample(BaseModel):
+    """Stats for a single definition on this example."""
+
+    definition_id: DefinitionId
+    model: str
+    n_runs: int
+    status_counts: dict[AgentRunStatus, int]
+    credit_stats: StatsWithCI | None
+
+
+class ExampleDetailResponse(BaseModel):
+    """Detailed view of a single example."""
+
+    snapshot_slug: SnapshotSlug
+    example_kind: ExampleKind
+    files_hash: str | None
+    split: Split
+    n_catchable_occurrences: int
+    files: list[str] | None  # For file_set examples
+    definitions: list[DefinitionStatsForExample]  # Per-definition stats
+    credit_stats: StatsWithCI | None  # Aggregate metrics across all definitions
+
+
+@router.get("/examples")
+def get_example_detail(
+    snapshot_slug: SnapshotSlug,
+    example_kind: ExampleKind,
+    files_hash: str | None = None,
+) -> ExampleDetailResponse:
+    """Get detailed information about a specific example.
+
+    Query parameters:
+        snapshot_slug: Snapshot identifier (e.g., "ducktape/2025-11-20-00")
+        example_kind: Example kind (whole_snapshot or file_set)
+        files_hash: Files hash (required for file_set, must be None for whole_snapshot)
+
+    Returns:
+        Detailed example information including:
+        - Example metadata (split, n_catchable_occurrences)
+        - File list (for file_set examples)
+        - Per-definition run statistics
+        - Aggregate metrics
+    """
+    with get_session() as session:
+        # Validate and fetch the example
+        query = session.query(Example).filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind)
+
+        if example_kind == ExampleKind.WHOLE_SNAPSHOT:
+            if files_hash is not None:
+                raise HTTPException(
+                    status_code=400, detail=f"files_hash must be None for whole_snapshot examples, got: {files_hash}"
+                )
+            query = query.filter(Example.files_hash.is_(None))
+        elif example_kind == ExampleKind.FILE_SET:
+            if files_hash is None:
+                raise HTTPException(status_code=400, detail="files_hash is required for file_set examples")
+            query = query.filter_by(files_hash=files_hash)
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid example_kind: {example_kind}")
+
+        example = query.first()
+        if not example:
+            raise HTTPException(
+                status_code=404, detail=f"Example not found: {snapshot_slug}/{example_kind}/{files_hash or 'NULL'}"
+            )
+
+        # Get split from snapshot
+        snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+        if not snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot not found: {snapshot_slug}")
+
+        split = snapshot.split
+
+        # Get file list for file_set examples
+        files: list[str] | None = None
+        if example_kind == ExampleKind.FILE_SET and files_hash:
+            file_members = (
+                session.query(FileSetMember.file_path)
+                .filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash)
+                .order_by(FileSetMember.file_path)
+                .all()
+            )
+            files = [m.file_path for m in file_members]
+
+        # Get per-definition stats from recall_by_definition_example view
+        example_stats_rows = (
+            session.query(RecallByDefinitionExample)
+            .filter_by(snapshot_slug=snapshot_slug, example_kind=example_kind, files_hash=files_hash)
+            .order_by(RecallByDefinitionExample.critic_definition_id)
+            .all()
+        )
+
+        # Convert to DefinitionStatsForExample
+        definitions = [
+            DefinitionStatsForExample(
+                definition_id=r.critic_definition_id,
+                model=r.critic_model,
+                n_runs=r.n_runs,
+                status_counts=Counter(r.status_counts or {}),
+                credit_stats=r.credit_stats,
+            )
+            for r in example_stats_rows
+        ]
+
+        # Compute aggregate stats across all definitions for this example
+        credit_stats: StatsWithCI | None = None
+        if definitions and any(d.credit_stats for d in definitions):
+            # Aggregate credit_stats across all definitions
+            all_credits = [d.credit_stats for d in definitions if d.credit_stats]
+            if all_credits:
+                # Simple mean aggregation (could be more sophisticated)
+                total_n = sum(c.n for c in all_credits)
+                if total_n > 0:
+                    weighted_mean = sum(c.mean * c.n for c in all_credits) / total_n
+                    all_mins = [c.min for c in all_credits]
+                    all_maxs = [c.max for c in all_credits]
+                    credit_stats = StatsWithCI(
+                        n=total_n,
+                        mean=weighted_mean,
+                        min=min(all_mins),
+                        max=max(all_maxs),
+                        lcb95=None,  # Would need proper variance pooling
+                        ucb95=None,
+                    )
+
+        return ExampleDetailResponse(
+            snapshot_slug=snapshot_slug,
+            example_kind=example_kind,
+            files_hash=files_hash,
+            split=split,
+            n_catchable_occurrences=example.n_catchable_occurrences,
+            files=files,
+            definitions=definitions,
+            credit_stats=credit_stats,
         )

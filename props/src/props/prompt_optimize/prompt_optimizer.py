@@ -34,7 +34,7 @@ from props.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingDe
 from props.db.session import get_session
 from props.display import short_uuid
 from props.grader.exceptions import GraderDidNotSubmitError
-from props.ids import SnapshotSlug
+from props.ids import DefinitionId, SnapshotSlug
 from props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
 from props.prompt_optimize.budget_handler import BudgetEnforcementHandler
 from props.splits import Split
@@ -173,7 +173,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
 
 
 class RunCriticInput(OpenAIStrictModeBaseModel):
-    definition_id: str = Field(
+    definition_id: DefinitionId = Field(
         description="Agent definition ID (from 'props agent-definition create' or 'critic' for baseline)"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
@@ -664,7 +664,7 @@ Prioritize recall.
             )
             handle.agent._handlers.append(budget_handler)
 
-            handle.insert_message(UserMessage.text(user))
+            handle.process_message(UserMessage.text(user))
             logger.debug("Starting agent.run()")
             await handle.run()
             logger.debug("Agent run complete")

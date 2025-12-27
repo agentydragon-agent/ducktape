@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import logging
 from uuid import UUID
 
-from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.events import ApiRequest, AssistantText, Response, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
 from openai_utils.model import ReasoningItem
 from props.db.models import Event
@@ -37,7 +37,8 @@ class DatabaseEventHandler(BaseHandler):
         self._sequence_num = 0
 
     def _write_event(
-        self, evt: UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem | ApiRequest
+        self,
+        evt: SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | Response | ReasoningItem | ApiRequest,
     ) -> None:
         """Write event to database with sequence number."""
         event_type = evt.type
@@ -58,6 +59,9 @@ class DatabaseEventHandler(BaseHandler):
         logger.debug(f"Wrote event to DB: {self.agent_run_id=} {self._sequence_num - 1=} {event_type=}")
 
     # ---- BaseHandler hooks (typed) ----
+    def on_system_text_event(self, evt: SystemText) -> None:
+        self._write_event(evt)
+
     def on_user_text_event(self, evt: UserText) -> None:
         self._write_event(evt)
 

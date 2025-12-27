@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from props.agent_types import AgentType
 from props.db.examples import Example
 from props.db.models import AgentRun, Event, FalsePositive, OccurrenceCredit, RunCost, Snapshot, TruePositive
-from props.ids import SnapshotSlug
+from props.ids import DefinitionId, SnapshotSlug
 from props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.splits import Split
 
@@ -454,7 +454,7 @@ class RecallByExampleRow(BaseModel):
     """Single row from recall-by-example query."""
 
     example: ExampleSpec
-    critic_definition_id: str
+    critic_definition_id: DefinitionId
     recall: float
     snapshot_slug: SnapshotSlug  # For backwards compatibility with existing code
 
@@ -462,7 +462,7 @@ class RecallByExampleRow(BaseModel):
 def query_recall_by_example(
     session: Session,
     split: Split | None = None,
-    critic_definition_id: str | None = None,
+    critic_definition_id: DefinitionId | None = None,
     snapshot_slugs: list[SnapshotSlug] | None = None,
 ) -> list[RecallByExampleRow]:
     """Query occurrence-weighted recall grouped by (example, critic_definition).

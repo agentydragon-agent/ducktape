@@ -18,6 +18,7 @@ from props.agent_types import AgentType, CriticTypeConfig
 from props.db.models import AgentRun, AgentRunStatus, Event, GradingDecision
 from props.db.session import get_session
 from props.display import ColumnDef, build_table_from_schema, ellipticize, print_table_with_footer, short_sha
+from props.ids import DefinitionId, SnapshotSlug
 
 
 @dataclass
@@ -25,8 +26,8 @@ class CriticRunSummary:
     """Summary data for a critic run."""
 
     run_id: UUID
-    snapshot_slug: str
-    definition_id: str
+    snapshot_slug: SnapshotSlug
+    definition_id: DefinitionId
     status: str
     tool_count: int
 

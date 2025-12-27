@@ -158,20 +158,6 @@ def fetch_snapshot(dest_dir: str) -> str:
     return dest_dir
 
 
-def get_agent_config() -> str:
-    """Get JSON representation of current agent's type_config.
-
-    Used as Jinja2 helper in critic_dev.md.j2 template.
-
-    Returns:
-        JSON string of type_config
-    """
-    with get_session() as session:
-        agent_run = get_current_agent_run(session)
-        config = agent_run.type_config
-        return config.model_dump_json(indent=2)
-
-
 def get_grading_context() -> str:
     """Get grading context for grader template.
 

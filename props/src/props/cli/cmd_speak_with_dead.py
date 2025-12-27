@@ -202,5 +202,5 @@ async def cmd_speak_with_dead(
         agent.insert_transcript_items(transcript_items)
 
         # Insert question and run
-        agent.insert_message(UserMessage.text(question))
+        agent.process_message(UserMessage.text(question))
         await agent.run()

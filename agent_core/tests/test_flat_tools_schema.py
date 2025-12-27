@@ -184,7 +184,7 @@ async def test_agent_compositor_flat_tools_request_schema(
         parallel_tool_calls=False,
         tool_policy=RequireAnyTool(),
     )
-    agent.insert_message(SystemMessage.text(system_prompt))
+    agent.process_message(SystemMessage.text(system_prompt))
     await agent.run()
 
     # Verify phase 1
@@ -218,7 +218,7 @@ async def test_agent_compositor_flat_tools_request_schema(
         parallel_tool_calls=False,
         tool_policy=RequireAnyTool(),
     )
-    agent.insert_message(SystemMessage.text(system_prompt))
+    agent.process_message(SystemMessage.text(system_prompt))
     await agent.run()
 
     # Verify phase 2

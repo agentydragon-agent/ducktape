@@ -43,7 +43,7 @@ async def test_compact_transcript_basic(compositor_client, mock_openai):
     agent = await Agent.create(
         mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
-    agent.insert_message(SystemMessage.text("Test system prompt"))
+    agent.process_message(SystemMessage.text("Test system prompt"))
 
     # Add some conversation history to the transcript
     agent._transcript.extend(
@@ -90,7 +90,7 @@ async def test_compact_transcript_insufficient_history(compositor_client, mock_o
     agent = await Agent.create(
         mcp_client=compositor_client, client=mock_openai, handlers=[BaseHandler()], tool_policy=RequireAnyTool()
     )
-    agent.insert_message(SystemMessage.text("Test system prompt"))
+    agent.process_message(SystemMessage.text("Test system prompt"))
 
     # Add only a few messages
     agent._transcript.extend([UserMessage.text("Hello"), AssistantMessage.text("Hi there")])
@@ -150,7 +150,7 @@ async def test_compaction_handler_integrated_with_agent(compositor_client, mock_
     agent = await Agent.create(
         mcp_client=compositor_client, client=mock_openai, handlers=[handler], tool_policy=RequireAnyTool()
     )
-    agent.insert_message(SystemMessage.text("Test system prompt"))
+    agent.process_message(SystemMessage.text("Test system prompt"))
 
     # Add conversation history
     agent._transcript.extend(

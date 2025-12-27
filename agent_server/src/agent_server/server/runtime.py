@@ -160,7 +160,7 @@ class AgentSession:
         if self._agent is not None:
             # Agent notices are injected via the NotificationsHandler/ServerModeHandler from MCP resource updates
             try:
-                self._agent.insert_message(OAIUserMessage.text(prompt))
+                self._agent.process_message(OAIUserMessage.text(prompt))
                 await self._agent.run()
             except asyncio.CancelledError:
                 # Error now logged, not sent via dead send_payload

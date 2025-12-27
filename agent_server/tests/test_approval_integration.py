@@ -39,7 +39,7 @@ async def test_approval_system_wired_and_blocks_on_ask(
             handlers=[FinishOnTextMessageHandler(), BaseHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
-        agent.insert_message(SystemMessage.text("test"))
+        agent.process_message(SystemMessage.text("test"))
 
         # Start the agent run in the background
         run_task = asyncio.create_task(agent.run())

@@ -50,13 +50,14 @@ from props.db.config import DatabaseConfig
 from props.db.temp_user_manager import TempUserManager
 from props.db_event_handler import DatabaseEventHandler
 from props.docker_env import DOCKER_MOUNT_PREFIX, PROPS_NETWORK_NAME, PropertiesDockerCompositor
+from props.ids import DefinitionId
 
 
-def _make_container_name(definition_id: str, agent_run_id: UUID) -> str:
-    role_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
-    role_part = role_slug[:20]
+def _make_container_name(definition_id: DefinitionId, agent_run_id: UUID) -> str:
+    def_slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", definition_id) or "agent"
+    def_part = def_slug[:20]
     run_part = str(agent_run_id).split("-")[0]
-    return f"{role_part}-{run_part}"
+    return f"{def_part}-{run_part}"
 
 
 if TYPE_CHECKING:
@@ -156,7 +157,7 @@ class AgentEnvironment(ABC):
 
     def __init__(
         self,
-        definition_id: str,
+        definition_id: DefinitionId,
         agent_run_id: UUID,
         docker_client: aiodocker.Docker,
         db_config: DatabaseConfig,
@@ -328,7 +329,7 @@ class _AgentDockerCompositor(PropertiesDockerCompositor):
         image_id: str,
         db_conn,
         *,
-        definition_id: str,
+        definition_id: DefinitionId,
         agent_run_id: UUID,
         container_name: str | None,
         labels: dict[str, str],

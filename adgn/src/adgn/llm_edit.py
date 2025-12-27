@@ -70,14 +70,14 @@ async def _execute(
                 dynamic_instructions=comp.render_agent_dynamic_instructions,
                 tool_policy=RequireAnyTool(),
             )
-            agent.insert_message(
+            agent.process_message(
                 SystemMessage.text(
                     "You are a code editor assistant. Use tools to read/modify/save files.\n"
                     "Operate on the provided file only. Prefer precise replace_text edits.\n"
                     "Finish with done(success, report)."
                 )
             )
-            agent.insert_message(UserMessage.text(f"Edit file: {file_path}\nGoal: {prompt}\n"))
+            agent.process_message(UserMessage.text(f"Edit file: {file_path}\nGoal: {prompt}\n"))
             res = await agent.run()
             print(res.text)
             return 0

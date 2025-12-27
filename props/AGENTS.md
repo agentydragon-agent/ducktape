@@ -158,7 +158,21 @@ Changes trigger automatic reload.
 props db recreate  # Drops schema, runs migrations, creates RLS/views
 ```
 
+**CRITICAL - NEVER RECREATE WITHOUT PERMISSION:** The `props db recreate` command drops ALL data including expensively-collected agent rollouts. **NEVER run this command without the user's explicit verbal agreement.** For applying migrations to an existing database, use the standard Alembic workflow instead (see Infrastructure TODOs for current limitations).
+
 **Example migration:** See `src/props/db/migrations/versions/20251213000000_add_clustering_tables.py`
+
+**CASCADE WARNING:** When dropping views with CASCADE (e.g., `DROP VIEW IF EXISTS recall_by_run CASCADE`), all dependent views are also dropped. Before writing such a migration:
+1. Query `pg_depend` or check the schema to list ALL dependent views
+2. Recreate all dropped views in correct dependency order in the same migration
+3. Re-grant permissions (`GRANT SELECT ON TABLE view_name TO agent_base`)
+
+Example: `recall_by_run` has 4 dependent views that cascade:
+- `recall_by_definition_example` → `recall_by_definition_split_kind`
+- `recall_by_definition_example` → `recall_by_example`
+- `recall_by_definition_example` → `pareto_frontier_by_example`
+
+See `20251227000000_exclude_in_progress_from_recall.py` for a complete CASCADE-aware migration.
 
 ## Temporary Database Users (Scoped Access)
 

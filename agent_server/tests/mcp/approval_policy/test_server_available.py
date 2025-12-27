@@ -39,7 +39,7 @@ async def test_approval_policy_server_is_available(echo_spec, make_policy_gatewa
             handlers=[FinishOnTextMessageHandler()],
             tool_policy=AllowAnyToolOrTextMessage(),
         )
-        agent.insert_message(UserMessage.text("test"))
+        agent.process_message(UserMessage.text("test"))
 
         # Run should complete without issues
         result = await agent.run()

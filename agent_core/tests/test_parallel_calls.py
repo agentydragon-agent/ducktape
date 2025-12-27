@@ -53,7 +53,7 @@ async def test_parallel_tool_calls_reduce_wall_time(
         handlers=[handler, recording_handler],
         tool_policy=RequireAnyTool(),
     )
-    agent.insert_message(UserMessage.text("go"))
+    agent.process_message(UserMessage.text("go"))
 
     t0 = time.perf_counter()
     await agent.run()

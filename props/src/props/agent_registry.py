@@ -57,6 +57,7 @@ from props.display import short_uuid
 from props.grader.exceptions import GraderDidNotSubmitError
 from props.grader.grader import GraderAgentEnvironment, _fp_from_orm, _tp_from_orm
 from props.grader.persistence import fp_to_db, tp_to_db
+from props.ids import DefinitionId
 from props.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 if TYPE_CHECKING:
@@ -70,7 +71,7 @@ class AgentRunView:
     """Unified view of an agent run from memory or DB."""
 
     agent_run_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     model: str
     status: AgentRunStatus
     created_at: datetime
@@ -124,7 +125,7 @@ class AgentRegistry:
     async def run_critic(
         self,
         *,
-        definition_id: str,
+        definition_id: DefinitionId,
         example: ExampleSpec,
         client: OpenAIModelProto,
         parent_run_id: UUID | None = None,
@@ -163,7 +164,7 @@ class AgentRegistry:
     async def _run_critic_impl(
         self,
         *,
-        definition_id: str,
+        definition_id: DefinitionId,
         example: ExampleSpec,
         client: OpenAIModelProto,
         parent_run_id: UUID | None,

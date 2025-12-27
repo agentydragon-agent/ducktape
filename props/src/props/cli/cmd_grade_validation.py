@@ -32,6 +32,7 @@ from props.db.models import (
 )
 from props.db.session import get_session
 from props.display import short_uuid
+from props.ids import DefinitionId
 from props.models.examples import ExampleKind, ExampleSpec
 from props.splits import Split
 
@@ -196,7 +197,7 @@ async def cmd_grade_validation(
 
         async def process_one(
             example: ExampleSpec,
-            definition_id: str,
+            definition_id: DefinitionId,
             critic_run_id_or_none: UUID | None,
             worker_id: int,
             item_index: int,

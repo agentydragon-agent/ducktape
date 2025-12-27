@@ -31,6 +31,7 @@ __all__ = [
     "GroundTruthUsage",
     "ReasoningItem",
     "Response",
+    "SystemText",
     "ToolCall",
     "ToolCallOutput",
     "UserText",
@@ -48,6 +49,11 @@ class GroundTruthUsage(BaseModel):
 
 
 # ---- Typed events (discriminated by "type" field) ----
+class SystemText(BaseModel):
+    type: Literal["system_text"] = "system_text"
+    text: str
+
+
 class UserText(BaseModel):
     type: Literal["user_text"] = "user_text"
     text: str
@@ -108,7 +114,7 @@ class Response(BaseModel):
 
 # Union of all current event types (discriminated by "type" field)
 EventType = Annotated[
-    UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem,
+    SystemText | UserText | AssistantText | ToolCall | ToolCallOutput | ApiRequest | Response | ReasoningItem,
     Field(discriminator="type"),
 ]
 

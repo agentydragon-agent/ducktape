@@ -198,10 +198,10 @@ def list_issues_cmd() -> None:
 @app.command("init")
 def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
-    from agent_container_util.output import render_agent_prompt
+    from agent_container_util.output import WORKSPACE, render_agent_prompt
     from props.agent_helpers import fetch_snapshot, get_scope_description
 
-    render_agent_prompt(
-        "props/docs/agents/critic.md.j2",
-        helpers={"get_scope_description": get_scope_description, "fetch_snapshot": fetch_snapshot},
-    )
+    # Side-effect: fetch snapshot before rendering template
+    fetch_snapshot(str(WORKSPACE))
+
+    render_agent_prompt("props/docs/agents/critic.md.j2", helpers={"scope_description": get_scope_description()})

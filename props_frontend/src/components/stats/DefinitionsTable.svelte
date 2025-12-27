@@ -2,27 +2,26 @@
   import { DataTable } from '@careswitch/svelte-data-table';
   import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from '../../lib/types';
   import { formatDistanceToNow } from 'date-fns';
+  import { formatStatsWithCI } from '../../lib/format';
+  import DefinitionIdLink from '../../lib/DefinitionIdLink.svelte';
+
+  interface CellClickInfo {
+    definitionId: string;
+    split: Split;
+    kind: ExampleKind;
+  }
 
   interface Props {
     definitions: DefinitionRow[];
+    exampleCounts?: { [key: string]: { [key: string]: number } };
     onSelectDefinition?: (definitionId: string) => void;
+    onCellClick?: (info: CellClickInfo) => void;
   }
 
-  let { definitions, onSelectDefinition }: Props = $props();
-
-  function handleDefinitionClick(definitionId: string) {
-    if (onSelectDefinition) {
-      onSelectDefinition(definitionId);
-    }
-  }
+  let { definitions, exampleCounts, onSelectDefinition, onCellClick }: Props = $props();
 
   function getStats(def: DefinitionRow, split: Split, kind: ExampleKind): SplitScopeStats | undefined {
     return def.stats[split]?.[kind];
-  }
-
-  function formatPct(value: number | null | undefined): string {
-    if (value == null) return '—';
-    return `${value.toFixed(1)}%`;
   }
 
   function formatCount(n: number, total: number): string {
@@ -33,13 +32,14 @@
     return formatDistanceToNow(new Date(isoDate), { addSuffix: false });
   }
 
-  // Column group configs
-  const colGroups: { split: Split; kind: ExampleKind; label: string }[] = [
-    { split: 'valid', kind: 'whole_snapshot', label: 'Valid Whole' },
-    { split: 'valid', kind: 'file_set', label: 'Valid Partial' },
-    { split: 'train', kind: 'whole_snapshot', label: 'Train Whole' },
-    { split: 'train', kind: 'file_set', label: 'Train Partial' },
-  ];
+  function getExampleCount(split: Split, kind: ExampleKind): number {
+    return exampleCounts?.[split]?.[kind] ?? 0;
+  }
+
+  // Hierarchical structure: splits -> kinds
+  const splits: Split[] = ['valid', 'train'];
+  const kinds: ExampleKind[] = ['whole_snapshot', 'file_set'];
+  const metricsPerKind = 5; // Recall, Runs, Zero, Done, Stalled
 
   // Create DataTable with sortable columns
   const table = $derived(new DataTable({
@@ -48,15 +48,15 @@
       { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
       { id: 'created_at', key: 'created_at', name: 'Age', sortable: true },
       // Generate columns for each split/kind combo
-      ...colGroups.flatMap(({ split, kind, label }) => [
-        {
+      ...splits.flatMap((split) =>
+        kinds.map((kind) => ({
           id: `${split}_${kind}_recall`,
           key: 'stats' as keyof DefinitionRow,
-          name: `${label} Recall`,
+          name: `${split} ${kind} Recall`,
           sortable: true,
-          getValue: (row: DefinitionRow) => getStats(row, split, kind)?.recall_pct ?? -1,
-        },
-      ]),
+          getValue: (row: DefinitionRow) => getStats(row, split, kind)?.recall_stats?.mean ?? -1,
+        }))
+      ),
     ],
     initialSort: 'valid_whole_snapshot_recall',
     initialSortDirection: 'desc',
@@ -69,10 +69,11 @@
     return '';
   }
 
-  function recallClass(pct: number | null | undefined): string {
-    if (pct == null) return 'text-gray-400';
-    if (pct >= 70) return 'text-green-600 font-medium';
-    if (pct >= 40) return 'text-yellow-600';
+  function recallClass(value: number | null | undefined): string {
+    if (value == null) return 'text-gray-400';
+    // value is 0.0-1.0, compare as ratio
+    if (value >= 0.70) return 'text-green-600 font-medium';
+    if (value >= 0.40) return 'text-yellow-600';
     return 'text-red-600';
   }
 
@@ -81,40 +82,47 @@
 <div class="overflow-x-auto">
   <table class="min-w-full text-sm">
     <thead>
-      <tr class="border-b border-gray-300">
-        <th
-          class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-          onclick={() => table.toggleSort('definition_id')}
-        >
+      <!-- Level 1: Split (Valid / Train) -->
+      <tr class="border-b border-gray-200">
+        <th rowspan="3" class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
+            onclick={() => table.toggleSort('definition_id')}>
           Definition{getSortIndicator('definition_id')}
         </th>
-        <th
-          class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100"
-          onclick={() => table.toggleSort('created_at')}
-        >
+        <th rowspan="3" class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
+            onclick={() => table.toggleSort('created_at')}>
           Age{getSortIndicator('created_at')}
         </th>
-        {#each colGroups as { split, kind, label }}
-          {@const colId = `${split}_${kind}_recall`}
-          <th
-            colspan="6"
-            class="px-3 py-2 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
-            onclick={() => table.toggleSort(colId)}
-          >
-            {label}{getSortIndicator(colId)}
+        {#each splits as split}
+          <th colspan={kinds.length * metricsPerKind}
+              class="px-3 py-1 text-center border-l border-gray-300 font-semibold capitalize">
+            {split}
           </th>
         {/each}
       </tr>
-      <tr class="border-b border-gray-200 text-xs text-gray-500">
-        <th></th>
-        <th></th>
-        {#each colGroups as _}
-          <th class="px-2 py-1 text-right">Recall</th>
-          <th class="px-2 py-1 text-right">LCB</th>
-          <th class="px-2 py-1 text-right">N</th>
-          <th class="px-2 py-1 text-right">Z</th>
-          <th class="px-2 py-1 text-right">✓</th>
-          <th class="px-2 py-1 text-right">S</th>
+      <!-- Level 2: Kind with example counts -->
+      <tr class="border-b border-gray-200">
+        {#each splits as split}
+          {#each kinds as kind}
+            {@const colId = `${split}_${kind}_recall`}
+            {@const count = getExampleCount(split, kind)}
+            <th colspan={metricsPerKind}
+                class="px-2 py-1 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
+                onclick={() => table.toggleSort(colId)}>
+              {kind} <span class="text-gray-400 font-normal">(n={count})</span>{getSortIndicator(colId)}
+            </th>
+          {/each}
+        {/each}
+      </tr>
+      <!-- Level 3: Metrics -->
+      <tr class="border-b border-gray-300 text-xs text-gray-500">
+        {#each splits as _split}
+          {#each kinds as _kind}
+            <th class="px-2 py-1 text-right border-l border-gray-200">Recall</th>
+            <th class="px-2 py-1 text-right">Runs</th>
+            <th class="px-2 py-1 text-right">Zero</th>
+            <th class="px-2 py-1 text-right">Done</th>
+            <th class="px-2 py-1 text-right">Stalled</th>
+          {/each}
         {/each}
       </tr>
     </thead>
@@ -122,38 +130,42 @@
       {#each table.rows as def (def.definition_id)}
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="px-3 py-2 font-mono text-xs">
-            {#if onSelectDefinition}
-              <button
-                type="button"
-                class="text-blue-600 hover:text-blue-800 hover:underline"
-                onclick={() => handleDefinitionClick(def.definition_id)}
-              >
-                {def.definition_id}
-              </button>
-            {:else}
-              {def.definition_id}
-            {/if}
+            <DefinitionIdLink id={def.definition_id} onclick={onSelectDefinition} />
           </td>
           <td class="px-3 py-2 text-right text-gray-600">
             {formatAge(def.created_at)}
           </td>
-          {#each colGroups as { split, kind }}
-            {@const stats = getStats(def, split, kind)}
-            {#if stats}
-              <td class="px-2 py-2 text-right {recallClass(stats.recall_pct)}">{formatPct(stats.recall_pct)}</td>
-              <td class="px-2 py-2 text-right text-gray-400">{formatPct(stats.lcb_pct)}</td>
-              <td class="px-2 py-2 text-right">{formatCount(stats.n_examples, stats.total_available)}</td>
-              <td class="px-2 py-2 text-right text-gray-400">{stats.zero_count}</td>
-              <td class="px-2 py-2 text-right">{stats.status_counts.completed ?? 0}</td>
-              <td class="px-2 py-2 text-right text-gray-400">{stats.status_counts.max_turns_exceeded ?? 0}</td>
-            {:else}
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-              <td class="px-2 py-2 text-right text-gray-300">—</td>
-            {/if}
+          {#each splits as split}
+            {#each kinds as kind}
+              {@const stats = getStats(def, split, kind)}
+              {@const clickable = onCellClick != null}
+              {@const cellClick = clickable ? () => onCellClick({ definitionId: def.definition_id, split, kind }) : undefined}
+              {@const clickClass = clickable ? 'cursor-pointer hover:bg-blue-100' : ''}
+              {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}
+              {#if stats}
+                <td
+                  class="px-2 py-2 text-right border-l border-gray-100 {recallClass(stats.recall_stats?.mean)} {clickClass}"
+                  onclick={cellClick}
+                  title={clickTitle}
+                >
+                  {stats.recall_stats ? formatStatsWithCI(stats.recall_stats) : '—'}
+                </td>
+                <td class="px-2 py-2 text-right">{stats.n_examples}</td>
+                <td class="px-2 py-2 text-right text-gray-400">{stats.zero_count}</td>
+                <td class="px-2 py-2 text-right">{stats.status_counts.completed ?? 0}</td>
+                <td class="px-2 py-2 text-right text-gray-400">{stats.status_counts.max_turns_exceeded ?? 0}</td>
+              {:else}
+                <td
+                  class="px-2 py-2 text-right border-l border-gray-100 text-gray-300 {clickClass}"
+                  onclick={cellClick}
+                  title={clickTitle}
+                >—</td>
+                <td class="px-2 py-2 text-right text-gray-300">—</td>
+                <td class="px-2 py-2 text-right text-gray-300">—</td>
+                <td class="px-2 py-2 text-right text-gray-300">—</td>
+                <td class="px-2 py-2 text-right text-gray-300">—</td>
+              {/if}
+            {/each}
           {/each}
         </tr>
       {/each}

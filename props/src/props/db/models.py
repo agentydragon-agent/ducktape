@@ -50,7 +50,7 @@ from props.agent_types import (
     TypeConfig,
 )
 from props.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
-from props.ids import SnapshotSlug, _SnapshotSlugBase
+from props.ids import DefinitionId, SnapshotSlug, _SnapshotSlugBase
 from props.models.examples import ExampleKind
 from props.models.snapshot import BundleFilter, Source
 from props.splits import Split
@@ -1049,7 +1049,7 @@ class RecallByExample(Base):
 class WinningDefinition(BaseModel):
     """A definition that achieved best score on an example."""
 
-    definition_id: str
+    definition_id: DefinitionId
     credit_stats: StatsWithCI
     n_runs: int
 

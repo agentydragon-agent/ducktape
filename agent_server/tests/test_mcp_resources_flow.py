@@ -44,7 +44,7 @@ async def test_model_reads_container_info_with_stubbed_openai(
         handlers=[FinishOnTextMessageHandler(), DisplayEventsHandler(), recording_handler],
         tool_policy=RequireAnyTool(),
     )
-    agent.insert_message(UserMessage.text("read container info"))
+    agent.process_message(UserMessage.text("read container info"))
 
     await agent.run()
     types = [e.type for e in recording_handler.records if isinstance(e, ToolCall | ToolCallOutput)]

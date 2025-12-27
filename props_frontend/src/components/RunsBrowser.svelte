@@ -9,17 +9,31 @@
     type AgentRunStatus,
     type AgentType,
     type RunsFilters,
+    type Split,
+    type ExampleKind,
     AGENT_RUN_STATUS_VALUES,
     AGENT_TYPE_VALUES,
   } from '../lib/api/client';
+  import RunIdLink from '../lib/RunIdLink.svelte';
+  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import { formatExample } from '../lib/formatters';
+
+  interface TriggerPrefill {
+    definitionId: string;
+    split: Split;
+    kind: ExampleKind;
+  }
 
   // Props
   interface Props {
     onSelectRun?: (runId: string) => void;
     initialDefinitionId?: string;
-    onClearDefinitionFilter?: () => void;
+    initialSplit?: Split;
+    initialKind?: ExampleKind;
+    onClose?: () => void;
+    onTriggerRun?: (prefill: TriggerPrefill) => void;
   }
-  let { onSelectRun, initialDefinitionId, onClearDefinitionFilter }: Props = $props();
+  let { onSelectRun, initialDefinitionId, initialSplit, initialKind, onClose, onTriggerRun }: Props = $props();
 
   // State
   let runs: RunInfo[] = $state([]);
@@ -64,6 +78,8 @@
     if (statusFilter) filters.status = statusFilter;
     if (agentTypeFilter) filters.agent_type = agentTypeFilter;
     if (initialDefinitionId) filters.definition_id = initialDefinitionId;
+    if (initialSplit) filters.split = initialSplit;
+    if (initialKind) filters.example_kind = initialKind;
     return filters;
   }
 
@@ -111,7 +127,7 @@
     columns: [
       { id: 'agent_run_id', key: 'agent_run_id', name: 'ID', sortable: true },
       { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
-      { id: 'agent_type', key: 'agent_type', name: 'Type', sortable: true },
+      { id: 'split', key: 'split', name: 'Split', sortable: true },
       { id: 'model', key: 'model', name: 'Model', sortable: true },
       { id: 'status', key: 'status', name: 'Status', sortable: true },
       { id: 'created_at', key: 'created_at', name: 'Created', sortable: true },
@@ -143,21 +159,33 @@
 </script>
 
 <div class="bg-white rounded-lg shadow p-4">
-  <div class="flex items-center justify-between mb-3">
+  <div class="flex items-center gap-3 mb-3">
+    {#if onClose}
+      <button
+        type="button"
+        class="text-sm text-gray-500 hover:text-gray-700 hover:underline"
+        onclick={onClose}
+      >
+        ← Back
+      </button>
+    {/if}
     <h2 class="text-lg font-semibold">
       {#if initialDefinitionId}
         Runs for <span class="font-mono text-blue-600">{initialDefinitionId}</span>
+        {#if initialSplit}<span class="text-gray-500">/ {initialSplit}</span>{/if}
+        {#if initialKind}<span class="text-gray-500">/ {initialKind}</span>{/if}
       {:else}
         All Runs
       {/if}
     </h2>
-    {#if initialDefinitionId && onClearDefinitionFilter}
+    <div class="flex-1"></div>
+    {#if onTriggerRun && initialDefinitionId && initialSplit && initialKind}
       <button
         type="button"
-        class="text-sm text-gray-500 hover:text-gray-700"
-        onclick={onClearDefinitionFilter}
+        class="px-3 py-1 text-sm bg-blue-500 text-white rounded hover:bg-blue-600"
+        onclick={() => onTriggerRun({ definitionId: initialDefinitionId!, split: initialSplit!, kind: initialKind! })}
       >
-        ← Back to all runs
+        + New Run
       </button>
     {/if}
   </div>
@@ -165,8 +193,9 @@
   <!-- Filters -->
   <div class="flex gap-4 mb-4">
     <div>
-      <label class="block text-xs text-gray-500 mb-1">Status</label>
+      <label for="runs-status-filter" class="block text-xs text-gray-500 mb-1">Status</label>
       <select
+        id="runs-status-filter"
         class="border rounded px-2 py-1 text-sm"
         bind:value={statusFilter}
         onchange={handleFilterChange}
@@ -178,8 +207,9 @@
       </select>
     </div>
     <div>
-      <label class="block text-xs text-gray-500 mb-1">Agent Type</label>
+      <label for="runs-agent-type-filter" class="block text-xs text-gray-500 mb-1">Agent Type</label>
       <select
+        id="runs-agent-type-filter"
         class="border rounded px-2 py-1 text-sm"
         bind:value={agentTypeFilter}
         onchange={handleFilterChange}
@@ -219,9 +249,12 @@
             </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('agent_type')}
+              onclick={() => table.toggleSort('split')}
             >
-              Type{getSortIndicator('agent_type')}
+              Split{getSortIndicator('split')}
+            </th>
+            <th class="px-3 py-2 text-left">
+              Example
             </th>
             <th
               class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
@@ -249,14 +282,17 @@
               class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
               onclick={() => handleRowClick(run.agent_run_id)}
             >
-              <td class="px-3 py-2 font-mono text-xs text-gray-600">
-                {run.agent_run_id.slice(0, 8)}...
+              <td class="px-3 py-2 text-xs">
+                <RunIdLink id={run.agent_run_id} />
               </td>
-              <td class="px-3 py-2 font-mono text-xs">
-                {run.definition_id}
+              <td class="px-3 py-2 text-xs">
+                <DefinitionIdLink id={run.definition_id} />
               </td>
-              <td class="px-3 py-2 text-gray-600">
-                {run.agent_type}
+              <td class="px-3 py-2 text-xs text-gray-500">
+                {run.split ?? '—'}
+              </td>
+              <td class="px-3 py-2 text-xs text-gray-500 font-mono">
+                {formatExample(run)}
               </td>
               <td class="px-3 py-2 text-xs text-gray-500">
                 {run.model}

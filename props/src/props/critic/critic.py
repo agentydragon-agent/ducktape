@@ -20,6 +20,7 @@ from props.critic.submit_server import CriticSubmitServer
 from props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props.db.config import DatabaseConfig
 from props.display import short_uuid
+from props.ids import DefinitionId
 from props.models.examples import ExampleSpec
 
 
@@ -61,7 +62,7 @@ class CriticAgentEnvironment(AgentEnvironment):
         db_config: DatabaseConfig,
         workspace_manager: WorkspaceManager,
         *,
-        definition_id: str = CRITIC_AGENT_DEFINITION_ID,
+        definition_id: DefinitionId = CRITIC_AGENT_DEFINITION_ID,
         container_name: str | None = None,
     ):
         # Store params needed by _make_mcp_server (before super().__init__ since it accesses them)

@@ -151,7 +151,7 @@ def run(
                         ],
                         tool_policy=RequireAnyTool(),
                     )
-                    agent.insert_message(SystemMessage.text(effective_system))
+                    agent.process_message(SystemMessage.text(effective_system))
 
                     async def _sync_once(since: str | None) -> tuple[str, bool]:
                         """Poll Matrix sync API and return (next_since, has_new_events)."""
@@ -185,7 +185,7 @@ def run(
                         since_token = next_since
                         if not has_new:
                             continue
-                        agent.insert_message(UserMessage.text("process matrix inbox"))
+                        agent.process_message(UserMessage.text("process matrix inbox"))
                         await agent.run()
         finally:
             await docker_client.close()

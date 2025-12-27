@@ -45,7 +45,7 @@ async def test_turn_limit_exceeded(make_agent_with_turn_limit, make_echo_calls) 
         steps=[*make_echo_calls(4)],  # 4 calls but limit to 3
         max_turns=3,
     )
-    agent.insert_message(UserMessage.text("keep calling echo"))
+    agent.process_message(UserMessage.text("keep calling echo"))
 
     # Run should raise MaxTurnsExceededError on 4th sampling attempt
     with pytest.raises(MaxTurnsExceededError) as exc_info:
@@ -60,7 +60,7 @@ async def test_turn_limit_within_bounds(make_agent_with_turn_limit, make_echo_ca
     """Test that agent completes successfully when staying within turn limit."""
     # Setup: agent makes 2 calls and finishes, limit is 5
     agent = await make_agent_with_turn_limit(steps=[*make_echo_calls(2), AssistantMessage("done")], max_turns=5)
-    agent.insert_message(UserMessage.text("call echo twice"))
+    agent.process_message(UserMessage.text("call echo twice"))
 
     # Should complete successfully
     result = await agent.run()
@@ -71,7 +71,7 @@ async def test_turn_limit_exactly_at_boundary(make_agent_with_turn_limit, make_e
     """Test that agent can use exactly max_turns without error."""
     # Setup: agent makes 2 calls then finishes (3 total turns including final assistant message)
     agent = await make_agent_with_turn_limit(steps=[*make_echo_calls(2), AssistantMessage("done")], max_turns=3)
-    agent.insert_message(UserMessage.text("call echo twice"))
+    agent.process_message(UserMessage.text("call echo twice"))
 
     # Should complete successfully (3 turns: call1, call2, done)
     result = await agent.run()

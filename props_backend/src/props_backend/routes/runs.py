@@ -3,28 +3,54 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
-from datetime import datetime
+import json
 import logging
 import random
-from typing import Annotated, Literal
+from dataclasses import dataclass, field
+from datetime import datetime
+from enum import StrEnum
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
+from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
-
-from agent_core.events import EventType
+from mcp.types import EmbeddedResource, ImageContent, TextContent
+from mcp_infra.exec.models import BaseExecResult, ExecInput
 from openai_utils.client_factory import build_client
+from openai_utils.model import ReasoningItem
 from props.agent_registry import AgentRegistry
 from props.agent_types import AgentType, TypeConfig
 from props.db.examples import Example
-from props.db.models import AgentRun, AgentRunStatus, Event, Snapshot
+from props.db.models import (
+    AgentRun,
+    AgentRunStatus,
+    Event,
+    FileSetMember,
+    GradingDecision,
+    OccurrenceTrigger,
+    Snapshot,
+    TruePositive,
+    TruePositiveOccurrenceORM,
+)
 from props.db.session import get_session
+from props.ids import DefinitionId
 from props.models.examples import ExampleKind, ExampleSpec
 from props.splits import Split
+from pydantic import BaseModel, Field, ValidationError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+# --- Enums ---
+
+
+class JobStatus(StrEnum):
+    """Validation job status."""
+
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 # --- Models ---
@@ -32,7 +58,7 @@ logger = logging.getLogger(__name__)
 
 class ActiveRunInfo(BaseModel):
     agent_run_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     model: str
     status: AgentRunStatus
     created_at: datetime
@@ -43,8 +69,9 @@ class ActiveRunsResponse(BaseModel):
 
 
 class ValidationRunRequest(BaseModel):
-    definition_id: str
+    definition_id: DefinitionId
     example_kind: ExampleKind
+    split: Split = Split.VALID
     n_samples: int = Field(ge=1, le=50, default=5)
     critic_model: str = "gpt-5.1-codex-mini"
     grader_model: str = "gpt-5.1-codex-mini"
@@ -52,7 +79,7 @@ class ValidationRunRequest(BaseModel):
 
 class ValidationRunResponse(BaseModel):
     job_id: UUID
-    status: str
+    status: JobStatus
     n_examples_sampled: int
     message: str
 
@@ -61,10 +88,10 @@ class JobInfo(BaseModel):
     """Information about a validation job."""
 
     job_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     example_kind: ExampleKind
     n_samples: int
-    status: str
+    status: JobStatus
     completed: int
     failed: int
 
@@ -75,11 +102,79 @@ class JobsResponse(BaseModel):
     jobs: list[JobInfo]
 
 
+class ChildRunInfo(BaseModel):
+    """Brief info about a child agent run."""
+
+    agent_run_id: UUID
+    agent_type: AgentType
+    status: AgentRunStatus
+
+
+class GraderRunInfo(BaseModel):
+    """Brief info about a grader run that graded this critic."""
+
+    agent_run_id: UUID
+    status: AgentRunStatus
+
+
+class TpTarget(BaseModel):
+    """TP match target."""
+
+    kind: Literal["tp"] = "tp"
+    tp_id: str
+    occurrence_id: str
+    credit: float  # Credit awarded for this match
+
+
+class FpTarget(BaseModel):
+    """FP match target."""
+
+    kind: Literal["fp"] = "fp"
+    fp_id: str
+    occurrence_id: str
+
+
+class NoMatchTarget(BaseModel):
+    """No match (unknown)."""
+
+    kind: Literal["none"] = "none"
+
+
+GradingTarget = Annotated[TpTarget | FpTarget | NoMatchTarget, Field(discriminator="kind")]
+
+
+class GradingDecisionInfo(BaseModel):
+    """Individual grading decision for API response."""
+
+    input_issue_id: str
+    target: GradingTarget
+    rationale: str
+
+
+class GradingSummary(BaseModel):
+    """Summary of grading results for a critic run (aggregate stats only)."""
+
+    tp_count: int
+    fp_count: int
+    unknown_count: int
+    total_credit: float
+    n_catchable_occurrences: int  # Frontend computes recall: total_credit / n_catchable
+
+
+class MissedOccurrenceInfo(BaseModel):
+    """A catchable TP occurrence that was not found by the critic."""
+
+    tp_id: str
+    occurrence_id: str
+    tp_rationale: str  # from true_positives.rationale
+    occ_note: str | None  # from true_positive_occurrences.note
+
+
 class AgentRunDetail(BaseModel):
     """Detailed view of an agent run."""
 
     agent_run_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     parent_agent_run_id: UUID | None
     model: str
     status: AgentRunStatus
@@ -88,23 +183,80 @@ class AgentRunDetail(BaseModel):
     updated_at: datetime
     type_config: TypeConfig
     event_count: int
+    resolved_files: list[str] | None = None  # For critic runs with file_set examples
+    child_runs: list[ChildRunInfo] = []  # Child runs spawned by this run
+    grader_runs: list[GraderRunInfo] = []  # For critic runs: grader runs that graded this critic
+    grading_summary: GradingSummary | None = None  # For critic runs: grading results
+    grading_decisions: list[GradingDecisionInfo] = []  # For grader runs: their output decisions
+    missed_occurrences: list[MissedOccurrenceInfo] = []  # For critic runs: catchable TPs not found
 
 
-class EventInfo(BaseModel):
-    """Event information for API responses."""
+# --- Parsed Event Types for API ---
+
+
+class DockerExecCallPayload(BaseModel):
+    """Parsed docker_exec tool call."""
+
+    type: Literal["docker_exec_call"] = "docker_exec_call"
+    call_id: str
+    input: ExecInput
+
+
+class DockerExecOutputPayload(BaseModel):
+    """Parsed docker_exec tool output."""
+
+    type: Literal["docker_exec_output"] = "docker_exec_output"
+    call_id: str
+    result: BaseExecResult
+
+
+class GenericToolCallPayload(BaseModel):
+    """Unparsed tool call (fallback)."""
+
+    type: Literal["tool_call"] = "tool_call"
+    name: str
+    call_id: str
+    args_json: str | None
+
+
+class GenericToolOutputPayload(BaseModel):
+    """Unparsed tool output (fallback)."""
+
+    type: Literal["tool_output"] = "tool_output"
+    call_id: str
+    content: list[Any]
+
+
+# Union of all parsed payload types
+# Uses original types where possible, custom wrappers only for docker_exec (structured result parsing)
+ParsedEventPayload = Annotated[
+    DockerExecCallPayload
+    | DockerExecOutputPayload
+    | GenericToolCallPayload
+    | GenericToolOutputPayload
+    | UserText
+    | AssistantText
+    | ApiRequest
+    | Response
+    | ReasoningItem,
+    Field(discriminator="type"),
+]
+
+
+class ParsedEventInfo(BaseModel):
+    """Event with parsed payload for API response."""
 
     id: int
     sequence_num: int
-    event_type: str
     timestamp: datetime
-    payload: EventType
+    payload: ParsedEventPayload
 
 
 class EventsResponse(BaseModel):
     """Response for events endpoint."""
 
     agent_run_id: UUID
-    events: list[EventInfo]
+    events: list[ParsedEventInfo]
     total_count: int
 
 
@@ -112,12 +264,14 @@ class RunInfo(BaseModel):
     """Run information for list view."""
 
     agent_run_id: UUID
-    definition_id: str
-    agent_type: AgentType
+    definition_id: DefinitionId
+    type_config: TypeConfig
     model: str
     status: AgentRunStatus
     created_at: datetime
     updated_at: datetime
+    # Split is only present for critic runs (derived from snapshot)
+    split: Split | None = None
 
 
 class RunsListResponse(BaseModel):
@@ -136,7 +290,7 @@ class WsEventMessage(BaseModel):
     """WebSocket message containing an event."""
 
     type: Literal["event"] = "event"
-    data: EventInfo
+    data: ParsedEventInfo
 
 
 class WsStatusData(BaseModel):
@@ -171,12 +325,12 @@ class ValidationJob:
     """Tracks a validation batch job."""
 
     job_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     example_kind: ExampleKind
     n_samples: int
     critic_model: str
     grader_model: str
-    status: str = "running"
+    status: JobStatus = JobStatus.RUNNING
     completed: int = 0
     failed: int = 0
     task: asyncio.Task | None = None
@@ -193,6 +347,77 @@ _jobs: dict[UUID, ValidationJob] = {}
 def get_registry(request: Request) -> AgentRegistry:
     """Get registry from app state."""
     return request.app.state.registry
+
+
+def _extract_text_from_mcp_content(content: list) -> str | None:
+    """Extract text from MCP CallToolResult content array."""
+    for item in content:
+        if isinstance(item, TextContent):
+            return item.text
+        if isinstance(item, dict) and "text" in item:
+            return item["text"]
+    return None
+
+
+def parse_event_payload(payload: EventType) -> ParsedEventPayload:
+    """Convert internal EventType to API ParsedEventPayload."""
+    try:
+        if isinstance(payload, ToolCall):
+            if payload.name == "docker_exec" and payload.args_json:
+                try:
+                    input_data = json.loads(payload.args_json)
+                    return DockerExecCallPayload(call_id=payload.call_id, input=ExecInput.model_validate(input_data))
+                except (json.JSONDecodeError, ValidationError):
+                    pass
+            return GenericToolCallPayload(name=payload.name, call_id=payload.call_id, args_json=payload.args_json)
+
+        if isinstance(payload, ToolCallOutput):
+            result_text = _extract_text_from_mcp_content(payload.result.content)
+            if result_text:
+                try:
+                    result_data = json.loads(result_text)
+                    return DockerExecOutputPayload(
+                        call_id=payload.call_id, result=BaseExecResult.model_validate(result_data)
+                    )
+                except (json.JSONDecodeError, ValidationError):
+                    pass
+            return GenericToolOutputPayload(
+                call_id=payload.call_id,
+                content=[
+                    c.model_dump() if isinstance(c, (TextContent, ImageContent, EmbeddedResource)) else c
+                    for c in payload.result.content
+                ],
+            )
+
+        # Pass through types that already have correct structure
+        if isinstance(payload, (UserText, AssistantText, ApiRequest, Response, ReasoningItem)):
+            return payload
+
+        # Fallback - should not happen if all types covered
+        raise ValueError(f"Unknown event payload type: {type(payload)}, payload={payload}")
+    except Exception as e:
+        logger.exception(f"Failed to parse event payload: {type(payload)}, error: {e}")
+        raise
+
+
+# --- Helper functions ---
+
+
+def make_grading_target(d: GradingDecision) -> GradingTarget:
+    """Convert a GradingDecision to a GradingTarget union type."""
+    if d.target_tp_id is not None:
+        return TpTarget(tp_id=d.target_tp_id, occurrence_id=d.target_tp_occurrence_id or "", credit=d.credit)
+    if d.target_fp_id is not None:
+        return FpTarget(fp_id=d.target_fp_id, occurrence_id=d.target_fp_occurrence_id or "")
+    return NoMatchTarget()
+
+
+def decisions_to_info(decisions: list[GradingDecision]) -> list[GradingDecisionInfo]:
+    """Convert GradingDecision ORM objects to API info objects."""
+    return [
+        GradingDecisionInfo(input_issue_id=d.input_issue_id, target=make_grading_target(d), rationale=d.rationale)
+        for d in decisions
+    ]
 
 
 # --- Endpoints ---
@@ -259,8 +484,10 @@ def list_jobs() -> JobsResponse:
 @router.get("")
 def list_runs(
     status: AgentRunStatus | None = None,
-    definition_id: str | None = None,
+    definition_id: DefinitionId | None = None,
     agent_type: AgentType | None = None,
+    split: Split | None = None,
+    example_kind: ExampleKind | None = None,
     offset: int = 0,
     limit: int = 100,
 ) -> RunsListResponse:
@@ -270,6 +497,8 @@ def list_runs(
     - status: Filter by run status
     - definition_id: Filter by definition ID
     - agent_type: Filter by agent type (critic, grader, etc.)
+    - split: Filter by data split (train, valid, test)
+    - example_kind: Filter by example kind (whole_snapshot, file_set)
     - offset: Pagination offset (default: 0)
     - limit: Pagination limit (default: 100, max: 500)
     """
@@ -285,22 +514,36 @@ def list_runs(
         if agent_type:
             # agent_type is stored in JSONB type_config
             query = query.filter(AgentRun.type_config["agent_type"].astext == agent_type)
+        if example_kind:
+            # example_kind is at type_config->'example'->>'kind'
+            query = query.filter(AgentRun.type_config["example"]["kind"].astext == example_kind)
+
+        # Join with snapshots to get split for critic runs
+        # For critic runs, snapshot_slug is at type_config->'example'->>'snapshot_slug'
+        query = query.outerjoin(Snapshot, AgentRun.type_config["example"]["snapshot_slug"].astext == Snapshot.slug)
+
+        if split:
+            query = query.filter(Snapshot.split == split)
 
         total_count = query.count()
-        runs = query.order_by(AgentRun.created_at.desc()).offset(offset).limit(limit).all()
+
+        runs_with_split = (
+            query.add_columns(Snapshot.split).order_by(AgentRun.created_at.desc()).offset(offset).limit(limit).all()
+        )
 
         return RunsListResponse(
             runs=[
                 RunInfo(
                     agent_run_id=r.agent_run_id,
                     definition_id=r.agent_definition_id,
-                    agent_type=r.type_config.agent_type,
+                    type_config=r.type_config,
                     model=r.model,
                     status=r.status,
                     created_at=r.created_at,
                     updated_at=r.updated_at,
+                    split=split,
                 )
-                for r in runs
+                for r, split in runs_with_split
             ],
             total_count=total_count,
             offset=offset,
@@ -317,19 +560,19 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     """
     registry = get_registry(request)
 
-    # Get validation examples of the requested kind
+    # Get examples of the requested kind and split
     with get_session() as session:
         examples = (
             session.query(Example)
             .join(Snapshot, Snapshot.slug == Example.snapshot_slug)
-            .filter(Snapshot.split == Split.VALID)
+            .filter(Snapshot.split == body.split)
             .filter(Example.example_kind == body.example_kind)
             .order_by(Example.snapshot_slug)
             .all()
         )
 
         if not examples:
-            raise HTTPException(status_code=400, detail=f"No validation examples of kind {body.example_kind}")
+            raise HTTPException(status_code=404, detail=f"No {body.split} examples of kind {body.example_kind}")
 
         # Sample N examples
         n_to_sample = min(body.n_samples, len(examples))
@@ -355,7 +598,9 @@ async def trigger_validation_runs(request: Request, body: ValidationRunRequest) 
     slugs = [e.snapshot_slug for e in example_specs[:3]]
     message = f"Started {n_to_sample} validation runs. Snapshots: {slugs}{'...' if n_to_sample > 3 else ''}"
 
-    return ValidationRunResponse(job_id=job_id, status="running", n_examples_sampled=n_to_sample, message=message)
+    return ValidationRunResponse(
+        job_id=job_id, status=JobStatus.RUNNING, n_examples_sampled=n_to_sample, message=message
+    )
 
 
 async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> None:
@@ -402,12 +647,12 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
             else:
                 job.failed += 1
 
-        job.status = "completed"
+        job.status = JobStatus.COMPLETED
         logger.info(f"[Job {job.job_id}] Finished: {job.completed} completed, {job.failed} failed")
 
     except Exception:
         logger.exception(f"[Job {job.job_id}] Batch failed")
-        job.status = "failed"
+        job.status = JobStatus.FAILED
 
 
 # --- Run Detail Endpoints ---
@@ -424,6 +669,135 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         # Count events
         event_count = session.query(Event).filter(Event.agent_run_id == run_id).count()
 
+        # Get child runs
+        child_run_rows = (
+            session.query(AgentRun).filter(AgentRun.parent_agent_run_id == run_id).order_by(AgentRun.created_at).all()
+        )
+        child_runs = [
+            ChildRunInfo(agent_run_id=child.agent_run_id, agent_type=child.type_config.agent_type, status=child.status)
+            for child in child_run_rows
+        ]
+
+        # Resolve files for critic runs with file_set examples
+        resolved_files: list[str] | None = None
+        grading_summary: GradingSummary | None = None
+        grader_runs: list[GraderRunInfo] = []
+        grading_decisions: list[GradingDecisionInfo] = []
+        missed_occurrences: list[MissedOccurrenceInfo] = []
+
+        if run.type_config.agent_type == AgentType.CRITIC:
+            example = run.type_config.example
+            if example.kind == ExampleKind.FILE_SET:
+                members = (
+                    session.query(FileSetMember.file_path)
+                    .filter(
+                        FileSetMember.snapshot_slug == example.snapshot_slug,
+                        FileSetMember.files_hash == example.files_hash,
+                    )
+                    .order_by(FileSetMember.file_path)
+                    .all()
+                )
+                resolved_files = [m.file_path for m in members]
+
+            # Find grader runs that graded this critic (linked via type_config.graded_agent_run_id)
+            # Use JSONB query since type_config is polymorphic
+            grader_rows = (
+                session.query(AgentRun)
+                .filter(AgentRun.type_config["graded_agent_run_id"].astext == str(run_id))
+                .order_by(AgentRun.created_at)
+                .all()
+            )
+            grader_runs = [
+                GraderRunInfo(agent_run_id=grader.agent_run_id, status=grader.status) for grader in grader_rows
+            ]
+            grader_run_ids = [g.agent_run_id for g in grader_rows]
+            if grader_run_ids:
+                # Aggregate grading decisions from all grader runs for this critic
+                decisions = (
+                    session.query(GradingDecision).filter(GradingDecision.agent_run_id.in_(grader_run_ids)).all()
+                )
+                tp_count = sum(1 for d in decisions if d.target_tp_id is not None)
+                fp_count = sum(1 for d in decisions if d.target_fp_id is not None)
+                unknown_count = sum(1 for d in decisions if d.target_tp_id is None and d.target_fp_id is None)
+                total_credit = sum(d.credit for d in decisions if d.target_tp_id is not None)
+
+                # Get n_catchable_occurrences from example for recall calculation
+                example_row = (
+                    session.query(Example)
+                    .filter(
+                        Example.snapshot_slug == example.snapshot_slug,
+                        Example.example_kind == example.kind,
+                        Example.files_hash == (example.files_hash if example.kind == ExampleKind.FILE_SET else None),
+                    )
+                    .first()
+                )
+                n_catchable = example_row.n_catchable_occurrences if example_row else None
+
+                grading_summary = GradingSummary(
+                    tp_count=tp_count,
+                    fp_count=fp_count,
+                    unknown_count=unknown_count,
+                    total_credit=total_credit,
+                    n_catchable_occurrences=n_catchable or 0,
+                )
+                grading_decisions = decisions_to_info(decisions)
+
+                # Find missed occurrences: catchable TPs not matched in grading_decisions
+                matched_occ_keys = {
+                    (d.target_tp_id, d.target_tp_occurrence_id) for d in decisions if d.target_tp_id is not None
+                }
+
+                # Query catchable occurrences based on example type
+                if example.kind == ExampleKind.FILE_SET:
+                    # For file_set: join through occurrence_triggers
+                    catchable_occs = (
+                        session.query(TruePositiveOccurrenceORM, TruePositive.rationale)
+                        .join(
+                            OccurrenceTrigger,
+                            (TruePositiveOccurrenceORM.snapshot_slug == OccurrenceTrigger.snapshot_slug)
+                            & (TruePositiveOccurrenceORM.tp_id == OccurrenceTrigger.tp_id)
+                            & (TruePositiveOccurrenceORM.occurrence_id == OccurrenceTrigger.occurrence_id),
+                        )
+                        .join(
+                            TruePositive,
+                            (TruePositiveOccurrenceORM.snapshot_slug == TruePositive.snapshot_slug)
+                            & (TruePositiveOccurrenceORM.tp_id == TruePositive.tp_id),
+                        )
+                        .filter(
+                            OccurrenceTrigger.snapshot_slug == example.snapshot_slug,
+                            OccurrenceTrigger.files_hash == example.files_hash,
+                        )
+                        .all()
+                    )
+                else:
+                    # For whole_snapshot: all occurrences in snapshot are catchable
+                    catchable_occs = (
+                        session.query(TruePositiveOccurrenceORM, TruePositive.rationale)
+                        .join(
+                            TruePositive,
+                            (TruePositiveOccurrenceORM.snapshot_slug == TruePositive.snapshot_slug)
+                            & (TruePositiveOccurrenceORM.tp_id == TruePositive.tp_id),
+                        )
+                        .filter(TruePositiveOccurrenceORM.snapshot_slug == example.snapshot_slug)
+                        .all()
+                    )
+
+                for occ, tp_rationale in catchable_occs:
+                    if (occ.tp_id, occ.occurrence_id) not in matched_occ_keys:
+                        missed_occurrences.append(
+                            MissedOccurrenceInfo(
+                                tp_id=occ.tp_id,
+                                occurrence_id=occ.occurrence_id,
+                                tp_rationale=tp_rationale,
+                                occ_note=occ.note,
+                            )
+                        )
+
+        elif run.type_config.agent_type == AgentType.GRADER:
+            # For grader runs, get their own decisions
+            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == run_id).all()
+            grading_decisions = decisions_to_info(decisions)
+
         return AgentRunDetail(
             agent_run_id=run.agent_run_id,
             definition_id=run.agent_definition_id,
@@ -435,6 +809,12 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             updated_at=run.updated_at,
             type_config=run.type_config,
             event_count=event_count,
+            resolved_files=resolved_files,
+            child_runs=child_runs,
+            grader_runs=grader_runs,
+            grading_summary=grading_summary,
+            grading_decisions=grading_decisions,
+            missed_occurrences=missed_occurrences,
         )
 
 
@@ -466,12 +846,8 @@ def get_run_events(run_id: UUID, offset: int = 0, limit: int = 100) -> EventsRes
         return EventsResponse(
             agent_run_id=run_id,
             events=[
-                EventInfo(
-                    id=e.id,
-                    sequence_num=e.sequence_num,
-                    event_type=e.event_type,
-                    timestamp=e.timestamp,
-                    payload=e.payload,
+                ParsedEventInfo(
+                    id=e.id, sequence_num=e.sequence_num, timestamp=e.timestamp, payload=parse_event_payload(e.payload)
                 )
                 for e in events
             ],
@@ -508,8 +884,8 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
 
     def _make_event_msg(e: Event) -> WsEventMessage:
         return WsEventMessage(
-            data=EventInfo(
-                id=e.id, sequence_num=e.sequence_num, event_type=e.event_type, timestamp=e.timestamp, payload=e.payload
+            data=ParsedEventInfo(
+                id=e.id, sequence_num=e.sequence_num, timestamp=e.timestamp, payload=parse_event_payload(e.payload)
             )
         )
 

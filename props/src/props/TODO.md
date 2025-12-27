@@ -33,3 +33,20 @@
 ## Migration TODOs
 
 - Bridge: accept (IssueCore, Occurrence) now; migrate to IssueDoc (lint_issue.py)
+
+## Frontend TODOs
+
+- Replace client→server polling with WebSocket endpoint for live updates
+- Consolidate active runs display (currently shown in 2 separate places in dashboard)
+- "Trigger validation runs" → popup modal instead of inline form
+- Add affordance for launching optimization/improvement runs with live events display
+- Live events streaming on run detail view (instead of polling)
+- Full status string display with elliptization for viewport width
+- Run IDs should use consistent helpers with clickable styling (underline, hover)
+
+## Infrastructure TODOs
+
+- Configure Alembic properly for direct CLI migration commands (`alembic upgrade head`)
+- Need sane story for applying migrations without full `db recreate`
+- Consolidate shared envrc and directory structure across workspace members
+- Consider whether CLI stats command should be deprecated in favor of frontend dashboard

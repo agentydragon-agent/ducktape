@@ -135,4 +135,4 @@ def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
     from agent_container_util.output import render_agent_prompt
 
-    render_agent_prompt("props/docs/agents/grader.md.j2", helpers={"get_grading_context": get_grading_context})
+    render_agent_prompt("props/docs/agents/grader.md.j2", helpers={"grading_context": get_grading_context()})

@@ -22,19 +22,31 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 
 **Features:**
 - Show ALL definitions (including those with no runs yet)
-- Group columns by (split, example_kind): Valid Whole, Valid Partial, Train Whole, Train Partial
+- 3-level header hierarchy:
+  - Level 1: Split (Valid, Train)
+  - Level 2: Example kind with count (whole_snapshot (n=X), file_set (n=Y))
+  - Level 3: Metrics (Recall, Runs, Zero, Done, Stalled)
 - Per-group columns:
-  - Recall %: Mean recall across examples
-  - 95% CI: Full confidence interval (e.g., "45% [38%-52%]")
-  - Evaluated: Count of examples with at least one run
-  - Zero Recall: Count of examples with 0% recall
-  - Max Turns: Count of runs exceeding max turns
-  - Context Exceeded: Count of runs exceeding context
-- Total available count in group header (e.g., "Valid Partial (N=171)")
+  - Recall: Mean ± margin (e.g., "45% ± 3%")
+  - Runs: evaluated/total count
+  - Zero: Count with 0% recall
+  - Done: Completed runs
+  - Stalled: Max turns exceeded
 - Sortable by any column
 - Definition age shown
+- Click recall cell → opens run trigger modal prefilled with definition/split/kind
 
-### 2. Active Runs
+### 3. Definition Detail
+
+**Purpose:** View details and runs for a single definition
+
+**Features:**
+- Definition ID with copyable CLI command (`props agent-definition fetch <id> ./`)
+- Stats table: split × kind metrics (recall, runs, zero, done, stalled)
+- Embedded runs browser filtered to this definition
+- Back navigation to leaderboard
+
+### 4. Active Runs
 
 **Purpose:** Monitor currently executing agent runs
 
@@ -45,21 +57,23 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Live update (WebSocket or fast polling)
 - Click to open run detail view
 
-### 3. Run Detail
+### 5. Run Detail
 
 **Purpose:** Inspect a single agent run
 
 **Features:**
 - Run metadata: ID, type, definition, model, status, created_at
 - Parent run link (for graders)
+- Child run links (critic → grader)
 - Events timeline rendered like chat:
   - User messages, assistant text, tool calls, outputs, reasoning
   - Sequence numbers
   - Full content (expandable for long items)
 - Live update while in_progress
 - Completion summary when done
+- Grading summary (for grader runs): TP matches, FP hits, recall score
 
-### 4. Runs Browser
+### 6. Runs Browser
 
 **Purpose:** Search and filter all historical runs
 
@@ -69,19 +83,31 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - Columns: ID, type, definition, model, status, created_at, example
 - Click through to run detail
 
-### 5. Validation Trigger
+### 7. Validation Trigger (Modal)
 
 **Purpose:** Start evaluation runs on examples
 
 **Features:**
-- Select critic definition
-- Select split (TRAIN/VALID)
+- Modal dialog triggered by:
+  - "New Run" button in jobs list
+  - Clicking recall cell in definitions table (prefilled)
+- Select critic definition (dropdown)
+- Select split (train/valid)
 - Select example kind (whole_snapshot/file_set)
 - Set sample count (1-50)
-- Show triggered jobs with progress
-- Show runs spawned from jobs
+- Jobs list shows triggered jobs with progress (in-memory, not persisted)
 
-### 6. Live Rollout View
+### 8. Example Browser
+
+**Purpose:** Browse and inspect training/validation examples
+
+**Features:**
+- List examples by snapshot, split, kind
+- Show file paths for file_set examples
+- Show TP/FP counts per example
+- Click through to example detail with ground truth
+
+### 9. Live Rollout View
 
 **Purpose:** Monitor validation batches in progress
 
@@ -105,6 +131,10 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 - `GET /api/runs/{id}` - Single run detail
 - `GET /api/runs/{id}/events` - Run events (paginated)
 - `WS /api/runs/{id}/stream` - Live event stream
+
+### Examples
+- `GET /api/examples` - List examples with filters (split, kind, snapshot)
+- `GET /api/examples/{snapshot}/{kind}/{hash}` - Example detail with ground truth
 
 ## Non-functional Requirements
 

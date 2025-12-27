@@ -44,7 +44,7 @@ async def test_reasoning_threading_filters_reasoning_from_next_input(
     agent, client = await make_test_agent(
         mcp_client_echo, seq, handlers=[FinishOnTextMessageHandler()], tool_policy=AllowAnyToolOrTextMessage()
     )
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
 
     res = await agent.run()
 

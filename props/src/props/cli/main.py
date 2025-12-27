@@ -57,7 +57,7 @@ from props.db.query_builders import query_recall_by_example
 from props.db.session import get_session, init_db
 from props.display import fmt_pct, short_sha
 from props.eval_harness import run_all_evals
-from props.ids import SnapshotSlug
+from props.ids import DefinitionId, SnapshotSlug
 from props.lint.lint_issue import run_specimen_lint_issue_async
 from props.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props.prompt_improve.improve_agent import OutcomeExhausted, OutcomeUnexpectedTermination, run_improvement_agent
@@ -227,7 +227,7 @@ async def prompt_improve_cmd(
     console.print("\n[bold cyan]Prompt Improvement Agent[/bold cyan]\n")
 
     # Helper function for Pareto selection
-    def select_pareto_examples(session, agent_definition_id_param: str, limit: int) -> list[ExampleSpec]:
+    def select_pareto_examples(session, agent_definition_id_param: DefinitionId, limit: int) -> list[ExampleSpec]:
         """Select Pareto-optimal training examples for an agent definition."""
         # Query occurrence-weighted recall per example using helper
         results = query_recall_by_example(session, split=Split.TRAIN, critic_definition_id=agent_definition_id_param)
@@ -675,7 +675,7 @@ async def cmd_run(
     # Scope (required)
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     # Definition ID (required)
-    definition_id: str = typer.Option(
+    definition_id: DefinitionId = typer.Option(
         "critic", "--definition-id", "-d", help="Agent definition ID (e.g., 'critic', 'critic-v1'). Default: 'critic'."
     ),
     # File filtering

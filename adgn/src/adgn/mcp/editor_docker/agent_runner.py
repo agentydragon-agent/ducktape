@@ -43,7 +43,7 @@ async def _run_agent_in_session(sess: EditorDockerSession, model_client: OpenAIM
         )
 
         # Insert system message from init output
-        agent.insert_message(SystemMessage.text(system_prompt))
+        agent.process_message(SystemMessage.text(system_prompt))
 
         await agent.run()
 

@@ -1,6 +1,6 @@
 """Agent handle - wraps Agent with definition-based image and system prompt.
 
-AgentHandle provides a similar interface to Agent (insert_message, run) but manages:
+AgentHandle provides a similar interface to Agent (process_message, run) but manages:
 - Loading agent definition from database
 - Running init script and using its output as system prompt
 - System message injection
@@ -15,7 +15,7 @@ Usage:
             compositor=comp,
             handlers=[],
         )
-        handle.insert_message(UserMessage.text("Review this code"))
+        handle.process_message(UserMessage.text("Review this code"))
         result = await handle.run()
 
 Note: The Docker image is built from the definition archive by AgentEnvironment.
@@ -40,6 +40,7 @@ from openai_utils.types import ReasoningSummary
 from props.db.models import AgentDefinition
 from props.db.session import get_session
 from props.db_event_handler import DatabaseEventHandler
+from props.ids import DefinitionId
 
 if TYPE_CHECKING:
     from fastmcp.client import Client
@@ -50,7 +51,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def load_definition_archive(definition_id: str) -> bytes:
+def load_definition_archive(definition_id: DefinitionId) -> bytes:
     """Load agent definition archive from database.
 
     Returns just the archive bytes since returning the ORM object would
@@ -67,7 +68,7 @@ def load_definition_archive(definition_id: str) -> bytes:
 class AgentHandle:
     """Handle to a running agent with transcript management.
 
-    Provides Agent-like interface (insert_message, run) while managing:
+    Provides Agent-like interface (process_message, run) while managing:
     - Container lifecycle
     - System message injection from /init output
 
@@ -75,18 +76,21 @@ class AgentHandle:
     """
 
     agent_run_id: UUID
-    definition_id: str
+    definition_id: DefinitionId
     agent: Agent
     compositor: PropertiesDockerCompositor
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
-    def insert_message(self, message: Message) -> None:
-        """Insert a message into the agent's transcript.
+    def process_message(self, message: Message) -> None:
+        """Add a message to the agent's transcript and notify handlers.
 
-        Same semantics as Agent.insert_message() - messages are added to
-        the conversation history but don't trigger handlers until run().
+        Same semantics as Agent.process_message() - messages are added to
+        the conversation history and handlers are notified.
+
+        Args:
+            message: The message to add
         """
-        self.agent.insert_message(message)
+        self.agent.process_message(message)
 
     async def run(self) -> AgentResult:
         """Run the agent loop until completion.
@@ -104,7 +108,7 @@ class AgentHandle:
         cls,
         *,
         agent_run_id: UUID,
-        definition_id: str,
+        definition_id: DefinitionId,
         model_client: OpenAIModelProto,
         mcp_client: Client,
         compositor: PropertiesDockerCompositor,
@@ -127,7 +131,7 @@ class AgentHandle:
             reasoning_summary: Optional reasoning summary mode for the agent
 
         Returns:
-            AgentHandle ready for insert_message() and run() calls.
+            AgentHandle ready for process_message() and run() calls.
 
         Raises:
             InitFailedError: If init script fails
@@ -148,6 +152,6 @@ class AgentHandle:
         # Insert system message from init output
         system_prompt = await run_init_script(mcp_client, compositor.runtime)
         logger.debug(f"Init script returned {len(system_prompt)} bytes")
-        agent.insert_message(SystemMessage.text(system_prompt))
+        agent.process_message(SystemMessage.text(system_prompt))
 
         return cls(agent_run_id=agent_run_id, definition_id=definition_id, agent=agent, compositor=compositor)

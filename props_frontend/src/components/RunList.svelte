@@ -2,6 +2,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { fetchActiveRuns, type ActiveRunInfo, type AgentRunStatus } from '../lib/api/client';
+  import RunIdLink from '../lib/RunIdLink.svelte';
+  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
 
   // Props
   interface Props {
@@ -82,10 +84,8 @@
         >
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <span class="font-mono text-sm text-gray-600">
-                {run.agent_run_id.slice(0, 8)}...
-              </span>
-              <span class="font-medium">{run.definition_id}</span>
+              <RunIdLink id={run.agent_run_id} />
+              <DefinitionIdLink id={run.definition_id} />
             </div>
             <div class="flex items-center gap-2">
               <span class="text-xs text-gray-500">{run.model}</span>

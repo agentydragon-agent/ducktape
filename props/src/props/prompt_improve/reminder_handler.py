@@ -18,6 +18,7 @@ from openai_utils.model import UserMessage
 from props.agent_types import ImprovementTypeConfig
 from props.db.config import DatabaseConfig
 from props.db.session import get_session
+from props.ids import DefinitionId
 from props.models.examples import SingleFileSetExample
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 class TerminationSuccess(BaseModel):
     kind: Literal["success"] = "success"
-    definition_id: str = Field(description="ID of the winning definition")
+    definition_id: DefinitionId = Field(description="ID of the winning definition")
     total_credit: float = Field(description="Winning definition's sum of grader credits across allowed_examples")
     baseline_avg: float = Field(description="Average total_credit across baseline definitions")
 
@@ -230,7 +231,9 @@ def check_termination_condition(
 
         if best_candidate_issues > baseline_avg:
             return TerminationSuccess(
-                definition_id=best_candidate_id, total_credit=best_candidate_issues, baseline_avg=baseline_avg
+                definition_id=DefinitionId(best_candidate_id),
+                total_credit=best_candidate_issues,
+                baseline_avg=baseline_avg,
             )
 
         return BlockingStatus(

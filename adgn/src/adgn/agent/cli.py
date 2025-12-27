@@ -115,13 +115,13 @@ async def run(
                 tool_policy=AllowAnyToolOrTextMessage(),
                 dynamic_instructions=comp.render_agent_dynamic_instructions,
             )
-            agent.insert_message(SystemMessage.text(system))
+            agent.process_message(SystemMessage.text(system))
             while True:
                 try:
                     user = Prompt.ask("\n[bold cyan]>[/bold cyan]", console=console)
                     if not user:
                         continue
-                    agent.insert_message(UserMessage.text(user))
+                    agent.process_message(UserMessage.text(user))
                     await agent.run()
                 except EOFError:
                     console.print("\n[dim]Exiting...[/dim]")

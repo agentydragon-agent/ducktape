@@ -387,7 +387,7 @@ async def _lint_issue_run_with_hydrated_root(
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
             )
-            agent.insert_message(UserMessage.text(prompt))
+            agent.process_message(UserMessage.text(prompt))
             await agent.run()
     # Compositor.__aexit__ unmounts all non-pinned servers and cleans up containers here
 

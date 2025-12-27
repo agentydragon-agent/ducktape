@@ -17,13 +17,11 @@
 body {
   margin: 0;
   min-width: 320px;
-  min-height: 100vh;
 }
 
 #app {
   max-width: 1600px;
   margin: 0 auto;
-  padding: 1rem;
 }
 
 h1 {

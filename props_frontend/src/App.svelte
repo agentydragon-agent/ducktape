@@ -4,51 +4,94 @@
   import { fetchOverview } from './lib/api';
   import type { OverviewResponse } from './lib/types';
   import DefinitionsTable from './components/stats/DefinitionsTable.svelte';
-  import ValidationRunTrigger from './components/ValidationRunTrigger.svelte';
+  import SummaryCards from './components/stats/SummaryCards.svelte';
+  import JobsList from './components/JobsList.svelte';
   import RunList from './components/RunList.svelte';
   import RunDetail from './components/RunDetail.svelte';
   import RunsBrowser from './components/RunsBrowser.svelte';
+  import DefinitionDetail from './components/DefinitionDetail.svelte';
+  import RunTriggerModal from './components/RunTriggerModal.svelte';
+  import type { Split, ExampleKind } from './lib/types';
+
+  interface ModalPrefill {
+    definitionId?: string;
+    split?: Split;
+    kind?: ExampleKind;
+  }
+
+  // Runs page filters from URL query params
+  interface RunsPageFilters {
+    definitionId?: string;
+    split?: Split;
+    kind?: ExampleKind;
+  }
 
   let data: OverviewResponse | null = $state(null);
   let loading = $state(true);
   let selectedRunId: string | null = $state(null);
   let selectedDefinitionId: string | null = $state(null);
+  let runsPageFilters: RunsPageFilters | null = $state(null);
+  let showRunModal = $state(false);
+  let modalPrefill: ModalPrefill | undefined = $state(undefined);
 
   // Parse URL to extract route state
-  function parseUrl(): { runId?: string; definitionId?: string } {
+  function parseUrl(): { runId?: string; definitionId?: string; runsFilters?: RunsPageFilters } {
     const path = window.location.pathname;
     const runMatch = path.match(/^\/runs\/([^/]+)$/);
-    const defMatch = path.match(/^\/definitions\/([^/]+)\/runs$/);
+    const defMatch = path.match(/^\/definitions\/([^/]+)$/);
+    const runsListMatch = path === '/runs';
+
+    // Parse query params for /runs page
+    let runsFilters: RunsPageFilters | undefined;
+    if (runsListMatch) {
+      const params = new URLSearchParams(window.location.search);
+      runsFilters = {};
+      if (params.get('definition')) runsFilters.definitionId = params.get('definition')!;
+      if (params.get('split')) runsFilters.split = params.get('split') as Split;
+      if (params.get('kind')) runsFilters.kind = params.get('kind') as ExampleKind;
+    }
+
     return {
       runId: runMatch?.[1],
       definitionId: defMatch?.[1],
+      runsFilters,
     };
   }
 
   // Update URL to reflect current state
   function updateUrl() {
-    let path = '/';
+    let url = '/';
     if (selectedRunId) {
-      path = `/runs/${selectedRunId}`;
+      url = `/runs/${selectedRunId}`;
     } else if (selectedDefinitionId) {
-      path = `/definitions/${selectedDefinitionId}/runs`;
+      url = `/definitions/${selectedDefinitionId}`;
+    } else if (runsPageFilters) {
+      const params = new URLSearchParams();
+      if (runsPageFilters.definitionId) params.set('definition', runsPageFilters.definitionId);
+      if (runsPageFilters.split) params.set('split', runsPageFilters.split);
+      if (runsPageFilters.kind) params.set('kind', runsPageFilters.kind);
+      const qs = params.toString();
+      url = qs ? `/runs?${qs}` : '/runs';
     }
-    if (window.location.pathname !== path) {
-      history.pushState({}, '', path);
+    const currentUrl = window.location.pathname + window.location.search;
+    if (currentUrl !== url) {
+      history.pushState({}, '', url);
     }
   }
 
   onMount(async () => {
     // Initialize state from URL
-    const { runId, definitionId } = parseUrl();
+    const { runId, definitionId, runsFilters } = parseUrl();
     if (runId) selectedRunId = runId;
     else if (definitionId) selectedDefinitionId = definitionId;
+    else if (runsFilters) runsPageFilters = runsFilters;
 
     // Listen for browser back/forward
     window.addEventListener('popstate', () => {
-      const { runId, definitionId } = parseUrl();
+      const { runId, definitionId, runsFilters } = parseUrl();
       selectedRunId = runId ?? null;
       selectedDefinitionId = definitionId ?? null;
+      runsPageFilters = runsFilters ?? null;
     });
 
     // Fetch overview data
@@ -81,31 +124,70 @@
     selectedDefinitionId = null;
     updateUrl();
   }
+
+  function handleGoHome() {
+    selectedRunId = null;
+    selectedDefinitionId = null;
+    runsPageFilters = null;
+    updateUrl();
+  }
+
+  function handleNavigateToRuns(filters: RunsPageFilters) {
+    selectedRunId = null;
+    selectedDefinitionId = null;
+    runsPageFilters = filters;
+    updateUrl();
+  }
+
+  function handleCloseRunsPage() {
+    runsPageFilters = null;
+    updateUrl();
+  }
+
+  function handleOpenRunModal(prefill?: ModalPrefill) {
+    modalPrefill = prefill;
+    showRunModal = true;
+  }
+
+  function handleCloseRunModal() {
+    showRunModal = false;
+    modalPrefill = undefined;
+  }
 </script>
 
-<Toaster richColors position="top-right" />
+<Toaster richColors position="top-right" duration={8000} />
 
-<div class="h-screen bg-gray-50 p-6 flex flex-col overflow-hidden">
-  <h1 class="text-2xl font-bold mb-4 flex-shrink-0">Props Dashboard</h1>
+<div class="min-h-screen bg-gray-50 p-6">
+  <h1 class="text-2xl font-bold mb-4 flex-shrink-0">
+    <button type="button" onclick={handleGoHome} class="hover:underline cursor-pointer">
+      Props Dashboard
+    </button>
+  </h1>
 
   {#if selectedRunId}
     <!-- Run detail view -->
-    <div class="flex-1 min-h-0">
-      <RunDetail runId={selectedRunId} onClose={handleCloseDetail} />
-    </div>
+    <RunDetail runId={selectedRunId} onClose={handleCloseDetail} onSelectRun={handleSelectRun} onSelectDefinition={handleSelectDefinition} />
   {:else if selectedDefinitionId}
-    <!-- Definition runs view -->
-    <div class="flex-1 overflow-y-auto min-h-0">
-      <RunsBrowser
-        initialDefinitionId={selectedDefinitionId}
-        onSelectRun={handleSelectRun}
-        onClearDefinitionFilter={handleClearDefinitionFilter}
-      />
-    </div>
+    <!-- Definition detail view -->
+    <DefinitionDetail
+      definitionId={selectedDefinitionId}
+      onClose={handleClearDefinitionFilter}
+      onSelectRun={handleSelectRun}
+    />
+  {:else if runsPageFilters}
+    <!-- Runs list with filters -->
+    <RunsBrowser
+      onSelectRun={handleSelectRun}
+      initialDefinitionId={runsPageFilters.definitionId}
+      initialSplit={runsPageFilters.split}
+      initialKind={runsPageFilters.kind}
+      onClose={handleCloseRunsPage}
+      onTriggerRun={(prefill) => handleOpenRunModal(prefill)}
+    />
   {:else}
     <!-- Main dashboard -->
-    <div class="flex-1 overflow-y-auto min-h-0">
-      <ValidationRunTrigger />
+    <div>
+      <JobsList onNewRun={() => handleOpenRunModal()} />
 
       <div class="mb-4">
         <RunList onSelectRun={handleSelectRun} />
@@ -118,11 +200,18 @@
       {#if loading}
         <p class="text-gray-500">Loading...</p>
       {:else if data}
-        <p class="text-gray-600 mb-4">{data.total_definitions} definitions</p>
+        <SummaryCards {data} onSelectDefinition={handleSelectDefinition} />
         <div class="bg-white rounded-lg shadow">
-          <DefinitionsTable definitions={data.definitions} onSelectDefinition={handleSelectDefinition} />
+          <DefinitionsTable
+            definitions={data.definitions}
+            exampleCounts={data.example_counts}
+            onSelectDefinition={handleSelectDefinition}
+            onCellClick={handleNavigateToRuns}
+          />
         </div>
       {/if}
     </div>
   {/if}
 </div>
+
+<RunTriggerModal open={showRunModal} onClose={handleCloseRunModal} prefill={modalPrefill} />

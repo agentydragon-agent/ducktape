@@ -64,6 +64,9 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-
 InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""
 
+DefinitionId = NewType("DefinitionId", str)
+"""Agent definition ID. Compile-time distinct from str, runtime is string."""
+
 
 def split_snapshot_slug(slug: SnapshotSlug) -> tuple[str, str]:
     """Split snapshot slug into repo and version components.

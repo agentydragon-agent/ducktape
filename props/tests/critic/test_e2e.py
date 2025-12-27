@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import pytest
 
+from agent_core.events import ApiRequest, SystemText, ToolCall
 from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 from props.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props.db.models import AgentRun, AgentRunStatus, Event
@@ -61,12 +62,17 @@ async def test_critic_http_mode_zero_issues(run_critic_with_steps, test_snapshot
         assert len(events) > 0, "Expected at least one event to be persisted"
 
         # Check for api_request events (OpenAI calls)
-        api_request_events = [e for e in events if e.event_type == "api_request"]
+        api_request_events = [e for e in events if isinstance(e.payload, ApiRequest)]
         assert len(api_request_events) >= 1, "Expected at least one api_request event"
 
         # Check for tool_call events (the submit call)
-        tool_call_events = [e for e in events if e.event_type == "tool_call"]
+        tool_call_events = [e for e in events if isinstance(e.payload, ToolCall)]
         assert len(tool_call_events) >= 1, "Expected at least one tool_call event"
+
+        # Check for system_text event (init script output)
+        system_text_events = [e for e in events if isinstance(e.payload, SystemText)]
+        assert len(system_text_events) == 1, "Expected exactly one system_text event"
+        assert system_text_events[0].sequence_num == 0, "System text should be first event (sequence 0)"
 
 
 @pytest.mark.requires_docker

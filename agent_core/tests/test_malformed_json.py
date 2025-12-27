@@ -36,7 +36,7 @@ async def _run_malformed_json_test(
         parallel_tool_calls=parallel,
         tool_policy=RequireAnyTool(),
     )
-    agent.insert_message(UserMessage.text("use echo"))
+    agent.process_message(UserMessage.text("use echo"))
 
     res = await agent.run()
     events = recording_handler.records

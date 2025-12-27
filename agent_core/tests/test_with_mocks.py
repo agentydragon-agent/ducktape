@@ -28,7 +28,7 @@ async def test_minicodex_with_sdk_mocks_executes_tool_and_returns_text(
     agent = await Agent.create(
         mcp_client=mcp_client_echo, client=client, handlers=test_handlers, tool_policy=RequireAnyTool()
     )
-    agent.insert_message(UserMessage.text("say hi"))
+    agent.process_message(UserMessage.text("say hi"))
 
     res = await agent.run()
 

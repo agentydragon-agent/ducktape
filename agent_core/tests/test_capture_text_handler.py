@@ -37,7 +37,7 @@ def make_agent_with_capture(mcp_client_echo, recording_handler, capture_handler,
 async def test_capture_text_basic(make_agent_with_capture, capture_handler) -> None:
     """Test that CaptureTextHandler captures assistant text."""
     agent = await make_agent_with_capture(steps=[AssistantMessage("Hello, world!")])
-    agent.insert_message(UserMessage.text("greet me"))
+    agent.process_message(UserMessage.text("greet me"))
 
     await agent.run()
 
@@ -49,7 +49,7 @@ async def test_capture_text_basic(make_agent_with_capture, capture_handler) -> N
 async def test_capture_text_after_tool_call(make_agent_with_capture, capture_handler) -> None:
     """Test capture after agent makes a tool call then responds."""
     agent = await make_agent_with_capture(steps=[EchoCall("testing"), AssistantMessage("Tool call completed.")])
-    agent.insert_message(UserMessage.text("use echo then respond"))
+    agent.process_message(UserMessage.text("use echo then respond"))
 
     await agent.run()
 
@@ -63,12 +63,12 @@ async def test_capture_text_multiple_runs(make_agent_with_capture, capture_handl
     )
 
     # First run
-    agent.insert_message(UserMessage.text("first question"))
+    agent.process_message(UserMessage.text("first question"))
     await agent.run()
     assert capture_handler.take() == "First response"
 
     # Second run (handler state reset after take)
-    agent.insert_message(UserMessage.text("second question"))
+    agent.process_message(UserMessage.text("second question"))
     await agent.run()
     assert capture_handler.take() == "Second response"
 

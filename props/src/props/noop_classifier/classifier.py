@@ -171,7 +171,8 @@ async def classify_worker(
 Classify each prefix and submit using submit_classifications.
 The tool will return the next batch for you to classify."""
 
-            agent.insert_messages([SystemMessage.text(SYSTEM_PROMPT), UserMessage.text(prompt)])
+            agent.process_message(SystemMessage.text(SYSTEM_PROMPT))
+            agent.process_message(UserMessage.text(prompt))
             # Agent runs continuously: classify → submit → get next batch → repeat
             await agent.run()
 

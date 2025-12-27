@@ -20,7 +20,7 @@ async def test_agent_mcp_echo_tool_use(
         tool_policy=RequireAnyTool(),
         parallel_tool_calls=False,
     )
-    agent.insert_message(SystemMessage.text("test: use echo"))
+    agent.process_message(SystemMessage.text("test: use echo"))
 
     res = await agent.run()
 

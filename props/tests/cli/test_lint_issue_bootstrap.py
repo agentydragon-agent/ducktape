@@ -87,7 +87,7 @@ async def test_lint_issue_bootstrap_small_files(
             )
 
             # Act
-            agent.insert_message(UserMessage.text("bootstrap lint"))
+            agent.process_message(UserMessage.text("bootstrap lint"))
             res = await agent.run()
 
     # Assert final text

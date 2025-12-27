@@ -10,7 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from agent_core.events import ApiRequest, AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.events import ApiRequest, AssistantText, Response, SystemText, ToolCall, ToolCallOutput, UserText
 from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import ReasoningItem, UserMessage
 
@@ -84,6 +84,10 @@ class BaseHandler:
             LoopDecision: NoAction | InjectItems | Abort | Compact
         """
         return NoAction()
+
+    def on_system_text_event(self, evt: SystemText) -> None:
+        """Called when a system message is added to the conversation."""
+        return
 
     def on_user_text_event(self, evt: UserText) -> None:
         """Called when user text is added to the conversation."""
@@ -170,7 +174,7 @@ class FinishOnTextMessageHandler(BaseHandler):
         agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
         while True:
             user_input = get_user_input()
-            agent.insert_message(UserMessage.text(user_input))
+            agent.process_message(UserMessage.text(user_input))
             await agent.run()  # Returns after assistant sends text
     """
 
@@ -201,11 +205,11 @@ class CaptureTextHandler(BaseHandler):
         handlers = [handler, ...]
         agent = await Agent.create(..., handlers=handlers, tool_policy=AllowAnyToolOrTextMessage())
 
-        agent.insert_message(UserMessage.text("Do something"))
+        agent.process_message(UserMessage.text("Do something"))
         await agent.run()  # Returns after assistant sends text
         response = handler.take()  # Get captured text, clears state
 
-        agent.insert_message(UserMessage.text("Do more"))
+        agent.process_message(UserMessage.text("Do more"))
         await agent.run()
         response = handler.take()
     """

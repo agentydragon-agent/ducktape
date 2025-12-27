@@ -264,7 +264,7 @@ async def generate_commit_message_agent(
                 parallel_tool_calls=True,
                 tool_policy=RequireAnyTool(),
             )
-            agent.insert_message(UserMessage.text(prompt))
+            agent.process_message(UserMessage.text(prompt))
             await agent.run()
     # CommitCompositor.__aexit__ unmounts all servers and cleans up
 

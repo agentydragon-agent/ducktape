@@ -22,6 +22,7 @@ from props.agent_types import AgentType
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.db.session import get_session
 from props.display import ColumnDef, build_table_from_schema
+from props.ids import DefinitionId
 from props.models.examples import SingleFileSetExample, WholeSnapshotExample
 from props.prompt_optimize.prompt_optimizer import ReportFailureInput, RunCriticInput, RunGraderInput
 from props.splits import Split
@@ -41,6 +42,7 @@ Common workflows:
 
   View metrics (definitions and examples):
     props critic-dev leaderboard
+    props critic-dev valid-leaderboard  # whole-repo mode only
     props critic-dev hard-examples --limit 10
 
   Report failure and abort:
@@ -217,7 +219,7 @@ def valid_leaderboard_cmd(
     class ValidationLeaderboardRow:
         """Row from validation leaderboard query."""
 
-        critic_definition_id: str
+        critic_definition_id: DefinitionId
         critic_model: str
         n_runs: int
         sum_credit: float | None
@@ -290,6 +292,11 @@ def init_cmd() -> None:
     - Agent-specific advice from /agent.md
     - Shared documentation and CLI help
     """
-    from props.agent_helpers import get_agent_config
+    from props.agent_helpers import get_current_agent_run
+    from props.db.session import get_session
 
-    render_agent_prompt("props/docs/agents/critic_dev.md.j2", helpers={"get_agent_config": get_agent_config})
+    with get_session() as session:
+        agent_run = get_current_agent_run(session)
+        config = agent_run.type_config
+
+    render_agent_prompt("props/docs/agents/critic_dev.md.j2", helpers={"config": config})

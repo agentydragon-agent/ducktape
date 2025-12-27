@@ -22,7 +22,16 @@ from mcp import types as mcp_types
 from pydantic import TypeAdapter
 import pydantic_core
 
-from agent_core.events import ApiRequest, AssistantText, GroundTruthUsage, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.events import (
+    ApiRequest,
+    AssistantText,
+    GroundTruthUsage,
+    Response,
+    SystemText,
+    ToolCall,
+    ToolCallOutput,
+    UserText,
+)
 from agent_core.loop_control import (
     Abort,
     AllowAnyToolOrTextMessage,
@@ -522,31 +531,29 @@ class Agent:
                 h.on_reasoning(item)
 
         elif isinstance(item, SystemMessage):
-            pass  # No handler notification for system messages
+            # Extract text from SystemMessage content parts
+            text = "\n".join(part.text for part in item.content) if item.content else ""
+            evt = SystemText(text=text)
+            for h in self._handlers:
+                h.on_system_text_event(evt)
 
-    def insert_message(self, message: Message) -> None:
-        """Insert a message into the transcript without triggering handlers.
+        else:
+            raise AssertionError(f"Unhandled transcript item type: {type(item).__name__}")
+
+    def process_message(self, message: Message) -> None:
+        """Add a message to the transcript and notify handlers.
 
         Use this to set up initial context (system prompts, user messages) before calling run().
-        These messages become part of the conversation history but do not trigger handler
-        notifications - handlers are only notified during the agent loop for messages/events
-        that occur during execution.
 
         Args:
             message: A UserMessage, AssistantMessage, or SystemMessage to add to transcript
         """
         self._transcript.append(message)
+        self._notify_handlers_for_transcript_item(message)
 
-    def insert_messages(self, messages: Sequence[Message]) -> None:
-        """Insert multiple messages into the transcript without triggering handlers.
-
-        Convenience method for inserting multiple messages at once.
-        Equivalent to calling insert_message() for each message.
-
-        Args:
-            messages: Sequence of UserMessage, AssistantMessage, or SystemMessage to add
-        """
-        self._transcript.extend(messages)
+    # TODO: Consider eliminating these no-handler methods by allowing handlers to be attached
+    # after transcript reconstruction. Then all inserts could use process_message() uniformly.
+    # Current use case: session resume / conversation replay (cmd_speak_with_dead.py).
 
     def insert_transcript_item(self, item: TranscriptItem) -> None:
         """Insert a transcript item (message, tool call, reasoning, or tool output) without triggering handlers.
@@ -554,8 +561,7 @@ class Agent:
         Use this to reconstruct a full transcript including tool calls and their outputs,
         e.g., when resuming from a saved session or replaying a previous conversation.
 
-        Like insert_message(), this does not trigger handler notifications - handlers are only
-        notified during the agent loop for items that occur during execution.
+        Unlike process_message(), handlers are NOT notified.
 
         Args:
             item: A TranscriptItem (Message, FunctionCallItem, ReasoningItem, or ToolCallOutput)
@@ -672,12 +678,10 @@ class Agent:
     async def run(self) -> AgentResult:
         """Run the agent loop until completion.
 
-        Before calling run(), insert messages into the transcript using insert_message() or insert_messages().
+        Before calling run(), add messages to the transcript using process_message() or insert_messages().
         Example:
-            agent.insert_messages([
-                SystemMessage.text("You are a helpful assistant"),
-                UserMessage.text("Hello"),
-            ])
+            agent.process_message(SystemMessage.text("You are a helpful assistant"))
+            agent.process_message(UserMessage.text("Hello"))
             result = await agent.run()
         """
         self.assistant_text_chunks.clear()
@@ -1081,7 +1085,7 @@ class Agent:
         Tool policy is set once at initialization and remains fixed throughout the agent's lifetime.
         Common values: RequireAnyTool() (typical), AllowAnyToolOrTextMessage(), ForbidAllTools().
 
-        For static system prompts, use insert_message(SystemMessage.text("...")) before calling run().
+        For static system prompts, use process_message(SystemMessage.text("...")) before calling run().
         For dynamic instructions that can change between phases, provide dynamic_instructions callback.
         """
         return cls(
