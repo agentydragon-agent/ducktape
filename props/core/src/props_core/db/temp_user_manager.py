@@ -1,7 +1,7 @@
 """Temporary PostgreSQL user management with async context manager pattern.
 
 Provides lifecycle management (create, yield credentials, cleanup) for ephemeral database users
-used by all agent types (critic, grader, clustering, prompt optimizer, etc.).
+used by all agent types (critic, grader, prompt optimizer, etc.).
 
 All agents use the unified pattern:
 - Username: agent_{agent_run_id}

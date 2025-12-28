@@ -163,7 +163,7 @@ def _make_critic_steps_zero_issues() -> list[Step]:
     """Create step sequence for run_critic that finds zero issues.
 
     Uses the AgentHandle-based infrastructure which loads system prompt
-    from AGENT.md in the definition.
+    from the /init script output.
     """
     return [DockerExecCall(cmd=["critique", "submit", "0", "No issues found"], timeout_ms=15000)]
 
@@ -173,11 +173,10 @@ def _make_critic_steps_zero_issues() -> list[Step]:
 async def test_critic_zero_issues(run_critic_with_steps, test_snapshot):
     """Test run_critic with AgentHandle-based flow.
 
-    Tests the definition-based flow that uses:
-    - AgentHandle to load agent definition from database
-    - AGENT.md as the system prompt (no Jinja rendering)
-    - init script for bootstrap context injection
-    - Same CriticAgentEnvironment for temp user and MCP server
+    Tests the package-based flow that uses:
+    - AgentHandle to load agent package from database
+    - /init script output as the system prompt
+    - CriticAgentEnvironment for temp user and MCP server
     """
     critic_run_id, status, _runner = await run_critic_with_steps(_make_critic_steps_zero_issues())
 

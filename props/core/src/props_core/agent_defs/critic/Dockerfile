@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Critic agent definition image
+# Critic agent package image
 # Built from the packed definition tar as context
 # Produces an image with /init (executable) and /agent.md (system prompt)
 
@@ -38,7 +38,7 @@ COPY . /build/
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install \
     /build/openai_utils \
-    /build/agent_runtimes/agent_container_util \
+    /build/agent_pkg_runtime \
     /build/agent_core \
     /build/cli_util \
     /build/mcp_infra \

@@ -40,7 +40,7 @@ WHERE agent_run_id = current_agent_run_id();
 
 | Output | Method |
 |--------|--------|
-| Create improved definition | CLI: `props agent-definition create /workspace/improved/` |
+| Create improved package | CLI: `props agent-pkg create /workspace/improved/` |
 | Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
 | View metrics | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples` |
 | Report failures | CLI: `props critic-dev report-failure "message"` |
@@ -53,11 +53,11 @@ WHERE agent_run_id = current_agent_run_id();
 
 ```bash
 # Fetch and unpack a base critic to get sane defaults
-props agent-definition fetch critic /workspace/improved/
+props agent-pkg fetch critic /workspace/improved/
 
 # Edit agent.md with your improvements based on failure analysis
-# Submit your improved definition
-props agent-definition create /workspace/improved/
+# Submit your improved package
+props agent-pkg create /workspace/improved/
 ```
 
 ## Workflow
@@ -82,7 +82,7 @@ Based on analysis:
 
 ### 4. Create and Submit
 
-Start from base critic (see "Starting Point" above), modify AGENT.md, submit via CLI.
+Start from base critic (see "Starting Point" above), modify agent.md, submit via CLI.
 
 ## Termination Condition
 

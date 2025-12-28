@@ -1,14 +1,13 @@
 <script lang="ts">
   import type { OverviewResponse, DefinitionRow, StatsWithCI } from '../../lib/types';
-  import { formatStatsWithCI } from '../../lib/format';
+  import { formatStatsWithCI } from '../../lib/formatters';
   import DefinitionIdLink from '../../lib/DefinitionIdLink.svelte';
 
   interface Props {
     data: OverviewResponse;
-    onSelectDefinition?: (id: string) => void;
   }
 
-  let { data, onSelectDefinition }: Props = $props();
+  let { data }: Props = $props();
 
   // Find best definition by valid whole-snapshot recall (preserves full StatsWithCI)
   function findBestDefinition(): { def: DefinitionRow; recall_stats: StatsWithCI } | null {
@@ -61,7 +60,7 @@
     {#if bestDef}
       <div class="text-2xl font-bold text-green-600">{formatStatsWithCI(bestDef.recall_stats)}</div>
       <div class="text-xs mt-1">
-        <DefinitionIdLink id={bestDef.def.definition_id} onclick={onSelectDefinition} />
+        <DefinitionIdLink id={bestDef.def.definition_id} />
       </div>
     {:else}
       <div class="text-2xl font-bold text-gray-400">-</div>

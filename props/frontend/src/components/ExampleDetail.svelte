@@ -1,127 +1,84 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { toast } from 'svelte-sonner';
-  import { fetchExampleDetail, type ExampleDetailResponse, type Split } from '../lib/api/client';
-  import { formatStatsWithCI } from '../lib/format';
+  import { type ExampleDetailResponse } from '../lib/api/client';
+  import { formatStatsWithCI } from '../lib/formatters';
+  import { recallColorClass } from '../lib/colors';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
 
   interface Props {
-    snapshotSlug: string;
-    exampleKind: 'whole_snapshot' | 'file_set';
-    filesHash?: string | null;
-    onClose?: () => void;
-    onSelectDefinition?: (definitionId: string) => void;
+    data: ExampleDetailResponse;
   }
-  let { snapshotSlug, exampleKind, filesHash, onClose, onSelectDefinition }: Props = $props();
+  let { data }: Props = $props();
 
-  let data: ExampleDetailResponse | null = $state(null);
-  let loading = $state(true);
-
-  async function loadData() {
-    loading = true;
-    try {
-      data = await fetchExampleDetail(snapshotSlug, exampleKind, filesHash ?? null);
-    } catch (e) {
-      const message = e instanceof Error ? e.message : 'Unknown error';
-      toast.error(message);
-    } finally {
-      loading = false;
-    }
-  }
-
-  function recallClass(value: number | null | undefined): string {
-    if (value == null) return 'text-gray-400';
-    if (value >= 0.70) return 'text-green-600 font-medium';
-    if (value >= 0.40) return 'text-yellow-600';
-    return 'text-red-600';
-  }
-
-  function formatStatus(counts: Record<string, number>): string {
+  function formatStatusCounts(counts: Record<string, number>): string {
     const parts: string[] = [];
     if (counts.completed) parts.push(`${counts.completed} completed`);
     if (counts.max_turns_exceeded) parts.push(`${counts.max_turns_exceeded} max_turns`);
     if (counts.in_progress) parts.push(`${counts.in_progress} in_progress`);
     return parts.join(', ') || '—';
   }
-
-  onMount(() => {
-    loadData();
-  });
 </script>
 
 <div class="space-y-4">
   <!-- Header -->
   <div class="bg-white rounded-lg shadow p-4">
     <div class="flex items-center gap-3 mb-3">
-      {#if onClose}
-        <button
-          type="button"
-          class="text-sm text-gray-500 hover:text-gray-700 hover:underline"
-          onclick={onClose}
-        >
-          ← Back
-        </button>
-      {/if}
+      <a href="/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
       <h2 class="text-lg font-semibold">Example Detail</h2>
     </div>
 
-    {#if loading}
-      <p class="text-gray-500 text-sm">Loading...</p>
-    {:else if data}
-      <div class="space-y-3">
-        <!-- Example metadata -->
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <span class="text-gray-500">Snapshot:</span>
-            <span class="ml-1 font-mono">{data.snapshot_slug}</span>
-          </div>
-          <div>
-            <span class="text-gray-500">Split:</span>
-            <span class="ml-1 capitalize">{data.split}</span>
-          </div>
-          <div>
-            <span class="text-gray-500">Kind:</span>
-            <span class="ml-1">{data.example_kind}</span>
-          </div>
-          <div>
-            <span class="text-gray-500">Catchable Occurrences:</span>
-            <span class="ml-1">{data.n_catchable_occurrences}</span>
-          </div>
-          {#if data.files_hash}
-            <div class="col-span-2">
-              <span class="text-gray-500">Files Hash:</span>
-              <span class="ml-1 font-mono text-xs">{data.files_hash}</span>
-            </div>
-          {/if}
+    <div class="space-y-3">
+      <!-- Example metadata -->
+      <div class="grid grid-cols-2 gap-4 text-sm">
+        <div>
+          <span class="text-gray-500">Snapshot:</span>
+          <span class="ml-1 font-mono">{data.snapshot_slug}</span>
         </div>
-
-        <!-- File list for file_set examples -->
-        {#if data.example_kind === 'file_set' && data.files}
-          <div>
-            <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
-            <ul class="text-xs font-mono text-gray-600 space-y-1">
-              {#each data.files as file}
-                <li>{file}</li>
-              {/each}
-            </ul>
-          </div>
-        {/if}
-
-        <!-- Aggregate stats -->
-        {#if data.credit_stats}
-          <div class="pt-3 border-t">
-            <span class="text-sm text-gray-500">Aggregate Recall:</span>
-            <span class="ml-2 text-sm {recallClass(data.credit_stats.mean)}">
-              {formatStatsWithCI(data.credit_stats)}
-            </span>
+        <div>
+          <span class="text-gray-500">Split:</span>
+          <span class="ml-1 capitalize">{data.split}</span>
+        </div>
+        <div>
+          <span class="text-gray-500">Kind:</span>
+          <span class="ml-1">{data.example_kind}</span>
+        </div>
+        <div>
+          <span class="text-gray-500">Catchable Occurrences:</span>
+          <span class="ml-1">{data.n_catchable_occurrences}</span>
+        </div>
+        {#if data.files_hash}
+          <div class="col-span-2">
+            <span class="text-gray-500">Files Hash:</span>
+            <span class="ml-1 font-mono text-xs">{data.files_hash}</span>
           </div>
         {/if}
       </div>
-    {/if}
+
+      <!-- File list for file_set examples -->
+      {#if data.example_kind === 'file_set' && data.files}
+        <div>
+          <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
+          <ul class="text-xs font-mono text-gray-600 space-y-1">
+            {#each data.files as file}
+              <li>{file}</li>
+            {/each}
+          </ul>
+        </div>
+      {/if}
+
+      <!-- Aggregate stats -->
+      {#if data.credit_stats}
+        <div class="pt-3 border-t">
+          <span class="text-sm text-gray-500">Aggregate Recall:</span>
+          <span class="ml-2 text-sm {recallColorClass(data.credit_stats.mean)}">
+            {formatStatsWithCI(data.credit_stats)}
+          </span>
+        </div>
+      {/if}
+    </div>
   </div>
 
   <!-- Definition stats table -->
-  {#if data && data.definitions.length > 0}
+  {#if data.definitions.length > 0}
     <div class="bg-white rounded-lg shadow p-4">
       <h3 class="text-sm font-medium text-gray-700 mb-3">Definitions ({data.definitions.length})</h3>
       <div class="overflow-x-auto">
@@ -139,21 +96,21 @@
             {#each data.definitions as def}
               <tr class="border-b border-gray-100 hover:bg-gray-50">
                 <td class="px-3 py-2">
-                  <DefinitionIdLink id={def.definition_id} onclick={onSelectDefinition} />
+                  <DefinitionIdLink id={def.definition_id} />
                 </td>
                 <td class="px-3 py-2 text-gray-600 font-mono text-xs">{def.model}</td>
-                <td class="px-3 py-2 text-right {recallClass(def.credit_stats?.mean)}">
+                <td class="px-3 py-2 text-right {recallColorClass(def.credit_stats?.mean)}">
                   {def.credit_stats ? formatStatsWithCI(def.credit_stats) : '—'}
                 </td>
                 <td class="px-3 py-2 text-right text-gray-600">{def.n_runs}</td>
-                <td class="px-3 py-2 text-xs text-gray-600">{formatStatus(def.status_counts)}</td>
+                <td class="px-3 py-2 text-xs text-gray-600">{formatStatusCounts(def.status_counts)}</td>
               </tr>
             {/each}
           </tbody>
         </table>
       </div>
     </div>
-  {:else if data}
+  {:else}
     <div class="bg-white rounded-lg shadow p-4">
       <p class="text-gray-500 text-sm">No definitions have been evaluated on this example yet.</p>
     </div>

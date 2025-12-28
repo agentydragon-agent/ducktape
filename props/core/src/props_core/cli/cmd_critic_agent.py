@@ -16,8 +16,8 @@ from props_core.db.session import get_session
 from props_core.db.snapshots import DBLocationAnchor
 import typer
 
-from agent_container_util.mcp import mcp_client_from_env
-from agent_container_util.output import WORKSPACE, render_agent_prompt
+from agent_pkg_runtime.mcp import mcp_client_from_env
+from agent_pkg_runtime.output import WORKSPACE, render_agent_prompt
 
 HELP_TEXT = """Critic agent commands for reporting code review findings.
 

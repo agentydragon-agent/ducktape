@@ -1,39 +1,39 @@
-# Agent Definitions
+# Agent Packages
 
 ## Overview
 
-Agent definitions are self-contained directories that fully specify an agent's behavior:
-prompt, bootstrap logic, and supporting tools/scripts. They are stored in PostgreSQL
-as tar archives with database-level access control.
+Agent packages are self-contained directories that fully specify an agent's behavior.
+They are packed as tar archives containing a Dockerfile that builds an image with `/init`.
+
+**Image contract:** The built Docker image must contain `/init` (executable).
+When run, `/init` outputs the agent's system prompt to stdout.
 
 **Identity model:**
-- **Repo-backed definitions**: Human-readable IDs (e.g., "critic", "grader"). Synced
+- **Repo-backed packages**: Human-readable IDs (e.g., "critic", "grader"). Synced
   from `agent_defs/` directory, always updated in place on sync.
-- **Agent-created definitions**: UUIDs assigned by the MCP server (via CLI helper).
+- **Agent-created packages**: UUIDs assigned by the MCP server (via CLI helper).
   Immutable once created.
 
-## Directory Structure
+## Package Structure
 
-Agent definitions in `props/src/props/agent_defs/`:
+Agent packages in `props/core/src/props_core/agent_defs/`:
 
 ```
 agent_defs/
-├── common/                      # Shared files (symlinked by agents)
-│   ├── docs/                    # postgres_access.md, rls_mechanism.md, ...
-│   └── init_helpers.py
-├── critic/                      # AGENT.md, init, bin/, docs -> common, examples/
-├── grader/                      # AGENT.md, init, bin/, docs -> common
-├── clustering/                  # AGENT.md, init, bin/, docs/, examples/
-├── prompt_optimizer/            # AGENT.md, init, bin/, docs/, examples/
-├── improvement/                 # AGENT.md, init, bin/, docs -> common
-└── <detector>/                  # Critic-based (inherits via symlinks: init, bin, docs -> critic)
+├── critic/                      # Dockerfile, init, agent.md (optional)
+├── grader/                      # Dockerfile, init
+├── prompt_optimizer/            # Dockerfile, init, agent.md
+├── improvement/                 # Dockerfile, init, agent.md
+└── <detector>/                  # Critic-based (inherits via symlinks)
 ```
 
-**Conventions:**
-- Each agent has `AGENT.md` (system prompt), `init` (bootstrap script), `bin/` (CLI)
-- `docs/` can be a symlink (`-> ../common/docs`) or contain agent-specific docs
-- Critic-based detectors inherit via symlinks to `../critic/`
-- See `agent_defs/CLAUDE.md` for link style conventions
+**Required:**
+- `Dockerfile` - Builds the agent image (must produce `/init`)
+- `/init` in image - Executable that outputs system prompt to stdout
+
+**Optional (used by some /init implementations):**
+- `agent.md` - Agent-specific prompt portion rendered by `/init`
+- Supporting files referenced by Dockerfile
 
 ## Agent Types
 
@@ -74,14 +74,14 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 
 ## Runtime Flow
 
-**CRITICAL: Workspace must be created BEFORE Docker container starts.**
+**CRITICAL: Image must be built BEFORE agent loop starts.**
 
 ```
 1. Create AgentRun in database
-2. Get workspace path: workspace_manager.get_path(agent_run_id)
-3. ensure_definition_unpacked(definition_id, workspace_path)
-4. Enter AgentEnvironment context (starts container with mount)
-5. Create AgentHandle (loads AGENT.md, builds bootstrap)
+2. Load archive from database
+3. Build Docker image from archive (via ensure_image_from_archive)
+4. Enter AgentEnvironment context (starts container)
+5. Create AgentHandle - runs /init and uses output as system prompt
 6. Run agent loop
 ```
 
@@ -97,7 +97,7 @@ All agents use a single `agent_base` role with RLS policies based on agent type:
 | Critic | `critique` | `insert-issue`, `insert-occurrence`, `submit`, `list-issues`, `delete-issue` |
 | Grader | `grade` | `add-tp-match`, `add-fp-match`, `add-no-match`, `delete-decision`, `submit` |
 | Clustering | `clustering` | `create-cluster`, `assign-to-cluster`, `assign-to-tp`, `assign-to-fp` |
-| Prompt Optimizer | `critic-dev` | `definition create`, `run-critic`, `run-grader`, `leaderboard`, `hard-examples` |
+| Prompt Optimizer | `critic-dev` | `run-critic`, `run-grader`, `leaderboard`, `hard-examples` |
 
 Usage: `<cli> <command> [args]` (CLIs are pip-installed console scripts)
 
@@ -118,13 +118,8 @@ Track costs across agent sub-trees:
 - `own_cost` - Cost of this agent run only
 - `cost_including_subagents` - Recursive sum including descendants
 
-### Dissolve agent_queries.py
-
-Refactor SQL template queries from `db/agent_queries.py` into agent-specific
-CLI commands under `agent_defs/*/bin/`.
-
 ## References
 
-- Agent definitions: `props/src/props/agent_defs/`
+- Agent packages: `props/core/src/props_core/agent_defs/`
 - Agent runtime utilities: `agent_runtimes/` (critic_util, grader_util, etc.)
-- E2E tests: `props/tests/` (if available)
+- Package building: `agent_pkg/src/agent_pkg/builder.py`

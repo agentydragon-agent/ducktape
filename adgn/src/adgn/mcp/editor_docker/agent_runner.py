@@ -6,7 +6,6 @@ from pathlib import Path
 import aiodocker
 from fastmcp.client import Client
 
-from adgn.agent.bootstrap import run_init_script
 from adgn.mcp.editor_docker.handlers import TerminateOnEditorSubmit
 from adgn.mcp.editor_docker.runner import EditorDockerSession, editor_docker_session, writeback_success
 from adgn.mcp.editor_docker.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
@@ -14,6 +13,7 @@ from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.turn_limit import MaxTurnsHandler
+from agent_pkg import run_init_script
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
 

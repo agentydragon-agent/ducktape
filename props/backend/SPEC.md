@@ -41,7 +41,7 @@ SPEC.md is append-only. TODO.md tracks implementation progress.
 **Purpose:** View details and runs for a single definition
 
 **Features:**
-- Definition ID with copyable CLI command (`props agent-definition fetch <id> ./`)
+- Package ID with copyable CLI command (`props agent-pkg fetch <id> ./`)
 - Stats table: split × kind metrics (recall, runs, zero, done, stalled)
 - Embedded runs browser filtered to this definition
 - Back navigation to leaderboard

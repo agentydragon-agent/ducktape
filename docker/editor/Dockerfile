@@ -1,4 +1,4 @@
-# Editor agent definition image
+# Editor agent package image
 # Built from repo root context: docker build -f docker/editor/Dockerfile -t adgn-editor:latest .
 # Image contract: /init outputs system prompt (loaded from editor_util package resources)
 
@@ -8,11 +8,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
 # Copy workspace packages
-COPY agent_runtimes/agent_container_util /build/agent_container_util
+COPY agent_pkg_runtime /build/agent_pkg_runtime
 COPY agent_runtimes/editor_util /build/editor_util
 
 # Install in dependency order: pip doesn't understand [tool.uv.sources] workspace refs
-RUN pip install --no-cache-dir /build/agent_container_util && \
+RUN pip install --no-cache-dir /build/agent_pkg_runtime && \
     pip install --no-cache-dir /build/editor_util
 
 # Required: /init (image contract - runs bootstrap, outputs system prompt)

@@ -26,6 +26,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from openai_utils.model_metadata import MODEL_METADATA
+from props_core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
 from props_core.agent_types import AgentType
 from props_core.db.models import (
     AgentDefinition,
@@ -41,7 +42,6 @@ from props_core.db.models import (
     TruePositiveOccurrenceORM,
 )
 from props_core.db.session import get_session
-from props_core.definition_utils import MANIFEST_FILE, validate_packed_definition
 from props_core.ids import SnapshotSlug
 from props_core.models.snapshot import BundleFilter, GitHubSource, GitSource, LocalSource, SnapshotDoc
 from props_core.prop_utils import specimens_definitions_root
@@ -146,7 +146,7 @@ def pack_repo_definition(definition_dir: Path, *, use_staged: bool = False) -> b
     """Pack repo-backed definition using MANIFEST and git archive.
 
     Creates a tar archive containing:
-    - Definition files (Dockerfile, AGENT.md, init, etc.) at root
+    - Definition files (Dockerfile, init, agent.md, etc.) at root
     - External dependencies at their original paths from repo root
 
     Args:
@@ -216,7 +216,7 @@ def pack_repo_definition(definition_dir: Path, *, use_staged: bool = False) -> b
     archive = buffer.getvalue()
 
     # Validate has required files (DB constraint handles size limit)
-    validate_packed_definition(archive)
+    validate_packed_agent_pkg(archive)
 
     return archive
 
@@ -504,6 +504,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             for p, ranges in occ.files.items()
                         },
                         note=occ.note,
+                        only_matchable_from_files_hash=ensure_file_set(
+                            session, issue.snapshot_slug, occ.only_matchable_from_files
+                        ),
                     )
                     session.add(orm_occ)
                 added += 1
@@ -535,6 +538,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                                 for p, ranges in occ.files.items()
                             },
                             note=occ.note,
+                            only_matchable_from_files_hash=ensure_file_set(
+                                session, issue.snapshot_slug, occ.only_matchable_from_files
+                            ),
                         )
                         session.add(orm_occ)
                     updated += 1
@@ -564,6 +570,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         },
                         note=fp_occ.note,
                         relevant_files=[str(p) for p in fp_occ.relevant_files],
+                        only_matchable_from_files_hash=ensure_file_set(
+                            session, fp.snapshot_slug, fp_occ.only_matchable_from_files
+                        ),
                     )
                     session.add(fp_orm_occ)
                 added += 1
@@ -595,6 +604,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             },
                             note=fp_occ.note,
                             relevant_files=[str(p) for p in fp_occ.relevant_files],
+                            only_matchable_from_files_hash=ensure_file_set(
+                                session, fp.snapshot_slug, fp_occ.only_matchable_from_files
+                            ),
                         )
                         session.add(fp_orm_occ)
                     updated += 1
@@ -697,6 +709,39 @@ def compute_files_hash(file_paths: list[str]) -> str:
     sorted_paths = sorted(file_paths)
     content = "\n".join(sorted_paths)
     return hashlib.md5(content.encode("utf-8")).hexdigest()
+
+
+def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: set[Path] | None) -> str | None:
+    """Ensure a file_set exists for the given paths and return its hash.
+
+    Upserts the FileSet and FileSetMember rows if they don't exist.
+    Returns None if file_paths is None (pass-through for optional fields).
+
+    Args:
+        session: Database session
+        snapshot_slug: Snapshot the file_set belongs to
+        file_paths: Set of file paths, or None
+
+    Returns:
+        The files_hash for this file set, or None if file_paths is None
+    """
+    if file_paths is None:
+        return None
+
+    path_strs = [str(p) for p in file_paths]
+    files_hash = compute_files_hash(path_strs)
+
+    # Check if file_set already exists
+    existing = session.query(FileSet).filter_by(snapshot_slug=snapshot_slug, files_hash=files_hash).first()
+    if existing is None:
+        # Create file_set and members
+        fs = FileSet(snapshot_slug=snapshot_slug, files_hash=files_hash)
+        session.add(fs)
+        session.flush()  # Ensure FK for members
+        for path_str in path_strs:
+            session.add(FileSetMember(snapshot_slug=snapshot_slug, files_hash=files_hash, file_path=path_str))
+
+    return files_hash
 
 
 def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
@@ -1001,7 +1046,7 @@ async def build_definition_images(docker: aiodocker.Docker, session: Session) ->
     Returns:
         Number of images built
     """
-    from adgn.definition_builder import ensure_image_from_archive
+    from agent_pkg import ensure_image_from_archive
 
     # Fetch all definition data while session is open (avoid detached instance errors)
     definitions = [(defn.id, defn.archive) for defn in session.query(AgentDefinition).all()]

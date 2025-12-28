@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from adgn.definition_builder import ensure_image_from_dockerfile
+from agent_pkg import ensure_image
 
 REPO_ROOT = Path(__file__).parents[
     4
@@ -17,6 +17,4 @@ EDITOR_IMAGE_TAG = "adgn-editor:test"
 @pytest.fixture
 async def editor_image_id(async_docker_client):
     """Build or retrieve editor agent image."""
-    return await ensure_image_from_dockerfile(
-        async_docker_client, repo_root=REPO_ROOT, dockerfile_path=EDITOR_DOCKERFILE, tag=EDITOR_IMAGE_TAG
-    )
+    return await ensure_image(async_docker_client, REPO_ROOT, EDITOR_IMAGE_TAG, dockerfile=EDITOR_DOCKERFILE)

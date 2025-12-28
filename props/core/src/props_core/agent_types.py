@@ -12,7 +12,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, Field
 
-from props_core.ids import DefinitionId, SnapshotSlug
+from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleSpec
 from props_core.prompt_optimize.target_metric import TargetMetric
 
@@ -30,7 +30,6 @@ class AgentType(StrEnum):
     CRITIC = "critic"
     GRADER = "grader"
     PROMPT_OPTIMIZER = "prompt_optimizer"
-    CLUSTERING = "clustering"  # Groups unknown issues into clusters
     IMPROVEMENT = "improvement"  # Analyzes runs and proposes improved prompts
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
 
@@ -98,18 +97,6 @@ class PromptOptimizerTypeConfig(BaseModel):
     budget_limit: float = Field(description="Dollar budget limit for optimization")
 
 
-class ClusteringTypeConfig(BaseModel):
-    """Clustering agent configuration.
-
-    Clustering agents group unknown issues (grader decisions with no TP match)
-    into named clusters. They have direct SQL access to create clusters and
-    assign unknowns.
-    """
-
-    agent_type: Literal[AgentType.CLUSTERING] = AgentType.CLUSTERING
-    snapshot_slug: SnapshotSlug  # Which snapshot's unknowns to cluster
-
-
 class ImprovementTypeConfig(BaseModel):
     """Improvement agent configuration.
 
@@ -135,12 +122,7 @@ class ImprovementTypeConfig(BaseModel):
 
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
-    CriticTypeConfig
-    | GraderTypeConfig
-    | FreeformTypeConfig
-    | PromptOptimizerTypeConfig
-    | ClusteringTypeConfig
-    | ImprovementTypeConfig,
+    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ImprovementTypeConfig,
     Field(discriminator="agent_type"),
 ]
 

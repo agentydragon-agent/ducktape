@@ -17,7 +17,6 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel, TypeAdapter
 
 if TYPE_CHECKING:
-    from props_core.db.clustering_models import UnknownAssignment, UnknownCluster
     from props_core.db.examples import Example
 
 from sqlalchemy import (
@@ -41,7 +40,6 @@ from sqlalchemy.types import TypeDecorator
 
 from agent_core.events import EventType
 from props_core.agent_types import (
-    ClusteringTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
@@ -477,11 +475,17 @@ class TruePositiveOccurrenceORM(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    only_matchable_from_files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
         ForeignKeyConstraint(
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "only_matchable_from_files_hash"],
+            ["file_sets.snapshot_slug", "file_sets.files_hash"],
+            ondelete="SET NULL",
         ),
     )
 
@@ -522,11 +526,17 @@ class FalsePositiveOccurrenceORM(Base):
     files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevant_files: Mapped[list] = mapped_column(JSONB, nullable=False)  # [path, ...]
+    only_matchable_from_files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
         ForeignKeyConstraint(
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "only_matchable_from_files_hash"],
+            ["file_sets.snapshot_slug", "file_sets.files_hash"],
+            ondelete="SET NULL",
         ),
     )
 
@@ -1149,10 +1159,10 @@ class OccurrenceStatistics(Base):
 
 
 class AgentDefinition(Base):
-    """Agent definition archive stored in database.
+    """Agent package archive stored in database.
 
-    Contains AGENT.md, init script, tools, examples, and docs packed as tar.
-    Definitions can be repo-backed (readable names) or agent-created (auto-generated IDs).
+    Contains Dockerfile, /init script, and optional supporting files packed as tar.
+    Packages can be repo-backed (readable names) or agent-created (auto-generated IDs).
     """
 
     __tablename__ = "agent_definitions"
@@ -1213,12 +1223,6 @@ class AgentRun(Base):
         back_populates="agent_run", cascade="all, delete-orphan"
     )
     events: Mapped[list[Event]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
-    unknown_clusters: Mapped[list[UnknownCluster]] = relationship(
-        back_populates="agent_run", cascade="all, delete-orphan"
-    )
-    unknown_assignments: Mapped[list[UnknownAssignment]] = relationship(
-        back_populates="agent_run", cascade="all, delete-orphan", foreign_keys="[UnknownAssignment.agent_run_id]"
-    )
 
     # Type-safe config accessors
     def critic_config(self) -> CriticTypeConfig:
@@ -1240,16 +1244,6 @@ class AgentRun(Base):
         if isinstance(self.type_config, GraderTypeConfig):
             return self.type_config
         raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
-
-    def clustering_config(self) -> ClusteringTypeConfig:
-        """Get type_config as ClusteringTypeConfig or raise ValueError.
-
-        Use when this run is expected to be a clustering run.
-        Raises ValueError if type_config is not ClusteringTypeConfig.
-        """
-        if isinstance(self.type_config, ClusteringTypeConfig):
-            return self.type_config
-        raise ValueError(f"Expected ClusteringTypeConfig, got {type(self.type_config).__name__}")
 
     def improvement_config(self) -> ImprovementTypeConfig:
         """Get type_config as ImprovementTypeConfig or raise ValueError.
@@ -1280,11 +1274,3 @@ class AgentRun(Base):
         if isinstance(self.type_config, FreeformTypeConfig):
             return self.type_config
         raise ValueError(f"Expected FreeformTypeConfig, got {type(self.type_config).__name__}")
-
-
-# Import clustering_models at end of module to register UnknownCluster/UnknownAssignment
-# with SQLAlchemy's class registry. AgentRun has relationships to these classes using
-# string references ("UnknownCluster", "UnknownAssignment") which SQLAlchemy resolves
-# lazily. This import ensures the classes are registered before any queries execute.
-# This must be at module scope (not inside TYPE_CHECKING) so it runs at import time.
-from props_core.db import clustering_models as _clustering_models  # noqa: F401, E402

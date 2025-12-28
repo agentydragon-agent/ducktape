@@ -52,12 +52,12 @@ def test_file_uri_template_matches_paths_with_slashes() -> None:
     """FILE_RESOURCE_URI_TEMPLATE must match paths containing slashes.
 
     The template uses RFC 6570 wildcard syntax {path*} so the regex uses .+
-    instead of [^/]+ - allowing it to match absolute paths like /AGENT.md.
+    instead of [^/]+ - allowing it to match absolute paths like /init.
     """
     # Root-level file (the failing case before the fix)
-    result = match_uri_template("file:///AGENT.md", FILE_RESOURCE_URI_TEMPLATE)
+    result = match_uri_template("file:///init", FILE_RESOURCE_URI_TEMPLATE)
     assert result is not None
-    assert result["path"] == "/AGENT.md"
+    assert result["path"] == "/init"
 
     # Nested path
     result = match_uri_template("file:///foo/bar/baz.txt", FILE_RESOURCE_URI_TEMPLATE)

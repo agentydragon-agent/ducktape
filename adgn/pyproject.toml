@@ -8,8 +8,9 @@ version = "0.0.0"
 authors = [{name = "Rai"}]
 requires-python = ">=3.12,<3.14"
 dependencies = [
-  "agent-container-util",
   "agent-core",
+  "agent-pkg",
+  "agent-pkg-runtime",
   "cli-util",
   "mcp-infra",
   "net-util",
@@ -181,13 +182,14 @@ adgn-editor-docker = "adgn.mcp.editor_docker.cli:main"
 # Mypy configuration moved to central /mypy.ini at repo root
 
 [tool.uv.sources]
-agent-container-util = { workspace = true }
 agent-core = { workspace = true }
+agent-pkg = { workspace = true }
+agent-pkg-runtime = { workspace = true }
 cli-util = { workspace = true }
+editor-util = { workspace = true }
 mcp-infra = { workspace = true }
 net-util = { workspace = true }
 openai-utils = { workspace = true }
-editor-util = { workspace = true }
 
 [[tool.mypy.overrides]]
 module = ["tests.detectors.fixtures.*"]

@@ -1,11 +1,11 @@
 """Test prompt improvement agent end-to-end with mocked OpenAI.
 
 Tests the improvement agent workflow:
-- Creating improved definition directory via docker_exec
-- Submitting via `critic-dev definition create` CLI
+- Creating improved package directory via docker_exec
+- Submitting via `props agent-pkg create` CLI
 - Token budget handling
 - RLS-scoped database access
-- Termination when definition beats baseline average
+- Termination when package beats baseline average
 """
 
 from __future__ import annotations
@@ -23,7 +23,8 @@ import pytest
 
 from agent_core.testing import AssertDockerExecThenFinish, DockerExecCall, Step
 
-# Define the improved AGENT.md content used across tests
+# Define the improved agent.md content used across tests
+# Note: The improvement agent creates a package with Dockerfile + init + agent.md
 IMPROVED_AGENT_MD = """# Improved Critic Prompt
 
 You are a code review assistant focused on finding:
@@ -50,25 +51,25 @@ print("Ready to begin.")
 
 
 def _make_improvement_steps() -> list[Step]:
-    """Create step sequence for improvement agent that creates and submits a definition.
+    """Create step sequence for improvement agent that creates and submits a package.
 
-    Uses bin CLI commands which run INSIDE THE CONTAINER where they have access
+    Uses CLI commands which run INSIDE THE CONTAINER where they have access
     to the MCP-over-HTTP server set up by the agent environment.
 
     The agent:
-    1. Creates definition directory at /workspace/improved/ via docker_exec
-    2. Writes AGENT.md and init script
+    1. Creates package directory at /workspace/improved/ via docker_exec
+    2. Writes agent.md and init script
     3. Makes init executable
-    4. Calls `critic-dev definition create` CLI to submit
+    4. Calls `props agent-pkg create` CLI to submit
     """
     return [
-        # 1. Create definition directory and write files
+        # 1. Create package directory and write files
         DockerExecCall(
             cmd=[
                 "sh",
                 "-c",
                 f"""mkdir -p /workspace/improved && \
-cat > /workspace/improved/AGENT.md << 'AGENT_EOF'
+cat > /workspace/improved/agent.md << 'AGENT_EOF'
 {IMPROVED_AGENT_MD}
 AGENT_EOF
 cat > /workspace/improved/init << 'INIT_EOF'
@@ -78,12 +79,12 @@ chmod +x /workspace/improved/init""",
             ],
             timeout_ms=15000,
         ),
-        # 2. Submit the definition via bin CLI (calls MCP-over-HTTP internally)
-        # Note: Uses critic_dev.py definition create
+        # 2. Submit the package via CLI (calls MCP-over-HTTP internally)
+        # Note: Uses props agent-pkg create
         # After this, termination check (mocked) returns success so agent finishes
         AssertDockerExecThenFinish(
             expected_output="",  # Just check exit code 0
-            message="Definition created successfully.",
+            message="Package created successfully.",
         ),
     ]
 

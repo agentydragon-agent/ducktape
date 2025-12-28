@@ -7,7 +7,6 @@ The actual definitions live in src/adgn/props/agent_defs/<id>/.
 # Core evaluation agents
 CRITIC_AGENT_DEFINITION_ID = "critic"
 GRADER_AGENT_DEFINITION_ID = "grader"
-CLUSTERING_AGENT_DEFINITION_ID = "clustering"
 
 # Optimization agents
 PROMPT_OPTIMIZER_AGENT_DEFINITION_ID = "prompt_optimizer"

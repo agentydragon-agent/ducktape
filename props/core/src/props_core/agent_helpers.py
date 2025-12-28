@@ -5,7 +5,7 @@ Provides:
 - get_scope_description(): Get critic scope description for template rendering
 - fetch_snapshot(): Fetch snapshot to local filesystem and return path
 
-For MCP client, use agent_container_util.mcp_client_from_env directly.
+For MCP client, use agent_pkg_runtime.mcp_client_from_env directly.
 
 Database access: Just use get_session() directly - it auto-initializes from PG* env vars.
 
@@ -25,8 +25,8 @@ Usage:
     with get_session() as session:
         snapshots = session.query(Snapshot).filter_by(split='train').all()
 
-    # MCP HTTP client (from agent_container_util.mcp)
-    from agent_container_util.mcp import mcp_client_from_env
+    # MCP HTTP client (from agent_pkg_runtime.mcp)
+    from agent_pkg_runtime.mcp import mcp_client_from_env
 
     async with mcp_client_from_env() as (client, _):
         result = await client.call_tool("tool_name", {"arg": "value"})

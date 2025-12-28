@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Critic-based detector agent definition image
+# Critic-based detector agent package image
 # Built from the packed definition tar as context
 
 FROM python:3.12-slim AS deps
@@ -37,7 +37,7 @@ COPY . /build/
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install \
     /build/openai_utils \
-    /build/agent_runtimes/agent_container_util \
+    /build/agent_pkg_runtime \
     /build/agent_core \
     /build/cli_util \
     /build/mcp_infra \

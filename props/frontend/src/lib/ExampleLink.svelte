@@ -1,8 +1,6 @@
 <script lang="ts">
   // Link component for examples
-  // - For whole_snapshot: displays "whole@{slug}"
-  // - For file_set: displays "files@{slug}/{hash}"
-  // - Links to /examples?snapshot_slug=...&example_kind=...&files_hash=...
+  // Uses native <a> with SvelteKit client-side navigation
 
   import { formatSnapshotSlug } from './formatters';
   import type { WholeSnapshotExample, SingleFileSetExample } from './api/client';
@@ -11,10 +9,9 @@
 
   interface Props {
     example: Example;
-    onclick?: (example: Example) => void;
   }
 
-  let { example, onclick }: Props = $props();
+  let { example }: Props = $props();
 
   const displayText = $derived(
     example.kind === 'whole_snapshot'
@@ -22,7 +19,7 @@
       : `files@${formatSnapshotSlug(example.snapshot_slug)}/${example.files_hash.slice(0, 6)}`
   );
 
-  const href = $derived(() => {
+  const href = $derived.by(() => {
     const params = new URLSearchParams({
       snapshot_slug: example.snapshot_slug,
       example_kind: example.kind,
@@ -32,19 +29,8 @@
     }
     return `/examples?${params.toString()}`;
   });
-
-  function handleClick(event: MouseEvent) {
-    event.preventDefault();
-    if (onclick) {
-      onclick(example);
-    } else {
-      // Default SPA navigation via history API
-      history.pushState({}, '', href());
-      window.dispatchEvent(new PopStateEvent('popstate'));
-    }
-  }
 </script>
 
-<a href={href()} class="font-mono text-xs text-blue-600 underline hover:text-blue-800" title="{example.snapshot_slug} ({example.kind})" onclick={handleClick}>
+<a {href} class="font-mono text-xs text-blue-600 underline hover:text-blue-800" title="{example.snapshot_slug} ({example.kind})">
   {displayText}
 </a>

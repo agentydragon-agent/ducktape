@@ -40,6 +40,25 @@ class YAMLOccurrence(BaseModel):
         default=None, description="Minimal file sets for TP detection (TPs only)"
     )
     relevant_files: list[str] | None = Field(default=None, description="Files making this FP relevant (FPs only)")
+    only_matchable_from_files: list[str] | None = Field(
+        default=None,
+        description=(
+            "GRADING OPTIMIZATION: Restricts which critique outputs can match this occurrence. "
+            "If set, a critique reporting issues only in files OUTSIDE this set will be skipped "
+            "during matching (assumed non-match without semantic comparison). "
+            "NULL = allow matching from any file (conservative default). "
+            "Non-empty = skip matching if critique's files don't overlap. "
+            "Independent of expect_caught_from (detection source ≠ valid reporting targets)."
+        ),
+    )
+
+    @field_validator("only_matchable_from_files", mode="before")
+    @classmethod
+    def validate_only_matchable_from_files(cls, v: list[str] | None) -> list[str] | None:
+        """Reject empty list - must be null or non-empty."""
+        if v is not None and len(v) == 0:
+            raise ValueError("only_matchable_from_files must be null or non-empty (got empty list)")
+        return v
 
     @field_validator("files", mode="before")
     @classmethod
@@ -111,6 +130,9 @@ class YAMLOccurrence(BaseModel):
             files=self._build_files_dict(),
             note=self.note,
             expect_caught_from={frozenset(Path(p) for p in trigger_set) for trigger_set in self.expect_caught_from},
+            only_matchable_from_files={Path(p) for p in self.only_matchable_from_files}
+            if self.only_matchable_from_files
+            else None,
         )
 
     def to_fp_occurrence(self) -> FalsePositiveOccurrence:
@@ -123,6 +145,9 @@ class YAMLOccurrence(BaseModel):
             files=self._build_files_dict(),
             note=self.note,
             relevant_files={Path(p) for p in self.relevant_files},
+            only_matchable_from_files={Path(p) for p in self.only_matchable_from_files}
+            if self.only_matchable_from_files
+            else None,
         )
 
     model_config = ConfigDict(extra="forbid")

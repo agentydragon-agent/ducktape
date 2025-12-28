@@ -23,7 +23,6 @@ export type CriticTypeConfig = components['schemas']['CriticTypeConfig'];
 export type GraderTypeConfig = components['schemas']['GraderTypeConfig'];
 export type FreeformTypeConfig = components['schemas']['FreeformTypeConfig'];
 export type PromptOptimizerTypeConfig = components['schemas']['PromptOptimizerTypeConfig'];
-export type ClusteringTypeConfig = components['schemas']['ClusteringTypeConfig'];
 export type ImprovementTypeConfig = components['schemas']['ImprovementTypeConfig'];
 export type WholeSnapshotExample = components['schemas']['WholeSnapshotExample'];
 export type SingleFileSetExample = components['schemas']['SingleFileSetExample'];
@@ -72,7 +71,6 @@ export const AGENT_TYPE_VALUES: AgentType[] = [
   'critic',
   'grader',
   'prompt_optimizer',
-  'clustering',
   'improvement',
   'freeform',
 ];
@@ -199,5 +197,26 @@ export async function fetchExampleDetail(
     },
   });
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch example detail'));
+  return data;
+}
+
+// --- Ground truth snapshots ---
+
+export type SnapshotSummary = components['schemas']['SnapshotSummary'];
+export type SnapshotDetailResponse = components['schemas']['SnapshotDetailResponse'];
+export type TpInfo = components['schemas']['TpInfo'];
+export type FpInfo = components['schemas']['FpInfo'];
+
+export async function fetchSnapshots() {
+  const { data, error } = await api.GET('/api/gt/snapshots');
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch snapshots'));
+  return data;
+}
+
+export async function fetchSnapshotDetail(snapshotSlug: string) {
+  const { data, error } = await api.GET('/api/gt/snapshots/{snapshot_slug}', {
+    params: { path: { snapshot_slug: snapshotSlug } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch snapshot'));
   return data;
 }

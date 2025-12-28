@@ -102,19 +102,3 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | recall_by_definition_split_kind | All splits (view) | - | - |
 
 *VALID/TEST access restricted to prevent overfitting. See `db/evaluation_flow.md.j2` for details.
-
-### Clustering
-
-| Table | SELECT | INSERT | UPDATE |
-|-------|--------|--------|--------|
-| unknown_clusters | Own run | Own run | Own run |
-| unknown_assignments | Own run | Own run | Own run |
-| true_positives | Its snapshot | - | - |
-| true_positive_occurrences | Its snapshot | - | - |
-| false_positives | Its snapshot | - | - |
-| false_positive_occurrences | Its snapshot | - | - |
-| occurrence_triggers | Its snapshot | - | - |
-| snapshots | All | - | - |
-| events | All | - | - |
-
-**Note:** Clustering agent can create clusters and assign unknowns within its own run. Sees ground truth for its configured snapshot.

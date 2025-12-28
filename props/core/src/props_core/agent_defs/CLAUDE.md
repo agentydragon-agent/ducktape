@@ -1,6 +1,6 @@
-# Agent Definitions
+# Agent Packages
 
-This directory contains agent definition packages synced to the database and deployed to containers.
+This directory contains agent packages synced to the database and deployed to containers.
 
 ## Agent-Facing Documentation
 
@@ -18,7 +18,7 @@ This directory contains agent definition packages synced to the database and dep
 
 ## Package Bundling
 
-Agent definitions use MANIFEST files to declare which packages to bundle. Each line is a path relative to the repo root:
+Agent packages use MANIFEST files to declare which packages to bundle. Each line is a path relative to the repo root:
 
 ```
 # MANIFEST example (critic/MANIFEST)
@@ -27,11 +27,11 @@ props
 agent_core
 mcp_infra
 openai_utils
-agent_runtimes/agent_container_util
+agent_pkg_runtime
 ```
 
 The `db sync` process:
-1. Reads MANIFEST from each agent definition
+1. Reads MANIFEST from each agent package
 2. Copies listed packages into the tarball
 3. Builds Docker image from Dockerfile
 

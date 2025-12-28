@@ -27,7 +27,7 @@ The only requirement: Dockerfile must produce an image with executable `/init`.
 
 | Output | Method |
 |--------|--------|
-| Fetch/create definitions | CLI: `props agent-definition fetch/create` |
+| Fetch/create packages | CLI: `props agent-pkg fetch/create` |
 | Run evaluations | CLI: `props critic-dev run-critic ...`, `props critic-dev run-grader ...` |
 | View metrics | CLI: `props critic-dev leaderboard`, `props critic-dev hard-examples` |
 | Report failures | CLI: `props critic-dev report-failure "message"` |
@@ -35,8 +35,8 @@ The only requirement: Dockerfile must produce an image with executable `/init`.
 ## Starting Point
 
 ```bash
-# Fetch base critic definition
-props agent-definition fetch critic /workspace/my_critic/
+# Fetch base critic package
+props agent-pkg fetch critic /workspace/my_critic/
 
 # Explore the structure
 ls -la /workspace/my_critic/
@@ -46,7 +46,7 @@ cat /workspace/my_critic/init
 
 Then modify what you need and submit:
 ```bash
-props agent-definition create /workspace/my_critic/
+props agent-pkg create /workspace/my_critic/
 ```
 
 ## What You Can Change

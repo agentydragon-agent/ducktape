@@ -4,7 +4,7 @@ Agent environments manage the complete lifecycle for agents that:
 - Execute commands via docker_exec in a container
 - Access database via scoped temporary credentials
 - Call submit tools via MCP-over-HTTP
-- Use agent definitions (AGENT.md + init script)
+- Use agent packages (Dockerfile + /init script)
 
 Subclasses configure:
 - definition_id: Which agent definition to use
@@ -38,8 +38,8 @@ from fastmcp import FastMCP
 from fastmcp.server.auth import StaticTokenVerifier
 import uvicorn
 
-from adgn.definition_builder import ensure_image_from_archive
 from agent_core.handler import BaseHandler
+from agent_pkg import ensure_image_from_archive
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display import CompactDisplayHandler
 from net_util import get_docker_network_gateway_async, pick_free_port, wait_for_port
@@ -120,11 +120,12 @@ class AgentEnvironment(ABC):
     props.agent_helpers. No bind mounts for snapshots - agents extract them
     directly from the database.
 
-    Agent definition structure (in workspace):
-    - AGENT.md: System prompt (loaded by AgentHandle)
-    - init: Bootstrap script executed before agent sampling
-    - docs/: Reference documentation
-    - examples/: Example code
+    Agent package structure (in Docker image, built from archive):
+    - /init: Bootstrap script executed before agent sampling (outputs system prompt)
+    - /agent.md: Agent-specific prompt portion (optional, used by some /init scripts)
+
+    The /workspace directory is a bind-mounted host directory for runtime files,
+    not the agent package contents.
 
     Subclasses must implement:
     - _make_mcp_server(auth): Create agent-specific MCP server

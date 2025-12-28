@@ -174,7 +174,7 @@ class PromptOptimizerAgentEnvironment(AgentEnvironment):
 
 class RunCriticInput(OpenAIStrictModeBaseModel):
     definition_id: DefinitionId = Field(
-        description="Agent definition ID (from 'props agent-definition create' or 'critic' for baseline)"
+        description="Agent package ID (from 'props agent-pkg create' or 'critic' for baseline)"
     )
     example: ExampleSpec = Field(description="Example to evaluate (WholeSnapshotExample or SingleFileSetExample)")
     max_turns: int = Field(ge=200, le=200, description="Maximum sampling turns (fixed at 200)")
@@ -231,7 +231,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 "Agent definition evaluation tools: "
                 "run_critic(definition_id, example) - run critic agent on example, "
                 "run_grader(critic_run_id) - grade critiques against ground truth. "
-                "Create definitions via CLI: props agent-definition create /workspace/my_critic/. "
+                "Create packages via CLI: props agent-pkg create /workspace/my_critic/."
                 "Query the database for results, costs, and metrics. "
                 "Use report_failure to declare the run unsuccessful and abort."
             ),
@@ -252,10 +252,10 @@ class PromptEvalServer(EnhancedFastMCP):
         # which extracts it from the database username pattern (agent_{uuid}).
 
         async def run_critic(payload: RunCriticInput) -> RunCriticOutput:
-            """Run critic agent using an agent definition.
+            """Run critic agent using an agent package.
 
-            Loads critic definition from database (AGENT.md, init script) and runs
-            the critic on the specified example.
+            Loads critic package from database and runs the /init script to get
+            the system prompt, then runs the critic on the specified example.
 
             Validates split-based access restrictions:
             - TRAIN split: all example types allowed
@@ -270,7 +270,7 @@ class PromptEvalServer(EnhancedFastMCP):
                 if not definition:
                     raise ToolError(
                         f"Agent definition not found: {payload.definition_id}. "
-                        f"Use CLI: props agent-definition create /workspace/my_critic/"
+                        f"Use CLI: props agent-pkg create /workspace/my_critic/"
                     )
 
                 # Load and validate snapshot

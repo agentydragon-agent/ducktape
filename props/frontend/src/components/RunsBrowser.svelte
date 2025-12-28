@@ -2,7 +2,6 @@
   import { onMount } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { DataTable } from '@careswitch/svelte-data-table';
-  import { formatDistanceToNow } from 'date-fns';
   import {
     fetchRuns,
     type RunInfo,
@@ -13,11 +12,13 @@
     type ExampleKind,
     AGENT_RUN_STATUS_VALUES,
     AGENT_TYPE_VALUES,
+    type CriticTypeConfig,
   } from '../lib/api/client';
+  import { formatAge } from '../lib/formatters';
+  import { getStatusColor, formatStatus } from '../lib/status';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
-  import type { CriticTypeConfig } from '../lib/api/client';
 
   interface TriggerPrefill {
     definitionId: string;
@@ -27,14 +28,12 @@
 
   // Props
   interface Props {
-    onSelectRun?: (runId: string) => void;
     initialDefinitionId?: string;
     initialSplit?: Split;
     initialKind?: ExampleKind;
-    onClose?: () => void;
     onTriggerRun?: (prefill: TriggerPrefill) => void;
   }
-  let { onSelectRun, initialDefinitionId, initialSplit, initialKind, onClose, onTriggerRun }: Props = $props();
+  let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
 
   // State
   let runs: RunInfo[] = $state([]);
@@ -46,32 +45,6 @@
   // Filters
   let statusFilter: AgentRunStatus | '' = $state('');
   let agentTypeFilter: AgentType | '' = $state('');
-
-
-  // Status badge colors (same as RunList)
-  function getStatusColor(status: AgentRunStatus): string {
-    switch (status) {
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'max_turns_exceeded':
-      case 'context_length_exceeded':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'reported_failure':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }
-
-  function formatStatus(status: AgentRunStatus): string {
-    return status.replace(/_/g, ' ');
-  }
-
-  function formatAge(isoDate: string): string {
-    return formatDistanceToNow(new Date(isoDate), { addSuffix: true });
-  }
 
   // Build filters object
   function buildFilters(): RunsFilters {
@@ -144,11 +117,7 @@
     return '';
   }
 
-  function handleRowClick(runId: string) {
-    if (onSelectRun) {
-      onSelectRun(runId);
-    }
-  }
+  // Rows are clickable via RunIdLink inside each row
 
   onMount(() => {
     loadRuns();
@@ -161,15 +130,7 @@
 
 <div class="bg-white rounded-lg shadow p-4">
   <div class="flex items-center gap-3 mb-3">
-    {#if onClose}
-      <button
-        type="button"
-        class="text-sm text-gray-500 hover:text-gray-700 hover:underline"
-        onclick={onClose}
-      >
-        ← Back
-      </button>
-    {/if}
+    <a href="/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
     <h2 class="text-lg font-semibold">
       {#if initialDefinitionId}
         Runs for <span class="font-mono text-blue-600">{initialDefinitionId}</span>
@@ -279,10 +240,7 @@
         </thead>
         <tbody>
           {#each table.rows as run (run.agent_run_id)}
-            <tr
-              class="border-b border-gray-100 hover:bg-gray-50 cursor-pointer"
-              onclick={() => handleRowClick(run.agent_run_id)}
-            >
+            <tr class="border-b border-gray-100 hover:bg-gray-50">
               <td class="px-3 py-2 text-xs">
                 <RunIdLink id={run.agent_run_id} />
               </td>

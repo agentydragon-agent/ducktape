@@ -16,7 +16,8 @@ ducktape/
 ├── uv.lock                  # Shared lockfile
 ├── adgn/                    # This package
 ├── tana/                    # Tana export utilities
-└── agent_container_util/    # Thin container utilities
+├── agent_pkg/               # Host-side agent package infrastructure
+└── agent_pkg_runtime/       # Thin container utilities
 ```
 
 ## Environment and setup (direnv + devenv)

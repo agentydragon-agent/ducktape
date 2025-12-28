@@ -20,16 +20,15 @@ from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli import common_options as opt
-from props_core.cli.cmd_agent_definition import app as agent_definition_app
+from props_core.cli.cmd_agent_pkg import app as agent_pkg_app
 from props_core.cli.cmd_analyze_exec import cmd_analyze_exec
 from props_core.cli.cmd_classify_noops import cmd_classify_noops
-from props_core.cli.cmd_cluster_unknowns import app as cluster_unknowns_app
-from props_core.cli.cmd_clustering_agent import app as clustering_agent_app
 from props_core.cli.cmd_critic_agent import app as critic_agent_app
 from props_core.cli.cmd_critic_dev import app as critic_dev_app
 from props_core.cli.cmd_db import db_app
 from props_core.cli.cmd_grade_validation import cmd_grade_validation
 from props_core.cli.cmd_grader_agent import app as grader_agent_app
+from props_core.cli.cmd_gt import gt_app
 from props_core.cli.cmd_snapshot import snapshot_app
 from props_core.cli.cmd_speak_with_dead import cmd_speak_with_dead
 from props_core.cli.cmd_stats import stats_app
@@ -78,14 +77,13 @@ app = TyperDI(help="props — properties tooling", add_completion=False)
 
 # Subcommand groups
 app.add_typer(db_app, name="db")
+app.add_typer(gt_app, name="gt")
 app.add_typer(snapshot_app, name="snapshot")
-app.add_typer(cluster_unknowns_app, name="cluster-unknowns")
-app.add_typer(agent_definition_app, name="agent-definition")
+app.add_typer(agent_pkg_app, name="agent-pkg")
 
 # Agent-type CLI subcommands (dual-use: human operators + container agents)
 app.add_typer(critic_agent_app, name="critic-agent")
 app.add_typer(grader_agent_app, name="grader-agent")
-app.add_typer(clustering_agent_app, name="clustering-agent")
 app.add_typer(critic_dev_app, name="critic-dev")
 
 # Configure logging via shared callback (default: WARNING level for props)
@@ -688,8 +686,8 @@ async def cmd_run(
 ) -> None:
     """Run critic agent on a snapshot with DB persistence.
 
-    Uses AgentHandle to load agent definition from DB. The definition's AGENT.md
-    provides the system prompt.
+    Uses AgentHandle to load agent package from DB. The package's /init script
+    outputs the system prompt.
 
     Example:
         props run ducktape/2025-11-26-00 --definition-id critic

@@ -129,7 +129,7 @@ class DatabaseConfig:
         """Create container-accessible config with temporary user credentials.
 
         Combines container_name and container_port (for Docker network) with temporary user credentials.
-        Use this for scoped agents (prompt optimizer, clustering, improvement).
+        Use this for scoped agents (prompt optimizer, improvement, etc.).
 
         Example:
             async with TempUserManager(config.admin, run_id) as creds:

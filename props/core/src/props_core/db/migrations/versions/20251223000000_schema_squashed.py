@@ -1040,7 +1040,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
     )
 
     op.execute(
-        "COMMENT ON TABLE agent_definitions IS 'Agent definition archives containing AGENT.md, init script, and tools'"
+        "COMMENT ON TABLE agent_definitions IS 'Agent package archives containing Dockerfile, /init script, and supporting files'"
     )
     op.execute(
         "COMMENT ON COLUMN agent_definitions.id IS 'Readable ID: repo-backed use names like \"critic\", agent-created use auto-generated'"

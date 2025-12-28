@@ -3,35 +3,82 @@
  * All display-related transformations go here.
  */
 
+import { formatDistanceToNow } from 'date-fns';
 import type { RunInfo, CriticTypeConfig } from './api/client';
+import type { StatsWithCI } from './types';
 
-/**
- * Format a snapshot slug for display.
- * Shows the first path component only (e.g., "ducktape" from "ducktape/2025-01-01").
- */
+// --- Percentage formatting ---
+
+const pctFormatter = new Intl.NumberFormat(undefined, {
+  style: 'percent',
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
+
+const pctFormatterWhole = new Intl.NumberFormat(undefined, {
+  style: 'percent',
+  minimumFractionDigits: 0,
+  maximumFractionDigits: 0,
+});
+
+/** Format a 0.0-1.0 value as percentage string. */
+export function formatPct(value: number, decimals = 1): string {
+  return decimals === 0 ? pctFormatterWhole.format(value) : pctFormatter.format(value);
+}
+
+/** Format StatsWithCI as "mean ± margin". */
+export function formatStatsWithCI(stats: StatsWithCI, options?: { showN?: boolean }): string {
+  const mean = formatPct(stats.mean);
+
+  if (stats.lcb95 != null && stats.ucb95 != null) {
+    const margin = (stats.ucb95 - stats.lcb95) / 2;
+    return `${mean} ± ${formatPct(margin)}`;
+  }
+
+  if (options?.showN) {
+    return `${mean} (n=${stats.n})`;
+  }
+
+  return mean;
+}
+
+/** Format StatsWithCI compactly for table cells. */
+export function formatStatsCompact(stats: StatsWithCI): string {
+  const mean = formatPct(stats.mean);
+
+  if (stats.lcb95 != null && stats.ucb95 != null) {
+    const margin = (stats.ucb95 - stats.lcb95) / 2;
+    return `${mean} ± ${formatPct(margin, 0)}`;
+  }
+
+  return mean;
+}
+
+// --- Date formatting ---
+
+/** Format an ISO date as relative time (e.g., "2 hours ago"). */
+export function formatAge(isoDate: string, addSuffix = true): string {
+  return formatDistanceToNow(new Date(isoDate), { addSuffix });
+}
+
+// --- Snapshot/example formatting ---
+
+/** Format a snapshot slug for display (first path component only). */
 export function formatSnapshotSlug(slug: string): string {
   return slug.split('/')[0];
 }
 
-/**
- * Format a files hash for display (consistent 8 char truncation).
- */
+/** Format a files hash for display (8 char truncation). */
 export function formatFilesHash(hash: string): string {
   return hash.slice(0, 8);
 }
 
-/**
- * Truncate text with ellipsis.
- */
+/** Truncate text with ellipsis. */
 export function truncateText(text: string, maxLength: number = 100): string {
   return text.length > maxLength ? text.slice(0, maxLength) + '...' : text;
 }
 
-/**
- * Format an example for display in compact form.
- * For critic runs: "whole@slug" or "files@slug/hash"
- * For non-critics: "—"
- */
+/** Format an example for display in compact form. */
 export function formatExample(run: RunInfo): string {
   if (run.type_config.agent_type !== 'critic') return '—';
   const config = run.type_config as CriticTypeConfig;

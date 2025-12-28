@@ -51,8 +51,8 @@ COPY mcp_infra/src mcp_infra/src
 COPY agent_core/pyproject.toml agent_core/
 COPY agent_core/src agent_core/src
 
-COPY agent_runtimes/agent_container_util/pyproject.toml agent_runtimes/agent_container_util/
-COPY agent_runtimes/agent_container_util/src agent_runtimes/agent_container_util/src
+COPY agent_pkg_runtime/pyproject.toml agent_pkg_runtime/
+COPY agent_pkg_runtime/src agent_pkg_runtime/src
 
 # Copy adgn package dependencies
 COPY adgn/pyproject.toml adgn/
@@ -64,7 +64,7 @@ RUN mkdir -p adgn/src/adgn && echo '__version__ = "0.0.0"' > adgn/src/adgn/__ini
 # Install dependencies + packages (this layer is cached unless pyproject.toml/uv.lock changes)
 # Include both dev and gepa extras (gepa is needed for props.cli imports)
 RUN --mount=type=cache,target=/root/.cache/uv,sharing=locked \
-    uv pip install --system ./openai_utils ./mcp_infra ./agent_core ./agent_runtimes/agent_container_util && \
+    uv pip install --system ./openai_utils ./mcp_infra ./agent_core ./agent_pkg_runtime && \
     cd adgn && uv pip install --system -e ".[dev,gepa]"
 
 # Now copy real source code (changes here won't invalidate dependency cache above)

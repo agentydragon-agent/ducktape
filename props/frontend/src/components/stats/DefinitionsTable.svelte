@@ -1,8 +1,8 @@
 <script lang="ts">
   import { DataTable } from '@careswitch/svelte-data-table';
   import type { DefinitionRow, SplitScopeStats, Split, ExampleKind } from '../../lib/types';
-  import { formatDistanceToNow } from 'date-fns';
-  import { formatStatsWithCI } from '../../lib/format';
+  import { formatStatsWithCI, formatAge } from '../../lib/formatters';
+  import { recallColorClass } from '../../lib/colors';
   import DefinitionIdLink from '../../lib/DefinitionIdLink.svelte';
 
   interface CellClickInfo {
@@ -14,23 +14,17 @@
   interface Props {
     definitions: DefinitionRow[];
     exampleCounts?: { [key: string]: { [key: string]: number } };
-    onSelectDefinition?: (definitionId: string) => void;
     onCellClick?: (info: CellClickInfo) => void;
   }
 
-  let { definitions, exampleCounts, onSelectDefinition, onCellClick }: Props = $props();
+  let { definitions, exampleCounts, onCellClick }: Props = $props();
 
   function getStats(def: DefinitionRow, split: Split, kind: ExampleKind): SplitScopeStats | undefined {
     return def.stats[split]?.[kind];
   }
 
-  function formatCount(n: number, total: number): string {
-    return `${n}/${total}`;
-  }
-
-  function formatAge(isoDate: string): string {
-    return formatDistanceToNow(new Date(isoDate), { addSuffix: false });
-  }
+  // Use formatAge from formatters.ts with addSuffix=false for table display
+  const formatTableAge = (isoDate: string) => formatAge(isoDate, false);
 
   function getExampleCount(split: Split, kind: ExampleKind): number {
     return exampleCounts?.[split]?.[kind] ?? 0;
@@ -68,15 +62,6 @@
     if (state === 'desc') return ' ↓';
     return '';
   }
-
-  function recallClass(value: number | null | undefined): string {
-    if (value == null) return 'text-gray-400';
-    // value is 0.0-1.0, compare as ratio
-    if (value >= 0.70) return 'text-green-600 font-medium';
-    if (value >= 0.40) return 'text-yellow-600';
-    return 'text-red-600';
-  }
-
 </script>
 
 <div class="overflow-x-auto">
@@ -130,10 +115,10 @@
       {#each table.rows as def (def.definition_id)}
         <tr class="border-b border-gray-100 hover:bg-gray-50">
           <td class="px-3 py-2 font-mono text-xs">
-            <DefinitionIdLink id={def.definition_id} onclick={onSelectDefinition} />
+            <DefinitionIdLink id={def.definition_id} />
           </td>
           <td class="px-3 py-2 text-right text-gray-600">
-            {formatAge(def.created_at)}
+            {formatTableAge(def.created_at)}
           </td>
           {#each splits as split}
             {#each kinds as kind}
@@ -144,7 +129,7 @@
               {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}
               {#if stats}
                 <td
-                  class="px-2 py-2 text-right border-l border-gray-100 {recallClass(stats.recall_stats?.mean)} {clickClass}"
+                  class="px-2 py-2 text-right border-l border-gray-100 {recallColorClass(stats.recall_stats?.mean)} {clickClass}"
                   onclick={cellClick}
                   title={clickTitle}
                 >

@@ -1,9 +1,9 @@
 """Agent workspace management.
 
-Agent workspaces are persistent directories that store:
-- Unpacked agent definition (AGENT.md, init, tools/, etc.)
-- Files created by the agent during operation
+Agent workspaces are persistent directories bind-mounted to /workspace in containers.
+Used for files created by the agent during operation (fetched snapshots, outputs, etc.).
 
+Note: Agent package contents (/init, /agent.md) are in the Docker image, not the workspace.
 Workspaces survive container restarts and app quits.
 """
 

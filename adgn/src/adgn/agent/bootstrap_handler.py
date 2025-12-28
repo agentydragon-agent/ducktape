@@ -1,8 +1,7 @@
 """Bootstrap handler for init script execution.
 
-This module contains BootstrapHandler and InitFailedError, which are
-application-layer components that depend on mcp.exec.models. They are
-separated from the core handler module to maintain clean dependency boundaries.
+This module contains BootstrapHandler which is an application-layer component
+that monitors init script execution and aborts on failure.
 """
 
 from __future__ import annotations
@@ -12,27 +11,11 @@ from mcp.types import CallToolResult, TextContent
 from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
+from agent_pkg import InitFailedError
 from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
 from openai_utils.model import FunctionCallItem
 
-__all__ = ["BootstrapHandler", "InitFailedError"]
-
-
-class InitFailedError(Exception):
-    """Raised when init script fails (non-zero exit, truncated output, or MCP error)."""
-
-    exec_result: BaseExecResult | None
-
-    def __init__(self, message: str, *, exec_result: BaseExecResult | None = None):
-        full_message = message
-        if exec_result is not None:
-            stdout = exec_result.stdout
-            stderr = exec_result.stderr
-            stdout_text = stdout.truncated_text if isinstance(stdout, TruncatedStream) else stdout
-            stderr_text = stderr.truncated_text if isinstance(stderr, TruncatedStream) else stderr
-            full_message = f"{message}\n\nSTDOUT:\n{stdout_text}\n\nSTDERR:\n{stderr_text}"
-        super().__init__(full_message)
-        self.exec_result = exec_result
+__all__ = ["BootstrapHandler"]
 
 
 def _extract_text(stream: str | TruncatedStream) -> str:

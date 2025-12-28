@@ -24,8 +24,8 @@ from rich.console import Console
 from sqlalchemy import text
 import typer
 
-from agent_container_util.mcp import mcp_client_from_env
-from agent_container_util.output import render_agent_prompt
+from agent_pkg_runtime.mcp import mcp_client_from_env
+from agent_pkg_runtime.output import render_agent_prompt
 from cli_util import async_run
 
 HELP_TEXT = """Critic development commands for iterating on agent definitions.
@@ -57,7 +57,7 @@ app = typer.Typer(name="critic-dev", help=HELP_TEXT, add_completion=False)
 @async_run
 async def run_critic_cmd(
     definition_id: Annotated[
-        str, typer.Argument(help="Agent definition ID (from 'props agent-definition create', or 'critic' for baseline)")
+        str, typer.Argument(help="Agent package ID (from 'props agent-pkg create', or 'critic' for baseline)")
     ],
     snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/test-trivial')")],
     files_hash: Annotated[

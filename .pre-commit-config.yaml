@@ -71,17 +71,33 @@ repos:
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.18.2
     hooks:
-      # agent_container_util: Per-package config, minimal deps
+      # agent_pkg_runtime: Per-package config, minimal deps
       - id: mypy
-        alias: mypy-agent-container-util
-        name: mypy (agent_container_util)
-        files: "^agent_runtimes/agent_container_util/.*\\.py$"
+        alias: mypy-agent-pkg-runtime
+        name: mypy (agent_pkg_runtime)
+        files: "^agent_pkg_runtime/.*\\.py$"
         language_version: python3.12
-        args: ["--config-file=agent_runtimes/agent_container_util/pyproject.toml"]
+        args: ["--config-file=agent_pkg_runtime/pyproject.toml"]
         additional_dependencies:
           - "fastmcp>=2.13"
           - "jinja2>=3.0"
           - types-Jinja2
+
+      # agent_pkg: Host-side agent package infrastructure
+      # Uses agent_pkg/mypy.ini for mypy_path to access workspace packages
+      - id: mypy
+        alias: mypy-agent-pkg
+        name: mypy (agent_pkg)
+        files: "^agent_pkg/.*\\.py$"
+        language_version: python3.12
+        args: ["--config-file=agent_pkg/mypy.ini"]
+        additional_dependencies:
+          - "fastmcp>=2.13"
+          - "mcp>=1.0"
+          - aiodocker
+          - pydantic>=2
+          - anyio>=4.0
+          - typer>=0.12
 
       # critic_util: Uses mypy.ini (has mypy_path for workspace packages)
       # Needs same deps as adgn since it imports from adgn
@@ -110,7 +126,6 @@ repos:
           - types-PyYAML
 
       # editor_util: Per-package config with mypy_path to workspace deps
-      # Needs fastmcp for both direct use and for type-checking agent_container_util imports
       - id: mypy
         alias: mypy-editor-util
         name: mypy (editor_util)

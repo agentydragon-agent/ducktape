@@ -56,7 +56,33 @@ in {
   processes.backend.exec = "uvicorn props_backend.app:app --reload --host 127.0.0.1 --port 8000 --reload-dir backend/src --reload-dir core/src";
 
   # Frontend dev server (Vite)
-  processes.frontend.exec = "pnpm --dir frontend dev --port 5173";
+  # Must cd to frontend dir - pnpm --dir doesn't work reliably with process-compose
+  processes.frontend.exec = "cd $DEVENV_ROOT/frontend && pnpm dev --port 5173";
+
+  # Periodic database backup (every 6 hours, keeps 7 days)
+  # Uses PG* env vars from devenv.env; PGPASSWORD read from state file
+  processes.pg_backup.exec = ''
+    BACKUP_DIR=".devenv/state/pg_backups"
+    mkdir -p "$BACKUP_DIR"
+    export PGPASSWORD=$(cat ${passwordFile})
+
+    do_backup() {
+      local TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+      local BACKUP_FILE="$BACKUP_DIR/props_backup_$TIMESTAMP.sql.gz"
+      echo "Creating backup: $BACKUP_FILE"
+      pg_dump | gzip > "$BACKUP_FILE"
+    }
+
+    echo "Waiting for postgres..."
+    until pg_isready -q; do sleep 2; done
+
+    do_backup
+    while true; do
+      sleep 21600  # 6 hours
+      do_backup
+      find "$BACKUP_DIR" -name "props_backup_*.sql.gz" -mtime +7 -delete
+    done
+  '';
 
   # Environment variables (database connection parameters - single source of truth)
   env = {
@@ -98,9 +124,14 @@ in {
 
     echo ""
     echo "Props dev environment ready"
-    echo "  devenv up  → starts postgres + backend + frontend"
+    echo "  devenv up  → starts postgres + backend + frontend + periodic backup"
     echo "  Backend:   http://localhost:8000"
     echo "  Frontend:  http://localhost:5173"
+    echo ""
+    echo "Database backup commands:"
+    echo "  props db backup        → create manual backup"
+    echo "  props db restore FILE  → restore from backup"
+    echo "  props db list-backups  → list available backups"
     echo ""
   '';
 }

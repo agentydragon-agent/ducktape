@@ -31,10 +31,10 @@ import logging
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from adgn.agent.bootstrap import run_init_script
 from agent_core.agent import Agent, AgentResult, Message
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
+from agent_pkg import run_init_script
 from openai_utils.model import SystemMessage
 from openai_utils.types import ReasoningSummary
 from props_core.db.models import AgentDefinition

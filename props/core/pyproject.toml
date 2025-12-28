@@ -10,10 +10,11 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   # Workspace dependencies (container-compatible)
   "agent-core",
+  "agent-pkg",
+  "agent-pkg-runtime",
+  "cli-util",
   "mcp-infra",
   "openai-utils",
-  "agent-container-util",
-  "cli-util",
   # Core dependencies
   "pydantic>=2.0.0",
   "typer>=0.12.0",
@@ -122,8 +123,9 @@ props = "props_core.cli.main:app"
 [tool.uv.sources]
 adgn = { workspace = true }
 agent-core = { workspace = true }
-mcp-infra = { workspace = true }
-openai-utils = { workspace = true }
-agent-container-util = { workspace = true }
+agent-pkg = { workspace = true }
+agent-pkg-runtime = { workspace = true }
 cli-util = { workspace = true }
+mcp-infra = { workspace = true }
 net-util = { workspace = true }
+openai-utils = { workspace = true }

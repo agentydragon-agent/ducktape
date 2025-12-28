@@ -19,7 +19,7 @@ from props_core.grader.decision_helpers import (
 )
 import typer
 
-from agent_container_util.output import render_agent_prompt
+from agent_pkg_runtime.output import render_agent_prompt
 
 HELP_TEXT = """Grader agent commands for matching critique findings to ground truth.
 

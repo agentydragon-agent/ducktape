@@ -15,10 +15,10 @@ from typing import Annotated
 import aiodocker
 import typer
 
-from adgn.definition_builder import ensure_image
 from adgn.mcp.editor_docker.agent_runner import run_editor_docker_agent
 from adgn.mcp.editor_docker.runner import DEFAULT_NETWORK
 from adgn.mcp.editor_docker.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
+from agent_pkg import ensure_image
 from cli_util import async_run, make_logging_callback
 from openai_utils.client_factory import build_client
 

@@ -16,8 +16,6 @@ from alembic.config import Config
 from psycopg2 import sql
 from sqlalchemy import Engine, create_engine, inspect, text
 
-# Import clustering models to register them with Base.metadata
-import props_core.db.clustering_models  # noqa: F401
 from props_core.db.models import Base
 
 if TYPE_CHECKING:

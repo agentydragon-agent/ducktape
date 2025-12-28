@@ -19,7 +19,7 @@ from props_core.agent_registry import AgentRegistry
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.resources import get_database_config
 
-from props_backend.routes import runs, stats
+from props_backend.routes import ground_truth, runs, stats
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -111,6 +111,7 @@ def create_app(*, static_dir: Path | None = None) -> FastAPI:
     # API routes
     app.include_router(stats.router, prefix="/api/stats", tags=["stats"])
     app.include_router(runs.router, prefix="/api/runs", tags=["runs"])
+    app.include_router(ground_truth.router, prefix="/api/gt", tags=["ground_truth"])
 
     # Health check
     @app.get("/health")

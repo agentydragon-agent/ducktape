@@ -7,21 +7,18 @@
     fetchRunEvents,
     type AgentRunDetail,
     type EventInfo,
-    type AgentRunStatus,
     type CriticTypeConfig,
     type GraderTypeConfig,
-    type ClusteringTypeConfig,
     type ImprovementTypeConfig,
     type PromptOptimizerTypeConfig,
-    type ChildRunInfo,
-    type GradingSummary,
     type ExecInput,
     type BaseExecResult,
     type TruncatedStream,
     type DockerExecCallPayload,
     type DockerExecOutputPayload,
   } from '../lib/api/client';
-  import { formatFilesHash, truncateText } from '../lib/formatters';
+  import { getStatusColor, formatStatus } from '../lib/status';
+  import { truncateText } from '../lib/formatters';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
@@ -33,11 +30,8 @@
   // Props
   interface Props {
     runId: string;
-    onClose?: () => void;
-    onSelectRun?: (runId: string) => void;
-    onSelectDefinition?: (definitionId: string) => void;
   }
-  let { runId, onClose, onSelectRun, onSelectDefinition }: Props = $props();
+  let { runId }: Props = $props();
 
   // State
   let run: AgentRunDetail | null = $state(null);
@@ -60,27 +54,6 @@
   // Render markdown to HTML (for reasoning summaries)
   function renderMarkdown(text: string): string {
     return marked.parse(text, { async: false });
-  }
-
-  // Status badge colors
-  function getStatusColor(status: AgentRunStatus): string {
-    switch (status) {
-      case 'in_progress':
-        return 'bg-blue-100 text-blue-800';
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'max_turns_exceeded':
-      case 'context_length_exceeded':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'reported_failure':
-        return 'bg-red-100 text-red-800';
-      default:
-        return 'bg-gray-100 text-gray-800';
-    }
-  }
-
-  function formatStatus(status: AgentRunStatus): string {
-    return status.replace(/_/g, ' ');
   }
 
   // Get agent type from type_config
@@ -337,15 +310,12 @@
   <!-- Header -->
   <div class="p-4 border-b flex items-center justify-between">
     <div class="flex items-center gap-4">
-      {#if onClose}
-        <button
-          type="button"
-          onclick={onClose}
-          class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50 cursor-pointer"
-        >
-          &larr; Back
-        </button>
-      {/if}
+      <a
+        href="/"
+        class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50"
+      >
+        ← Back
+      </a>
       <h2 class="text-lg font-semibold">Run Details</h2>
       {#if run}
         <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
@@ -372,7 +342,7 @@
         </div>
         <div>
           <span class="text-gray-500">Definition:</span>
-          <span class="ml-1"><DefinitionIdLink id={run.definition_id} onclick={onSelectDefinition} /></span>
+          <span class="ml-1"><DefinitionIdLink id={run.definition_id} /></span>
         </div>
         <div>
           <span class="text-gray-500">Model:</span>
@@ -416,17 +386,12 @@
           <span class="text-gray-500">Grading critic:</span>
           <RunIdLink id={config.graded_agent_run_id} />
         </div>
-      {:else if run.type_config.agent_type === 'clustering'}
-        {@const config = run.type_config as ClusteringTypeConfig}
-        <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span><span class="text-gray-500">Snapshot:</span> <span class="font-mono">{config.snapshot_slug}</span></span>
-        </div>
       {:else if run.type_config.agent_type === 'improvement'}
         {@const config = run.type_config as ImprovementTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Baselines:</span>
             {#each config.baseline_definition_ids as defId, i}
-              {#if i > 0}, {/if}<DefinitionIdLink id={defId} onclick={onSelectDefinition} />
+              {#if i > 0}, {/if}<DefinitionIdLink id={defId} />
             {/each}
           </span>
           <span><span class="text-gray-500">Examples:</span> {config.allowed_examples.length}</span>
@@ -451,7 +416,7 @@
         <span class="ml-2 flex flex-wrap gap-2">
           {#each run.child_runs as child}
             <span class="inline-flex items-center gap-1">
-              <RunIdLink id={child.agent_run_id} onclick={onSelectRun} />
+              <RunIdLink id={child.agent_run_id} />
               <span class="text-xs text-gray-400">({child.agent_type})</span>
             </span>
           {/each}

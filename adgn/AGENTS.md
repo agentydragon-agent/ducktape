@@ -13,10 +13,11 @@ ducktape/
 ├── uv.lock                  # Single lockfile for all packages
 ├── adgn/                    # This package
 ├── tana/                    # Tana export utilities
-└── agent_container_util/    # Thin utilities for container init scripts
+├── agent_pkg/               # Host-side agent package infrastructure
+└── agent_pkg_runtime/       # Thin utilities for container init scripts
 ```
 
-`agent_container_util` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
+`agent_pkg_runtime` provides output/MCP helpers used by init scripts in Docker containers. It has no dependency on `adgn` (installed separately in container images).
 
 ## Environment and Setup (direnv + devenv)
 - Requirements: Nix + devenv, direnv, Python 3.12+. Node 20 is available in the dev shell for the UI.

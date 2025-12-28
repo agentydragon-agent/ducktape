@@ -9,8 +9,8 @@ from typing import Annotated
 
 import typer
 
-from agent_container_util.mcp import mcp_client_from_env
-from agent_container_util.output import render_agent_prompt
+from agent_pkg_runtime.mcp import mcp_client_from_env
+from agent_pkg_runtime.output import render_agent_prompt
 from editor_util import EDIT_RESOURCE_URI
 
 submit_app = typer.Typer(name="editor-submit", help="Editor submit helper for MCP communication")

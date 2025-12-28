@@ -133,14 +133,16 @@ ducktape/
 ├── uv.lock                  # Single lockfile for all packages
 ├── adgn/                    # Main LLM/agent package
 ├── tana/                    # Tana export utilities
-└── agent_container_util/    # Thin container utilities (no adgn deps)
+├── agent_pkg/               # Host-side agent package infrastructure
+└── agent_pkg_runtime/       # Thin container utilities (no adgn deps)
 ```
 
 **Key points:**
 - Single `uv.lock` at repo root with all resolved dependencies
 - Run `uv sync` from `ducktape/` to install all workspace members
 - Each package has its own `pyproject.toml` but shares the lockfile
-- `agent_container_util` is designed for Docker containers (minimal deps)
+- `agent_pkg` provides host-side image building and init runner
+- `agent_pkg_runtime` is designed for Docker containers (minimal deps)
 
 **Development workflow:**
 - Each package (adgn, tana) has its own `.envrc` + `devenv.nix` that manages a local venv

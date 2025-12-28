@@ -30,8 +30,8 @@ COPY agent_core/src agent_core/src
 COPY mcp_infra/pyproject.toml mcp_infra/README.md mcp_infra/
 COPY mcp_infra/src mcp_infra/src
 
-COPY agent_runtimes/agent_container_util/pyproject.toml agent_runtimes/agent_container_util/
-COPY agent_runtimes/agent_container_util/src agent_runtimes/agent_container_util/src
+COPY agent_pkg_runtime/pyproject.toml agent_pkg_runtime/
+COPY agent_pkg_runtime/src agent_pkg_runtime/src
 
 # Copy adgn package
 COPY adgn/pyproject.toml adgn/
@@ -44,6 +44,6 @@ COPY agent_server/src agent_server/src
 # Cache wheel downloads via BuildKit to speed up repeated builds
 # Install packages in dependency order
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install ./cli_util ./net_util ./openai_utils ./agent_core ./mcp_infra ./agent_runtimes/agent_container_util ./adgn ./agent_server
+    pip install ./cli_util ./net_util ./openai_utils ./agent_core ./mcp_infra ./agent_pkg_runtime ./adgn ./agent_server
 
 CMD ["python", "-c", "print('adgn runtime image ready')"]

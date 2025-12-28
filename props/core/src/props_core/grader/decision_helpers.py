@@ -17,7 +17,7 @@ from __future__ import annotations
 from props_core.db.models import GradingDecision
 from props_core.db.session import get_session
 
-from agent_container_util.mcp import mcp_client_from_env
+from agent_pkg_runtime.mcp import mcp_client_from_env
 
 
 def insert_tp_match(input_issue_id: str, tp_id: str, tp_occurrence_id: str, credit: float, rationale: str) -> None:
