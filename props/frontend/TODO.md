@@ -101,13 +101,23 @@
   - Created `lib/expansionState.svelte.ts` helper
   - Provides toggle(), isExpanded(), expand(), collapse() methods
   - Updated snapshot page to use helper
-- [ ] Improve dynamic icon rendering in `IssueComment.svelte` (currently uses manual if-else chain)
+- [x] Improve dynamic icon rendering in `IssueComment.svelte`
+  - Replaced manual if-else chains with `<svelte:component this={icon}>` dynamic rendering
+  - Extracted target styling to const for cleaner grading edge rendering
+  - Eliminated ~10 lines of duplicated conditional logic
 
 ### Backend Cleanup
 
 - [x] Clean up unnecessary Pydantic model defaults
   - Removed `= []` and `= None` defaults from `AgentRunDetail` fields
   - All values are always provided explicitly in constructor
+
+- [x] Refactor AgentRunDetail to use discriminated union
+  - Split into CriticRunDetail, GraderRunDetail, OtherAgentRunDetail
+  - Added explicit `agent_type` discriminator field
+  - Each variant only contains fields relevant to that agent type
+  - TypeScript now enforces proper type narrowing when accessing type-specific fields
+  - Eliminates "disjoint union smell" (all fields existed but only some were populated)
 
 ### Type System
 
