@@ -67,9 +67,9 @@
     return marked.parse(text, { async: false });
   }
 
-  // Get agent type from type_config
+  // Get agent type from discriminator field
   function getAgentType(run: AgentRunDetail): string {
-    return run.type_config.agent_type;
+    return run.agent_type;
   }
 
   // Load run data
@@ -80,7 +80,7 @@
       events = eventsResult.events;
 
       // Load snapshot data for critic runs with reported issues
-      if (run.type_config.agent_type === 'critic' && run.reported_issues && run.reported_issues.length > 0) {
+      if (run.agent_type === 'critic' && run.reported_issues.length > 0) {
         await loadSnapshotData(run);
       }
     } catch (e) {
@@ -93,7 +93,7 @@
 
   // Load snapshot and file data for critique viewer
   async function loadSnapshotData(criticRun: AgentRunDetail) {
-    if (criticRun.type_config.agent_type !== 'critic') return;
+    if (criticRun.agent_type !== 'critic') return;
 
     const config = criticRun.type_config as CriticTypeConfig;
     let snapshotSlug: string;
@@ -114,7 +114,7 @@
       const allFilePaths = new Set<string>();
 
       // Files from critique issues
-      for (const issue of criticRun.reported_issues || []) {
+      for (const issue of criticRun.reported_issues) {
         for (const fileInfo of issue.occurrences.flatMap((o) => o.files)) {
           allFilePaths.add(fileInfo.path);
         }
@@ -456,7 +456,7 @@
 
     <!-- Type-specific inputs -->
     <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-      {#if run.type_config.agent_type === 'critic'}
+      {#if run.agent_type === 'critic'}
         {@const config = run.type_config as CriticTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span>
@@ -467,13 +467,13 @@
             <span><span class="text-gray-500">Files:</span> {run.resolved_files.join(', ')}</span>
           {/if}
         </div>
-      {:else if run.type_config.agent_type === 'grader'}
+      {:else if run.agent_type === 'grader'}
         {@const config = run.type_config as GraderTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span class="text-gray-500">Grading critic:</span>
           <RunIdLink id={config.graded_agent_run_id} />
         </div>
-      {:else if run.type_config.agent_type === 'improvement'}
+      {:else if run.agent_type === 'improvement'}
         {@const config = run.type_config as ImprovementTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
@@ -489,7 +489,7 @@
             grader={config.grader_model}</span
           >
         </div>
-      {:else if run.type_config.agent_type === 'prompt_optimizer'}
+      {:else if run.agent_type === 'prompt_optimizer'}
         {@const config = run.type_config as PromptOptimizerTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
@@ -520,7 +520,7 @@
     {/if}
 
     <!-- Grading summary (for critic runs with completed grader) -->
-    {#if run.grading_summary}
+    {#if run.agent_type === 'critic' && run.grading_summary}
       {@const gs = run.grading_summary}
       {@const recall =
         gs.recall_denominator_occurrences > 0 ? gs.total_credit / gs.recall_denominator_occurrences : null}
@@ -549,7 +549,7 @@
     {/if}
 
     <!-- Grading edges (for both critic and grader runs) -->
-    {#if run.grading_edges.length > 0 || run.missed_occurrences.length > 0}
+    {#if run.agent_type === 'critic' && (run.grading_edges.length > 0 || run.missed_occurrences.length > 0)}
       {@const visibleEdges = run.grading_edges.filter(
         (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
       )}
@@ -563,10 +563,17 @@
           defaultOpen={totalItems < 10}
         />
       </div>
+    {:else if run.agent_type === 'grader' && run.grading_edges.length > 0}
+      {@const visibleEdges = run.grading_edges.filter(
+        (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+      )}
+      <div class="px-4 py-2 border-b flex-shrink-0">
+        <GradingEdges edges={run.grading_edges} missedOccurrences={[]} defaultOpen={visibleEdges.length < 10} />
+      </div>
     {/if}
 
     <!-- Critique file viewer (for critic runs with reported issues) -->
-    {#if run.type_config.agent_type === 'critic' && run.reported_issues && run.reported_issues.length > 0 && snapshotDetail}
+    {#if run.agent_type === 'critic' && run.reported_issues.length > 0 && snapshotDetail}
       <div class="border-b">
         <div class="px-4 py-3 bg-gray-100 border-b">
           <h3 class="text-md font-medium">Critique vs Ground Truth</h3>

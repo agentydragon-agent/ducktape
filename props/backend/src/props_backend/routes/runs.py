@@ -196,9 +196,10 @@ class ReportedIssueInfo(BaseModel):
     occurrences: list[ReportedIssueOccurrenceInfo]
 
 
-class AgentRunDetail(BaseModel):
-    """Detailed view of an agent run."""
+class CriticRunDetail(BaseModel):
+    """Detailed view of a critic agent run."""
 
+    agent_type: Literal[AgentType.CRITIC] = AgentType.CRITIC
     agent_run_id: UUID
     definition_id: DefinitionId
     parent_agent_run_id: UUID | None
@@ -209,13 +210,53 @@ class AgentRunDetail(BaseModel):
     updated_at: datetime
     type_config: TypeConfig
     event_count: int
-    resolved_files: list[str] | None  # For critic runs with file_set examples
-    child_runs: list[ChildRunInfo]  # Child runs spawned by this run
-    grader_runs: list[GraderRunInfo]  # For critic runs: grader runs that graded this critic
-    grading_summary: GradingSummary | None  # For critic runs: grading results
-    grading_edges: list[GradingEdgeInfo]  # For grader runs: their output edges
-    missed_occurrences: list[MissedOccurrenceInfo]  # For critic runs: catchable TPs not found
-    reported_issues: list[ReportedIssueInfo]  # For critic runs: issues found by the critic
+    child_runs: list[ChildRunInfo]
+    resolved_files: list[str] | None  # For file_set examples
+    grader_runs: list[GraderRunInfo]  # Grader runs that graded this critic
+    grading_summary: GradingSummary | None  # Grading results
+    grading_edges: list[GradingEdgeInfo]  # Aggregated edges from all graders that graded this critic
+    missed_occurrences: list[MissedOccurrenceInfo]  # Catchable TPs not found
+    reported_issues: list[ReportedIssueInfo]  # Issues found by the critic
+
+
+class GraderRunDetail(BaseModel):
+    """Detailed view of a grader agent run."""
+
+    agent_type: Literal[AgentType.GRADER] = AgentType.GRADER
+    agent_run_id: UUID
+    definition_id: DefinitionId
+    parent_agent_run_id: UUID | None
+    model: str
+    status: AgentRunStatus
+    completion_summary: str | None
+    created_at: datetime
+    updated_at: datetime
+    type_config: TypeConfig
+    event_count: int
+    child_runs: list[ChildRunInfo]
+    grading_edges: list[GradingEdgeInfo]  # Output edges from this grader
+
+
+class OtherAgentRunDetail(BaseModel):
+    """Detailed view of other agent types (snapshot_grader, prompt_optimizer, improvement, freeform)."""
+
+    agent_type: Literal[
+        AgentType.SNAPSHOT_GRADER, AgentType.PROMPT_OPTIMIZER, AgentType.IMPROVEMENT, AgentType.FREEFORM
+    ]
+    agent_run_id: UUID
+    definition_id: DefinitionId
+    parent_agent_run_id: UUID | None
+    model: str
+    status: AgentRunStatus
+    completion_summary: str | None
+    created_at: datetime
+    updated_at: datetime
+    type_config: TypeConfig
+    event_count: int
+    child_runs: list[ChildRunInfo]
+
+
+AgentRunDetail = Annotated[CriticRunDetail | GraderRunDetail | OtherAgentRunDetail, Field(discriminator="agent_type")]
 
 
 # --- Parsed Event Types for API ---
@@ -841,7 +882,44 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == run_id).all()
             grading_edges = edges_to_info(edges)
 
-        return AgentRunDetail(
+        # Construct appropriate detail variant based on agent type
+        if run.type_config.agent_type == AgentType.CRITIC:
+            return CriticRunDetail(
+                agent_run_id=run.agent_run_id,
+                definition_id=run.agent_definition_id,
+                parent_agent_run_id=run.parent_agent_run_id,
+                model=run.model,
+                status=run.status,
+                completion_summary=run.completion_summary,
+                created_at=run.created_at,
+                updated_at=run.updated_at,
+                type_config=run.type_config,
+                event_count=event_count,
+                child_runs=child_runs,
+                resolved_files=resolved_files,
+                grader_runs=grader_runs,
+                grading_summary=grading_summary,
+                grading_edges=grading_edges,
+                missed_occurrences=missed_occurrences,
+                reported_issues=reported_issues,
+            )
+        if run.type_config.agent_type == AgentType.GRADER:
+            return GraderRunDetail(
+                agent_run_id=run.agent_run_id,
+                definition_id=run.agent_definition_id,
+                parent_agent_run_id=run.parent_agent_run_id,
+                model=run.model,
+                status=run.status,
+                completion_summary=run.completion_summary,
+                created_at=run.created_at,
+                updated_at=run.updated_at,
+                type_config=run.type_config,
+                event_count=event_count,
+                child_runs=child_runs,
+                grading_edges=grading_edges,
+            )
+        return OtherAgentRunDetail(
+            agent_type=run.type_config.agent_type,
             agent_run_id=run.agent_run_id,
             definition_id=run.agent_definition_id,
             parent_agent_run_id=run.parent_agent_run_id,
@@ -852,13 +930,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             updated_at=run.updated_at,
             type_config=run.type_config,
             event_count=event_count,
-            resolved_files=resolved_files,
             child_runs=child_runs,
-            grader_runs=grader_runs,
-            grading_summary=grading_summary,
-            grading_edges=grading_edges,
-            missed_occurrences=missed_occurrences,
-            reported_issues=reported_issues,
         )
 
 

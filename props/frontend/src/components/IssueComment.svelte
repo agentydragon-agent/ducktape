@@ -106,15 +106,7 @@
     onclick={onToggle}
     type="button"
   >
-    {#if styling.icon === CheckCircle}
-      <CheckCircle size={16} class={styling.iconColor} />
-    {:else if styling.icon === XCircle}
-      <XCircle size={16} class={styling.iconColor} />
-    {:else if styling.icon === Link}
-      <Link size={16} class={styling.iconColor} />
-    {:else}
-      <HelpCircle size={16} class={styling.iconColor} />
-    {/if}
+    <svelte:component this={styling.icon} size={16} class={styling.iconColor} />
     <span class="font-mono text-sm font-medium">{issueId}</span>
     <span class="text-xs {styling.labelColor} font-medium">{styling.label}</span>
     {#if credit !== undefined}
@@ -157,25 +149,42 @@
               {@const target = edge.target}
               {@const edgeCredit = target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
               {#if edgeCredit > 0 || target.kind === 'none'}
-                <div
-                  class="text-xs p-1.5 rounded border {target.kind === 'tp'
-                    ? 'bg-green-50 border-green-200'
+                {@const targetStyling =
+                  target.kind === 'tp'
+                    ? {
+                        bg: 'bg-green-50',
+                        border: 'border-green-200',
+                        icon: CheckCircle,
+                        iconColor: 'text-green-600',
+                        textColor: 'text-green-700',
+                        creditColor: 'text-green-600',
+                        label: `${target.tp_id}/${target.occurrence_id}`,
+                      }
                     : target.kind === 'fp'
-                      ? 'bg-red-50 border-red-200'
-                      : 'bg-gray-50 border-gray-200'}"
-                >
+                      ? {
+                          bg: 'bg-red-50',
+                          border: 'border-red-200',
+                          icon: XCircle,
+                          iconColor: 'text-red-600',
+                          textColor: 'text-red-700',
+                          creditColor: 'text-red-600',
+                          label: `${target.fp_id}/${target.occurrence_id}`,
+                        }
+                      : {
+                          bg: 'bg-gray-50',
+                          border: 'border-gray-200',
+                          icon: HelpCircle,
+                          iconColor: 'text-gray-600',
+                          textColor: 'text-gray-600',
+                          creditColor: '',
+                          label: 'Novel finding (no match)',
+                        }}
+                <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
                   <div class="flex items-center gap-2">
-                    {#if target.kind === 'tp'}
-                      <CheckCircle size={12} class="text-green-600" />
-                      <span class="font-mono text-green-700">{target.tp_id}/{target.occurrence_id}</span>
-                      <span class="text-green-600 font-medium">(+{edgeCredit.toFixed(2)})</span>
-                    {:else if target.kind === 'fp'}
-                      <XCircle size={12} class="text-red-600" />
-                      <span class="font-mono text-red-700">{target.fp_id}/{target.occurrence_id}</span>
-                      <span class="text-red-600 font-medium">(+{edgeCredit.toFixed(2)})</span>
-                    {:else}
-                      <HelpCircle size={12} class="text-gray-600" />
-                      <span class="text-gray-600">Novel finding (no match)</span>
+                    <svelte:component this={targetStyling.icon} size={12} class={targetStyling.iconColor} />
+                    <span class="font-mono {targetStyling.textColor}">{targetStyling.label}</span>
+                    {#if edgeCredit > 0}
+                      <span class="{targetStyling.creditColor} font-medium">(+{edgeCredit.toFixed(2)})</span>
                     {/if}
                   </div>
                   {#if edge.rationale}
