@@ -17,15 +17,37 @@ if ! command -v nix &> /dev/null; then
     curl -sL https://nixos.org/nix/install -o /tmp/nix-install.sh
     sh /tmp/nix-install.sh --no-daemon --no-channel-add --no-modify-profile </dev/null >&2 || true
 
-    # Manual profile setup when installer's nix-env fails due to gVisor PTY bug
+    # Manual profile setup when installer's nix-env fails due to gVisor PTY bug.
+    #
+    # ROOT CAUSE (discovered via strace):
+    # Claude Code web runs on gVisor (runsc), not a real Linux kernel. gVisor's PTY
+    # emulation has a race condition. When nix-env builds a derivation, it:
+    #   1. Opens /dev/ptmx to create a PTY pair (master fd)
+    #   2. Forks a child process for the build sandbox
+    #   3. Parent immediately calls read() on the PTY master
+    #   4. gVisor returns EIO instead of blocking until data arrives
+    #
+    # WHY NIX USES PTYs (not pipes):
+    # Per C99 7.19.3, stdout is fully buffered when connected to a pipe, but line
+    # buffered when connected to a terminal. Nix needs real-time build output, so it
+    # uses PTYs to trick programs into line-buffered mode. This is fundamental to
+    # Nix's architecture - there's no --use-pipes flag.
+    #
+    # WHY NO INSTALLER FLAGS HELP:
+    # - The PTY is created internally by nix-env, not inherited from the shell
+    # - --no-daemon, --no-channel-add, </dev/null, <&- all affect different things
+    # - sandbox=false in nix.conf disables namespace isolation, not PTY usage
+    # - The gVisor bug is in read() returning EIO, not in any Nix configuration
+    #
+    # WORKAROUND:
+    # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
+    # We just symlink the profile manually, bypassing any derivation builds.
     if [ ! -e ~/.nix-profile/bin/nix ] && [ -d /nix/store ]; then
         NIX_PKG=$(ls -d /nix/store/*-nix-[0-9]* 2>/dev/null | head -1)
         if [ -n "$NIX_PKG" ]; then
-            "$NIX_PKG/bin/nix-env" -i "$NIX_PKG" >&2 || {
-                mkdir -p /nix/var/nix/profiles/per-user/root
-                ln -sfn "$NIX_PKG" /nix/var/nix/profiles/per-user/root/profile
-                ln -sfn /nix/var/nix/profiles/per-user/root/profile ~/.nix-profile
-            }
+            mkdir -p /nix/var/nix/profiles/per-user/root
+            ln -sfn "$NIX_PKG" /nix/var/nix/profiles/per-user/root/profile
+            ln -sfn /nix/var/nix/profiles/per-user/root/profile ~/.nix-profile
         fi
     fi
 fi
