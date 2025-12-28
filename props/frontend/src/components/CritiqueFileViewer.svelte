@@ -1,17 +1,31 @@
 <script lang="ts">
-  import { CheckCircle, XCircle } from 'lucide-svelte';
   import hljs from 'highlight.js';
   import 'highlight.js/styles/github.css';
-  import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
+  import type {
+    FileContentResponse,
+    TpInfo,
+    FpInfo,
+    GradingEdgeInfo,
+  } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
+
+  interface CritiqueIssue {
+    id: string;
+    rationale: string;
+    note?: string;
+    ranges: Array<{ start_line: number; end_line: number }> | null;
+    allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+  }
 
   interface Props {
     file: FileContentResponse;
-    tps?: TpInfo[];
-    fps?: FpInfo[];
+    tps: TpInfo[];
+    fps: FpInfo[];
+    critiqueIssues: CritiqueIssue[];
+    gradingEdges: GradingEdgeInfo[];
   }
 
-  let { file, tps = [], fps = [] }: Props = $props();
+  let { file, tps, fps, critiqueIssues, gradingEdges }: Props = $props();
 
   const lines = $derived(file.content.split('\n'));
 
@@ -53,7 +67,7 @@
 
   // Highlight individual lines
   const highlightedLines = $derived(
-    lines.map((line) => {
+    lines.map((line: string) => {
       if (!line.trim()) return line;
       try {
         const result = hljs.highlight(line, { language: language, ignoreIllegals: true });
@@ -64,20 +78,23 @@
     })
   );
 
-  // Flatten occurrences that reference this file
-  interface OccurrenceMarker {
-    kind: 'tp' | 'fp';
+  // Unified issue marker interface
+  interface IssueMarker {
+    kind: 'tp' | 'fp' | 'critique';
     issueId: string;
-    occurrenceId: string;
+    occurrenceId?: string;
     rationale: string;
     note?: string;
     ranges: Array<{ start_line: number; end_line: number }> | null;
     allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+    gradingEdges?: GradingEdgeInfo[];
   }
 
-  const occurrences = $derived<OccurrenceMarker[]>(() => {
-    const result: OccurrenceMarker[] = [];
+  // Combine all issues (TPs, FPs, and critique issues) that reference this file
+  const allIssues = $derived<IssueMarker[]>(() => {
+    const result: IssueMarker[] = [];
 
+    // Add TPs
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
         const fileLocation = occ.files.find((f) => f.path === file.path);
@@ -95,6 +112,7 @@
       }
     }
 
+    // Add FPs
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
         const fileLocation = occ.files.find((f) => f.path === file.path);
@@ -112,29 +130,46 @@
       }
     }
 
+    // Add critique issues
+    for (const issue of critiqueIssues) {
+      const fileLocation = issue.allFiles.find((f) => f.path === file.path);
+      if (fileLocation) {
+        // Find grading edges for this critique issue
+        const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.id);
+        result.push({
+          kind: 'critique',
+          issueId: issue.id,
+          rationale: issue.rationale,
+          note: issue.note,
+          ranges: fileLocation.ranges,
+          allFiles: issue.allFiles,
+          gradingEdges: edges,
+        });
+      }
+    }
+
     return result;
   });
 
-  // Map line numbers to occurrences (0-based line index)
-  const lineToOccurrences = $derived<Map<number, OccurrenceMarker[]>>(() => {
-    const map = new Map<number, OccurrenceMarker[]>();
+  // Map line numbers to issues (0-based line index)
+  const lineToIssues = $derived<Map<number, IssueMarker[]>>(() => {
+    const map = new Map<number, IssueMarker[]>();
 
-    for (const occ of occurrences) {
-      if (!occ.ranges) {
+    for (const issue of allIssues) {
+      if (!issue.ranges) {
         // Whole file - mark all lines
         for (let i = 0; i < lines.length; i++) {
           const existing = map.get(i) || [];
-          map.set(i, [...existing, occ]);
+          map.set(i, [...existing, issue]);
         }
       } else {
         // Specific ranges
-        for (const range of occ.ranges) {
-          // Convert from 1-based display to 0-based index
+        for (const range of issue.ranges) {
           const startIdx = range.start_line;
           const endIdx = range.end_line;
           for (let i = startIdx; i <= endIdx; i++) {
             const existing = map.get(i) || [];
-            map.set(i, [...existing, occ]);
+            map.set(i, [...existing, issue]);
           }
         }
       }
@@ -143,16 +178,22 @@
     return map;
   });
 
-  let expandedOccurrences = $state<Set<string>>(new Set());
+  let expandedIssues = $state<Set<string>>(new Set());
 
-  function toggleOccurrence(id: string) {
-    const newSet = new Set(expandedOccurrences);
+  function toggleIssue(id: string) {
+    const newSet = new Set(expandedIssues);
     if (newSet.has(id)) {
       newSet.delete(id);
     } else {
       newSet.add(id);
     }
-    expandedOccurrences = newSet;
+    expandedIssues = newSet;
+  }
+
+  function getIssueKey(issue: IssueMarker): string {
+    return issue.occurrenceId
+      ? `${issue.kind}-${issue.issueId}-${issue.occurrenceId}`
+      : `${issue.kind}-${issue.issueId}`;
   }
 </script>
 
@@ -161,6 +202,11 @@
   <div class="px-4 py-2 border-b bg-gray-50 flex items-center gap-2">
     <span class="font-semibold">{file.path}</span>
     <span class="text-gray-500 text-xs">({file.line_count} lines)</span>
+    <span class="text-gray-500 text-xs ml-auto">
+      {allIssues.filter((i) => i.kind === 'critique').length} critique,
+      {allIssues.filter((i) => i.kind === 'tp').length} TPs,
+      {allIssues.filter((i) => i.kind === 'fp').length} FPs
+    </span>
   </div>
 
   <!-- Content -->
@@ -168,29 +214,29 @@
     <table class="w-full">
       <tbody>
         {#each lines as line, idx}
-          {@const lineOccs = lineToOccurrences.get(idx) || []}
-          {@const hasTP = lineOccs.some((o) => o.kind === 'tp')}
-          {@const hasFP = lineOccs.some((o) => o.kind === 'fp')}
-          {@const bgClass = hasTP ? 'bg-green-50' : hasFP ? 'bg-red-50' : ''}
-          {@const borderClass = hasTP ? 'border-l-4 border-green-500' : hasFP ? 'border-l-4 border-red-500' : ''}
+          {@const lineIssues = lineToIssues.get(idx) || []}
+          {@const hasTP = lineIssues.some((i) => i.kind === 'tp')}
+          {@const hasFP = lineIssues.some((i) => i.kind === 'fp')}
+          {@const hasCritique = lineIssues.some((i) => i.kind === 'critique')}
+          {@const bgClass = hasTP
+            ? 'bg-green-50'
+            : hasFP
+              ? 'bg-red-50'
+              : hasCritique
+                ? 'bg-blue-50'
+                : ''}
+          {@const borderClass = hasTP
+            ? 'border-l-4 border-green-500'
+            : hasFP
+              ? 'border-l-4 border-red-500'
+              : hasCritique
+                ? 'border-l-4 border-blue-500'
+                : ''}
 
           <tr class="hover:bg-gray-100 {bgClass} {borderClass}">
             <!-- Line number (1-based display) -->
             <td class="px-2 py-0.5 text-right text-gray-400 select-none w-12 border-r align-top">
-              <div class="flex items-center justify-end gap-1">
-                {#if lineOccs.length > 0}
-                  <div class="flex gap-0.5">
-                    {#each lineOccs as occ}
-                      {#if occ.kind === 'tp'}
-                        <CheckCircle size={12} class="text-green-600" />
-                      {:else}
-                        <XCircle size={12} class="text-red-600" />
-                      {/if}
-                    {/each}
-                  </div>
-                {/if}
-                <span>{idx + 1}</span>
-              </div>
+              <span>{idx + 1}</span>
             </td>
             <!-- Line content -->
             <td class="px-4 py-0.5 whitespace-pre align-top">
@@ -198,23 +244,24 @@
             </td>
           </tr>
 
-          <!-- Issue comment cards (show after the first line of each occurrence's range) -->
-          {#each lineOccs as occ}
+          <!-- Issue comment cards (show after the first line of each issue's range) -->
+          {#each lineIssues as issue}
             {@const isFirstLine =
-              !occ.ranges || occ.ranges.length === 0 ? idx === 0 : occ.ranges.some((r) => r.start_line === idx)}
+              !issue.ranges || issue.ranges.length === 0 ? idx === 0 : issue.ranges.some((r) => r.start_line === idx)}
             {#if isFirstLine}
-              {@const occId = `${occ.kind}-${occ.issueId}-${occ.occurrenceId}`}
-              {@const isExpanded = expandedOccurrences.has(occId)}
+              {@const issueKey = getIssueKey(issue)}
+              {@const isExpanded = expandedIssues.has(issueKey)}
               <tr>
                 <td colspan="2" class="px-4 py-1">
                   <IssueComment
-                    kind={occ.kind}
-                    issueId="{occ.issueId}/{occ.occurrenceId}"
-                    rationale={occ.rationale}
-                    note={occ.note}
-                    allFiles={occ.allFiles}
+                    kind={issue.kind}
+                    issueId={issue.occurrenceId ? `${issue.issueId}/${issue.occurrenceId}` : issue.issueId}
+                    rationale={issue.rationale}
+                    note={issue.note}
+                    allFiles={issue.allFiles}
                     expanded={isExpanded}
-                    onToggle={() => toggleOccurrence(occId)}
+                    onToggle={() => toggleIssue(issueKey)}
+                    gradingEdges={issue.gradingEdges}
                   />
                 </td>
               </tr>
