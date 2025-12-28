@@ -65,6 +65,10 @@ if ! command -v nix &> /dev/null; then
         fi
     fi
 fi
+
+# Find nix package path (profile may be overwritten by nix profile install later)
+NIX_BIN=$(ls -d /nix/store/*-nix-[0-9]*/bin 2>/dev/null | head -1)
+[ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:$PATH"
 [ -d ~/.nix-profile/bin ] && export PATH="$HOME/.nix-profile/bin:$PATH"
 
 # Install direnv via nix
@@ -80,11 +84,12 @@ if [ -n "$CLAUDE_PROJECT_DIR" ]; then
     done
 fi
 
-# Output hooks for bash
+# Output hooks for bash (NIX_BIN was set earlier)
 cat << EOF
 # Nix
 export NIX_USER_CONF_FILES="$NIX_CONF"
-[ -e ~/.nix-profile/etc/profile.d/nix.sh ] && . ~/.nix-profile/etc/profile.d/nix.sh
+[ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:\$PATH"
+[ -d ~/.nix-profile/bin ] && export PATH="\$HOME/.nix-profile/bin:\$PATH"
 
 # direnv
 command -v direnv &>/dev/null && eval "\$(direnv hook bash)"
