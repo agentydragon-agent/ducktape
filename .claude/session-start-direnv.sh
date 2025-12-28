@@ -1,63 +1,97 @@
 #!/bin/bash
 set -e
 
-# Only run in web environments
-if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
-    echo "Skipping development environment setup (local environment)"
-    exit 0
-fi
+[ "$CLAUDE_CODE_REMOTE" != "true" ] && exit 0
+[ -z "$CLAUDE_PROJECT_DIR" ] && { echo "CLAUDE_PROJECT_DIR not set" >&2; exit 1; }
 
-echo "Setting up development environment for Claude Code on the Web..." >&2
-echo "NOTE: Nix/devenv installation is skipped due to container limitations." >&2
-echo "      Only direnv will be set up. See comments in this script for details." >&2
+echo "Setting up dev environment..." >&2
 
-# Nix installation fails in Claude Code containers due to process management issues
-# Error: "cannot get exit status of PID: No child processes"
-# This is a known limitation - Nix requires features not available in this environment
-#
-# Consequence: devenv-based .envrc files will not work
-# Workaround: Use simple .envrc files that don't rely on devenv/Nix
+# Install Nix with sandbox disabled (required for container)
+NIX_CONF="$CLAUDE_PROJECT_DIR/.claude/claude-code-web/nix.conf"
+export NIX_USER_CONF_FILES="$NIX_CONF"
 
-# Install direnv if not already present
-if ! command -v direnv &> /dev/null; then
-    echo "Installing direnv..." >&2
-    # Download and install direnv binary directly
-    DIRENV_VERSION="2.35.0"
-    DIRENV_ARCH="linux-amd64"
-    curl -sfL "https://github.com/direnv/direnv/releases/download/v${DIRENV_VERSION}/direnv.${DIRENV_ARCH}" \
-        -o /usr/local/bin/direnv
-    chmod +x /usr/local/bin/direnv
-    echo "direnv ${DIRENV_VERSION} installed successfully" >&2
-else
-    echo "direnv already installed: $(direnv version)" >&2
-fi
+if ! command -v nix &> /dev/null; then
+    # Run installer. The nix-env step fails in gVisor containers due to a PTY bug:
+    # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
+    # gVisor returns EIO on this read (race condition in PTY emulation). No flags can fix
+    # this since the PTY is created internally by nix-env for sandbox communication.
+    curl -sL https://nixos.org/nix/install -o /tmp/nix-install.sh
+    sh /tmp/nix-install.sh --no-daemon --no-channel-add --no-modify-profile </dev/null >&2 || true
 
-# Allow all .envrc files in the project
-if [ -n "$CLAUDE_PROJECT_DIR" ]; then
-    cd "$CLAUDE_PROJECT_DIR"
-    echo "Allowing .envrc files in project..." >&2
-    if find . -name ".envrc" -type f 2>/dev/null | grep -q ".envrc"; then
-        find . -name ".envrc" -type f | while read envrc; do
-            echo "  Allowing $envrc" >&2
-            direnv allow "$(dirname "$envrc")" 2>/dev/null || echo "    (failed to allow, will retry on first use)" >&2
-        done
-    else
-        echo "  No .envrc files found" >&2
+    # Manual profile setup when installer's nix-env fails due to gVisor PTY bug.
+    #
+    # ROOT CAUSE (discovered via strace):
+    # Claude Code web runs on gVisor (runsc), not a real Linux kernel. gVisor's PTY
+    # emulation has a race condition. When nix-env builds a derivation, it:
+    #   1. Opens /dev/ptmx to create a PTY pair (master fd)
+    #   2. Forks a child process for the build sandbox
+    #   3. Parent immediately calls read() on the PTY master
+    #   4. gVisor returns EIO instead of blocking until data arrives
+    #
+    # GVISOR BUG LOCATION (github.com/google/gvisor):
+    # pkg/sentry/fsimpl/devpts/queue.go lines 112-116:
+    #   if !q.readable {
+    #       if l.numReplicas == 0 {
+    #           return 0, false, false, linuxerr.EIO  // ← THE BUG
+    #       }
+    #       return 0, false, false, linuxerr.ErrWouldBlock
+    #   }
+    # gVisor returns EIO when numReplicas==0 (no slave opened yet), but the child
+    # process is still in the middle of opening the slave. Real Linux blocks until
+    # data arrives regardless of whether the slave has been opened. gVisor conflates
+    # "not yet opened" with "closed" - both result in numReplicas==0.
+    #
+    # WHY NIX USES PTYs (not pipes):
+    # Per C99 7.19.3, stdout is fully buffered when connected to a pipe, but line
+    # buffered when connected to a terminal. Nix needs real-time build output, so it
+    # uses PTYs to trick programs into line-buffered mode. This is fundamental to
+    # Nix's architecture - there's no --use-pipes flag.
+    # See: src/libstore/unix/build/derivation-builder.cc line 808 (posix_openpt)
+    #
+    # WHY NO INSTALLER FLAGS HELP:
+    # - The PTY is created internally by nix-env, not inherited from the shell
+    # - --no-daemon, --no-channel-add, </dev/null, <&- all affect different things
+    # - sandbox=false in nix.conf disables namespace isolation, not PTY usage
+    # - The gVisor bug is in read() returning EIO, not in any Nix configuration
+    #
+    # WORKAROUND:
+    # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
+    # We just symlink the profile manually, bypassing any derivation builds.
+    if [ ! -e ~/.nix-profile/bin/nix ] && [ -d /nix/store ]; then
+        NIX_PKG=$(ls -d /nix/store/*-nix-[0-9]* 2>/dev/null | head -1)
+        if [ -n "$NIX_PKG" ]; then
+            mkdir -p /nix/var/nix/profiles/per-user/root
+            ln -sfn "$NIX_PKG" /nix/var/nix/profiles/per-user/root/profile
+            ln -sfn /nix/var/nix/profiles/per-user/root/profile ~/.nix-profile
+        fi
     fi
 fi
 
-# Export environment initialization to persist for subsequent bash commands
-# Try outputting to STDOUT (maybe Claude Code captures this?)
-echo "# direnv hook for .envrc activation"
-echo "if command -v direnv &> /dev/null; then"
-echo "    eval \"\$(direnv hook bash)\""
-echo "fi"
+# Find nix package path (profile may be overwritten by nix profile install later)
+NIX_BIN=$(ls -d /nix/store/*-nix-[0-9]*/bin 2>/dev/null | head -1)
+[ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:$PATH"
+[ -d ~/.nix-profile/bin ] && export PATH="$HOME/.nix-profile/bin:$PATH"
 
-echo "" >&2
-echo "Development environment setup complete:" >&2
-echo "  ✓ direnv: $(direnv version 2>/dev/null || echo 'installed')" >&2
-echo "  ✗ Nix: skipped (container limitations)" >&2
-echo "  ✗ devenv: skipped (requires Nix)" >&2
-echo "" >&2
-echo "NOTE: .envrc files using 'use devenv' will not work." >&2
-echo "      Use simple .envrc files with standard shell commands instead." >&2
+# Install direnv via nix
+if ! command -v direnv &> /dev/null; then
+    nix profile install nixpkgs#direnv 2>&1 | tail -3 >&2 || true
+fi
+
+# Allow .envrc files
+cd "$CLAUDE_PROJECT_DIR"
+find . -name ".envrc" -type f 2>/dev/null | while read f; do
+    direnv allow "$(dirname "$f")" 2>/dev/null || true
+done
+
+# Output hooks for bash (NIX_BIN was set earlier)
+cat << EOF
+# Nix
+export NIX_USER_CONF_FILES="$NIX_CONF"
+[ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:\$PATH"
+[ -d ~/.nix-profile/bin ] && export PATH="\$HOME/.nix-profile/bin:\$PATH"
+
+# direnv
+command -v direnv &>/dev/null && eval "\$(direnv hook bash)"
+EOF
+
+echo "Setup complete: nix=$(nix --version 2>/dev/null || echo 'N/A'), direnv=$(direnv version 2>/dev/null || echo 'N/A')" >&2
