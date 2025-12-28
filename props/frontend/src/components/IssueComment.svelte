@@ -39,56 +39,72 @@
     labelColor: colors.textDark,
   });
 
+  // Icon mappings
+  const ICONS = {
+    tp: CheckCircle,
+    fp: XCircle,
+    novel: HelpCircle,
+    critique: Link,
+    none: HelpCircle, // For grading edge targets
+  } as const;
+
+  // Target kind to color mapping
+  const TARGET_COLORS = {
+    tp: 'green',
+    fp: 'red',
+    none: 'gray',
+  } as const;
+
   // Helper to create color classes for a given base color
-  const colorClasses = (color: string) => ({
+  const colorClasses = (color: string, creditColor?: string) => ({
     bg: `bg-${color}-50`,
     border: `border-${color}-200`,
     iconColor: `text-${color}-600`,
     textColor: `text-${color}-700`,
-    creditColor: `text-${color}-600`,
+    creditColor: creditColor ?? `text-${color}-600`,
   });
 
   // Helper to create grading edge styling from base color and label
-  const createTargetStyling = (baseColor: string, label: string) => ({
-    ...colorClasses(baseColor),
+  const createTargetStyling = (baseColor: string, label: string, creditColor?: string) => ({
+    ...colorClasses(baseColor, creditColor),
     label,
   });
 
-  // Visual styling based on kind
-  const Icon = $derived(
-    (() => {
-      switch (kind) {
-        case 'tp':
-          return CheckCircle;
-        case 'fp':
-          return XCircle;
-        case 'critique': {
-          const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
-          return isNovel ? HelpCircle : Link;
-        }
-        default:
-          return HelpCircle;
-      }
-    })()
-  );
+  // Get label for grading edge target
+  const getTargetLabel = (target: { kind: string; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
+    if (target.kind === 'tp') return `${target.tp_id}/${target.occurrence_id}`;
+    if (target.kind === 'fp') return `${target.fp_id}/${target.occurrence_id}`;
+    return 'Novel finding (no match)';
+  };
+
+  // Compute critique classification once
+  const critiqueType = $derived.by(() => {
+    if (kind !== 'critique') return null;
+    const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
+    const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
+    const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
+    if (hasTPMatch) return 'tp';
+    if (hasFPMatch) return 'fp';
+    if (isNovel) return 'novel';
+    return 'default';
+  });
+
+  const Icon = $derived.by(() => {
+    if (kind === 'tp') return ICONS.tp;
+    if (kind === 'fp') return ICONS.fp;
+    if (kind === 'critique') return critiqueType === 'novel' ? ICONS.novel : ICONS.critique;
+    return ICONS.critique;
+  });
 
   const styling = $derived.by(() => {
-    switch (kind) {
-      case 'tp':
-        return createStyling(issueColors.tp, 'TP');
-      case 'fp':
-        return createStyling(issueColors.fp, 'FP');
-      case 'critique': {
-        const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
-        const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
-        const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
+    if (kind === 'tp') return createStyling(issueColors.tp, 'TP');
+    if (kind === 'fp') return createStyling(issueColors.fp, 'FP');
 
-        if (hasTPMatch) return createStyling(issueColors.critique, 'Critique (TP)');
-        if (hasFPMatch) return createStyling(issueColors.critiqueFp, 'Critique (FP)');
-        if (isNovel) return createStyling(issueColors.novel, 'Critique (Novel)');
-        return createStyling(issueColors.critique, 'Critique');
-      }
-    }
+    // Critique styling based on grading
+    if (critiqueType === 'tp') return createStyling(issueColors.critique, 'Critique (TP)');
+    if (critiqueType === 'fp') return createStyling(issueColors.critiqueFp, 'Critique (FP)');
+    if (critiqueType === 'novel') return createStyling(issueColors.novel, 'Critique (Novel)');
+    return createStyling(issueColors.critique, 'Critique');
   });
 </script>
 
@@ -142,13 +158,12 @@
               {@const target = edge.target}
               {@const edgeCredit = target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
               {#if edgeCredit > 0 || target.kind === 'none'}
-                {@const TargetIcon = target.kind === 'tp' ? CheckCircle : target.kind === 'fp' ? XCircle : HelpCircle}
-                {@const targetStyling =
-                  target.kind === 'tp'
-                    ? createTargetStyling('green', `${target.tp_id}/${target.occurrence_id}`)
-                    : target.kind === 'fp'
-                      ? createTargetStyling('red', `${target.fp_id}/${target.occurrence_id}`)
-                      : { ...createTargetStyling('gray', 'Novel finding (no match)'), creditColor: '' }}
+                {@const TargetIcon = ICONS[target.kind]}
+                {@const targetStyling = createTargetStyling(
+                  TARGET_COLORS[target.kind],
+                  getTargetLabel(target),
+                  target.kind === 'none' ? '' : undefined
+                )}
                 <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
                   <div class="flex items-center gap-2">
                     <TargetIcon size={12} class={targetStyling.iconColor} />
