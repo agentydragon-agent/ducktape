@@ -1,0 +1,104 @@
+# Agent Definition Authoring Guide
+
+Agent definitions are stored as **tarballs (Docker build contexts)** in the database.
+
+**Only requirement:** The tarball must contain a `Dockerfile` that produces an image with `/init` (executable). Everything else is optional.
+
+## How Agent Definitions Work
+
+When an agent runs:
+
+1. **Docker container starts** from the definition's image
+2. **`/init` executes** and its stdout becomes the agent's **system message**
+3. **Agent loop begins** — the LLM receives the system message and starts processing
+
+**The `/init` output is the agent's entire context.** Include everything the agent needs: task description, CLI help, database schema docs, workflow instructions.
+
+## Runtime Environment
+
+The container receives these resources:
+
+| Resource | Access Method |
+|----------|---------------|
+| MCP servers | `MCP_SERVER_URL`, `MCP_SERVER_TOKEN` env vars |
+| PostgreSQL | `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD` env vars |
+| Source code | Init can fetch via `props snapshot fetch <slug>` to `/snapshots/{slug}/` |
+| Working dir | `/workspace/` (writable) |
+
+**Database user pattern:** `agent_{run_id}` — RLS policies automatically scope queries to your agent's data.
+
+**MCP connection:** HTTP-based. The agent framework handles MCP communication; your init script just prints the system message.
+
+## Common Workflow
+
+```bash
+# Fetch definition by ID
+props agent-definition fetch <definition-id> /workspace/my_def/
+
+# Modify files as needed (Dockerfile, packages, etc.)
+
+# Pack and insert new definition
+props agent-definition create /workspace/my_def/
+```
+
+## Dockerfile
+
+The Dockerfile creates the `/init` script. Example:
+
+```dockerfile
+RUN printf '#!/bin/sh\nexec props critic-agent init\n' > /init && chmod +x /init
+```
+
+**Init requirements:** Exit non-zero if RLS context is NULL, paths don't exist, or DB fails. Output must stay under `mcp_infra.exec.models.MAX_BYTES_CAP`.
+
+## Base Definition Patterns
+
+The built-in props definitions use these patterns (none are required for custom definitions):
+
+**Python packages:** Bundled in tarball, pip-installed in Dockerfile. Provide CLI tools and documentation.
+
+**Jinja2 templating:** Init scripts use `render_agent_prompt()` to include docs:
+{% raw %}
+- `{{ include_doc("package/path") }}` — from package resources
+- `{{ include_file("/path") }}` — from filesystem
+- `{{ describe_relation("name") }}` — psql \d+ output
+- `{{ run_command("cmd") }}` — shell command output
+{% endraw %}
+
+**`agent.md` file:** Some definitions include an `agent.md` for agent-specific advice, rendered via {% raw %}`{{ include_file("/agent.md") }}`{% endraw %}. Edit this to change just the advice portion without touching the Dockerfile.
+
+## Filesystem Layout
+
+```
+/init                          # Executable bootstrap (required, produces system message)
+/workspace/                    # Working directory (empty at start, writable)
+/snapshots/{slug}/             # Source code (if init fetches it via props snapshot fetch)
+```
+
+Any other files depend on your Dockerfile.
+
+## Definition Helpers
+
+```python
+from props_core.definition_utils import pack_definition, unpack_definition
+
+# Pack directory into tarball (validates Dockerfile exists)
+archive = pack_definition(my_dir)
+
+# Unpack tarball to directory
+unpack_definition(archive, target_dir)
+```
+
+Or use the CLI:
+```bash
+props agent-definition fetch <id> /workspace/my_def/   # unpack
+props agent-definition create /workspace/my_def/       # pack and insert
+```
+
+## Best Practices
+
+1. Init fails fast — exit non-zero on any precondition failure
+2. Print context in init — what agent needs goes into transcript
+3. Custom tools for structured work — don't parse raw output
+4. Don't duplicate docs — init prints context once
+5. Verify before submit — tools can validate work

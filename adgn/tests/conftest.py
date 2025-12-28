@@ -15,12 +15,6 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.notifications.buffer import NotificationsBuffer
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.types import McpServerSpecs
-from props.db.models import CanonicalIssuesSnapshot
-
-# Empty canonical issues snapshot for GraderRun fixtures.
-# Format matches GraderRun.canonical_issues_snapshot Pydantic model.
-EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])
-
 
 # Register shared fixture modules for parallel workers and subset runs
 pytest_plugins = (

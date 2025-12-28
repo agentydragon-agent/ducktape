@@ -1,8 +1,8 @@
 [tool.uv.workspace]
 members = [
     "adgn",
-    "props",
-    "props_backend",
+    "props/core",
+    "props/backend",
     "agent_core",
     "agent_server",
     "mcp_infra",

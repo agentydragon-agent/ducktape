@@ -52,11 +52,11 @@ in {
   '';
 
   # Backend dev server (FastAPI with auto-reload)
-  # Watch both props and props_backend source directories for changes
-  processes.backend.exec = "uvicorn props_backend.app:app --reload --host 127.0.0.1 --port 8000 --reload-dir ../props_backend/src --reload-dir src";
+  # Watch both props_core and props_backend source directories for changes
+  processes.backend.exec = "uvicorn props_backend.app:app --reload --host 127.0.0.1 --port 8000 --reload-dir backend/src --reload-dir core/src";
 
   # Frontend dev server (Vite)
-  processes.frontend.exec = "pnpm --dir ../props_frontend dev --port 5173";
+  processes.frontend.exec = "pnpm --dir frontend dev --port 5173";
 
   # Environment variables (database connection parameters - single source of truth)
   env = {
