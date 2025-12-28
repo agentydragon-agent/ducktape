@@ -447,13 +447,17 @@
 
     <!-- Grading edges (for both critic and grader runs) -->
     {#if run.grading_edges.length > 0 || run.missed_occurrences.length > 0}
-      {@const totalItems = run.grading_edges.length + run.missed_occurrences.length}
+      {@const visibleEdges = run.grading_edges.filter(e =>
+        e.target.kind === 'none' ||
+        ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+      )}
+      {@const totalItems = visibleEdges.length + run.missed_occurrences.length}
       <div class="px-4 py-2 border-b flex-shrink-0">
         <GradingEdges
           edges={run.grading_edges}
           missedOccurrences={run.missed_occurrences}
           totalCredit={run.grading_summary?.total_credit}
-          nCatchable={run.grading_summary?.recall_denominator_occurrences}
+          recallDenominator={run.grading_summary?.recall_denominator_occurrences}
           defaultOpen={totalItems < 10}
         />
       </div>
