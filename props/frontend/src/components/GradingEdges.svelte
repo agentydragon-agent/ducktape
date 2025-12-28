@@ -18,23 +18,23 @@
   );
 
   // Filter and sort edges - in complete bipartite graph, most edges have zero credit
-  // Only show non-zero credit edges prominently, collapse zeros
-  const nonZeroTpEdges = $derived(
+  // Show ALL non-zero credit edges (TP and FP) prominently, collapse zeros
+  const getCredit = (edge: GradingEdgeInfo) => {
+    if (edge.target.kind === 'tp') return edge.target.credit;
+    if (edge.target.kind === 'fp') return edge.target.credit;
+    return 0;
+  };
+
+  const nonZeroEdges = $derived(
     edges
-      .filter(e => e.target.kind === 'tp' && e.target.credit > 0)
-      .sort((a, b) => {
-        // Sort by credit descending
-        const aCredit = a.target.kind === 'tp' ? a.target.credit : 0;
-        const bCredit = b.target.kind === 'tp' ? b.target.credit : 0;
-        return bCredit - aCredit;
-      })
+      .filter(e => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) > 0)
+      .sort((a, b) => getCredit(b) - getCredit(a))
   );
 
-  const zeroTpEdges = $derived(
-    edges.filter(e => e.target.kind === 'tp' && e.target.credit === 0)
+  const zeroEdges = $derived(
+    edges.filter(e => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) === 0)
   );
 
-  const fpEdges = $derived(edges.filter(e => e.target.kind === 'fp'));
   const unmatchedEdges = $derived(edges.filter(e => e.target.kind === 'none'));
 
   let showZeroEdges = $state(false);
@@ -43,24 +43,32 @@
 {#if edges.length > 0 || missedOccurrences.length > 0}
   <details open={defaultOpen}>
     <summary class="cursor-pointer text-gray-500 hover:text-gray-700 text-xs">
-      Grading ({nonZeroTpEdges.length} matches, {zeroTpEdges.length} non-matches)
+      Grading ({nonZeroEdges.length} matches, {zeroEdges.length} non-matches)
       {#if creditSummary}
         <span class="text-gray-400">— {creditSummary}</span>
       {/if}
     </summary>
     <div class="mt-2 space-y-2">
-      <!-- Matched TPs (non-zero credit) -->
-      {#if nonZeroTpEdges.length > 0}
-        <div class="text-xs font-medium text-green-600 mb-1">Matches ({nonZeroTpEdges.length}):</div>
-        {#each nonZeroTpEdges as edge}
+      <!-- Non-zero credit edges (both TP and FP) -->
+      {#if nonZeroEdges.length > 0}
+        <div class="text-xs font-medium mb-1">Matches ({nonZeroEdges.length}):</div>
+        {#each nonZeroEdges as edge}
           {@const target = edge.target}
-          <div class="p-2 rounded border text-xs bg-green-50 border-green-200">
+          {@const credit = getCredit(edge)}
+          {@const isTP = target.kind === 'tp'}
+          {@const bgColor = isTP ? 'bg-green-50' : 'bg-red-50'}
+          {@const borderColor = isTP ? 'border-green-200' : 'border-red-200'}
+          {@const textColor = isTP ? 'text-green-600' : 'text-red-600'}
+          <div class="p-2 rounded border text-xs {bgColor} {borderColor}">
             <div class="flex items-center gap-2 mb-1">
               <span class="font-mono font-medium">{edge.critique_issue_id}</span>
               <span class="text-gray-400">→</span>
               {#if target.kind === 'tp'}
-                <span class="text-green-600">{target.tp_id}/{target.occurrence_id}</span>
-                <span class="text-green-600 font-medium">(+{target.credit.toFixed(2)})</span>
+                <span class="{textColor}">{target.tp_id}/{target.occurrence_id}</span>
+                <span class="{textColor} font-medium">(+{credit.toFixed(2)})</span>
+              {:else if target.kind === 'fp'}
+                <span class="{textColor}">{target.fp_id}/{target.occurrence_id}</span>
+                <span class="{textColor} font-medium">(+{credit.toFixed(2)} FP)</span>
               {/if}
             </div>
             <div class="text-gray-600">{edge.rationale}</div>
@@ -68,8 +76,8 @@
         {/each}
       {/if}
 
-      <!-- Zero-credit TP edges (collapsed by default) -->
-      {#if zeroTpEdges.length > 0}
+      <!-- Zero-credit edges (collapsed by default) -->
+      {#if zeroEdges.length > 0}
         <div class="mt-3 pt-2 border-t border-gray-200">
           <button
             type="button"
@@ -77,11 +85,11 @@
             class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
             <span>{showZeroEdges ? '▼' : '▶'}</span>
-            <span>Non-matches ({zeroTpEdges.length})</span>
+            <span>Non-matches ({zeroEdges.length})</span>
           </button>
           {#if showZeroEdges}
             <div class="mt-2 space-y-1">
-              {#each zeroTpEdges as edge}
+              {#each zeroEdges as edge}
                 {@const target = edge.target}
                 <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
                   <div class="flex items-center gap-2 mb-1">
@@ -89,38 +97,20 @@
                     <span class="text-gray-400">→</span>
                     {#if target.kind === 'tp'}
                       <span class="text-gray-500">{target.tp_id}/{target.occurrence_id}</span>
-                      <span class="text-gray-400">(0.00)</span>
+                    {:else if target.kind === 'fp'}
+                      <span class="text-gray-500">{target.fp_id}/{target.occurrence_id} FP</span>
                     {/if}
+                    <span class="text-gray-400">(0.00)</span>
                   </div>
                   <div class="text-gray-500 text-[11px]">{edge.rationale}</div>
                 </div>
               {/each}
             </div>
           {/if}
-        </div>
+        </div}
       {/if}
 
-      <!-- Matched FPs -->
-      {#if fpEdges.length > 0}
-        <div class="mt-3 pt-2 border-t border-gray-200">
-          <div class="text-xs font-medium text-red-600 mb-1">Matched FPs ({fpEdges.length}):</div>
-          {#each fpEdges as edge}
-            {@const target = edge.target}
-            <div class="p-2 rounded border text-xs bg-red-50 border-red-200">
-              <div class="flex items-center gap-2 mb-1">
-                <span class="font-mono font-medium">{edge.critique_issue_id}</span>
-                <span class="text-gray-400">→</span>
-                {#if target.kind === 'fp'}
-                  <span class="text-red-600">{target.fp_id}/{target.occurrence_id}</span>
-                {/if}
-              </div>
-              <div class="text-gray-600">{edge.rationale}</div>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      <!-- Novel Findings (novel findings) -->
+      <!-- Novel Findings -->
       {#if unmatchedEdges.length > 0}
         <div class="mt-3 pt-2 border-t border-gray-200">
           <div class="text-xs font-medium text-gray-500 mb-1">Novel Findings ({unmatchedEdges.length}):</div>
@@ -150,7 +140,7 @@
               {/if}
             </div>
           {/each}
-        </div>
+        </div}
       {/if}
     </div>
   </details>
