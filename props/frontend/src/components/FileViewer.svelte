@@ -115,9 +115,9 @@
 
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
-    const url = new URL(`${base}/snapshots/${snapshotSlug}`, $page.url);
-    url.searchParams.set('issueId', issueId);
-    url.searchParams.set('occurrenceId', occurrenceId);
+    const routePath = `${base}/snapshots/${snapshotSlug}/${issueId}/${occurrenceId}`;
+    const url = new URL(routePath, $page.url);
+    url.searchParams.set('file', file.path);
     return url.toString();
   }
 </script>

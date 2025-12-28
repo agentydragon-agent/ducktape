@@ -15,12 +15,14 @@
 
   let { data } = $props();
   const snapshot = $derived(data.snapshot as SnapshotDetailResponse);
+  const targetIssueId = $derived(data.issueId);
+  const targetOccurrenceId = $derived(data.occurrenceId);
+  const targetFile = $derived(data.fileToShow);
 
   const expandedIssues = createExpansionState();
   let activeTab: 'files' | 'tps' | 'fps' = $state('files');
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
-  let targetOccurrenceId = $state<string | null>(null);
 
   // Breadcrumb items for file viewer
   const breadcrumbs = $derived.by(() => {
@@ -61,21 +63,25 @@
 
   // Generate URL for occurrence
   function getOccurrenceUrl(issueId: string, occurrenceId: string, filePath?: string): string {
-    const path = filePath ? `${base}/snapshots/${data.slug}` : $page.url.pathname;
-    const url = new URL(path, $page.url);
-    url.searchParams.set('issueId', issueId);
-    url.searchParams.set('occurrenceId', occurrenceId);
-    return url.toString();
+    const routePath = `${base}/snapshots/${data.slug}/${issueId}/${occurrenceId}`;
+    if (filePath) {
+      const url = new URL(routePath, $page.url);
+      url.searchParams.set('file', filePath);
+      return url.toString();
+    }
+    return new URL(routePath, $page.url).toString();
   }
 
-  function findAndNavigateToOccurrence(issueId: string, occurrenceId: string) {
+  function findAndNavigateToOccurrence(issueId: string, occurrenceId: string, filePath?: string) {
     const searchInIssues = (issues: typeof snapshot.true_positives | typeof snapshot.false_positives) => {
       for (const issue of issues) {
         const issueIdMatch = 'tp_id' in issue ? issue.tp_id === issueId : issue.fp_id === issueId;
         if (issueIdMatch) {
           const occ = issue.occurrences.find((o) => o.occurrence_id === occurrenceId);
           if (occ?.files.length) {
-            handleFileClick(occ.files[0].path);
+            // Use specified file or first file
+            const fileToLoad = filePath || occ.files[0].path;
+            handleFileClick(fileToLoad);
             expandedIssues.expand(issueId);
             activeTab = 'files';
             setTimeout(() => {
@@ -94,13 +100,10 @@
     searchInIssues(snapshot.true_positives) || searchInIssues(snapshot.false_positives);
   }
 
-  // Handle deep linking via query params
+  // Handle deep linking via route params
   $effect(() => {
-    const issueId = $page.url.searchParams.get('issueId');
-    const occurrenceId = $page.url.searchParams.get('occurrenceId');
-    if (issueId && occurrenceId) {
-      targetOccurrenceId = occurrenceId;
-      findAndNavigateToOccurrence(issueId, occurrenceId);
+    if (targetIssueId && targetOccurrenceId) {
+      findAndNavigateToOccurrence(targetIssueId, targetOccurrenceId, targetFile);
     }
   });
 </script>
