@@ -3,7 +3,6 @@
  * Manages a set of expanded item IDs with toggle functionality.
  */
 export function createExpansionState() {
-  // eslint-disable-next-line no-undef
   let expanded = $state<Set<string>>(new Set());
 
   return {
