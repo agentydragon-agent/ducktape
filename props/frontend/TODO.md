@@ -65,6 +65,7 @@
 ## Code Quality & Refactoring
 
 ### Completed Deduplication Work
+
 - [x] **Critical bug fixes**
   - Added missing `credit: float` field to `FpTarget` in backend (props/backend/src/props_backend/routes/runs.py:136)
   - Fixed syntax highlighting to preserve multi-line state (was highlighting line-by-line, now processes entire file)
@@ -84,6 +85,7 @@
   - Removed duplicated color scheme definitions
 
 ### Remaining Deduplication Tasks
+
 - [ ] Update `FileTree.svelte` to use `getFileIcon()` from shared utilities (currently has inline icon selection logic)
 - [ ] Update `IssueComment.svelte` to use `issueColors` constant from `lib/colors.ts` (currently has inline color definitions)
 - [ ] Extract stdout/stderr truncation rendering to reusable component
@@ -91,11 +93,13 @@
 - [ ] Improve dynamic icon rendering in `IssueComment.svelte` (currently uses manual if-else chain)
 
 ### Backend Cleanup
+
 - [ ] Clean up unnecessary Pydantic model defaults
   - Remove `= []` or `= None` defaults where values are always provided
   - Review all Pydantic models in backend for unnecessary defaults
 
 ### Type System
+
 - [ ] Regenerate frontend TypeScript types via `pnpm generate`
   - **Blocked**: Requires backend running with Docker (aiodocker dependency)
   - New types needed for `FpTarget.credit` and `reported_issues` fields

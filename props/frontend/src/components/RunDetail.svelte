@@ -5,6 +5,8 @@
   import {
     fetchRun,
     fetchRunEvents,
+    fetchSnapshotDetail,
+    fetchSnapshotFile,
     type AgentRunDetail,
     type EventInfo,
     type CriticTypeConfig,
@@ -16,6 +18,8 @@
     type TruncatedStream,
     type DockerExecCallPayload,
     type DockerExecOutputPayload,
+    type SnapshotDetailResponse,
+    type FileContentResponse,
   } from '../lib/api/client';
   import { getStatusColor, formatStatus } from '../lib/status';
   import { truncateText } from '../lib/formatters';
@@ -23,6 +27,7 @@
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingEdges from './GradingEdges.svelte';
+  import CritiqueFileViewer from './CritiqueFileViewer.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
   marked.use({ breaks: true, async: false });
@@ -39,6 +44,11 @@
   let loading = $state(true);
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   let expandedOutputs: Set<string> = $state(new Set());
+
+  // Critique viewer state
+  let snapshotDetail: SnapshotDetailResponse | null = $state(null);
+  let fileContents: Map<string, FileContentResponse> = $state(new Map());
+  let loadingSnapshot = $state(false);
 
   function toggleOutputExpanded(callId: string) {
     if (expandedOutputs.has(callId)) {
@@ -67,11 +77,82 @@
       const [runResult, eventsResult] = await Promise.all([fetchRun(runId), fetchRunEvents(runId, 0, 500)]);
       run = runResult;
       events = eventsResult.events;
+
+      // Load snapshot data for critic runs with reported issues
+      if (run.type_config.agent_type === 'critic' && run.reported_issues && run.reported_issues.length > 0) {
+        await loadSnapshotData(run);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load run';
       toast.error(message);
     } finally {
       loading = false;
+    }
+  }
+
+  // Load snapshot and file data for critique viewer
+  async function loadSnapshotData(criticRun: AgentRunDetail) {
+    if (criticRun.type_config.agent_type !== 'critic') return;
+
+    const config = criticRun.type_config as CriticTypeConfig;
+    let snapshotSlug: string;
+
+    // Extract snapshot slug from example
+    if (config.example.kind === 'whole_snapshot') {
+      snapshotSlug = config.example.snapshot_slug;
+    } else {
+      snapshotSlug = config.example.snapshot_slug;
+    }
+
+    loadingSnapshot = true;
+    try {
+      // Fetch snapshot detail to get ground truth
+      snapshotDetail = await fetchSnapshotDetail(snapshotSlug);
+
+      // Collect all files mentioned in critique issues or ground truth
+      const allFilePaths = new Set<string>();
+
+      // Files from critique issues
+      for (const issue of criticRun.reported_issues || []) {
+        for (const fileInfo of issue.occurrences.flatMap((o) => o.files)) {
+          allFilePaths.add(fileInfo.path);
+        }
+      }
+
+      // Files from ground truth
+      for (const tp of snapshotDetail.true_positives) {
+        for (const occ of tp.occurrences) {
+          for (const fileInfo of occ.files) {
+            allFilePaths.add(fileInfo.path);
+          }
+        }
+      }
+      for (const fp of snapshotDetail.false_positives) {
+        for (const occ of fp.occurrences) {
+          for (const fileInfo of occ.files) {
+            allFilePaths.add(fileInfo.path);
+          }
+        }
+      }
+
+      // Fetch file contents
+      const newContents = new Map<string, FileContentResponse>();
+      await Promise.all(
+        Array.from(allFilePaths).map(async (path) => {
+          try {
+            const content = await fetchSnapshotFile(snapshotSlug, path);
+            newContents.set(path, content);
+          } catch (e) {
+            console.error(`Failed to fetch file ${path}:`, e);
+          }
+        })
+      );
+      fileContents = newContents;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load snapshot data';
+      toast.error(message);
+    } finally {
+      loadingSnapshot = false;
     }
   }
 
@@ -486,6 +567,39 @@
           recallDenominator={run.grading_summary?.recall_denominator_occurrences}
           defaultOpen={totalItems < 10}
         />
+      </div>
+    {/if}
+
+    <!-- Critique file viewer (for critic runs with reported issues) -->
+    {#if run.type_config.agent_type === 'critic' && run.reported_issues && run.reported_issues.length > 0 && snapshotDetail}
+      <div class="border-b">
+        <div class="px-4 py-3 bg-gray-100 border-b">
+          <h3 class="text-md font-medium">Critique vs Ground Truth</h3>
+          <p class="text-sm text-gray-600 mt-1">Showing files with critique issues or ground truth annotations</p>
+        </div>
+        {#if loadingSnapshot}
+          <div class="p-4">
+            <p class="text-gray-500 text-sm">Loading snapshot data...</p>
+          </div>
+        {:else}
+          <div class="p-4 space-y-6">
+            {#each Array.from(fileContents.entries()) as [_, fileContent]}
+              <CritiqueFileViewer
+                file={fileContent}
+                tps={snapshotDetail.true_positives}
+                fps={snapshotDetail.false_positives}
+                critiqueIssues={run.reported_issues.map((issue) => ({
+                  id: issue.issue_id,
+                  rationale: issue.rationale,
+                  note: undefined,
+                  ranges: null,
+                  allFiles: issue.occurrences.flatMap((o) => o.files),
+                }))}
+                gradingEdges={run.grading_edges}
+              />
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
 
