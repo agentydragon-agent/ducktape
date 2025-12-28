@@ -52,7 +52,9 @@
   - [x] Show grading results with visual indicators (TP match=blue, FP match=orange, novel=gray)
   - [x] Display bipartite graph edges (only nonzero credit edges shown)
   - [x] Added `reported_issues` to backend API (`AgentRunDetail`)
-  - [ ] Integrate CritiqueFileViewer into run detail view UI
+  - [x] Integrate CritiqueFileViewer into run detail view UI
+    - Auto-fetches snapshot detail + file contents for critic runs
+    - Displays new "Critique vs Ground Truth" section
   - [ ] Add critique-specific navigation/filtering
 
 - [ ] Phase 6: Polish
@@ -86,24 +88,39 @@
 
 ### Remaining Deduplication Tasks
 
-- [ ] Update `FileTree.svelte` to use `getFileIcon()` from shared utilities (currently has inline icon selection logic)
-- [ ] Update `IssueComment.svelte` to use `issueColors` constant from `lib/colors.ts` (currently has inline color definitions)
-- [ ] Extract stdout/stderr truncation rendering to reusable component
-- [ ] Create reusable tab button component (tab styling appears duplicated across components)
+- [x] Update `FileTree.svelte` to use `getFileIcon()` from shared utilities
+- [x] Update `IssueComment.svelte` to use `issueColors` constant from `lib/colors.ts`
+- [x] Extract stdout/stderr truncation rendering to reusable component
+  - Created `TruncatedStream.svelte` component
+  - Eliminated 15+ lines of duplicated code in RunDetail
+- [x] Create reusable tab button component
+  - Created `TabButton.svelte` component
+  - Updated snapshot page to use component
+  - Eliminated 20+ lines of duplicated markup
+- [x] Create reusable expansion state helper (Svelte 5 runes)
+  - Created `lib/expansionState.svelte.ts` helper
+  - Provides toggle(), isExpanded(), expand(), collapse() methods
+  - Updated snapshot page to use helper
 - [ ] Improve dynamic icon rendering in `IssueComment.svelte` (currently uses manual if-else chain)
 
 ### Backend Cleanup
 
-- [ ] Clean up unnecessary Pydantic model defaults
-  - Remove `= []` or `= None` defaults where values are always provided
-  - Review all Pydantic models in backend for unnecessary defaults
+- [x] Clean up unnecessary Pydantic model defaults
+  - Removed `= []` and `= None` defaults from `AgentRunDetail` fields
+  - All values are always provided explicitly in constructor
 
 ### Type System
 
-- [ ] Regenerate frontend TypeScript types via `pnpm generate`
-  - **Blocked**: Requires backend running with Docker (aiodocker dependency)
-  - New types needed for `FpTarget.credit` and `reported_issues` fields
-  - Current workaround: Committed with `--no-verify` to bypass type checking
+- [x] Regenerate frontend TypeScript types via `pnpm generate`
+  - Generated types without Docker using `/tmp/generate_openapi.py`
+  - Confirmed `FpTarget.credit` and `reported_issues` fields in schema
+
+### ESLint Configuration
+
+- [x] Configure ESLint for Svelte 5 runes
+  - Applied `eslint-plugin-svelte` to `**/*.svelte.ts` files
+  - Plugin properly handles $state, $derived, and other runes
+  - Removed need for manual global declarations
 
 ## Known Issues / Improvements
 
