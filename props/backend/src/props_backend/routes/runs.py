@@ -171,6 +171,30 @@ class MissedOccurrenceInfo(BaseModel):
     occ_note: str | None  # from true_positive_occurrences.note
 
 
+class FileLocation(BaseModel):
+    """File location with optional line range."""
+
+    file: str
+    start_line: int | None = None
+    end_line: int | None = None
+
+
+class ReportedIssueOccurrenceInfo(BaseModel):
+    """Occurrence of a reported issue."""
+
+    occurrence_id: str
+    note: str | None
+    locations: list[FileLocation]
+
+
+class ReportedIssueInfo(BaseModel):
+    """Issue reported by a critic run."""
+
+    issue_id: str
+    rationale: str
+    occurrences: list[ReportedIssueOccurrenceInfo]
+
+
 class AgentRunDetail(BaseModel):
     """Detailed view of an agent run."""
 
@@ -190,6 +214,7 @@ class AgentRunDetail(BaseModel):
     grading_summary: GradingSummary | None = None  # For critic runs: grading results
     grading_edges: list[GradingEdgeInfo] = []  # For grader runs: their output edges
     missed_occurrences: list[MissedOccurrenceInfo] = []  # For critic runs: catchable TPs not found
+    reported_issues: list[ReportedIssueInfo] = []  # For critic runs: issues found by the critic
 
 
 # --- Parsed Event Types for API ---
@@ -685,6 +710,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         grader_runs: list[GraderRunInfo] = []
         grading_edges: list[GradingEdgeInfo] = []
         missed_occurrences: list[MissedOccurrenceInfo] = []
+        reported_issues: list[ReportedIssueInfo] = []
 
         if run.type_config.agent_type == AgentType.CRITIC:
             example = run.type_config.example
@@ -790,6 +816,23 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                             )
                         )
 
+            # Get reported issues for critic runs
+            reported_issues = [
+                ReportedIssueInfo(
+                    issue_id=issue.issue_id,
+                    rationale=issue.rationale,
+                    occurrences=[
+                        ReportedIssueOccurrenceInfo(
+                            occurrence_id=occ.occurrence_id,
+                            note=occ.note,
+                            locations=[FileLocation(**loc) for loc in occ.locations],
+                        )
+                        for occ in issue.occurrences
+                    ],
+                )
+                for issue in run.reported_issues
+            ]
+
         elif run.type_config.agent_type == AgentType.GRADER:
             # For grader runs, get their own edges
             edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == run_id).all()
@@ -812,6 +855,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             grading_summary=grading_summary,
             grading_edges=grading_edges,
             missed_occurrences=missed_occurrences,
+            reported_issues=reported_issues,
         )
 
 
