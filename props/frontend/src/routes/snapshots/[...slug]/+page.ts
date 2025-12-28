@@ -1,6 +1,9 @@
-import { fetchSnapshotDetail } from '$lib/api/client';
+import { fetchSnapshotDetail, fetchSnapshotTree } from '$lib/api/client';
 
 export async function load({ params }) {
-  const data = await fetchSnapshotDetail(params.slug);
-  return { snapshot: data };
+  const [snapshot, tree] = await Promise.all([
+    fetchSnapshotDetail(params.slug),
+    fetchSnapshotTree(params.slug),
+  ]);
+  return { snapshot, tree, slug: params.slug };
 }

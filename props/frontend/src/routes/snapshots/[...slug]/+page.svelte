@@ -1,12 +1,17 @@
 <script lang="ts">
   import { splitBadgeClass } from '$lib/colors';
-  import type { SnapshotDetailResponse } from '$lib/api/client';
+  import type { SnapshotDetailResponse, FileContentResponse } from '$lib/api/client';
+  import { fetchSnapshotFile } from '$lib/api/client';
+  import FileTree from '../../../components/FileTree.svelte';
+  import FileViewer from '../../../components/FileViewer.svelte';
 
   let { data } = $props();
   const snapshot = $derived(data.snapshot as SnapshotDetailResponse);
 
   let expandedIssues: Set<string> = $state(new Set());
-  let activeTab: 'tps' | 'fps' = $state('tps');
+  let activeTab: 'files' | 'tps' | 'fps' = $state('files');
+  let selectedFile: FileContentResponse | null = $state(null);
+  let loadingFile = $state(false);
 
   function toggleIssue(issueId: string) {
     const newSet = new Set(expandedIssues);
@@ -27,6 +32,18 @@
     );
     return `${file.path}:${rangeStrs.join(',')}`;
   }
+
+  async function handleFileClick(path: string) {
+    loadingFile = true;
+    try {
+      selectedFile = await fetchSnapshotFile(data.slug, path);
+    } catch (error) {
+      console.error('Failed to load file:', error);
+      alert(`Failed to load file: ${error}`);
+    } finally {
+      loadingFile = false;
+    }
+  }
 </script>
 
 <div class="bg-white rounded-lg shadow">
@@ -45,6 +62,12 @@
   <div class="border-b">
     <nav class="flex -mb-px">
       <button
+        class="px-4 py-2 font-medium text-sm border-b-2 {activeTab === 'files' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
+        onclick={() => activeTab = 'files'}
+      >
+        Files
+      </button>
+      <button
         class="px-4 py-2 font-medium text-sm border-b-2 {activeTab === 'tps' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700'}"
         onclick={() => activeTab = 'tps'}
       >
@@ -60,12 +83,40 @@
   </div>
 
   <!-- Content -->
-  <div class="p-4 max-h-[70vh] overflow-y-auto">
-    {#if activeTab === 'tps'}
-      {#if snapshot.true_positives.length === 0}
-        <p class="text-gray-500">No true positives</p>
-      {:else}
-        <div class="space-y-2">
+  <div class="p-4">
+    {#if activeTab === 'files'}
+      <div class="grid grid-cols-2 gap-4">
+        <!-- File Tree -->
+        <div class="overflow-y-auto max-h-[70vh]">
+          <h3 class="text-sm font-medium mb-2">File Browser</h3>
+          <FileTree
+            nodes={data.tree.tree}
+            onFileClick={handleFileClick}
+            selectedPath={selectedFile?.path}
+          />
+        </div>
+
+        <!-- File Viewer -->
+        <div class="overflow-y-auto max-h-[70vh]">
+          {#if loadingFile}
+            <div class="flex items-center justify-center h-full text-gray-500">
+              Loading...
+            </div>
+          {:else if selectedFile}
+            <FileViewer file={selectedFile} />
+          {:else}
+            <div class="flex items-center justify-center h-full text-gray-500">
+              Select a file to view
+            </div>
+          {/if}
+        </div>
+      </div>
+    {:else if activeTab === 'tps'}
+      <div class="max-h-[70vh] overflow-y-auto">
+        {#if snapshot.true_positives.length === 0}
+          <p class="text-gray-500">No true positives</p>
+        {:else}
+          <div class="space-y-2">
           {#each snapshot.true_positives as tp}
             <div class="border rounded">
               <button
@@ -110,13 +161,15 @@
               {/if}
             </div>
           {/each}
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     {:else}
-      {#if snapshot.false_positives.length === 0}
-        <p class="text-gray-500">No false positives</p>
-      {:else}
-        <div class="space-y-2">
+      <div class="max-h-[70vh] overflow-y-auto">
+        {#if snapshot.false_positives.length === 0}
+          <p class="text-gray-500">No false positives</p>
+        {:else}
+          <div class="space-y-2">
           {#each snapshot.false_positives as fp}
             <div class="border rounded">
               <button
@@ -161,8 +214,9 @@
               {/if}
             </div>
           {/each}
-        </div>
-      {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
   </div>
 </div>
