@@ -21,7 +21,7 @@ from props_core.db.models import (
     AgentDefinition,
     AgentRun,
     AgentRunStatus,
-    GradingDecision,
+    GradingEdge,
     RecallByDefinitionSplitKind,
     Snapshot,
 )
@@ -255,24 +255,24 @@ async def cmd_grade_validation(
                     critic_run_id=critic_run_id, client=grader_client, verbose=verbose, max_turns=200
                 )
 
-                # Fetch recall for progress message (direct query to grading_decisions)
+                # Fetch recall for progress message (direct query to grading_edges)
                 with get_session() as session:
                     grader_run = session.get(AgentRun, grader_run_id)
                     assert grader_run is not None
 
                     if grader_run.status == AgentRunStatus.COMPLETED:
-                        # Show absolute numbers instead of percentage (query grading_decisions)
+                        # Show absolute numbers instead of percentage (query grading_edges)
                         total_credit = (
-                            session.query(func.sum(GradingDecision.credit))
-                            .filter_by(agent_run_id=grader_run_id)
-                            .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
+                            session.query(func.sum(GradingEdge.credit))
+                            .filter_by(grader_run_id=grader_run_id)
+                            .filter(GradingEdge.tp_id.isnot(None))  # Only TP matches
                             .scalar()
                             or 0.0
                         )
                         n_occurrences = (
-                            session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                            .filter_by(agent_run_id=grader_run_id)
-                            .filter(GradingDecision.target_tp_id.isnot(None))
+                            session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
+                            .filter_by(grader_run_id=grader_run_id)
+                            .filter(GradingEdge.tp_id.isnot(None))
                             .distinct()
                             .count()
                         )

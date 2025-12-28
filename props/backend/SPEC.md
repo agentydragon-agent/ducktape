@@ -250,7 +250,7 @@ When ground truth changes (new TPs/FPs added/modified):
 
 **Desired staleness detection:**
 - Compare semantic content only: TP/FP IDs, rationales, occurrence locations (files + line ranges)
-- Exclude `expect_caught_from` (test coverage metadata, not grading content)
+- Exclude `critic_scopes_expected_to_recall` (test coverage metadata, not grading content)
 
 **Optimization approaches:**
 1. **Timestamp-based:** Compare `updated_at` on ground truth vs `canonical_issues_snapshot_time` on grader run

@@ -13,6 +13,6 @@ occurrences:
     subtract.py:
     - 1
     - 3
-  expect_caught_from:
+  critic_scopes_expected_to_recall:
   - - divide.py
     - subtract.py

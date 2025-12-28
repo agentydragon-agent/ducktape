@@ -57,7 +57,7 @@ in {
 
   # Frontend dev server (Vite)
   # Must cd to frontend dir - pnpm --dir doesn't work reliably with process-compose
-  processes.frontend.exec = "cd $DEVENV_ROOT/frontend && pnpm dev --port 5173";
+  processes.frontend.exec = "cd ./frontend && pnpm dev --port 5173";
 
   # Periodic database backup (every 6 hours, keeps 7 days)
   # Uses PG* env vars from devenv.env; PGPASSWORD read from state file

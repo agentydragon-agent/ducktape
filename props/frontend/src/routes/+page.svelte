@@ -6,7 +6,6 @@
   import SummaryCards from '$components/stats/SummaryCards.svelte';
   import JobsList from '$components/JobsList.svelte';
   import RunList from '$components/RunList.svelte';
-  import RunsBrowser from '$components/RunsBrowser.svelte';
 
   let { data } = $props();
 
@@ -27,10 +26,6 @@
 
   <div class="mb-4">
     <RunList />
-  </div>
-
-  <div class="mb-4">
-    <RunsBrowser />
   </div>
 
   <SummaryCards data={data.overview} />

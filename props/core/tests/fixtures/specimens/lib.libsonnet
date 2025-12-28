@@ -8,7 +8,7 @@
 //   I.issue(
 //     rationale='Dead code should be removed',
 //     filesToRanges={'src/cli.py': [[145, 167]]},
-//     // expect_caught_from auto-inferred: [['src/cli.py']] (single file)
+//     // critic_scopes_expected_to_recall auto-inferred: [['src/cli.py']] (single file)
 //   )
 
 // ============================================================================
@@ -52,12 +52,12 @@ local normFiles(files) = {
 // Parameters:
 //   rationale: Full explanation of what's wrong and recommended fix
 //   filesToRanges: Dict of file paths → array of line ranges
-//   expect_caught_from: (optional) List of alternative file sets for detection
+//   critic_scopes_expected_to_recall: (optional) List of alternative file sets for detection
 //                       Format: [['file1.py'], ['file2.py', 'file3.py']]
 //                       Semantics: Issue detectable from ANY of these file sets (OR logic)
 //                       Each inner list is files required together (AND logic)
 //
-// Detection standard for expect_caught_from:
+// Detection standard for critic_scopes_expected_to_recall:
 //   "If I gave a high-quality critic this file set to review, and they failed to
 //   find this issue, would that be a failure on their part?"
 //
@@ -70,25 +70,25 @@ local normFiles(files) = {
 //   NOT: "Can you detect this reading only these files in isolation?"
 //
 // Auto-inference:
-//   - If filesToRanges has 1 file AND expect_caught_from not provided:
-//     Auto-infers expect_caught_from = [[that_single_file]]
-//   - If filesToRanges has >1 file AND expect_caught_from not provided:
+//   - If filesToRanges has 1 file AND critic_scopes_expected_to_recall not provided:
+//     Auto-infers critic_scopes_expected_to_recall = [[that_single_file]]
+//   - If filesToRanges has >1 file AND critic_scopes_expected_to_recall not provided:
 //     Raises error (author must specify minimal detection sets)
 //
-// Returns: {rationale, occurrences: [{occurrence_id, files, expect_caught_from}]}
-local issue(rationale, filesToRanges, expect_caught_from=null) =
+// Returns: {rationale, occurrences: [{occurrence_id, files, critic_scopes_expected_to_recall}]}
+local issue(rationale, filesToRanges, critic_scopes_expected_to_recall=null) =
   local files_list = std.objectFields(filesToRanges);
-  local inferred_expect_caught_from =
-    if expect_caught_from != null then expect_caught_from
+  local inferred_critic_scopes_expected_to_recall =
+    if critic_scopes_expected_to_recall != null then critic_scopes_expected_to_recall
     else if std.length(files_list) == 1 then [[files_list[0]]]
-    else error 'Multi-file issue requires explicit expect_caught_from. Specify minimal file sets required to detect this issue (AND/OR semantics). Files: ' + std.manifestJson(files_list);
+    else error 'Multi-file issue requires explicit critic_scopes_expected_to_recall. Specify minimal file sets required to detect this issue (AND/OR semantics). Files: ' + std.manifestJson(files_list);
   {
     rationale: rationale,
     should_flag: true,
     occurrences: [{
       occurrence_id: 'occ-1',
       files: normFiles(filesToRanges),
-      expect_caught_from: inferred_expect_caught_from,
+      critic_scopes_expected_to_recall: inferred_critic_scopes_expected_to_recall,
     }],
   };
 
@@ -99,9 +99,9 @@ local issue(rationale, filesToRanges, expect_caught_from=null) =
 //   occurrences: List of occurrence objects, each with:
 //     - files: {file: [ranges]|null} dict
 //     - note: string (REQUIRED - explains this specific occurrence)
-//     - expect_caught_from: [[files...], ...] (REQUIRED if total files > 1)
+//     - critic_scopes_expected_to_recall: [[files...], ...] (REQUIRED if total files > 1)
 //
-// Detection standard for expect_caught_from (same as issue()):
+// Detection standard for critic_scopes_expected_to_recall (same as issue()):
 //   "If I gave a high-quality critic this file set to review, and they failed to
 //   find this issue, would that be a failure on their part?"
 //
@@ -116,7 +116,7 @@ local issue(rationale, filesToRanges, expect_caught_from=null) =
 // Validation:
 //   - ALL occurrences must have 'note' field
 //   - If total unique files across ALL occurrences > 1:
-//     EVERY occurrence must have explicit 'expect_caught_from'
+//     EVERY occurrence must have explicit 'critic_scopes_expected_to_recall'
 //     (Even single-file occurrences need it when total > 1)
 //
 // Returns: {rationale, occurrences}
@@ -140,14 +140,14 @@ local issueMulti(rationale, occurrences) =
   local unique_files = std.set(all_files);
   local total_files = std.length(unique_files);
 
-  // If total files > 1, validate ALL occurrences have expect_caught_from
+  // If total files > 1, validate ALL occurrences have critic_scopes_expected_to_recall
   local missing_expect = if total_files > 1 then [
     i
     for i in std.range(0, std.length(occurrences) - 1)
-    if !std.objectHas(occurrences[i], 'expect_caught_from')
+    if !std.objectHas(occurrences[i], 'critic_scopes_expected_to_recall')
   ] else [];
   local expect_valid = if std.length(missing_expect) > 0
-  then error 'Multi-file issue (total files: %d) requires expect_caught_from on ALL occurrences. Missing in occurrences at indices: %s. Files: %s' % [total_files, std.manifestJson(missing_expect), std.manifestJson(unique_files)]
+  then error 'Multi-file issue (total files: %d) requires critic_scopes_expected_to_recall on ALL occurrences. Missing in occurrences at indices: %s. Files: %s' % [total_files, std.manifestJson(missing_expect), std.manifestJson(unique_files)]
   else true;
 
   {
@@ -158,7 +158,7 @@ local issueMulti(rationale, occurrences) =
         occurrence_id: 'occ-%d' % (i + 1),
         files: normFiles(occurrences[i].files),
         note: occurrences[i].note,
-        expect_caught_from: occurrences[i].expect_caught_from,
+        critic_scopes_expected_to_recall: occurrences[i].critic_scopes_expected_to_recall,
       }
       for i in std.range(0, std.length(occurrences) - 1)
     ],

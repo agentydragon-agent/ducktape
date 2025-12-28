@@ -41,10 +41,10 @@ from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandle
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
 from mcp_infra.display import CompactDisplayHandler
 from openai_utils.errors import ContextLengthExceededError
-from openai_utils.model import OpenAIModelProto
+from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.types import ReasoningSummary
 from props_core.agent_handle import AgentHandle
-from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
+from props_core.agent_types import CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.common_options import DEFAULT_MAX_LINES
 from props_core.critic.critic import CriticAgentEnvironment
@@ -54,10 +54,13 @@ from props_core.db.config import DatabaseConfig
 from props_core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from props_core.db.session import get_session
 from props_core.display import short_uuid
+from props_core.grader.daemon import GraderDaemonScaffold
+from props_core.grader.drift_handler import format_notifications
 from props_core.grader.exceptions import GraderDidNotSubmitError
 from props_core.grader.grader import GraderAgentEnvironment, _fp_from_orm, _tp_from_orm
 from props_core.grader.persistence import fp_to_db, tp_to_db
-from props_core.ids import DefinitionId
+from props_core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
+from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 if TYPE_CHECKING:
@@ -378,7 +381,8 @@ class AgentRegistry:
                 tp
                 for tp in snapshot.true_positives
                 if any(
-                    any(alt.issubset(reviewed_files) for alt in occ.expect_caught_from_set) for occ in tp.occurrences
+                    any(alt.issubset(reviewed_files) for alt in occ.critic_scopes_expected_to_recall_set)
+                    for occ in tp.occurrences
                 )
             ]
             filtered_orm_fps = [
@@ -513,6 +517,170 @@ class AgentRegistry:
                     self._active.pop(grader_run_id, None)
 
         logger.info(f"Grader run completed: agent_run_id={grader_run_id}, status={agent_status}")
+        return grader_run_id
+
+    # --- Snapshot Grader Daemon ---
+
+    async def run_snapshot_grader(
+        self,
+        *,
+        snapshot_slug: SnapshotSlug,
+        client: OpenAIModelProto,
+        verbose: bool = False,
+        max_lines: int = DEFAULT_MAX_LINES,
+        max_turns: int = 200,
+    ) -> UUID:
+        """Run a snapshot grader daemon. Blocks until shutdown or context exhausted.
+
+        The daemon grades ALL critiques for the snapshot, sleeping when no drift
+        and waking on pg_notify when GT changes or new critiques arrive.
+
+        Args:
+            snapshot_slug: Snapshot this daemon is responsible for
+            client: OpenAI-compatible model client
+            verbose: Whether to enable verbose display
+            max_lines: Max lines per event in verbose display
+            max_turns: Max turns per wake cycle (resets after each sleep)
+
+        Returns:
+            Daemon run ID (query DB for status)
+        """
+        async with self._semaphore:
+            return await self._run_snapshot_grader_impl(
+                snapshot_slug=snapshot_slug, client=client, verbose=verbose, max_lines=max_lines, max_turns=max_turns
+            )
+
+    async def _run_snapshot_grader_impl(
+        self, *, snapshot_slug: SnapshotSlug, client: OpenAIModelProto, verbose: bool, max_lines: int, max_turns: int
+    ) -> UUID:
+        """Internal snapshot grader daemon execution."""
+        grader_run_id = uuid4()
+
+        # Verify snapshot exists
+        with get_session() as session:
+            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).one_or_none()
+            if snapshot is None:
+                raise ValueError(f"Snapshot '{snapshot_slug}' not found")
+
+            type_config = SnapshotGraderTypeConfig(snapshot_slug=snapshot_slug).model_dump(mode="json")
+
+            # Create initial daemon run
+            session.add(
+                AgentRun(
+                    agent_run_id=grader_run_id,
+                    agent_definition_id=GRADER_AGENT_DEFINITION_ID,
+                    parent_agent_run_id=None,
+                    model=client.model,
+                    type_config=type_config,
+                    status=AgentRunStatus.IN_PROGRESS,
+                )
+            )
+            session.commit()
+            logger.info(f"Created snapshot grader daemon: agent_run_id={grader_run_id}, snapshot={snapshot_slug}")
+
+        # Set up environment
+        env = SnapshotGraderAgentEnvironment(
+            snapshot_slug=snapshot_slug,
+            docker_client=self._docker_client,
+            grader_run_id=grader_run_id,
+            db_config=self._db_config,
+            workspace_manager=self._workspace_manager,
+        )
+
+        agent_status: AgentRunStatus = AgentRunStatus.IN_PROGRESS
+
+        async with (
+            env as compositor,
+            Client(compositor) as mcp_client,
+            GraderDaemonScaffold(snapshot_slug, self._db_config) as scaffold,
+        ):
+            # Build handlers
+            drift_handler = scaffold.create_drift_handler()
+
+            daemon_handlers: list[BaseHandler] = [drift_handler]
+            if verbose:
+                display_handler = await CompactDisplayHandler.from_compositor(
+                    compositor,
+                    max_lines=max_lines,
+                    prefix=f"[SNAPSHOT-GRADER {short_uuid(grader_run_id)} {snapshot_slug}] ",
+                )
+                daemon_handlers.append(display_handler)
+
+            daemon_handlers.extend(
+                [
+                    RedirectOnTextMessageHandler(
+                        reminder_message=(
+                            "Text messages won't be delivered. Use props grader-agent CLI commands "
+                            "to list pending edges, match issues to GT, and fill remaining edges."
+                        )
+                    ),
+                    MaxTurnsHandler(max_turns=max_turns),
+                ]
+            )
+
+            # Create AgentHandle
+            agent_handle = await AgentHandle.create(
+                agent_run_id=grader_run_id,
+                definition_id=GRADER_AGENT_DEFINITION_ID,
+                model_client=client,
+                mcp_client=mcp_client,
+                compositor=compositor,
+                handlers=daemon_handlers,
+                dynamic_instructions=compositor.render_agent_dynamic_instructions,
+                parallel_tool_calls=True,
+                reasoning_summary=ReasoningSummary.DETAILED,
+            )
+
+            # Track as active
+            async with self._lock:
+                self._active[grader_run_id] = ActiveRun(handle=agent_handle, task=None)
+
+            try:
+                # Daemon loop: run → sleep → wake → run → ...
+                while not scaffold.is_shutdown:
+                    try:
+                        await agent_handle.run()
+                    except MaxTurnsExceededError:
+                        logger.warning("Snapshot grader hit max turns, resetting for next wake cycle")
+                        # Reset turn count by recreating handlers with fresh MaxTurnsHandler
+                        # For now, just continue to sleep/wake cycle
+
+                    # Wait for next work (blocks until pg_notify or drift detected)
+                    notifs = await scaffold.wait_for_drift_or_notification()
+
+                    if scaffold.is_shutdown:
+                        break
+
+                    # Inject wake message and continue
+                    if notifs:
+                        wake_msg = format_notifications(notifs)
+                        agent_handle.agent.process_message(UserMessage.text(wake_msg))
+                    else:
+                        agent_handle.agent.process_message(
+                            UserMessage.text("Drift detected. Check grading_pending for new work.")
+                        )
+
+                agent_status = AgentRunStatus.COMPLETED
+
+            except ContextLengthExceededError:
+                logger.warning(f"Snapshot grader {grader_run_id} hit context limit")
+                agent_status = AgentRunStatus.CONTEXT_LENGTH_EXCEEDED
+            except Exception as e:
+                logger.error(f"Snapshot grader {grader_run_id} failed: {e}", exc_info=True)
+                agent_status = AgentRunStatus.REPORTED_FAILURE
+            finally:
+                # Remove from active tracking
+                async with self._lock:
+                    self._active.pop(grader_run_id, None)
+
+                # Update status in DB
+                with get_session() as session:
+                    found_run = session.get(AgentRun, grader_run_id)
+                    if found_run and found_run.status == AgentRunStatus.IN_PROGRESS:
+                        found_run.status = agent_status
+                        session.commit()
+
+        logger.info(f"Snapshot grader daemon exited: agent_run_id={grader_run_id}, status={agent_status}")
         return grader_run_id
 
     # --- State Tracking ---

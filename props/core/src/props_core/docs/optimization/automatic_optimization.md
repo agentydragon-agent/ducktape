@@ -85,11 +85,11 @@ Start with small examples, not whole-snapshot:
 
 ```sql
 -- Find easiest file-set examples (1-3 catchable occurrences)
-SELECT snapshot_slug, files_hash, n_catchable_occurrences
+SELECT snapshot_slug, files_hash, n_recall_denominator
 FROM examples
 WHERE example_kind = 'file_set'
-  AND n_catchable_occurrences BETWEEN 1 AND 3
-ORDER BY n_catchable_occurrences;
+  AND n_recall_denominator BETWEEN 1 AND 3
+ORDER BY n_recall_denominator;
 ```
 
 **Strategy:**
@@ -115,8 +115,8 @@ SELECT tp_id, rationale FROM true_positives
 WHERE snapshot_slug = '<snapshot>';
 
 -- How was each reported issue graded?
-SELECT * FROM grading_decisions
-WHERE agent_run_id = '<grader_run_id>';
+SELECT * FROM grading_edges
+WHERE grader_run_id = '<grader_run_id>';
 
 -- What did the critic actually do? (execution trace)
 SELECT event_type, payload FROM events

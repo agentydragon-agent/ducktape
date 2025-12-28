@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session, selectinload
 import yaml
 
 from props_core.db.models import (
+    ExpectedRecallScope,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     FileSet,
     FileSetMember,
-    OccurrenceTrigger,
     TruePositive,
     TruePositiveOccurrenceORM,
 )
@@ -101,24 +101,24 @@ def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> d
     if occ.note:
         result["note"] = _maybe_literal(occ.note)
 
-    # Get expect_caught_from from triggers
+    # Get critic_scopes_expected_to_recall from triggers
     # Each trigger set's paths are sorted, then trigger sets are sorted by first path
-    expect_caught_from: list[list[str]] = []
+    critic_scopes_expected_to_recall: list[list[str]] = []
     for trigger in occ.triggers:
         if trigger.file_set:
             paths = sorted(m.file_path for m in trigger.file_set.members)
-            expect_caught_from.append(paths)
+            critic_scopes_expected_to_recall.append(paths)
 
-    if expect_caught_from:
+    if critic_scopes_expected_to_recall:
         # Sort trigger sets for deterministic output
-        expect_caught_from.sort(key=lambda x: x[0] if x else "")
-        result["expect_caught_from"] = expect_caught_from
+        critic_scopes_expected_to_recall.sort(key=lambda x: x[0] if x else "")
+        result["critic_scopes_expected_to_recall"] = critic_scopes_expected_to_recall
 
-    # Get only_matchable_from_files if set
-    if occ.only_matchable_from_files_hash:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.only_matchable_from_files_hash)
+    # Get graders_match_only_if_reported_on if set
+    if occ.match_filter_hash:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_filter_hash)
         if paths:
-            result["only_matchable_from_files"] = paths
+            result["graders_match_only_if_reported_on"] = paths
 
     return result
 
@@ -134,11 +134,11 @@ def _export_fp_occurrence(session: Session, occ: FalsePositiveOccurrenceORM) -> 
     if occ.relevant_files:
         result["relevant_files"] = sorted(occ.relevant_files)
 
-    # Get only_matchable_from_files if set
-    if occ.only_matchable_from_files_hash:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.only_matchable_from_files_hash)
+    # Get graders_match_only_if_reported_on if set
+    if occ.match_filter_hash:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_filter_hash)
         if paths:
-            result["only_matchable_from_files"] = paths
+            result["graders_match_only_if_reported_on"] = paths
 
     return result
 
@@ -200,7 +200,7 @@ def export_snapshot_issues(session: Session, snapshot_slug: SnapshotSlug, output
             .options(
                 selectinload(TruePositive.occurrences)
                 .selectinload(TruePositiveOccurrenceORM.triggers)
-                .selectinload(OccurrenceTrigger.file_set)
+                .selectinload(ExpectedRecallScope.file_set)
                 .selectinload(FileSet.members)
             )
             .order_by(TruePositive.tp_id)

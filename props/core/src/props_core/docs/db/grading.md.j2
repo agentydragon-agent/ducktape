@@ -1,34 +1,20 @@
-# Grading Decisions
+# Grading Schema
 
-This document describes how grading output is stored.
+{{ describe_relation("grading_edges") }}
 
-{{ describe_relation("grading_decisions") }}
+## Pending Edges
 
-## Writing Decisions
+{{ describe_relation("grading_pending") }}
 
-**Python helpers:**
-```python
-from props_core.grader.helpers import insert_tp_match, insert_fp_match, insert_no_match
+Query this view to see what edges are missing. Grading is complete when no rows remain.
 
-# TP match with full credit
-insert_tp_match(session, grader_run_id,
-    input_issue_id="dead-code-1",
-    tp_id="tp-dead-utils",
-    occurrence_id=1,
-    found_credit=1.0,
-    rationale="Exact match"
-)
+## Sparse Matching
 
-# FP match
-insert_fp_match(session, grader_run_id,
-    input_issue_id="dup-1",
-    fp_id="fp-visual-consistency",
-    rationale="This duplication is intentional for visual consistency"
-)
+Not all occurrences are matchable from all critiques. The `matchable_occurrences()` function returns which GT occurrences a critique can reach:
 
-# No match (novel issue)
-insert_no_match(session, grader_run_id,
-    input_issue_id="style-1",
-    rationale="Style issue not in ground truth"
-)
+```sql
+SELECT * FROM matchable_occurrences('snapshot/slug', ARRAY['src/foo.py', 'src/bar.py']);
 ```
+
+- `match_filter_hash IS NULL`: No file restriction - matchable from any files
+- `match_filter_hash IS NOT NULL`: File-scoped - only matchable when critique touches overlapping files

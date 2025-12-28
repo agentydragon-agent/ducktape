@@ -25,17 +25,18 @@ from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from agent_pkg import ensure_image_from_archive
 from openai_utils.model_metadata import MODEL_METADATA
 from props_core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
 from props_core.agent_types import AgentType
 from props_core.db.models import (
     AgentDefinition,
+    ExpectedRecallScope,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     FileSet,
     FileSetMember,
     ModelMetadata,
-    OccurrenceTrigger,
     Snapshot,
     SnapshotFile,
     TruePositive,
@@ -493,7 +494,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 )
                 session.add(orm_issue)
                 # Add occurrences to normalized table
-                # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as column
+                # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
                 for occ in issue.occurrences:
                     orm_occ = TruePositiveOccurrenceORM(
                         snapshot_slug=issue.snapshot_slug,
@@ -504,8 +505,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             for p, ranges in occ.files.items()
                         },
                         note=occ.note,
-                        only_matchable_from_files_hash=ensure_file_set(
-                            session, issue.snapshot_slug, occ.only_matchable_from_files
+                        match_filter_hash=ensure_file_set(
+                            session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                         ),
                     )
                     session.add(orm_occ)
@@ -527,7 +528,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     # Delete existing occurrences and re-add (cascade handles this)
                     for occ_orm in list(existing.occurrences):
                         session.delete(occ_orm)
-                    # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as column
+                    # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
                     for occ in issue.occurrences:
                         orm_occ = TruePositiveOccurrenceORM(
                             snapshot_slug=issue.snapshot_slug,
@@ -538,8 +539,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                                 for p, ranges in occ.files.items()
                             },
                             note=occ.note,
-                            only_matchable_from_files_hash=ensure_file_set(
-                                session, issue.snapshot_slug, occ.only_matchable_from_files
+                            match_filter_hash=ensure_file_set(
+                                session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                             ),
                         )
                         session.add(orm_occ)
@@ -570,8 +571,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         },
                         note=fp_occ.note,
                         relevant_files=[str(p) for p in fp_occ.relevant_files],
-                        only_matchable_from_files_hash=ensure_file_set(
-                            session, fp.snapshot_slug, fp_occ.only_matchable_from_files
+                        match_filter_hash=ensure_file_set(
+                            session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                         ),
                     )
                     session.add(fp_orm_occ)
@@ -604,8 +605,8 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             },
                             note=fp_occ.note,
                             relevant_files=[str(p) for p in fp_occ.relevant_files],
-                            only_matchable_from_files_hash=ensure_file_set(
-                                session, fp.snapshot_slug, fp_occ.only_matchable_from_files
+                            match_filter_hash=ensure_file_set(
+                                session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                             ),
                         )
                         session.add(fp_orm_occ)
@@ -745,21 +746,21 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
 
 
 def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
-    """Sync file_sets, file_set_members, and occurrence_triggers from YAML sources.
+    """Sync file_sets, file_set_members, and expected_recall_scopes from YAML sources.
 
-    Reads expect_caught_from from YAML files (the source of truth), not from ORM.
+    Reads critic_scopes_expected_to_recall from YAML files (the source of truth), not from ORM.
     """
     desired_file_sets: dict[tuple[SnapshotSlug, str], list[str]] = {}
     desired_triggers: set[tuple[SnapshotSlug, str, str, str]] = set()
 
-    # Load canonical TPs from YAML to get expect_caught_from
+    # Load canonical TPs from YAML to get critic_scopes_expected_to_recall
 
     for slug in slugs:
         true_positives, _ = load_yaml_issues(slug, specimens_dir)
 
         for tp in true_positives:
             for occurrence in tp.occurrences:
-                for trigger_files in occurrence.expect_caught_from:
+                for trigger_files in occurrence.critic_scopes_expected_to_recall:
                     # Convert to strings and compute hash
                     file_paths = [str(f) for f in trigger_files]
                     files_hash = compute_files_hash(file_paths)
@@ -775,10 +776,10 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
         (slug, tp_id, occ_id, h)
         for slug, tp_id, occ_id, h in session.query(
-            OccurrenceTrigger.snapshot_slug,
-            OccurrenceTrigger.tp_id,
-            OccurrenceTrigger.occurrence_id,
-            OccurrenceTrigger.files_hash,
+            ExpectedRecallScope.snapshot_slug,
+            ExpectedRecallScope.tp_id,
+            ExpectedRecallScope.occurrence_id,
+            ExpectedRecallScope.files_hash,
         ).all()
     }
 
@@ -799,6 +800,13 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
         file_sets_added += 1
 
     for slug, files_hash in to_delete:
+        # Clear match_filter_hash on occurrences before deleting file_set (FK RESTRICT)
+        session.query(TruePositiveOccurrenceORM).filter_by(snapshot_slug=slug, match_filter_hash=files_hash).update(
+            {TruePositiveOccurrenceORM.match_filter_hash: None}
+        )
+        session.query(FalsePositiveOccurrenceORM).filter_by(snapshot_slug=slug, match_filter_hash=files_hash).update(
+            {FalsePositiveOccurrenceORM.match_filter_hash: None}
+        )
         session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
         file_sets_deleted += 1
 
@@ -806,33 +814,33 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     triggers_to_add = desired_triggers - existing_triggers
     triggers_to_delete = existing_triggers - desired_triggers
 
-    occurrence_triggers_added = 0
-    occurrence_triggers_deleted = 0
+    expected_recall_scopes_added = 0
+    expected_recall_scopes_deleted = 0
 
     for slug, tp_id, occurrence_id, files_hash in triggers_to_add:
         session.add(
-            OccurrenceTrigger(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
+            ExpectedRecallScope(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
         )
-        occurrence_triggers_added += 1
+        expected_recall_scopes_added += 1
 
     if triggers_to_delete:
-        session.query(OccurrenceTrigger).filter(
+        session.query(ExpectedRecallScope).filter(
             tuple_(
-                OccurrenceTrigger.snapshot_slug,
-                OccurrenceTrigger.tp_id,
-                OccurrenceTrigger.occurrence_id,
-                OccurrenceTrigger.files_hash,
+                ExpectedRecallScope.snapshot_slug,
+                ExpectedRecallScope.tp_id,
+                ExpectedRecallScope.occurrence_id,
+                ExpectedRecallScope.files_hash,
             ).in_(list(triggers_to_delete))
         ).delete(synchronize_session=False)
-        occurrence_triggers_deleted = len(triggers_to_delete)
+        expected_recall_scopes_deleted = len(triggers_to_delete)
 
     session.commit()
     logger.info(
-        "File sets synced: +%d added, -%d deleted; occurrence_triggers +%d, -%d",
+        "File sets synced: +%d added, -%d deleted; expected_recall_scopes +%d, -%d",
         file_sets_added,
         file_sets_deleted,
-        occurrence_triggers_added,
-        occurrence_triggers_deleted,
+        expected_recall_scopes_added,
+        expected_recall_scopes_deleted,
     )
     total = len(desired_file_sets)
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)
@@ -1046,8 +1054,6 @@ async def build_definition_images(docker: aiodocker.Docker, session: Session) ->
     Returns:
         Number of images built
     """
-    from agent_pkg import ensure_image_from_archive
-
     # Fetch all definition data while session is open (avoid detached instance errors)
     definitions = [(defn.id, defn.archive) for defn in session.query(AgentDefinition).all()]
 

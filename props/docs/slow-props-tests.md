@@ -56,10 +56,10 @@ This is a legitimate slow test that should have a higher timeout or be marked as
 
 ### `synced_test_db` (FAST - test fixtures)
 Uses local git-tracked fixtures at `tests/props/fixtures/specimens/`:
-- `test-fixtures/test-trivial` (TRAIN) - 4 small Python files
-- `test-fixtures/test-validation` (VALID) - 1 file
-- `test-fixtures/test-validation-2` (VALID) - 1 file
-- `test-fixtures/test-split-test` (TEST) - 1 file
+- `test-fixtures/train1` (TRAIN) - 4 small Python files
+- `test-fixtures/valid1` (VALID) - 1 file
+- `test-fixtures/valid2` (VALID) - 1 file
+- `test-fixtures/test1` (TEST) - 1 file
 
 These use `vcs: local` with `bundle: null` in their `manifest.yaml`, so:
 - **No hydration** - `resolve_source_root()` returns the original path directly with `needs_cleanup=False`

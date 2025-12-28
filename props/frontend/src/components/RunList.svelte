@@ -1,47 +1,20 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import { fetchActiveRuns, type ActiveRunInfo } from '../lib/api/client';
-  import { getStatusColor, formatStatus } from '../lib/status';
-  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import { runs } from '$lib/stores/runsFeed';
+  import { getStatusColor, formatStatus } from '$lib/status';
+  import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
 
-  // State
-  let runs: ActiveRunInfo[] = $state([]);
-  let loading = $state(true);
-  let pollInterval: ReturnType<typeof setInterval> | null = null;
-
-  // Load runs
-  async function loadRuns() {
-    try {
-      const result = await fetchActiveRuns();
-      runs = result.runs;
-    } catch (e) {
-      console.warn('Failed to load runs:', e instanceof Error ? e.message : String(e));
-    } finally {
-      loading = false;
-    }
-  }
-
-  onMount(() => {
-    loadRuns();
-    // Poll every 2 seconds
-    pollInterval = setInterval(loadRuns, 2000);
-  });
-
-  onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
-  });
+  // Filter to show only in-progress runs
+  const activeRuns = $derived($runs.filter(r => r.status === 'in_progress'));
 </script>
 
 <div class="bg-white rounded-lg shadow p-4">
   <h2 class="text-lg font-semibold mb-3">Active Runs</h2>
 
-  {#if loading}
-    <p class="text-gray-500 text-sm">Loading...</p>
-  {:else if runs.length === 0}
+  {#if activeRuns.length === 0}
     <p class="text-gray-500 text-sm">No active runs</p>
   {:else}
     <div class="space-y-2">
-      {#each runs as run}
+      {#each activeRuns as run}
         <a
           href="/runs/{run.agent_run_id}"
           class="block w-full text-left p-3 rounded border hover:bg-gray-50 transition-colors"

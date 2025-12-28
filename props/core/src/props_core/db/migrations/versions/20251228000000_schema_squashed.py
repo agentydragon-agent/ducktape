@@ -1,19 +1,20 @@
 """Squashed schema for props database.
 
 This is a complete schema migration that replaces all previous migrations.
-It was generated from schema_dump_for_squash.sql with manual translation
-to proper Alembic operations where practical.
-
-Key schema features:
+Incorporates:
 - Unified agent_runs table (replaces legacy critic_runs, grader_runs, etc.)
 - stats_with_ci composite type for statistics with 95% confidence intervals
 - Occurrence-weighted aggregation (raw totals, not normalized ratios)
 - RLS policies for agent data isolation
 - SECURITY DEFINER functions for RLS bypasses
+- Optimized examples view with array containment
+- in_progress filter in recall views
+- match_filter_hash for sparse grading
+- No clustering tables (deprecated feature removed)
 
-Revision ID: 20251223000000
+Revision ID: 20251228000000
 Revises: None
-Create Date: 2025-12-23
+Create Date: 2025-12-28
 """
 
 from collections.abc import Sequence
@@ -22,7 +23,7 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20251223000000"
+revision: str = "20251228000000"
 down_revision: str | Sequence[str] | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -77,6 +78,7 @@ def upgrade() -> None:
         )
     """)
 
+    # Note: 'clustering' value kept for backward compatibility but is deprecated/unused
     op.execute("""
         CREATE TYPE agent_type_enum AS ENUM (
             'critic',
@@ -86,6 +88,11 @@ def upgrade() -> None:
             'freeform',
             'improvement'
         )
+    """)
+
+    op.execute("""
+        COMMENT ON TYPE agent_type_enum IS
+        'Agent types. Note: clustering value is deprecated and unused.'
     """)
 
     op.execute("""
@@ -232,8 +239,8 @@ Access fields: (compute_stats_with_ci(...)).mean, .min, .max, .lcb95, .ucb95, et
     op.execute("""
         COMMENT ON FUNCTION scale_stats(stats_with_ci, double precision) IS
         'Divides all values in a stats_with_ci by a divisor.
-Use to convert raw count stats to ratio stats (e.g., credit / n_catchable_occurrences for recall).
-Example: scale_stats(credit_stats, n_catchable_occurrences)'
+Use to convert raw count stats to ratio stats (e.g., credit / n_recall_denominator for recall).
+Example: scale_stats(credit_stats, n_recall_denominator)'
     """)
 
     # Helper: current_agent_run_id from session username
@@ -517,6 +524,7 @@ SECURITY DEFINER to bypass RLS.'
     """)
 
     # DRY helper: can_access_snapshot - unified snapshot access check for RLS policies
+    # Note: clustering branch removed (feature deprecated)
     op.execute("""
         CREATE FUNCTION can_access_snapshot(p_slug text) RETURNS boolean
         LANGUAGE plpgsql STABLE SECURITY DEFINER
@@ -526,7 +534,6 @@ SECURITY DEFINER to bypass RLS.'
                 (current_agent_type() = 'prompt_optimizer' AND is_train_snapshot(p_slug))
                 OR (current_agent_type() = 'grader' AND p_slug = get_graded_snapshot_slug(current_agent_run_id()))
                 OR (current_agent_type() = 'improvement' AND is_improvement_snapshot_allowed(p_slug))
-                OR (current_agent_type() = 'clustering' AND p_slug = current_agent_type_config()->>'snapshot_slug')
             );
         END;
         $$
@@ -571,7 +578,7 @@ Used for critic/grader write policies.'
                 ELSE EXISTS (
                     -- Check if any file set for this TP is a subset of the reviewed scope
                     SELECT 1
-                    FROM occurrence_triggers ot
+                    FROM expected_recall_scopes ot
                     WHERE ot.snapshot_slug = p_snapshot_slug
                       AND ot.tp_id = p_tp_id
                       -- All files in this file set must be in the reviewed scope
@@ -797,65 +804,7 @@ For whole-snapshot scope, always returns TRUE.'
         'Validates that grading_decisions target_tp_id/target_fp_id references exist in ground truth'
     """)
 
-    # Trigger function to validate unknown_assignments mapped TP/FP exists
-    op.execute("""
-        CREATE FUNCTION check_unknown_mapping_exists() RETURNS trigger
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-            grader_run_snapshot_slug TEXT;
-        BEGIN
-            -- Only validate if a mapping is set
-            IF NEW.mapped_tp_id IS NULL AND NEW.mapped_fp_id IS NULL THEN
-                RETURN NEW;
-            END IF;
-
-            -- Get the snapshot slug from the grader run's graded critic run
-            SELECT (cr.type_config -> 'example' ->> 'snapshot_slug')
-            INTO grader_run_snapshot_slug
-            FROM agent_runs gr
-            JOIN agent_runs cr ON cr.agent_run_id = get_graded_agent_run_id(gr.agent_run_id)
-            WHERE gr.agent_run_id = NEW.grader_run_id;
-
-            IF grader_run_snapshot_slug IS NULL THEN
-                RAISE EXCEPTION 'Could not determine snapshot for grader run %', NEW.grader_run_id;
-            END IF;
-
-            -- Validate mapped TP exists
-            IF NEW.mapped_tp_id IS NOT NULL THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM true_positives
-                    WHERE snapshot_slug = grader_run_snapshot_slug
-                      AND tp_id = NEW.mapped_tp_id
-                ) THEN
-                    RAISE EXCEPTION 'Mapped TP (tp_id=%) does not exist in snapshot %',
-                        NEW.mapped_tp_id, grader_run_snapshot_slug;
-                END IF;
-            END IF;
-
-            -- Validate mapped FP exists
-            IF NEW.mapped_fp_id IS NOT NULL THEN
-                IF NOT EXISTS (
-                    SELECT 1 FROM false_positives
-                    WHERE snapshot_slug = grader_run_snapshot_slug
-                      AND fp_id = NEW.mapped_fp_id
-                ) THEN
-                    RAISE EXCEPTION 'Mapped FP (fp_id=%) does not exist in snapshot %',
-                        NEW.mapped_fp_id, grader_run_snapshot_slug;
-                END IF;
-            END IF;
-
-            RETURN NEW;
-        END;
-        $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION check_unknown_mapping_exists() IS
-        'Validates that unknown_assignments mapped_tp_id/mapped_fp_id references exist in ground truth'
-    """)
-
-    # SECURITY DEFINER function for validation aggregates
+    # SECURITY DEFINER function for validation aggregates (with access guard)
     op.execute("""
         CREATE FUNCTION get_validation_full_snapshot_aggregates()
         RETURNS TABLE(
@@ -869,45 +818,60 @@ For whole-snapshot scope, always returns TRUE.'
             total_credit double precision,
             n_occurrences integer
         )
-        LANGUAGE sql STABLE SECURITY DEFINER
+        LANGUAGE plpgsql STABLE SECURITY DEFINER
         SET search_path TO 'public'
         AS $$
-          WITH occurrence_avg_credits AS (
+        DECLARE
+            config jsonb;
+        BEGIN
+            config := current_agent_type_config();
+
+            -- Only allow whole-repo mode agents
+            IF config IS NULL OR config->>'target_metric' != 'whole-repo' THEN
+                RAISE EXCEPTION 'Access denied: get_validation_full_snapshot_aggregates() requires whole-repo target_metric';
+            END IF;
+
+            RETURN QUERY
+            WITH occurrence_avg_credits AS (
+                SELECT
+                    oc.snapshot_slug,
+                    oc.critic_definition_id,
+                    oc.critic_model,
+                    oc.grader_model,
+                    oc.critic_run_id,
+                    oc.grader_run_id,
+                    cr.status,
+                    oc.tp_id,
+                    oc.occurrence_id,
+                    AVG(oc.found_credit) as avg_credit
+                FROM occurrence_credits oc
+                JOIN snapshots s ON oc.snapshot_slug = s.slug
+                JOIN agent_runs cr ON oc.critic_run_id = cr.agent_run_id
+                WHERE s.split = 'valid'::split_enum
+                  AND oc.example_kind = 'whole_snapshot'
+                  AND (cr.type_config->>'agent_type') = 'critic'
+                GROUP BY oc.snapshot_slug, oc.critic_definition_id, oc.critic_model, oc.grader_model,
+                         oc.critic_run_id, oc.grader_run_id, cr.status, oc.tp_id, oc.occurrence_id
+            )
             SELECT
-                oc.snapshot_slug,
-                oc.critic_definition_id,
-                oc.critic_model,
-                oc.grader_model,
-                oc.critic_run_id,
-                oc.grader_run_id,
-                cr.status,
-                oc.tp_id,
-                oc.occurrence_id,
-                AVG(oc.found_credit) as avg_credit
-            FROM occurrence_credits oc
-            JOIN snapshots s ON oc.snapshot_slug = s.slug
-            JOIN agent_runs cr ON oc.critic_run_id = cr.agent_run_id
-            WHERE s.split = 'valid'::split_enum
-              AND oc.example_kind = 'whole_snapshot'
-              AND (cr.type_config->>'agent_type') = 'critic'
-            GROUP BY oc.snapshot_slug, oc.critic_definition_id, oc.critic_model, oc.grader_model,
-                     oc.critic_run_id, oc.grader_run_id, cr.status, oc.tp_id, oc.occurrence_id
-          )
-          SELECT
-            snapshot_slug,
-            critic_definition_id,
-            critic_model,
-            grader_model,
-            critic_run_id,
-            grader_run_id,
-            status,
-            SUM(avg_credit) as total_credit,
-            CAST(COUNT(*) AS integer) as n_occurrences
-          FROM occurrence_avg_credits
-          GROUP BY snapshot_slug, critic_definition_id, critic_model, grader_model,
-                   critic_run_id, grader_run_id, status
-          ORDER BY snapshot_slug, critic_definition_id, critic_model, grader_model,
-                   critic_run_id, grader_run_id
+                occurrence_avg_credits.snapshot_slug,
+                occurrence_avg_credits.critic_definition_id,
+                occurrence_avg_credits.critic_model,
+                occurrence_avg_credits.grader_model,
+                occurrence_avg_credits.critic_run_id,
+                occurrence_avg_credits.grader_run_id,
+                occurrence_avg_credits.status,
+                SUM(avg_credit) as total_credit,
+                CAST(COUNT(*) AS integer) as n_occurrences
+            FROM occurrence_avg_credits
+            GROUP BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_definition_id,
+                     occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
+                     occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id,
+                     occurrence_avg_credits.status
+            ORDER BY occurrence_avg_credits.snapshot_slug, occurrence_avg_credits.critic_definition_id,
+                     occurrence_avg_credits.critic_model, occurrence_avg_credits.grader_model,
+                     occurrence_avg_credits.critic_run_id, occurrence_avg_credits.grader_run_id;
+        END;
         $$
     """)
 
@@ -916,7 +880,7 @@ For whole-snapshot scope, always returns TRUE.'
         'Black-box validation metrics for whole-repo mode.
 Returns per-run recall for VALID split, whole_snapshot example_kind only.
 Includes critic_run status for proper outcome counting.
-Used by prompt optimizer in whole-repo validation mode.'
+Requires caller to be a whole-repo mode agent (prompt_optimizer or improvement).'
     """)
 
     # Line number validation trigger function for reported_issue_occurrences
@@ -985,14 +949,6 @@ Used by prompt optimizer in whole-repo validation mode.'
 Line numbers are 1-based: for a file with line_count=N, valid range is 1..N (inclusive).
 Raises exception if line numbers exceed file bounds or file not found in snapshot_files.'
     """)
-
-    # NOTE: validate_true_positive_line_numbers() is no longer needed since occurrences
-    # moved to the separate true_positive_occurrences table. Line number validation
-    # happens via validate_occurrence_line_numbers() trigger on that table.
-
-    # NOTE: validate_false_positive_line_numbers() is no longer needed since occurrences
-    # moved to the separate false_positive_occurrences table. Line number validation
-    # happens via validate_occurrence_line_numbers() trigger on that table.
 
     # =========================================================================
     # 5. Tables
@@ -1128,7 +1084,7 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("relative_path", sa.String(), nullable=False),
         sa.Column("line_count", sa.Integer(), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "relative_path"),
-        sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="CASCADE"),
+        sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="RESTRICT"),
     )
 
     op.execute(
@@ -1170,8 +1126,47 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         "'Patterns the labeler considers acceptable - teaches agents what NOT to flag.'"
     )
 
+    # File sets table - deduplicated, content-addressable by (snapshot_slug, files_hash)
+    op.create_table(
+        "file_sets",
+        sa.Column("snapshot_slug", sa.String(), nullable=False),
+        sa.Column("files_hash", sa.String(), nullable=False),  # MD5 of sorted file paths
+        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
+        sa.PrimaryKeyConstraint("snapshot_slug", "files_hash"),
+        sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="RESTRICT"),
+    )
+
+    op.execute("""
+        COMMENT ON TABLE file_sets IS
+        'Content-addressable file sets for training examples.
+Primary key is (snapshot_slug, files_hash) where files_hash = MD5 of sorted file paths.
+Deduplicated by PK constraint - same files always produce same hash.'
+    """)
+
+    # File set members table - files in each file set (FK-validated)
+    op.create_table(
+        "file_set_members",
+        sa.Column("snapshot_slug", sa.String(), nullable=False),
+        sa.Column("files_hash", sa.String(), nullable=False),
+        sa.Column("file_path", sa.String(), nullable=False),
+        sa.PrimaryKeyConstraint("snapshot_slug", "files_hash", "file_path"),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "files_hash"], ["file_sets.snapshot_slug", "file_sets.files_hash"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    op.execute("""
+        COMMENT ON TABLE file_set_members IS
+        'Files belonging to each file set. FK to snapshot_files validates file paths exist in snapshot.'
+    """)
+
     # True positive occurrences table (normalized from JSONB)
-    # Note: expect_caught_from is stored in occurrence_triggers M:N table, not as JSONB column
+    # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as JSONB column
     op.create_table(
         "true_positive_occurrences",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
@@ -1179,10 +1174,17 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("files", postgresql.JSONB(), nullable=False),  # {path: [line_ranges] | null}
         sa.Column("note", sa.Text(), nullable=True),
+        sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "match_filter_hash"],
+            ["file_sets.snapshot_slug", "file_sets.files_hash"],
+            ondelete="RESTRICT",
+            name="fk_tp_occ_matchable_files",
         ),
     )
 
@@ -1195,10 +1197,17 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         sa.Column("files", postgresql.JSONB(), nullable=False),  # {path: [line_ranges] | null}
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column("relevant_files", postgresql.JSONB(), nullable=False),  # [path, ...]
+        sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "match_filter_hash"],
+            ["file_sets.snapshot_slug", "file_sets.files_hash"],
+            ondelete="RESTRICT",
+            name="fk_fp_occ_matchable_files",
         ),
     )
 
@@ -1275,48 +1284,9 @@ Raises exception if line numbers exceed file bounds or file not found in snapsho
         Cross-table validation against snapshot_files.line_count is done by validate_reported_issue_line_numbers().';
     """)
 
-    # File sets table - deduplicated, content-addressable by (snapshot_slug, files_hash)
-    op.create_table(
-        "file_sets",
-        sa.Column("snapshot_slug", sa.String(), nullable=False),
-        sa.Column("files_hash", sa.String(), nullable=False),  # MD5 of sorted file paths
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("snapshot_slug", "files_hash"),
-        sa.ForeignKeyConstraint(["snapshot_slug"], ["snapshots.slug"], ondelete="CASCADE"),
-    )
-
-    op.execute("""
-        COMMENT ON TABLE file_sets IS
-        'Content-addressable file sets for training examples.
-Primary key is (snapshot_slug, files_hash) where files_hash = MD5 of sorted file paths.
-Deduplicated by PK constraint - same files always produce same hash.'
-    """)
-
-    # File set members table - files in each file set (FK-validated)
-    op.create_table(
-        "file_set_members",
-        sa.Column("snapshot_slug", sa.String(), nullable=False),
-        sa.Column("files_hash", sa.String(), nullable=False),
-        sa.Column("file_path", sa.String(), nullable=False),
-        sa.PrimaryKeyConstraint("snapshot_slug", "files_hash", "file_path"),
-        sa.ForeignKeyConstraint(
-            ["snapshot_slug", "files_hash"], ["file_sets.snapshot_slug", "file_sets.files_hash"], ondelete="CASCADE"
-        ),
-        sa.ForeignKeyConstraint(
-            ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
-            ondelete="CASCADE",
-        ),
-    )
-
-    op.execute("""
-        COMMENT ON TABLE file_set_members IS
-        'Files belonging to each file set. FK to snapshot_files validates file paths exist in snapshot.'
-    """)
-
     # Occurrence triggers - M:N linking occurrences to file sets
     op.create_table(
-        "occurrence_triggers",
+        "expected_recall_scopes",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
         sa.Column("tp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
@@ -1338,9 +1308,9 @@ Deduplicated by PK constraint - same files always produce same hash.'
     )
 
     op.execute("""
-        COMMENT ON TABLE occurrence_triggers IS
+        COMMENT ON TABLE expected_recall_scopes IS
         'M:N relationship linking true_positive_occurrences to file_sets.
-Each occurrence can be triggered by multiple file sets (expect_caught_from alternatives).'
+Each occurrence can be triggered by multiple file sets (critic_scopes_expected_to_recall alternatives).'
     """)
 
     # Reported issues table
@@ -1359,6 +1329,19 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
     op.execute(
         "COMMENT ON COLUMN reported_issues.agent_run_id IS 'FK to agent_runs - identifies which agent run reported this issue'"
     )
+
+    op.execute("""
+        COMMENT ON TABLE reported_issues IS
+        'Issues reported by critic agents. Each issue has a rationale and one or more occurrences.
+Linked to agent_runs via agent_run_id. Occurrences in reported_issue_occurrences.
+
+RLS: Critic sees own run only. Grader sees graded run only. Prompt optimizer sees TRAIN runs.
+
+USEFUL FOR: Critic (write), grader (read), clustering (read).
+- Critic: INSERT new findings during review
+- Grader: read to match against ground truth
+- Clustering: read unknowns (issues with no TP/FP match)'
+    """)
 
     # Reported issue occurrences table
     op.create_table(
@@ -1383,13 +1366,23 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
             ondelete="CASCADE",
         ),
         sa.CheckConstraint("jsonb_array_length(locations) > 0", name="locations_not_empty"),
-        # Line number validation done via trigger (validate_reported_issue_occ_basic_line_numbers)
-        # because PostgreSQL doesn't allow subqueries in CHECK constraints
     )
 
     op.execute(
         "COMMENT ON COLUMN reported_issue_occurrences.agent_run_id IS 'FK to agent_runs (denormalized from reported_issues for RLS efficiency)'"
     )
+
+    op.execute("""
+        COMMENT ON TABLE reported_issue_occurrences IS
+        'Locations where a reported issue occurs. Each occurrence has file path and line range.
+Foreign key to reported_issues(agent_run_id, issue_id).
+
+RLS: Same as reported_issues (scoped by agent_run_id).
+
+USEFUL FOR: Critic (write), grader (read).
+- Critic: INSERT occurrence locations when reporting issues
+- Grader: read to verify location matches ground truth'
+    """)
 
     op.execute("""
         CREATE TRIGGER validate_reported_issue_occ_basic_line_numbers_trigger
@@ -1443,10 +1436,20 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
     op.execute(
         "COMMENT ON COLUMN grading_decisions.agent_run_id IS 'FK to agent_runs - identifies which grader agent run created this decision'"
     )
-    op.execute(
-        "COMMENT ON TABLE grading_decisions IS "
-        "'Matches input issues to TPs/FPs. Trigger enforces SUM(credit) <= 1.0 per occurrence.'"
-    )
+    op.execute("""
+        COMMENT ON TABLE grading_decisions IS
+        'Grader decisions matching reported issues to ground truth.
+target_tp_id/target_fp_id = matched ground truth (NULL = no match).
+credit = match quality (0-1). Trigger enforces SUM(credit) <= 1.0 per occurrence.
+
+RLS: Grader sees own run only. Prompt optimizer sees TRAIN runs only.
+Clustering agent sees decisions for its configured snapshot.
+
+USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only), clustering (read unknowns).
+- Grader: INSERT decisions for each input issue
+- Prompt optimizer: analyze which issues got credit vs not
+- Clustering: read decisions with NULL targets (unknowns)'
+    """)
 
     # Events table
     op.create_table(
@@ -1462,72 +1465,6 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
             ["agent_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE", name="fk_events_agent_run_id"
         ),
         sa.UniqueConstraint("agent_run_id", "sequence_num", name="uq_events_agent_run_id_seq"),
-    )
-
-    # Unknown clusters table
-    op.create_table(
-        "unknown_clusters",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("cluster_name", sa.String(), nullable=False),
-        sa.Column("description", sa.Text(), nullable=False),
-        sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["agent_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE", name="fk_unknown_clusters_agent_run_id"
-        ),
-        sa.UniqueConstraint("agent_run_id", "cluster_name", name="uq_unknown_clusters_agent_run_cluster_name"),
-    )
-
-    # Unknown assignments table
-    op.create_table(
-        "unknown_assignments",
-        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("grader_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("unknown_id", sa.String(), nullable=False),
-        sa.Column("cluster_id", sa.Integer(), nullable=True),
-        sa.Column("mapped_tp_id", sa.String(), nullable=True),
-        sa.Column("mapped_fp_id", sa.String(), nullable=True),
-        sa.Column("rationale", sa.Text(), nullable=False),
-        sa.Column("cancelled_at", sa.DateTime(), nullable=True),
-        sa.Column("cancellation_reason", sa.Text(), nullable=True),
-        sa.Column("agent_run_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(
-            ["grader_run_id"],
-            ["agent_runs.agent_run_id"],
-            ondelete="CASCADE",
-            name="fk_unknown_assignments_grader_run_id",
-        ),
-        sa.ForeignKeyConstraint(
-            ["agent_run_id"],
-            ["agent_runs.agent_run_id"],
-            ondelete="CASCADE",
-            name="fk_unknown_assignments_agent_run_id",
-        ),
-        sa.ForeignKeyConstraint(["cluster_id"], ["unknown_clusters.id"], ondelete="CASCADE"),
-        sa.UniqueConstraint(
-            "agent_run_id", "grader_run_id", "unknown_id", "cancelled_at", name="uq_unknown_assignments_unique_active"
-        ),
-        sa.CheckConstraint(
-            "(cluster_id IS NOT NULL AND mapped_tp_id IS NULL AND mapped_fp_id IS NULL) "
-            "OR (cluster_id IS NULL AND mapped_tp_id IS NOT NULL AND mapped_fp_id IS NULL) "
-            "OR (cluster_id IS NULL AND mapped_tp_id IS NULL AND mapped_fp_id IS NOT NULL)",
-            name="unknown_assignments_exactly_one_target_check",
-        ),
-        # Issue ID format constraints
-        issue_id_constraint("unknown_id", "unknown_id_format"),
-        sa.CheckConstraint(
-            f"mapped_tp_id IS NULL OR (mapped_tp_id {ISSUE_ID_CHECK_SQL.format(col='mapped_tp_id')})",
-            name="mapped_tp_id_format",
-        ),
-        sa.CheckConstraint(
-            f"mapped_fp_id IS NULL OR (mapped_fp_id {ISSUE_ID_CHECK_SQL.format(col='mapped_fp_id')})",
-            name="mapped_fp_id_format",
-        ),
     )
 
     # Model metadata table
@@ -1569,9 +1506,6 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
         postgresql_where=sa.text("(type_config->>'agent_type') = 'critic'"),
     )
 
-    # NOTE: examples is now a VIEW (not a table), so we cannot create indexes on it.
-    # The underlying tables (snapshots, file_sets, occurrence_triggers) are already indexed.
-
     op.create_index("ix_true_positives_snapshot_slug", "true_positives", ["snapshot_slug"])
     op.create_index("ix_false_positives_snapshot_slug", "false_positives", ["snapshot_slug"])
 
@@ -1585,24 +1519,6 @@ Each occurrence can be triggered by multiple file sets (expect_caught_from alter
     op.create_index("grading_decisions_agent_run_id_idx", "grading_decisions", ["agent_run_id"])
 
     op.create_index("ix_events_agent_run_id_seq", "events", ["agent_run_id", "sequence_num"])
-
-    op.create_index("ix_unknown_clusters_agent_run_id", "unknown_clusters", ["agent_run_id"])
-
-    op.create_index("ix_unknown_assignments_agent_run_id", "unknown_assignments", ["agent_run_id"])
-    op.create_index("ix_unknown_assignments_grader_run_id", "unknown_assignments", ["grader_run_id"])
-    op.create_index("ix_unknown_assignments_grader_unknown", "unknown_assignments", ["grader_run_id", "unknown_id"])
-    op.create_index(
-        "ix_unknown_assignments_active",
-        "unknown_assignments",
-        ["agent_run_id", "grader_run_id", "unknown_id"],
-        postgresql_where=sa.text("cancelled_at IS NULL"),
-    )
-    op.create_index(
-        "ix_unknown_assignments_cluster_active",
-        "unknown_assignments",
-        ["cluster_id"],
-        postgresql_where=sa.text("cancelled_at IS NULL"),
-    )
 
     # =========================================================================
     # 7. Views (grading_credit_sums must be created before trigger that uses it)
@@ -1629,7 +1545,7 @@ Used by check_credit_sum trigger function.'
     """)
 
     # examples view - derived from file_sets + whole-snapshot entries
-    # Uses set-based join for catchable count (optimized from per-row function calls)
+    # Uses array containment optimization for catchable count
     op.execute("""
         CREATE VIEW examples AS
         -- Whole-snapshot examples (one per snapshot)
@@ -1641,59 +1557,59 @@ Used by check_credit_sum trigger function.'
                 SELECT COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))::integer
                 FROM true_positive_occurrences tpo
                 WHERE tpo.snapshot_slug = slug
-            ) AS n_catchable_occurrences
+            ) AS n_recall_denominator
         FROM snapshots
 
         UNION ALL
 
-        -- Per-file-set examples with optimized catchable count
-        -- Uses set-based join instead of per-row function calls
+        -- Per-file-set examples with optimized catchable count using array containment
         SELECT
             fs.snapshot_slug,
             'file_set'::example_kind_enum AS example_kind,
             fs.files_hash,
-            COALESCE(catchable.n_catchable, 0) AS n_catchable_occurrences
+            COALESCE(catchable.n_catchable, 0) AS n_recall_denominator
         FROM file_sets fs
         LEFT JOIN (
-            -- Compute catchable occurrences per file_set using set operations
+            -- Pre-aggregate files into arrays, then use <@ for subset check
+            WITH file_set_arrays AS (
+                SELECT snapshot_slug, files_hash, array_agg(file_path ORDER BY file_path) as files
+                FROM file_set_members
+                GROUP BY snapshot_slug, files_hash
+            )
             SELECT
-                fs_inner.snapshot_slug,
-                fs_inner.files_hash,
+                scope.snapshot_slug,
+                scope.files_hash,
                 COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))::integer AS n_catchable
-            FROM file_sets fs_inner
-            JOIN true_positive_occurrences tpo ON tpo.snapshot_slug = fs_inner.snapshot_slug
+            FROM file_set_arrays scope
+            JOIN true_positive_occurrences tpo ON tpo.snapshot_slug = scope.snapshot_slug
             WHERE EXISTS (
-                -- Check if any trigger for this TP occurrence is a subset of the scope
-                SELECT 1 FROM occurrence_triggers ot
-                WHERE ot.snapshot_slug = fs_inner.snapshot_slug
+                -- At least one trigger file_set is a subset of scope
+                SELECT 1 FROM expected_recall_scopes ot
+                JOIN file_set_arrays trigger ON trigger.snapshot_slug = ot.snapshot_slug
+                    AND trigger.files_hash = ot.files_hash
+                WHERE ot.snapshot_slug = scope.snapshot_slug
                   AND ot.tp_id = tpo.tp_id
                   AND ot.occurrence_id = tpo.occurrence_id
-                  -- Trigger files must be subset of scope files
-                  AND NOT EXISTS (
-                      SELECT 1 FROM file_set_members trigger_f
-                      LEFT JOIN file_set_members scope_f
-                        ON scope_f.snapshot_slug = fs_inner.snapshot_slug
-                        AND scope_f.files_hash = fs_inner.files_hash
-                        AND scope_f.file_path = trigger_f.file_path
-                      WHERE trigger_f.snapshot_slug = fs_inner.snapshot_slug
-                        AND trigger_f.files_hash = ot.files_hash
-                        AND scope_f.file_path IS NULL  -- file in trigger but not in scope
-                  )
+                  AND trigger.files <@ scope.files  -- trigger is subset of scope
             )
-            GROUP BY fs_inner.snapshot_slug, fs_inner.files_hash
+            GROUP BY scope.snapshot_slug, scope.files_hash
         ) catchable ON catchable.snapshot_slug = fs.snapshot_slug
                    AND catchable.files_hash = fs.files_hash
     """)
 
     op.execute("""
         COMMENT ON VIEW examples IS
-        'Training examples derived from file_sets (per-file) + whole-snapshot entries.
-Primary key: (snapshot_slug, example_kind, files_hash).
-For per-file examples, files are resolved via FK joins to file_set_members.
-Already deduplicated by content-addressable file_sets PK.
+        'Training/validation examples derived from snapshots and file_sets.
+Two kinds: whole_snapshot (review all files) or file_set (review specific files).
+n_recall_denominator = number of TP occurrences catchable from this scope.
 
-n_catchable_occurrences: Computed from ground truth using set-based join
-(optimized from per-row function calls for ~900x speedup).'
+RLS: Inherits from snapshots. In whole-repo mode, prompt optimizer sees TRAIN split only.
+In targeted mode, all splits visible (filenames only, not ground truth).
+
+USEFUL FOR: All agent types.
+- Critic: know what scope to review
+- Prompt optimizer: select examples for evaluation
+- Improvement agent: select examples by difficulty (start with small n_catchable)'
     """)
 
     # =========================================================================
@@ -1718,21 +1634,10 @@ n_catchable_occurrences: Computed from ground truth using set-based join
     """)
 
     op.execute("""
-        CREATE TRIGGER check_unknown_mapping_exists_trigger
-        BEFORE INSERT OR UPDATE ON unknown_assignments
-        FOR EACH ROW EXECUTE FUNCTION check_unknown_mapping_exists()
-    """)
-
-    op.execute("""
         CREATE TRIGGER validate_line_numbers_trigger
         BEFORE INSERT OR UPDATE ON reported_issue_occurrences
         FOR EACH ROW EXECUTE FUNCTION validate_reported_issue_line_numbers()
     """)
-
-    # NOTE: validate_tp_line_numbers_trigger and validate_fp_line_numbers_trigger
-    # are no longer needed since occurrences moved to separate tables.
-    # Line number validation happens via validate_tp_occ_line_numbers and
-    # validate_fp_occ_line_numbers triggers on the occurrences tables.
 
     # =========================================================================
     # 9. Additional Views
@@ -1817,10 +1722,16 @@ n_catchable_occurrences: Computed from ground truth using set-based join
 
     op.execute("""
         COMMENT ON VIEW occurrence_credits IS
-        'Per-occurrence credit assignments from grader decisions or failed critic runs.
+        'Per-occurrence credit from grading. Base view for computing recall.
+Each row = one catchable TP occurrence with its found_credit (0-1).
+Sum(found_credit)/count(*) = occurrence-weighted recall.
 
-For successful grading: joins grader agent_run to critic agent_run via type_config->graded_agent_run_id.
-For failed critics: synthesizes zero-credit rows for catchable occurrences.'
+RLS: CRITICAL - prompt optimizer sees TRAIN split only. VALID/TEST filtered by RLS
+on underlying grading_decisions. Prevents overfitting to validation data.
+
+USEFUL FOR: Prompt optimizer (TRAIN split only).
+- Analyze which specific occurrences are being missed
+- Debug why certain issues are not being caught'
     """)
 
     # occurrence_run_credits view
@@ -1877,9 +1788,19 @@ For failed critics: synthesizes zero-credit rows for catchable occurrences.'
             critic_definition_id, critic_model, grader_model
     """)
 
-    # recall_by_run view (formerly critic_run_occurrence_stats)
-    # NOTE: credit_stats contains stats of RAW total_credit per grader run.
-    # recall_stats = scale_stats(credit_stats, n_catchable_occurrences)
+    op.execute("""
+        COMMENT ON VIEW occurrence_statistics IS
+        'Aggregate statistics per occurrence across all runs.
+
+RLS: Inherits from occurrence_credits. Prompt optimizer sees TRAIN split only.
+
+USEFUL FOR: Prompt optimizer, improvement agent, clustering agent.
+- Find consistently-missed occurrences (low hit rate across runs)
+- Identify occurrence patterns that need prompt improvements
+- Clustering: analyze which occurrences produce many unknowns'
+    """)
+
+    # recall_by_run view - with in_progress filter
     op.execute("""
         CREATE VIEW recall_by_run AS
         WITH grader_stats AS (
@@ -1901,7 +1822,7 @@ For failed critics: synthesizes zero-credit rows for catchable occurrences.'
                 e.example_kind,
                 e.files_hash,
                 s.split,
-                e.n_catchable_occurrences,
+                e.n_recall_denominator,
                 -- Critic-specific columns
                 cr.agent_run_id AS critic_run_id,
                 cr.agent_definition_id AS critic_definition_id,
@@ -1923,21 +1844,22 @@ For failed critics: synthesizes zero-credit rows for catchable occurrences.'
             JOIN snapshots s ON cr.type_config->'example'->>'snapshot_slug' = s.slug
             LEFT JOIN grader_stats gs ON gs.critic_run_id = cr.agent_run_id
             WHERE cr.type_config->>'agent_type' = 'critic'
-            GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.n_catchable_occurrences
+              AND cr.status <> 'in_progress'  -- Exclude in-progress runs
+            GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.n_recall_denominator
         )
         SELECT
             snapshot_slug,
             example_kind,
             files_hash,
             split,
-            n_catchable_occurrences,
+            n_recall_denominator,
             critic_run_id,
             critic_definition_id,
             critic_model,
             critic_status,
             credit_stats,
-            -- Recall derived by dividing credit by n_catchable_occurrences
-            scale_stats(credit_stats, n_catchable_occurrences) AS recall_stats
+            -- Recall derived by dividing credit by n_recall_denominator
+            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
         FROM per_run
     """)
 
@@ -1947,16 +1869,23 @@ For failed critics: synthesizes zero-credit rows for catchable occurrences.'
 
 Columns grouped by: example identification, then critic-specific, then statistics.
 
-- n_catchable_occurrences: Ground truth count (denominator for recall)
+- n_recall_denominator: Ground truth count (denominator for recall)
 - critic_status: Critic run status (completed, max_turns_exceeded, etc.)
 - credit_stats: Stats over grader total credits (numerator; not normalized)
-- recall_stats: credit_stats / n_catchable_occurrences via scale_stats()
+- recall_stats: credit_stats / n_recall_denominator via scale_stats()
 
-Failed critics contribute 0 credit via COALESCE.'
+NOTE: in_progress runs are excluded (they have not finished yet).
+Failed critics (completed but no grader) contribute 0 credit via COALESCE.
+
+RLS: Inherits from agent_runs, grading_decisions. Prompt optimizer sees TRAIN only.
+
+USEFUL FOR: Prompt optimizer, improvement agent.
+- Debug individual runs (why did this run fail?)
+- Find runs to retry or analyze
+- Compare runs across same definition'
     """)
 
-    # recall_by_definition_example view (NEW - intermediate aggregation)
-    # Groups recall_by_run by (definition, model, example) - used by GEPA and feeds into other views
+    # recall_by_definition_example view
     op.execute("""
         CREATE VIEW recall_by_definition_example AS
         WITH raw_stats AS (
@@ -1967,7 +1896,7 @@ Failed critics contribute 0 credit via COALESCE.'
                 rbr.example_kind,
                 rbr.files_hash,
                 rbr.split,
-                MAX(rbr.n_catchable_occurrences)::integer AS n_catchable_occurrences,
+                MAX(rbr.n_recall_denominator)::integer AS n_recall_denominator,
                 COUNT(*)::integer AS n_runs,
                 agg_status_counts(array_agg(rbr.critic_status)) AS status_counts,
                 compute_stats_with_ci(array_agg(
@@ -1980,25 +1909,25 @@ Failed critics contribute 0 credit via COALESCE.'
         SELECT
             critic_definition_id, critic_model,
             snapshot_slug, example_kind, files_hash, split,
-            n_catchable_occurrences, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_catchable_occurrences) AS recall_stats
+            n_recall_denominator, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
     op.execute("""
         COMMENT ON VIEW recall_by_definition_example IS
-        'Per-(definition, model, example) recall statistics aggregated over all runs.
+        'Recall aggregated by (definition, example). Stats across multiple runs of same definition on same example.
+Key columns: n_runs, status_counts, credit_stats (raw credits), recall_stats (credit/catchable).
 
-Intermediate view between recall_by_run and higher-level aggregations.
-Used by GEPA to get recall for a specific (definition, model, example) tuple.
+RLS: Inherits from recall_by_run. Prompt optimizer sees TRAIN split only.
 
-- n_catchable_occurrences: Ground truth count (denominator)
-- n_runs: Number of critic runs for this (definition, model, example)
-- credit_stats: Stats of raw credit counts across runs (numerator)
-- recall_stats: credit_stats / n_catchable_occurrences via scale_stats()'
+USEFUL FOR: Prompt optimizer, improvement agent.
+- Compare definition performance on specific examples
+- Find hard examples for a given definition
+- Identify which examples need more attention'
     """)
 
-    # recall_by_definition_split_kind view (formerly aggregated_recall_by_definition)
+    # recall_by_definition_split_kind view
     op.execute("""
         CREATE VIEW recall_by_definition_split_kind AS
         WITH
@@ -2007,10 +1936,10 @@ Used by GEPA to get recall for a specific (definition, model, example) tuple.
             SELECT
                 split, example_kind, critic_definition_id, critic_model,
                 COUNT(*)::integer AS n_examples,
-                SUM(n_catchable_occurrences)::integer AS n_catchable_occurrences
+                SUM(n_recall_denominator)::integer AS n_recall_denominator
             FROM (
                 SELECT DISTINCT
-                    split, example_kind, files_hash, n_catchable_occurrences,
+                    split, example_kind, files_hash, n_recall_denominator,
                     critic_definition_id, critic_model
                 FROM recall_by_definition_example
             ) per_example
@@ -2031,9 +1960,9 @@ Used by GEPA to get recall for a specific (definition, model, example) tuple.
         )
         SELECT
             rs.split, rs.example_kind, rs.critic_definition_id, rs.critic_model,
-            ec.n_examples, rs.n_runs, ec.n_catchable_occurrences,
+            ec.n_examples, rs.n_runs, ec.n_recall_denominator,
             rs.status_counts, rs.credit_stats,
-            scale_stats(rs.credit_stats, ec.n_catchable_occurrences) AS recall_stats,
+            scale_stats(rs.credit_stats, ec.n_recall_denominator) AS recall_stats,
             rs.zero_count
         FROM run_stats rs
         JOIN example_counts ec USING (split, example_kind, critic_definition_id, critic_model)
@@ -2041,17 +1970,19 @@ Used by GEPA to get recall for a specific (definition, model, example) tuple.
 
     op.execute("""
         COMMENT ON VIEW recall_by_definition_split_kind IS
-        'Per-critic-definition aggregate metrics grouped by (definition, model, split, example_kind).
+        'Recall aggregated by (definition, split, example_kind). Highest-level summary per definition.
+Key columns: n_examples, n_runs, recall_stats with UCB/LCB confidence intervals.
 
-Aggregates recall_by_definition_example across examples within each (split, example_kind) group.
+RLS: Returns all splits (TRAIN/VALID/TEST) but inherits RLS from underlying tables.
+Prompt optimizer sees all splits because this view is the leaderboard (public summary).
 
-- n_catchable_occurrences: Sum across distinct examples (denominator)
-- credit_stats: Stats of raw credit counts across runs (numerator); failed runs count as 0 credit
-- recall_stats: credit_stats / n_catchable_occurrences via scale_stats()'
+USEFUL FOR: Prompt optimizer (primary metric view).
+- Leaderboard: compare definitions by LCB
+- Train vs valid comparison (overfitting check)
+- n_examples < 5 warning: small sample size, high variance'
     """)
 
-    # recall_by_example view (formerly aggregated_recall_by_example)
-    # Aggregates recall_by_definition_example across definitions
+    # recall_by_example view
     op.execute("""
         CREATE VIEW recall_by_example AS
         WITH raw_stats AS (
@@ -2060,7 +1991,7 @@ Aggregates recall_by_definition_example across examples within each (split, exam
                 rbde.example_kind,
                 rbde.files_hash,
                 rbde.split,
-                MAX(rbde.n_catchable_occurrences)::integer AS n_catchable_occurrences,
+                MAX(rbde.n_recall_denominator)::integer AS n_recall_denominator,
                 rbde.critic_model,
                 SUM(rbde.n_runs)::integer AS n_runs,
                 agg_status_counts(array_agg(rbde.status_counts)) AS status_counts,
@@ -2072,13 +2003,25 @@ Aggregates recall_by_definition_example across examples within each (split, exam
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split,
-            n_catchable_occurrences, critic_model, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_catchable_occurrences) AS recall_stats
+            n_recall_denominator, critic_model, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
+    op.execute("""
+        COMMENT ON VIEW recall_by_example IS
+        'Recall aggregated by example (across all definitions). Shows per-example difficulty.
+Groups by (snapshot, example_kind, files_hash, split, model).
+
+RLS: Inherits from recall_by_definition_example. All splits visible for aggregate metrics.
+
+USEFUL FOR: Prompt optimizer, improvement agent.
+- Find hard examples (low recall across all definitions)
+- Prioritize which examples to focus improvement efforts on
+- Compare example difficulty across splits'
+    """)
+
     # pareto_frontier_by_example view
-    # Now uses recall_by_definition_example directly (already aggregated to definition+example level)
     op.execute("""
         CREATE VIEW pareto_frontier_by_example AS
         WITH best_scores AS (
@@ -2087,18 +2030,18 @@ Aggregates recall_by_definition_example across examples within each (split, exam
                 split,
                 example_kind,
                 files_hash,
-                n_catchable_occurrences,
+                n_recall_denominator,
                 critic_model,
                 max((credit_stats).mean) AS best_mean_credit
             FROM recall_by_definition_example
-            GROUP BY snapshot_slug, split, example_kind, files_hash, n_catchable_occurrences, critic_model
+            GROUP BY snapshot_slug, split, example_kind, files_hash, n_recall_denominator, critic_model
         )
         SELECT
             bs.snapshot_slug,
             bs.split,
             bs.example_kind,
             bs.files_hash,
-            bs.n_catchable_occurrences,
+            bs.n_recall_denominator,
             bs.critic_model,
             -- Single column: list of winning definitions with their stats
             jsonb_agg(
@@ -2126,7 +2069,7 @@ Aggregates recall_by_definition_example across examples within each (split, exam
             bs.best_mean_credit = (rbde.credit_stats).mean
         )
         GROUP BY bs.snapshot_slug, bs.split, bs.example_kind, bs.files_hash,
-            bs.n_catchable_occurrences, bs.critic_model
+            bs.n_recall_denominator, bs.critic_model
     """)
 
     op.execute("""
@@ -2134,14 +2077,34 @@ Aggregates recall_by_definition_example across examples within each (split, exam
         'Pareto frontier: definitions that achieved best mean credit on each example.
 
 For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-- n_catchable_occurrences: ground truth count (denominator for recall)
+- n_recall_denominator: ground truth count (denominator for recall)
 - winning_definitions: JSONB array of {definition_id, credit_stats} for all definitions at best score
 
 All entries in winning_definitions have the same credit_stats.mean (the best score).
-Consumer can compute recall as credit_stats.mean / n_catchable_occurrences.
+Consumer can compute recall as credit_stats.mean / n_recall_denominator.
 
 Built on recall_by_definition_example, which aggregates over runs.
 Failed critic runs (max_turns/context_length) count as 0.0 credit.'
+    """)
+
+    # validation_recall_by_definition view
+    op.execute("""
+        CREATE VIEW validation_recall_by_definition AS
+        SELECT
+            critic_definition_id,
+            critic_model,
+            compute_stats_with_ci(array_agg(
+                total_credit / NULLIF(n_occurrences, 0)
+            )) AS recall_stats
+        FROM get_validation_full_snapshot_aggregates()
+        GROUP BY critic_definition_id, critic_model
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW validation_recall_by_definition IS
+        'Aggregated validation recall by definition for whole-repo mode.
+Uses stats_with_ci for mean and 95% CI bounds. Only accessible to whole-repo mode agents.
+Access fields: (recall_stats).n, (recall_stats).mean, (recall_stats).lcb95, (recall_stats).ucb95'
     """)
 
     # event_costs view - per-event cost calculation
@@ -2233,7 +2196,7 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("GRANT SELECT ON TABLE examples TO agent_base")
     op.execute("GRANT SELECT ON TABLE file_sets TO agent_base")
     op.execute("GRANT SELECT ON TABLE file_set_members TO agent_base")
-    op.execute("GRANT SELECT ON TABLE occurrence_triggers TO agent_base")
+    op.execute("GRANT SELECT ON TABLE expected_recall_scopes TO agent_base")
     op.execute("GRANT SELECT ON TABLE snapshot_files TO agent_base")
     op.execute("GRANT SELECT ON TABLE true_positive_occurrences TO agent_base")
     op.execute("GRANT SELECT ON TABLE false_positive_occurrences TO agent_base")
@@ -2245,7 +2208,6 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("GRANT SELECT ON TABLE recall_by_example TO agent_base")
     op.execute("GRANT SELECT ON TABLE events TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE events_id_seq TO agent_base")
-    # examples is now a VIEW (no sequence)
     op.execute("GRANT SELECT ON TABLE false_positives TO agent_base")
     op.execute("GRANT SELECT ON TABLE grading_credit_sums TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE grading_decisions_id_seq TO agent_base")
@@ -2254,54 +2216,43 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
     op.execute("GRANT SELECT ON TABLE occurrence_run_credits TO agent_base")
     op.execute("GRANT SELECT ON TABLE occurrence_statistics TO agent_base")
     op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
+    op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")
     op.execute("GRANT SELECT ON TABLE event_costs TO agent_base")
     op.execute("GRANT SELECT ON TABLE run_costs TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issue_occurrences TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE reported_issue_occurrences_id_seq TO agent_base")
     op.execute("GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE reported_issues TO agent_base")
-    op.execute("GRANT SELECT,INSERT,UPDATE ON TABLE unknown_assignments TO agent_base")
-    op.execute("GRANT SELECT,USAGE ON SEQUENCE unknown_assignments_id_seq TO agent_base")
-    op.execute("GRANT SELECT,INSERT,UPDATE ON TABLE unknown_clusters TO agent_base")
-    op.execute("GRANT SELECT,USAGE ON SEQUENCE unknown_clusters_id_seq TO agent_base")
 
     # =========================================================================
     # 11. RLS Policies
     # =========================================================================
 
     # Force RLS on tables
-    # NOTE: examples is now a VIEW - VIEWs don't support RLS directly
-    # (they inherit RLS from underlying tables they query)
     op.execute("ALTER TABLE snapshots FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positives FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positives FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE events FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues FORCE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issue_occurrences FORCE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE unknown_clusters FORCE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE unknown_assignments FORCE ROW LEVEL SECURITY")
 
     # Enable RLS
     op.execute("ALTER TABLE agent_definitions ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE agent_runs ENABLE ROW LEVEL SECURITY")
-    # examples is a VIEW - no RLS
     op.execute("ALTER TABLE snapshots ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positives ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positives ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positive_occurrences ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positive_occurrences ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE occurrence_triggers ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE expected_recall_scopes ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE events ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE grading_decisions ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issue_occurrences ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE unknown_clusters ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE unknown_assignments ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE file_sets ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE file_set_members ENABLE ROW LEVEL SECURITY")
 
     # Admin policies for postgres user
     op.execute("CREATE POLICY admin_full_access_events ON events TO postgres USING (true) WITH CHECK (true)")
-    # examples is a VIEW - no RLS policies
     op.execute(
         "CREATE POLICY admin_full_access_false_positives ON false_positives TO postgres USING (true) WITH CHECK (true)"
     )
@@ -2316,7 +2267,7 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         "CREATE POLICY admin_full_access_fp_occurrences ON false_positive_occurrences TO postgres USING (true) WITH CHECK (true)"
     )
     op.execute(
-        "CREATE POLICY admin_full_access_occ_triggers ON occurrence_triggers TO postgres USING (true) WITH CHECK (true)"
+        "CREATE POLICY admin_full_access_occ_triggers ON expected_recall_scopes TO postgres USING (true) WITH CHECK (true)"
     )
     op.execute("CREATE POLICY admin_full_access_file_sets ON file_sets TO postgres USING (true) WITH CHECK (true)")
     op.execute(
@@ -2329,7 +2280,7 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         "CREATE POLICY agent_definitions_insert ON agent_definitions FOR INSERT WITH CHECK (created_by_agent_run_id = current_agent_run_id())"
     )
 
-    # Agent runs policies
+    # Agent runs policies (clustering branch removed)
     op.execute("""
         CREATE POLICY agent_runs_agent_select ON agent_runs FOR SELECT USING (
             (current_agent_type() = 'prompt_optimizer'
@@ -2340,10 +2291,6 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
             OR (current_agent_type() = 'improvement'
                 AND (type_config->>'agent_type') IN ('critic', 'grader')
                 AND is_improvement_example_allowed(type_config->'example'->>'snapshot_slug', (type_config->'example'->>'kind')::example_kind_enum, (type_config->'example'->>'files_hash')))
-            OR (current_agent_type() = 'clustering'
-                AND (type_config->>'agent_type') IN ('critic', 'grader')
-                AND (((type_config->>'agent_type') = 'critic' AND type_config->'example'->>'snapshot_slug' = current_agent_type_config()->>'snapshot_slug')
-                     OR ((type_config->>'agent_type') = 'grader' AND get_graded_snapshot_slug(agent_run_id) = current_agent_type_config()->>'snapshot_slug')))
         )
     """)
     op.execute(
@@ -2353,8 +2300,7 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         "CREATE POLICY agent_runs_select_children ON agent_runs FOR SELECT USING (parent_agent_run_id = current_agent_run_id())"
     )
 
-    # file_sets policies - controls access to per-file examples
-    # Key constraint: Prompt optimizer in whole-repo mode must NOT see VALID file_sets (file paths)
+    # file_sets policies (clustering branch removed)
     op.execute("""
         CREATE POLICY file_sets_agent_select ON file_sets FOR SELECT USING (
             -- Prompt optimizer in whole-repo mode: only TRAIN file_sets
@@ -2376,12 +2322,10 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
             -- Improvement: allowed snapshots only
             OR (current_agent_type() = 'improvement'
                 AND is_improvement_snapshot_allowed(snapshot_slug))
-            -- Clustering: all file_sets
-            OR (current_agent_type() = 'clustering')
         )
     """)
 
-    # file_set_members policies - follows file_sets access (same snapshot_slug/files_hash FK)
+    # file_set_members policies (clustering branch removed)
     op.execute("""
         CREATE POLICY file_set_members_agent_select ON file_set_members FOR SELECT USING (
             -- Prompt optimizer in whole-repo mode: only TRAIN file_set_members
@@ -2393,23 +2337,17 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
                 AND (current_agent_type_config()->>'target_metric' IS NULL
                      OR current_agent_type_config()->>'target_metric' != 'whole_repo')
                 AND is_train_or_valid_snapshot(snapshot_slug))
-            -- Critic: only their example's file_set_members
+            -- Critic: own example's file_set_members
             OR (current_agent_type() = 'critic'
-                AND snapshot_slug = current_agent_type_config()->'example'->>'snapshot_slug'
-                AND files_hash = current_agent_type_config()->'example'->>'files_hash')
-            -- Grader: graded example's file_set_members
+                AND snapshot_slug = current_agent_type_config()->'example'->>'snapshot_slug')
+            -- Grader: graded snapshot's file_set_members
             OR (current_agent_type() = 'grader'
                 AND snapshot_slug = get_graded_snapshot_slug(current_agent_run_id()))
-            -- Improvement: allowed snapshots only
+            -- Improvement: allowed snapshots' file_set_members
             OR (current_agent_type() = 'improvement'
                 AND is_improvement_snapshot_allowed(snapshot_slug))
-            -- Clustering: all file_set_members
-            OR (current_agent_type() = 'clustering')
         )
     """)
-
-    # Examples VIEW - inherits RLS from underlying tables (snapshots, file_sets)
-    # Whole-snapshot examples always visible (from snapshots), file_set examples filtered via file_sets RLS
 
     # Snapshots - any agent with a valid run can see all snapshots metadata
     op.execute(
@@ -2438,17 +2376,16 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
 
     # Occurrence triggers - uses can_access_snapshot() helper
     op.execute(
-        "CREATE POLICY occ_triggers_agent_select ON occurrence_triggers FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+        "CREATE POLICY occ_triggers_agent_select ON expected_recall_scopes FOR SELECT USING (can_access_snapshot(snapshot_slug))"
     )
 
-    # Events policies
+    # Events policies (clustering branch removed)
     op.execute("""
         CREATE POLICY events_agent_select ON events FOR SELECT USING (
             (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
             OR (agent_run_id = current_agent_run_id())
             OR (current_agent_type() = 'improvement'
                 AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
-            OR (current_agent_type() = 'clustering')
         )
     """)
 
@@ -2511,167 +2448,12 @@ Failed critic runs (max_turns/context_length) count as 0.0 credit.'
         "CREATE POLICY reported_issue_occurrences_agent_delete ON reported_issue_occurrences FOR DELETE USING (is_own_run_as(agent_run_id, 'critic'))"
     )
 
-    # Unknown clusters policies (clustering agent)
-    op.execute(
-        "CREATE POLICY unknown_clusters_agent_select ON unknown_clusters FOR SELECT USING (agent_run_id = current_agent_run_id())"
-    )
-    op.execute(
-        "CREATE POLICY unknown_clusters_agent_insert ON unknown_clusters FOR INSERT WITH CHECK (agent_run_id = current_agent_run_id())"
-    )
-    op.execute(
-        "CREATE POLICY unknown_clusters_agent_update ON unknown_clusters FOR UPDATE USING (agent_run_id = current_agent_run_id())"
-    )
-
-    # Unknown assignments policies (clustering agent)
-    op.execute(
-        "CREATE POLICY unknown_assignments_agent_select ON unknown_assignments FOR SELECT USING (agent_run_id = current_agent_run_id())"
-    )
-    op.execute(
-        "CREATE POLICY unknown_assignments_agent_insert ON unknown_assignments FOR INSERT WITH CHECK (agent_run_id = current_agent_run_id())"
-    )
-    op.execute(
-        "CREATE POLICY unknown_assignments_agent_update ON unknown_assignments FOR UPDATE USING (agent_run_id = current_agent_run_id())"
-    )
-
     # Initialize salt singleton
     op.execute("INSERT INTO agent_role_salt (id) VALUES (1) ON CONFLICT DO NOTHING")
 
 
 def downgrade() -> None:
     """Drop all schema objects."""
-    # Drop policies
-    policies = [
-        ("unknown_assignments_agent_update", "unknown_assignments"),
-        ("unknown_assignments_agent_insert", "unknown_assignments"),
-        ("unknown_assignments_agent_select", "unknown_assignments"),
-        ("unknown_clusters_agent_update", "unknown_clusters"),
-        ("unknown_clusters_agent_insert", "unknown_clusters"),
-        ("unknown_clusters_agent_select", "unknown_clusters"),
-        ("reported_issue_occurrences_agent_delete", "reported_issue_occurrences"),
-        ("reported_issue_occurrences_agent_update", "reported_issue_occurrences"),
-        ("reported_issue_occurrences_agent_insert", "reported_issue_occurrences"),
-        ("reported_issue_occurrences_agent_select", "reported_issue_occurrences"),
-        ("reported_issues_agent_delete", "reported_issues"),
-        ("reported_issues_agent_update", "reported_issues"),
-        ("reported_issues_agent_insert", "reported_issues"),
-        ("reported_issues_agent_select", "reported_issues"),
-        ("grading_decisions_agent_delete", "grading_decisions"),
-        ("grading_decisions_agent_update", "grading_decisions"),
-        ("grading_decisions_agent_insert", "grading_decisions"),
-        ("grading_decisions_agent_select", "grading_decisions"),
-        ("events_agent_select", "events"),
-        ("false_positives_agent_select", "false_positives"),
-        ("true_positives_agent_select", "true_positives"),
-        ("snapshots_agent_select", "snapshots"),
-        ("clustering_user_events_policy", "events"),
-        ("clustering_user_false_positives_policy", "false_positives"),
-        ("clustering_user_true_positives_policy", "true_positives"),
-        ("clustering_user_snapshots_policy", "snapshots"),
-        ("examples_agent_select", "examples"),
-        ("agent_runs_select_children", "agent_runs"),
-        ("agent_runs_select_own", "agent_runs"),
-        ("agent_runs_agent_select", "agent_runs"),
-        ("agent_definitions_insert", "agent_definitions"),
-        ("agent_definitions_select", "agent_definitions"),
-        ("admin_full_access_true_positives", "true_positives"),
-        ("admin_full_access_snapshots", "snapshots"),
-        ("admin_full_access_false_positives", "false_positives"),
-        ("admin_full_access_examples", "examples"),
-        ("admin_full_access_events", "events"),
-        ("admin_full_access_file_sets", "file_sets"),
-        ("admin_full_access_file_set_members", "file_set_members"),
-        ("file_sets_agent_select", "file_sets"),
-        ("file_set_members_agent_select", "file_set_members"),
-    ]
-    for policy, table in policies:
-        op.execute(f"DROP POLICY IF EXISTS {policy} ON {table}")
-
-    # Drop role
-    op.execute("REVOKE ALL ON ALL TABLES IN SCHEMA public FROM agent_base")
-    op.execute("REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM agent_base")
-    op.execute("REVOKE USAGE ON SCHEMA public FROM agent_base")
-    op.execute("DROP ROLE IF EXISTS agent_base")
-
-    # Drop views
-    op.execute("DROP VIEW IF EXISTS run_costs CASCADE")
-    op.execute("DROP VIEW IF EXISTS event_costs CASCADE")
-    op.execute("DROP VIEW IF EXISTS pareto_frontier_by_example CASCADE")
-    op.execute("DROP VIEW IF EXISTS recall_by_example CASCADE")
-    op.execute("DROP VIEW IF EXISTS recall_by_definition_split_kind CASCADE")
-    op.execute("DROP VIEW IF EXISTS recall_by_definition_example CASCADE")
-    op.execute("DROP VIEW IF EXISTS recall_by_run CASCADE")
-    op.execute("DROP VIEW IF EXISTS occurrence_statistics CASCADE")
-    op.execute("DROP VIEW IF EXISTS occurrence_run_credits CASCADE")
-    op.execute("DROP VIEW IF EXISTS occurrence_credits CASCADE")
-    op.execute("DROP VIEW IF EXISTS examples CASCADE")  # Now a VIEW, not a table
-    op.execute("DROP VIEW IF EXISTS grading_credit_sums CASCADE")
-
-    # Drop triggers
-    op.execute("DROP TRIGGER IF EXISTS enforce_credit_sum ON grading_decisions")
-    op.execute("DROP TRIGGER IF EXISTS check_input_issue_exists_trigger ON grading_decisions")
-    op.execute("DROP TRIGGER IF EXISTS check_grading_target_exists_trigger ON grading_decisions")
-    op.execute("DROP TRIGGER IF EXISTS check_unknown_mapping_exists_trigger ON unknown_assignments")
-
-    # Drop tables
-    op.drop_table("unknown_assignments")
-    op.drop_table("unknown_clusters")
-    op.drop_table("events")
-    op.drop_table("grading_decisions")
-    op.drop_table("reported_issue_occurrences")
-    op.drop_table("reported_issues")
-    op.drop_table("occurrence_triggers")
-    op.drop_table("file_set_members")
-    op.drop_table("file_sets")
-    op.drop_table("false_positives")
-    op.drop_table("true_positives")
-    op.drop_table("snapshot_files")
-    op.execute("ALTER TABLE agent_definitions DROP CONSTRAINT IF EXISTS fk_agent_definitions_created_by")
-    op.drop_table("agent_runs")
-    op.drop_table("agent_definitions")
-    op.drop_table("agent_role_salt")
-    op.drop_table("model_metadata")
-    op.drop_table("snapshots")
-
-    # Drop functions
-    functions = [
-        "get_validation_full_snapshot_aggregates()",
-        "validate_input_issue_exists(uuid, text)",
-        "check_input_issue_exists()",
-        "check_grading_target_exists()",
-        "check_unknown_mapping_exists()",
-        "check_credit_sum()",
-        "is_fp_relevant_for_scope(text, text, example_kind_enum, text)",
-        "is_tp_catchable_from_scope(text, text, example_kind_enum, text)",
-        "get_agent_run_ids_for_train_snapshots()",
-        "get_improvement_allowed_agent_run_ids()",
-        "is_improvement_snapshot_allowed(text)",
-        "is_improvement_example_allowed(text, example_kind_enum, text)",
-        "is_train_agent_run(uuid)",
-        "is_train_or_valid_snapshot(text)",
-        "is_valid_snapshot(text)",
-        "is_train_snapshot(text)",
-        "create_agent_role(uuid)",
-        "derive_agent_password(uuid)",
-        "get_graded_snapshot_slug(uuid)",
-        "current_graded_agent_run_id()",
-        "get_graded_agent_run_id(uuid)",
-        "current_agent_type()",
-        "current_agent_type_config()",
-        "get_agent_type_config(uuid)",
-        "current_agent_run_id()",
-        "compute_stats_with_ci(double precision[])",
-        "scale_stats(stats_with_ci, double precision)",
-        "agg_status_counts(agent_run_status_enum[])",
-        "agg_status_counts(jsonb[])",
-    ]
-    for func in functions:
-        op.execute(f"DROP FUNCTION IF EXISTS {func} CASCADE")
-
-    # Drop types
-    op.execute("DROP TYPE IF EXISTS stats_with_ci CASCADE")
-    op.execute("DROP TYPE IF EXISTS split_enum CASCADE")
-    op.execute("DROP TYPE IF EXISTS agent_type_enum CASCADE")
-    op.execute("DROP TYPE IF EXISTS agent_run_status_enum CASCADE")
-
-    # Drop extensions
-    op.execute("DROP EXTENSION IF EXISTS pgcrypto CASCADE")
+    # This is a fresh schema - downgrade just drops everything
+    op.execute("DROP SCHEMA public CASCADE")
+    op.execute("CREATE SCHEMA public")

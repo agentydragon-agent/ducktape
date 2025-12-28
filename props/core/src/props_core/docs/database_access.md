@@ -9,7 +9,7 @@ Init scripts typically fetch snapshots using `props snapshot fetch <slug>`, plac
 Example:
 ```bash
 ls /snapshots/ducktape/2025-11-26-00/    # List files in a snapshot
-cat /snapshots/test-fixtures/test-trivial/add.py   # Read a file
+cat /snapshots/test-fixtures/train1/add.py   # Read a file
 ```
 
 Check your init output for which snapshots were fetched and their paths.
@@ -76,14 +76,14 @@ Run `\d+ table_name` before writing queries to understand the schema.
 
 | Table | SELECT | INSERT | UPDATE |
 |-------|--------|--------|--------|
-| grading_decisions | Own run | Own run | Own run |
+| grading_edges | Own run | Own run | Own run |
 | reported_issues | Graded critic run | - | - |
 | reported_issue_occurrences | Graded critic run | - | - |
 | true_positives | Graded snapshot | - | - |
 | true_positive_occurrences | Graded snapshot | - | - |
 | false_positives | Graded snapshot | - | - |
 | false_positive_occurrences | Graded snapshot | - | - |
-| occurrence_triggers | Graded snapshot | - | - |
+| expected_recall_scopes | Graded snapshot | - | - |
 
 **Note:** Graders see ground truth for the snapshot being graded only.
 
@@ -96,7 +96,7 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | true_positive_occurrences | TRAIN split | - | - |
 | false_positives | TRAIN split | - | - |
 | false_positive_occurrences | TRAIN split | - | - |
-| occurrence_triggers | TRAIN split | - | - |
+| expected_recall_scopes | TRAIN split | - | - |
 | critic_runs | TRAIN split | - | - |
 | grader_runs | TRAIN split | - | - |
 | recall_by_definition_split_kind | All splits (view) | - | - |

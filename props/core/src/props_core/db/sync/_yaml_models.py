@@ -36,28 +36,29 @@ class YAMLOccurrence(BaseModel):
         description="File paths to line specifications (normalized to list of [start, end] ranges)"
     )
     note: str | None = Field(default=None, description="Occurrence-specific explanation")
-    expect_caught_from: list[list[str]] | None = Field(
-        default=None, description="Minimal file sets for TP detection (TPs only)"
+    critic_scopes_expected_to_recall: list[list[str]] | None = Field(
+        default=None, description="Critic scope file sets where this counts toward recall (TPs only)"
     )
     relevant_files: list[str] | None = Field(default=None, description="Files making this FP relevant (FPs only)")
-    only_matchable_from_files: list[str] | None = Field(
+    graders_match_only_if_reported_on: list[str] | None = Field(
         default=None,
         description=(
             "GRADING OPTIMIZATION: Restricts which critique outputs can match this occurrence. "
             "If set, a critique reporting issues only in files OUTSIDE this set will be skipped "
             "during matching (assumed non-match without semantic comparison). "
             "NULL = allow matching from any file (conservative default). "
-            "Non-empty = skip matching if critique's files don't overlap. "
-            "Independent of expect_caught_from (detection source ≠ valid reporting targets)."
+            "Non-empty = skip matching if critique's files don't overlap."
         ),
     )
 
-    @field_validator("only_matchable_from_files", mode="before")
+    model_config = ConfigDict(extra="forbid")
+
+    @field_validator("graders_match_only_if_reported_on", mode="before")
     @classmethod
-    def validate_only_matchable_from_files(cls, v: list[str] | None) -> list[str] | None:
+    def validate_graders_match_only_if_reported_on(cls, v: list[str] | None) -> list[str] | None:
         """Reject empty list - must be null or non-empty."""
         if v is not None and len(v) == 0:
-            raise ValueError("only_matchable_from_files must be null or non-empty (got empty list)")
+            raise ValueError("graders_match_only_if_reported_on must be null or non-empty (got empty list)")
         return v
 
     @field_validator("files", mode="before")
@@ -122,16 +123,20 @@ class YAMLOccurrence(BaseModel):
 
     def to_tp_occurrence(self) -> TruePositiveOccurrence:
         """Expand to canonical TruePositiveOccurrence."""
-        if self.expect_caught_from is None:
-            raise ValueError("expect_caught_from required for TP occurrence (should be auto-inferred by validator)")
+        if self.critic_scopes_expected_to_recall is None:
+            raise ValueError(
+                "critic_scopes_expected_to_recall required for TP occurrence (should be auto-inferred by validator)"
+            )
 
         return TruePositiveOccurrence(
             occurrence_id=self.occurrence_id,
             files=self._build_files_dict(),
             note=self.note,
-            expect_caught_from={frozenset(Path(p) for p in trigger_set) for trigger_set in self.expect_caught_from},
-            only_matchable_from_files={Path(p) for p in self.only_matchable_from_files}
-            if self.only_matchable_from_files
+            critic_scopes_expected_to_recall={
+                frozenset(Path(p) for p in trigger_set) for trigger_set in self.critic_scopes_expected_to_recall
+            },
+            graders_match_only_if_reported_on={Path(p) for p in self.graders_match_only_if_reported_on}
+            if self.graders_match_only_if_reported_on
             else None,
         )
 
@@ -145,12 +150,10 @@ class YAMLOccurrence(BaseModel):
             files=self._build_files_dict(),
             note=self.note,
             relevant_files={Path(p) for p in self.relevant_files},
-            only_matchable_from_files={Path(p) for p in self.only_matchable_from_files}
-            if self.only_matchable_from_files
+            graders_match_only_if_reported_on={Path(p) for p in self.graders_match_only_if_reported_on}
+            if self.graders_match_only_if_reported_on
             else None,
         )
-
-    model_config = ConfigDict(extra="forbid")
 
 
 class YAMLIssue(BaseModel):
@@ -158,8 +161,8 @@ class YAMLIssue(BaseModel):
 
     Enforces business rules:
     - Multi-occurrence issues must have notes on all occurrences
-    - Single-file TPs can omit expect_caught_from (auto-inferred)
-    - Multi-file TPs must have explicit expect_caught_from
+    - Single-file TPs can omit critic_scopes_expected_to_recall (auto-inferred)
+    - Multi-file TPs must have explicit critic_scopes_expected_to_recall
     - FPs can omit relevant_files (auto-inferred from files keys)
     """
 
@@ -180,19 +183,19 @@ class YAMLIssue(BaseModel):
         return self
 
     @model_validator(mode="after")
-    def auto_infer_expect_caught_from(self) -> YAMLIssue:
-        """Auto-infer expect_caught_from for single-file TPs."""
+    def auto_infer_critic_scopes_expected_to_recall(self) -> YAMLIssue:
+        """Auto-infer critic_scopes_expected_to_recall for single-file TPs."""
         if self.should_flag:
             for occ in self.occurrences:
-                if occ.expect_caught_from is None:
+                if occ.critic_scopes_expected_to_recall is None:
                     files = list(occ.files.keys())
                     if len(files) == 1:
                         # Auto-infer: single file → [[that_file]]
-                        occ.expect_caught_from = [[files[0]]]
+                        occ.critic_scopes_expected_to_recall = [[files[0]]]
                     else:
                         raise ValueError(
                             f"Multi-file TP occurrence {occ.occurrence_id} requires "
-                            f"explicit expect_caught_from (found files: {files})"
+                            f"explicit critic_scopes_expected_to_recall (found files: {files})"
                         )
         return self
 

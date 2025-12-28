@@ -1,7 +1,10 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import { Toaster } from 'svelte-sonner';
   import RunTriggerModal from '$components/RunTriggerModal.svelte';
+  import { connected, startFeed } from '$lib/stores/runsFeed';
   import type { Split, ExampleKind } from '$lib/types';
   import type { Snippet } from 'svelte';
 
@@ -32,28 +35,61 @@
   // Expose modal functions to child routes
   import { setContext } from 'svelte';
   setContext('runModal', { open: handleOpenRunModal });
+
+  // Start WebSocket feed on mount
+  onMount(() => {
+    startFeed();
+  });
+
+  // Navigation items
+  const navItems = [
+    { href: '/', label: 'Overview' },
+    { href: '/runs', label: 'Runs' },
+    { href: '/snapshots', label: 'Ground Truth' },
+  ];
+
+  function isActive(href: string, pathname: string): boolean {
+    if (href === '/') return pathname === '/';
+    return pathname.startsWith(href);
+  }
 </script>
 
 <Toaster richColors position="top-right" duration={8000} />
 
-<div class="min-h-screen bg-gray-50 p-6">
-  <div class="flex justify-between items-center mb-4">
-    <h1 class="text-2xl font-bold flex-shrink-0">
-      <a href="/" class="hover:underline cursor-pointer">
-        Props Dashboard
-      </a>
-    </h1>
-    <nav class="flex gap-4">
-      <a
-        href="/snapshots"
-        class="text-blue-600 hover:text-blue-800 hover:underline"
-      >
-        Ground Truth
-      </a>
-    </nav>
-  </div>
+<div class="min-h-screen bg-gray-50">
+  <!-- Header -->
+  <header class="bg-white border-b border-gray-200 px-6 py-3">
+    <div class="flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-bold">
+          <a href="/" class="hover:text-blue-600">Props</a>
+        </h1>
+        {#if $connected}
+          <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">live</span>
+        {:else}
+          <span class="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded">reconnecting...</span>
+        {/if}
+      </div>
+      <nav class="flex gap-1">
+        {#each navItems as { href, label }}
+          <a
+            {href}
+            class="px-3 py-1.5 rounded text-sm font-medium transition-colors
+              {isActive(href, $page.url.pathname)
+                ? 'bg-blue-100 text-blue-700'
+                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
+          >
+            {label}
+          </a>
+        {/each}
+      </nav>
+    </div>
+  </header>
 
-  {@render children()}
+  <!-- Main content -->
+  <main class="p-6">
+    {@render children()}
+  </main>
 </div>
 
 <RunTriggerModal open={showRunModal} onClose={handleCloseRunModal} prefill={modalPrefill} />

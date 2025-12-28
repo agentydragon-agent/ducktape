@@ -1,30 +1,13 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
-  import { fetchJobs, type JobInfo } from '../lib/api/client';
-  import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
-  import JobIdLink from '../lib/JobIdLink.svelte';
+  import { jobs } from '$lib/stores/runsFeed';
+  import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
+  import JobIdLink from '$lib/JobIdLink.svelte';
 
   interface Props {
     onNewRun: () => void;
   }
 
   let { onNewRun }: Props = $props();
-
-  let jobs: JobInfo[] = $state([]);
-
-  onMount(() => {
-    pollJobs();
-  });
-
-  async function pollJobs() {
-    try {
-      const result = await fetchJobs();
-      jobs = result.jobs;
-    } catch (e) {
-      console.warn('Jobs poll failed:', e instanceof Error ? e.message : String(e));
-    }
-    setTimeout(pollJobs, 2000);
-  }
 </script>
 
 <div class="bg-white rounded-lg shadow p-4 mb-4">
@@ -39,9 +22,9 @@
     </button>
   </div>
 
-  {#if jobs.length > 0}
+  {#if $jobs.length > 0}
     <div class="space-y-2">
-      {#each jobs as job}
+      {#each $jobs as job}
         <div class="text-xs bg-gray-50 p-2 rounded">
           <div class="flex gap-4 items-center">
             <JobIdLink id={job.job_id} />

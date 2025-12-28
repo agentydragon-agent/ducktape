@@ -39,7 +39,7 @@ class Example(Base):
 
     See docs/training_strategy.md for details on example generation.
 
-    n_catchable_occurrences: Computed directly from ground truth (true_positives) using
+    n_recall_denominator: Computed directly from ground truth (true_positives) using
     is_tp_catchable_from_scope() in the VIEW definition. This allows correct recall computation
     even when all critic runs fail (0/N) vs when no runs exist (NULL).
     """
@@ -65,7 +65,7 @@ class Example(Base):
     )
 
     # Catchable occurrences computed from ground truth
-    n_catchable_occurrences: Mapped[int] = mapped_column(
+    n_recall_denominator: Mapped[int] = mapped_column(
         Integer, nullable=False, comment="Number of catchable TP occurrences for this example (from ground truth)"
     )
 

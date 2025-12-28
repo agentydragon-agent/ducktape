@@ -20,7 +20,7 @@ from uuid import UUID
 
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
-from props_core.db.models import AgentRun, AgentRunStatus, GradingDecision
+from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props_core.db.session import get_session
 from props_core.models.examples import ExampleKind
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
@@ -207,7 +207,7 @@ async def test_three_agent_workflow_with_grader_data_access(
     3. Prompt optimizer can invoke run_grader
     4. Grader agent can READ the critic's reported_issues (RLS permission)
     5. Grader agent can READ ground truth (true_positives, false_positives)
-    6. Grader agent can WRITE grading_decisions
+    6. Grader agent can WRITE grading_edges
     7. Grader agent submits via MCP
 
     The key assertion is that the grader can actually read the critic's data.
@@ -302,13 +302,13 @@ async def test_three_agent_workflow_with_grader_data_access(
             assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
             assert grader_run.grader_config().graded_agent_run_id == critic_run_id
 
-            # Verify grading decision was written
-            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == grader_run_id).all()
-            assert len(decisions) == 1, f"Expected 1 decision, got {len(decisions)}"
-            decision = decisions[0]
-            assert decision.input_issue_id == "test-issue-001"
-            assert decision.target_tp_id is None  # no-match decision has NULL target_tp_id
-            assert decision.target_fp_id is None  # no-match decision has NULL target_fp_id
+            # Verify grading edge was written
+            edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == grader_run_id).all()
+            assert len(edges) == 1, f"Expected 1 edge, got {len(edges)}"
+            edge = edges[0]
+            assert edge.critique_issue_id == "test-issue-001"
+            assert edge.tp_id is None  # no-match edge has NULL tp_id
+            assert edge.fp_id is None  # no-match edge has NULL fp_id
 
     except (RuntimeError, AssertionError):
         # Print captured requests for debugging
@@ -342,7 +342,7 @@ async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, tes
     - Recall value is correct: 76% = average of 80% (first run) and 72% (second run)
 
     Expected recall calculation:
-    - test_train_example_with_runs uses test-fixtures/test-trivial (4 TPs, WHOLE_SNAPSHOT)
+    - test_train_example_with_runs uses test-fixtures/train1 (4 TPs, WHOLE_SNAPSHOT)
     - Creates 2 grader runs:
       - Run 1: found_credit=0.8 per occurrence → 80% recall
       - Run 2: found_credit=0.8*0.9=0.72 per occurrence → 72% recall
@@ -350,7 +350,7 @@ async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, tes
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.n_catchable_occurrences == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.n_recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
 
     # Steps: run leaderboard and check output contains the expected 76% recall
     steps = [
@@ -378,7 +378,7 @@ async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, 
     - Recall value is correct: 76% = average of 80% (first run) and 72% (second run)
 
     Expected recall calculation:
-    - test_train_example_with_runs uses test-fixtures/test-trivial (4 TPs, WHOLE_SNAPSHOT)
+    - test_train_example_with_runs uses test-fixtures/train1 (4 TPs, WHOLE_SNAPSHOT)
     - Creates 2 grader runs:
       - Run 1: found_credit=0.8 per occurrence → 80% recall
       - Run 2: found_credit=0.8*0.9=0.72 per occurrence → 72% recall
@@ -386,7 +386,7 @@ async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, 
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.n_catchable_occurrences == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.n_recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
 
     steps = [
         DockerExecCall(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),

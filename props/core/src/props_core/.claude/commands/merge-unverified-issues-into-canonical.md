@@ -42,7 +42,7 @@ For each gathered issue:
    * Set `should_flag: true`.
    * Precisely localize with file paths and line ranges.
    * Write the rationale preserving the important semantics of the user's description.
-   * For multi-file issues: specify `expect_caught_from` (required).
+   * For multi-file issues: specify `critic_scopes_expected_to_recall` (required).
 
    If it's a canonical negative (false positive):
    * Create as `should_flag: false` with clear rationale and localized anchors.

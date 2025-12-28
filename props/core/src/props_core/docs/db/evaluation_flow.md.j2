@@ -9,7 +9,7 @@ Critic Run                    Grader Run                 Metrics
 ───────────                   ──────────                 ───────
 Source code ─┐
              ├─> Critique ────> Match to TPs/FPs ────> Recall
-System prompt┘   (reported_issues)  (grading_decisions)    (aggregate views)
+System prompt┘   (reported_issues)  (grading_edges)        (aggregate views)
 ```
 
 {{ describe_relation("snapshots") }}
@@ -32,15 +32,23 @@ System prompt┘   (reported_issues)  (grading_decisions)    (aggregate views)
 ## 2. Grader Run
 
 **Input:**
-- Critique from critic (query `reported_issues`)
-- Ground truth from snapshot (query `true_positives`, `false_positives`)
+- Critique from critic (query `reported_issues`, `reported_issue_occurrences`)
+- Ground truth from snapshot (query `true_positives`, `true_positive_occurrences`, `false_positives`, `false_positive_occurrences`)
 
-**Process:**
-1. Match each reported issue to TPs (assign credit)
-2. Check for FPs (flag incorrect complaints)
-3. Mark unmatched issues as unknowns
+**Task:** Fill in a bipartite graph connecting critique issues to GT occurrences.
 
-**Output:** `grading_decisions` table populated, `grader_run.output` contains aggregated results.
+Every (critique_issue, matchable_gt_occurrence) pair needs an edge with credit:
+- **1.0** = perfect match (issue accurately describes occurrence)
+- **0.0** = no match (issue doesn't describe occurrence)
+- **Partial** = issue partially captures the occurrence
+
+**Matchability:** An occurrence is matchable from a critique issue if:
+- No file restriction is specified (`match_filter_hash IS NULL`), OR
+- The critique touches files that overlap with the occurrence's file scope
+
+Use `props grader-agent list pending` to see missing edges. Grading is complete when no pending edges remain.
+
+**Output:** `grading_edges` table populated with edges between issues and GT occurrences.
 
 ## 3. Metrics Computation
 

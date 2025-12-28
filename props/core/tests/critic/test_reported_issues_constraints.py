@@ -28,8 +28,8 @@ def test_critic_run(synced_test_db):
     """Create a test critic run using synced fixtures."""
     with get_session() as session:
         # Query an existing example from test fixtures (synced_test_db provides agent definitions)
-        example = session.query(Example).filter_by(snapshot_slug=SnapshotSlug("test-fixtures/test-trivial")).first()
-        assert example is not None, "Expected test-fixtures/test-trivial example to exist"
+        example = session.query(Example).filter_by(snapshot_slug=SnapshotSlug("test-fixtures/train1")).first()
+        assert example is not None, "Expected test-fixtures/train1 example to exist"
 
         # Create critic run
         critic_run = make_critic_run(example=example)

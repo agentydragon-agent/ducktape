@@ -8,7 +8,7 @@
 
 1. **Reads actual code for every cluster** using `props snapshot exec`
 2. **Identifies exact line ranges** for each issue occurrence
-3. **Proposes expect_caught_from** based on detection logic (following `docs/authoring.md` section 5)
+3. **Proposes critic_scopes_expected_to_recall** based on detection logic (following `docs/authoring.md` section 5)
 4. **Prepares detailed summaries** including:
    - Synthesized rationale (combining all instances)
    - Exact file paths and line ranges
@@ -112,10 +112,10 @@ Issue file: specimens/{snapshot}/issues/{enriched.proposed_slug}.yaml
 Rationale:
   {enriched.final_rationale}
 
-expect_caught_from:
-  {enriched.proposed_expect_caught_from}
+critic_scopes_expected_to_recall:
+  {enriched.proposed_critic_scopes_expected_to_recall}
 
-  Reasoning: {enriched.expect_caught_from_justification}
+  Reasoning: {enriched.critic_scopes_expected_to_recall_justification}
 
 Structure: {enriched.structure_type} (single vs multi-occurrence)
 
@@ -153,7 +153,7 @@ What should we do with this cluster?
   ```
 
 **If "edit":**
-- Ask user what to change (rationale, expect_caught_from, file path, etc.)
+- Ask user what to change (rationale, critic_scopes_expected_to_recall, file path, etc.)
 - Apply corrections
 - Create issue file with corrections
 - Log to `verification_log.jsonl` with `"action": "accepted_with_edits"` and `"user_corrections": "..."`
@@ -196,7 +196,7 @@ What should we do with this cluster?
 **Read `docs/authoring.md` sections 3-4 for:**
 - YAML issue structure
 - Range format specifications
-- Rules for `expect_caught_from` and `relevant_files`
+- Rules for `critic_scopes_expected_to_recall` and `relevant_files`
 - False positive rationale format (acknowledge what looks problematic, explain why acceptable)
 
 ## Tips for Efficient Verification

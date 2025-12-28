@@ -61,6 +61,20 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 
+def _create_grader_client():
+    """Create model client for grader daemons if configured.
+
+    Returns None if PROPS_GRADER_MODEL is not set.
+    """
+    model = os.environ.get("PROPS_GRADER_MODEL")
+    if not model:
+        return None
+
+    from openai_utils.model import OpenAIChatCompletionModel
+
+    return OpenAIChatCompletionModel(model=model)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Application lifespan handler."""
@@ -76,11 +90,26 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         docker_client=docker_client, db_config=db_config, workspace_manager=workspace_manager
     )
 
+    # Optionally start grader daemons if model configured
+    daemon_manager = None
+    grader_client = _create_grader_client()
+    if grader_client:
+        from props_core.grader.daemon_manager import DaemonManager
+
+        daemon_manager = DaemonManager(registry=app.state.registry, client=grader_client)
+        await daemon_manager.start_all()
+        app.state.daemon_manager = daemon_manager
+        logger.info(f"Grader daemons started (model: {grader_client.model})")
+    else:
+        logger.info("Grader daemons disabled (set PROPS_GRADER_MODEL to enable)")
+
     logger.info("Props backend ready")
     yield
 
     # Cleanup
     logger.info("Shutting down props backend...")
+    if daemon_manager:
+        await daemon_manager.shutdown()
     await app.state.registry.close()
     logger.info("Props backend stopped")
 

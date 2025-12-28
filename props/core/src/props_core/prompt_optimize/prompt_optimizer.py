@@ -30,7 +30,7 @@ from props_core.critic.exceptions import CriticDidNotSubmitError, CriticExecutio
 from props_core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
-from props_core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingDecision, Snapshot
+from props_core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, Snapshot
 from props_core.db.session import get_session
 from props_core.display import short_uuid
 from props_core.grader.exceptions import GraderDidNotSubmitError
@@ -447,21 +447,21 @@ class PromptEvalServer(EnhancedFastMCP):
                 # Get example kind from the example itself
                 scope_kind = example.example_kind
 
-                # Compute immediate feedback from this grader run (direct query to grading_decisions)
+                # Compute immediate feedback from this grader run (direct query to grading_edges)
                 # Pattern 1: Total credit (recall numerator)
                 total_credit = (
-                    session.query(func.sum(GradingDecision.credit))
-                    .filter_by(agent_run_id=grader_run_id)
-                    .filter(GradingDecision.target_tp_id.isnot(None))  # Only TP matches
+                    session.query(func.sum(GradingEdge.credit))
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingEdge.tp_id.isnot(None))  # Only TP matches
                     .scalar()
                     or 0.0
                 )
 
                 # Pattern 2: Occurrence count (recall denominator)
                 max_credit = (
-                    session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                    .filter_by(agent_run_id=grader_run_id)
-                    .filter(GradingDecision.target_tp_id.isnot(None))
+                    session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingEdge.tp_id.isnot(None))
                     .distinct()
                     .count()
                 )

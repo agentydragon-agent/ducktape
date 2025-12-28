@@ -115,12 +115,10 @@ async def test_prompt_optimizer_can_see_all_snapshots_metadata(
     is not sensitive. All agents can see all snapshots. Actual data access
     control is enforced on sensitive tables (true_positives, agent_runs, etc.).
 
-    Uses test-fixtures/test-split-test (TEST split) from git fixtures.
+    Uses test-fixtures/test1 (TEST split) from git fixtures.
     """
     # Can see TEST split snapshots (metadata only, not sensitive)
-    test_snapshots = (
-        prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/test-split-test").all()
-    )
+    test_snapshots = prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/test1").all()
     assert len(test_snapshots) == 1, "prompt optimizer user CAN see all snapshots metadata"
     assert test_snapshots[0].split == "test"
 
@@ -137,7 +135,7 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(
 ):
     """Prompt optimizer users can see TRAIN split snapshots (RLS policy allows).
 
-    Uses test-fixtures/test-trivial (TRAIN split) from git fixtures.
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
 
     Setup (as admin_user):
     - Git fixture already has test-trivial snapshot
@@ -145,9 +143,7 @@ async def test_prompt_optimizer_can_see_train_split_snapshots(
     Verify (as prompt optimizer temp user):
     - Can query snapshots for train split
     """
-    train_snapshots = (
-        prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/test-trivial").all()
-    )
+    train_snapshots = prompt_optimizer_session.query(Snapshot).filter(Snapshot.slug == "test-fixtures/train1").all()
 
     assert len(train_snapshots) == 1, "prompt optimizer user should see train split snapshots via RLS"
     assert train_snapshots[0].split == "train"
@@ -158,7 +154,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
 ):
     """Prompt optimizer users CANNOT see valid split true positives (RLS policy blocks).
 
-    Uses test-fixtures/test-validation (VALID split) from git fixtures with synced TPs.
+    Uses test-fixtures/valid1 (VALID split) from git fixtures with synced TPs.
 
     Setup (as admin_user):
     - Git fixture already has test-validation snapshot with TPs
@@ -168,9 +164,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_true_positives(
     """
     # Should NOT see true positives for valid specimen
     valid_tps = (
-        prompt_optimizer_session.query(TruePositive)
-        .filter(TruePositive.snapshot_slug == "test-fixtures/test-validation")
-        .all()
+        prompt_optimizer_session.query(TruePositive).filter(TruePositive.snapshot_slug == "test-fixtures/valid1").all()
     )
     assert len(valid_tps) == 0, "prompt optimizer user should NOT see valid split true_positives via RLS"
 
@@ -180,7 +174,7 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
 ):
     """Prompt optimizer users can see TRAIN split false positives (RLS policy allows).
 
-    Uses test-fixtures/test-trivial (TRAIN split) from git fixtures.
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
     Note: test-trivial may not have FPs, but the test verifies RLS allows the query.
 
     Setup (as admin_user):
@@ -192,7 +186,7 @@ async def test_prompt_optimizer_can_see_train_split_false_positives(
     # Query should succeed (no RLS block), but may return empty if no FPs defined
     _ = (
         prompt_optimizer_session.query(FalsePositive)
-        .filter(FalsePositive.snapshot_slug == "test-fixtures/test-trivial")
+        .filter(FalsePositive.snapshot_slug == "test-fixtures/train1")
         .all()
     )
     # Just verify query succeeded (no exception from RLS block)
@@ -204,7 +198,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
 ):
     """Prompt optimizer users cannot see TEST split critic runs (RLS policy blocks).
 
-    Uses test-fixtures/test-split-test (TEST split) from git fixtures.
+    Uses test-fixtures/test1 (TEST split) from git fixtures.
 
     Setup (as admin_user):
     - Query existing test-split-test snapshot and example
@@ -216,7 +210,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     # Setup: Use admin_user to write test data
     with get_session() as session:
         # Query git fixture example (TEST split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-split-test").first()
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test1").first()
         assert example, "test-split-test fixture not found"
 
         # Create a critic run for the test specimen using fixture factory
@@ -227,7 +221,7 @@ async def test_prompt_optimizer_cannot_see_test_split_critic_runs(
     # Verify: Connect as prompt optimizer temp user and verify RLS blocks test split
     test_runs = (
         prompt_optimizer_session.query(AgentRun)
-        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/test-split-test")
+        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/test1")
         .all()
     )
 
@@ -239,7 +233,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
 ):
     """Prompt optimizer users can see TRAIN split critic runs (RLS policy allows).
 
-    Uses test-fixtures/test-trivial (TRAIN split) from git fixtures.
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
 
     Setup (as admin_user):
     - Query existing test-trivial snapshot and example
@@ -253,7 +247,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
 
     with get_session() as session:
         # Query git fixture example (TRAIN split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"
 
         # Create a critic run for the train specimen using fixture factory
@@ -265,7 +259,7 @@ async def test_prompt_optimizer_can_see_train_split_critic_runs(
     train_runs = prompt_optimizer_session.query(AgentRun).filter(AgentRun.agent_run_id == train_agent_run_id).all()
 
     assert len(train_runs) == 1, "prompt optimizer user should see train split critic_runs via RLS"
-    assert train_runs[0].critic_config().example.snapshot_slug == "test-fixtures/test-trivial"
+    assert train_runs[0].critic_config().example.snapshot_slug == "test-fixtures/train1"
 
 
 async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
@@ -276,14 +270,14 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
     This prevents overfitting - the optimizer cannot inspect validation run details,
     only aggregate metrics via SECURITY DEFINER functions.
 
-    Uses test-fixtures/test-validation (VALID split) from git fixtures.
+    Uses test-fixtures/valid1 (VALID split) from git fixtures.
     """
     valid_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
     with get_session() as session:
         # Query git fixture example (VALID split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-validation").first()
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
 
         # Create a critic run for the valid specimen
@@ -294,7 +288,7 @@ async def test_prompt_optimizer_cannot_see_valid_split_critic_runs(
     # Verify: Connect as prompt optimizer temp user and verify RLS blocks valid split
     valid_runs = (
         prompt_optimizer_session.query(AgentRun)
-        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/test-validation")
+        .filter(AgentRun.type_config["snapshot_slug"].astext == "test-fixtures/valid1")
         .all()
     )
 
@@ -309,14 +303,14 @@ async def test_prompt_optimizer_cannot_see_valid_split_events(
     This prevents learning from validation failures - the optimizer cannot inspect
     what tools the critic called or what outputs it received during validation runs.
 
-    Uses test-fixtures/test-validation (VALID split) from git fixtures.
+    Uses test-fixtures/valid1 (VALID split) from git fixtures.
     """
     valid_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
     with get_session() as session:
         # Query git fixture example (VALID split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-validation").first()
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/valid1").first()
         assert example, "test-validation fixture not found"
 
         # Create a critic run for the valid specimen
@@ -348,14 +342,14 @@ async def test_prompt_optimizer_can_see_train_split_events(
 
     The optimizer can inspect training run details to understand failures and improve prompts.
 
-    Uses test-fixtures/test-trivial (TRAIN split) from git fixtures.
+    Uses test-fixtures/train1 (TRAIN split) from git fixtures.
     """
     train_agent_run_id = uuid4()
 
     # Setup: Use admin_user to write test data
     with get_session() as session:
         # Query git fixture example (TRAIN split)
-        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/test-trivial").first()
+        example = session.query(Example).filter_by(snapshot_slug="test-fixtures/train1").first()
         assert example, "test-trivial fixture not found"
 
         # Create a critic run for the train specimen

@@ -37,7 +37,7 @@ from props_core.db.config import get_database_config
 from props_core.db.models import (
     AgentRun,
     AgentRunStatus,
-    GradingDecision,
+    GradingEdge,
     RecallByDefinitionSplitKind,
     ReportedIssue,
     Snapshot,
@@ -507,20 +507,20 @@ async def cmd_run_grader(
                 typer.echo(grader_run.completion_summary)
                 typer.echo("")
 
-            # Display recall metrics from grading_decisions
+            # Display recall metrics from grading_edges
             if grader_run.status == AgentRunStatus.COMPLETED:
                 # TODO: Deduplicate recall calculation into db/grading.py helper function
                 total_credit = (
-                    session.query(func.sum(GradingDecision.credit))
-                    .filter_by(agent_run_id=grader_run_id)
-                    .filter(GradingDecision.target_tp_id.isnot(None))
+                    session.query(func.sum(GradingEdge.credit))
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingEdge.tp_id.isnot(None))
                     .scalar()
                     or 0.0
                 )
                 n_occurrences = (
-                    session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-                    .filter_by(agent_run_id=grader_run_id)
-                    .filter(GradingDecision.target_tp_id.isnot(None))
+                    session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
+                    .filter_by(grader_run_id=grader_run_id)
+                    .filter(GradingEdge.tp_id.isnot(None))
                     .distinct()
                     .count()
                 )

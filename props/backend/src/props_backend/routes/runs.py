@@ -21,9 +21,9 @@ from props_core.db.models import (
     AgentRun,
     AgentRunStatus,
     Event,
+    ExpectedRecallScope,
     FileSetMember,
-    GradingDecision,
-    OccurrenceTrigger,
+    GradingEdge,
     Snapshot,
     TruePositive,
     TruePositiveOccurrenceORM,
@@ -144,10 +144,10 @@ class NoMatchTarget(BaseModel):
 GradingTarget = Annotated[TpTarget | FpTarget | NoMatchTarget, Field(discriminator="kind")]
 
 
-class GradingDecisionInfo(BaseModel):
-    """Individual grading decision for API response."""
+class GradingEdgeInfo(BaseModel):
+    """Individual grading edge for API response."""
 
-    input_issue_id: str
+    critique_issue_id: str
     target: GradingTarget
     rationale: str
 
@@ -159,7 +159,7 @@ class GradingSummary(BaseModel):
     fp_count: int
     unknown_count: int
     total_credit: float
-    n_catchable_occurrences: int  # Frontend computes recall: total_credit / n_catchable
+    n_recall_denominator: int  # Frontend computes recall: total_credit / n_catchable
 
 
 class MissedOccurrenceInfo(BaseModel):
@@ -188,7 +188,7 @@ class AgentRunDetail(BaseModel):
     child_runs: list[ChildRunInfo] = []  # Child runs spawned by this run
     grader_runs: list[GraderRunInfo] = []  # For critic runs: grader runs that graded this critic
     grading_summary: GradingSummary | None = None  # For critic runs: grading results
-    grading_decisions: list[GradingDecisionInfo] = []  # For grader runs: their output decisions
+    grading_edges: list[GradingEdgeInfo] = []  # For grader runs: their output edges
     missed_occurrences: list[MissedOccurrenceInfo] = []  # For critic runs: catchable TPs not found
 
 
@@ -404,20 +404,20 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
 # --- Helper functions ---
 
 
-def make_grading_target(d: GradingDecision) -> GradingTarget:
-    """Convert a GradingDecision to a GradingTarget union type."""
-    if d.target_tp_id is not None:
-        return TpTarget(tp_id=d.target_tp_id, occurrence_id=d.target_tp_occurrence_id or "", credit=d.credit)
-    if d.target_fp_id is not None:
-        return FpTarget(fp_id=d.target_fp_id, occurrence_id=d.target_fp_occurrence_id or "")
+def make_grading_target(d: GradingEdge) -> GradingTarget:
+    """Convert a GradingEdge to a GradingTarget union type."""
+    if d.tp_id is not None:
+        return TpTarget(tp_id=d.tp_id, occurrence_id=d.tp_occurrence_id or "", credit=d.credit)
+    if d.fp_id is not None:
+        return FpTarget(fp_id=d.fp_id, occurrence_id=d.fp_occurrence_id or "")
     return NoMatchTarget()
 
 
-def decisions_to_info(decisions: list[GradingDecision]) -> list[GradingDecisionInfo]:
-    """Convert GradingDecision ORM objects to API info objects."""
+def edges_to_info(edges: list[GradingEdge]) -> list[GradingEdgeInfo]:
+    """Convert GradingEdge ORM objects to API info objects."""
     return [
-        GradingDecisionInfo(input_issue_id=d.input_issue_id, target=make_grading_target(d), rationale=d.rationale)
-        for d in decisions
+        GradingEdgeInfo(critique_issue_id=d.critique_issue_id, target=make_grading_target(d), rationale=d.rationale)
+        for d in edges
     ]
 
 
@@ -659,7 +659,7 @@ async def _run_validation_batch(job: ValidationJob, registry: AgentRegistry) -> 
 # --- Run Detail Endpoints ---
 
 
-@router.get("/{run_id}")
+@router.get("/run/{run_id}")
 def get_run(run_id: UUID) -> AgentRunDetail:
     """Get details of a specific agent run."""
     with get_session() as session:
@@ -683,7 +683,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         resolved_files: list[str] | None = None
         grading_summary: GradingSummary | None = None
         grader_runs: list[GraderRunInfo] = []
-        grading_decisions: list[GradingDecisionInfo] = []
+        grading_edges: list[GradingEdgeInfo] = []
         missed_occurrences: list[MissedOccurrenceInfo] = []
 
         if run.type_config.agent_type == AgentType.CRITIC:
@@ -713,16 +713,14 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             ]
             grader_run_ids = [g.agent_run_id for g in grader_rows]
             if grader_run_ids:
-                # Aggregate grading decisions from all grader runs for this critic
-                decisions = (
-                    session.query(GradingDecision).filter(GradingDecision.agent_run_id.in_(grader_run_ids)).all()
-                )
-                tp_count = sum(1 for d in decisions if d.target_tp_id is not None)
-                fp_count = sum(1 for d in decisions if d.target_fp_id is not None)
-                unknown_count = sum(1 for d in decisions if d.target_tp_id is None and d.target_fp_id is None)
-                total_credit = sum(d.credit for d in decisions if d.target_tp_id is not None)
+                # Aggregate grading edges from all grader runs for this critic
+                edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id.in_(grader_run_ids)).all()
+                tp_count = sum(1 for d in edges if d.tp_id is not None)
+                fp_count = sum(1 for d in edges if d.fp_id is not None)
+                unknown_count = 0  # No "unknown" type in edges model - all edges are TP or FP
+                total_credit = sum(d.credit for d in edges if d.tp_id is not None)
 
-                # Get n_catchable_occurrences from example for recall calculation
+                # Get n_recall_denominator from example for recall calculation
                 example_row = (
                     session.query(Example)
                     .filter(
@@ -732,32 +730,30 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                     )
                     .first()
                 )
-                n_catchable = example_row.n_catchable_occurrences if example_row else None
+                n_catchable = example_row.n_recall_denominator if example_row else None
 
                 grading_summary = GradingSummary(
                     tp_count=tp_count,
                     fp_count=fp_count,
                     unknown_count=unknown_count,
                     total_credit=total_credit,
-                    n_catchable_occurrences=n_catchable or 0,
+                    n_recall_denominator=n_catchable or 0,
                 )
-                grading_decisions = decisions_to_info(decisions)
+                grading_edges = edges_to_info(edges)
 
-                # Find missed occurrences: catchable TPs not matched in grading_decisions
-                matched_occ_keys = {
-                    (d.target_tp_id, d.target_tp_occurrence_id) for d in decisions if d.target_tp_id is not None
-                }
+                # Find missed occurrences: catchable TPs not matched in grading_edges
+                matched_occ_keys = {(d.tp_id, d.tp_occurrence_id) for d in edges if d.tp_id is not None}
 
                 # Query catchable occurrences based on example type
                 if example.kind == ExampleKind.FILE_SET:
-                    # For file_set: join through occurrence_triggers
+                    # For file_set: join through expected_recall_scopes
                     catchable_occs = (
                         session.query(TruePositiveOccurrenceORM, TruePositive.rationale)
                         .join(
-                            OccurrenceTrigger,
-                            (TruePositiveOccurrenceORM.snapshot_slug == OccurrenceTrigger.snapshot_slug)
-                            & (TruePositiveOccurrenceORM.tp_id == OccurrenceTrigger.tp_id)
-                            & (TruePositiveOccurrenceORM.occurrence_id == OccurrenceTrigger.occurrence_id),
+                            ExpectedRecallScope,
+                            (TruePositiveOccurrenceORM.snapshot_slug == ExpectedRecallScope.snapshot_slug)
+                            & (TruePositiveOccurrenceORM.tp_id == ExpectedRecallScope.tp_id)
+                            & (TruePositiveOccurrenceORM.occurrence_id == ExpectedRecallScope.occurrence_id),
                         )
                         .join(
                             TruePositive,
@@ -765,8 +761,8 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                             & (TruePositiveOccurrenceORM.tp_id == TruePositive.tp_id),
                         )
                         .filter(
-                            OccurrenceTrigger.snapshot_slug == example.snapshot_slug,
-                            OccurrenceTrigger.files_hash == example.files_hash,
+                            ExpectedRecallScope.snapshot_slug == example.snapshot_slug,
+                            ExpectedRecallScope.files_hash == example.files_hash,
                         )
                         .all()
                     )
@@ -795,9 +791,9 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                         )
 
         elif run.type_config.agent_type == AgentType.GRADER:
-            # For grader runs, get their own decisions
-            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == run_id).all()
-            grading_decisions = decisions_to_info(decisions)
+            # For grader runs, get their own edges
+            edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == run_id).all()
+            grading_edges = edges_to_info(edges)
 
         return AgentRunDetail(
             agent_run_id=run.agent_run_id,
@@ -814,12 +810,12 @@ def get_run(run_id: UUID) -> AgentRunDetail:
             child_runs=child_runs,
             grader_runs=grader_runs,
             grading_summary=grading_summary,
-            grading_decisions=grading_decisions,
+            grading_edges=grading_edges,
             missed_occurrences=missed_occurrences,
         )
 
 
-@router.get("/{run_id}/events")
+@router.get("/run/{run_id}/events")
 def get_run_events(run_id: UUID, offset: int = 0, limit: int = 100) -> EventsResponse:
     """Get events for a specific agent run.
 
@@ -862,7 +858,7 @@ def get_run_events(run_id: UUID, offset: int = 0, limit: int = 100) -> EventsRes
 _ws_connections: dict[UUID, set[WebSocket]] = {}
 
 
-@router.websocket("/{run_id}/stream")
+@router.websocket("/run/{run_id}/stream")
 async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
     """WebSocket endpoint for live event streaming.
 
@@ -940,3 +936,105 @@ async def stream_run_events(websocket: WebSocket, run_id: UUID) -> None:
             _ws_connections[run_id].discard(websocket)
             if not _ws_connections[run_id]:
                 del _ws_connections[run_id]
+
+
+# --- WebSocket for Runs Feed (list updates) ---
+
+
+class WsFeedRunsMessage(BaseModel):
+    """WebSocket message containing recent runs."""
+
+    type: Literal["runs"] = "runs"
+    runs: list[RunInfo]
+
+
+class WsFeedJobsMessage(BaseModel):
+    """WebSocket message containing active jobs."""
+
+    type: Literal["jobs"] = "jobs"
+    jobs: list[JobInfo]
+
+
+# Track active feed connections
+_feed_connections: set[WebSocket] = set()
+
+
+def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
+    """Convert AgentRun ORM to RunInfo."""
+    return RunInfo(
+        agent_run_id=run.agent_run_id,
+        definition_id=run.definition_id,
+        type_config=run.type_config,
+        model=run.model,
+        status=run.status,
+        created_at=run.created_at,
+        updated_at=run.updated_at,
+        split=split,
+    )
+
+
+def _get_recent_runs(session, limit: int = 20) -> list[RunInfo]:
+    """Get recent runs with split info."""
+    runs = session.query(AgentRun).order_by(AgentRun.updated_at.desc()).limit(limit).all()
+    result = []
+    for run in runs:
+        split = None
+        if run.type_config.get("agent_type") == "critic":
+            snapshot_slug = run.type_config.get("snapshot_slug")
+            if snapshot_slug:
+                snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+                if snapshot:
+                    split = snapshot.split
+        result.append(_build_run_info(run, split))
+    return result
+
+
+def _get_active_jobs() -> list[JobInfo]:
+    """Get active validation jobs from in-memory store."""
+    return [JobInfo.model_validate(job, from_attributes=True) for job in _jobs.values()]
+
+
+@router.websocket("/feed")
+async def runs_feed(websocket: WebSocket) -> None:
+    """WebSocket endpoint for live runs/jobs feed.
+
+    Sends initial state then streams updates when runs or jobs change.
+    """
+    await websocket.accept()
+    _feed_connections.add(websocket)
+
+    try:
+        # Send initial state
+        with get_session() as session:
+            runs = _get_recent_runs(session)
+            jobs = _get_active_jobs()
+            await websocket.send_json(WsFeedRunsMessage(runs=runs).model_dump(mode="json"))
+            await websocket.send_json(WsFeedJobsMessage(jobs=jobs).model_dump(mode="json"))
+            last_updated = max((r.updated_at for r in runs), default=datetime.min)
+            last_job_state = [(j.job_id, j.completed, j.failed) for j in jobs]
+
+        # Poll for changes
+        while True:
+            await asyncio.sleep(1.0)
+
+            with get_session() as session:
+                # Check for new/updated runs
+                current_runs = _get_recent_runs(session)
+                current_updated = max((r.updated_at for r in current_runs), default=datetime.min)
+
+                if current_updated > last_updated:
+                    await websocket.send_json(WsFeedRunsMessage(runs=current_runs).model_dump(mode="json"))
+                    last_updated = current_updated
+
+                # Check for job changes
+                current_jobs = _get_active_jobs()
+                current_job_state = [(j.job_id, j.completed, j.failed) for j in current_jobs]
+
+                if current_job_state != last_job_state:
+                    await websocket.send_json(WsFeedJobsMessage(jobs=current_jobs).model_dump(mode="json"))
+                    last_job_state = current_job_state
+
+    except WebSocketDisconnect:
+        logger.debug("Feed WebSocket disconnected")
+    finally:
+        _feed_connections.discard(websocket)

@@ -10,24 +10,24 @@ Never create synthetic ORM models (Snapshot, TruePositive, FalsePositive, Exampl
 
 Located in `fixtures/specimens/`:
 
-- **test-fixtures/test-trivial** (TRAIN split)
+- **test-fixtures/train1** (TRAIN split)
   - Files: add.py, subtract.py, multiply.py, divide.py
-  - Issues: 4 TPs (test-issue.yaml through test-issue-4.yaml), 1 FP (test-fp.yaml)
+  - Issues: 4 TPs (tp1.yaml through tp4.yaml), 1 FP (fp1.yaml)
   - Use for: Multi-file tests, duplication detection, RLS train split
 
-- **test-fixtures/test-validation** (VALID split)
+- **test-fixtures/valid1** (VALID split)
   - Files: subtract.py
-  - Issues: 1 TP (test-issue.yaml)
+  - Issues: 1 TP (tp1.yaml)
   - Use for: RLS valid split, warm-start validation
 
-- **test-fixtures/test-validation-2** (VALID split)
+- **test-fixtures/valid2** (VALID split)
   - Files: calculator.py
-  - Issues: 1 TP (test-issue.yaml)
+  - Issues: 1 TP (tp1.yaml)
   - Use for: Warm-start with multiple validation examples
 
-- **test-fixtures/test-split-test** (TEST split)
+- **test-fixtures/test1** (TEST split)
   - Files: example_module.py
-  - Issues: 1 TP (test-issue.yaml)
+  - Issues: 1 TP (tp1.yaml)
   - Use for: RLS test split verification
 
 ## Using Git Fixtures in Tests (short form)

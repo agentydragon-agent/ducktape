@@ -111,17 +111,7 @@ class TempUserManager:
         return f"agent_{self.agent_run_id}"
 
     async def grant_permissions(self, username: str) -> None:
-        """Grant permissions via the unified agent_base template role.
-
-        The agent_base role (created in migration 20251226000001) provides:
-        - Schema and sequence usage
-        - Access to agent_runs and agent_definitions
-        - Read on reference tables (snapshots, examples, prompts)
-        - Read/write on agent-specific tables (reported_issues, grading_decisions, etc.)
-
-        RLS policies filter access based on agent_run_id via current_agent_run_id().
-        Type-specific access is controlled by RLS policies checking current_agent_type().
-        """
+        """Grant agent_base role which provides RLS-scoped access to agent tables."""
         assert self.admin_engine is not None, "admin_engine not initialized"
         async with self.admin_engine.begin() as conn:
             quoted_username = quote_ident(username)

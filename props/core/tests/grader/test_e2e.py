@@ -12,7 +12,7 @@ Comprehensive tests verify:
 
 from __future__ import annotations
 
-from props_core.db.models import AgentRun, AgentRunStatus, GradingDecision
+from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
 from props_core.db.session import get_session
 import pytest
 
@@ -192,7 +192,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str, fp_id: str) -> list[Ste
         ),
         # Step 2: Read true_positives for this snapshot
         # This demonstrates grader can access ground truth TPs
-        # test-fixtures/test-trivial has TP "test-issue" catchable from subtract.py
+        # test-fixtures/train1 has TP "test-issue" catchable from subtract.py
         AssertDockerExecThenCall(
             expected_output="test-issue-01",  # Reported issue from critic
             next_cmd=["psql", "-c", "SELECT tp_id, rationale FROM true_positives LIMIT 5"],
@@ -200,7 +200,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str, fp_id: str) -> list[Ste
         ),
         # Step 3: Read false_positives for this snapshot
         # This demonstrates grader can access ground truth FPs
-        # test-fixtures/test-trivial has a FP defined in git fixtures
+        # test-fixtures/train1 has a FP defined in git fixtures
         AssertDockerExecThenCall(
             expected_output="test-issue",  # TP ID from fixture
             next_cmd=["psql", "-c", "SELECT fp_id, rationale FROM false_positives LIMIT 5"],
@@ -236,7 +236,7 @@ async def test_grader_comprehensive_data_access(
     1. reported_issues table (read critique being graded)
     2. true_positives table (read ground truth TPs)
     3. false_positives table (read ground truth FPs)
-    4. grading_decisions table (write decisions via CLI helper)
+    4. grading_edges table (write edges via CLI helper)
     5. MCP submit endpoint (finalize grading)
 
     The test uses psql queries to demonstrate direct database access works,
@@ -268,13 +268,13 @@ async def test_grader_comprehensive_data_access(
             # Verify the grader completed successfully
             assert grader_run.status == AgentRunStatus.COMPLETED, f"Expected COMPLETED, got {grader_run.status}"
 
-            # Verify grading decision was written
-            decisions = session.query(GradingDecision).filter(GradingDecision.agent_run_id == grader_run_id).all()
-            assert len(decisions) == 1, f"Expected 1 decision, got {len(decisions)}"
-            decision = decisions[0]
-            assert decision.input_issue_id == "test-issue-01"
-            assert decision.target_tp_id is None  # no-match decision has NULL target_tp_id
-            assert decision.target_fp_id is None  # no-match decision has NULL target_fp_id
+            # Verify grading edge was written
+            edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == grader_run_id).all()
+            assert len(edges) == 1, f"Expected 1 edge, got {len(edges)}"
+            edge = edges[0]
+            assert edge.critique_issue_id == "test-issue-01"
+            assert edge.tp_id is None  # no-match edge has NULL tp_id
+            assert edge.fp_id is None  # no-match edge has NULL fp_id
 
     except (RuntimeError, AssertionError):
         # Print captured requests for debugging

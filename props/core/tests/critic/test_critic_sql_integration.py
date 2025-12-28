@@ -117,7 +117,7 @@ async def test_critic_sql_rls_isolation(test_critic_run, test_snapshot, temp_eng
         # Get a different example (any one from test fixtures will do)
         other_example = (
             session.query(Example)
-            .filter_by(snapshot_slug=SnapshotSlug("test-fixtures/test-trivial"))
+            .filter_by(snapshot_slug=SnapshotSlug("test-fixtures/train1"))
             .filter(Example.files_hash.isnot(None))  # Get a file_set example
             .first()
         )

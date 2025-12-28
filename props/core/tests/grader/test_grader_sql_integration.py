@@ -2,15 +2,15 @@
 
 Tests the end-to-end SQL workflow where grader agents:
 1. Get temporary database credentials with RLS scoping
-2. Write grading decisions directly to PostgreSQL
+2. Write grading edges directly to PostgreSQL
 3. Call grader_submit tool to finalize grading
-4. Validation occurs on submit (ensures all input issues have decisions)
+4. Validation occurs on submit (ensures all edges are created)
 """
 
 from __future__ import annotations
 
 from fastmcp.exceptions import ToolError
-from props_core.db.models import AgentRun, AgentRunStatus, GradingDecision, ReportedIssue
+from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge, ReportedIssue
 from props_core.db.session import get_session
 from props_core.db.temp_user_manager import TempUserManager
 from props_core.grader.submit_server import GraderSubmitServer
@@ -49,6 +49,8 @@ def grader_submit_server(test_grader_run, test_grader_critic_run):
 async def test_grader_sql_basic_workflow(
     grader_submit_server,
     test_grader_run,
+    test_grader_critic_run,
+    test_snapshot,
     test_db,
     temp_grader_engine,
     tp_single_id,
@@ -56,20 +58,23 @@ async def test_grader_sql_basic_workflow(
     fp_id,
     fp_occurrence_id,
 ):
-    """Test basic grader SQL workflow with TP, FP, and no-match decisions."""
+    """Test basic grader SQL workflow with TP, FP, and no-match edges."""
     # Simulate agent actions using temp user credentials
 
     with temp_grader_engine.connect() as conn:
-        # Decision 1: TP match
+        # Edge 1: TP match
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
-                   credit, rationale)
-                VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug,
+                   tp_id, tp_occurrence_id, credit, rationale)
+                VALUES (current_agent_run_id(), :critic_run, :issue_id, :snapshot,
+                        :tp_id, :occ_id, :credit, :rationale)
             """),
             {
-                "input_id": "input-001",
+                "critic_run": str(test_grader_critic_run),
+                "issue_id": "input-001",
+                "snapshot": str(test_snapshot),
                 "tp_id": tp_single_id,
                 "occ_id": tp_single_occurrence_id,
                 "credit": 0.8,
@@ -77,16 +82,19 @@ async def test_grader_sql_basic_workflow(
             },
         )
 
-        # Decision 2: FP match
+        # Edge 2: FP match
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, target_fp_id, target_fp_occurrence_id,
-                   credit, rationale)
-                VALUES (current_agent_run_id(), :input_id, :fp_id, :occ_id, :credit, :rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug,
+                   fp_id, fp_occurrence_id, credit, rationale)
+                VALUES (current_agent_run_id(), :critic_run, :issue_id, :snapshot,
+                        :fp_id, :occ_id, :credit, :rationale)
             """),
             {
-                "input_id": "input-002",
+                "critic_run": str(test_grader_critic_run),
+                "issue_id": "input-002",
+                "snapshot": str(test_snapshot),
                 "fp_id": fp_id,
                 "occ_id": fp_occurrence_id,
                 "credit": 1.0,
@@ -94,14 +102,22 @@ async def test_grader_sql_basic_workflow(
             },
         )
 
-        # Decision 3: No-match
+        # Edge 3: No-match (still needs tp/fp columns, just NULL)
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
-                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug,
+                   tp_id, tp_occurrence_id, credit, rationale)
+                VALUES (current_agent_run_id(), :critic_run, :issue_id, :snapshot,
+                        NULL, NULL, :credit, :rationale)
             """),
-            {"input_id": "input-003", "credit": 0.0, "rationale": "No matching ground truth"},
+            {
+                "critic_run": str(test_grader_critic_run),
+                "issue_id": "input-003",
+                "snapshot": str(test_snapshot),
+                "credit": 0.0,
+                "rationale": "No matching ground truth",
+            },
         )
 
         conn.commit()
@@ -113,59 +129,73 @@ async def test_grader_sql_basic_workflow(
 
     # Verify result
     result = tool_result.structured_content
-    assert result["message"] == "Grading completed successfully with 3 decisions"
-    assert result["decisions_count"] == 3
+    assert result["message"] == "Grading completed successfully with 3 edges"
+    assert result["edges_count"] == 3
     assert result["input_issues_count"] == 3
 
     # Verify database state
     with get_session() as session:
-        # Check decisions exist
-        decisions = session.query(GradingDecision).filter_by(agent_run_id=test_grader_run).all()
-        assert len(decisions) == 3
+        # Check edges exist
+        edges = session.query(GradingEdge).filter_by(grader_run_id=test_grader_run).all()
+        assert len(edges) == 3
 
-        tp_decision = next(d for d in decisions if d.input_issue_id == "input-001")
-        assert tp_decision.target_tp_id == tp_single_id
-        assert tp_decision.target_tp_occurrence_id == tp_single_occurrence_id
-        assert tp_decision.credit == 0.8
+        tp_edge = next(e for e in edges if e.critique_issue_id == "input-001")
+        assert tp_edge.tp_id == tp_single_id
+        assert tp_edge.tp_occurrence_id == tp_single_occurrence_id
+        assert tp_edge.credit == 0.8
 
-        fp_decision = next(d for d in decisions if d.input_issue_id == "input-002")
-        assert fp_decision.target_fp_id == fp_id
-        assert fp_decision.target_fp_occurrence_id == fp_occurrence_id
-        assert fp_decision.credit == 1.0
+        fp_edge = next(e for e in edges if e.critique_issue_id == "input-002")
+        assert fp_edge.fp_id == fp_id
+        assert fp_edge.fp_occurrence_id == fp_occurrence_id
+        assert fp_edge.credit == 1.0
 
-        no_match = next(d for d in decisions if d.input_issue_id == "input-003")
-        assert no_match.target_tp_id is None
-        assert no_match.target_fp_id is None
+        no_match = next(e for e in edges if e.critique_issue_id == "input-003")
+        assert no_match.tp_id is None
+        assert no_match.fp_id is None
         assert no_match.credit == 0.0
 
 
-async def test_grader_sql_missing_decision_fails(grader_submit_server, test_grader_run, test_db, temp_grader_engine):
-    """Test submit fails if any input issue lacks a decision."""
+async def test_grader_sql_missing_edge_fails(
+    grader_submit_server, test_grader_run, test_grader_critic_run, test_snapshot, test_db, temp_grader_engine
+):
+    """Test submit fails if any required edge is missing."""
     with temp_grader_engine.connect() as conn:
-        # Only create decisions for 2 out of 3 input issues
+        # Only create edges for 2 out of 3 input issues
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
-                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
+                VALUES (current_agent_run_id(), :critic_run, :issue_id, :snapshot, :credit, :rationale)
             """),
-            {"input_id": "input-001", "credit": 0.0, "rationale": "No match"},
+            {
+                "critic_run": str(test_grader_critic_run),
+                "issue_id": "input-001",
+                "snapshot": str(test_snapshot),
+                "credit": 0.0,
+                "rationale": "No match",
+            },
         )
 
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
-                VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
+                VALUES (current_agent_run_id(), :critic_run, :issue_id, :snapshot, :credit, :rationale)
             """),
-            {"input_id": "input-002", "credit": 0.0, "rationale": "No match"},
+            {
+                "critic_run": str(test_grader_critic_run),
+                "issue_id": "input-002",
+                "snapshot": str(test_snapshot),
+                "credit": 0.0,
+                "rationale": "No match",
+            },
         )
 
-        # Missing decision for input-003!
+        # Missing edge for input-003!
         conn.commit()
 
     # Submit should FAIL
-    with pytest.raises(ToolError, match="Missing grading decisions for input issues: input-003"):
+    with pytest.raises(ToolError, match="Missing grading edges for input issues: input-003"):
         await grader_submit_server.submit_tool.run({"summary": "Incomplete grading"})
 
 
@@ -184,8 +214,8 @@ async def test_grader_sql_multiple_decisions_allowed(
         # Create valid decisions for input-001 and input-002
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-001", "credit": 0.0, "rationale": "No match"},
@@ -193,8 +223,8 @@ async def test_grader_sql_multiple_decisions_allowed(
 
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-002", "credit": 0.0, "rationale": "No match"},
@@ -204,8 +234,8 @@ async def test_grader_sql_multiple_decisions_allowed(
         # This is allowed: one input can match multiple ground truth issues with partial credit
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, tp_id, tp_occurrence_id,
                    credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
@@ -220,8 +250,8 @@ async def test_grader_sql_multiple_decisions_allowed(
 
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, tp_id, tp_occurrence_id,
                    credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
@@ -268,11 +298,16 @@ async def test_grader_sql_rls_isolation(
 
         session.flush()
 
-        # Now add the decision for other run
-        decision = GradingDecision(
-            agent_run_id=other_run_id, input_issue_id="other-input", credit=0.0, rationale="Other agent's decision"
+        # Now add the edge for other run
+        edge = GradingEdge(
+            grader_run_id=other_run_id,
+            critique_run_id=test_grader_critic_run,
+            critique_issue_id="other-input",
+            snapshot_slug=test_snapshot,
+            credit=0.0,
+            rationale="Other agent's edge",
         )
-        session.add(decision)
+        session.add(edge)
         session.commit()
 
     # Now agent with temp_creds inserts their own decision
@@ -280,8 +315,8 @@ async def test_grader_sql_rls_isolation(
     with temp_grader_engine.connect() as conn:
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "my-input", "credit": 0.0, "rationale": "My decision"},
@@ -289,7 +324,7 @@ async def test_grader_sql_rls_isolation(
         conn.commit()
 
         # Query should only see own run's data
-        result = conn.execute(text("SELECT input_issue_id FROM grading_decisions ORDER BY input_issue_id"))
+        result = conn.execute(text("SELECT critique_issue_id FROM grading_edges ORDER BY critique_issue_id"))
         input_ids = [row[0] for row in result]
 
         # Should ONLY see "my-input", not "other-input"
@@ -304,8 +339,8 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
         # Decision for input-001: 0.7 credit to tp-shared/occ-shared
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, tp_id, tp_occurrence_id,
                    credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
             """),
@@ -324,8 +359,8 @@ async def test_grader_sql_credit_sum_trigger_enforcement(
         with pytest.raises(Exception, match=r"Credit sum would exceed 1\.0"):
             conn.execute(
                 text("""
-                    INSERT INTO grading_decisions
-                      (agent_run_id, input_issue_id, target_tp_id, target_tp_occurrence_id,
+                    INSERT INTO grading_edges
+                      (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, tp_id, tp_occurrence_id,
                        credit, rationale)
                     VALUES (current_agent_run_id(), :input_id, :tp_id, :occ_id, :credit, :rationale)
                 """),
@@ -348,8 +383,8 @@ async def test_grader_sql_hard_delete_revision_workflow(
         for i in range(1, 4):
             conn.execute(
                 text("""
-                    INSERT INTO grading_decisions
-                      (agent_run_id, input_issue_id, credit, rationale)
+                    INSERT INTO grading_edges
+                      (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                     VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
                 """),
                 {"input_id": f"input-00{i}", "credit": 0.0, "rationale": f"Decision {i}"},
@@ -358,9 +393,9 @@ async def test_grader_sql_hard_delete_revision_workflow(
         # Hard delete decision for input-002 (agent reconsidered)
         conn.execute(
             text("""
-                DELETE FROM grading_decisions
+                DELETE FROM grading_edges
                 WHERE agent_run_id = current_agent_run_id()
-                  AND input_issue_id = :input_id
+                  AND critique_issue_id = :input_id
             """),
             {"input_id": "input-002"},
         )
@@ -376,8 +411,8 @@ async def test_grader_sql_hard_delete_revision_workflow(
     with temp_grader_engine.connect() as conn:
         conn.execute(
             text("""
-                INSERT INTO grading_decisions
-                  (agent_run_id, input_issue_id, credit, rationale)
+                INSERT INTO grading_edges
+                  (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                 VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
             """),
             {"input_id": "input-002", "credit": 0.0, "rationale": "Revised decision"},
@@ -435,8 +470,8 @@ async def test_grader_report_failure_after_complete_fails(
         for i in range(1, 4):
             conn.execute(
                 text("""
-                    INSERT INTO grading_decisions
-                      (agent_run_id, input_issue_id, credit, rationale)
+                    INSERT INTO grading_edges
+                      (grader_run_id, critique_run_id, critique_issue_id, snapshot_slug, credit, rationale)
                     VALUES (current_agent_run_id(), :input_id, :credit, :rationale)
                 """),
                 {"input_id": f"input-00{i}", "credit": 0.0, "rationale": f"Decision {i}"},

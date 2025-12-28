@@ -29,6 +29,7 @@ class AgentType(StrEnum):
 
     CRITIC = "critic"
     GRADER = "grader"
+    SNAPSHOT_GRADER = "snapshot_grader"  # Persistent grader daemon per snapshot
     PROMPT_OPTIMIZER = "prompt_optimizer"
     IMPROVEMENT = "improvement"  # Analyzes runs and proposes improved prompts
     FREEFORM = "freeform"  # Ad-hoc sub-agents created by other agents
@@ -120,9 +121,30 @@ class ImprovementTypeConfig(BaseModel):
     grader_model: str = Field(description="Model used for grader evaluations")
 
 
+class SnapshotGraderTypeConfig(BaseModel):
+    """Snapshot grader daemon configuration.
+
+    Persistent grader that reconciles all critiques for a snapshot. Unlike per-critique
+    GraderTypeConfig, this daemon:
+    - Grades ALL critiques for the snapshot (not just one)
+    - Sleeps when no drift, wakes on pg_notify
+    - Maintains GT context for token efficiency
+
+    RLS uses current_grader_snapshot_slug() to extract snapshot_slug from type_config.
+    """
+
+    agent_type: Literal[AgentType.SNAPSHOT_GRADER] = AgentType.SNAPSHOT_GRADER
+    snapshot_slug: str = Field(description="Snapshot this daemon is responsible for")
+
+
 # Discriminated union for type-specific config
 TypeConfig = Annotated[
-    CriticTypeConfig | GraderTypeConfig | FreeformTypeConfig | PromptOptimizerTypeConfig | ImprovementTypeConfig,
+    CriticTypeConfig
+    | GraderTypeConfig
+    | SnapshotGraderTypeConfig
+    | FreeformTypeConfig
+    | PromptOptimizerTypeConfig
+    | ImprovementTypeConfig,
     Field(discriminator="agent_type"),
 ]
 

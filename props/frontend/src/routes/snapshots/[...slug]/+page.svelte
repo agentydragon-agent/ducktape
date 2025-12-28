@@ -98,9 +98,9 @@
                         {#if occ.note}
                           <div class="mt-1 text-sm text-gray-600 italic">{occ.note}</div>
                         {/if}
-                        {#if occ.expect_caught_from.length > 0}
+                        {#if occ.critic_scopes_expected_to_recall.length > 0}
                           <div class="mt-1 text-xs text-gray-500">
-                            Caught from: {occ.expect_caught_from.map((f: string[]) => f.join(', ')).join(' | ')}
+                            Expected recall scopes: {occ.critic_scopes_expected_to_recall.map((f: string[]) => f.join(', ')).join(' | ')}
                           </div>
                         {/if}
                       </div>

@@ -155,31 +155,3 @@ def fetch_snapshot(dest_dir: Path) -> Path:
 
     fetch_snapshot_to_path(snapshot_slug, dest_dir)
     return dest_dir
-
-
-def get_grading_context() -> str:
-    """Get grading context for grader template.
-
-    Returns a pre-formatted string describing what the grader is evaluating:
-    - The critic run being graded
-    - The snapshot being graded
-
-    RLS scoping details are documented in database_access.md (transcluded separately).
-
-    Used as Jinja2 helper in grader.md.j2 template.
-    """
-    with get_session() as session:
-        agent_run = get_current_agent_run(session)
-        grader_config = agent_run.grader_config()
-
-        # Get the graded critic run to find snapshot info
-        graded_run = session.get(AgentRun, grader_config.graded_agent_run_id)
-        if graded_run is None:
-            raise ValueError(f"Graded agent run not found: {grader_config.graded_agent_run_id}")
-
-        # Get snapshot slug from critic's config
-        critic_config = graded_run.critic_config()
-        snapshot_slug = critic_config.example.snapshot_slug
-
-        return f"""Graded Critic Run: {grader_config.graded_agent_run_id}
-Snapshot: {snapshot_slug}"""

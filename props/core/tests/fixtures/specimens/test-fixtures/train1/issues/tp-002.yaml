@@ -10,5 +10,5 @@ occurrences:
     add.py:
     - 4
     - 6
-  expect_caught_from:
+  critic_scopes_expected_to_recall:
   - - add.py

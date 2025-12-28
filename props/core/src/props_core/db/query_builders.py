@@ -548,5 +548,5 @@ def query_recall_by_example(
 #   - RecallByDefinitionSplitKind: per (definition, model, split, example_kind)
 #   - RecallByExample: per (example, model)
 #
-# All views return: n_catchable_occurrences (denominator), credit_stats (numerator),
-# recall_stats (credit_stats / n_catchable_occurrences).
+# All views return: n_recall_denominator (denominator), credit_stats (numerator),
+# recall_stats (credit_stats / n_recall_denominator).

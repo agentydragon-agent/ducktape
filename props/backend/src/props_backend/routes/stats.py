@@ -136,7 +136,7 @@ class ExampleStats(BaseModel):
     example_kind: ExampleKind
     files_hash: str | None
     split: Split
-    n_catchable_occurrences: int
+    n_recall_denominator: int
     n_runs: int
     status_counts: dict[AgentRunStatus, int]
     credit_stats: StatsWithCI | None
@@ -193,7 +193,7 @@ def get_definition_detail(definition_id: DefinitionId) -> DefinitionDetailRespon
                 example_kind=r.example_kind,
                 files_hash=r.files_hash,
                 split=r.split,
-                n_catchable_occurrences=r.n_catchable_occurrences,
+                n_recall_denominator=r.n_recall_denominator,
                 n_runs=r.n_runs,
                 status_counts=Counter(r.status_counts or {}),
                 credit_stats=r.credit_stats,
@@ -227,7 +227,7 @@ class ExampleDetailResponse(BaseModel):
     example_kind: ExampleKind
     files_hash: str | None
     split: Split
-    n_catchable_occurrences: int
+    n_recall_denominator: int
     files: list[str] | None  # For file_set examples
     definitions: list[DefinitionStatsForExample]  # Per-definition stats
     credit_stats: StatsWithCI | None  # Aggregate metrics across all definitions
@@ -246,7 +246,7 @@ def get_example_detail(
 
     Returns:
         Detailed example information including:
-        - Example metadata (split, n_catchable_occurrences)
+        - Example metadata (split, n_recall_denominator)
         - File list (for file_set examples)
         - Per-definition run statistics
         - Aggregate metrics
@@ -338,7 +338,7 @@ def get_example_detail(
             example_kind=example_kind,
             files_hash=files_hash,
             split=split,
-            n_catchable_occurrences=example.n_catchable_occurrences,
+            n_recall_denominator=example.n_recall_denominator,
             files=files,
             definitions=definitions,
             credit_stats=credit_stats,

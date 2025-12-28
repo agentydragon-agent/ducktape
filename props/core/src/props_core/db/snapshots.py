@@ -49,8 +49,8 @@ class DBTruePositiveOccurrence(BaseModel):
     occurrence_id: str = Field(description="Unique ID within this TP")
     files: dict[str, list[DBLineRange] | None] = Field(description="File paths (as strings) mapped to line ranges")
     note: str | None = Field(default=None)
-    expect_caught_from: list[list[str]] = Field(
-        description="Minimal file sets for detection (list of alternatives, each alternative is list of paths)"
+    critic_scopes_expected_to_recall: list[list[str]] = Field(
+        description="Critic scope file sets where this counts toward recall (list of alternatives)"
     )
 
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -110,7 +110,7 @@ class DBFileOccurrence(BaseModel):
 class DBOccurrence(BaseModel):
     """Database representation of an occurrence (critic-reported issue).
 
-    Simpler than TruePositiveOccurrence - no expect_caught_from tracking.
+    Simpler than TruePositiveOccurrence - no critic_scopes_expected_to_recall tracking.
     """
 
     files: list[DBFileOccurrence] = Field(description="Files with line ranges")

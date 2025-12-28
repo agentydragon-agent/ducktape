@@ -16,18 +16,18 @@ from tests.conftest import (
     make_critic_run,
     make_grader_run,
     make_reported_issues,
-    populate_grading_decisions,
+    populate_grading_edges,
 )
 
 
 def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
     """Test that the view includes grader runs with occurrence-based results.
 
-    Uses git-synced test fixtures (test-fixtures/test-trivial) instead of synthetic data.
+    Uses git-synced test fixtures (test-fixtures/train1) instead of synthetic data.
     The test-trivial fixture has a TP 'test-issue' with occurrence 'occ-1' in subtract.py.
     """
-    # Use git-synced fixture: test-fixtures/test-trivial (TRAIN split)
-    snapshot_slug = SnapshotSlug("test-fixtures/test-trivial")
+    # Use git-synced fixture: test-fixtures/train1 (TRAIN split)
+    snapshot_slug = SnapshotSlug("test-fixtures/train1")
     critic_agent_run_id = uuid4()
     grader_agent_run_id = uuid4()
 
@@ -89,9 +89,13 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         session.add(grader_run)
         session.flush()  # Ensure grader_run.agent_run_id is available
 
-        # Populate grading_decisions table from MCP occurrence_results
-        populate_grading_decisions(
-            grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
+        # Populate grading_edges table from MCP occurrence_results
+        populate_grading_edges(
+            critic_run=critic_run,
+            grader_run=grader_run,
+            snapshot_slug=snapshot_slug,
+            occurrence_results=grader_success.occurrence_results,
+            session=session,
         )
 
         session.commit()

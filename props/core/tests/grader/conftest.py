@@ -1,7 +1,7 @@
 """Fixtures and helpers for grader tests.
 
-Note: Decision insertion helpers have been moved to production code.
-Import from props_core.grader.decision_helpers instead.
+Note: Edge insertion helpers have been moved to production code.
+Import from props_core.grader.edge_helpers instead.
 """
 
 from __future__ import annotations
@@ -12,22 +12,14 @@ from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props_core.db.session import get_session
 from props_core.db.snapshots import DBGraderOutput, DBReportedIssue
-from props_core.grader.decision_helpers import insert_fp_match, insert_no_match, insert_tp_match
+from props_core.grader.edge_helpers import insert_edge
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
 from tests.conftest import make_critic_run, make_grader_output, make_grader_run
 
-__all__ = [
-    "insert_fp_match",
-    "insert_no_match",
-    "insert_tp_match",
-    "make_test_critic_run",
-    "make_test_grader_run",
-    "test_grader_critic_run",
-    "test_grader_run",
-]
+__all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 
 
 def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type: ignore[return]

@@ -170,7 +170,7 @@ async def snapshot_dump(
                                 "occurrence_id": occ.occurrence_id,
                                 "files": occ.files,
                                 "note": occ.note,
-                                "expect_caught_from": occ.expect_caught_from,
+                                "critic_scopes_expected_to_recall": occ.critic_scopes_expected_to_recall,
                             }
                             for occ in tp.occurrences
                         ],

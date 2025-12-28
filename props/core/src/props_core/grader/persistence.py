@@ -77,7 +77,7 @@ def tp_to_db(tp: TruePositiveIssue) -> DBTruePositiveIssue:
                 occurrence_id=occ.occurrence_id,
                 files=convert_files_dict_to_db(occ.files),
                 note=occ.note,
-                expect_caught_from=[[str(p) for p in fs] for fs in occ.expect_caught_from],
+                critic_scopes_expected_to_recall=[[str(p) for p in fs] for fs in occ.critic_scopes_expected_to_recall],
             )
             for occ in tp.occurrences
         ],
@@ -94,7 +94,9 @@ def tp_from_db(db_tp: DBTruePositiveIssue) -> TruePositiveIssue:
                 occurrence_id=occ.occurrence_id,
                 files=convert_files_dict_from_db(occ.files),
                 note=occ.note,
-                expect_caught_from={frozenset(Path(p) for p in fs) for fs in occ.expect_caught_from},
+                critic_scopes_expected_to_recall={
+                    frozenset(Path(p) for p in fs) for fs in occ.critic_scopes_expected_to_recall
+                },
             )
             for occ in db_tp.occurrences
         ],

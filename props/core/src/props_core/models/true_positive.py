@@ -95,11 +95,11 @@ class TruePositiveOccurrence(BaseModel):
         description="Maps file paths to line ranges or None for unspecified anchor"
     )
     note: str | None = Field(default=None, description="Occurrence-specific note")
-    expect_caught_from: set[frozenset[Path]] = Field(
+    critic_scopes_expected_to_recall: set[frozenset[Path]] = Field(
         description=(
-            "TRAINING SIGNAL: Some known file sets such that IF a critic is shown these files, "
-            "THEN we want it to catch this issue. NOT exhaustive - does not enumerate all possible "
-            "detection sources. "
+            "BENCHMARK NORMALIZATION: Critic scope file sets where this occurrence counts toward recall. "
+            "If ANY of these file sets is a subset of the critic's reviewed scope, this occurrence "
+            "is included in the recall denominator. "
             "Outer set = alternatives (OR), inner frozenset = required together (AND). "
             "Must be non-empty. "
             "\n\n"
@@ -110,7 +110,7 @@ class TruePositiveOccurrence(BaseModel):
             "Not 'can you detect this reading only these files in isolation'."
         )
     )
-    only_matchable_from_files: set[Path] | None = Field(
+    graders_match_only_if_reported_on: set[Path] | None = Field(
         description=(
             "GRADING OPTIMIZATION: Restricts which critique outputs can match this occurrence. "
             "If set, a critique reporting issues only in files OUTSIDE this set will be skipped "
@@ -120,14 +120,14 @@ class TruePositiveOccurrence(BaseModel):
             "determined the closed set of valid reporting files, OR for genuinely cross-cutting issues. "
             "Non-empty = we know the closed set; skip matching if critique's files don't overlap. "
             "\n\n"
-            "Independent of expect_caught_from (detection source ≠ valid reporting targets). "
+            "Independent of critic_scopes_expected_to_recall (detection source ≠ valid reporting targets). "
             "Example: 'X.py calls Y.abort() which doesn't exist' - detectable from X.py, but validly "
             "reported in either X.py (caller) or Y.py (missing method)."
         )
     )
 
-    @field_serializer("expect_caught_from")
-    def serialize_expect_caught_from(self, value: set[frozenset[Path]]) -> list[list[str]]:
+    @field_serializer("critic_scopes_expected_to_recall")
+    def serialize_critic_scopes_expected_to_recall(self, value: set[frozenset[Path]]) -> list[list[str]]:
         """Convert set[frozenset[Path]] to JSON: list[list[str]]."""
         return [[str(p) for p in fs] for fs in value]
 
@@ -138,10 +138,10 @@ class TruePositiveOccurrence(BaseModel):
 
     @model_validator(mode="after")
     def validate_non_empty(self) -> TruePositiveOccurrence:
-        if not self.expect_caught_from:
-            raise ValueError("expect_caught_from must be non-empty")
-        if self.only_matchable_from_files is not None and not self.only_matchable_from_files:
-            raise ValueError("only_matchable_from_files must be None or non-empty")
+        if not self.critic_scopes_expected_to_recall:
+            raise ValueError("critic_scopes_expected_to_recall must be non-empty")
+        if self.graders_match_only_if_reported_on is not None and not self.graders_match_only_if_reported_on:
+            raise ValueError("graders_match_only_if_reported_on must be None or non-empty")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -159,7 +159,7 @@ class FalsePositiveOccurrence(BaseModel):
     )
     note: str | None = Field(default=None, description="Occurrence-specific note")
     relevant_files: set[Path] = Field(description="Files that make this FP relevant (ANY logic). Must be non-empty.")
-    only_matchable_from_files: set[Path] | None = Field(
+    graders_match_only_if_reported_on: set[Path] | None = Field(
         description=(
             "Files a critique must report on to match this occurrence (sparse grading). "
             "NULL = cross-cutting (any critique can match). Non-empty = file-local."
@@ -180,8 +180,8 @@ class FalsePositiveOccurrence(BaseModel):
     def validate_non_empty(self) -> FalsePositiveOccurrence:
         if not self.relevant_files:
             raise ValueError("relevant_files must be non-empty")
-        if self.only_matchable_from_files is not None and not self.only_matchable_from_files:
-            raise ValueError("only_matchable_from_files must be None or non-empty")
+        if self.graders_match_only_if_reported_on is not None and not self.graders_match_only_if_reported_on:
+            raise ValueError("graders_match_only_if_reported_on must be None or non-empty")
         return self
 
     model_config = ConfigDict(extra="forbid")
@@ -225,7 +225,7 @@ def should_catch_occurrence(occ: TruePositiveOccurrence, reviewed_files: set[Pat
 
     Returns True if any alternative file set is a subset of reviewed files.
     """
-    return any(alt.issubset(reviewed_files) for alt in occ.expect_caught_from)
+    return any(alt.issubset(reviewed_files) for alt in occ.critic_scopes_expected_to_recall)
 
 
 def should_show_fp_occurrence(occ: FalsePositiveOccurrence, reviewed_files: set[Path]) -> bool:

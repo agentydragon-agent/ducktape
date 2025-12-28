@@ -45,6 +45,7 @@ from props_core.agent_types import (
     GraderTypeConfig,
     ImprovementTypeConfig,
     PromptOptimizerTypeConfig,
+    SnapshotGraderTypeConfig,
     TypeConfig,
 )
 from props_core.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTruePositiveIssue
@@ -379,7 +380,7 @@ class TruePositive(Base):
 
     Composite primary key: (snapshot_slug, tp_id).
     Each true positive has one or more occurrences stored in true_positive_occurrences.
-    Trigger file sets (expect_caught_from) are stored in occurrence_triggers M:N table.
+    Trigger file sets (critic_scopes_expected_to_recall) are stored in expected_recall_scopes M:N table.
     """
 
     __tablename__ = "true_positives"
@@ -465,7 +466,7 @@ class TruePositiveOccurrenceORM(Base):
     """Occurrence within a true positive issue.
 
     Each occurrence represents a specific location where the issue manifests.
-    expect_caught_from is stored in the occurrence_triggers M:N table (linking to file_sets).
+    critic_scopes_expected_to_recall is stored in the expected_recall_scopes M:N table (linking to file_sets).
     """
 
     __tablename__ = "true_positive_occurrences"
@@ -475,7 +476,7 @@ class TruePositiveOccurrenceORM(Base):
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    only_matchable_from_files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -483,7 +484,7 @@ class TruePositiveOccurrenceORM(Base):
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "only_matchable_from_files_hash"],
+            ["snapshot_slug", "match_filter_hash"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -491,16 +492,16 @@ class TruePositiveOccurrenceORM(Base):
 
     # Relationships
     true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
-    triggers: Mapped[list[OccurrenceTrigger]] = relationship(
+    triggers: Mapped[list[ExpectedRecallScope]] = relationship(
         back_populates="occurrence",
-        primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(OccurrenceTrigger.snapshot_slug), "
-        "TruePositiveOccurrenceORM.tp_id == foreign(OccurrenceTrigger.tp_id), "
-        "TruePositiveOccurrenceORM.occurrence_id == foreign(OccurrenceTrigger.occurrence_id))",
+        primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(ExpectedRecallScope.snapshot_slug), "
+        "TruePositiveOccurrenceORM.tp_id == foreign(ExpectedRecallScope.tp_id), "
+        "TruePositiveOccurrenceORM.occurrence_id == foreign(ExpectedRecallScope.occurrence_id))",
     )
 
     @property
-    def expect_caught_from_set(self) -> set[frozenset[Path]]:
-        """Derive expect_caught_from from occurrence_triggers relationship."""
+    def critic_scopes_expected_to_recall_set(self) -> set[frozenset[Path]]:
+        """Derive critic_scopes_expected_to_recall from expected_recall_scopes relationship."""
         result: set[frozenset[Path]] = set()
         for trigger in self.triggers:
             # Each trigger links to a file_set via files_hash
@@ -526,7 +527,7 @@ class FalsePositiveOccurrenceORM(Base):
     files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     relevant_files: Mapped[list] = mapped_column(JSONB, nullable=False)  # [path, ...]
-    only_matchable_from_files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -534,7 +535,7 @@ class FalsePositiveOccurrenceORM(Base):
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "only_matchable_from_files_hash"],
+            ["snapshot_slug", "match_filter_hash"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -617,13 +618,13 @@ class FileSetMember(Base):
     file_set: Mapped[FileSet] = relationship(back_populates="members")
 
 
-class OccurrenceTrigger(Base):
+class ExpectedRecallScope(Base):
     """M:N relationship linking true_positive_occurrences to file_sets.
 
-    Each occurrence can be triggered by multiple file sets (expect_caught_from alternatives).
+    Each occurrence can be triggered by multiple file sets (critic_scopes_expected_to_recall alternatives).
     """
 
-    __tablename__ = "occurrence_triggers"
+    __tablename__ = "expected_recall_scopes"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -726,63 +727,78 @@ class ReportedIssueOccurrence(Base):
     reported_issue: Mapped[ReportedIssue] = relationship(back_populates="occurrences")
 
 
-class GradingDecision(Base):
-    """Grading decision linking an input issue to a ground truth occurrence (or no-match).
+class GradingPending(Base):
+    """View: missing grading edges (drift detection).
 
-    Unified table for TP, FP, and no-match decisions (discriminated by NULL pattern):
-    - TP match: target_tp_id + target_tp_occurrence_id are NOT NULL
-    - FP match: target_fp_id + target_fp_occurrence_id are NOT NULL
-    - No match: All targets are NULL, credit must be 0.0
-
-    Database constraints:
-    - CHECK constraint ensures input_issue_id corresponds to a reported issue in the
-      critique being graded (validates via agent_run -> reported_issues)
-    - SQL trigger enforces credit sum ≤1.0 per occurrence (see check_credit_sum function)
-
-    Agent uses hard DELETE to remove incorrect decisions.
+    Each row represents a (critique_issue, gt_occurrence) pair that needs grading.
+    When this view returns no rows for a grader's scope, grading is complete.
     """
 
-    __tablename__ = "grading_decisions"
-    __table_args__ = (
-        {"comment": "Matches input issues to TPs/FPs. Trigger enforces SUM(credit) <= 1.0 per occurrence."},
-    )
+    __tablename__ = "grading_pending"
+    __table_args__ = ({"info": {"is_view": True}},)
+
+    # Composite primary key for view (SQLAlchemy requires PK)
+    critique_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)
+    critique_issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    tp_id: Mapped[str | None] = mapped_column(String, primary_key=True, nullable=True)
+    tp_occurrence_id: Mapped[str | None] = mapped_column(String, primary_key=True, nullable=True)
+    fp_id: Mapped[str | None] = mapped_column(String, primary_key=True, nullable=True)
+    fp_occurrence_id: Mapped[str | None] = mapped_column(String, primary_key=True, nullable=True)
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn())
+
+
+class GradingEdge(Base):
+    """Explicit bipartite graph edge from critique issue to GT occurrence.
+
+    Each edge represents a grader's judgment about whether a critique issue matches
+    a ground truth occurrence. Every (critique_issue, matchable_occurrence) pair
+    must have an edge (complete coverage).
+
+    Discriminated by NULL pattern:
+    - TP edge: tp_id + tp_occurrence_id NOT NULL, fp_id + fp_occurrence_id NULL
+    - FP edge: fp_id + fp_occurrence_id NOT NULL, tp_id + tp_occurrence_id NULL
+
+    Credit semantics:
+    - For TPs: 0.0-1.0 (how well critique matches; 0.0 = reviewed, no match)
+    - For FPs: 0.0 for non-match, >0 for penalty (incorrectly triggered FP)
+
+    No "no-match" type: pairs with no semantic match still get an edge with credit=0.0.
+    Query grading_pending view to see missing edges (drift).
+    """
+
+    __tablename__ = "grading_edges"
+    __table_args__ = ({"comment": "Bipartite graph edges from critique issues to GT occurrences."},)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    agent_run_id: Mapped[UUID] = mapped_column(
-        PG_UUID(as_uuid=True),
-        ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"),
-        nullable=False,
-        server_default=FetchedValue(),
-    )
-    input_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
-    target_tp_id: Mapped[str | None] = mapped_column(String, nullable=True, comment="TP target (nullable)")
-    target_tp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True, comment="TP target (nullable)")
+    # Critique reference
+    critique_run_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    critique_issue_id: Mapped[str] = mapped_column(String, nullable=False)
 
-    target_fp_id: Mapped[str | None] = mapped_column(String, nullable=True, comment="FP target (nullable)")
-    target_fp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True, comment="FP target (nullable)")
+    # Snapshot (for FK validation)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
 
-    # Matching metadata
+    # TP target (nullable - exactly one of TP or FP)
+    tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    tp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # FP target (nullable)
+    fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fp_occurrence_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+    # Grading metadata
     credit: Mapped[float] = mapped_column(nullable=False)
     rationale: Mapped[str] = mapped_column(Text, nullable=False)
+    grader_run_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("agent_runs.agent_run_id", ondelete="CASCADE"), nullable=False
+    )
 
     # Audit trail
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     # Relationships
-    agent_run: Mapped[AgentRun] = relationship(back_populates="grading_decisions")
-
-    @classmethod
-    def get_active_for_run(cls, session: Session, agent_run_id: UUID) -> list[GradingDecision]:
-        """Get all decisions for a grader agent run.
-
-        Note: Soft-delete was removed, so all persisted decisions are active.
-        """
-        return list(
-            session.execute(select(cls).where(cls.agent_run_id == agent_run_id).order_by(cls.created_at))
-            .scalars()
-            .all()
-        )
+    grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
 
 
 class ModelMetadata(Base):
@@ -907,9 +923,9 @@ class RecallByRun(Base):
     Base view that aggregates occurrence metrics per critic run, across all graders.
     Feeds into recall_by_definition_example which groups by (definition, model, example).
 
-    - n_catchable_occurrences: Ground truth count (denominator for recall)
+    - n_recall_denominator: Ground truth count (denominator for recall)
     - credit_stats: Stats over grader total credits (numerator; not normalized)
-    - recall_stats: credit_stats / n_catchable_occurrences
+    - recall_stats: credit_stats / n_recall_denominator
 
     Failed critic runs (max_turns/context_length) contribute 0 credit via COALESCE.
     """
@@ -926,7 +942,7 @@ class RecallByRun(Base):
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     split: Mapped[Split] = mapped_column(nullable=False)
-    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
     critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -936,7 +952,7 @@ class RecallByRun(Base):
     # Credit stats (numerator for recall)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_catchable_occurrences)
+    # Recall statistics (credit_stats / n_recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -946,9 +962,9 @@ class RecallByDefinitionExample(Base):
     Intermediate view between recall_by_run and higher-level aggregations.
     Groups recall_by_run by (definition, model, example) - used by GEPA.
 
-    - n_catchable_occurrences: Ground truth count (denominator)
+    - n_recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_catchable_occurrences
+    - recall_stats: credit_stats / n_recall_denominator
     """
 
     __tablename__ = "recall_by_definition_example"
@@ -964,7 +980,7 @@ class RecallByDefinitionExample(Base):
     split: Mapped[Split] = mapped_column(nullable=False)
 
     # Ground truth count (denominator)
-    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Number of critic runs for this (definition, model, example)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -975,7 +991,7 @@ class RecallByDefinitionExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_catchable_occurrences)
+    # Recall statistics (credit_stats / n_recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -984,9 +1000,9 @@ class RecallByDefinitionSplitKind(Base):
 
     Aggregates recall_by_definition_example across examples within each (split, example_kind) group.
 
-    - n_catchable_occurrences: Sum across distinct examples (denominator)
+    - n_recall_denominator: Sum across distinct examples (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_catchable_occurrences
+    - recall_stats: credit_stats / n_recall_denominator
     """
 
     __tablename__ = "recall_by_definition_split_kind"
@@ -1004,7 +1020,7 @@ class RecallByDefinitionSplitKind(Base):
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Catchable occurrences (denominator - sum across distinct examples)
-    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
@@ -1012,7 +1028,7 @@ class RecallByDefinitionSplitKind(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_catchable_occurrences)
+    # Recall statistics (credit_stats / n_recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
     # Count of runs where caught credit was exactly 0 (complete failure to find anything)
@@ -1024,9 +1040,9 @@ class RecallByExample(Base):
 
     Aggregates recall_by_definition_example across definitions.
 
-    - n_catchable_occurrences: Ground truth count (denominator)
+    - n_recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_catchable_occurrences
+    - recall_stats: credit_stats / n_recall_denominator
     """
 
     __tablename__ = "recall_by_example"
@@ -1041,7 +1057,7 @@ class RecallByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Catchable occurrences (denominator)
-    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -1052,7 +1068,7 @@ class RecallByExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_catchable_occurrences)
+    # Recall statistics (credit_stats / n_recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1073,11 +1089,11 @@ class ParetoFrontierByExample(Base):
     For each example, shows definitions that achieved the best mean credit.
 
     For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-    - n_catchable_occurrences: ground truth count (denominator for recall)
+    - n_recall_denominator: ground truth count (denominator for recall)
     - winning_definitions: list of {definition_id, credit_stats, n_runs} for all definitions at best score
 
     All entries in winning_definitions have the same credit_stats.mean (the best score).
-    Consumer can compute recall as best_mean_credit / n_catchable_occurrences.
+    Consumer can compute recall as best_mean_credit / n_recall_denominator.
 
     Useful for prompt optimization to identify:
     - Which definitions excel on specific examples (definition specialization)
@@ -1100,7 +1116,7 @@ class ParetoFrontierByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Ground truth count for this example
-    n_catchable_occurrences: Mapped[int] = mapped_column(Integer, nullable=False)
+    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # JSONB array of {definition_id, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
@@ -1219,8 +1235,8 @@ class AgentRun(Base):
     reported_issues: Mapped[list[ReportedIssue]] = relationship(
         back_populates="agent_run", cascade="all, delete-orphan"
     )
-    grading_decisions: Mapped[list[GradingDecision]] = relationship(
-        back_populates="agent_run", cascade="all, delete-orphan"
+    grading_edges: Mapped[list[GradingEdge]] = relationship(
+        back_populates="grader_run", foreign_keys="GradingEdge.grader_run_id", cascade="all, delete-orphan"
     )
     events: Mapped[list[Event]] = relationship(back_populates="agent_run", cascade="all, delete-orphan")
 
@@ -1244,6 +1260,16 @@ class AgentRun(Base):
         if isinstance(self.type_config, GraderTypeConfig):
             return self.type_config
         raise ValueError(f"Expected GraderTypeConfig, got {type(self.type_config).__name__}")
+
+    def snapshot_grader_config(self) -> SnapshotGraderTypeConfig:
+        """Get type_config as SnapshotGraderTypeConfig or raise ValueError.
+
+        Use when this run is expected to be a snapshot grader daemon run.
+        Raises ValueError if type_config is not SnapshotGraderTypeConfig.
+        """
+        if isinstance(self.type_config, SnapshotGraderTypeConfig):
+            return self.type_config
+        raise ValueError(f"Expected SnapshotGraderTypeConfig, got {type(self.type_config).__name__}")
 
     def improvement_config(self) -> ImprovementTypeConfig:
         """Get type_config as ImprovementTypeConfig or raise ValueError.

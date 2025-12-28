@@ -1,7 +1,17 @@
 {pkgs, ...}: {
   # Basic packages available in the shell
   # stdenv.cc.cc.lib provides libstdc++.so.6 needed by numpy, etc.
-  packages = [pkgs.git pkgs.stdenv.cc.cc.lib pkgs.zlib];
+  packages = [
+    pkgs.git
+    pkgs.stdenv.cc.cc.lib
+    pkgs.zlib
+    pkgs.ninja
+    pkgs.pkg-config
+    pkgs.dbus
+    pkgs.glib
+    pkgs.gobject-introspection
+    pkgs.cairo
+  ];
 
   # Python with uv for workspace-wide venv management
   languages.python = {
@@ -10,6 +20,9 @@
     uv = {
       enable = true;
       sync.enable = true;
+      # Don't use allExtras - it pulls in adgn[gnome] which requires dbus-python
+      # and complex system dependencies. Specify needed extras explicitly.
+      sync.extras = ["dev" "orchestration" "gepa"];
     };
   };
 

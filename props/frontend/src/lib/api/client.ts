@@ -131,7 +131,7 @@ export async function fetchJobs() {
 
 // Fetch run details
 export async function fetchRun(runId: string) {
-  const { data, error } = await api.GET('/api/runs/{run_id}', {
+  const { data, error } = await api.GET('/api/runs/run/{run_id}', {
     params: { path: { run_id: runId } },
   });
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch run'));
@@ -140,7 +140,7 @@ export async function fetchRun(runId: string) {
 
 // Fetch run events
 export async function fetchRunEvents(runId: string, offset = 0, limit = 100) {
-  const { data, error } = await api.GET('/api/runs/{run_id}/events', {
+  const { data, error } = await api.GET('/api/runs/run/{run_id}/events', {
     params: { path: { run_id: runId }, query: { offset, limit } },
   });
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch events'));

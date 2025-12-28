@@ -28,10 +28,10 @@ def test_load_git_fixtures(test_specimens_base: Path) -> None:
 
     # Verify each expected snapshot exists with correct split
     expected = {
-        "test-fixtures/test-trivial": "train",
-        "test-fixtures/test-validation": "valid",
-        "test-fixtures/test-validation-2": "valid",
-        "test-fixtures/test-split-test": "test",
+        "test-fixtures/train1": "train",
+        "test-fixtures/valid1": "valid",
+        "test-fixtures/valid2": "valid",
+        "test-fixtures/test1": "test",
     }
     for slug, expected_split in expected.items():
         assert SnapshotSlug(slug) in snapshots, f"Missing snapshot: {slug}"

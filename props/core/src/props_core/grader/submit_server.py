@@ -1,7 +1,7 @@
 """MCP server for grader submit workflow.
 
 Provides the grader_submit tool that agents call when done grading.
-Validates grading decisions and marks the grader run as complete.
+Validates grading edges are complete and marks the grader run as complete.
 """
 
 from __future__ import annotations
@@ -12,8 +12,9 @@ from uuid import UUID
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
-from props_core.db.models import AgentRun, AgentRunStatus, GradingDecision, ReportedIssue
+from props_core.db.models import AgentRun, AgentRunStatus
 from props_core.db.session import get_session
+from sqlalchemy import text
 
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
@@ -59,18 +60,12 @@ class GraderSubmitServer(EnhancedFastMCP):
         self._critic_run_id = critic_run_id
 
         def submit(input: GraderSubmitInput) -> None:
-            """Finalize grading and validate decisions.
+            """Finalize grading and validate edges are complete.
 
-            Call this when you're done grading all input issues. This will:
-            1. Validate that every input issue has at least one decision
-            2. Verify credit sums per occurrence don't exceed 1.0
-            3. Mark the grader run as completed
-            4. Store your summary
-
-            Validations performed:
-            - Every input issue must have at least one decision
-            - Multiple decisions per input are allowed (e.g., input matches tp-A at 0.1 and tp-B at 0.2)
-            - Credit sums validated (though SQL trigger already enforces ≤1.0)
+            Call this when you're done grading all edges. This will:
+            1. Validate that no pending edges remain (grading_pending is empty)
+            2. Mark the grader run as completed
+            3. Store your summary
             """
             with get_session() as session:
                 agent_run = session.get(AgentRun, self._grader_run_id)
@@ -83,15 +78,19 @@ class GraderSubmitServer(EnhancedFastMCP):
                 if agent_run.status == AgentRunStatus.REPORTED_FAILURE:
                     raise ToolError(f"Grader run {self._grader_run_id} already reported failure")
 
-                input_issue_ids = {
-                    i.issue_id for i in session.query(ReportedIssue).filter_by(agent_run_id=self._critic_run_id)
-                }
-                decided_ids = {
-                    d.input_issue_id for d in session.query(GradingDecision).filter_by(agent_run_id=self._grader_run_id)
-                }
-                missing = input_issue_ids - decided_ids
-                if missing:
-                    raise ToolError(f"Missing grading decisions for: {', '.join(sorted(missing))}")
+                # Check if any edges are still pending
+                pending_count = session.execute(
+                    text("""
+                        SELECT COUNT(*) FROM grading_pending
+                        WHERE critique_run_id = :critic_run_id
+                    """),
+                    {"critic_run_id": self._critic_run_id},
+                ).scalar()
+
+                if pending_count and pending_count > 0:
+                    raise ToolError(
+                        f"{pending_count} edges still pending. Complete all grading edges before submitting."
+                    )
 
                 agent_run.status = AgentRunStatus.COMPLETED
                 agent_run.completion_summary = input.summary

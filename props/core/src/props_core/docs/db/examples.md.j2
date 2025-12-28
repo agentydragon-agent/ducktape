@@ -41,7 +41,7 @@ WHERE snapshot_slug = 'ducktape/2025-11-26-00'
 
 ## Example Generation
 
-Examples are auto-generated from `expect_caught_from` in ground truth:
+Examples are auto-generated from `critic_scopes_expected_to_recall` in ground truth:
 - Each unique trigger set becomes a per-file example
 - Plus one full-snapshot example per snapshot
 
@@ -60,8 +60,8 @@ Examples are auto-generated from `expect_caught_from` in ground truth:
 **Hill-climbing query:**
 ```sql
 -- Find easiest examples to start with
-SELECT snapshot_slug, files_hash, n_catchable_occurrences
+SELECT snapshot_slug, files_hash, n_recall_denominator
 FROM examples
-WHERE example_kind = 'file_set' AND n_catchable_occurrences <= 3
-ORDER BY n_catchable_occurrences;
+WHERE example_kind = 'file_set' AND n_recall_denominator <= 3
+ORDER BY n_recall_denominator;
 ```

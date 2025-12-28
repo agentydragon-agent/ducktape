@@ -55,8 +55,8 @@ class TpOccurrenceInfo(BaseModel):
     occurrence_id: str
     files: list[FileLocationInfo]
     note: str | None
-    expect_caught_from: list[list[str]]
-    only_matchable_from_files: list[str] | None
+    critic_scopes_expected_to_recall: list[list[str]]
+    graders_match_only_if_reported_on: list[str] | None
 
 
 class TpInfo(BaseModel):
@@ -75,7 +75,7 @@ class FpOccurrenceInfo(BaseModel):
     files: list[FileLocationInfo]
     note: str | None
     relevant_files: list[str]
-    only_matchable_from_files: list[str] | None
+    graders_match_only_if_reported_on: list[str] | None
 
 
 class FpInfo(BaseModel):
@@ -117,7 +117,7 @@ def _parse_files_json(files_json: dict) -> list[FileLocationInfo]:
 
 
 def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
-    """Get expect_caught_from paths from occurrence triggers."""
+    """Get critic_scopes_expected_to_recall paths from occurrence triggers."""
     result = []
     for trigger in occ.triggers:
         if trigger.file_set:
@@ -127,7 +127,7 @@ def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
 
 
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
-    """Get only_matchable_from_files paths from hash."""
+    """Get graders_match_only_if_reported_on paths from hash."""
     if not files_hash:
         return None
     members = (
@@ -213,10 +213,8 @@ def get_snapshot_detail(snapshot_slug: str) -> SnapshotDetailResponse:
                         occurrence_id=occ.occurrence_id,
                         files=_parse_files_json(occ.files),
                         note=occ.note,
-                        expect_caught_from=_get_trigger_paths(occ),
-                        only_matchable_from_files=_get_matchable_files(
-                            session, slug, occ.only_matchable_from_files_hash
-                        ),
+                        critic_scopes_expected_to_recall=_get_trigger_paths(occ),
+                        graders_match_only_if_reported_on=_get_matchable_files(session, slug, occ.match_filter_hash),
                     )
                 )
             tp_infos.append(
@@ -234,9 +232,7 @@ def get_snapshot_detail(snapshot_slug: str) -> SnapshotDetailResponse:
                         files=_parse_files_json(occ.files),
                         note=occ.note,
                         relevant_files=sorted(occ.relevant_files),
-                        only_matchable_from_files=_get_matchable_files(
-                            session, slug, occ.only_matchable_from_files_hash
-                        ),
+                        graders_match_only_if_reported_on=_get_matchable_files(session, slug, occ.match_filter_hash),
                     )
                 )
             fp_infos.append(

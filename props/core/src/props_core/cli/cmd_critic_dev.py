@@ -59,7 +59,7 @@ async def run_critic_cmd(
     definition_id: Annotated[
         str, typer.Argument(help="Agent package ID (from 'props agent-pkg create', or 'critic' for baseline)")
     ],
-    snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/test-trivial')")],
+    snapshot_slug: Annotated[str, typer.Argument(help="Snapshot identifier (e.g., 'test-fixtures/train1')")],
     files_hash: Annotated[
         str | None, typer.Argument(help="Files hash for file_set example, or omit/empty for whole_snapshot")
     ] = None,
@@ -71,7 +71,7 @@ async def run_critic_cmd(
 
     Examples:
         # Whole snapshot review
-        props critic-dev run-critic critic "test-fixtures/test-trivial"
+        props critic-dev run-critic critic "test-fixtures/train1"
 
         # File set review (specific files)
         props critic-dev run-critic critic "ducktape/2025-11-26-00" "abc123..."

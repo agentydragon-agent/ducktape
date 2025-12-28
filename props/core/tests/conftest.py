@@ -9,14 +9,10 @@ from unittest.mock import patch
 from uuid import UUID, uuid4
 
 from props_core.agent_registry import AgentRegistry
-from props_core.agent_types import ClusteringTypeConfig, CriticTypeConfig, GraderTypeConfig
+from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
 from props_core.critic.models import CriticSubmitPayload, CriticSuccess
-from props_core.db.agent_definition_ids import (
-    CLUSTERING_AGENT_DEFINITION_ID,
-    CRITIC_AGENT_DEFINITION_ID,
-    GRADER_AGENT_DEFINITION_ID,
-)
+from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID, GRADER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig, get_database_config
 from props_core.db.examples import Example
 from props_core.db.models import (
@@ -26,7 +22,7 @@ from props_core.db.models import (
     FalsePositiveOccurrenceORM,
     FileSet,
     FileSetMember,
-    GradingDecision,
+    GradingEdge,
     ReportedIssue,
     ReportedIssueOccurrence,
     Snapshot,
@@ -140,7 +136,7 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
         # Called from production code - allow it
         return original(*args, **kwargs)
 
-    monkeypatch.setattr("props.db.config.get_database_config", _block_from_tests)
+    monkeypatch.setattr("props_core.db.config.get_database_config", _block_from_tests)
 
     # Return original for test_db fixture to use
     return original
@@ -184,7 +180,7 @@ def make_grader_output(
     Example:
         # Query real TPs from database
         tp_occs = session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id).filter_by(
-            snapshot_slug="test-fixtures/test-trivial"
+            snapshot_slug="test-fixtures/train1"
         ).all()
 
         # Create output with 80% recall across all occurrences
@@ -230,7 +226,7 @@ def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> lis
 
     Example:
         with get_session() as session:
-            tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/test-trivial", session)
+            tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/train1", session)
             output = make_grader_output(tp_occurrences=tp_occs, found_credit=0.8)
     """
     rows = (
@@ -306,7 +302,7 @@ def make_critique_payload(notes_md: str = "") -> DBCriticSubmitPayload:
 def make_tp_occurrence(
     occurrence_id: str = "occ-1",
     files: dict[Path, list[LineRange] | None] | None = None,
-    expect_caught_from: set[frozenset[Path]] | None = None,
+    critic_scopes_expected_to_recall: set[frozenset[Path]] | None = None,
     note: str | None = None,
 ) -> TruePositiveOccurrence:
     """Build TruePositiveOccurrence with proper Pydantic types.
@@ -317,7 +313,7 @@ def make_tp_occurrence(
             - None (default): Single file Path("test.py") with no ranges
             - {Path("file.py"): None}: File with no line ranges
             - {Path("file.py"): [LineRange(...)]}: File with line ranges
-        expect_caught_from: Minimal file sets for detection
+        critic_scopes_expected_to_recall: Minimal file sets for detection
             - None (default): Single trigger set containing first file
             - {frozenset([Path("file.py")])}: Set of frozensets of Paths
         note: Occurrence-specific note (optional)
@@ -336,12 +332,12 @@ def make_tp_occurrence(
 
         # Multiple trigger sets (OR logic):
         make_tp_occurrence(
-            expect_caught_from={frozenset([Path("file1.py")]), frozenset([Path("file2.py")])}
+            critic_scopes_expected_to_recall={frozenset([Path("file1.py")]), frozenset([Path("file2.py")])}
         )
 
         # Trigger set requiring multiple files (AND logic):
         make_tp_occurrence(
-            expect_caught_from={frozenset([Path("client.py"), Path("utils.py")])}
+            critic_scopes_expected_to_recall={frozenset([Path("client.py"), Path("utils.py")])}
         )
     """
     # Default: single file with no ranges
@@ -349,12 +345,15 @@ def make_tp_occurrence(
         files = {Path("test.py"): None}
 
     # Default: single trigger set containing first file
-    if expect_caught_from is None:
+    if critic_scopes_expected_to_recall is None:
         first_file = next(iter(files.keys()))
-        expect_caught_from = {frozenset([first_file])}
+        critic_scopes_expected_to_recall = {frozenset([first_file])}
 
     return TruePositiveOccurrence(
-        occurrence_id=occurrence_id, files=files, note=note, expect_caught_from=expect_caught_from
+        occurrence_id=occurrence_id,
+        files=files,
+        note=note,
+        critic_scopes_expected_to_recall=critic_scopes_expected_to_recall,
     )
 
 
@@ -410,53 +409,17 @@ def make_fp_occurrence(
 # Use make_critic_run instead to create AgentRun records for critic runs
 
 
-def make_clustering_run(
-    snapshot_slug: SnapshotSlug,
-    status: AgentRunStatus = AgentRunStatus.IN_PROGRESS,
-    agent_run_id: UUID | None = None,
-    model: str = "test-model",
-) -> AgentRun:
-    """Build AgentRun for clustering with ClusteringTypeConfig.
-
-    Args:
-        snapshot_slug: Snapshot this run analyzes (must be SnapshotSlug)
-        status: Run status (default: IN_PROGRESS)
-        agent_run_id: Optional agent run ID (auto-generated if None)
-        model: Model name (default: test-model)
-
-    Returns:
-        AgentRun ORM model (not yet added to session)
-
-    Examples:
-        # Basic run:
-        make_clustering_run(SnapshotSlug("test/spec-a"))
-
-        # With custom status:
-        make_clustering_run(SnapshotSlug("test/spec-b"), status=AgentRunStatus.COMPLETED)
-    """
-    if agent_run_id is None:
-        agent_run_id = uuid4()
-    type_config = ClusteringTypeConfig(snapshot_slug=snapshot_slug)
-    return AgentRun(
-        agent_run_id=agent_run_id,
-        agent_definition_id=CLUSTERING_AGENT_DEFINITION_ID,
-        model=model,
-        type_config=type_config,
-        status=status,
-    )
-
-
 # DEPRECATED: get_example() and get_or_create_example() removed
 # Examples are now database VIEWs auto-generated from file_sets and snapshots tables
 # Query directly:
 #   example = session.query(Example).filter_by(
-#       snapshot_slug="test-fixtures/test-trivial",
+#       snapshot_slug="test-fixtures/train1",
 #       scope_kind=ExampleKind.WHOLE_SNAPSHOT
 #   ).one()
 #
 # Or for single-file-set:
 #   example = session.query(Example).filter_by(
-#       snapshot_slug="test-fixtures/test-trivial",
+#       snapshot_slug="test-fixtures/train1",
 #       scope_kind=ExampleKind.FILE_SET,
 #       files_hash=123
 #   ).one()
@@ -600,7 +563,7 @@ def make_reported_issues(
         agent_run_id: The agent run (critic) these issues belong to
         issue_ids: List of issue IDs to create (e.g., ["input-1", "input-2"])
         session: Database session
-        location_file: File path for occurrence locations. Default "subtract.py" exists in test-trivial fixture.
+        location_file: File path for occurrence locations. Default "subtract.py" exists in train1 fixture.
             Pass None to skip occurrence creation (useful for whole_snapshot examples).
 
     Returns:
@@ -625,72 +588,48 @@ def make_reported_issues(
     return issues
 
 
-def populate_grading_decisions(
-    *, grader_run: AgentRun, occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult], session: Session
+def populate_grading_edges(
+    *,
+    critic_run: AgentRun,
+    grader_run: AgentRun,
+    snapshot_slug: SnapshotSlug,
+    occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult],
+    session: Session,
 ) -> None:
-    """Create GradingDecision rows from occurrence results.
+    """Create GradingEdge rows from occurrence results.
 
-    Deterministic factory - creates one decision per match in occurrence results.
+    Deterministic factory - creates one edge per match in occurrence results.
     No conditional logic, no side effects beyond session writes.
 
-    Precondition: ReportedIssue rows must already exist for all input_issue_ids
+    Precondition: ReportedIssue rows must already exist for all critique_issue_ids
     referenced in occurrence_results.
 
     Args:
-        grader_run: Grader AgentRun to associate decisions with
+        critic_run: Critic AgentRun the edges reference
+        grader_run: Grader AgentRun that created these edges
+        snapshot_slug: Snapshot being graded
         occurrence_results: List of OccurrenceResult (MCP) or DBOccurrenceResult (DB persistence)
         session: Database session (uses provided session, not get_session())
 
     Raises:
-        IntegrityError: If referenced input_issue_id doesn't exist (CHECK constraint)
+        IntegrityError: If referenced critique_issue_id doesn't exist (CHECK constraint)
     """
-    # Create one GradingDecision per match in each occurrence result
+    # Create one GradingEdge per match in each occurrence result
     for occ_result in occurrence_results:
         for match in occ_result.matched_by:
-            decision = GradingDecision(
-                agent_run_id=grader_run.agent_run_id,
-                input_issue_id=str(match.input_id),
-                target_tp_id=str(occ_result.tp_id),
-                target_tp_occurrence_id=occ_result.occurrence_id,
-                target_fp_id=None,
-                target_fp_occurrence_id=None,
+            edge = GradingEdge(
+                critique_run_id=critic_run.agent_run_id,
+                critique_issue_id=str(match.input_id),
+                snapshot_slug=snapshot_slug,
+                tp_id=str(occ_result.tp_id),
+                tp_occurrence_id=occ_result.occurrence_id,
+                fp_id=None,
+                fp_occurrence_id=None,
                 credit=match.credit,
                 rationale=str(occ_result.rationale),
+                grader_run_id=grader_run.agent_run_id,
             )
-            session.add(decision)
-
-
-def make_unknown_grading_decisions(
-    *, agent_run_id: UUID, unknown_ids: list[str], session: Session, rationale_prefix: str = "Unknown issue"
-) -> None:
-    """Create GradingDecision rows marking input issues as unknowns.
-
-    Deterministic factory - creates one no-match decision per unknown_id.
-    All target fields are NULL (indicating no TP/FP match).
-
-    Precondition: ReportedIssue rows must already exist for all unknown_ids.
-
-    Args:
-        agent_run_id: Agent run to associate decisions with
-        unknown_ids: List of input issue IDs to mark as unknowns
-        session: Database session (uses provided session, not get_session())
-        rationale_prefix: Prefix for rationale text (default: "Unknown issue")
-
-    Raises:
-        IntegrityError: If referenced input_issue_id doesn't exist (CHECK constraint)
-    """
-    for unknown_id in unknown_ids:
-        decision = GradingDecision(
-            agent_run_id=agent_run_id,
-            input_issue_id=unknown_id,
-            target_tp_id=None,
-            target_tp_occurrence_id=None,
-            target_fp_id=None,
-            target_fp_occurrence_id=None,
-            credit=0.0,
-            rationale=f"{rationale_prefix} {unknown_id}",
-        )
-        session.add(decision)
+            session.add(edge)
 
 
 def make_critic_and_grader_run(
@@ -706,7 +645,7 @@ def make_critic_and_grader_run(
     - ReportedIssue rows (derived from grader_output)
     - ReportedIssueOccurrence rows (placeholder locations)
     - Grader AgentRun with provided output
-    - GradingDecision rows from grader output
+    - GradingEdge rows from grader output
 
     Args:
         example: Example being evaluated
@@ -745,15 +684,21 @@ def make_critic_and_grader_run(
     session.add(grader_run)
     session.flush()
 
-    # Populate grading decisions (deterministic)
+    # Populate grading edges (deterministic)
     if isinstance(grader_output, DBGraderSuccess):
         occurrence_results = grader_output.occurrence_results
-        populate_grading_decisions(grader_run=grader_run, occurrence_results=occurrence_results, session=session)
+        populate_grading_edges(
+            critic_run=critic_run,
+            grader_run=grader_run,
+            snapshot_slug=example.snapshot_slug,
+            occurrence_results=occurrence_results,
+            session=session,
+        )
 
     return critic_run, grader_run
 
 
-def make_grader_run_with_decisions(
+def make_grader_run_with_edges(
     *,  # Force keyword arguments
     critic_run: AgentRun,
     session: Session,
@@ -763,25 +708,25 @@ def make_grader_run_with_decisions(
     occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult] | None = None,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
-    """Build grader AgentRun and populate grading_decisions table (one-step helper).
+    """Build grader AgentRun and populate grading_edges table (one-step helper).
 
-    Combines make_grader_run() + session.add/flush + populate_grading_decisions()
+    Combines make_grader_run() + session.add/flush + populate_grading_edges()
     to reduce boilerplate in tests that need normalized table data.
 
     DEPRECATED: This helper is rarely used. Prefer explicit test setup with
-    make_reported_issues() + make_grader_run() + populate_grading_decisions().
+    make_reported_issues() + make_grader_run() + populate_grading_edges().
 
     Args:
         critic_run: Critic AgentRun being evaluated (derives snapshot_slug and graded_agent_run_id)
-        session: Database session (required for decisions and flush)
+        session: Database session (required for edges and flush)
         canonical_issues_snapshot: Snapshot of TPs+FPs used (default: EMPTY_CANONICAL_ISSUES_SNAPSHOT)
         model: Model name (default: "test-model")
         status: Run status (default: COMPLETED)
-        occurrence_results: Occurrence results for populating decisions (optional)
+        occurrence_results: Occurrence results for populating edges (optional)
         agent_run_id: Optional agent run ID (defaults to uuid4())
 
     Returns:
-        Grader AgentRun ORM model (added to session, flushed, with grading_decisions populated)
+        Grader AgentRun ORM model (added to session, flushed, with grading_edges populated)
     """
     grader_run = make_grader_run(
         critic_run=critic_run,
@@ -793,14 +738,23 @@ def make_grader_run_with_decisions(
     session.add(grader_run)
     session.flush()
 
-    # Populate grading decisions if occurrence_results provided
+    # Populate grading edges if occurrence_results provided
     if occurrence_results:
         # Extract issue IDs and create reported issues first
         issue_ids = [str(match.input_id) for occ in occurrence_results for match in occ.matched_by]
         make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
-        # Populate grading decisions from occurrence_results
-        populate_grading_decisions(grader_run=grader_run, occurrence_results=occurrence_results, session=session)
+        # Get snapshot_slug from critic's type_config
+        snapshot_slug = critic_run.critic_config().example.snapshot_slug
+
+        # Populate grading edges from occurrence_results
+        populate_grading_edges(
+            critic_run=critic_run,
+            grader_run=grader_run,
+            snapshot_slug=snapshot_slug,
+            occurrence_results=occurrence_results,
+            session=session,
+        )
 
     return grader_run
 
@@ -1008,16 +962,16 @@ def admin_engine(test_db: DatabaseConfig) -> Generator:
 
 @pytest.fixture
 def test_snapshot(synced_test_db: DatabaseConfig) -> SnapshotSlug:
-    """Use test-fixtures/test-trivial snapshot from git fixtures.
+    """Use test-fixtures/train1 snapshot from git fixtures.
 
-    Returns test-fixtures/test-trivial slug which is already synced by synced_test_db.
+    Returns test-fixtures/train1 slug which is already synced by synced_test_db.
     Uses function-scoped synced_test_db to support tests that write to the database.
 
     Returns:
         SnapshotSlug for the git fixture snapshot
     """
     # Use git fixture snapshot (already synced via synced_test_db)
-    return SnapshotSlug("test-fixtures/test-trivial")
+    return SnapshotSlug("test-fixtures/train1")
 
 
 # =============================================================================
@@ -1140,9 +1094,9 @@ def test_validation_snapshot_slug(synced_test_db: DatabaseConfig) -> SnapshotSlu
     """Return test-validation fixture snapshot slug (after syncing test fixtures).
 
     Test fixture snapshot with issues (TPs/FPs) for validation.
-    Lives in tests/props/fixtures/specimens/test-fixtures/test-validation/.
+    Lives in tests/props/fixtures/specimens/test-fixtures/valid1/.
     """
-    return SnapshotSlug("test-fixtures/test-validation")
+    return SnapshotSlug("test-fixtures/valid1")
 
 
 # =============================================================================
@@ -1162,12 +1116,12 @@ def all_files_scope(test_snapshot: SnapshotSlug) -> WholeSnapshotExample:
 
 @pytest.fixture
 def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExample:
-    """SingleFileSetExample for subtract.py in test-trivial.
+    """SingleFileSetExample for subtract.py in train1.
 
     Queries the database to get the actual files_hash for the subtract.py scope.
-    The file set is created during sync from ground truth expect_caught_from.
+    The file set is created during sync from ground truth critic_scopes_expected_to_recall.
     """
-    slug = SnapshotSlug("test-fixtures/test-trivial")
+    slug = SnapshotSlug("test-fixtures/train1")
     with get_session() as session:
         # Find file set that has exactly "subtract.py" file
         # by finding FileSetMember with subtract.py and checking it's the only file
@@ -1178,7 +1132,7 @@ def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExampl
             .filter(FileSetMember.file_path == "subtract.py")
             .first()
         )
-        assert fs is not None, "No file set found for subtract.py in test-trivial"
+        assert fs is not None, "No file set found for subtract.py in train1"
         return SingleFileSetExample(snapshot_slug=slug, files_hash=fs.files_hash)
 
 
@@ -1190,68 +1144,68 @@ def subtract_file_example(synced_test_db: DatabaseConfig) -> SingleFileSetExampl
 @pytest.fixture
 def example_subtract_orm(synced_test_session: Session) -> Example:
     """ORM Example for subtract.py (single TP occurrence) from git-synced fixture."""
-    slug = SnapshotSlug("test-fixtures/test-trivial")
+    slug = SnapshotSlug("test-fixtures/train1")
     example = (
         synced_test_session.query(Example)
         .filter_by(snapshot_slug=slug)
         .filter(Example.files_hash.isnot(None))
-        .filter(Example.n_catchable_occurrences == 1)
+        .filter(Example.n_recall_denominator == 1)
         .first()
     )
-    assert example is not None, "Expected single-file-set example with 1 catchable TP in test-trivial"
+    assert example is not None, "Expected single-file-set example with 1 catchable TP in train1"
     return example
 
 
 @pytest.fixture
 def example_multi_tp_orm(synced_test_session: Session) -> Example:
     """ORM Example with multiple TP occurrences from git-synced fixture (e.g., add.py)."""
-    slug = SnapshotSlug("test-fixtures/test-trivial")
+    slug = SnapshotSlug("test-fixtures/train1")
     example = (
         synced_test_session.query(Example)
         .filter_by(snapshot_slug=slug)
         .filter(Example.files_hash.isnot(None))
-        .filter(Example.n_catchable_occurrences > 1)
+        .filter(Example.n_recall_denominator > 1)
         .first()
     )
-    assert example is not None, "Expected file-set example with multiple TP occurrences in test-trivial"
+    assert example is not None, "Expected file-set example with multiple TP occurrences in train1"
     return example
 
 
 @pytest.fixture
 def tp_occurrence_single(synced_test_session: Session, example_subtract_orm: Example) -> tuple[str, str]:
-    """(tp_id, occurrence_id) for a real single-occurrence TP in test-trivial."""
+    """(tp_id, occurrence_id) for a real single-occurrence TP in train1."""
     tp_occ = (
         synced_test_session.query(TruePositiveOccurrenceORM)
         .filter_by(snapshot_slug=example_subtract_orm.snapshot_slug)
         .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
         .first()
     )
-    assert tp_occ is not None, "Expected at least one TP occurrence in test-trivial"
+    assert tp_occ is not None, "Expected at least one TP occurrence in train1"
     return tp_occ.tp_id, tp_occ.occurrence_id
 
 
 @pytest.fixture
 def tp_single_id(tp_occurrence_single: tuple[str, str]) -> str:
-    """TP id for the single-occurrence TP in test-trivial."""
+    """TP id for the single-occurrence TP in train1."""
     return tp_occurrence_single[0]
 
 
 @pytest.fixture
 def tp_single_occurrence_id(tp_occurrence_single: tuple[str, str]) -> str:
-    """Occurrence id for the single-occurrence TP in test-trivial."""
+    """Occurrence id for the single-occurrence TP in train1."""
     return tp_occurrence_single[1]
 
 
 @pytest.fixture
 def tp_occurrences_multi(synced_test_session: Session, example_multi_tp_orm: Example) -> list[tuple[str, str]]:
-    """List of (tp_id, occurrence_id) for a multi-occurrence example in test-trivial."""
+    """List of (tp_id, occurrence_id) for a multi-occurrence example in train1."""
     rows = (
         synced_test_session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
         .filter_by(snapshot_slug=example_multi_tp_orm.snapshot_slug)
         .order_by(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id)
         .all()
     )
-    assert rows, "Expected TP occurrences for multi-TP example in test-trivial"
+    assert rows, "Expected TP occurrences for multi-TP example in train1"
     return [(row.tp_id, row.occurrence_id) for row in rows]
 
 
@@ -1288,7 +1242,7 @@ def make_grader_run_with_credit(
     input_idx: int = 0,
     model: str = "test-grader-model",
 ) -> AgentRun:
-    """Create grader run + grading_decision for a critic run using real TP occurrence IDs."""
+    """Create grader run + grading_edge for a critic run using real TP occurrence IDs."""
 
     tp_id, occ_id = tp_occurrence
 
@@ -1315,8 +1269,15 @@ def make_grader_run_with_credit(
         summary=Rationale(f"Summary {credit}"),
     )
 
-    populate_grading_decisions(
-        grader_run=grader_run, occurrence_results=grader_success.occurrence_results, session=session
+    # Get snapshot_slug from critic's type_config
+    snapshot_slug = critic_run.critic_config().example.snapshot_slug
+
+    populate_grading_edges(
+        critic_run=critic_run,
+        grader_run=grader_run,
+        snapshot_slug=snapshot_slug,
+        occurrence_results=grader_success.occurrence_results,
+        session=session,
     )
     return grader_run
 
@@ -1328,9 +1289,9 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
     - 2 Critic AgentRuns (for UCB/LCB computation which requires COUNT(*) > 1)
     - ReportedIssue + ReportedIssueOccurrence rows
     - 2 Grader AgentRuns
-    - GradingDecision rows
+    - GradingEdge rows
 
-    The grading_decisions are populated using real TP IDs from the database.
+    The grading_edges are populated using real TP IDs from the database.
 
     Args:
         slug: Snapshot slug to query
@@ -1341,15 +1302,15 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
         pair of AgentRun objects (second pair also created for UCB/LCB stats)
     """
     with get_session() as session:
-        # Must use whole-snapshot example so n_catchable_occurrences matches all TPs
+        # Must use whole-snapshot example so n_recall_denominator matches all TPs
         example = session.query(Example).filter_by(snapshot_slug=slug, example_kind=ExampleKind.WHOLE_SNAPSHOT).first()
         assert example, f"No whole-snapshot example found for {slug}"
 
         # Get real TP occurrences from database - all TPs in snapshot
         tp_occs = get_tp_occurrences_for_snapshot(slug, session)
         assert tp_occs, f"No TP occurrences found for {slug}"
-        assert len(tp_occs) == example.n_catchable_occurrences, (
-            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.n_catchable_occurrences} catchable"
+        assert len(tp_occs) == example.n_recall_denominator, (
+            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.n_recall_denominator} catchable"
         )
 
         # Create grader output with real TP IDs
@@ -1372,44 +1333,44 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
 
 @pytest.fixture
 def test_trivial_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
-    """Provide the test-trivial snapshot (train split).
+    """Provide the train1 snapshot (train split).
 
     This is a real git-tracked fixture with 2 TPs in add.py and subtract.py.
     Use this instead of creating synthetic snapshots.
     """
     with get_session() as session:
-        return session.query(Snapshot).filter_by(slug="test-fixtures/test-trivial").one()
+        return session.query(Snapshot).filter_by(slug="test-fixtures/train1").one()
 
 
 @pytest.fixture
 def test_validation_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
-    """Provide the test-validation snapshot (valid split).
+    """Provide the valid1 snapshot (valid split).
 
     This is a real git-tracked fixture with 1 TP in subtract.py.
     Use this instead of creating synthetic snapshots.
     """
     with get_session() as session:
-        return session.query(Snapshot).filter_by(slug="test-fixtures/test-validation").one()
+        return session.query(Snapshot).filter_by(slug="test-fixtures/valid1").one()
 
 
 @pytest.fixture
 def test_train_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
     """Provide a train example with critic and grader runs.
 
-    Uses test-trivial fixture (train split) and creates runs with 80% recall.
+    Uses train1 fixture (train split) and creates runs with 80% recall.
     Returns (example, critic_run, grader_run) tuple where runs are AgentRun objects.
     """
-    return _make_example_with_runs(SnapshotSlug("test-fixtures/test-trivial"), found_credit=0.8)
+    return _make_example_with_runs(SnapshotSlug("test-fixtures/train1"), found_credit=0.8)
 
 
 @pytest.fixture
 def test_valid_example_with_runs(synced_test_db: DatabaseConfig) -> tuple[Example, AgentRun, AgentRun]:
     """Provide a valid example with critic and grader runs.
 
-    Uses test-validation fixture (valid split) and creates runs with 60% recall.
+    Uses valid1 fixture (valid split) and creates runs with 60% recall.
     Returns (example, critic_run, grader_run) tuple where runs are AgentRun objects.
     """
-    return _make_example_with_runs(SnapshotSlug("test-fixtures/test-validation"), found_credit=0.6)
+    return _make_example_with_runs(SnapshotSlug("test-fixtures/valid1"), found_credit=0.6)
 
 
 # =============================================================================
@@ -1438,7 +1399,7 @@ def run_critic_with_steps(synced_test_db, test_snapshot, make_step_runner, async
             # Must provide example parameter now
             with get_session() as session:
                 example = session.query(Example).filter_by(
-                    snapshot_slug="test-fixtures/test-trivial",
+                    snapshot_slug="test-fixtures/train1",
                     scope_kind=ExampleKind.WHOLE_SNAPSHOT
                 ).one()
                 critic_run_id, status, runner = await run_critic_with_steps(steps, example=example.to_example_spec())

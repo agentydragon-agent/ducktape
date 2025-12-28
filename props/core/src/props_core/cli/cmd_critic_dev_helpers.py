@@ -10,7 +10,7 @@ from typing import Any
 from uuid import UUID
 
 from props_core.agent_types import AgentType, CriticTypeConfig
-from props_core.db.models import AgentRun, AgentRunStatus, Event, GradingDecision
+from props_core.db.models import AgentRun, AgentRunStatus, Event, GradingEdge
 from props_core.db.session import get_session
 from props_core.display import ColumnDef, build_table_from_schema, ellipticize, print_table_with_footer, short_sha
 from props_core.ids import DefinitionId, SnapshotSlug
@@ -233,44 +233,42 @@ def show_grading_summary(agent_run_id: UUID) -> None:
         print(f"Grader: {short_sha(str(grader_run_id))}\n")
 
         credit = (
-            session.query(func.sum(GradingDecision.credit))
-            .filter_by(agent_run_id=grader_run_id)
-            .filter(GradingDecision.target_tp_id.isnot(None))
+            session.query(func.sum(GradingEdge.credit))
+            .filter_by(grader_run_id=grader_run_id)
+            .filter(GradingEdge.tp_id.isnot(None))
             .scalar()
             or 0.0
         )
         n_occ = (
-            session.query(GradingDecision.target_tp_id, GradingDecision.target_tp_occurrence_id)
-            .filter_by(agent_run_id=grader_run_id)
-            .filter(GradingDecision.target_tp_id.isnot(None))
+            session.query(GradingEdge.tp_id, GradingEdge.tp_occurrence_id)
+            .filter_by(grader_run_id=grader_run_id)
+            .filter(GradingEdge.tp_id.isnot(None))
             .distinct()
             .count()
         )
         n_tps = (
-            session.query(GradingDecision.target_tp_id)
-            .filter_by(agent_run_id=grader_run_id)
-            .filter(GradingDecision.target_tp_id.isnot(None))
+            session.query(GradingEdge.tp_id)
+            .filter_by(grader_run_id=grader_run_id)
+            .filter(GradingEdge.tp_id.isnot(None))
             .distinct()
             .count()
         )
         n_novel = (
-            session.query(GradingDecision)
-            .filter_by(agent_run_id=grader_run_id)
-            .filter(GradingDecision.target_tp_id.is_(None))
+            session.query(GradingEdge)
+            .filter_by(grader_run_id=grader_run_id)
+            .filter(GradingEdge.tp_id.is_(None))
             .count()
         )
         print(f"Credit: {credit:.1f}/{n_occ} occ | {n_tps} TPs | {n_novel} unknown\n")
 
         missed_q = (
-            session.query(GradingDecision)
-            .filter_by(agent_run_id=grader_run_id)
-            .filter(GradingDecision.target_tp_id.isnot(None), GradingDecision.credit == 0.0)
+            session.query(GradingEdge)
+            .filter_by(grader_run_id=grader_run_id)
+            .filter(GradingEdge.tp_id.isnot(None), GradingEdge.credit == 0.0)
         )
         total_missed = missed_q.count()
         missed = missed_q.limit(5).all()
         if missed:
             print(f"Missed ({len(missed)}/{total_missed}):")
             for d in missed:
-                print(
-                    f"  - {d.target_tp_id} occ {d.target_tp_occurrence_id}" + (" (partial)" if d.input_issue_id else "")
-                )
+                print(f"  - {d.tp_id} occ {d.tp_occurrence_id}")

@@ -80,8 +80,10 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
                 occurrence_id=occ.occurrence_id,
                 files=_convert_orm_files_to_db(occ.files),
                 note=occ.note,
-                # Derive from M:N relationship (occurrence_triggers -> file_sets)
-                expect_caught_from=[[str(p) for p in trigger_set] for trigger_set in occ.expect_caught_from_set],
+                # Derive from M:N relationship (expected_recall_scopes -> file_sets)
+                critic_scopes_expected_to_recall=[
+                    [str(p) for p in trigger_set] for trigger_set in occ.critic_scopes_expected_to_recall_set
+                ],
             )
             for occ in orm_tp.occurrences
         ],
@@ -116,7 +118,7 @@ def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[
         return any(
             set(trigger_set) <= targeted_files_str
             for occurrence in tp.occurrences
-            for trigger_set in occurrence.expect_caught_from
+            for trigger_set in occurrence.critic_scopes_expected_to_recall
         )
 
     return [tp for tp in tps if is_catchable(tp)]

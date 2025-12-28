@@ -5,7 +5,6 @@ from uuid import UUID
 from props_core.agent_types import (
     AgentConfig,
     AgentType,
-    ClusteringTypeConfig,
     CriticTypeConfig,
     FreeformTypeConfig,
     GraderTypeConfig,
@@ -49,7 +48,6 @@ class TestTypeConfigDiscriminatedUnion:
                 },
                 PromptOptimizerTypeConfig,
             ),
-            ({"agent_type": "clustering", "snapshot_slug": "test/2025-01-01-00"}, ClusteringTypeConfig),
             (
                 {
                     "agent_type": "improvement",
@@ -203,7 +201,6 @@ class TestAgentConfig:
         [
             CriticTypeConfig(example=WholeSnapshotExample(snapshot_slug=SnapshotSlug("test/2025-01-01-00"))),
             GraderTypeConfig(graded_agent_run_id=UUID("550e8400-e29b-41d4-a716-446655440000")),
-            ClusteringTypeConfig(snapshot_slug=SnapshotSlug("test/2025-01-01-00")),
             FreeformTypeConfig(),
         ],
         ids=lambda tc: tc.agent_type,

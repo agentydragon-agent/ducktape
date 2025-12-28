@@ -39,7 +39,7 @@ def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
         occurrence_id=orm_occ.occurrence_id,
         files=_convert_files_jsonb(orm_occ.files),
         note=orm_occ.note,
-        expect_caught_from=orm_occ.expect_caught_from_set,  # Already converts to set[frozenset[Path]]
+        critic_scopes_expected_to_recall=orm_occ.critic_scopes_expected_to_recall_set,  # Already converts to set[frozenset[Path]]
     )
 
 
