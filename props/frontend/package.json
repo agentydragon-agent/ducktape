@@ -37,6 +37,7 @@
   "dependencies": {
     "@careswitch/svelte-data-table": "^0.6.3",
     "date-fns": "^4.1.0",
+    "lucide-svelte": "^0.562.0",
     "marked": "^17.0.1",
     "openapi-fetch": "^0.15.0",
     "svelte-sonner": "^0.3.28"
