@@ -27,11 +27,25 @@ if ! command -v nix &> /dev/null; then
     #   3. Parent immediately calls read() on the PTY master
     #   4. gVisor returns EIO instead of blocking until data arrives
     #
+    # GVISOR BUG LOCATION (github.com/google/gvisor):
+    # pkg/sentry/fsimpl/devpts/queue.go lines 112-116:
+    #   if !q.readable {
+    #       if l.numReplicas == 0 {
+    #           return 0, false, false, linuxerr.EIO  // ← THE BUG
+    #       }
+    #       return 0, false, false, linuxerr.ErrWouldBlock
+    #   }
+    # gVisor returns EIO when numReplicas==0 (no slave opened yet), but the child
+    # process is still in the middle of opening the slave. Real Linux blocks until
+    # data arrives regardless of whether the slave has been opened. gVisor conflates
+    # "not yet opened" with "closed" - both result in numReplicas==0.
+    #
     # WHY NIX USES PTYs (not pipes):
     # Per C99 7.19.3, stdout is fully buffered when connected to a pipe, but line
     # buffered when connected to a terminal. Nix needs real-time build output, so it
     # uses PTYs to trick programs into line-buffered mode. This is fundamental to
     # Nix's architecture - there's no --use-pipes flag.
+    # See: src/libstore/unix/build/derivation-builder.cc line 808 (posix_openpt)
     #
     # WHY NO INSTALLER FLAGS HELP:
     # - The PTY is created internally by nix-env, not inherited from the shell
