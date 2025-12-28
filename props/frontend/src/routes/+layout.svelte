@@ -2,6 +2,7 @@
   import '../app.css';
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { base } from '$app/paths';
   import { Toaster } from 'svelte-sonner';
   import RunTriggerModal from '$components/RunTriggerModal.svelte';
   import { connected, startFeed } from '$lib/stores/runsFeed';
@@ -42,15 +43,17 @@
   });
 
   // Navigation items
-  const navItems = [
-    { href: '/', label: 'Overview' },
-    { href: '/runs', label: 'Runs' },
-    { href: '/snapshots', label: 'Ground Truth' },
-  ];
+  const navItems = $derived([
+    { href: `${base}/`, label: 'Overview' },
+    { href: `${base}/runs`, label: 'Runs' },
+    { href: `${base}/snapshots`, label: 'Ground Truth' },
+  ]);
 
   function isActive(href: string, pathname: string): boolean {
-    if (href === '/') return pathname === '/';
-    return pathname.startsWith(href);
+    const normalizedHref = href === `${base}/` ? base || '/' : href;
+    const normalizedPath = pathname === '' ? '/' : pathname;
+    if (normalizedHref === (base || '/')) return normalizedPath === (base || '/');
+    return normalizedPath.startsWith(normalizedHref);
   }
 </script>
 
@@ -62,7 +65,7 @@
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         <h1 class="text-xl font-bold">
-          <a href="/" class="hover:text-blue-600">Props</a>
+          <a href="{base}/" class="hover:text-blue-600">Props</a>
         </h1>
         {#if $connected}
           <span class="px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded">live</span>

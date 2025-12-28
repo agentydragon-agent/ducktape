@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { base } from '$app/paths';
   import { toast } from 'svelte-sonner';
   import { DataTable } from '@careswitch/svelte-data-table';
   import {
@@ -127,7 +128,7 @@
 
 <div class="bg-white rounded-lg shadow p-4">
   <div class="flex items-center gap-3 mb-3">
-    <a href="/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
+    <a href="{base}/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
     <h2 class="text-lg font-semibold">
       {#if initialDefinitionId}
         Runs for <span class="font-mono text-blue-600">{initialDefinitionId}</span>

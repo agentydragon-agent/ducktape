@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { base } from '$app/paths';
   import { runs } from '$lib/stores/runsFeed';
   import { getStatusColor, formatStatus } from '$lib/status';
   import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
@@ -16,7 +17,7 @@
     <div class="space-y-2">
       {#each activeRuns as run}
         <a
-          href="/runs/{run.agent_run_id}"
+          href="{base}/runs/{run.agent_run_id}"
           class="block w-full text-left p-3 rounded border hover:bg-gray-50 transition-colors"
         >
           <div class="flex items-center justify-between">

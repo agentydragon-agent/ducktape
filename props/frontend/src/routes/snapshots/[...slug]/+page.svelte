@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { base } from '$app/paths';
   import { toast } from 'svelte-sonner';
   import { splitBadgeClass } from '$lib/colors';
   import type { SnapshotDetailResponse, FileContentResponse } from '$lib/api/client';
@@ -25,7 +26,9 @@
     if (!selectedFile) return [{ label: snapshot.slug }];
 
     const parts = selectedFile.path.split('/');
-    const items: Array<{ label: string; href?: string }> = [{ label: snapshot.slug, href: `/snapshots/${data.slug}` }];
+    const items: Array<{ label: string; href?: string }> = [
+      { label: snapshot.slug, href: `${base}/snapshots/${data.slug}` },
+    ];
 
     parts.forEach((part, i) => {
       if (i < parts.length - 1) {
@@ -64,9 +67,10 @@
 
   // Generate URL for occurrence
   function getOccurrenceUrl(issueId: string, occurrenceId: string, filePath?: string): string {
-    const base = $page.url.origin;
-    const path = filePath ? `/snapshots/${data.slug}` : $page.url.pathname;
-    return `${base}${path}#${issueId}/${occurrenceId}`;
+    const path = filePath ? `${base}/snapshots/${data.slug}` : $page.url.pathname;
+    const url = new URL(path, $page.url);
+    url.hash = `${issueId}/${occurrenceId}`;
+    return url.toString();
   }
 
   // Parse URL fragment and handle deep linking
@@ -121,7 +125,7 @@
   <!-- Header -->
   <div class="px-4 py-3 border-b flex justify-between items-center">
     <div class="flex items-center gap-3">
-      <a href="/snapshots" class="text-gray-500 hover:text-gray-700">← Back</a>
+      <a href="{base}/snapshots" class="text-gray-500 hover:text-gray-700">← Back</a>
       <h2 class="text-xl font-semibold font-mono">{snapshot.slug}</h2>
       <span class="px-2 py-1 text-xs font-medium rounded {splitBadgeClass(snapshot.split)}">
         {snapshot.split}

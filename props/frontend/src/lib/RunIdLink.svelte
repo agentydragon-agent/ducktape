@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { base } from '$app/paths';
+
   // Link component for agent run IDs (UUIDs)
   // Uses native <a> with SvelteKit client-side navigation
 
@@ -9,6 +11,6 @@
   let { id }: Props = $props();
 </script>
 
-<a href="/runs/{id}" class="font-mono text-blue-600 underline hover:text-blue-800 truncate" title={id}>
+<a href="{base}/runs/{id}" class="font-mono text-blue-600 underline hover:text-blue-800 truncate" title={id}>
   {id}
 </a>
