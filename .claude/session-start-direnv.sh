@@ -72,9 +72,15 @@ NIX_BIN=$(ls -d /nix/store/*-nix-[0-9]*/bin 2>/dev/null | head -1)
 [ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:$PATH"
 [ -d ~/.nix-profile/bin ] && export PATH="$HOME/.nix-profile/bin:$PATH"
 
-# Install direnv via nix
+# Install direnv, devenv, and uv via nix (using nixpkgs for better cache coverage)
 if ! command -v direnv &> /dev/null; then
     nix profile install nixpkgs#direnv 2>&1 | tail -3 >&2 || true
+fi
+if ! command -v devenv &> /dev/null; then
+    nix profile install nixpkgs#devenv 2>&1 | tail -3 >&2 || true
+fi
+if ! command -v uv &> /dev/null; then
+    nix profile install nixpkgs#uv 2>&1 | tail -3 >&2 || true
 fi
 
 # Allow .envrc files
@@ -83,15 +89,24 @@ find . -name ".envrc" -type f 2>/dev/null | while read f; do
     direnv allow "$(dirname "$f")" 2>/dev/null || true
 done
 
-# Output hooks for bash (NIX_BIN was set earlier)
-cat << EOF
-# Nix
+# Persist environment variables for subsequent Claude Bash tool calls
+# CLAUDE_ENV_FILE is sourced before each bash command
+if [ -n "$CLAUDE_ENV_FILE" ]; then
+    cat >> "$CLAUDE_ENV_FILE" << EOF
+# Nix environment (added by session-start-direnv.sh)
 export NIX_USER_CONF_FILES="$NIX_CONF"
 [ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:\$PATH"
 [ -d ~/.nix-profile/bin ] && export PATH="\$HOME/.nix-profile/bin:\$PATH"
-
-# direnv
-command -v direnv &>/dev/null && eval "\$(direnv hook bash)"
 EOF
+    echo "Wrote environment to CLAUDE_ENV_FILE" >&2
+fi
 
-echo "Setup complete: nix=$(nix --version 2>/dev/null || echo 'N/A'), direnv=$(direnv version 2>/dev/null || echo 'N/A')" >&2
+# Output context for Claude (informational - not executed)
+echo "Session environment initialized:"
+echo "  nix: $(nix --version 2>/dev/null || echo 'N/A')"
+echo "  direnv: $(direnv version 2>/dev/null || echo 'N/A')"
+echo "  devenv: $(devenv version 2>/dev/null || echo 'N/A')"
+echo "  uv: $(uv --version 2>/dev/null || echo 'N/A')"
+echo "PATH includes: ~/.nix-profile/bin, $NIX_BIN"
+
+echo "Setup complete" >&2
