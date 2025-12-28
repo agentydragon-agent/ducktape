@@ -116,7 +116,8 @@
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
     const url = new URL(`${base}/snapshots/${snapshotSlug}`, $page.url);
-    url.searchParams.set('occurrence', `${issueId}/${occurrenceId}`);
+    url.searchParams.set('issueId', issueId);
+    url.searchParams.set('occurrenceId', occurrenceId);
     return url.toString();
   }
 </script>

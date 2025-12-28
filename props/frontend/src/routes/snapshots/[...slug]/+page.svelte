@@ -29,15 +29,8 @@
     const parts = selectedFile.path.split('/');
     const items: Array<{ label: string; href?: string }> = [
       { label: snapshot.slug, href: `${base}/snapshots/${data.slug}` },
+      ...parts.map((part) => ({ label: part })),
     ];
-
-    parts.forEach((part, i) => {
-      if (i < parts.length - 1) {
-        items.push({ label: part });
-      } else {
-        items.push({ label: part });
-      }
-    });
 
     return items;
   });
@@ -70,53 +63,44 @@
   function getOccurrenceUrl(issueId: string, occurrenceId: string, filePath?: string): string {
     const path = filePath ? `${base}/snapshots/${data.slug}` : $page.url.pathname;
     const url = new URL(path, $page.url);
-    url.searchParams.set('occurrence', `${issueId}/${occurrenceId}`);
+    url.searchParams.set('issueId', issueId);
+    url.searchParams.set('occurrenceId', occurrenceId);
     return url.toString();
+  }
+
+  function findAndNavigateToOccurrence(issueId: string, occurrenceId: string) {
+    const searchInIssues = (issues: typeof snapshot.true_positives | typeof snapshot.false_positives) => {
+      for (const issue of issues) {
+        const issueIdMatch = 'tp_id' in issue ? issue.tp_id === issueId : issue.fp_id === issueId;
+        if (issueIdMatch) {
+          const occ = issue.occurrences.find((o) => o.occurrence_id === occurrenceId);
+          if (occ?.files.length) {
+            handleFileClick(occ.files[0].path);
+            expandedIssues.expand(issueId);
+            activeTab = 'files';
+            setTimeout(() => {
+              document.getElementById(`${issueId}-${occurrenceId}`)?.scrollIntoView({
+                behavior: 'smooth',
+                block: 'center',
+              });
+            }, 100);
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    searchInIssues(snapshot.true_positives) || searchInIssues(snapshot.false_positives);
   }
 
   // Handle deep linking via query params
   $effect(() => {
-    const occurrence = $page.url.searchParams.get('occurrence');
-    if (occurrence) {
-      const [issueId, occurrenceId] = occurrence.split('/');
-      if (issueId && occurrenceId) {
-        targetOccurrenceId = occurrenceId;
-
-        // Find the occurrence and open its file
-        for (const tp of snapshot.true_positives) {
-          if (tp.tp_id === issueId) {
-            const occ = tp.occurrences.find((o) => o.occurrence_id === occurrenceId);
-            if (occ && occ.files.length > 0) {
-              handleFileClick(occ.files[0].path);
-              expandedIssues.expand(issueId);
-              activeTab = 'files';
-
-              setTimeout(() => {
-                const elem = document.getElementById(`${issueId}-${occurrenceId}`);
-                elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }, 100);
-            }
-            break;
-          }
-        }
-
-        for (const fp of snapshot.false_positives) {
-          if (fp.fp_id === issueId) {
-            const occ = fp.occurrences.find((o) => o.occurrence_id === occurrenceId);
-            if (occ && occ.files.length > 0) {
-              handleFileClick(occ.files[0].path);
-              expandedIssues.expand(issueId);
-              activeTab = 'files';
-
-              setTimeout(() => {
-                const elem = document.getElementById(`${issueId}-${occurrenceId}`);
-                elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }, 100);
-            }
-            break;
-          }
-        }
-      }
+    const issueId = $page.url.searchParams.get('issueId');
+    const occurrenceId = $page.url.searchParams.get('occurrenceId');
+    if (issueId && occurrenceId) {
+      targetOccurrenceId = occurrenceId;
+      findAndNavigateToOccurrence(issueId, occurrenceId);
     }
   });
 </script>
