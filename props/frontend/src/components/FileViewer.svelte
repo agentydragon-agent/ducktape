@@ -41,7 +41,7 @@
             issueId: tp.tp_id,
             occurrenceId: occ.occurrence_id,
             rationale: tp.rationale,
-            note: occ.note,
+            note: occ.note ?? undefined,
             ranges: fileLocation.ranges,
             allFiles: occ.files,
           });
@@ -58,7 +58,7 @@
             issueId: fp.fp_id,
             occurrenceId: occ.occurrence_id,
             rationale: fp.rationale,
-            note: occ.note,
+            note: occ.note ?? undefined,
             ranges: fileLocation.ranges,
             allFiles: occ.files,
           });

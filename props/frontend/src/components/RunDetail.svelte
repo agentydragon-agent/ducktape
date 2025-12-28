@@ -28,7 +28,7 @@
   import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingEdges from './GradingEdges.svelte';
   import CritiqueFileViewer from './CritiqueFileViewer.svelte';
-  import TruncatedStream from './TruncatedStream.svelte';
+  import TruncatedStreamComponent from './TruncatedStream.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
   marked.use({ breaks: true, async: false });
@@ -115,8 +115,8 @@
 
       // Files from critique issues
       for (const issue of criticRun.reported_issues) {
-        for (const fileInfo of issue.occurrences.flatMap((o) => o.files)) {
-          allFilePaths.add(fileInfo.path);
+        for (const location of issue.occurrences.flatMap((o) => o.locations)) {
+          allFilePaths.add(location.file);
         }
       }
 
@@ -522,8 +522,7 @@
     <!-- Grading summary (for critic runs with completed grader) -->
     {#if run.agent_type === 'critic' && run.grading_summary}
       {@const gs = run.grading_summary}
-      {@const recall =
-        gs.recall_denominator_occurrences > 0 ? gs.total_credit / gs.recall_denominator_occurrences : null}
+      {@const recall = gs.recall_denominator > 0 ? gs.total_credit / gs.recall_denominator : null}
       {@const recallColor =
         recall == null
           ? 'text-gray-400'
@@ -537,7 +536,7 @@
           <span>
             <span class="text-gray-500">Credit:</span>
             <span class="ml-1 font-medium {recallColor}">
-              {gs.total_credit.toFixed(1)} / {gs.recall_denominator_occurrences} catchable
+              {gs.total_credit.toFixed(1)} / {gs.recall_denominator} catchable
             </span>
             <span class="text-gray-400 text-xs">({recall != null ? `${(recall * 100).toFixed(0)}%` : '—'})</span>
           </span>
@@ -559,7 +558,7 @@
           edges={run.grading_edges}
           missedOccurrences={run.missed_occurrences}
           totalCredit={run.grading_summary?.total_credit}
-          recallDenominator={run.grading_summary?.recall_denominator_occurrences}
+          recallDenominator={run.grading_summary?.recall_denominator}
           defaultOpen={totalItems < 10}
         />
       </div>
@@ -595,7 +594,15 @@
                   rationale: issue.rationale,
                   note: undefined,
                   ranges: null,
-                  allFiles: issue.occurrences.flatMap((o) => o.files),
+                  allFiles: issue.occurrences.flatMap((o) =>
+                    o.locations.map((loc) => ({
+                      path: loc.file,
+                      ranges:
+                        loc.start_line != null && loc.end_line != null
+                          ? [{ start_line: loc.start_line, end_line: loc.end_line }]
+                          : null,
+                    }))
+                  ),
                 }))}
                 gradingEdges={run.grading_edges}
               />
@@ -679,8 +686,8 @@
 
                   <div class="relative">
                     <div class="px-3 py-2 {needsExpand && !isExpanded ? 'max-h-48 overflow-y-auto' : ''}">
-                      <TruncatedStream stream={pair.result.stdout} kind="stdout" />
-                      <TruncatedStream stream={pair.result.stderr} kind="stderr" />
+                      <TruncatedStreamComponent stream={pair.result.stdout} kind="stdout" />
+                      <TruncatedStreamComponent stream={pair.result.stderr} kind="stderr" />
                       {#if !stdoutText && !stderrText}
                         <span class="text-gray-500 italic">(no output)</span>
                       {/if}

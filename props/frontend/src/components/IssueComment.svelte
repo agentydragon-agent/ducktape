@@ -28,72 +28,65 @@
     credit,
   }: Props = $props();
 
+  // Helper to create styling from colors and label
+  const createStyling = (
+    colors: { bg: string; border: string; borderLeft: string; headerBg: string; text: string; textDark: string },
+    label: string
+  ) => ({
+    ...colors,
+    iconColor: colors.text,
+    label,
+    labelColor: colors.textDark,
+  });
+
+  // Helper to create color classes for a given base color
+  const colorClasses = (color: string) => ({
+    bg: `bg-${color}-50`,
+    border: `border-${color}-200`,
+    iconColor: `text-${color}-600`,
+    textColor: `text-${color}-700`,
+    creditColor: `text-${color}-600`,
+  });
+
+  // Helper to create grading edge styling from base color and label
+  const createTargetStyling = (baseColor: string, label: string) => ({
+    ...colorClasses(baseColor),
+    label,
+  });
+
   // Visual styling based on kind
+  const Icon = $derived(
+    (() => {
+      switch (kind) {
+        case 'tp':
+          return CheckCircle;
+        case 'fp':
+          return XCircle;
+        case 'critique': {
+          const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
+          return isNovel ? HelpCircle : Link;
+        }
+        default:
+          return HelpCircle;
+      }
+    })()
+  );
+
   const styling = $derived.by(() => {
     switch (kind) {
-      case 'tp': {
-        const colors = issueColors.tp;
-        return {
-          ...colors,
-          icon: CheckCircle,
-          iconColor: colors.text,
-          label: 'TP',
-          labelColor: colors.textDark,
-        };
-      }
-      case 'fp': {
-        const colors = issueColors.fp;
-        return {
-          ...colors,
-          icon: XCircle,
-          iconColor: colors.text,
-          label: 'FP',
-          labelColor: colors.textDark,
-        };
-      }
+      case 'tp':
+        return createStyling(issueColors.tp, 'TP');
+      case 'fp':
+        return createStyling(issueColors.fp, 'FP');
       case 'critique': {
-        // Color based on grading if available
         const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
         const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
         const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
 
-        if (hasTPMatch) {
-          const colors = issueColors.critique;
-          return {
-            ...colors,
-            icon: Link,
-            iconColor: colors.text,
-            label: 'Critique (TP)',
-            labelColor: colors.textDark,
-          };
-        } else if (hasFPMatch) {
-          const colors = issueColors.critiqueFp;
-          return {
-            ...colors,
-            icon: Link,
-            iconColor: colors.text,
-            label: 'Critique (FP)',
-            labelColor: colors.textDark,
-          };
-        } else if (isNovel) {
-          const colors = issueColors.novel;
-          return {
-            ...colors,
-            icon: HelpCircle,
-            iconColor: colors.text,
-            label: 'Critique (Novel)',
-            labelColor: colors.textDark,
-          };
-        } else {
-          const colors = issueColors.critique;
-          return {
-            ...colors,
-            icon: Link,
-            iconColor: colors.text,
-            label: 'Critique',
-            labelColor: colors.textDark,
-          };
-        }
+        if (hasTPMatch) return createStyling(issueColors.critique, 'Critique (TP)');
+        if (hasFPMatch) return createStyling(issueColors.critiqueFp, 'Critique (FP)');
+        if (isNovel) return createStyling(issueColors.novel, 'Critique (Novel)');
+        return createStyling(issueColors.critique, 'Critique');
       }
     }
   });
@@ -106,7 +99,7 @@
     onclick={onToggle}
     type="button"
   >
-    <svelte:component this={styling.icon} size={16} class={styling.iconColor} />
+    <Icon size={16} class={styling.iconColor} />
     <span class="font-mono text-sm font-medium">{issueId}</span>
     <span class="text-xs {styling.labelColor} font-medium">{styling.label}</span>
     {#if credit !== undefined}
@@ -149,39 +142,16 @@
               {@const target = edge.target}
               {@const edgeCredit = target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
               {#if edgeCredit > 0 || target.kind === 'none'}
+                {@const TargetIcon = target.kind === 'tp' ? CheckCircle : target.kind === 'fp' ? XCircle : HelpCircle}
                 {@const targetStyling =
                   target.kind === 'tp'
-                    ? {
-                        bg: 'bg-green-50',
-                        border: 'border-green-200',
-                        icon: CheckCircle,
-                        iconColor: 'text-green-600',
-                        textColor: 'text-green-700',
-                        creditColor: 'text-green-600',
-                        label: `${target.tp_id}/${target.occurrence_id}`,
-                      }
+                    ? createTargetStyling('green', `${target.tp_id}/${target.occurrence_id}`)
                     : target.kind === 'fp'
-                      ? {
-                          bg: 'bg-red-50',
-                          border: 'border-red-200',
-                          icon: XCircle,
-                          iconColor: 'text-red-600',
-                          textColor: 'text-red-700',
-                          creditColor: 'text-red-600',
-                          label: `${target.fp_id}/${target.occurrence_id}`,
-                        }
-                      : {
-                          bg: 'bg-gray-50',
-                          border: 'border-gray-200',
-                          icon: HelpCircle,
-                          iconColor: 'text-gray-600',
-                          textColor: 'text-gray-600',
-                          creditColor: '',
-                          label: 'Novel finding (no match)',
-                        }}
+                      ? createTargetStyling('red', `${target.fp_id}/${target.occurrence_id}`)
+                      : { ...createTargetStyling('gray', 'Novel finding (no match)'), creditColor: '' }}
                 <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
                   <div class="flex items-center gap-2">
-                    <svelte:component this={targetStyling.icon} size={12} class={targetStyling.iconColor} />
+                    <TargetIcon size={12} class={targetStyling.iconColor} />
                     <span class="font-mono {targetStyling.textColor}">{targetStyling.label}</span>
                     {#if edgeCredit > 0}
                       <span class="{targetStyling.creditColor} font-medium">(+{edgeCredit.toFixed(2)})</span>

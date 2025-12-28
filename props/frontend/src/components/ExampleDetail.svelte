@@ -43,7 +43,7 @@
         </div>
         <div>
           <span class="text-gray-500">Catchable Occurrences:</span>
-          <span class="ml-1">{data.recall_denominator_occurrences}</span>
+          <span class="ml-1">{data.recall_denominator}</span>
         </div>
         {#if data.files_hash}
           <div class="col-span-2">
