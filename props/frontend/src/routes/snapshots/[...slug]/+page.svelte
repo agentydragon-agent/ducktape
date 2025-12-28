@@ -106,7 +106,7 @@
           {#if loadingFile}
             <div class="flex items-center justify-center h-full text-gray-500">Loading...</div>
           {:else if selectedFile}
-            <FileViewer file={selectedFile} />
+            <FileViewer file={selectedFile} tps={snapshot.true_positives} fps={snapshot.false_positives} />
           {:else}
             <div class="flex items-center justify-center h-full text-gray-500">Select a file to view</div>
           {/if}

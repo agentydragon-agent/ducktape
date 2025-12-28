@@ -1,7 +1,7 @@
 <script lang="ts">
   import { getContext } from 'svelte';
   import { goto } from '$app/navigation';
-  import type { Split, ExampleKind } from '$lib/types';
+  import type { RunModalPrefill } from '$lib/types';
   import DefinitionsTable from '$components/stats/DefinitionsTable.svelte';
   import SummaryCards from '$components/stats/SummaryCards.svelte';
   import JobsList from '$components/JobsList.svelte';
@@ -10,10 +10,10 @@
   let { data } = $props();
 
   const runModal = getContext<{
-    open: (_?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
+    open: (_?: RunModalPrefill) => void;
   }>('runModal');
 
-  function handleNavigateToRuns(filters: { definitionId?: string; split?: Split; kind?: ExampleKind }) {
+  function handleNavigateToRuns(filters: RunModalPrefill) {
     const params = new URLSearchParams();
     if (filters.definitionId) params.set('definition', filters.definitionId);
     if (filters.split) params.set('split', filters.split);

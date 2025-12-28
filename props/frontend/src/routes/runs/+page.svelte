@@ -2,10 +2,10 @@
   import { page } from '$app/stores';
   import { getContext } from 'svelte';
   import RunsBrowser from '$components/RunsBrowser.svelte';
-  import type { Split, ExampleKind } from '$lib/types';
+  import type { RunModalPrefill, RunTrigger, Split, ExampleKind } from '$lib/types';
 
   const runModal = getContext<{
-    open: (_?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
+    open: (_?: RunModalPrefill) => void;
   }>('runModal');
 
   // Parse query params
@@ -13,7 +13,7 @@
   const split = $derived($page.url.searchParams.get('split') as Split | undefined);
   const kind = $derived($page.url.searchParams.get('kind') as ExampleKind | undefined);
 
-  function handleTriggerRun(prefill: { definitionId: string; split: Split; kind: ExampleKind }) {
+  function handleTriggerRun(prefill: RunTrigger) {
     runModal?.open(prefill);
   }
 </script>

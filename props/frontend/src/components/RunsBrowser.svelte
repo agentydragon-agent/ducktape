@@ -14,24 +14,19 @@
     AGENT_TYPE_VALUES,
     type CriticTypeConfig,
   } from '../lib/api/client';
+  import type { RunTrigger } from '../lib/types';
   import { formatAge } from '../lib/formatters';
   import { getStatusColor, formatStatus } from '../lib/status';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
 
-  interface TriggerPrefill {
-    definitionId: string;
-    split: Split;
-    kind: ExampleKind;
-  }
-
   // Props
   interface Props {
     initialDefinitionId?: string;
     initialSplit?: Split;
     initialKind?: ExampleKind;
-    onTriggerRun?: (_: TriggerPrefill) => void;
+    onTriggerRun?: (_: RunTrigger) => void;
   }
   let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
 
