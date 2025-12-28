@@ -239,8 +239,8 @@ Access fields: (compute_stats_with_ci(...)).mean, .min, .max, .lcb95, .ucb95, et
     op.execute("""
         COMMENT ON FUNCTION scale_stats(stats_with_ci, double precision) IS
         'Divides all values in a stats_with_ci by a divisor.
-Use to convert raw count stats to ratio stats (e.g., credit / n_recall_denominator for recall).
-Example: scale_stats(credit_stats, n_recall_denominator)'
+Use to convert raw count stats to ratio stats (e.g., credit / recall_denominator for recall).
+Example: scale_stats(credit_stats, recall_denominator)'
     """)
 
     # Helper: current_agent_run_id from session username
@@ -1574,7 +1574,7 @@ Used by check_edge_credit_sum trigger function.'
                 SELECT COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))::integer
                 FROM true_positive_occurrences tpo
                 WHERE tpo.snapshot_slug = slug
-            ) AS n_recall_denominator
+            ) AS recall_denominator
         FROM snapshots
 
         UNION ALL
@@ -1584,7 +1584,7 @@ Used by check_edge_credit_sum trigger function.'
             fs.snapshot_slug,
             'file_set'::example_kind_enum AS example_kind,
             fs.files_hash,
-            COALESCE(catchable.n_catchable, 0) AS n_recall_denominator
+            COALESCE(catchable.recall_denominator, 0) AS recall_denominator
         FROM file_sets fs
         LEFT JOIN (
             -- Pre-aggregate files into arrays, then use <@ for subset check
@@ -1596,7 +1596,7 @@ Used by check_edge_credit_sum trigger function.'
             SELECT
                 scope.snapshot_slug,
                 scope.files_hash,
-                COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))::integer AS n_catchable
+                COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))::integer AS recall_denominator
             FROM file_set_arrays scope
             JOIN true_positive_occurrences tpo ON tpo.snapshot_slug = scope.snapshot_slug
             WHERE EXISTS (
@@ -1618,7 +1618,7 @@ Used by check_edge_credit_sum trigger function.'
         COMMENT ON VIEW examples IS
         'Training/validation examples derived from snapshots and file_sets.
 Two kinds: whole_snapshot (review all files) or file_set (review specific files).
-n_recall_denominator = number of TP occurrences catchable from this scope.
+recall_denominator = number of TP occurrences catchable from this scope.
 
 RLS: Inherits from snapshots. In whole-repo mode, prompt optimizer sees TRAIN split only.
 In targeted mode, all splits visible (filenames only, not ground truth).
@@ -1626,7 +1626,7 @@ In targeted mode, all splits visible (filenames only, not ground truth).
 USEFUL FOR: All agent types.
 - Critic: know what scope to review
 - Prompt optimizer: select examples for evaluation
-- Improvement agent: select examples by difficulty (start with small n_catchable)'
+- Improvement agent: select examples by difficulty (start with small recall_denominator)'
     """)
 
     # =========================================================================
@@ -1826,7 +1826,7 @@ USEFUL FOR: Prompt optimizer, improvement agent, clustering agent.
                 get_graded_agent_run_id(gr.agent_run_id) AS critic_run_id,
                 COALESCE(SUM(gd.credit) FILTER (WHERE gd.target_tp_id IS NOT NULL), 0.0) AS total_credit,
                 COUNT(DISTINCT (gd.target_tp_id, gd.target_tp_occurrence_id))
-                    FILTER (WHERE gd.target_tp_id IS NOT NULL) AS n_catchable
+                    FILTER (WHERE gd.target_tp_id IS NOT NULL) AS recall_denominator
             FROM agent_runs gr
             JOIN grading_decisions gd ON gd.agent_run_id = gr.agent_run_id
             WHERE get_agent_type_config(gr.agent_run_id)->>'agent_type' = 'grader'
@@ -1839,7 +1839,7 @@ USEFUL FOR: Prompt optimizer, improvement agent, clustering agent.
                 e.example_kind,
                 e.files_hash,
                 s.split,
-                e.n_recall_denominator,
+                e.recall_denominator,
                 -- Critic-specific columns
                 cr.agent_run_id AS critic_run_id,
                 cr.agent_definition_id AS critic_definition_id,
@@ -1862,21 +1862,21 @@ USEFUL FOR: Prompt optimizer, improvement agent, clustering agent.
             LEFT JOIN grader_stats gs ON gs.critic_run_id = cr.agent_run_id
             WHERE cr.type_config->>'agent_type' = 'critic'
               AND cr.status <> 'in_progress'  -- Exclude in-progress runs
-            GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.n_recall_denominator
+            GROUP BY cr.agent_run_id, cr.agent_definition_id, cr.type_config, s.split, cr.model, cr.status, e.example_kind, e.files_hash, e.recall_denominator
         )
         SELECT
             snapshot_slug,
             example_kind,
             files_hash,
             split,
-            n_recall_denominator,
+            recall_denominator,
             critic_run_id,
             critic_definition_id,
             critic_model,
             critic_status,
             credit_stats,
-            -- Recall derived by dividing credit by n_recall_denominator
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            -- Recall derived by dividing credit by recall_denominator
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM per_run
     """)
 
@@ -1886,10 +1886,10 @@ USEFUL FOR: Prompt optimizer, improvement agent, clustering agent.
 
 Columns grouped by: example identification, then critic-specific, then statistics.
 
-- n_recall_denominator: Ground truth count (denominator for recall)
+- recall_denominator: Ground truth count (denominator for recall)
 - critic_status: Critic run status (completed, max_turns_exceeded, etc.)
 - credit_stats: Stats over grader total credits (numerator; not normalized)
-- recall_stats: credit_stats / n_recall_denominator via scale_stats()
+- recall_stats: credit_stats / recall_denominator via scale_stats()
 
 NOTE: in_progress runs are excluded (they have not finished yet).
 Failed critics (completed but no grader) contribute 0 credit via COALESCE.
@@ -1913,7 +1913,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
                 rbr.example_kind,
                 rbr.files_hash,
                 rbr.split,
-                MAX(rbr.n_recall_denominator)::integer AS n_recall_denominator,
+                MAX(rbr.recall_denominator)::integer AS recall_denominator,
                 COUNT(*)::integer AS n_runs,
                 agg_status_counts(array_agg(rbr.critic_status)) AS status_counts,
                 compute_stats_with_ci(array_agg(
@@ -1926,8 +1926,8 @@ USEFUL FOR: Prompt optimizer, improvement agent.
         SELECT
             critic_definition_id, critic_model,
             snapshot_slug, example_kind, files_hash, split,
-            n_recall_denominator, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            recall_denominator, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
@@ -1953,10 +1953,10 @@ USEFUL FOR: Prompt optimizer, improvement agent.
             SELECT
                 split, example_kind, critic_definition_id, critic_model,
                 COUNT(*)::integer AS n_examples,
-                SUM(n_recall_denominator)::integer AS n_recall_denominator
+                SUM(recall_denominator)::integer AS recall_denominator
             FROM (
                 SELECT DISTINCT
-                    split, example_kind, files_hash, n_recall_denominator,
+                    split, example_kind, files_hash, recall_denominator,
                     critic_definition_id, critic_model
                 FROM recall_by_definition_example
             ) per_example
@@ -1977,9 +1977,9 @@ USEFUL FOR: Prompt optimizer, improvement agent.
         )
         SELECT
             rs.split, rs.example_kind, rs.critic_definition_id, rs.critic_model,
-            ec.n_examples, rs.n_runs, ec.n_recall_denominator,
+            ec.n_examples, rs.n_runs, ec.recall_denominator,
             rs.status_counts, rs.credit_stats,
-            scale_stats(rs.credit_stats, ec.n_recall_denominator) AS recall_stats,
+            scale_stats(rs.credit_stats, ec.recall_denominator) AS recall_stats,
             rs.zero_count
         FROM run_stats rs
         JOIN example_counts ec USING (split, example_kind, critic_definition_id, critic_model)
@@ -2008,7 +2008,7 @@ USEFUL FOR: Prompt optimizer (primary metric view).
                 rbde.example_kind,
                 rbde.files_hash,
                 rbde.split,
-                MAX(rbde.n_recall_denominator)::integer AS n_recall_denominator,
+                MAX(rbde.recall_denominator)::integer AS recall_denominator,
                 rbde.critic_model,
                 SUM(rbde.n_runs)::integer AS n_runs,
                 agg_status_counts(array_agg(rbde.status_counts)) AS status_counts,
@@ -2020,8 +2020,8 @@ USEFUL FOR: Prompt optimizer (primary metric view).
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split,
-            n_recall_denominator, critic_model, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            recall_denominator, critic_model, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
@@ -2047,18 +2047,18 @@ USEFUL FOR: Prompt optimizer, improvement agent.
                 split,
                 example_kind,
                 files_hash,
-                n_recall_denominator,
+                recall_denominator,
                 critic_model,
                 max((credit_stats).mean) AS best_mean_credit
             FROM recall_by_definition_example
-            GROUP BY snapshot_slug, split, example_kind, files_hash, n_recall_denominator, critic_model
+            GROUP BY snapshot_slug, split, example_kind, files_hash, recall_denominator, critic_model
         )
         SELECT
             bs.snapshot_slug,
             bs.split,
             bs.example_kind,
             bs.files_hash,
-            bs.n_recall_denominator,
+            bs.recall_denominator,
             bs.critic_model,
             -- Single column: list of winning definitions with their stats
             jsonb_agg(
@@ -2086,7 +2086,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
             bs.best_mean_credit = (rbde.credit_stats).mean
         )
         GROUP BY bs.snapshot_slug, bs.split, bs.example_kind, bs.files_hash,
-            bs.n_recall_denominator, bs.critic_model
+            bs.recall_denominator, bs.critic_model
     """)
 
     op.execute("""
@@ -2094,11 +2094,11 @@ USEFUL FOR: Prompt optimizer, improvement agent.
         'Pareto frontier: definitions that achieved best mean credit on each example.
 
 For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-- n_recall_denominator: ground truth count (denominator for recall)
+- recall_denominator: ground truth count (denominator for recall)
 - winning_definitions: JSONB array of {definition_id, credit_stats} for all definitions at best score
 
 All entries in winning_definitions have the same credit_stats.mean (the best score).
-Consumer can compute recall as credit_stats.mean / n_recall_denominator.
+Consumer can compute recall as credit_stats.mean / recall_denominator.
 
 Built on recall_by_definition_example, which aggregates over runs.
 Failed critic runs (max_turns/context_length) count as 0.0 credit.'

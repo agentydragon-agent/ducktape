@@ -427,14 +427,14 @@
     <!-- Grading summary (for critic runs with completed grader) -->
     {#if run.grading_summary}
       {@const gs = run.grading_summary}
-      {@const recall = gs.n_catchable_occurrences > 0 ? gs.total_credit / gs.n_catchable_occurrences : null}
+      {@const recall = gs.recall_denominator_occurrences > 0 ? gs.total_credit / gs.recall_denominator_occurrences : null}
       {@const recallColor = recall == null ? 'text-gray-400' : recall >= 0.7 ? 'text-green-600' : recall >= 0.4 ? 'text-yellow-600' : 'text-red-600'}
       <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
         <div class="flex flex-wrap gap-x-6 gap-y-1">
           <span>
             <span class="text-gray-500">Credit:</span>
             <span class="ml-1 font-medium {recallColor}">
-              {gs.total_credit.toFixed(1)} / {gs.n_catchable_occurrences} catchable
+              {gs.total_credit.toFixed(1)} / {gs.recall_denominator_occurrences} catchable
             </span>
             <span class="text-gray-400 text-xs">({recall != null ? `${(recall * 100).toFixed(0)}%` : '—'})</span>
           </span>
@@ -453,7 +453,7 @@
           edges={run.grading_edges}
           missedOccurrences={run.missed_occurrences}
           totalCredit={run.grading_summary?.total_credit}
-          nCatchable={run.grading_summary?.n_catchable_occurrences}
+          nCatchable={run.grading_summary?.recall_denominator_occurrences}
           defaultOpen={totalItems < 10}
         />
       </div>

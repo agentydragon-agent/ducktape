@@ -159,7 +159,7 @@ class GradingSummary(BaseModel):
     fp_count: int
     unknown_count: int
     total_credit: float
-    n_recall_denominator: int  # Frontend computes recall: total_credit / n_catchable
+    recall_denominator: int  # Frontend computes recall: total_credit / recall_denominator
 
 
 class MissedOccurrenceInfo(BaseModel):
@@ -720,7 +720,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                 unknown_count = 0  # No "unknown" type in edges model - all edges are TP or FP
                 total_credit = sum(d.credit for d in edges if d.tp_id is not None)
 
-                # Get n_recall_denominator from example for recall calculation
+                # Get recall_denominator from example for recall calculation
                 example_row = (
                     session.query(Example)
                     .filter(
@@ -730,14 +730,14 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                     )
                     .first()
                 )
-                n_catchable = example_row.n_recall_denominator if example_row else None
+                recall_denominator = example_row.recall_denominator if example_row else None
 
                 grading_summary = GradingSummary(
                     tp_count=tp_count,
                     fp_count=fp_count,
                     unknown_count=unknown_count,
                     total_credit=total_credit,
-                    n_recall_denominator=n_catchable or 0,
+                    recall_denominator=recall_denominator or 0,
                 )
                 grading_edges = edges_to_info(edges)
 

@@ -1149,7 +1149,7 @@ def example_subtract_orm(synced_test_session: Session) -> Example:
         synced_test_session.query(Example)
         .filter_by(snapshot_slug=slug)
         .filter(Example.files_hash.isnot(None))
-        .filter(Example.n_recall_denominator == 1)
+        .filter(Example.recall_denominator == 1)
         .first()
     )
     assert example is not None, "Expected single-file-set example with 1 catchable TP in train1"
@@ -1164,7 +1164,7 @@ def example_multi_tp_orm(synced_test_session: Session) -> Example:
         synced_test_session.query(Example)
         .filter_by(snapshot_slug=slug)
         .filter(Example.files_hash.isnot(None))
-        .filter(Example.n_recall_denominator > 1)
+        .filter(Example.recall_denominator > 1)
         .first()
     )
     assert example is not None, "Expected file-set example with multiple TP occurrences in train1"
@@ -1302,15 +1302,15 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
         pair of AgentRun objects (second pair also created for UCB/LCB stats)
     """
     with get_session() as session:
-        # Must use whole-snapshot example so n_recall_denominator matches all TPs
+        # Must use whole-snapshot example so recall_denominator matches all TPs
         example = session.query(Example).filter_by(snapshot_slug=slug, example_kind=ExampleKind.WHOLE_SNAPSHOT).first()
         assert example, f"No whole-snapshot example found for {slug}"
 
         # Get real TP occurrences from database - all TPs in snapshot
         tp_occs = get_tp_occurrences_for_snapshot(slug, session)
         assert tp_occs, f"No TP occurrences found for {slug}"
-        assert len(tp_occs) == example.n_recall_denominator, (
-            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.n_recall_denominator} catchable"
+        assert len(tp_occs) == example.recall_denominator, (
+            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} catchable"
         )
 
         # Create grader output with real TP IDs

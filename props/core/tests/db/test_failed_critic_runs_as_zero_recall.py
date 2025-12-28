@@ -210,7 +210,7 @@ def test_multiple_grader_runs_do_not_overweight_critic_run(
     # Mean: (0.0 + avg(0.5,0.6,0.7)) / 2 = (0.0 + 0.6) / 2 = 0.3
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.3) < 0.01, f"credit_stats.mean should be 0.3, got {avg_caught}"
-    assert result.n_recall_denominator == 1
+    assert result.recall_denominator == 1
 
 
 def test_aggregated_view_counts_total_and_failed_runs(synced_test_session: Session, example_subtract_orm: Example):
@@ -313,7 +313,7 @@ def test_aggregated_recall_by_example_has_correct_weighting(
     # Mean: (0.0 + avg(0.4,0.5,0.6)) / 2 = (0.0 + 0.5) / 2 = 0.25
     avg_caught = result.credit_stats.mean if result.credit_stats else 0.0
     assert abs(avg_caught - 0.25) < 0.01, f"Expected 0.25, got {avg_caught}"
-    assert result.n_recall_denominator == 1
+    assert result.recall_denominator == 1
 
 
 def test_occurrence_statistics_has_correct_n_critic_runs(

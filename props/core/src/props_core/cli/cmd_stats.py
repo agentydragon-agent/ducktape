@@ -79,7 +79,7 @@ _STATUS_COLUMNS: list[ColumnDef[Any, Any]] = build_status_columns()
 # Views now use:
 #   - recall_stats: StatsWithCI with 0..1 recall ratios (pre-scaled via scale_stats() in VIEW)
 #   - credit_stats: StatsWithCI with raw credit counts
-#   - n_recall_denominator: int
+#   - recall_denominator: int
 #   - status_counts: dict[AgentRunStatus, int]
 _OCCURRENCE_COLUMNS: list[ColumnDef[Any, Any]] = [
     ColumnDef("Recall %", lambda r: r.recall_stats.mean if r.recall_stats else 0.0, fmt_pct, justify="right", width=9),
@@ -91,7 +91,7 @@ _OCCURRENCE_COLUMNS: list[ColumnDef[Any, Any]] = [
         width=7,
     ),
     ColumnDef(
-        "Catchable", lambda r: r.n_recall_denominator, lambda v: fmt_float(v, decimals=1), justify="right", width=9
+        "Catchable", lambda r: r.recall_denominator, lambda v: fmt_float(v, decimals=1), justify="right", width=9
     ),
     *_STATUS_COLUMNS,
 ]

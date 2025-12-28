@@ -598,7 +598,7 @@ Used by check_edge_credit_sum trigger function.'
                 ge.critique_run_id,
                 COALESCE(SUM(ge.credit) FILTER (WHERE ge.tp_id IS NOT NULL), 0.0) AS total_credit,
                 COUNT(DISTINCT (ge.tp_id, ge.tp_occurrence_id))
-                    FILTER (WHERE ge.tp_id IS NOT NULL) AS n_catchable
+                    FILTER (WHERE ge.tp_id IS NOT NULL) AS recall_denominator
             FROM grading_edges ge
             GROUP BY ge.grader_run_id, ge.critique_run_id
         ),
@@ -608,7 +608,7 @@ Used by check_edge_credit_sum trigger function.'
                 e.example_kind,
                 e.files_hash,
                 s.split,
-                e.n_recall_denominator,
+                e.recall_denominator,
                 cr.agent_run_id AS critic_run_id,
                 cr.agent_definition_id AS critic_definition_id,
                 cr.model AS critic_model,
@@ -630,13 +630,13 @@ Used by check_edge_credit_sum trigger function.'
             WHERE (cr.type_config->>'agent_type') = 'critic'
               AND cr.status != 'in_progress'
             GROUP BY cr.agent_run_id, cr.type_config, cr.agent_definition_id, cr.model, cr.status,
-                     e.example_kind, e.files_hash, e.n_recall_denominator, s.split
+                     e.example_kind, e.files_hash, e.recall_denominator, s.split
         )
         SELECT
-            snapshot_slug, example_kind, files_hash, split, n_recall_denominator,
+            snapshot_slug, example_kind, files_hash, split, recall_denominator,
             critic_run_id, critic_definition_id, critic_model, critic_status,
             credit_stats,
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM per_run
     """)
 
@@ -656,7 +656,7 @@ Used by check_edge_credit_sum trigger function.'
                 rbr.example_kind,
                 rbr.files_hash,
                 rbr.split,
-                MAX(rbr.n_recall_denominator)::integer AS n_recall_denominator,
+                MAX(rbr.recall_denominator)::integer AS recall_denominator,
                 COUNT(*)::integer AS n_runs,
                 agg_status_counts(array_agg(rbr.critic_status)) AS status_counts,
                 compute_stats_with_ci(array_agg(
@@ -669,8 +669,8 @@ Used by check_edge_credit_sum trigger function.'
         SELECT
             critic_definition_id, critic_model,
             snapshot_slug, example_kind, files_hash, split,
-            n_recall_denominator, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            recall_denominator, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
@@ -687,10 +687,10 @@ Used by check_edge_credit_sum trigger function.'
             SELECT
                 split, example_kind, critic_definition_id, critic_model,
                 COUNT(*)::integer AS n_examples,
-                SUM(n_recall_denominator)::integer AS n_recall_denominator
+                SUM(recall_denominator)::integer AS recall_denominator
             FROM (
                 SELECT DISTINCT
-                    split, example_kind, files_hash, n_recall_denominator,
+                    split, example_kind, files_hash, recall_denominator,
                     critic_definition_id, critic_model
                 FROM recall_by_definition_example
             ) per_example
@@ -710,9 +710,9 @@ Used by check_edge_credit_sum trigger function.'
         )
         SELECT
             rs.split, rs.example_kind, rs.critic_definition_id, rs.critic_model,
-            ec.n_examples, rs.n_runs, ec.n_recall_denominator,
+            ec.n_examples, rs.n_runs, ec.recall_denominator,
             rs.status_counts, rs.credit_stats,
-            scale_stats(rs.credit_stats, ec.n_recall_denominator) AS recall_stats,
+            scale_stats(rs.credit_stats, ec.recall_denominator) AS recall_stats,
             rs.zero_count
         FROM run_stats rs
         JOIN example_counts ec USING (split, example_kind, critic_definition_id, critic_model)
@@ -732,7 +732,7 @@ Used by check_edge_credit_sum trigger function.'
                 rbde.example_kind,
                 rbde.files_hash,
                 rbde.split,
-                MAX(rbde.n_recall_denominator)::integer AS n_recall_denominator,
+                MAX(rbde.recall_denominator)::integer AS recall_denominator,
                 rbde.critic_model,
                 SUM(rbde.n_runs)::integer AS n_runs,
                 agg_status_counts(array_agg(rbde.status_counts)) AS status_counts,
@@ -744,8 +744,8 @@ Used by check_edge_credit_sum trigger function.'
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split,
-            n_recall_denominator, critic_model, n_runs, status_counts, credit_stats,
-            scale_stats(credit_stats, n_recall_denominator) AS recall_stats
+            recall_denominator, critic_model, n_runs, status_counts, credit_stats,
+            scale_stats(credit_stats, recall_denominator) AS recall_stats
         FROM raw_stats
     """)
 
@@ -763,7 +763,7 @@ Used by check_edge_credit_sum trigger function.'
                 example_kind,
                 files_hash,
                 split,
-                MAX(n_recall_denominator) AS n_recall_denominator,
+                MAX(recall_denominator) AS recall_denominator,
                 critic_model,
                 MAX(COALESCE((credit_stats).mean, 0.0)) AS best_mean_credit
             FROM recall_by_definition_example
@@ -780,7 +780,7 @@ Used by check_edge_credit_sum trigger function.'
         )
         SELECT
             snapshot_slug, example_kind, files_hash, split,
-            MAX(n_recall_denominator)::integer AS n_recall_denominator,
+            MAX(recall_denominator)::integer AS recall_denominator,
             critic_model,
             array_agg(DISTINCT critic_definition_id) AS winning_critic_definition_ids,
             best_mean_credit

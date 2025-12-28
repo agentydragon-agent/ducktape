@@ -923,9 +923,9 @@ class RecallByRun(Base):
     Base view that aggregates occurrence metrics per critic run, across all graders.
     Feeds into recall_by_definition_example which groups by (definition, model, example).
 
-    - n_recall_denominator: Ground truth count (denominator for recall)
+    - recall_denominator: Ground truth count (denominator for recall)
     - credit_stats: Stats over grader total credits (numerator; not normalized)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
 
     Failed critic runs (max_turns/context_length) contribute 0 credit via COALESCE.
     """
@@ -942,7 +942,7 @@ class RecallByRun(Base):
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     split: Mapped[Split] = mapped_column(nullable=False)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
     critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -952,7 +952,7 @@ class RecallByRun(Base):
     # Credit stats (numerator for recall)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -962,9 +962,9 @@ class RecallByDefinitionExample(Base):
     Intermediate view between recall_by_run and higher-level aggregations.
     Groups recall_by_run by (definition, model, example) - used by GEPA.
 
-    - n_recall_denominator: Ground truth count (denominator)
+    - recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_definition_example"
@@ -980,7 +980,7 @@ class RecallByDefinitionExample(Base):
     split: Mapped[Split] = mapped_column(nullable=False)
 
     # Ground truth count (denominator)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Number of critic runs for this (definition, model, example)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -991,7 +991,7 @@ class RecallByDefinitionExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1000,9 +1000,9 @@ class RecallByDefinitionSplitKind(Base):
 
     Aggregates recall_by_definition_example across examples within each (split, example_kind) group.
 
-    - n_recall_denominator: Sum across distinct examples (denominator)
+    - recall_denominator: Sum across distinct examples (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_definition_split_kind"
@@ -1020,7 +1020,7 @@ class RecallByDefinitionSplitKind(Base):
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Catchable occurrences (denominator - sum across distinct examples)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
@@ -1028,7 +1028,7 @@ class RecallByDefinitionSplitKind(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
     # Count of runs where caught credit was exactly 0 (complete failure to find anything)
@@ -1040,9 +1040,9 @@ class RecallByExample(Base):
 
     Aggregates recall_by_definition_example across definitions.
 
-    - n_recall_denominator: Ground truth count (denominator)
+    - recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_example"
@@ -1057,7 +1057,7 @@ class RecallByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Catchable occurrences (denominator)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -1068,7 +1068,7 @@ class RecallByExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1089,11 +1089,11 @@ class ParetoFrontierByExample(Base):
     For each example, shows definitions that achieved the best mean credit.
 
     For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-    - n_recall_denominator: ground truth count (denominator for recall)
+    - recall_denominator: ground truth count (denominator for recall)
     - winning_definitions: list of {definition_id, credit_stats, n_runs} for all definitions at best score
 
     All entries in winning_definitions have the same credit_stats.mean (the best score).
-    Consumer can compute recall as best_mean_credit / n_recall_denominator.
+    Consumer can compute recall as best_mean_credit / recall_denominator.
 
     Useful for prompt optimization to identify:
     - Which definitions excel on specific examples (definition specialization)
@@ -1116,7 +1116,7 @@ class ParetoFrontierByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Ground truth count for this example
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # JSONB array of {definition_id, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)
