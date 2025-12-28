@@ -2,15 +2,18 @@
 
 ## Infrastructure
 
-- [ ] Set up GitHub CI for frontend build
-  - Add workflow to run `pnpm install` and `pnpm build`
-  - Ensure type checking passes
-  - Consider adding linting
+- [x] Set up GitHub CI for frontend build
+  - Added frontend-build job to `.github/workflows/ci.yml`
+  - Runs `pnpm install`, `pnpm build`, and `pnpm check`
 
-- [ ] Set up local development environment for props
-  - Document how to start backend server for development
-  - Document how to run tests
-  - Document how to regenerate OpenAPI types (`pnpm generate`)
+- [x] Set up local development environment for props
+  - **Backend**: See props/core/README.md for test setup
+  - **Frontend**:
+    - Install deps: `cd props/frontend && pnpm install`
+    - Start dev server: `pnpm dev`
+    - Build: `pnpm build`
+    - Type check: `pnpm check`
+    - Regenerate OpenAPI types: `pnpm generate` (requires backend running at http://127.0.0.1:8000)
 
 ## Snapshot Browser Features (SPEC.md Implementation)
 
