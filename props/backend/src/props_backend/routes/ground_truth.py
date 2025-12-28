@@ -176,9 +176,9 @@ def list_snapshots() -> SnapshotsListResponse:
 
 
 @router.get("/snapshots/{snapshot_slug:path}")
-def get_snapshot_detail(snapshot_slug: str) -> SnapshotDetailResponse:
+def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
     """Get detailed snapshot info with all TPs and FPs."""
-    slug = SnapshotSlug(snapshot_slug)
+    slug = snapshot_slug
 
     with get_session() as session:
         snapshot = session.query(Snapshot).filter_by(slug=slug).first()
@@ -269,9 +269,9 @@ class FileTreeResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/tree")
-def get_snapshot_tree(snapshot_slug: str) -> FileTreeResponse:
+def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
     """Get directory tree with issue occurrence counts."""
-    slug = SnapshotSlug(snapshot_slug)
+    slug = snapshot_slug
 
     with get_session() as session:
         snapshot = session.query(Snapshot).filter_by(slug=slug).first()
@@ -402,12 +402,12 @@ class FileContentResponse(BaseModel):
 
 
 @router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
-def get_snapshot_file(snapshot_slug: str, file_path: str) -> FileContentResponse:
+def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileContentResponse:
     """Get file content from snapshot tar archive."""
     import io
     import tarfile
 
-    slug = SnapshotSlug(snapshot_slug)
+    slug = snapshot_slug
 
     with get_session() as session:
         snapshot = session.query(Snapshot).filter_by(slug=slug).first()

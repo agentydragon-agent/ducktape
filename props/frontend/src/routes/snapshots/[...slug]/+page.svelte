@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { toast } from 'svelte-sonner';
   import { splitBadgeClass } from '$lib/colors';
   import type { SnapshotDetailResponse, FileContentResponse } from '$lib/api/client';
   import { fetchSnapshotFile } from '$lib/api/client';
@@ -38,8 +39,7 @@
     try {
       selectedFile = await fetchSnapshotFile(data.slug, path);
     } catch (error) {
-      console.error('Failed to load file:', error);
-      alert(`Failed to load file: ${error}`);
+      toast.error(`Failed to load file: ${error}`);
     } finally {
       loadingFile = false;
     }
