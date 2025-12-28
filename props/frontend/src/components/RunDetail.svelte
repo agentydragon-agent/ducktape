@@ -22,7 +22,7 @@
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
-  import GradingDecisions from './GradingDecisions.svelte';
+  import GradingEdges from './GradingEdges.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
   marked.use({ breaks: true, async: false });
@@ -445,12 +445,12 @@
       </div>
     {/if}
 
-    <!-- Grading decisions (for both critic and grader runs) -->
-    {#if run.grading_decisions.length > 0 || run.missed_occurrences.length > 0}
-      {@const totalItems = run.grading_decisions.length + run.missed_occurrences.length}
+    <!-- Grading edges (for both critic and grader runs) -->
+    {#if run.grading_edges.length > 0 || run.missed_occurrences.length > 0}
+      {@const totalItems = run.grading_edges.length + run.missed_occurrences.length}
       <div class="px-4 py-2 border-b flex-shrink-0">
-        <GradingDecisions
-          decisions={run.grading_decisions}
+        <GradingEdges
+          edges={run.grading_edges}
           missedOccurrences={run.missed_occurrences}
           totalCredit={run.grading_summary?.total_credit}
           nCatchable={run.grading_summary?.n_catchable_occurrences}

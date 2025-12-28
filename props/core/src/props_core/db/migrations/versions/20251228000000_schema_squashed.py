@@ -643,49 +643,33 @@ For whole-snapshot scope, always returns TRUE.'
 
     # Trigger functions
     op.execute("""
-        CREATE FUNCTION check_credit_sum() RETURNS trigger
+        CREATE FUNCTION check_edge_credit_sum() RETURNS trigger
         LANGUAGE plpgsql
         AS $$
         DECLARE
             current_total FLOAT;
         BEGIN
-            -- Skip if no target (no-match case)
-            IF NEW.target_tp_id IS NULL AND NEW.target_fp_id IS NULL THEN
-                RETURN NEW;
-            END IF;
-
-            -- Get current total from view (excluding NEW row)
-            IF NEW.target_tp_id IS NOT NULL THEN
-                SELECT COALESCE(total_credit, 0.0) INTO current_total
-                FROM grading_credit_sums
-                WHERE agent_run_id = NEW.agent_run_id
-                  AND target_tp_id = NEW.target_tp_id
-                  AND target_tp_occurrence_id = NEW.target_tp_occurrence_id;
-
-                -- On UPDATE, subtract old credit from current total
-                IF TG_OP = 'UPDATE' THEN
-                    current_total := current_total - OLD.credit;
-                END IF;
+            -- Get current total (excluding this row if updating)
+            IF NEW.tp_id IS NOT NULL THEN
+                SELECT COALESCE(SUM(credit), 0.0) INTO current_total
+                FROM grading_edges
+                WHERE critique_run_id = NEW.critique_run_id
+                  AND tp_id = NEW.tp_id
+                  AND tp_occurrence_id = NEW.tp_occurrence_id
+                  AND id != COALESCE(NEW.id, -1);
             ELSE
-                SELECT COALESCE(total_credit, 0.0) INTO current_total
-                FROM grading_credit_sums
-                WHERE agent_run_id = NEW.agent_run_id
-                  AND target_fp_id = NEW.target_fp_id
-                  AND target_fp_occurrence_id = NEW.target_fp_occurrence_id;
-
-                -- On UPDATE, subtract old credit from current total
-                IF TG_OP = 'UPDATE' THEN
-                    current_total := current_total - OLD.credit;
-                END IF;
+                SELECT COALESCE(SUM(credit), 0.0) INTO current_total
+                FROM grading_edges
+                WHERE critique_run_id = NEW.critique_run_id
+                  AND fp_id = NEW.fp_id
+                  AND fp_occurrence_id = NEW.fp_occurrence_id
+                  AND id != COALESCE(NEW.id, -1);
             END IF;
 
-            -- Add new credit and validate
-            current_total := COALESCE(current_total, 0.0) + NEW.credit;
-
-            IF current_total > 1.0 THEN
-                RAISE EXCEPTION 'Credit sum would exceed 1.0 for occurrence (current: %, new: %, total: %)',
-                    current_total - NEW.credit, NEW.credit, current_total
-                USING HINT = 'Each occurrence can have at most 1.0 total credit across all input issues';
+            -- Check if adding new credit would exceed 1.0
+            IF current_total + NEW.credit > 1.0 THEN
+                RAISE EXCEPTION 'Credit sum for occurrence would exceed 1.0 (current: %, new: %)',
+                    current_total, NEW.credit;
             END IF;
 
             RETURN NEW;
@@ -694,8 +678,8 @@ For whole-snapshot scope, always returns TRUE.'
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION check_credit_sum() IS
-        'Trigger function that validates credit sums per occurrence do not exceed 1.0.'
+        COMMENT ON FUNCTION check_edge_credit_sum() IS
+        'Trigger function that validates credit sums per (critique_run, occurrence) do not exceed 1.0.'
     """)
 
     op.execute("""
@@ -1390,63 +1374,94 @@ USEFUL FOR: Critic (write), grader (read).
         FOR EACH ROW EXECUTE FUNCTION validate_reported_issue_occ_basic_line_numbers();
     """)
 
-    # Grading decisions table
+    # Grading edges table - bipartite graph between critique issues and GT occurrences
     op.create_table(
-        "grading_decisions",
+        "grading_edges",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("input_issue_id", sa.String(), nullable=False),
-        sa.Column("target_tp_id", sa.String(), nullable=True, comment="TP target (nullable)"),
-        sa.Column("target_tp_occurrence_id", sa.String(), nullable=True, comment="TP target (nullable)"),
-        sa.Column("target_fp_id", sa.String(), nullable=True, comment="FP target (nullable)"),
-        sa.Column("target_fp_occurrence_id", sa.String(), nullable=True, comment="FP target (nullable)"),
+        # Reference to the critique issue (from reported_issues)
+        sa.Column("critique_run_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("critique_issue_id", sa.String(), nullable=False),
+        # TP target (nullable - exactly one of TP or FP must be set)
+        sa.Column("snapshot_slug", sa.String(), nullable=False),  # For FK validation
+        sa.Column("tp_id", sa.String(), nullable=True),
+        sa.Column("tp_occurrence_id", sa.String(), nullable=True),
+        # FP target (nullable)
+        sa.Column("fp_id", sa.String(), nullable=True),
+        sa.Column("fp_occurrence_id", sa.String(), nullable=True),
+        # Grading metadata
         sa.Column("credit", sa.Float(), nullable=False),
         sa.Column("rationale", sa.Text(), nullable=False),
+        sa.Column("grader_run_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
-        sa.Column(
-            "agent_run_id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("current_agent_run_id()"),
-            nullable=False,
-        ),
+        # Primary key
         sa.PrimaryKeyConstraint("id"),
-        sa.ForeignKeyConstraint(["agent_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE"),
-        sa.CheckConstraint("credit >= 0.0 AND credit <= 1.0", name="credit_in_range"),
-        sa.CheckConstraint(
-            "(target_tp_id IS NOT NULL AND target_tp_occurrence_id IS NOT NULL AND target_fp_id IS NULL AND target_fp_occurrence_id IS NULL) "
-            "OR (target_tp_id IS NULL AND target_tp_occurrence_id IS NULL AND target_fp_id IS NOT NULL AND target_fp_occurrence_id IS NOT NULL) "
-            "OR (target_tp_id IS NULL AND target_tp_occurrence_id IS NULL AND target_fp_id IS NULL AND target_fp_occurrence_id IS NULL)",
-            name="exactly_one_target",
+        # FK to reported_issues
+        sa.ForeignKeyConstraint(
+            ["critique_run_id", "critique_issue_id"],
+            ["reported_issues.agent_run_id", "reported_issues.issue_id"],
+            ondelete="CASCADE",
+            name="fk_grading_edges_critique",
         ),
-        sa.CheckConstraint(
-            "target_tp_id IS NOT NULL OR target_fp_id IS NOT NULL OR credit = 0.0", name="no_match_zero_credit"
+        # FK to agent_runs (grader)
+        sa.ForeignKeyConstraint(
+            ["grader_run_id"], ["agent_runs.agent_run_id"], ondelete="CASCADE", name="fk_grading_edges_grader"
         ),
-        # Issue ID format constraints
-        issue_id_constraint("input_issue_id", "input_issue_id_format"),
-        sa.CheckConstraint(
-            f"target_tp_id IS NULL OR (target_tp_id {ISSUE_ID_CHECK_SQL.format(col='target_tp_id')})",
-            name="target_tp_id_format",
+        # FK to true_positive_occurrences (when TP target set)
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "tp_id", "tp_occurrence_id"],
+            [
+                "true_positive_occurrences.snapshot_slug",
+                "true_positive_occurrences.tp_id",
+                "true_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_grading_edges_tp",
         ),
-        sa.CheckConstraint(
-            f"target_fp_id IS NULL OR (target_fp_id {ISSUE_ID_CHECK_SQL.format(col='target_fp_id')})",
-            name="target_fp_id_format",
+        # FK to false_positive_occurrences (when FP target set)
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "fp_occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+            name="fk_grading_edges_fp",
         ),
+        # Unique constraints to prevent duplicate edges
+        sa.UniqueConstraint(
+            "critique_run_id", "critique_issue_id", "tp_id", "tp_occurrence_id", name="uq_grading_edges_tp"
+        ),
+        sa.UniqueConstraint(
+            "critique_run_id", "critique_issue_id", "fp_id", "fp_occurrence_id", name="uq_grading_edges_fp"
+        ),
+        # Exactly one of TP or FP must be set (same pattern as old grading_decisions)
+        sa.CheckConstraint(
+            """(
+                (tp_id IS NOT NULL AND tp_occurrence_id IS NOT NULL AND fp_id IS NULL AND fp_occurrence_id IS NULL)
+                OR (fp_id IS NOT NULL AND fp_occurrence_id IS NOT NULL AND tp_id IS NULL AND tp_occurrence_id IS NULL)
+            )""",
+            name="exactly_one_target_edge",
+        ),
+        # Credit range
+        sa.CheckConstraint("credit >= 0.0 AND credit <= 1.0", name="credit_range_edge"),
     )
 
-    op.execute(
-        "COMMENT ON COLUMN grading_decisions.agent_run_id IS 'FK to agent_runs - identifies which grader agent run created this decision'"
-    )
     op.execute("""
-        COMMENT ON TABLE grading_decisions IS
-        'Grader decisions matching reported issues to ground truth.
-target_tp_id/target_fp_id = matched ground truth (NULL = no match).
-credit = match quality (0-1). Trigger enforces SUM(credit) <= 1.0 per occurrence.
+        COMMENT ON TABLE grading_edges IS
+        'Explicit bipartite graph edges from critique issues to GT occurrences.
+Each edge represents a grader''s judgment about whether a critique issue matches a GT occurrence.
 
-RLS: Grader sees own run only. Prompt optimizer sees TRAIN runs only.
-Clustering agent sees decisions for its configured snapshot.
+Key invariants:
+- Every (critique_issue, matchable_occurrence) pair must have an edge (complete coverage)
+- Exactly one of (tp_id, tp_occurrence_id) or (fp_id, fp_occurrence_id) is set
+- credit: 0.0-1.0 for TP matches, 0.0 for FP matches (FP credit = anti-credit, penalty)
+- No-match decisions still create edges with credit=0.0
 
-USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only), clustering (read unknowns).
-- Grader: INSERT decisions for each input issue
+Drift = missing edges. Query grading_pending view to see what''s missing.
+
+USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
+- Grader: INSERT edges for each (critique_issue, gt_occurrence) pair
 - Prompt optimizer: analyze which issues got credit vs not
 - Clustering: read decisions with NULL targets (unknowns)'
     """)
@@ -1516,7 +1531,11 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only), clustering (read
         ["agent_run_id", "reported_issue_id"],
     )
 
-    op.create_index("grading_decisions_agent_run_id_idx", "grading_decisions", ["agent_run_id"])
+    # Indexes for grading_edges
+    op.create_index("idx_grading_edges_critique", "grading_edges", ["critique_run_id", "critique_issue_id"])
+    op.create_index("idx_grading_edges_tp", "grading_edges", ["snapshot_slug", "tp_id", "tp_occurrence_id"])
+    op.create_index("idx_grading_edges_fp", "grading_edges", ["snapshot_slug", "fp_id", "fp_occurrence_id"])
+    op.create_index("idx_grading_edges_grader", "grading_edges", ["grader_run_id"])
 
     op.create_index("ix_events_agent_run_id_seq", "events", ["agent_run_id", "sequence_num"])
 
@@ -1524,24 +1543,22 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only), clustering (read
     # 7. Views (grading_credit_sums must be created before trigger that uses it)
     # =========================================================================
 
-    # grading_credit_sums view (used by check_credit_sum trigger function)
+    # grading_edge_credit_sums view (used by check_edge_credit_sum trigger function)
     op.execute("""
-        CREATE VIEW grading_credit_sums AS
-        SELECT agent_run_id,
-            target_tp_id,
-            target_tp_occurrence_id,
-            target_fp_id,
-            target_fp_occurrence_id,
-            sum(credit) AS total_credit
-        FROM grading_decisions
-        WHERE target_tp_id IS NOT NULL OR target_fp_id IS NOT NULL
-        GROUP BY agent_run_id, target_tp_id, target_tp_occurrence_id, target_fp_id, target_fp_occurrence_id
+        CREATE VIEW grading_edge_credit_sums AS
+        SELECT
+            critique_run_id,
+            tp_id, tp_occurrence_id,
+            fp_id, fp_occurrence_id,
+            SUM(credit) AS total_credit
+        FROM grading_edges
+        GROUP BY critique_run_id, tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
     """)
 
     op.execute("""
-        COMMENT ON VIEW grading_credit_sums IS
-        'Aggregate credit sums per (agent_run, occurrence) for enforcing credit <= 1.0 constraint.
-Used by check_credit_sum trigger function.'
+        COMMENT ON VIEW grading_edge_credit_sums IS
+        'Aggregate credit sums per (critique_run, occurrence) for enforcing credit <= 1.0 constraint.
+Used by check_edge_credit_sum trigger function.'
     """)
 
     # examples view - derived from file_sets + whole-snapshot entries
