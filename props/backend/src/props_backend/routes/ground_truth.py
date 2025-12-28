@@ -246,3 +246,202 @@ def get_snapshot_detail(snapshot_slug: str) -> SnapshotDetailResponse:
             true_positives=tp_infos,
             false_positives=fp_infos,
         )
+
+
+# --- File Browser Endpoints ---
+
+
+class FileTreeNode(BaseModel):
+    """Node in file tree (file or directory)."""
+
+    path: str
+    name: str
+    is_dir: bool
+    tp_count: int = 0
+    fp_count: int = 0
+    children: list["FileTreeNode"] | None = None  # None for files, list for directories
+
+
+class FileTreeResponse(BaseModel):
+    """Directory tree with issue counts."""
+
+    tree: list[FileTreeNode]
+
+
+@router.get("/snapshots/{snapshot_slug:path}/tree")
+def get_snapshot_tree(snapshot_slug: str) -> FileTreeResponse:
+    """Get directory tree with issue occurrence counts."""
+    slug = SnapshotSlug(snapshot_slug)
+
+    with get_session() as session:
+        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
+        if not snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
+
+        # Get all snapshot files
+        snapshot_files_rows = (
+            session.query(SnapshotFile.relative_path)
+            .filter_by(snapshot_slug=slug)
+            .order_by(SnapshotFile.relative_path)
+            .all()
+        )
+        snapshot_files = {row.relative_path for row in snapshot_files_rows}
+
+        # Get TP occurrences with file locations
+        tps = (
+            session.query(TruePositive)
+            .filter_by(snapshot_slug=slug)
+            .options(selectinload(TruePositive.occurrences))
+            .all()
+        )
+
+        # Get FP occurrences with file locations
+        fps = (
+            session.query(FalsePositive)
+            .filter_by(snapshot_slug=slug)
+            .options(selectinload(FalsePositive.occurrences))
+            .all()
+        )
+
+        # Count occurrences per file
+        tp_counts_by_file: dict[str, int] = {}
+        fp_counts_by_file: dict[str, int] = {}
+
+        for tp in tps:
+            for occ in tp.occurrences:
+                for file_path in occ.files.keys():
+                    tp_counts_by_file[file_path] = tp_counts_by_file.get(file_path, 0) + 1
+
+        for fp in fps:
+            for occ in fp.occurrences:
+                for file_path in occ.files.keys():
+                    fp_counts_by_file[file_path] = fp_counts_by_file.get(file_path, 0) + 1
+
+        # Build tree structure
+        root_nodes: dict[str, FileTreeNode] = {}
+
+        def ensure_path(path: str) -> FileTreeNode:
+            """Ensure path and all parents exist in tree."""
+            if path in root_nodes:
+                return root_nodes[path]
+
+            parts = path.split("/")
+            if len(parts) == 1:
+                # Root level file/dir
+                node = FileTreeNode(
+                    path=path,
+                    name=path,
+                    is_dir=False,
+                    children=None,
+                )
+                root_nodes[path] = node
+                return node
+
+            # Need to create parent
+            parent_path = "/".join(parts[:-1])
+            parent = ensure_path(parent_path)
+
+            # Mark parent as directory
+            if parent.children is None:
+                parent.is_dir = True
+                parent.children = []
+
+            # Create this node
+            node = FileTreeNode(
+                path=path,
+                name=parts[-1],
+                is_dir=False,
+                children=None,
+            )
+            parent.children.append(node)
+            root_nodes[path] = node
+            return node
+
+        # Add all snapshot files to tree
+        for file_path in sorted(snapshot_files):
+            ensure_path(file_path)
+
+        # Propagate counts up the tree
+        def propagate_counts(node: FileTreeNode) -> tuple[int, int]:
+            """Return (tp_count, fp_count) for this node and set on node."""
+            if not node.is_dir:
+                # Leaf file - use direct counts
+                node.tp_count = tp_counts_by_file.get(node.path, 0)
+                node.fp_count = fp_counts_by_file.get(node.path, 0)
+                return (node.tp_count, node.fp_count)
+
+            # Directory - sum children
+            total_tp = 0
+            total_fp = 0
+            if node.children:
+                for child in node.children:
+                    child_tp, child_fp = propagate_counts(child)
+                    total_tp += child_tp
+                    total_fp += child_fp
+
+            node.tp_count = total_tp
+            node.fp_count = total_fp
+            return (total_tp, total_fp)
+
+        # Get root-level nodes
+        root_level = [node for path, node in root_nodes.items() if "/" not in path]
+
+        # Propagate counts
+        for node in root_level:
+            propagate_counts(node)
+
+        return FileTreeResponse(tree=root_level)
+
+
+class FileContentResponse(BaseModel):
+    """File content from snapshot."""
+
+    path: str
+    content: str
+    line_count: int
+
+
+@router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
+def get_snapshot_file(snapshot_slug: str, file_path: str) -> FileContentResponse:
+    """Get file content from snapshot tar archive."""
+    import io
+    import tarfile
+
+    slug = SnapshotSlug(snapshot_slug)
+
+    with get_session() as session:
+        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
+        if not snapshot:
+            raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
+
+        if not snapshot.content:
+            raise HTTPException(status_code=404, detail=f"Snapshot has no content: {slug}")
+
+        # Check if file exists in snapshot
+        snapshot_file = (
+            session.query(SnapshotFile).filter_by(snapshot_slug=slug, relative_path=file_path).first()
+        )
+        if not snapshot_file:
+            raise HTTPException(status_code=404, detail=f"File not found in snapshot: {file_path}")
+
+        # Extract file from tar
+        buffer = io.BytesIO(snapshot.content)
+        try:
+            with tarfile.open(fileobj=buffer, mode="r") as tar:
+                try:
+                    member = tar.getmember(file_path)
+                    file_obj = tar.extractfile(member)
+                    if file_obj is None:
+                        raise HTTPException(status_code=400, detail=f"Cannot extract file: {file_path}")
+
+                    content_bytes = file_obj.read()
+                    # Decode as UTF-8, replace invalid chars
+                    content = content_bytes.decode("utf-8", errors="replace")
+
+                    return FileContentResponse(
+                        path=file_path, content=content, line_count=snapshot_file.line_count
+                    )
+                except KeyError:
+                    raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
+        except tarfile.TarError as e:
+            raise HTTPException(status_code=500, detail=f"Error reading tar archive: {e}")

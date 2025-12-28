@@ -113,7 +113,6 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 **At Snapshot Level:**
 - Overall recall statistics
 - Per-file breakdown
-- Pareto chart of most frequently missed issues
 
 ### 5. Visual Design Requirements
 

@@ -220,3 +220,41 @@ export async function fetchSnapshotDetail(snapshotSlug: string) {
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch snapshot'));
   return data;
 }
+
+// File tree types
+export interface FileTreeNode {
+  path: string;
+  name: string;
+  is_dir: boolean;
+  tp_count: number;
+  fp_count: number;
+  children: FileTreeNode[] | null;
+}
+
+export interface FileTreeResponse {
+  tree: FileTreeNode[];
+}
+
+export interface FileContentResponse {
+  path: string;
+  content: string;
+  line_count: number;
+}
+
+// Fetch snapshot file tree
+export async function fetchSnapshotTree(snapshotSlug: string): Promise<FileTreeResponse> {
+  const { data, error } = await api.GET('/api/gt/snapshots/{snapshot_slug}/tree', {
+    params: { path: { snapshot_slug: snapshotSlug } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch snapshot tree'));
+  return data as FileTreeResponse;
+}
+
+// Fetch file content from snapshot
+export async function fetchSnapshotFile(snapshotSlug: string, filePath: string): Promise<FileContentResponse> {
+  const { data, error } = await api.GET('/api/gt/snapshots/{snapshot_slug}/files/{file_path}', {
+    params: { path: { snapshot_slug: snapshotSlug, file_path: filePath } },
+  });
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch file'));
+  return data as FileContentResponse;
+}
