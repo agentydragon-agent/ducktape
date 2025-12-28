@@ -20,6 +20,8 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
   - True Positive occurrences (TPs) in that file/subtree
   - False Positive occurrences (FPs) in that file/subtree
   - Count at disjoint issue/occurrence level (no double counting)
+  - **Note**: An occurrence counts toward a file if that file appears in the occurrence's files list
+  - Occurrences spanning multiple files count toward each file separately
 - Visual badges with counts (e.g., "3 TPs, 1 FP")
 - Color coding: TPs in green, FPs in red
 
@@ -37,6 +39,11 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 
 **Issue Markers (Ground Truth):**
 - Visual markers on affected line ranges
+- **IMPORTANT**: An occurrence can:
+  - Span multiple files (occurrence.files is a list)
+  - Each file can have multiple line ranges OR no line ranges (whole file)
+  - Structure: `{ path: string, ranges: LineRange[] | null }`
+  - When `ranges === null`: Highlight entire file or show file-level marker
 - Distinct visual styles:
   - **True Positives**: Green left border, light green background
   - **False Positives**: Red left border, light red background
@@ -46,7 +53,8 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
   - Occurrence ID
   - Rationale text
   - Note field (if present)
-  - Line range
+  - All file locations (may be multiple)
+  - Line ranges (if specified, otherwise "whole file")
 
 **Issue Statistics (per occurrence):**
 - Show distribution of credits from critique runs:
@@ -59,6 +67,8 @@ A comprehensive UI for viewing ground truth snapshots and critique runs with Git
 - Button on each occurrence to copy URL like:
   - `/snapshots/{slug}/files/{path}#{tp_id}/{occurrence_id}`
   - Should deep-link directly to that occurrence when pasted
+  - For multi-file occurrences: URL points to primary file (first in files list)
+  - Occurrence detail panel shows links to all other affected files
 
 ### 3. Critique Viewer with Ground Truth Overlay
 
@@ -147,8 +157,9 @@ SnapshotDetailPage
 │       ├── CodeDisplay (syntax highlighted)
 │       ├── LineGutter (line numbers + issue markers)
 │       └── IssueOverlay
-│           ├── OccurrenceMarker (TP/FP)
+│           ├── OccurrenceMarker (TP/FP - shows markers for this file's ranges)
 │           └── OccurrenceDetail (expandable)
+│               ├── AllFileLocations (list of all files this occurrence spans)
 │               ├── OccurrenceStats
 │               └── CopyUrlButton
 └── IssueNavigator (next/prev controls)
@@ -211,8 +222,13 @@ CritiqueDetailPage
 **Data Models:**
 - `TpInfo`, `FpInfo` - Issue info with occurrences
 - `TpOccurrenceInfo`, `FpOccurrenceInfo` - Occurrence with file locations
-- `FileLocationInfo` - File path with line ranges
-- `LineRangeInfo` - start_line/end_line (DB stores 0-based but displays 1-based)
+  - `files: FileLocationInfo[]` - Array of file locations (can be multiple files)
+- `FileLocationInfo` - File path with optional line ranges
+  - `path: string` - File path
+  - `ranges: LineRangeInfo[] | null` - Line ranges (null = whole file)
+- `LineRangeInfo` - start_line/end_line
+  - DB stores 0-based, display shows 1-based
+  - `start_line: number`, `end_line: number` (both inclusive)
 
 ### 11. URL Structure
 
