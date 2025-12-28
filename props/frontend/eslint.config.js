@@ -16,13 +16,6 @@ export default [
       globals: {
         ...globals.browser,
         ...globals.node,
-        // Svelte 5 runes (compiler-provided globals)
-        $state: 'readonly',
-        $derived: 'readonly',
-        $effect: 'readonly',
-        $props: 'readonly',
-        $bindable: 'readonly',
-        $inspect: 'readonly',
       },
     },
     rules: {
@@ -31,7 +24,7 @@ export default [
   },
   {
     files: ['**/*.{ts,tsx}'],
-    ignores: ['**/*.svelte'],
+    ignores: ['**/*.svelte', '**/*.svelte.ts'],
     languageOptions: {
       parser: tsParser,
     },
@@ -43,7 +36,7 @@ export default [
     },
   },
   {
-    files: ['**/*.svelte'],
+    files: ['**/*.svelte', '**/*.svelte.ts'],
     languageOptions: {
       parser: svelteParser,
       parserOptions: {
