@@ -1,6 +1,8 @@
 <script lang="ts">
   import { CheckCircle, XCircle, Link, HelpCircle } from 'lucide-svelte';
   import type { GradingEdgeInfo } from '../lib/api/client';
+  import { issueColors } from '../lib/colors';
+  import { formatFileLocation } from '../lib/formatters';
 
   interface Props {
     kind: 'tp' | 'fp' | 'critique';
@@ -29,26 +31,26 @@
   // Visual styling based on kind
   const styling = $derived.by(() => {
     switch (kind) {
-      case 'tp':
+      case 'tp': {
+        const colors = issueColors.tp;
         return {
-          bg: 'bg-green-50',
-          border: 'border-green-200',
-          headerBg: 'bg-green-100',
+          ...colors,
           icon: CheckCircle,
-          iconColor: 'text-green-600',
+          iconColor: colors.text,
           label: 'TP',
-          labelColor: 'text-green-700',
+          labelColor: colors.textDark,
         };
-      case 'fp':
+      }
+      case 'fp': {
+        const colors = issueColors.fp;
         return {
-          bg: 'bg-red-50',
-          border: 'border-red-200',
-          headerBg: 'bg-red-100',
+          ...colors,
           icon: XCircle,
-          iconColor: 'text-red-600',
+          iconColor: colors.text,
           label: 'FP',
-          labelColor: 'text-red-700',
+          labelColor: colors.textDark,
         };
+      }
       case 'critique': {
         // Color based on grading if available
         const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
@@ -56,62 +58,45 @@
         const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
 
         if (hasTPMatch) {
+          const colors = issueColors.critique;
           return {
-            bg: 'bg-blue-50',
-            border: 'border-blue-200',
-            headerBg: 'bg-blue-100',
+            ...colors,
             icon: Link,
-            iconColor: 'text-blue-600',
+            iconColor: colors.text,
             label: 'Critique (TP)',
-            labelColor: 'text-blue-700',
+            labelColor: colors.textDark,
           };
         } else if (hasFPMatch) {
+          const colors = issueColors.critiqueFp;
           return {
-            bg: 'bg-orange-50',
-            border: 'border-orange-200',
-            headerBg: 'bg-orange-100',
+            ...colors,
             icon: Link,
-            iconColor: 'text-orange-600',
+            iconColor: colors.text,
             label: 'Critique (FP)',
-            labelColor: 'text-orange-700',
+            labelColor: colors.textDark,
           };
         } else if (isNovel) {
+          const colors = issueColors.novel;
           return {
-            bg: 'bg-gray-50',
-            border: 'border-gray-200',
-            headerBg: 'bg-gray-100',
+            ...colors,
             icon: HelpCircle,
-            iconColor: 'text-gray-600',
+            iconColor: colors.text,
             label: 'Critique (Novel)',
-            labelColor: 'text-gray-700',
+            labelColor: colors.textDark,
           };
         } else {
+          const colors = issueColors.critique;
           return {
-            bg: 'bg-blue-50',
-            border: 'border-blue-200',
-            headerBg: 'bg-blue-100',
+            ...colors,
             icon: Link,
-            iconColor: 'text-blue-600',
+            iconColor: colors.text,
             label: 'Critique',
-            labelColor: 'text-blue-700',
+            labelColor: colors.textDark,
           };
         }
       }
     }
   });
-
-  function formatFileLocation(file: {
-    path: string;
-    ranges: Array<{ start_line: number; end_line: number }> | null;
-  }): string {
-    if (!file.ranges || file.ranges.length === 0) {
-      return file.path;
-    }
-    const rangeStrs = file.ranges.map((r) =>
-      r.start_line === r.end_line ? `${r.start_line + 1}` : `${r.start_line + 1}-${r.end_line + 1}`
-    );
-    return `${file.path}:${rangeStrs.join(',')}`;
-  }
 </script>
 
 <div class="border-l-4 {styling.border} {styling.bg} rounded-r shadow-sm my-2">

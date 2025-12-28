@@ -1,16 +1,7 @@
 <script lang="ts">
-  import {
-    ChevronRight,
-    ChevronDown,
-    Folder,
-    FolderOpen,
-    File,
-    FileText,
-    FileCode,
-    FileJson,
-    Settings,
-  } from 'lucide-svelte';
+  import { ChevronRight, ChevronDown, Folder, FolderOpen } from 'lucide-svelte';
   import type { FileTreeNode } from '../lib/api/client';
+  import { getFileIcon } from '../lib/fileTypes';
 
   interface Props {
     nodes: FileTreeNode[];
@@ -37,7 +28,7 @@
   {@const isExpanded = expanded.has(node.path)}
   {@const isSelected = selectedPath === node.path}
   {@const indent = depth * 16}
-  {@const ext = node.name.split('.').pop()?.toLowerCase()}
+  {@const FileIcon = getFileIcon(node.name)}
 
   <div
     class="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer text-sm {isSelected ? 'bg-blue-100' : ''}"
@@ -67,17 +58,7 @@
       </span>
     {:else}
       <span class="text-gray-400">
-        {#if ext === 'json' || ext === 'yaml' || ext === 'yml'}
-          <FileJson size={16} />
-        {:else if ext === 'js' || ext === 'ts' || ext === 'jsx' || ext === 'tsx' || ext === 'py' || ext === 'rb' || ext === 'java' || ext === 'c' || ext === 'cpp' || ext === 'go' || ext === 'rs'}
-          <FileCode size={16} />
-        {:else if ext === 'md' || ext === 'txt'}
-          <FileText size={16} />
-        {:else if ext === 'config' || ext === 'conf' || ext === 'cfg'}
-          <Settings size={16} />
-        {:else}
-          <File size={16} />
-        {/if}
+        <FileIcon size={16} />
       </span>
     {/if}
     <span class="flex-1 font-mono">{node.name}</span>
