@@ -121,8 +121,15 @@
     onclick={onToggle}
     type="button"
   >
-    {@const Icon = styling.icon}
-    <Icon size={16} class={styling.iconColor} />
+    {#if styling.icon === CheckCircle}
+      <CheckCircle size={16} class={styling.iconColor} />
+    {:else if styling.icon === XCircle}
+      <XCircle size={16} class={styling.iconColor} />
+    {:else if styling.icon === Link}
+      <Link size={16} class={styling.iconColor} />
+    {:else}
+      <HelpCircle size={16} class={styling.iconColor} />
+    {/if}
     <span class="font-mono text-sm font-medium">{issueId}</span>
     <span class="text-xs {styling.labelColor} font-medium">{styling.label}</span>
     {#if credit !== undefined}
