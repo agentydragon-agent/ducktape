@@ -358,3 +358,30 @@ repos:
         entry: bash -c 'cd adgn/src/adgn/agent/web && npm run check'
         files: ^adgn/src/adgn/agent/web/
         pass_filenames: false
+
+  # Svelte/TypeScript checks for Props Frontend
+  - repo: local
+    hooks:
+      # ESLint: Import ordering, code quality
+      - id: eslint-props
+        name: eslint (Props Frontend)
+        language: system
+        entry: bash -c 'cd props/frontend && pnpm run lint -- --fix'
+        files: ^props/frontend/src/.*\.(ts|svelte)$
+        pass_filenames: false
+
+      # Prettier: Code formatting
+      - id: prettier-props
+        name: prettier (Props Frontend)
+        language: system
+        entry: bash -c 'cd props/frontend && pnpm run format'
+        files: ^props/frontend/src/.*\.(ts|svelte|css)$
+        pass_filenames: false
+
+      # Svelte-check: Type checking
+      - id: svelte-check-props
+        name: svelte-check (Props Frontend)
+        language: system
+        entry: bash -c 'cd props/frontend && pnpm run check'
+        files: ^props/frontend/
+        pass_filenames: false

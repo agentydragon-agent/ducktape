@@ -3,9 +3,18 @@
 from __future__ import annotations
 
 from datetime import datetime
+import io
+import tarfile
 
 from fastapi import APIRouter, HTTPException
-from props_core.db.models import FalsePositive, FileSetMember, Snapshot, TruePositive, TruePositiveOccurrenceORM
+from props_core.db.models import (
+    FalsePositive,
+    FileSetMember,
+    Snapshot,
+    SnapshotFile,
+    TruePositive,
+    TruePositiveOccurrenceORM,
+)
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from props_core.splits import Split
@@ -259,7 +268,7 @@ class FileTreeNode(BaseModel):
     is_dir: bool
     tp_count: int = 0
     fp_count: int = 0
-    children: list["FileTreeNode"] | None = None  # None for files, list for directories
+    children: list[FileTreeNode] | None = None  # None for files, list for directories
 
 
 class FileTreeResponse(BaseModel):
@@ -309,12 +318,12 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
 
         for tp in tps:
             for occ in tp.occurrences:
-                for file_path in occ.files.keys():
+                for file_path in occ.files:
                     tp_counts_by_file[file_path] = tp_counts_by_file.get(file_path, 0) + 1
 
         for fp in fps:
             for occ in fp.occurrences:
-                for file_path in occ.files.keys():
+                for file_path in occ.files:
                     fp_counts_by_file[file_path] = fp_counts_by_file.get(file_path, 0) + 1
 
         # Build tree structure
@@ -404,9 +413,6 @@ class FileContentResponse(BaseModel):
 @router.get("/snapshots/{snapshot_slug:path}/files/{file_path:path}")
 def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileContentResponse:
     """Get file content from snapshot tar archive."""
-    import io
-    import tarfile
-
     slug = snapshot_slug
 
     with get_session() as session:
