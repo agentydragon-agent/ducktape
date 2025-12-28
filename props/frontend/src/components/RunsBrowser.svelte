@@ -31,7 +31,7 @@
     initialDefinitionId?: string;
     initialSplit?: Split;
     initialKind?: ExampleKind;
-    onTriggerRun?: (prefill: TriggerPrefill) => void;
+    onTriggerRun?: (_prefill: TriggerPrefill) => void;
   }
   let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
 
@@ -96,19 +96,21 @@
   }
 
   // DataTable for sorting
-  const table = $derived(new DataTable({
-    data: runs,
-    columns: [
-      { id: 'agent_run_id', key: 'agent_run_id', name: 'ID', sortable: true },
-      { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
-      { id: 'split', key: 'split', name: 'Split', sortable: true },
-      { id: 'model', key: 'model', name: 'Model', sortable: true },
-      { id: 'status', key: 'status', name: 'Status', sortable: true },
-      { id: 'created_at', key: 'created_at', name: 'Created', sortable: true },
-    ],
-    initialSort: 'created_at',
-    initialSortDirection: 'desc',
-  }));
+  const table = $derived(
+    new DataTable({
+      data: runs,
+      columns: [
+        { id: 'agent_run_id', key: 'agent_run_id', name: 'ID', sortable: true },
+        { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
+        { id: 'split', key: 'split', name: 'Split', sortable: true },
+        { id: 'model', key: 'model', name: 'Model', sortable: true },
+        { id: 'status', key: 'status', name: 'Status', sortable: true },
+        { id: 'created_at', key: 'created_at', name: 'Created', sortable: true },
+      ],
+      initialSort: 'created_at',
+      initialSortDirection: 'desc',
+    })
+  );
 
   function getSortIndicator(columnId: string): string {
     const state = table.getSortState(columnId);
@@ -209,25 +211,14 @@
             >
               Definition{getSortIndicator('definition_id')}
             </th>
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('split')}
-            >
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('split')}>
               Split{getSortIndicator('split')}
             </th>
-            <th class="px-3 py-2 text-left">
-              Example
-            </th>
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('model')}
-            >
+            <th class="px-3 py-2 text-left"> Example </th>
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('model')}>
               Model{getSortIndicator('model')}
             </th>
-            <th
-              class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100"
-              onclick={() => table.toggleSort('status')}
-            >
+            <th class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100" onclick={() => table.toggleSort('status')}>
               Status{getSortIndicator('status')}
             </th>
             <th

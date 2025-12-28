@@ -17,7 +17,7 @@
   async function copyCommand() {
     await navigator.clipboard.writeText(cliCommand);
     copied = true;
-    setTimeout(() => copied = false, 2000);
+    setTimeout(() => (copied = false), 2000);
   }
 
   // Column group configs (same as DefinitionsTable)

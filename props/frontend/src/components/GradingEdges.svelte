@@ -12,9 +12,7 @@
   let { edges, missedOccurrences = [], totalCredit, recallDenominator, defaultOpen = false }: Props = $props();
 
   const creditSummary = $derived(
-    totalCredit != null && recallDenominator != null
-      ? `${totalCredit.toFixed(1)}/${recallDenominator} recall`
-      : null
+    totalCredit != null && recallDenominator != null ? `${totalCredit.toFixed(1)}/${recallDenominator} recall` : null
   );
 
   // Filter and sort edges - in complete bipartite graph, most edges have zero credit
@@ -27,15 +25,15 @@
 
   const nonZeroEdges = $derived(
     edges
-      .filter(e => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) > 0)
+      .filter((e) => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) > 0)
       .sort((a, b) => getCredit(b) - getCredit(a))
   );
 
   const zeroEdges = $derived(
-    edges.filter(e => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) === 0)
+    edges.filter((e) => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) === 0)
   );
 
-  const unmatchedEdges = $derived(edges.filter(e => e.target.kind === 'none'));
+  const unmatchedEdges = $derived(edges.filter((e) => e.target.kind === 'none'));
 
   let showZeroEdges = $state(false);
 </script>
@@ -64,10 +62,10 @@
               <span class="font-mono font-medium">{edge.critique_issue_id}</span>
               <span class="text-gray-400">→</span>
               {#if target.kind === 'tp'}
-                <span class="{textColor}">{target.tp_id}/{target.occurrence_id}</span>
+                <span class={textColor}>{target.tp_id}/{target.occurrence_id}</span>
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)})</span>
               {:else if target.kind === 'fp'}
-                <span class="{textColor}">{target.fp_id}/{target.occurrence_id}</span>
+                <span class={textColor}>{target.fp_id}/{target.occurrence_id}</span>
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)} FP)</span>
               {/if}
             </div>
@@ -81,7 +79,7 @@
         <div class="mt-3 pt-2 border-t border-gray-200">
           <button
             type="button"
-            onclick={() => showZeroEdges = !showZeroEdges}
+            onclick={() => (showZeroEdges = !showZeroEdges)}
             class="text-xs text-gray-500 hover:text-gray-700 flex items-center gap-1"
           >
             <span>{showZeroEdges ? '▼' : '▶'}</span>
@@ -107,7 +105,7 @@
               {/each}
             </div>
           {/if}
-        </div}
+        </div>
       {/if}
 
       <!-- Novel Findings -->
@@ -140,7 +138,7 @@
               {/if}
             </div>
           {/each}
-        </div}
+        </div>
       {/if}
     </div>
   </details>

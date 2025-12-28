@@ -67,13 +67,7 @@ export const AGENT_RUN_STATUS_VALUES: AgentRunStatus[] = [
   'reported_failure',
 ];
 
-export const AGENT_TYPE_VALUES: AgentType[] = [
-  'critic',
-  'grader',
-  'prompt_optimizer',
-  'improvement',
-  'freeform',
-];
+export const AGENT_TYPE_VALUES: AgentType[] = ['critic', 'grader', 'prompt_optimizer', 'improvement', 'freeform'];
 
 // Extract error message from API error response
 function extractErrorMessage(error: unknown, fallback: string): string {
@@ -182,11 +176,7 @@ export async function fetchDefinitionDetail(definitionId: string) {
 export type ExampleDetailResponse = components['schemas']['ExampleDetailResponse'];
 export type DefinitionStatsForExample = components['schemas']['DefinitionStatsForExample'];
 
-export async function fetchExampleDetail(
-  snapshotSlug: string,
-  exampleKind: ExampleKind,
-  filesHash: string | null
-) {
+export async function fetchExampleDetail(snapshotSlug: string, exampleKind: ExampleKind, filesHash: string | null) {
   const { data, error } = await api.GET('/api/stats/examples', {
     params: {
       query: {

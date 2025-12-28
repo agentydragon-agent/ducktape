@@ -76,8 +76,8 @@
             {href}
             class="px-3 py-1.5 rounded text-sm font-medium transition-colors
               {isActive(href, $page.url.pathname)
-                ? 'bg-blue-100 text-blue-700'
-                : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
+              ? 'bg-blue-100 text-blue-700'
+              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}"
           >
             {label}
           </a>

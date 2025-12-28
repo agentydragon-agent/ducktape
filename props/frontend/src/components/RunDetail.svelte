@@ -64,10 +64,7 @@
   // Load run data
   async function loadData() {
     try {
-      const [runResult, eventsResult] = await Promise.all([
-        fetchRun(runId),
-        fetchRunEvents(runId, 0, 500),
-      ]);
+      const [runResult, eventsResult] = await Promise.all([fetchRun(runId), fetchRunEvents(runId, 0, 500)]);
       run = runResult;
       events = eventsResult.events;
     } catch (e) {
@@ -131,9 +128,7 @@
         const callId = event.payload.call_id;
         const input = event.payload.input;
         const outputEvent = outputsByCallId.get(callId) || null;
-        const result = outputEvent && isDockerExecOutput(outputEvent.payload)
-          ? outputEvent.payload.result
-          : null;
+        const result = outputEvent && isDockerExecOutput(outputEvent.payload) ? outputEvent.payload.result : null;
 
         dockerExecPairs.push({ callEvent: event, outputEvent, input, result, callId });
         pairedCallIds.add(callId);
@@ -141,7 +136,7 @@
     }
 
     // Filter out paired events from main list
-    const remainingEvents = events.filter(event => {
+    const remainingEvents = events.filter((event) => {
       const payload = event.payload;
       if (isDockerExecCall(payload) && pairedCallIds.has(payload.call_id)) return false;
       if (isDockerExecOutput(payload) && pairedCallIds.has(payload.call_id)) return false;
@@ -169,7 +164,7 @@
       return unwrapped[0];
     }
     // Quote args with spaces
-    return unwrapped.map(arg => arg.includes(' ') ? `"${arg}"` : arg).join(' ');
+    return unwrapped.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ');
   }
 
   // Format duration - show in seconds if >= 1s and whole second
@@ -193,7 +188,12 @@
   }
 
   // Format API usage stats
-  function formatUsage(usage: { input_tokens?: number | null; output_tokens?: number | null; input_tokens_details?: { cached_tokens?: number | null } | null; output_tokens_details?: { reasoning_tokens?: number | null } | null }): string {
+  function formatUsage(usage: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    input_tokens_details?: { cached_tokens?: number | null } | null;
+    output_tokens_details?: { reasoning_tokens?: number | null } | null;
+  }): string {
     const cached = usage.input_tokens_details?.cached_tokens ?? 0;
     const reasoning = usage.output_tokens_details?.reasoning_tokens ?? 0;
     const parts = [`in: ${usage.input_tokens ?? 0}`, `out: ${usage.output_tokens ?? 0}`];
@@ -205,12 +205,13 @@
   // Format exit status
   function formatExitStatus(exit: BaseExecResult['exit']): { text: string; color: string } {
     switch (exit.kind) {
-      case 'exited':
+      case 'exited': {
         const code = exit.exit_code ?? 0;
         return {
           text: `exit ${code}`,
-          color: code === 0 ? 'text-green-600' : 'text-red-600'
+          color: code === 0 ? 'text-green-600' : 'text-red-600',
         };
+      }
       case 'timed_out':
         return { text: 'TIMEOUT', color: 'text-yellow-600' };
       case 'killed':
@@ -219,7 +220,12 @@
   }
 
   // Render event content based on type (for non-docker_exec events)
-  function renderEventContent(event: EventInfo): { label: string; content: string; style: string; isMarkdown?: boolean } {
+  function renderEventContent(event: EventInfo): {
+    label: string;
+    content: string;
+    style: string;
+    isMarkdown?: boolean;
+  } {
     const payload = event.payload;
 
     switch (payload.type) {
@@ -227,23 +233,31 @@
         return { label: 'User', content: payload.text, style: 'bg-blue-50 border-blue-200' };
       case 'assistant_text':
         return { label: 'Assistant', content: payload.text, style: 'bg-green-50 border-green-200' };
-      case 'tool_call':
+      case 'tool_call': {
         const argsPreview = payload.args_json ? truncateText(payload.args_json) : '';
         return { label: `Tool: ${payload.name}`, content: argsPreview, style: 'bg-purple-50 border-purple-200' };
-      case 'tool_output':
+      }
+      case 'tool_output': {
         const resultText = payload.content.map((c: any) => c.text || '[non-text]').join('\n');
         const preview = truncateText(resultText, 200);
         return { label: 'Tool Output', content: preview, style: 'bg-gray-50 border-gray-200' };
-      case 'reasoning':
+      }
+      case 'reasoning': {
         const summaryText = payload.summary?.map((s: any) => s.text).join('\n');
-        if (!summaryText) return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
+        if (!summaryText)
+          return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
         return { label: 'Reasoning', content: summaryText, style: 'bg-yellow-50 border-yellow-200', isMarkdown: true };
+      }
       case 'api_request':
         return { label: 'API Request', content: `model: ${payload.model}`, style: 'bg-indigo-50 border-indigo-200' };
       case 'response':
         return { label: 'Response', content: formatUsage(payload.usage), style: 'bg-indigo-50 border-indigo-200' };
       default:
-        return { label: payload.type, content: truncateText(JSON.stringify(payload)), style: 'bg-gray-50 border-gray-200' };
+        return {
+          label: payload.type,
+          content: truncateText(JSON.stringify(payload)),
+          style: 'bg-gray-50 border-gray-200',
+        };
     }
   }
 
@@ -261,7 +275,7 @@
       items.push({
         kind: 'docker_exec',
         pair,
-        seqNum: pair.callEvent.sequence_num
+        seqNum: pair.callEvent.sequence_num,
       });
     }
 
@@ -284,7 +298,7 @@
             kind: 'api_pair',
             request: event,
             response: nextEvent,
-            seqNum: event.sequence_num
+            seqNum: event.sequence_num,
           });
           usedIndices.add(i);
           usedIndices.add(i + 1);
@@ -295,7 +309,7 @@
       items.push({
         kind: 'regular',
         event,
-        seqNum: event.sequence_num
+        seqNum: event.sequence_num,
       });
     }
 
@@ -310,10 +324,7 @@
   <!-- Header -->
   <div class="p-4 border-b flex items-center justify-between">
     <div class="flex items-center gap-4">
-      <a
-        href="/"
-        class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50"
-      >
+      <a href="/" class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50">
         ← Back
       </a>
       <h2 class="text-lg font-semibold">Run Details</h2>
@@ -389,20 +400,28 @@
       {:else if run.type_config.agent_type === 'improvement'}
         {@const config = run.type_config as ImprovementTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span><span class="text-gray-500">Baselines:</span>
+          <span
+            ><span class="text-gray-500">Baselines:</span>
             {#each config.baseline_definition_ids as defId, i}
-              {#if i > 0}, {/if}<DefinitionIdLink id={defId} />
+              {#if i > 0},
+              {/if}<DefinitionIdLink id={defId} />
             {/each}
           </span>
           <span><span class="text-gray-500">Examples:</span> {config.allowed_examples.length}</span>
-          <span><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model}, grader={config.grader_model}</span>
+          <span
+            ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model},
+            grader={config.grader_model}</span
+          >
         </div>
       {:else if run.type_config.agent_type === 'prompt_optimizer'}
         {@const config = run.type_config as PromptOptimizerTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
           <span><span class="text-gray-500">Budget:</span> ${config.budget_limit}</span>
-          <span><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}, grader={config.grader_model}</span>
+          <span
+            ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model},
+            grader={config.grader_model}</span
+          >
         </div>
       {:else}
         <span class="text-gray-400 italic">No type-specific inputs</span>
@@ -427,8 +446,16 @@
     <!-- Grading summary (for critic runs with completed grader) -->
     {#if run.grading_summary}
       {@const gs = run.grading_summary}
-      {@const recall = gs.recall_denominator_occurrences > 0 ? gs.total_credit / gs.recall_denominator_occurrences : null}
-      {@const recallColor = recall == null ? 'text-gray-400' : recall >= 0.7 ? 'text-green-600' : recall >= 0.4 ? 'text-yellow-600' : 'text-red-600'}
+      {@const recall =
+        gs.recall_denominator_occurrences > 0 ? gs.total_credit / gs.recall_denominator_occurrences : null}
+      {@const recallColor =
+        recall == null
+          ? 'text-gray-400'
+          : recall >= 0.7
+            ? 'text-green-600'
+            : recall >= 0.4
+              ? 'text-yellow-600'
+              : 'text-red-600'}
       <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
         <div class="flex flex-wrap gap-x-6 gap-y-1">
           <span>
@@ -447,9 +474,8 @@
 
     <!-- Grading edges (for both critic and grader runs) -->
     {#if run.grading_edges.length > 0 || run.missed_occurrences.length > 0}
-      {@const visibleEdges = run.grading_edges.filter(e =>
-        e.target.kind === 'none' ||
-        ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+      {@const visibleEdges = run.grading_edges.filter(
+        (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
       )}
       {@const totalItems = visibleEdges.length + run.missed_occurrences.length}
       <div class="px-4 py-2 border-b flex-shrink-0">
@@ -479,7 +505,9 @@
               <!-- Docker Exec CLI-style display -->
               {@const pair = item.pair}
               {@const exitStatus = pair.result ? formatExitStatus(pair.result.exit) : null}
-              <div class="{roundingClass} {borderClass} border-gray-700 bg-gray-900 text-gray-100 font-mono text-xs overflow-hidden">
+              <div
+                class="{roundingClass} {borderClass} border-gray-700 bg-gray-900 text-gray-100 font-mono text-xs overflow-hidden"
+              >
                 <!-- Command header with cwd, command, and right-side info -->
                 <div class="px-3 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
                   <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -494,7 +522,12 @@
                       <span class={exitStatus.color}>{exitStatus.text}</span>
                     {/if}
                     <span class="text-gray-500 flex items-center gap-1">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-width="2" d="M12 6v6l4 2"/></svg>
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        ><circle cx="12" cy="12" r="10" stroke-width="2" /><path
+                          stroke-width="2"
+                          d="M12 6v6l4 2"
+                        /></svg
+                      >
                       {#if pair.result}
                         {formatDuration(pair.result.duration_ms)}/{formatDuration(pair.input.timeout_ms)}
                       {:else}
@@ -507,7 +540,9 @@
 
                 <!-- Extra parameters (if any non-default, excluding cwd which is now in header) -->
                 {#if pair.input.env?.length || pair.input.user}
-                  <div class="px-3 py-1 bg-gray-850 border-b border-gray-700 text-gray-400 text-[10px] flex flex-wrap gap-3">
+                  <div
+                    class="px-3 py-1 bg-gray-850 border-b border-gray-700 text-gray-400 text-[10px] flex flex-wrap gap-3"
+                  >
                     {#if pair.input.user}
                       <span>user: {pair.input.user}</span>
                     {/if}
@@ -533,13 +568,17 @@
                       {#if stdoutText}
                         <pre class="whitespace-pre-wrap break-words text-gray-200">{stdoutText}</pre>
                         {#if stdoutTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">... stdout truncated ({stdoutTrunc.totalBytes?.toLocaleString()} bytes total)</div>
+                          <div class="text-yellow-500 mt-1">
+                            ... stdout truncated ({stdoutTrunc.totalBytes?.toLocaleString()} bytes total)
+                          </div>
                         {/if}
                       {/if}
                       {#if stderrText}
                         <pre class="whitespace-pre-wrap break-words text-red-400">{stderrText}</pre>
                         {#if stderrTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">... stderr truncated ({stderrTrunc.totalBytes?.toLocaleString()} bytes total)</div>
+                          <div class="text-yellow-500 mt-1">
+                            ... stderr truncated ({stderrTrunc.totalBytes?.toLocaleString()} bytes total)
+                          </div>
                         {/if}
                       {/if}
                       {#if !stdoutText && !stderrText}
@@ -558,9 +597,7 @@
                     {/if}
                   </div>
                 {:else}
-                  <div class="px-3 py-2 text-gray-500 italic">
-                    (awaiting result...)
-                  </div>
+                  <div class="px-3 py-2 text-gray-500 italic">(awaiting result...)</div>
                 {/if}
               </div>
             {:else if item.kind === 'api_pair'}

@@ -4,7 +4,9 @@
   import RunsBrowser from '$components/RunsBrowser.svelte';
   import type { Split, ExampleKind } from '$lib/types';
 
-  const runModal = getContext<{ open: (prefill?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void }>('runModal');
+  const runModal = getContext<{
+    open: (_prefill?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
+  }>('runModal');
 
   // Parse query params
   const definitionId = $derived($page.url.searchParams.get('definition') ?? undefined);

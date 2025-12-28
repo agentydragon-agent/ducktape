@@ -4,7 +4,7 @@
   import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
 
   // Filter to show only in-progress runs
-  const activeRuns = $derived($runs.filter(r => r.status === 'in_progress'));
+  const activeRuns = $derived($runs.filter((r) => r.status === 'in_progress'));
 </script>
 
 <div class="bg-white rounded-lg shadow p-4">
