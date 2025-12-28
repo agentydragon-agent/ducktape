@@ -1,12 +1,7 @@
 <script lang="ts">
   import hljs from 'highlight.js';
   import 'highlight.js/styles/github.css';
-  import type {
-    FileContentResponse,
-    TpInfo,
-    FpInfo,
-    GradingEdgeInfo,
-  } from '../lib/api/client';
+  import type { FileContentResponse, TpInfo, FpInfo, GradingEdgeInfo } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
 
   interface CritiqueIssue {
@@ -218,13 +213,7 @@
           {@const hasTP = lineIssues.some((i) => i.kind === 'tp')}
           {@const hasFP = lineIssues.some((i) => i.kind === 'fp')}
           {@const hasCritique = lineIssues.some((i) => i.kind === 'critique')}
-          {@const bgClass = hasTP
-            ? 'bg-green-50'
-            : hasFP
-              ? 'bg-red-50'
-              : hasCritique
-                ? 'bg-blue-50'
-                : ''}
+          {@const bgClass = hasTP ? 'bg-green-50' : hasFP ? 'bg-red-50' : hasCritique ? 'bg-blue-50' : ''}
           {@const borderClass = hasTP
             ? 'border-l-4 border-green-500'
             : hasFP

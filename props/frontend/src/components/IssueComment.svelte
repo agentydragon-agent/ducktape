@@ -49,7 +49,7 @@
           label: 'FP',
           labelColor: 'text-red-700',
         };
-      case 'critique':
+      case 'critique': {
         // Color based on grading if available
         const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
         const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
@@ -161,14 +161,15 @@
           <div class="space-y-1">
             {#each gradingEdges as edge}
               {@const target = edge.target}
-              {@const edgeCredit =
-                target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
+              {@const edgeCredit = target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
               {#if edgeCredit > 0 || target.kind === 'none'}
-                <div class="text-xs p-1.5 rounded border {target.kind === 'tp'
+                <div
+                  class="text-xs p-1.5 rounded border {target.kind === 'tp'
                     ? 'bg-green-50 border-green-200'
                     : target.kind === 'fp'
                       ? 'bg-red-50 border-red-200'
-                      : 'bg-gray-50 border-gray-200'}">
+                      : 'bg-gray-50 border-gray-200'}"
+                >
                   <div class="flex items-center gap-2">
                     {#if target.kind === 'tp'}
                       <CheckCircle size={12} class="text-green-600" />

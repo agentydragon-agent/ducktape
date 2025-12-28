@@ -89,3 +89,19 @@ export function formatExample(run: RunInfo): string {
   }
   return `files@${slug}/${formatFilesHash(example.files_hash)}`;
 }
+
+// --- File location formatting ---
+
+/** Format a file location with optional line ranges. */
+export function formatFileLocation(file: {
+  path: string;
+  ranges: Array<{ start_line: number; end_line: number }> | null;
+}): string {
+  if (!file.ranges || file.ranges.length === 0) {
+    return file.path;
+  }
+  const rangeStrs = file.ranges.map((r) =>
+    r.start_line === r.end_line ? `${r.start_line + 1}` : `${r.start_line + 1}-${r.end_line + 1}`
+  );
+  return `${file.path}:${rangeStrs.join(',')}`;
+}

@@ -133,6 +133,7 @@ class FpTarget(BaseModel):
     kind: Literal["fp"] = "fp"
     fp_id: str
     occurrence_id: str
+    credit: float
 
 
 class NoMatchTarget(BaseModel):
@@ -432,9 +433,11 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
 def make_grading_target(d: GradingEdge) -> GradingTarget:
     """Convert a GradingEdge to a GradingTarget union type."""
     if d.tp_id is not None:
-        return TpTarget(tp_id=d.tp_id, occurrence_id=d.tp_occurrence_id or "", credit=d.credit)
+        assert d.tp_occurrence_id is not None, f"TP grading edge {d.critique_issue_id} missing tp_occurrence_id"
+        return TpTarget(tp_id=d.tp_id, occurrence_id=d.tp_occurrence_id, credit=d.credit)
     if d.fp_id is not None:
-        return FpTarget(fp_id=d.fp_id, occurrence_id=d.fp_occurrence_id or "")
+        assert d.fp_occurrence_id is not None, f"FP grading edge {d.critique_issue_id} missing fp_occurrence_id"
+        return FpTarget(fp_id=d.fp_id, occurrence_id=d.fp_occurrence_id, credit=d.credit)
     return NoMatchTarget()
 
 

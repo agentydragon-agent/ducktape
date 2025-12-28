@@ -1,4 +1,4 @@
-// Shared color utilities for recall and split badges
+// Shared color utilities for recall, split badges, and issue types
 
 /** Returns Tailwind classes for recall value styling */
 export function recallColorClass(value: number | null | undefined): string {
@@ -21,3 +21,47 @@ export function splitBadgeClass(split: string): string {
       return 'bg-gray-100 text-gray-800';
   }
 }
+
+/** Color scheme for issue types (TP, FP, critique, novel) */
+export const issueColors = {
+  tp: {
+    bg: 'bg-green-50',
+    border: 'border-green-200',
+    borderLeft: 'border-l-4 border-green-500',
+    headerBg: 'bg-green-100',
+    text: 'text-green-600',
+    textDark: 'text-green-700',
+  },
+  fp: {
+    bg: 'bg-red-50',
+    border: 'border-red-200',
+    borderLeft: 'border-l-4 border-red-500',
+    headerBg: 'bg-red-100',
+    text: 'text-red-600',
+    textDark: 'text-red-700',
+  },
+  critique: {
+    bg: 'bg-blue-50',
+    border: 'border-blue-200',
+    borderLeft: 'border-l-4 border-blue-500',
+    headerBg: 'bg-blue-100',
+    text: 'text-blue-600',
+    textDark: 'text-blue-700',
+  },
+  critiqueFp: {
+    bg: 'bg-orange-50',
+    border: 'border-orange-200',
+    borderLeft: 'border-l-4 border-orange-500',
+    headerBg: 'bg-orange-100',
+    text: 'text-orange-600',
+    textDark: 'text-orange-700',
+  },
+  novel: {
+    bg: 'bg-gray-50',
+    border: 'border-gray-200',
+    borderLeft: 'border-l-4 border-gray-500',
+    headerBg: 'bg-gray-100',
+    text: 'text-gray-600',
+    textDark: 'text-gray-700',
+  },
+} as const;
