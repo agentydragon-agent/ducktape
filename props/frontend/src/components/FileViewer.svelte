@@ -10,9 +10,11 @@
     file: FileContentResponse;
     tps?: TpInfo[];
     fps?: FpInfo[];
+    snapshotSlug?: string;
+    targetOccurrenceId?: string | null;
   }
 
-  let { file, tps = [], fps = [] }: Props = $props();
+  let { file, tps = [], fps = [], snapshotSlug, targetOccurrenceId = null }: Props = $props();
 
   const lines = $derived(file.content.split('\n'));
   const language = $derived(detectLanguage(file.path));
@@ -108,6 +110,12 @@
     }
     expandedOccurrences = newSet;
   }
+
+  function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
+    if (!snapshotSlug) return undefined;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    return `${origin}/snapshots/${snapshotSlug}#${issueId}/${occurrenceId}`;
+  }
 </script>
 
 <div class="border rounded bg-white font-mono text-sm">
@@ -159,17 +167,21 @@
             {#if isFirstLine}
               {@const occId = `${occ.kind}-${occ.issueId}-${occ.occurrenceId}`}
               {@const isExpanded = expandedOccurrences.has(occId)}
+              {@const isTargeted = targetOccurrenceId === occ.occurrenceId}
               <tr>
                 <td colspan="2" class="px-4 py-1">
-                  <IssueComment
-                    kind={occ.kind}
-                    issueId="{occ.issueId}/{occ.occurrenceId}"
-                    rationale={occ.rationale}
-                    note={occ.note}
-                    allFiles={occ.allFiles}
-                    expanded={isExpanded}
-                    onToggle={() => toggleOccurrence(occId)}
-                  />
+                  <div id="{occ.issueId}-{occ.occurrenceId}" class={isTargeted ? 'ring-2 ring-blue-500 rounded' : ''}>
+                    <IssueComment
+                      kind={occ.kind}
+                      issueId="{occ.issueId}/{occ.occurrenceId}"
+                      rationale={occ.rationale}
+                      note={occ.note}
+                      allFiles={occ.allFiles}
+                      expanded={isExpanded}
+                      onToggle={() => toggleOccurrence(occId)}
+                      copyUrl={getOccurrenceUrl(occ.issueId, occ.occurrenceId)}
+                    />
+                  </div>
                 </td>
               </tr>
             {/if}

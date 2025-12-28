@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { toast } from 'svelte-sonner';
   import { splitBadgeClass } from '$lib/colors';
   import type { SnapshotDetailResponse, FileContentResponse } from '$lib/api/client';
@@ -6,6 +7,8 @@
   import FileTree from '../../../components/FileTree.svelte';
   import FileViewer from '../../../components/FileViewer.svelte';
   import TabButton from '../../../components/TabButton.svelte';
+  import Breadcrumb from '../../../components/Breadcrumb.svelte';
+  import CopyButton from '../../../components/CopyButton.svelte';
   import { createExpansionState } from '$lib/expansionState.svelte';
 
   let { data } = $props();
@@ -15,6 +18,25 @@
   let activeTab: 'files' | 'tps' | 'fps' = $state('files');
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
+  let targetOccurrenceId = $state<string | null>(null);
+
+  // Breadcrumb items for file viewer
+  const breadcrumbs = $derived.by(() => {
+    if (!selectedFile) return [{ label: snapshot.slug }];
+
+    const parts = selectedFile.path.split('/');
+    const items: Array<{ label: string; href?: string }> = [{ label: snapshot.slug, href: `/snapshots/${data.slug}` }];
+
+    parts.forEach((part, i) => {
+      if (i < parts.length - 1) {
+        items.push({ label: part });
+      } else {
+        items.push({ label: part });
+      }
+    });
+
+    return items;
+  });
 
   function formatFileLocation(file: {
     path: string;
@@ -39,6 +61,60 @@
       loadingFile = false;
     }
   }
+
+  // Generate URL for occurrence
+  function getOccurrenceUrl(issueId: string, occurrenceId: string, filePath?: string): string {
+    const base = $page.url.origin;
+    const path = filePath ? `/snapshots/${data.slug}` : $page.url.pathname;
+    return `${base}${path}#${issueId}/${occurrenceId}`;
+  }
+
+  // Parse URL fragment and handle deep linking
+  $effect(() => {
+    const hash = $page.url.hash.slice(1);
+    if (hash) {
+      const [issueId, occurrenceId] = hash.split('/');
+      if (issueId && occurrenceId) {
+        targetOccurrenceId = occurrenceId;
+
+        // Find the occurrence and open its file
+        for (const tp of snapshot.true_positives) {
+          if (tp.tp_id === issueId) {
+            const occ = tp.occurrences.find((o) => o.occurrence_id === occurrenceId);
+            if (occ && occ.files.length > 0) {
+              handleFileClick(occ.files[0].path);
+              expandedIssues.expand(issueId);
+              activeTab = 'files';
+
+              // Scroll to occurrence after a short delay
+              setTimeout(() => {
+                const elem = document.getElementById(`${issueId}-${occurrenceId}`);
+                elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 100);
+            }
+            break;
+          }
+        }
+
+        for (const fp of snapshot.false_positives) {
+          if (fp.fp_id === issueId) {
+            const occ = fp.occurrences.find((o) => o.occurrence_id === occurrenceId);
+            if (occ && occ.files.length > 0) {
+              handleFileClick(occ.files[0].path);
+              expandedIssues.expand(issueId);
+              activeTab = 'files';
+
+              setTimeout(() => {
+                const elem = document.getElementById(`${issueId}-${occurrenceId}`);
+                elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 100);
+            }
+            break;
+          }
+        }
+      }
+    }
+  });
 </script>
 
 <div class="bg-white rounded-lg shadow">
@@ -81,7 +157,16 @@
           {#if loadingFile}
             <div class="flex items-center justify-center h-full text-gray-500">Loading...</div>
           {:else if selectedFile}
-            <FileViewer file={selectedFile} tps={snapshot.true_positives} fps={snapshot.false_positives} />
+            <div class="mb-3">
+              <Breadcrumb items={breadcrumbs} />
+            </div>
+            <FileViewer
+              file={selectedFile}
+              tps={snapshot.true_positives}
+              fps={snapshot.false_positives}
+              snapshotSlug={snapshot.slug}
+              {targetOccurrenceId}
+            />
           {:else}
             <div class="flex items-center justify-center h-full text-gray-500">Select a file to view</div>
           {/if}
@@ -115,8 +200,19 @@
                     <div class="mt-3">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
                       {#each tp.occurrences as occ}
-                        <div class="bg-white border rounded p-2 mt-1">
-                          <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                        <div
+                          id="{tp.tp_id}-{occ.occurrence_id}"
+                          class="bg-white border rounded p-2 mt-1 {targetOccurrenceId === occ.occurrence_id
+                            ? 'ring-2 ring-blue-500'
+                            : ''}"
+                        >
+                          <div class="flex items-center justify-between">
+                            <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                            <CopyButton
+                              text={getOccurrenceUrl(tp.tp_id, occ.occurrence_id, occ.files[0]?.path)}
+                              label="Copy URL"
+                            />
+                          </div>
                           <div class="mt-1">
                             {#each occ.files as file}
                               <div class="text-sm font-mono">{formatFileLocation(file)}</div>
@@ -170,8 +266,19 @@
                     <div class="mt-3">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Occurrences</h4>
                       {#each fp.occurrences as occ}
-                        <div class="bg-white border rounded p-2 mt-1">
-                          <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                        <div
+                          id="{fp.fp_id}-{occ.occurrence_id}"
+                          class="bg-white border rounded p-2 mt-1 {targetOccurrenceId === occ.occurrence_id
+                            ? 'ring-2 ring-blue-500'
+                            : ''}"
+                        >
+                          <div class="flex items-center justify-between">
+                            <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                            <CopyButton
+                              text={getOccurrenceUrl(fp.fp_id, occ.occurrence_id, occ.files[0]?.path)}
+                              label="Copy URL"
+                            />
+                          </div>
                           <div class="mt-1">
                             {#each occ.files as file}
                               <div class="text-sm font-mono">{formatFileLocation(file)}</div>

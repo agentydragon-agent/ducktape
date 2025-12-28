@@ -3,6 +3,7 @@
   import type { GradingEdgeInfo } from '../lib/api/client';
   import { issueColors } from '../lib/colors';
   import { formatFileLocation } from '../lib/formatters';
+  import CopyButton from './CopyButton.svelte';
 
   interface Props {
     kind: 'tp' | 'fp' | 'critique';
@@ -14,6 +15,7 @@
     onToggle?: () => void;
     gradingEdges?: GradingEdgeInfo[]; // For critique issues - show what they matched
     credit?: number; // For grading edge targets
+    copyUrl?: string; // Optional URL to copy for this occurrence
   }
 
   let {
@@ -26,6 +28,7 @@
     onToggle,
     gradingEdges = [],
     credit,
+    copyUrl,
   }: Props = $props();
 
   // Helper to create styling from colors and label
@@ -127,6 +130,11 @@
   <!-- Content (expanded) -->
   {#if expanded}
     <div class="px-3 py-2 space-y-2 text-sm">
+      {#if copyUrl}
+        <div class="flex justify-end">
+          <CopyButton text={copyUrl} label="Copy Link" />
+        </div>
+      {/if}
       <div>
         <div class="text-xs font-medium text-gray-600 mb-1">Rationale:</div>
         <div class="text-gray-800 whitespace-pre-wrap">{rationale}</div>
