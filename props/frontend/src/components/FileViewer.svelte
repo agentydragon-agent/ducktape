@@ -1,5 +1,7 @@
 <script lang="ts">
   import { CheckCircle, XCircle } from 'lucide-svelte';
+  import hljs from 'highlight.js';
+  import 'highlight.js/styles/github.css';
   import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
 
   interface Props {
@@ -11,6 +13,55 @@
   let { file, tps = [], fps = [] }: Props = $props();
 
   const lines = $derived(file.content.split('\n'));
+
+  // Detect language from file extension
+  const language = $derived(() => {
+    const ext = file.path.split('.').pop()?.toLowerCase();
+    const langMap: Record<string, string> = {
+      js: 'javascript',
+      ts: 'typescript',
+      jsx: 'javascript',
+      tsx: 'typescript',
+      py: 'python',
+      rb: 'ruby',
+      java: 'java',
+      c: 'c',
+      cpp: 'cpp',
+      cc: 'cpp',
+      cxx: 'cpp',
+      h: 'c',
+      hpp: 'cpp',
+      go: 'go',
+      rs: 'rust',
+      sh: 'bash',
+      bash: 'bash',
+      zsh: 'bash',
+      json: 'json',
+      yaml: 'yaml',
+      yml: 'yaml',
+      xml: 'xml',
+      html: 'html',
+      css: 'css',
+      scss: 'scss',
+      sql: 'sql',
+      md: 'markdown',
+      txt: 'plaintext',
+    };
+    return langMap[ext || ''] || 'plaintext';
+  });
+
+  // Highlight individual lines
+  const highlightedLines = $derived(
+    lines.map((line) => {
+      if (!line.trim()) return line;
+      try {
+        const result = hljs.highlight(line, { language: language, ignoreIllegals: true });
+        return result.value;
+      } catch {
+        return line;
+      }
+    })
+  );
 
   // Flatten occurrences that reference this file
   interface OccurrenceMarker {
@@ -154,7 +205,9 @@
               </div>
             </td>
             <!-- Line content -->
-            <td class="px-4 py-0.5 whitespace-pre align-top">{line}</td>
+            <td class="px-4 py-0.5 whitespace-pre align-top">
+              {@html highlightedLines[idx] || line}
+            </td>
           </tr>
 
           <!-- Occurrence details (show after the first line of each occurrence's range) -->
