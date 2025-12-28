@@ -1,5 +1,6 @@
 <script lang="ts">
   import 'highlight.js/styles/github.css';
+  import { CheckCircle, XCircle } from 'lucide-svelte';
   import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
@@ -28,12 +29,12 @@
     allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
   }
 
-  const occurrences = $derived<OccurrenceMarker[]>(() => {
+  const occurrences = $derived.by<OccurrenceMarker[]>(() => {
     const result: OccurrenceMarker[] = [];
 
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
+        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'tp',
@@ -50,7 +51,7 @@
 
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
+        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'fp',
@@ -69,7 +70,7 @@
   });
 
   // Map line numbers to occurrences (0-based line index)
-  const lineToOccurrences = $derived<Map<number, OccurrenceMarker[]>>(() => {
+  const lineToOccurrences = $derived.by<Map<number, OccurrenceMarker[]>>(() => {
     const map = new Map<number, OccurrenceMarker[]>();
 
     for (const occ of occurrences) {

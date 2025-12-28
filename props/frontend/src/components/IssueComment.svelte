@@ -27,7 +27,7 @@
   }: Props = $props();
 
   // Visual styling based on kind
-  const styling = $derived(() => {
+  const styling = $derived.by(() => {
     switch (kind) {
       case 'tp':
         return {
@@ -96,6 +96,7 @@
             labelColor: 'text-blue-700',
           };
         }
+      }
     }
   });
 
@@ -120,7 +121,8 @@
     onclick={onToggle}
     type="button"
   >
-    <svelte:component this={styling.icon} size={16} class={styling.iconColor} />
+    {@const Icon = styling.icon}
+    <Icon size={16} class={styling.iconColor} />
     <span class="font-mono text-sm font-medium">{issueId}</span>
     <span class="text-xs {styling.labelColor} font-medium">{styling.label}</span>
     {#if credit !== undefined}

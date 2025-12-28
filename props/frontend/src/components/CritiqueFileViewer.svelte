@@ -40,13 +40,13 @@
   }
 
   // Combine all issues (TPs, FPs, and critique issues) that reference this file
-  const allIssues = $derived<IssueMarker[]>(() => {
+  const allIssues = $derived.by<IssueMarker[]>(() => {
     const result: IssueMarker[] = [];
 
     // Add TPs
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
+        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'tp',
@@ -64,7 +64,7 @@
     // Add FPs
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
+        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'fp',
@@ -101,7 +101,7 @@
   });
 
   // Map line numbers to issues (0-based line index)
-  const lineToIssues = $derived<Map<number, IssueMarker[]>>(() => {
+  const lineToIssues = $derived.by<Map<number, IssueMarker[]>>(() => {
     const map = new Map<number, IssueMarker[]>();
 
     for (const issue of allIssues) {
