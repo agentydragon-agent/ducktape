@@ -1,9 +1,9 @@
 <script lang="ts">
-  import { base } from '$app/paths';
   import { type ExampleDetailResponse } from '../lib/api/client';
   import { formatStatsWithCI } from '../lib/formatters';
   import { recallColorClass } from '../lib/colors';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import BackButton from './BackButton.svelte';
 
   interface Props {
     data: ExampleDetailResponse;
@@ -23,7 +23,7 @@
   <!-- Header -->
   <div class="bg-white rounded-lg shadow p-4">
     <div class="flex items-center gap-3 mb-3">
-      <a href="{base}/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
+      <BackButton />
       <h2 class="text-lg font-semibold">Example Detail</h2>
     </div>
 

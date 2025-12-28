@@ -10,6 +10,7 @@
   import TabButton from '../../../components/TabButton.svelte';
   import Breadcrumb from '../../../components/Breadcrumb.svelte';
   import CopyButton from '../../../components/CopyButton.svelte';
+  import BackButton from '../../../components/BackButton.svelte';
   import { createExpansionState } from '$lib/expansionState.svelte';
 
   let { data } = $props();
@@ -69,15 +70,15 @@
   function getOccurrenceUrl(issueId: string, occurrenceId: string, filePath?: string): string {
     const path = filePath ? `${base}/snapshots/${data.slug}` : $page.url.pathname;
     const url = new URL(path, $page.url);
-    url.hash = `${issueId}/${occurrenceId}`;
+    url.searchParams.set('occurrence', `${issueId}/${occurrenceId}`);
     return url.toString();
   }
 
-  // Parse URL fragment and handle deep linking
+  // Handle deep linking via query params
   $effect(() => {
-    const hash = $page.url.hash.slice(1);
-    if (hash) {
-      const [issueId, occurrenceId] = hash.split('/');
+    const occurrence = $page.url.searchParams.get('occurrence');
+    if (occurrence) {
+      const [issueId, occurrenceId] = occurrence.split('/');
       if (issueId && occurrenceId) {
         targetOccurrenceId = occurrenceId;
 
@@ -90,7 +91,6 @@
               expandedIssues.expand(issueId);
               activeTab = 'files';
 
-              // Scroll to occurrence after a short delay
               setTimeout(() => {
                 const elem = document.getElementById(`${issueId}-${occurrenceId}`);
                 elem?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -125,7 +125,7 @@
   <!-- Header -->
   <div class="px-4 py-3 border-b flex justify-between items-center">
     <div class="flex items-center gap-3">
-      <a href="{base}/snapshots" class="text-gray-500 hover:text-gray-700">← Back</a>
+      <BackButton href="{base}/snapshots" />
       <h2 class="text-xl font-semibold font-mono">{snapshot.slug}</h2>
       <span class="px-2 py-1 text-xs font-medium rounded {splitBadgeClass(snapshot.split)}">
         {snapshot.split}

@@ -44,16 +44,15 @@
 
   // Navigation items
   const navItems = $derived([
-    { href: `${base}/`, label: 'Overview' },
+    { href: base || '/', label: 'Overview' },
     { href: `${base}/runs`, label: 'Runs' },
     { href: `${base}/snapshots`, label: 'Ground Truth' },
   ]);
 
   function isActive(href: string, pathname: string): boolean {
-    const normalizedHref = href === `${base}/` ? base || '/' : href;
-    const normalizedPath = pathname === '' ? '/' : pathname;
-    if (normalizedHref === (base || '/')) return normalizedPath === (base || '/');
-    return normalizedPath.startsWith(normalizedHref);
+    // Root is exact match, others use startsWith
+    if (href === (base || '/')) return pathname === (base || '/');
+    return pathname.startsWith(href);
   }
 </script>
 

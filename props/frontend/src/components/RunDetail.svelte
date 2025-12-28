@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { base } from '$app/paths';
   import { toast } from 'svelte-sonner';
   import { marked } from 'marked';
+  import BackButton from './BackButton.svelte';
   import {
     fetchRun,
     fetchRunEvents,
@@ -401,12 +401,7 @@
   <!-- Header -->
   <div class="p-4 border-b flex items-center justify-between">
     <div class="flex items-center gap-4">
-      <a
-        href="{base}/"
-        class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50"
-      >
-        ← Back
-      </a>
+      <BackButton class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50" />
       <h2 class="text-lg font-semibold">Run Details</h2>
       {#if run}
         <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
