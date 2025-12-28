@@ -1,5 +1,6 @@
 <script lang="ts">
   import 'highlight.js/styles/github.css';
+  import { page } from '$app/stores';
   import { CheckCircle, XCircle } from 'lucide-svelte';
   import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
@@ -113,8 +114,7 @@
 
   function getOccurrenceUrl(issueId: string, occurrenceId: string): string | undefined {
     if (!snapshotSlug) return undefined;
-    const origin = typeof window !== 'undefined' ? window.location.origin : '';
-    return `${origin}/snapshots/${snapshotSlug}#${issueId}/${occurrenceId}`;
+    return `${$page.url.origin}/snapshots/${snapshotSlug}#${issueId}/${occurrenceId}`;
   }
 </script>
 
