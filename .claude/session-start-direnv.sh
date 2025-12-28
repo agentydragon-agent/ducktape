@@ -7,7 +7,7 @@ set -e
 echo "Setting up dev environment..." >&2
 
 # Install Nix with sandbox disabled (required for container)
-NIX_CONF="$CLAUDE_PROJECT_DIR/.claude/nix-web.conf"
+NIX_CONF="$CLAUDE_PROJECT_DIR/.claude/claude-code-web/nix.conf"
 export NIX_USER_CONF_FILES="$NIX_CONF"
 
 if ! command -v nix &> /dev/null; then
