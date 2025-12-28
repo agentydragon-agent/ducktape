@@ -1,4 +1,15 @@
 <script lang="ts">
+  import {
+    ChevronRight,
+    ChevronDown,
+    Folder,
+    FolderOpen,
+    File,
+    FileText,
+    FileCode,
+    FileJson,
+    Settings,
+  } from 'lucide-svelte';
   import type { FileTreeNode } from '../lib/api/client';
 
   interface Props {
@@ -20,38 +31,13 @@
     }
     expanded = newSet;
   }
-
-  function getFileIcon(name: string, isDir: boolean): string {
-    if (isDir) return '📁';
-
-    const ext = name.split('.').pop()?.toLowerCase();
-    switch (ext) {
-      case 'js':
-      case 'ts':
-      case 'jsx':
-      case 'tsx':
-        return '📜';
-      case 'py':
-        return '🐍';
-      case 'md':
-        return '📝';
-      case 'json':
-      case 'yaml':
-      case 'yml':
-        return '⚙️';
-      case 'html':
-      case 'css':
-        return '🎨';
-      default:
-        return '📄';
-    }
-  }
 </script>
 
 {#snippet treeNode(node: FileTreeNode, depth: number)}
   {@const isExpanded = expanded.has(node.path)}
   {@const isSelected = selectedPath === node.path}
   {@const indent = depth * 16}
+  {@const ext = node.name.split('.').pop()?.toLowerCase()}
 
   <div
     class="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer text-sm {isSelected ? 'bg-blue-100' : ''}"
@@ -65,9 +51,35 @@
     }}
   >
     {#if node.is_dir}
-      <span class="text-gray-400">{isExpanded ? '▼' : '▶'}</span>
+      <span class="text-gray-400">
+        {#if isExpanded}
+          <ChevronDown size={16} />
+        {:else}
+          <ChevronRight size={16} />
+        {/if}
+      </span>
+      <span class="text-blue-500">
+        {#if isExpanded}
+          <FolderOpen size={16} />
+        {:else}
+          <Folder size={16} />
+        {/if}
+      </span>
+    {:else}
+      <span class="text-gray-400">
+        {#if ext === 'json' || ext === 'yaml' || ext === 'yml'}
+          <FileJson size={16} />
+        {:else if ext === 'js' || ext === 'ts' || ext === 'jsx' || ext === 'tsx' || ext === 'py' || ext === 'rb' || ext === 'java' || ext === 'c' || ext === 'cpp' || ext === 'go' || ext === 'rs'}
+          <FileCode size={16} />
+        {:else if ext === 'md' || ext === 'txt'}
+          <FileText size={16} />
+        {:else if ext === 'config' || ext === 'conf' || ext === 'cfg'}
+          <Settings size={16} />
+        {:else}
+          <File size={16} />
+        {/if}
+      </span>
     {/if}
-    <span>{getFileIcon(node.name, node.is_dir)}</span>
     <span class="flex-1 font-mono">{node.name}</span>
     {#if node.tp_count > 0 || node.fp_count > 0}
       <div class="flex items-center gap-1 text-xs">
