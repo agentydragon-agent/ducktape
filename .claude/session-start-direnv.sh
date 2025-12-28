@@ -2,6 +2,7 @@
 set -e
 
 [ "$CLAUDE_CODE_REMOTE" != "true" ] && exit 0
+[ -z "$CLAUDE_PROJECT_DIR" ] && { echo "CLAUDE_PROJECT_DIR not set" >&2; exit 1; }
 
 echo "Setting up dev environment..." >&2
 
@@ -77,12 +78,10 @@ if ! command -v direnv &> /dev/null; then
 fi
 
 # Allow .envrc files
-if [ -n "$CLAUDE_PROJECT_DIR" ]; then
-    cd "$CLAUDE_PROJECT_DIR"
-    find . -name ".envrc" -type f 2>/dev/null | while read f; do
-        direnv allow "$(dirname "$f")" 2>/dev/null || true
-    done
-fi
+cd "$CLAUDE_PROJECT_DIR"
+find . -name ".envrc" -type f 2>/dev/null | while read f; do
+    direnv allow "$(dirname "$f")" 2>/dev/null || true
+done
 
 # Output hooks for bash (NIX_BIN was set earlier)
 cat << EOF
