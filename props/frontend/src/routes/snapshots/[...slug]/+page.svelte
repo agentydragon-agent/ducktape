@@ -5,24 +5,16 @@
   import { fetchSnapshotFile } from '$lib/api/client';
   import FileTree from '../../../components/FileTree.svelte';
   import FileViewer from '../../../components/FileViewer.svelte';
+  import TabButton from '../../../components/TabButton.svelte';
+  import { createExpansionState } from '$lib/expansionState.svelte';
 
   let { data } = $props();
   const snapshot = $derived(data.snapshot as SnapshotDetailResponse);
 
-  let expandedIssues: Set<string> = $state(new Set());
+  const expandedIssues = createExpansionState();
   let activeTab: 'files' | 'tps' | 'fps' = $state('files');
   let selectedFile: FileContentResponse | null = $state(null);
   let loadingFile = $state(false);
-
-  function toggleIssue(issueId: string) {
-    const newSet = new Set(expandedIssues);
-    if (newSet.has(issueId)) {
-      newSet.delete(issueId);
-    } else {
-      newSet.add(issueId);
-    }
-    expandedIssues = newSet;
-  }
 
   function formatFileLocation(file: {
     path: string;
@@ -64,30 +56,13 @@
   <!-- Tabs -->
   <div class="border-b">
     <nav class="flex -mb-px">
-      <button
-        class="px-4 py-2 font-medium text-sm border-b-2 {activeTab === 'files'
-          ? 'border-blue-500 text-blue-600'
-          : 'border-transparent text-gray-500 hover:text-gray-700'}"
-        onclick={() => (activeTab = 'files')}
-      >
-        Files
-      </button>
-      <button
-        class="px-4 py-2 font-medium text-sm border-b-2 {activeTab === 'tps'
-          ? 'border-blue-500 text-blue-600'
-          : 'border-transparent text-gray-500 hover:text-gray-700'}"
-        onclick={() => (activeTab = 'tps')}
-      >
+      <TabButton active={activeTab === 'files'} onclick={() => (activeTab = 'files')}>Files</TabButton>
+      <TabButton active={activeTab === 'tps'} onclick={() => (activeTab = 'tps')}>
         True Positives ({snapshot.true_positives.length})
-      </button>
-      <button
-        class="px-4 py-2 font-medium text-sm border-b-2 {activeTab === 'fps'
-          ? 'border-blue-500 text-blue-600'
-          : 'border-transparent text-gray-500 hover:text-gray-700'}"
-        onclick={() => (activeTab = 'fps')}
-      >
+      </TabButton>
+      <TabButton active={activeTab === 'fps'} onclick={() => (activeTab = 'fps')}>
         False Positives ({snapshot.false_positives.length})
-      </button>
+      </TabButton>
     </nav>
   </div>
 
@@ -122,16 +97,16 @@
               <div class="border rounded">
                 <button
                   class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
-                  onclick={() => toggleIssue(tp.tp_id)}
+                  onclick={() => expandedIssues.toggle(tp.tp_id)}
                 >
                   <div class="flex items-center gap-2">
-                    <span class="text-gray-400">{expandedIssues.has(tp.tp_id) ? '▼' : '▶'}</span>
+                    <span class="text-gray-400">{expandedIssues.isExpanded(tp.tp_id) ? '▼' : '▶'}</span>
                     <span class="font-mono text-sm font-medium">{tp.tp_id}</span>
                     <span class="text-xs text-gray-500">({tp.occurrences.length} occ)</span>
                   </div>
                 </button>
 
-                {#if expandedIssues.has(tp.tp_id)}
+                {#if expandedIssues.isExpanded(tp.tp_id)}
                   <div class="px-3 pb-3 border-t bg-gray-50">
                     <div class="mt-2">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Rationale</h4>
@@ -177,16 +152,16 @@
               <div class="border rounded">
                 <button
                   class="w-full px-3 py-2 flex justify-between items-center hover:bg-gray-50 text-left"
-                  onclick={() => toggleIssue(fp.fp_id)}
+                  onclick={() => expandedIssues.toggle(fp.fp_id)}
                 >
                   <div class="flex items-center gap-2">
-                    <span class="text-gray-400">{expandedIssues.has(fp.fp_id) ? '▼' : '▶'}</span>
+                    <span class="text-gray-400">{expandedIssues.isExpanded(fp.fp_id) ? '▼' : '▶'}</span>
                     <span class="font-mono text-sm font-medium">{fp.fp_id}</span>
                     <span class="text-xs text-gray-500">({fp.occurrences.length} occ)</span>
                   </div>
                 </button>
 
-                {#if expandedIssues.has(fp.fp_id)}
+                {#if expandedIssues.isExpanded(fp.fp_id)}
                   <div class="px-3 pb-3 border-t bg-gray-50">
                     <div class="mt-2">
                       <h4 class="text-xs font-medium text-gray-500 uppercase mb-1">Rationale</h4>

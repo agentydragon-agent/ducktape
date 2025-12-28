@@ -28,6 +28,7 @@
   import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingEdges from './GradingEdges.svelte';
   import CritiqueFileViewer from './CritiqueFileViewer.svelte';
+  import TruncatedStream from './TruncatedStream.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
   marked.use({ breaks: true, async: false });
@@ -260,12 +261,6 @@
   function getStreamText(stream: ExecStream): string {
     if (typeof stream === 'string') return stream;
     return stream.truncated_text;
-  }
-
-  // Check if stream is truncated
-  function isStreamTruncated(stream: ExecStream): { truncated: boolean; totalBytes?: number } {
-    if (typeof stream === 'string') return { truncated: false };
-    return { truncated: true, totalBytes: stream.total_bytes };
   }
 
   // Format API usage stats
@@ -670,8 +665,6 @@
                 {#if pair.result}
                   {@const callId = pair.callId}
                   {@const isExpanded = expandedOutputs.has(callId)}
-                  {@const stdoutTrunc = isStreamTruncated(pair.result.stdout)}
-                  {@const stderrTrunc = isStreamTruncated(pair.result.stderr)}
                   {@const stdoutText = getStreamText(pair.result.stdout)}
                   {@const stderrText = getStreamText(pair.result.stderr)}
                   {@const outputLines = (stdoutText + stderrText).split('\n').length}
@@ -679,22 +672,8 @@
 
                   <div class="relative">
                     <div class="px-3 py-2 {needsExpand && !isExpanded ? 'max-h-48 overflow-y-auto' : ''}">
-                      {#if stdoutText}
-                        <pre class="whitespace-pre-wrap break-words text-gray-200">{stdoutText}</pre>
-                        {#if stdoutTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">
-                            ... stdout truncated ({stdoutTrunc.totalBytes?.toLocaleString()} bytes total)
-                          </div>
-                        {/if}
-                      {/if}
-                      {#if stderrText}
-                        <pre class="whitespace-pre-wrap break-words text-red-400">{stderrText}</pre>
-                        {#if stderrTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">
-                            ... stderr truncated ({stderrTrunc.totalBytes?.toLocaleString()} bytes total)
-                          </div>
-                        {/if}
-                      {/if}
+                      <TruncatedStream stream={pair.result.stdout} kind="stdout" />
+                      <TruncatedStream stream={pair.result.stderr} kind="stderr" />
                       {#if !stdoutText && !stderrText}
                         <span class="text-gray-500 italic">(no output)</span>
                       {/if}
