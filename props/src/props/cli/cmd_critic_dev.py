@@ -19,6 +19,7 @@ from agent_container_util.output import render_agent_prompt
 from cli_util import async_run
 from props.agent_helpers import get_current_agent_run, get_current_agent_run_id
 from props.agent_types import AgentType
+from props.cli.cmd_critic_dev_helpers import show_execution_traces, show_grading_summary, show_run_status
 from props.cli.cmd_stats import cmd_stats_critic_leaderboard, cmd_stats_example, fmt_float, fmt_model, fmt_pct
 from props.db.session import get_session
 from props.display import ColumnDef, build_table_from_schema
@@ -138,9 +139,6 @@ def run_status_cmd() -> None:
     Displays counts of runs by status (completed, max_turns_exceeded, etc.)
     and identifies definitions with high failure rates.
     """
-    # Import here to avoid circular imports
-    from props.cli.cmd_critic_dev_helpers import show_run_status
-
     with get_session() as session:
         parent_id = get_current_agent_run_id(session)
     show_run_status(parent_agent_run_id=parent_id)
@@ -153,9 +151,6 @@ def traces_cmd(limit: Annotated[int, typer.Option("--limit", "-n", help="Number 
     Lists recent critic runs with tool counts and shows the full trace
     for the most recent run. Useful for understanding agent behavior patterns.
     """
-    # Import here to avoid circular imports
-    from props.cli.cmd_critic_dev_helpers import show_execution_traces
-
     with get_session() as session:
         parent_id = get_current_agent_run_id(session)
     show_execution_traces(limit=limit, parent_agent_run_id=parent_id)
@@ -168,9 +163,6 @@ def grading_summary_cmd(run_id: Annotated[str, typer.Argument(help="UUID of a cr
     Accepts either a critic run ID (finds associated grader) or grader run ID directly.
     Displays credit breakdown, TP/occurrence counts, and missed issues.
     """
-    # Import here to avoid circular imports
-    from props.cli.cmd_critic_dev_helpers import show_grading_summary
-
     show_grading_summary(agent_run_id=UUID(run_id))
 
 
@@ -292,9 +284,6 @@ def init_cmd() -> None:
     - Agent-specific advice from /agent.md
     - Shared documentation and CLI help
     """
-    from props.agent_helpers import get_current_agent_run
-    from props.db.session import get_session
-
     with get_session() as session:
         agent_run = get_current_agent_run(session)
         config = agent_run.type_config

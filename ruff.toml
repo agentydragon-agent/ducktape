@@ -87,7 +87,6 @@ split-on-trailing-comma = false
 "gatelet/tasks.py" = ["INP001"]  # Task script doesn't need __init__.py
 "rspcache/src/rspcache/admin_app.py" = ["B008"]  # FastAPI dependency injection pattern
 "gatelet/gatelet/server/**/*.py" = ["B008"]  # FastAPI dependency injection pattern
-"adgn/src/adgn/props/cli/*.py" = ["B008"]  # typer-di dependency injection pattern (like FastAPI)
 # AST visitor methods must use visit_<NodeType> naming (framework requirement)
 # Python's ast.NodeVisitor dispatches by method name: visit_Import, visit_Name, etc.
 "py_detectors/src/py_detectors/det_*.py" = ["N802"]
@@ -95,3 +94,5 @@ split-on-trailing-comma = false
 "py_detectors/tests/fixtures/**" = ["ALL"]
 "adgn/src/adgn/tools/trivial_patterns.py" = ["N802"]
 "prompts/scans/scan_*.py" = ["N802"]
+# Lazy import for orchestration-only dependency (adgn.definition_builder not in container)
+"props/src/props/db/sync/sync.py" = ["PLC0415"]

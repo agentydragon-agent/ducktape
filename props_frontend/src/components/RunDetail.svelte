@@ -24,6 +24,7 @@
   import { formatFilesHash, truncateText } from '../lib/formatters';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingDecisions from './GradingDecisions.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
@@ -401,13 +402,12 @@
       {#if run.type_config.agent_type === 'critic'}
         {@const config = run.type_config as CriticTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span><span class="text-gray-500">Snapshot:</span> <span class="font-mono">{config.example.snapshot_slug}</span></span>
+          <span>
+            <span class="text-gray-500">Example:</span>
+            <ExampleLink example={config.example} />
+          </span>
           {#if config.example.kind === 'file_set' && run.resolved_files}
             <span><span class="text-gray-500">Files:</span> {run.resolved_files.join(', ')}</span>
-          {:else if config.example.kind === 'file_set'}
-            <span><span class="text-gray-500">Files hash:</span> <span class="font-mono text-xs">{formatFilesHash(config.example.files_hash)}</span></span>
-          {:else}
-            <span class="text-gray-500">(whole snapshot)</span>
           {/if}
         </div>
       {:else if run.type_config.agent_type === 'grader'}

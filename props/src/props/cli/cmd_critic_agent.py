@@ -12,7 +12,8 @@ from typing import Annotated
 import typer
 
 from agent_container_util.mcp import mcp_client_from_env
-from props.agent_helpers import get_current_agent_run_id
+from agent_container_util.output import WORKSPACE, render_agent_prompt
+from props.agent_helpers import fetch_snapshot, get_current_agent_run_id, get_scope_description
 from props.critic.submit_server import CriticSubmitInput
 from props.db.models import ReportedIssue, ReportedIssueOccurrence
 from props.db.session import get_session
@@ -198,10 +199,7 @@ def list_issues_cmd() -> None:
 @app.command("init")
 def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
-    from agent_container_util.output import WORKSPACE, render_agent_prompt
-    from props.agent_helpers import fetch_snapshot, get_scope_description
-
     # Side-effect: fetch snapshot before rendering template
-    fetch_snapshot(str(WORKSPACE))
+    fetch_snapshot(WORKSPACE)
 
     render_agent_prompt("props/docs/agents/critic.md.j2", helpers={"scope_description": get_scope_description()})

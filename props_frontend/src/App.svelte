@@ -10,6 +10,7 @@
   import RunDetail from './components/RunDetail.svelte';
   import RunsBrowser from './components/RunsBrowser.svelte';
   import DefinitionDetail from './components/DefinitionDetail.svelte';
+  import ExampleDetail from './components/ExampleDetail.svelte';
   import RunTriggerModal from './components/RunTriggerModal.svelte';
   import type { Split, ExampleKind } from './lib/types';
 
@@ -26,20 +27,34 @@
     kind?: ExampleKind;
   }
 
+  // Example page params from URL query params
+  interface ExamplePageParams {
+    snapshotSlug: string;
+    exampleKind: 'whole_snapshot' | 'file_set';
+    filesHash?: string | null;
+  }
+
   let data: OverviewResponse | null = $state(null);
   let loading = $state(true);
   let selectedRunId: string | null = $state(null);
   let selectedDefinitionId: string | null = $state(null);
   let runsPageFilters: RunsPageFilters | null = $state(null);
+  let examplePageParams: ExamplePageParams | null = $state(null);
   let showRunModal = $state(false);
   let modalPrefill: ModalPrefill | undefined = $state(undefined);
 
   // Parse URL to extract route state
-  function parseUrl(): { runId?: string; definitionId?: string; runsFilters?: RunsPageFilters } {
+  function parseUrl(): {
+    runId?: string;
+    definitionId?: string;
+    runsFilters?: RunsPageFilters;
+    exampleParams?: ExamplePageParams;
+  } {
     const path = window.location.pathname;
     const runMatch = path.match(/^\/runs\/([^/]+)$/);
     const defMatch = path.match(/^\/definitions\/([^/]+)$/);
     const runsListMatch = path === '/runs';
+    const examplesMatch = path === '/examples';
 
     // Parse query params for /runs page
     let runsFilters: RunsPageFilters | undefined;
@@ -51,10 +66,26 @@
       if (params.get('kind')) runsFilters.kind = params.get('kind') as ExampleKind;
     }
 
+    // Parse query params for /examples page
+    let exampleParams: ExamplePageParams | undefined;
+    if (examplesMatch) {
+      const params = new URLSearchParams(window.location.search);
+      const snapshotSlug = params.get('snapshot_slug');
+      const exampleKind = params.get('example_kind');
+      if (snapshotSlug && (exampleKind === 'whole_snapshot' || exampleKind === 'file_set')) {
+        exampleParams = {
+          snapshotSlug,
+          exampleKind,
+          filesHash: params.get('files_hash') || null,
+        };
+      }
+    }
+
     return {
       runId: runMatch?.[1],
       definitionId: defMatch?.[1],
       runsFilters,
+      exampleParams,
     };
   }
 
@@ -65,6 +96,12 @@
       url = `/runs/${selectedRunId}`;
     } else if (selectedDefinitionId) {
       url = `/definitions/${selectedDefinitionId}`;
+    } else if (examplePageParams) {
+      const params = new URLSearchParams();
+      params.set('snapshot_slug', examplePageParams.snapshotSlug);
+      params.set('example_kind', examplePageParams.exampleKind);
+      if (examplePageParams.filesHash) params.set('files_hash', examplePageParams.filesHash);
+      url = `/examples?${params.toString()}`;
     } else if (runsPageFilters) {
       const params = new URLSearchParams();
       if (runsPageFilters.definitionId) params.set('definition', runsPageFilters.definitionId);
@@ -81,16 +118,18 @@
 
   onMount(async () => {
     // Initialize state from URL
-    const { runId, definitionId, runsFilters } = parseUrl();
+    const { runId, definitionId, runsFilters, exampleParams } = parseUrl();
     if (runId) selectedRunId = runId;
     else if (definitionId) selectedDefinitionId = definitionId;
+    else if (exampleParams) examplePageParams = exampleParams;
     else if (runsFilters) runsPageFilters = runsFilters;
 
     // Listen for browser back/forward
     window.addEventListener('popstate', () => {
-      const { runId, definitionId, runsFilters } = parseUrl();
+      const { runId, definitionId, runsFilters, exampleParams } = parseUrl();
       selectedRunId = runId ?? null;
       selectedDefinitionId = definitionId ?? null;
+      examplePageParams = exampleParams ?? null;
       runsPageFilters = runsFilters ?? null;
     });
 
@@ -128,6 +167,7 @@
   function handleGoHome() {
     selectedRunId = null;
     selectedDefinitionId = null;
+    examplePageParams = null;
     runsPageFilters = null;
     updateUrl();
   }
@@ -135,12 +175,18 @@
   function handleNavigateToRuns(filters: RunsPageFilters) {
     selectedRunId = null;
     selectedDefinitionId = null;
+    examplePageParams = null;
     runsPageFilters = filters;
     updateUrl();
   }
 
   function handleCloseRunsPage() {
     runsPageFilters = null;
+    updateUrl();
+  }
+
+  function handleCloseExample() {
+    examplePageParams = null;
     updateUrl();
   }
 
@@ -173,6 +219,15 @@
       definitionId={selectedDefinitionId}
       onClose={handleClearDefinitionFilter}
       onSelectRun={handleSelectRun}
+    />
+  {:else if examplePageParams}
+    <!-- Example detail view -->
+    <ExampleDetail
+      snapshotSlug={examplePageParams.snapshotSlug}
+      exampleKind={examplePageParams.exampleKind}
+      filesHash={examplePageParams.filesHash}
+      onClose={handleCloseExample}
+      onSelectDefinition={handleSelectDefinition}
     />
   {:else if runsPageFilters}
     <!-- Runs list with filters -->

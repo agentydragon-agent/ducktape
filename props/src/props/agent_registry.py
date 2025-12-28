@@ -244,6 +244,7 @@ class AgentRegistry:
                 mcp_client=mcp_client,
                 compositor=comp,
                 handlers=handlers,
+                reasoning_summary=ReasoningSummary.DETAILED,
             )
 
             # Track as active

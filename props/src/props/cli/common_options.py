@@ -73,3 +73,8 @@ OPT_RUNBOOK_PATH = typer.Option(
 OPT_RUNBOOK_SNAPSHOT = typer.Option(
     None, "--snapshot", help="Snapshot slug to hydrate and mount as /workspace (read-only)", click_type=SNAPSHOT_SLUG
 )
+
+# Options - Agent Definition
+OPT_DEFINITION_ID = typer.Option(
+    "critic", "--definition-id", "-d", help="Agent definition ID (e.g., 'critic', 'critic-v1'). Default: 'critic'."
+)

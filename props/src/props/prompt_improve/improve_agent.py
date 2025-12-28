@@ -18,6 +18,7 @@ from agent_core.turn_limit import MaxTurnsHandler
 from mcp_infra.display import CompactDisplayHandler
 from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto
+from openai_utils.types import ReasoningSummary
 from props.agent_handle import AgentHandle
 from props.agent_registry import AgentRegistry
 from props.agent_setup import AgentEnvironment
@@ -218,6 +219,7 @@ async def run_improvement_agent(
                     compositor=comp,
                     handlers=handlers,
                     parallel_tool_calls=True,
+                    reasoning_summary=ReasoningSummary.DETAILED,
                 )
 
                 logger.info("Starting agent loop")

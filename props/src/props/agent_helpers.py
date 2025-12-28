@@ -35,13 +35,14 @@ Usage:
 from __future__ import annotations
 
 import logging
-import subprocess
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
-from props.db.models import AgentRun
+from props.cli.cmd_snapshot import fetch_snapshot_to_path
+from props.db.models import AgentRun, FileSet
 from props.db.session import get_session
 from props.models.examples import WholeSnapshotExample
 
@@ -116,8 +117,6 @@ def get_scope_description() -> str:
     Returns a pre-formatted string describing the snapshot and files to review.
     Used as Jinja2 helper in critic.md.j2 template.
     """
-    from props.db.models import FileSet
-
     with get_session() as session:
         agent_run = get_current_agent_run(session)
         example = agent_run.critic_config().example
@@ -136,10 +135,11 @@ def get_scope_description() -> str:
         return f"Snapshot: {example.snapshot_slug}\nFiles to review: {files_str}"
 
 
-def fetch_snapshot(dest_dir: str) -> str:
+def fetch_snapshot(dest_dir: Path) -> Path:
     """Fetch snapshot for current critic agent to specified directory.
 
-    Calls `props snapshot fetch <slug> <dest_dir>` to download snapshot.
+    Retrieves the tar archive from the snapshots table and extracts it
+    to the specified directory.
     Used as Jinja2 helper in critic.md.j2 template.
 
     Args:
@@ -153,8 +153,7 @@ def fetch_snapshot(dest_dir: str) -> str:
         critic_config = agent_run.critic_config()
         snapshot_slug = critic_config.example.snapshot_slug
 
-    # TODO: Calling CLI via subprocess is ugly - consider a direct Python API
-    subprocess.run(["props", "snapshot", "fetch", snapshot_slug, dest_dir], check=True)
+    fetch_snapshot_to_path(snapshot_slug, dest_dir)
     return dest_dir
 
 

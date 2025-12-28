@@ -14,6 +14,7 @@ from uuid import UUID
 from sqlalchemy import select, text
 import typer
 
+from agent_container_util.output import render_agent_prompt
 from props.db.clustering_models import UnknownAssignment, UnknownCluster
 from props.db.session import get_session
 
@@ -180,6 +181,4 @@ def cancel_assignment_cmd(
 @app.command("init")
 def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
-    from agent_container_util.output import render_agent_prompt
-
     render_agent_prompt("props/docs/agents/clustering.md.j2")

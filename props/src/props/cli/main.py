@@ -675,9 +675,7 @@ async def cmd_run(
     # Scope (required)
     snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
     # Definition ID (required)
-    definition_id: DefinitionId = typer.Option(
-        "critic", "--definition-id", "-d", help="Agent definition ID (e.g., 'critic', 'critic-v1'). Default: 'critic'."
-    ),
+    definition_id: DefinitionId = opt.OPT_DEFINITION_ID,
     # File filtering
     files: list[str] | None = opt.OPT_FILES_FILTER,
     # Common options

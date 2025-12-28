@@ -3,18 +3,20 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
-import random
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
+import json
+import logging
+import random
 from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
-from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from mcp.types import EmbeddedResource, ImageContent, TextContent
+from pydantic import BaseModel, Field, ValidationError
+
+from agent_core.events import ApiRequest, AssistantText, EventType, Response, ToolCall, ToolCallOutput, UserText
 from mcp_infra.exec.models import BaseExecResult, ExecInput
 from openai_utils.client_factory import build_client
 from openai_utils.model import ReasoningItem
@@ -36,7 +38,6 @@ from props.db.session import get_session
 from props.ids import DefinitionId
 from props.models.examples import ExampleKind, ExampleSpec
 from props.splits import Split
-from pydantic import BaseModel, Field, ValidationError
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -384,13 +385,13 @@ def parse_event_payload(payload: EventType) -> ParsedEventPayload:
             return GenericToolOutputPayload(
                 call_id=payload.call_id,
                 content=[
-                    c.model_dump() if isinstance(c, (TextContent, ImageContent, EmbeddedResource)) else c
+                    c.model_dump() if isinstance(c, TextContent | ImageContent | EmbeddedResource) else c
                     for c in payload.result.content
                 ],
             )
 
         # Pass through types that already have correct structure
-        if isinstance(payload, (UserText, AssistantText, ApiRequest, Response, ReasoningItem)):
+        if isinstance(payload, UserText | AssistantText | ApiRequest | Response | ReasoningItem):
             return payload
 
         # Fallback - should not happen if all types covered

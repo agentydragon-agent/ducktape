@@ -179,3 +179,25 @@ export async function fetchDefinitionDetail(definitionId: string) {
   if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch definition'));
   return data;
 }
+
+// Fetch example detail with per-definition stats
+export type ExampleDetailResponse = components['schemas']['ExampleDetailResponse'];
+export type DefinitionStatsForExample = components['schemas']['DefinitionStatsForExample'];
+
+export async function fetchExampleDetail(
+  snapshotSlug: string,
+  exampleKind: ExampleKind,
+  filesHash: string | null
+) {
+  const { data, error } = await api.GET('/api/stats/examples', {
+    params: {
+      query: {
+        snapshot_slug: snapshotSlug,
+        example_kind: exampleKind,
+        ...(filesHash ? { files_hash: filesHash } : {}),
+      },
+    },
+  });
+  if (error) throw new Error(extractErrorMessage(error, 'Failed to fetch example detail'));
+  return data;
+}

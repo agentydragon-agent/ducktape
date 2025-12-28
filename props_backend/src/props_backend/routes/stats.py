@@ -236,9 +236,7 @@ class ExampleDetailResponse(BaseModel):
 
 @router.get("/examples")
 def get_example_detail(
-    snapshot_slug: SnapshotSlug,
-    example_kind: ExampleKind,
-    files_hash: str | None = None,
+    snapshot_slug: SnapshotSlug, example_kind: ExampleKind, files_hash: str | None = None
 ) -> ExampleDetailResponse:
     """Get detailed information about a specific example.
 

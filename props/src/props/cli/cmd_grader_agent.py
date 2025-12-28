@@ -11,6 +11,7 @@ from typing import Annotated
 
 import typer
 
+from agent_container_util.output import render_agent_prompt
 from props.agent_helpers import get_grading_context
 from props.grader.decision_helpers import (
     delete_decision,
@@ -133,6 +134,4 @@ def submit_cmd(summary: Annotated[str, typer.Argument(help="Brief summary of gra
 @app.command("init")
 def init_cmd() -> None:
     """Run bootstrap (called by /init script)."""
-    from agent_container_util.output import render_agent_prompt
-
     render_agent_prompt("props/docs/agents/grader.md.j2", helpers={"grading_context": get_grading_context()})

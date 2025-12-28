@@ -305,6 +305,34 @@ def snapshot_capture_ducktape(
     typer.echo("Note: Changes are NOT auto-committed. Review before committing.")
 
 
+def fetch_snapshot_to_path(slug: str, output: Path) -> None:
+    """Fetch snapshot from database and extract to filesystem.
+
+    Retrieves the tar archive from the snapshots table and extracts it
+    to the specified output directory.
+
+    Args:
+        slug: Snapshot slug (e.g., 'ducktape/2025-11-26-00')
+        output: Output directory to extract snapshot into
+
+    Raises:
+        ValueError: If snapshot not found or has no content
+    """
+    output.mkdir(parents=True, exist_ok=True)
+
+    with get_session() as session:
+        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
+        if snapshot is None:
+            raise ValueError(f"Snapshot not found: {slug}")
+        if snapshot.content is None:
+            raise ValueError(f"Snapshot has no content: {slug}")
+
+        archive_bytes = snapshot.content
+
+    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tf:
+        tf.extractall(output, filter="data")
+
+
 def snapshot_fetch(
     slug: Annotated[str, typer.Argument(help="Snapshot slug (e.g., 'ducktape/2025-11-26-00')")],
     output: Annotated[Path, typer.Argument(help="Output directory to extract snapshot into")],
@@ -318,24 +346,13 @@ def snapshot_fetch(
     Example:
         props snapshot fetch ducktape/2025-11-26-00 /snapshots/ducktape/2025-11-26-00
     """
-    target = output
-    target.mkdir(parents=True, exist_ok=True)
+    try:
+        fetch_snapshot_to_path(slug, output)
+    except ValueError as e:
+        typer.echo(f"Error: {e}", err=True)
+        raise typer.Exit(1)
 
-    with get_session() as session:
-        snapshot = session.query(Snapshot).filter_by(slug=slug).first()
-        if snapshot is None:
-            typer.echo(f"Error: Snapshot not found: {slug}", err=True)
-            raise typer.Exit(1)
-        if snapshot.content is None:
-            typer.echo(f"Error: Snapshot has no content: {slug}", err=True)
-            raise typer.Exit(1)
-
-        archive_bytes = snapshot.content
-
-    with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r") as tf:
-        tf.extractall(target, filter="data")
-
-    typer.echo(f"Extracted: {target}")
+    typer.echo(f"Extracted: {output}")
 
 
 # Register commands

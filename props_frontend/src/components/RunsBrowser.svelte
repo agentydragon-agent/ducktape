@@ -16,7 +16,8 @@
   } from '../lib/api/client';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
-  import { formatExample } from '../lib/formatters';
+  import ExampleLink from '../lib/ExampleLink.svelte';
+  import type { CriticTypeConfig } from '../lib/api/client';
 
   interface TriggerPrefill {
     definitionId: string;
@@ -291,8 +292,13 @@
               <td class="px-3 py-2 text-xs text-gray-500">
                 {run.split ?? '—'}
               </td>
-              <td class="px-3 py-2 text-xs text-gray-500 font-mono">
-                {formatExample(run)}
+              <td class="px-3 py-2 text-xs text-gray-500">
+                {#if run.type_config.agent_type === 'critic'}
+                  {@const config = run.type_config as CriticTypeConfig}
+                  <ExampleLink example={config.example} />
+                {:else}
+                  <span class="text-gray-400">—</span>
+                {/if}
               </td>
               <td class="px-3 py-2 text-xs text-gray-500">
                 {run.model}
