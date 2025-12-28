@@ -3,7 +3,7 @@
 
   interface Props {
     nodes: FileTreeNode[];
-    onFileClick: (_path: string) => void;
+    onFileClick: (_: string) => void;
     selectedPath?: string;
   }
 

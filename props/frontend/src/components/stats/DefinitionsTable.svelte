@@ -14,7 +14,7 @@
   interface Props {
     definitions: DefinitionRow[];
     exampleCounts?: { [key: string]: { [key: string]: number } };
-    onCellClick?: (_info: CellClickInfo) => void;
+    onCellClick?: (_: CellClickInfo) => void;
   }
 
   let { definitions, exampleCounts, onCellClick }: Props = $props();

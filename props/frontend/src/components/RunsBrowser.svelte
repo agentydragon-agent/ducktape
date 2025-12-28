@@ -31,7 +31,7 @@
     initialDefinitionId?: string;
     initialSplit?: Split;
     initialKind?: ExampleKind;
-    onTriggerRun?: (_prefill: TriggerPrefill) => void;
+    onTriggerRun?: (_: TriggerPrefill) => void;
   }
   let { initialDefinitionId, initialSplit, initialKind, onTriggerRun }: Props = $props();
 

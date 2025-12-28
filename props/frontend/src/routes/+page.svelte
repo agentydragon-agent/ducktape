@@ -10,7 +10,7 @@
   let { data } = $props();
 
   const runModal = getContext<{
-    open: (_prefill?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
+    open: (_?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
   }>('runModal');
 
   function handleNavigateToRuns(filters: { definitionId?: string; split?: Split; kind?: ExampleKind }) {

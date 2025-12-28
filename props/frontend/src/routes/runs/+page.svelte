@@ -5,7 +5,7 @@
   import type { Split, ExampleKind } from '$lib/types';
 
   const runModal = getContext<{
-    open: (_prefill?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
+    open: (_?: { definitionId?: string; split?: Split; kind?: ExampleKind }) => void;
   }>('runModal');
 
   // Parse query params
