@@ -1,8 +1,9 @@
 <script lang="ts">
-  import hljs from 'highlight.js';
   import 'highlight.js/styles/github.css';
   import type { FileContentResponse, TpInfo, FpInfo, GradingEdgeInfo } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
+  import { detectLanguage } from '../lib/fileTypes';
+  import { highlightLines } from '../lib/highlighting';
 
   interface CritiqueIssue {
     id: string;
@@ -23,55 +24,8 @@
   let { file, tps, fps, critiqueIssues, gradingEdges }: Props = $props();
 
   const lines = $derived(file.content.split('\n'));
-
-  // Detect language from file extension
-  const language = $derived(() => {
-    const ext = file.path.split('.').pop()?.toLowerCase();
-    const langMap: Record<string, string> = {
-      js: 'javascript',
-      ts: 'typescript',
-      jsx: 'javascript',
-      tsx: 'typescript',
-      py: 'python',
-      rb: 'ruby',
-      java: 'java',
-      c: 'c',
-      cpp: 'cpp',
-      cc: 'cpp',
-      cxx: 'cpp',
-      h: 'c',
-      hpp: 'cpp',
-      go: 'go',
-      rs: 'rust',
-      sh: 'bash',
-      bash: 'bash',
-      zsh: 'bash',
-      json: 'json',
-      yaml: 'yaml',
-      yml: 'yaml',
-      xml: 'xml',
-      html: 'html',
-      css: 'css',
-      scss: 'scss',
-      sql: 'sql',
-      md: 'markdown',
-      txt: 'plaintext',
-    };
-    return langMap[ext || ''] || 'plaintext';
-  });
-
-  // Highlight individual lines
-  const highlightedLines = $derived(
-    lines.map((line: string) => {
-      if (!line.trim()) return line;
-      try {
-        const result = hljs.highlight(line, { language: language, ignoreIllegals: true });
-        return result.value;
-      } catch {
-        return line;
-      }
-    })
-  );
+  const language = $derived(detectLanguage(file.path));
+  const highlightedLines = $derived(highlightLines(lines, language));
 
   // Unified issue marker interface
   interface IssueMarker {
