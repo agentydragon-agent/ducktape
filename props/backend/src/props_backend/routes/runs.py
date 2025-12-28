@@ -209,13 +209,13 @@ class AgentRunDetail(BaseModel):
     updated_at: datetime
     type_config: TypeConfig
     event_count: int
-    resolved_files: list[str] | None = None  # For critic runs with file_set examples
-    child_runs: list[ChildRunInfo] = []  # Child runs spawned by this run
-    grader_runs: list[GraderRunInfo] = []  # For critic runs: grader runs that graded this critic
-    grading_summary: GradingSummary | None = None  # For critic runs: grading results
-    grading_edges: list[GradingEdgeInfo] = []  # For grader runs: their output edges
-    missed_occurrences: list[MissedOccurrenceInfo] = []  # For critic runs: catchable TPs not found
-    reported_issues: list[ReportedIssueInfo] = []  # For critic runs: issues found by the critic
+    resolved_files: list[str] | None  # For critic runs with file_set examples
+    child_runs: list[ChildRunInfo]  # Child runs spawned by this run
+    grader_runs: list[GraderRunInfo]  # For critic runs: grader runs that graded this critic
+    grading_summary: GradingSummary | None  # For critic runs: grading results
+    grading_edges: list[GradingEdgeInfo]  # For grader runs: their output edges
+    missed_occurrences: list[MissedOccurrenceInfo]  # For critic runs: catchable TPs not found
+    reported_issues: list[ReportedIssueInfo]  # For critic runs: issues found by the critic
 
 
 # --- Parsed Event Types for API ---
