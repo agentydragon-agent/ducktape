@@ -120,13 +120,12 @@
 
     const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
     const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
-    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
     const total_credit = edges
       .filter((e) => e.target.kind === 'tp')
-      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+      .reduce((sum, e) => sum + e.target.credit, 0);
 
     // Recall denominator needs to come from example - we'll pass it separately
-    return { tp_count, fp_count, unknown_count, total_credit };
+    return { tp_count, fp_count, total_credit };
   }
 
   // Load run data
@@ -615,7 +614,6 @@
             </span>
             <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
             <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
-            <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
           </div>
         </div>
       {/if}
@@ -625,9 +623,7 @@
     {#if getAgentType(run) === 'critic'}
       {@const edges = getAggregatedEdges(run)}
       {#if edges.length > 0}
-        {@const visibleEdges = edges.filter(
-          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-        )}
+        {@const visibleEdges = edges.filter((e) => e.target.credit > 0)}
         {@const gs = computeGradingSummary(run)}
         <div class="px-4 py-2 border-b flex-shrink-0">
           <GradingEdges
@@ -644,9 +640,7 @@
     {:else if getAgentType(run) === 'grader'}
       {@const gradingEdges = getGradingEdges(run)}
       {#if gradingEdges.length > 0}
-        {@const visibleEdges = gradingEdges.filter(
-          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-        )}
+        {@const visibleEdges = gradingEdges.filter((e) => e.target.credit > 0)}
         <div class="px-4 py-2 border-b flex-shrink-0">
           <GradingEdges
             edges={gradingEdges}

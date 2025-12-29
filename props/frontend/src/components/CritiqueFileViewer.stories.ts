@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { Meta, StoryObj } from '@storybook/svelte';
+import type { GradingEdgeInfo } from '../lib/api/client';
 import CritiqueFileViewer from './CritiqueFileViewer.svelte';
 
 // Mock file content with realistic code
@@ -113,7 +114,7 @@ const mockCritiqueIssues: any = [
 ];
 
 // Mock grading edges (critique matched to ground truth)
-const mockGradingEdges: any = [
+const mockGradingEdges: GradingEdgeInfo[] = [
   {
     critique_issue_id: 'critique-sql-001',
     target: {
@@ -127,9 +128,12 @@ const mockGradingEdges: any = [
   {
     critique_issue_id: 'critique-hash-001',
     target: {
-      kind: 'none',
+      kind: 'tp',
+      tp_id: 'tp-sql-injection',
+      occurrence_id: 'occ-tp-sql-001',
+      credit: 0.0,
     },
-    rationale: 'Novel finding - MD5 usage not in ground truth',
+    rationale: 'MD5 concern does not match SQL injection - no credit',
   },
 ];
 

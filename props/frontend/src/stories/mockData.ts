@@ -316,9 +316,12 @@ export const mockGradingEdges: GradingEdgeInfo[] = [
   {
     critique_issue_id: 'critique-002',
     target: {
-      kind: 'none',
+      kind: 'tp',
+      tp_id: 'tp-sql-injection-001',
+      occurrence_id: 'occ-tp-001',
+      credit: 0.0,
     },
-    rationale: 'Valid concern but not in ground truth',
+    rationale: 'Connection management concern does not match the SQL injection issue',
   },
 ];
 
