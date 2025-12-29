@@ -50,7 +50,10 @@ const mockTPs: any = [
         files: [
           {
             path: 'src/auth/login.py',
-            ranges: [{ start_line: 13, end_line: 14 }],
+            ranges: [
+              { start_line: 13, end_line: 14, note: 'String interpolation creates SQL injection vector' },
+              { start_line: 20, end_line: 20, note: 'Query execution with unsanitized input' },
+            ],
           },
         ],
         note: 'User input directly concatenated into SQL query without parameterization',

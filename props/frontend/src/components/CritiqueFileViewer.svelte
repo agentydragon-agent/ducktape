@@ -8,6 +8,7 @@
   interface LineRange {
     start_line: number;
     end_line: number;
+    note?: string | null;
   }
 
   interface FileLocation {
@@ -137,6 +138,25 @@
     return map;
   });
 
+  // Map line numbers to range notes (for ranges that end on that line)
+  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
+    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRange }>>();
+
+    for (const issue of allIssues) {
+      if (issue.ranges) {
+        for (const range of issue.ranges) {
+          if (range.note) {
+            const endIdx = range.end_line;
+            const existing = map.get(endIdx) || [];
+            map.set(endIdx, [...existing, { issue, range }]);
+          }
+        }
+      }
+    }
+
+    return map;
+  });
+
   let expandedIssues = $state<Set<string>>(new Set());
 
   function toggleIssue(id: string) {
@@ -219,6 +239,18 @@
                 </td>
               </tr>
             {/if}
+          {/each}
+
+          <!-- Range notes (show after the last line of each range with a note) -->
+          {@const rangeNotes = lineToRangeNotes.get(idx) || []}
+          {#each rangeNotes as { range }}
+            <tr>
+              <td colspan="2" class="px-4 py-0.5">
+                <div class="text-xs italic text-gray-600 bg-gray-50 border-l-2 border-gray-300 px-2 py-1 rounded-r">
+                  {range.note}
+                </div>
+              </td>
+            </tr>
           {/each}
         {/each}
       </tbody>
