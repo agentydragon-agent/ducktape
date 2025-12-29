@@ -1,7 +1,0 @@
-# Single-project workspace (no multi-package setup)
-# This file exists to configure pnpm workspace-level options
-packages: []
-
-# Suppress esbuild platform-specific binary warnings
-overrides:
-  esbuild: ">=0.21.0"

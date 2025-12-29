@@ -298,6 +298,7 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
+    { name = "docker" },
     { name = "playwright" },
     { name = "pyhamcrest" },
     { name = "pytest" },
@@ -313,6 +314,7 @@ requires-dist = [
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "aiosqlite", specifier = ">=0.18.0" },
     { name = "cli-util", editable = "cli_util" },
+    { name = "docker", marker = "extra == 'dev'", specifier = ">=7.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
     { name = "fastmcp", specifier = ">=2.13" },
     { name = "jinja2", specifier = ">=3.1" },
@@ -3255,6 +3257,7 @@ dependencies = [
     { name = "docker" },
     { name = "jinja2" },
     { name = "mcp-infra" },
+    { name = "net-util" },
     { name = "openai-utils" },
     { name = "plotext" },
     { name = "psycopg", extra = ["binary"] },
@@ -3290,9 +3293,6 @@ gepa = [
     { name = "litellm" },
     { name = "nest-asyncio" },
 ]
-orchestration = [
-    { name = "net-util" },
-]
 
 [package.metadata]
 requires-dist = [
@@ -3311,7 +3311,7 @@ requires-dist = [
     { name = "mcp-infra", editable = "mcp_infra" },
     { name = "mypy", marker = "extra == 'dev'", specifier = "==1.18.2" },
     { name = "nest-asyncio", marker = "extra == 'gepa'", specifier = ">=1.5.0" },
-    { name = "net-util", marker = "extra == 'orchestration'", editable = "net_util" },
+    { name = "net-util", editable = "net_util" },
     { name = "openai-utils", editable = "openai_utils" },
     { name = "plotext", specifier = ">=5.2.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
@@ -3337,7 +3337,7 @@ requires-dist = [
     { name = "types-pyyaml", marker = "extra == 'dev'" },
     { name = "uvicorn", specifier = ">=0.30.0" },
 ]
-provides-extras = ["orchestration", "dev", "gepa"]
+provides-extras = ["dev", "gepa"]
 
 [[package]]
 name = "psutil"
