@@ -20,8 +20,9 @@ export default defineConfig({
   ],
 
   webServer: {
-    command: 'pnpm build-storybook && npx http-server storybook-static -p 6006',
+    command: 'npx http-server storybook-static -p 6006',
     port: 6006,
     reuseExistingServer: !process.env.CI,
+    timeout: 30000,
   },
 });
