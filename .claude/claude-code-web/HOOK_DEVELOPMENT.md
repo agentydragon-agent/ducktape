@@ -95,9 +95,13 @@ devenv-1.11.2 dependencies:
 ├── glibc, openssl, dbus, gcc-lib...
 ```
 
-devenv needs a specific nix version for API compatibility. This means we download nix twice:
-- Once via the installer (nix 2.33.0)
-- Again as a devenv dependency (nix 2.30.4)
+**Can devenv share our nix?** No. Tested 2025-12-29:
+- devenv wrapper uses `--set DEVENV_NIX` (unconditional, can't override)
+- Running unwrapped `.devenv-wrapped` with our nix fails:
+  `unknown setting 'lazy-trees'` - devenv needs nix 2.30.4 features
+- The two nix closures have **0 shared paths** (different versions = different hashes)
+
+devenv's nix bundling is **required**, not a packaging mistake.
 
 **Alternatives investigated:**
 - `apt-cache search devenv`: Not available in apt
