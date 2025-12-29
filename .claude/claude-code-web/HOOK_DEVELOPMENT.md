@@ -177,6 +177,93 @@ Check `/tmp/session-start-direnv.log` for hook execution details.
 - `.envrc` - Repository-level direnv config (uses devenv)
 - `devenv.nix` - devenv configuration
 
+## Alternative: No-Nix Approach
+
+Given the timeout issues with nix, consider abandoning devenv for Claude Code web and using
+what's already in the container. This trades reproducibility for reliability.
+
+### Container Pre-installed Tools (verified 2025-12-29)
+
+| Tool | Version | Location |
+|------|---------|----------|
+| Python | 3.11.14 | /usr/local/bin/python3 |
+| pip | 24.0 | /usr/bin/pip3 |
+| Node.js | 22.21.1 | /opt/node22/bin/node |
+| npm | (bundled) | /opt/node22/bin/npm |
+| PostgreSQL | 16.11 | /usr/bin/psql, pg_ctlcluster |
+| git | ✓ | /usr/bin/git |
+| gcc/g++ | ✓ | /usr/bin/gcc |
+| make | ✓ | /usr/bin/make |
+| curl/wget | ✓ | /usr/bin |
+| jq | ✓ | /usr/bin/jq |
+
+**PostgreSQL cluster:** Pre-configured at port 5432, just needs `sudo pg_ctlcluster 16 main start`.
+
+### What We'd Need to Install
+
+| Tool | Method | Size | Time |
+|------|--------|------|------|
+| **uv** | Standalone binary from GitHub | 22 MB | ~7s |
+| **direnv** | `apt install direnv` | ~2 MB | ~3s |
+
+**Total: ~25 MB, ~10 seconds** vs nix approach (~370 MB, 2-3 minutes)
+
+### Standalone uv Installation
+
+```bash
+curl -LsSf "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz" \
+  | tar -xz -C ~/.local/bin --strip-components=1
+```
+
+Tested 2025-12-29: Works, produces `uv 0.9.18`.
+
+### Proposed No-Nix Hook
+
+```python
+# Simplified hook - no nix, just uv + direnv
+def setup_no_nix():
+    # 1. Install uv standalone (22 MB, ~7s)
+    if not shutil.which("uv"):
+        subprocess.run([
+            "curl", "-LsSf",
+            "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz"
+        ], stdout=subprocess.PIPE)
+        # ... extract to ~/.local/bin
+
+    # 2. Install direnv via apt (if not present)
+    if not shutil.which("direnv"):
+        subprocess.run(["sudo", "apt-get", "install", "-y", "direnv"])
+
+    # 3. Start postgres if needed
+    subprocess.run(["sudo", "pg_ctlcluster", "16", "main", "start"])
+
+    # 4. Run uv sync for Python deps
+    subprocess.run(["uv", "sync"])
+```
+
+### Trade-offs
+
+**Pros:**
+- Fast: ~10s vs 2-3 minutes
+- Reliable: No timeout issues
+- Simple: No nix complexity
+
+**Cons:**
+- Not reproducible: System Python 3.11 vs pinned Python 3.12
+- No devenv services: Would need to manage postgres manually
+- Diverges from local dev setup: Local uses devenv, web uses apt/standalone
+
+### Hybrid Option
+
+Keep nix approach for resumed sessions (which work), fall back to no-nix for fresh sessions:
+
+```python
+if nix_store_populated():
+    use_nix_approach()  # Fast path, tools cached
+else:
+    use_no_nix_approach()  # Fresh session, can't wait for nix
+```
+
 ## Non-Goals
 
 - Getting a single session working manually
