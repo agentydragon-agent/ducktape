@@ -3,9 +3,8 @@ set -e
 
 # Debug: log environment state for diagnosing hook issues
 echo "[session-start-direnv] Starting hook" >&2
-echo "[session-start-direnv] CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-<unset>}" >&2
-echo "[session-start-direnv] CLAUDE_PROJECT_DIR=${CLAUDE_PROJECT_DIR:-<unset>}" >&2
-echo "[session-start-direnv] CLAUDE_ENV_FILE=${CLAUDE_ENV_FILE:-<unset>}" >&2
+echo "[session-start-direnv] Environment variables:" >&2
+env | sort | sed 's/^/[session-start-direnv]   /' >&2
 
 if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
     echo "[session-start-direnv] Not remote environment, skipping" >&2
