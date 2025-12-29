@@ -7,9 +7,8 @@
     GradingEdgeInfo,
     ReportedIssueInfo,
     ReportedIssueOccurrenceInfo,
-    FileLocationInfo,
-    LineRange,
   } from '../lib/api/client';
+  import type { IssueMarker, LineRange } from '../lib/types';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
@@ -28,18 +27,6 @@
   const lines = $derived(file.content.split('\n'));
   const language = $derived(detectLanguage(file.path));
   const highlightedLines = $derived(highlightLines(lines, language));
-
-  // Unified issue marker interface
-  interface IssueMarker {
-    kind: 'tp' | 'fp' | 'critique';
-    issueId: string;
-    occurrenceId?: string;
-    rationale: string;
-    note?: string;
-    ranges: LineRange[] | null;
-    allFiles: FileLocationInfo[];
-    gradingEdges?: GradingEdgeInfo[];
-  }
 
   // Combine all issues (TPs, FPs, and critique issues) that reference this file
   const allIssues = $derived.by<IssueMarker[]>(() => {

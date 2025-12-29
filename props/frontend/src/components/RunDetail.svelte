@@ -373,12 +373,19 @@
         return { label: `Tool: ${payload.name}`, content: argsPreview, style: 'bg-purple-50 border-purple-200' };
       }
       case 'tool_output': {
-        const resultText = payload.content.map((c: any) => c.text || '[non-text]').join('\n');
+        const resultText = payload.content
+          .map((c) => {
+            if (typeof c === 'object' && c !== null && 'text' in c && typeof c.text === 'string') {
+              return c.text;
+            }
+            return '[non-text]';
+          })
+          .join('\n');
         const preview = truncateText(resultText, 200);
         return { label: 'Tool Output', content: preview, style: 'bg-gray-50 border-gray-200' };
       }
       case 'reasoning': {
-        const summaryText = payload.summary?.map((s: any) => s.text).join('\n');
+        const summaryText = payload.summary?.map((s) => s.text).join('\n');
         if (!summaryText)
           return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
         return { label: 'Reasoning', content: summaryText, style: 'bg-yellow-50 border-yellow-200', isMarkdown: true };

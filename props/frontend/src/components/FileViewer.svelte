@@ -3,7 +3,8 @@
   import { page } from '$app/stores';
   import { base } from '$app/paths';
   import { CheckCircle, XCircle } from 'lucide-svelte';
-  import type { FileContentResponse, TpInfo, FpInfo, FileLocationInfo, LineRange } from '../lib/api/client';
+  import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
+  import type { IssueMarker } from '../lib/types';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
@@ -23,18 +24,8 @@
   const highlightedLines = $derived(highlightLines(lines, language));
 
   // Flatten occurrences that reference this file
-  interface OccurrenceMarker {
-    kind: 'tp' | 'fp';
-    issueId: string;
-    occurrenceId: string;
-    rationale: string;
-    note?: string;
-    ranges: LineRange[] | null;
-    allFiles: FileLocationInfo[];
-  }
-
-  const occurrences = $derived.by<OccurrenceMarker[]>(() => {
-    const result: OccurrenceMarker[] = [];
+  const occurrences = $derived.by<IssueMarker[]>(() => {
+    const result: IssueMarker[] = [];
 
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
@@ -74,8 +65,8 @@
   });
 
   // Map line numbers to occurrences (0-based line index)
-  const lineToOccurrences = $derived.by<Map<number, OccurrenceMarker[]>>(() => {
-    const map = new Map<number, OccurrenceMarker[]>();
+  const lineToOccurrences = $derived.by<Map<number, IssueMarker[]>>(() => {
+    const map = new Map<number, IssueMarker[]>();
 
     for (const occ of occurrences) {
       if (!occ.ranges) {
@@ -168,7 +159,7 @@
           {#each lineOccs as occ}
             {@const isFirstLine =
               !occ.ranges || occ.ranges.length === 0 ? idx === 0 : occ.ranges.some((r) => r.start_line === idx)}
-            {#if isFirstLine}
+            {#if isFirstLine && occ.occurrenceId}
               {@const occId = `${occ.kind}-${occ.issueId}-${occ.occurrenceId}`}
               {@const isExpanded = expandedOccurrences.has(occId)}
               {@const isTargeted = targetOccurrenceId === occ.occurrenceId}

@@ -8,8 +8,10 @@
   - COMPLETED: Defined `MissedOccurrence` interface with proper types (tp_id, occurrence_id, tp_rationale, occ_note)
 - [x] **Remove `any` from CritiqueFileViewer.svelte** - ~~Use type inference instead of explicit `any` annotations~~
   - COMPLETED: Imported `ReportedIssueOccurrenceInfo`, removed inline `any` types
-- [ ] **Type mockData properly** - Use generated schema types for all mock data instead of `any` (src/stories/mockData.ts:1-5)
-- [ ] **Fix RunDetail event content types** - Use proper discriminated union types instead of `any` for payload content items (src/components/RunDetail.svelte:367,372)
+- [x] **Type mockData properly** - ~~Use generated schema types for all mock data instead of `any`~~
+  - COMPLETED: Replaced `any` types with proper schema types (OverviewResponse, SnapshotDetailResponse, etc.)
+- [x] **Fix RunDetail event content types** - ~~Use proper discriminated union types instead of `any` for payload content items~~
+  - COMPLETED: Replaced `any` with proper type narrowing for tool_output content and reasoning summary
 
 ### Medium Priority (Maintenance burden)
 
@@ -19,8 +21,10 @@
 - [x] **Replace inline LineRange types** - ~~Use imported `LineRange` type instead of inline definitions~~
   - COMPLETED: Replaced in FileViewer.svelte:32, using imported `LineRange` type
   - Note: Test/story files may still have inline types (low priority)
-- [ ] **Eliminate redundant OccurrenceMarker interface** - Use composed types from backend schema (src/components/FileViewer.svelte:26-37)
-- [ ] **Consider consolidating IssueMarker interface** - Evaluate if this adds value or should use backend types directly (src/components/CritiqueFileViewer.svelte:31-40)
+- [x] **Eliminate redundant OccurrenceMarker interface** - ~~Use composed types from backend schema~~
+  - COMPLETED: Created shared `IssueMarker` type in types.ts, removed inline OccurrenceMarker from FileViewer.svelte
+- [x] **Consider consolidating IssueMarker interface** - ~~Evaluate if this adds value or should use backend types directly~~
+  - COMPLETED: Consolidated into shared `IssueMarker` type in types.ts, used by both FileViewer.svelte and CritiqueFileViewer.svelte
 
 ## Domain Object Linking
 

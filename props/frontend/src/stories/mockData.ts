@@ -1,41 +1,69 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Mock data for Storybook stories
-// Using any types to avoid schema mismatches since these are just visual examples
+// Using generated schema types for type safety
 
-export const mockOverview: any = {
+import type { components } from '../lib/api/schema';
+
+type OverviewResponse = components['schemas']['OverviewResponse'];
+type SnapshotDetailResponse = components['schemas']['SnapshotDetailResponse'];
+type FileTreeResponse = components['schemas']['FileTreeResponse'];
+type SnapshotSummary = components['schemas']['SnapshotSummary'];
+
+export const mockOverview: OverviewResponse = {
   definitions: [
     {
       definition_id: 'def-001',
-      description: 'Check for SQL injection vulnerabilities',
-      critic_type: 'security',
-      agent_type: 'code_analyzer',
-      enabled: true,
+      created_at: '2025-01-15T10:00:00Z',
+      stats: {
+        train: {
+          whole_snapshot: {
+            recall_stats: { n: 10, mean: 0.75, min: 0.5, max: 1.0, lcb95: 0.65, ucb95: 0.85 },
+            n_examples: 10,
+            zero_count: 1,
+            status_counts: { completed: 8, in_progress: 2 },
+            total_available: 45,
+          },
+        },
+        valid: {
+          whole_snapshot: {
+            recall_stats: { n: 5, mean: 0.68, min: 0.4, max: 0.9, lcb95: 0.55, ucb95: 0.81 },
+            n_examples: 5,
+            zero_count: 0,
+            status_counts: { completed: 5 },
+            total_available: 8,
+          },
+        },
+      },
     },
     {
       definition_id: 'def-002',
-      description: 'Detect XSS vulnerabilities in templates',
-      critic_type: 'security',
-      agent_type: 'code_analyzer',
-      enabled: true,
+      created_at: '2025-01-10T14:30:00Z',
+      stats: {
+        train: {
+          file_set: {
+            recall_stats: { n: 15, mean: 0.82, min: 0.6, max: 1.0, lcb95: 0.75, ucb95: 0.89 },
+            n_examples: 15,
+            zero_count: 2,
+            status_counts: { completed: 15 },
+            total_available: 23,
+          },
+        },
+      },
     },
     {
       definition_id: 'def-003',
-      description: 'Check for hardcoded credentials',
-      critic_type: 'security',
-      agent_type: 'code_analyzer',
-      enabled: false,
+      created_at: '2025-01-01T00:00:00Z',
+      stats: {},
     },
   ],
   example_counts: {
-    'def-001': { train: 45, test: 12, validation: 8 },
-    'def-002': { train: 23, test: 6, validation: 4 },
-    'def-003': { train: 67, test: 18, validation: 11 },
+    train: { whole_snapshot: 45, file_set: 23 },
+    valid: { whole_snapshot: 8, file_set: 4 },
   },
   total_definitions: 3,
 };
 
-export const mockSnapshotDetail: any = {
-  slug: 'project-snapshot-v1.0',
+export const mockSnapshotDetail: SnapshotDetailResponse = {
+  slug: 'project/snapshot-v1',
   split: 'test',
   created_at: '2025-01-10T14:00:00Z',
   true_positives: [
@@ -45,12 +73,13 @@ export const mockSnapshotDetail: any = {
       occurrences: [
         {
           occurrence_id: 'occ-tp-001',
-          files: [{ path: 'src/db/queries.py', ranges: [{ start_line: 45, end_line: 50 }] }],
+          files: [{ path: 'src/db/queries.py', ranges: [{ start_line: 45, end_line: 50, note: null }] }],
           note: 'Direct string concatenation with user input',
           critic_scopes_expected_to_recall: [['security', 'sql-injection']],
           graders_match_only_if_reported_on: null,
         },
       ],
+      created_at: '2025-01-10T14:00:00Z',
     },
     {
       tp_id: 'tp-002',
@@ -58,12 +87,13 @@ export const mockSnapshotDetail: any = {
       occurrences: [
         {
           occurrence_id: 'occ-tp-002',
-          files: [{ path: 'templates/user_profile.html', ranges: [{ start_line: 23, end_line: 25 }] }],
+          files: [{ path: 'templates/user_profile.html', ranges: [{ start_line: 23, end_line: 25, note: null }] }],
           note: null,
           critic_scopes_expected_to_recall: [['security', 'xss']],
           graders_match_only_if_reported_on: null,
         },
       ],
+      created_at: '2025-01-10T14:00:00Z',
     },
   ],
   false_positives: [
@@ -73,17 +103,18 @@ export const mockSnapshotDetail: any = {
       occurrences: [
         {
           occurrence_id: 'occ-fp-001',
-          files: [{ path: 'src/db/safe_queries.py', ranges: [{ start_line: 67, end_line: 70 }] }],
+          files: [{ path: 'src/db/safe_queries.py', ranges: [{ start_line: 67, end_line: 70, note: null }] }],
           note: 'Actually safe - uses ORM query builder',
           relevant_files: ['src/db/models.py'],
           graders_match_only_if_reported_on: null,
         },
       ],
+      created_at: '2025-01-10T14:00:00Z',
     },
   ],
 };
 
-export const mockSnapshotTree: any = {
+export const mockSnapshotTree: FileTreeResponse = {
   tree: [
     {
       name: 'src',
@@ -100,13 +131,7 @@ export const mockSnapshotTree: any = {
           fp_count: 1,
           children: [
             { name: 'queries.py', path: 'src/db/queries.py', is_dir: false, tp_count: 1, fp_count: 0 },
-            {
-              name: 'safe_queries.py',
-              path: 'src/db/safe_queries.py',
-              is_dir: false,
-              tp_count: 0,
-              fp_count: 1,
-            },
+            { name: 'safe_queries.py', path: 'src/db/safe_queries.py', is_dir: false, tp_count: 0, fp_count: 1 },
           ],
         },
       ],
@@ -130,28 +155,54 @@ export const mockSnapshotTree: any = {
   ],
 };
 
-export const mockSnapshotsList = [
+export const mockSnapshotsList: SnapshotSummary[] = [
   {
-    slug: 'project-snapshot-v1.0',
-    split: 'test' as const,
+    slug: 'project/snapshot-v1',
+    split: 'test',
     tp_count: 24,
     fp_count: 3,
     created_at: '2025-01-15T10:00:00Z',
   },
   {
-    slug: 'project-snapshot-v0.9',
-    split: 'valid' as const,
+    slug: 'project/snapshot-v0',
+    split: 'valid',
     tp_count: 18,
     fp_count: 2,
     created_at: '2025-01-10T14:30:00Z',
   },
   {
-    slug: 'baseline-snapshot',
-    split: 'train' as const,
+    slug: 'baseline/snapshot',
+    split: 'train',
     tp_count: 156,
     fp_count: 12,
     created_at: '2025-01-01T00:00:00Z',
   },
 ];
 
-export const mockExampleDetail: any = null;
+type ExampleDetailResponse = components['schemas']['ExampleDetailResponse'];
+
+export const mockExampleDetail: ExampleDetailResponse = {
+  snapshot_slug: 'project/snapshot-v1',
+  example_kind: 'whole_snapshot',
+  files_hash: null,
+  split: 'valid',
+  recall_denominator: 5,
+  files: null,
+  definitions: [
+    {
+      definition_id: 'def-001',
+      model: 'gpt-5.1-codex-mini',
+      n_runs: 3,
+      status_counts: { completed: 3 },
+      credit_stats: { n: 3, mean: 0.8, min: 0.6, max: 1.0, lcb95: 0.65, ucb95: 0.95 },
+    },
+    {
+      definition_id: 'def-002',
+      model: 'gpt-5.1-codex-mini',
+      n_runs: 2,
+      status_counts: { completed: 2 },
+      credit_stats: { n: 2, mean: 0.6, min: 0.4, max: 0.8, lcb95: null, ucb95: null },
+    },
+  ],
+  credit_stats: { n: 5, mean: 0.72, min: 0.4, max: 1.0, lcb95: 0.58, ucb95: 0.86 },
+};
