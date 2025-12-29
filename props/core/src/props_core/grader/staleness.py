@@ -196,15 +196,22 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             .all()
         )
 
-        # TODO: N+1 query - session.get() for each grader run in a loop.
-        # Fix: Collect all graded_critic_run_ids, fetch with .filter().in_(), build lookup dict.
+        # Batch-fetch all critic runs to avoid N+1 query
+        graded_critic_run_ids = [run.grader_config().graded_agent_run_id for run in grader_runs]
+        critic_runs_list = (
+            session.query(AgentRun).filter(AgentRun.agent_run_id.in_(graded_critic_run_ids)).all()
+            if graded_critic_run_ids
+            else []
+        )
+        critic_runs_by_id = {run.agent_run_id: run for run in critic_runs_list}
+
         for grader_run in grader_runs:
             grader_config = grader_run.grader_config()
             stored_snapshot = grader_config.canonical_issues_snapshot
             graded_critic_run_id = grader_config.graded_agent_run_id
 
-            # Get the critic run to find example specification
-            critic_run = session.get(AgentRun, graded_critic_run_id)
+            # Get the critic run from lookup dict
+            critic_run = critic_runs_by_id.get(graded_critic_run_id)
             if not critic_run:
                 raise ValueError(f"Critic run {graded_critic_run_id} not found for grader {grader_run.agent_run_id}")
 

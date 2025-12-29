@@ -100,14 +100,12 @@ class DatabaseConfig:
 
     @property
     def admin_for_container(self) -> DbConnectionConfig:
-        """Connection config for container-to-container access.
+        """Connection config for container-to-container access with admin privileges.
 
         Uses container_name as host and container_port for Docker network communication.
-        Use this for privileged agents (like grader) that need full database access.
 
-        For scoped agents with temporary users, use for_container_user() instead.
-
-        TODO: Grader should have read-only access, not full admin privileges.
+        NOTE: This provides full admin access. Most agents should use for_container_user()
+        with RLS-scoped temporary users instead. Grader and critic agents use RLS scoping.
 
         Raises:
             ValueError: If container_name or container_port is None
