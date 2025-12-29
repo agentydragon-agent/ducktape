@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
 from datetime import datetime
 import io
 import tarfile
@@ -108,30 +109,21 @@ class SnapshotDetailResponse(BaseModel):
 
 def _build_file_locations_from_ranges(ranges: list[OccurrenceRangeORM]) -> list[FileLocationInfo]:
     """Convert ORM ranges to FileLocationInfo list."""
-    from collections import defaultdict
-
     by_file: dict[str, list[LineRange]] = defaultdict(list)
     for range_orm in ranges:
-        path_str = str(range_orm.file_path)
-        by_file[path_str].append(
+        by_file[str(range_orm.file_path)].append(
             LineRange(
                 start_line=range_orm.start_line,
                 end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
                 note=range_orm.note,
             )
         )
-
     return [FileLocationInfo(path=path, ranges=ranges_list) for path, ranges_list in sorted(by_file.items())]
 
 
 def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
     """Get critic_scopes_expected_to_recall paths from occurrence triggers."""
-    result = []
-    for trigger in occ.triggers:
-        if trigger.file_set:
-            paths = sorted(m.file_path for m in trigger.file_set.members)
-            result.append(paths)
-    return sorted(result, key=lambda x: x[0] if x else "")
+    return [sorted(m.file_path for m in trigger.file_set.members) for trigger in occ.triggers if trigger.file_set]
 
 
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
@@ -347,20 +339,12 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
         )
 
         # Count occurrences per file
-        tp_counts_by_file: dict[str, int] = {}
-        fp_counts_by_file: dict[str, int] = {}
-
-        for tp in tps:
-            for occ in tp.occurrences:
-                for range_orm in occ.ranges:
-                    file_path = str(range_orm.file_path)
-                    tp_counts_by_file[file_path] = tp_counts_by_file.get(file_path, 0) + 1
-
-        for fp in fps:
-            for occ in fp.occurrences:
-                for range_orm in occ.ranges:
-                    file_path = str(range_orm.file_path)
-                    fp_counts_by_file[file_path] = fp_counts_by_file.get(file_path, 0) + 1
+        tp_counts_by_file = Counter(
+            str(range_orm.file_path) for tp in tps for occ in tp.occurrences for range_orm in occ.ranges
+        )
+        fp_counts_by_file = Counter(
+            str(range_orm.file_path) for fp in fps for occ in fp.occurrences for range_orm in occ.ranges
+        )
 
         # Build tree structure
         root_nodes: dict[str, FileTreeNode] = {}

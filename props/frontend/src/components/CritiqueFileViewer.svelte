@@ -1,13 +1,13 @@
 <script lang="ts">
   import 'highlight.js/styles/github.css';
-  import type { FileContentResponse, TpInfo, FpInfo, GradingEdgeInfo } from '../lib/api/client';
+  import type { FileContentResponse, TpInfo, FpInfo, GradingEdgeInfo, ReportedIssueInfo } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
 
   interface LineRange {
     start_line: number;
-    end_line: number;
+    end_line?: number | null;
     note?: string | null;
   }
 
@@ -16,19 +16,11 @@
     ranges: LineRange[] | null;
   }
 
-  interface CritiqueIssue {
-    id: string;
-    rationale: string;
-    note?: string;
-    ranges: LineRange[] | null;
-    allFiles: FileLocation[];
-  }
-
   interface Props {
     file: FileContentResponse;
     tps: TpInfo[];
     fps: FpInfo[];
-    critiqueIssues: CritiqueIssue[];
+    critiqueIssues: ReportedIssueInfo[];
     gradingEdges: GradingEdgeInfo[];
   }
 
@@ -92,17 +84,21 @@
 
     // Add critique issues
     for (const issue of critiqueIssues) {
-      const fileLocation = issue.allFiles.find((f) => f.path === file.path);
+      // Flatten all files from all occurrences
+      const allFiles = issue.occurrences.flatMap((occ: any) => occ.files);
+      const fileLocation = allFiles.find((f: any) => f.path === file.path);
       if (fileLocation) {
         // Find grading edges for this critique issue
-        const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.id);
+        const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.issue_id);
+        // Use first occurrence note (occurrence notes take precedence), convert null to undefined
+        const note = issue.occurrences[0]?.note ?? undefined;
         result.push({
           kind: 'critique',
-          issueId: issue.id,
+          issueId: issue.issue_id,
           rationale: issue.rationale,
-          note: issue.note,
+          note,
           ranges: fileLocation.ranges,
-          allFiles: issue.allFiles,
+          allFiles,
           gradingEdges: edges,
         });
       }
@@ -126,7 +122,7 @@
         // Specific ranges
         for (const range of issue.ranges) {
           const startIdx = range.start_line;
-          const endIdx = range.end_line;
+          const endIdx = range.end_line ?? range.start_line;
           for (let i = startIdx; i <= endIdx; i++) {
             const existing = map.get(i) || [];
             map.set(i, [...existing, issue]);
@@ -146,7 +142,7 @@
       if (issue.ranges) {
         for (const range of issue.ranges) {
           if (range.note) {
-            const endIdx = range.end_line;
+            const endIdx = range.end_line ?? range.start_line;
             const existing = map.get(endIdx) || [];
             map.set(endIdx, [...existing, { issue, range }]);
           }

@@ -86,21 +86,29 @@ const mockFPs: any = [
   },
 ];
 
-// Mock critique issues from agent run
+// Mock critique issues from agent run (matches ReportedIssueInfo structure)
 const mockCritiqueIssues: any = [
   {
-    id: 'critique-sql-001',
+    issue_id: 'critique-sql-001',
     rationale: 'Potential SQL injection: User input concatenated into query string',
-    note: 'The username parameter is directly interpolated into the SQL query',
-    ranges: [{ start_line: 13, end_line: 14 }],
-    allFiles: [{ path: 'src/auth/login.py', ranges: [{ start_line: 13, end_line: 14 }] }],
+    occurrences: [
+      {
+        occurrence_id: 'occ-critique-001',
+        note: 'The username parameter is directly interpolated into the SQL query',
+        files: [{ path: 'src/auth/login.py', ranges: [{ start_line: 13, end_line: 14 }] }],
+      },
+    ],
   },
   {
-    id: 'critique-hash-001',
+    issue_id: 'critique-hash-001',
     rationale: 'Weak cryptographic hash function: MD5 should not be used for passwords',
-    note: null,
-    ranges: [{ start_line: 20, end_line: 20 }],
-    allFiles: [{ path: 'src/auth/login.py', ranges: [{ start_line: 20, end_line: 20 }] }],
+    occurrences: [
+      {
+        occurrence_id: 'occ-critique-002',
+        note: null,
+        files: [{ path: 'src/auth/login.py', ranges: [{ start_line: 20, end_line: 20 }] }],
+      },
+    ],
   },
 ];
 

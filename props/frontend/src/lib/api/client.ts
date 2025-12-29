@@ -199,6 +199,9 @@ export type SnapshotSummary = components['schemas']['SnapshotSummary'];
 export type SnapshotDetailResponse = components['schemas']['SnapshotDetailResponse'];
 export type TpInfo = components['schemas']['TpInfo'];
 export type FpInfo = components['schemas']['FpInfo'];
+export type ReportedIssueInfo = components['schemas']['ReportedIssueInfo'];
+export type ReportedIssueOccurrenceInfo = components['schemas']['ReportedIssueOccurrenceInfo'];
+export type FileLocationInfo = components['schemas']['FileLocationInfo'];
 
 export async function fetchSnapshots() {
   const { data, error } = await api.GET('/api/gt/snapshots');

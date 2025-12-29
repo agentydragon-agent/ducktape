@@ -10,7 +10,10 @@
     issueId: string;
     rationale: string;
     note?: string;
-    allFiles?: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+    allFiles?: Array<{
+      path: string;
+      ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
+    }>;
     expanded?: boolean;
     onToggle?: () => void;
     gradingEdges?: GradingEdgeInfo[]; // For critique issues - show what they matched

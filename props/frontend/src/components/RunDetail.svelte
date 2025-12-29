@@ -144,8 +144,8 @@
 
       // Files from critique issues
       for (const issue of criticRun.reported_issues) {
-        for (const location of issue.occurrences.flatMap((o) => o.locations)) {
-          allFilePaths.add(location.file);
+        for (const fileLocation of issue.occurrences.flatMap((o: any) => o.files)) {
+          allFilePaths.add(fileLocation.path);
         }
       }
 
@@ -631,21 +631,7 @@
                 file={fileContent}
                 tps={snapshotDetail.true_positives}
                 fps={snapshotDetail.false_positives}
-                critiqueIssues={run.reported_issues.map((issue) => ({
-                  id: issue.issue_id,
-                  rationale: issue.rationale,
-                  note: undefined,
-                  ranges: null,
-                  allFiles: issue.occurrences.flatMap((o) =>
-                    o.locations.map((loc) => ({
-                      path: loc.file,
-                      ranges:
-                        loc.start_line != null && loc.end_line != null
-                          ? [{ start_line: loc.start_line, end_line: loc.end_line }]
-                          : null,
-                    }))
-                  ),
-                }))}
+                critiqueIssues={run.reported_issues}
                 gradingEdges={edges}
               />
             {/each}

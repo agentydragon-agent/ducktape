@@ -21,6 +21,7 @@ from props_core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember,
 from props_core.db.session import get_session
 from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleKind, ExampleSpec
+from props_core.models.true_positive import LineRange
 from props_core.splits import Split
 from pydantic import BaseModel, Field, ValidationError
 
@@ -117,12 +118,11 @@ class GradingEdgeInfo(BaseModel):
     rationale: str
 
 
-class FileLocation(BaseModel):
-    """File location with optional line range."""
+class FileLocationInfo(BaseModel):
+    """File with optional line ranges (matches ground truth structure)."""
 
-    file: str
-    start_line: int | None = None
-    end_line: int | None = None
+    path: str
+    ranges: list[LineRange] | None
 
 
 class ReportedIssueOccurrenceInfo(BaseModel):
@@ -130,7 +130,7 @@ class ReportedIssueOccurrenceInfo(BaseModel):
 
     occurrence_id: str
     note: str | None
-    locations: list[FileLocation]
+    files: list[FileLocationInfo]
 
 
 class ReportedIssueInfo(BaseModel):
@@ -720,6 +720,29 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                 )
 
             # Get reported issues for critic runs
+            def _group_locations_by_file(locations: list) -> list[FileLocationInfo]:
+                """Group flat location anchors by file into FileLocationInfo structure."""
+                from collections import defaultdict
+
+                by_file: dict[str, list[LineRange]] = defaultdict(list)
+                for loc in locations:
+                    file_path = loc["file"]
+                    start_line = loc.get("start_line")
+                    end_line = loc.get("end_line")
+                    if start_line is not None:
+                        by_file[file_path].append(
+                            LineRange(
+                                start_line=start_line, end_line=end_line if end_line != start_line else None, note=None
+                            )
+                        )
+                    else:
+                        # Whole file
+                        by_file[file_path] = []
+                return [
+                    FileLocationInfo(path=path, ranges=ranges_list if ranges_list else None)
+                    for path, ranges_list in sorted(by_file.items())
+                ]
+
             reported_issues = [
                 ReportedIssueInfo(
                     issue_id=issue.issue_id,
@@ -728,7 +751,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                         ReportedIssueOccurrenceInfo(
                             occurrence_id=occ.occurrence_id,
                             note=occ.note,
-                            locations=[FileLocation(**loc) for loc in occ.locations],
+                            files=_group_locations_by_file(occ.locations),
                         )
                         for occ in issue.occurrences
                     ],
