@@ -19,13 +19,7 @@ from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_server.approvals import load_default_policy_source
 from agent_server.mcp.approval_policy.engine import PolicyEngine
-from agent_server.mcp.chat.server import (
-    CHAT_ASSISTANT_SERVER_NAME,
-    CHAT_HUMAN_SERVER_NAME,
-    ChatAuthor,
-    ChatServer,
-    ChatStorePersisted,
-)
+from agent_server.mcp.chat.server import attach_persisted_chat_servers
 from agent_server.mcp.loop.server import LoopServer
 from agent_server.mcp.runtime.server import RuntimeServer
 from agent_server.mcp.ui.server import UiServer
@@ -43,6 +37,7 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.container_session import ContainerOptions
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.snapshots import SamplingSnapshot, ServerEntry
 from openai_utils.client_factory import build_client
 from openai_utils.model import OpenAIModelProto, SystemMessage
@@ -98,17 +93,21 @@ class AgentContainerCompositor(Compositor):
         # Mount agent-specific servers (all pinned)
 
         # Loop control (agent-only surface)
-        self.loop = await self.mount_inproc("loop", LoopServer(), pinned=True)
+        self.loop = await self.mount_inproc(MCPMountPrefix("loop"), LoopServer(), pinned=True)
 
         # Policy servers (from approval engine)
-        self.policy_reader = await self.mount_inproc("policy_reader", self._approval_engine.reader, pinned=True)
+        self.policy_reader = await self.mount_inproc(
+            MCPMountPrefix("policy_reader"), self._approval_engine.reader, pinned=True
+        )
 
-        self.policy_proposer = await self.mount_inproc("policy_proposer", self._approval_engine.proposer, pinned=True)
+        self.policy_proposer = await self.mount_inproc(
+            MCPMountPrefix("policy_proposer"), self._approval_engine.proposer, pinned=True
+        )
 
         # Conditionally mount UI and runtime (iff ui_bus is not None)
         if self._ui_bus is not None:
             # UI server
-            self.ui = await self.mount_inproc("ui", UiServer(self._ui_bus), pinned=True)
+            self.ui = await self.mount_inproc(MCPMountPrefix("ui"), UiServer(self._ui_bus), pinned=True)
 
             # Runtime exec server
             runtime_image = resolve_runtime_image()
@@ -128,17 +127,11 @@ class AgentContainerCompositor(Compositor):
                 },
             )
             self.runtime = await self.mount_inproc(
-                "runtime", RuntimeServer(self._async_docker_client, opts), pinned=True
+                MCPMountPrefix("runtime"), RuntimeServer(self._async_docker_client, opts), pinned=True
             )
 
-            # Attach persisted chat servers (separate from 7 core servers)
-            # Inline: ChatStorePersisted + two ChatServers for human/assistant
-            store = ChatStorePersisted(persistence=self._persistence, agent_id=self._agent_id)
-            human = ChatServer(author=ChatAuthor.USER, store=store)
-            assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
-            store.register_servers(human=human, assistant=assistant)
-            await self.mount_inproc(CHAT_HUMAN_SERVER_NAME, human)
-            await self.mount_inproc(CHAT_ASSISTANT_SERVER_NAME, assistant)
+            # Attach persisted chat servers
+            await attach_persisted_chat_servers(self, persistence=self._persistence, agent_id=self._agent_id)
         else:
             self.ui = None
             self.runtime = None

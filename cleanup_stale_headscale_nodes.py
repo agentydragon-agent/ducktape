@@ -16,28 +16,16 @@ import argparse
 from datetime import UTC, datetime
 import json
 import subprocess
-import sys
 from typing import Any
 
 
 def run_headscale_command(args: list[str]) -> dict[str, Any]:
     """Run a headscale command and return JSON output."""
     cmd = ["headscale", *args]
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        if args[-1] == "json":
-            return json.loads(result.stdout)
-        return {"output": result.stdout}
-    except subprocess.CalledProcessError as e:
-        print(f"Error running headscale command: {e}", file=sys.stderr)
-        print(f"Command: {' '.join(cmd)}", file=sys.stderr)
-        if e.stderr:
-            print(f"Error output: {e.stderr}", file=sys.stderr)
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON output: {e}", file=sys.stderr)
-        print(f"Raw output: {result.stdout}", file=sys.stderr)
-        sys.exit(1)
+    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+    if args[-1] == "json":
+        return json.loads(result.stdout)
+    return {"output": result.stdout}
 
 
 def get_all_nodes() -> list[dict[str, Any]]:
@@ -136,20 +124,16 @@ def select_nodes_for_deletion(nodes: list[dict[str, Any]], all_offline: bool = F
     print(f"\nFound {len(offline_nodes)} offline nodes:")
     display_nodes(offline_nodes)
 
-    try:
-        while True:
-            response = input(f"\nDelete all {len(offline_nodes)} offline nodes? (y/n/list): ").lower().strip()
-            if response in {"y", "yes"}:
-                return [node["id"] for node in offline_nodes]
-            if response in {"n", "no"}:
-                return []
-            if response == "list":
-                display_nodes(offline_nodes)
-            else:
-                print("Please enter 'y', 'n', or 'list'")
-    except EOFError:
-        print("\nNo interactive input available. Use --all-offline flag for automated deletion.")
-        return []
+    while True:
+        response = input(f"\nDelete all {len(offline_nodes)} offline nodes? (y/n/list): ").lower().strip()
+        if response in {"y", "yes"}:
+            return [node["id"] for node in offline_nodes]
+        if response in {"n", "no"}:
+            return []
+        if response == "list":
+            display_nodes(offline_nodes)
+        else:
+            print("Please enter 'y', 'n', or 'list'")
 
 
 def delete_nodes(node_ids: list[int], dry_run: bool = False, force: bool = False) -> None:
@@ -179,15 +163,9 @@ def delete_nodes(node_ids: list[int], dry_run: bool = False, force: bool = False
         progress_percent = (i / len(node_ids)) * 100
         print(f"[{i:>3}/{len(node_ids):>3}] ({progress_percent:5.1f}%) Deleting node {node_id}... ", end="", flush=True)
 
-        try:
-            cmd = ["nodes", "delete", "-i", str(node_id), "--force"]
-
-            run_headscale_command(cmd)
-            print("✓")
-            deleted_count += 1
-        except Exception as e:
-            print(f"✗ ({e})")
-            failed_count += 1
+        run_headscale_command(["nodes", "delete", "-i", str(node_id), "--force"])
+        print("✓")
+        deleted_count += 1
 
     print(f"\nDeletion complete: {deleted_count} deleted, {failed_count} failed")
 

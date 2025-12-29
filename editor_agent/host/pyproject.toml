@@ -5,7 +5,7 @@ description = "Host-side orchestration for editor agent"
 requires-python = ">=3.12"
 dependencies = [
     "editor-agent-runtime",
-    "agent-pkg",
+    "agent-pkg-host",
     "agent-core",
     "mcp-infra",
     "net-util",
@@ -17,7 +17,7 @@ dependencies = [
 
 [tool.uv.sources]
 editor-agent-runtime = { workspace = true }
-agent-pkg = { workspace = true }
+agent-pkg-host = { workspace = true }
 agent-core = { workspace = true }
 mcp-infra = { workspace = true }
 net-util = { workspace = true }
@@ -41,4 +41,4 @@ packages = ["src/editor_agent"]
 python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
-mypy_path = "editor_agent/runtime/src:mcp_utils/src:cli_util/src:agent_pkg_runtime/src:mcp_infra/src:agent_core/src:openai_utils/src:agent_pkg/src"
+mypy_path = "editor_agent/runtime/src:mcp_utils/src:cli_util/src:agent_pkg/runtime/src:mcp_infra/src:agent_core/src:openai_utils/src:agent_pkg/host/src"

@@ -24,13 +24,14 @@ from agent_core.loop_control import RequireAnyTool
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.display import CompactDisplayHandler
 from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 from props_core.noop_classifier.models import Classification, ClassifierState, SubmitClassificationsInput, SubmitResult
 
 logger = logging.getLogger(__name__)
 
 # MCP mount prefix for classifier server
-CLASSIFIER_MOUNT_PREFIX = "classifier"
+CLASSIFIER_MOUNT_PREFIX = MCPMountPrefix("classifier")
 
 # =============================================================================
 # System Prompt

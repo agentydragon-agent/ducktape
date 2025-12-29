@@ -10,6 +10,7 @@ import pytest
 from mcp_infra.compositor.admin import CompositorAdminServer
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
@@ -25,7 +26,9 @@ async def mounted_compositor_admin(compositor) -> Mounted[CompositorAdminServer]
     conflicts with any production admin server mounting logic.
     """
     admin_server = CompositorAdminServer(compositor=compositor)
-    mounted: Mounted[CompositorAdminServer] = await compositor.mount_inproc("test_compositor_admin", admin_server)
+    mounted: Mounted[CompositorAdminServer] = await compositor.mount_inproc(
+        MCPMountPrefix("test_compositor_admin"), admin_server
+    )
     return mounted
 
 

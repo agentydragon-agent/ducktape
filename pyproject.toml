@@ -1,7 +1,16 @@
+# 2025-12-29: Override rfc3987-syntax with fork that precompiles the Lark parser.
+# Replaced N Lark parsers with one precompiled, ~9x smaller import time (0.8s → 0.09s).
+# Pending upstream merge: https://github.com/willynilly/rfc3987-syntax/pull/11
+[tool.uv]
+override-dependencies = ["rfc3987-syntax"]
+
+[tool.uv.sources]
+rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branch = "adgn/one-parser" }
+
 [tool.uv.workspace]
 members = [
-    "agent_pkg",
-    "agent_pkg_runtime",
+    "agent_pkg/host",
+    "agent_pkg/runtime",
     "adgn",
     "agent_core",
     "agent_server",
@@ -10,6 +19,7 @@ members = [
     "editor_agent/runtime",
     "ember",
     "git_commit_ai",
+    "gmail-archiver",
     "mcp_infra",
     "mcp_utils",
     "net_util",

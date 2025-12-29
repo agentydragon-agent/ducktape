@@ -28,7 +28,7 @@ def _commit_all(repo: pygit2.Repository, message: str) -> None:
 
 
 @pytest.fixture
-def repo_git_ro(tmp_path: Path) -> Path:
+def repo_git_ro(tmp_path: Path) -> pygit2.Repository:
     """Single unified repo for git-ro tests.
 
     Commits:
@@ -58,11 +58,11 @@ def repo_git_ro(tmp_path: Path) -> Path:
     idx.add(str(big.relative_to(repo_path)))
     idx.write()
 
-    return repo_path
+    return repo
 
 
 @pytest.fixture
-async def typed_git_ro(repo_git_ro: Path, make_typed_mcp):
+async def typed_git_ro(repo_git_ro: pygit2.Repository, make_typed_mcp):
     """Async yield fixture providing a TypedClient for git-ro server.
 
     Usage:

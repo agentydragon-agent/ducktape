@@ -12,11 +12,12 @@ from pydantic import BaseModel, Field
 
 from agent_server.persist.sqlite import SQLitePersistence
 from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
-# Server names (mounted in-proc with a shared store)
-CHAT_HUMAN_SERVER_NAME = "chat_human"
-CHAT_ASSISTANT_SERVER_NAME = "chat_assistant"
+# Mount prefixes (mounted in-proc with a shared store)
+CHAT_HUMAN_MOUNT_PREFIX = MCPMountPrefix("chat_human")
+CHAT_ASSISTANT_MOUNT_PREFIX = MCPMountPrefix("chat_assistant")
 
 
 class ChatAuthor(StrEnum):
@@ -310,7 +311,10 @@ class ChatServer(EnhancedFastMCP):
 
 
 async def attach_chat_servers(
-    comp, *, human_name: str = CHAT_HUMAN_SERVER_NAME, assistant_name: str = CHAT_ASSISTANT_SERVER_NAME
+    comp,
+    *,
+    human_prefix: MCPMountPrefix = CHAT_HUMAN_MOUNT_PREFIX,
+    assistant_prefix: MCPMountPrefix = CHAT_ASSISTANT_MOUNT_PREFIX,
 ):
     """Attach chat.human and chat.assistant in-proc backed by a shared store.
 
@@ -321,8 +325,8 @@ async def attach_chat_servers(
     assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
     # Register servers for cross-broadcasts
     store.register_servers(human=human, assistant=assistant)
-    await comp.mount_inproc(human_name, human)
-    await comp.mount_inproc(assistant_name, assistant)
+    await comp.mount_inproc(human_prefix, human)
+    await comp.mount_inproc(assistant_prefix, assistant)
     return store, human, assistant
 
 
@@ -331,13 +335,13 @@ async def attach_persisted_chat_servers(
     *,
     persistence: SQLitePersistence,
     agent_id: str,
-    human_name: str = CHAT_HUMAN_SERVER_NAME,
-    assistant_name: str = CHAT_ASSISTANT_SERVER_NAME,
+    human_prefix: MCPMountPrefix = CHAT_HUMAN_MOUNT_PREFIX,
+    assistant_prefix: MCPMountPrefix = CHAT_ASSISTANT_MOUNT_PREFIX,
 ):
     store = ChatStorePersisted(persistence=persistence, agent_id=agent_id)
     human = ChatServer(author=ChatAuthor.USER, store=store)
     assistant = ChatServer(author=ChatAuthor.ASSISTANT, store=store)
     store.register_servers(human=human, assistant=assistant)
-    await comp.mount_inproc(human_name, human)
-    await comp.mount_inproc(assistant_name, assistant)
+    await comp.mount_inproc(human_prefix, human)
+    await comp.mount_inproc(assistant_prefix, assistant)
     return store, human, assistant

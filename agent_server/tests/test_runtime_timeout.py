@@ -5,6 +5,7 @@ import pytest
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, Exited, TimedOut, make_exec_input
 from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.stubs.typed_stubs import ToolStub
 from mcp_infra.testing.fixtures import make_container_opts
 
@@ -22,7 +23,9 @@ async def test_runtime_per_session_timeout_then_next_call_ok(
 ) -> None:
     """Test runtime timeout and recovery without policy gateway."""
     # Mount runtime server and capture Mounted object
-    mounted_runtime = await compositor.mount_inproc("runtime", _runtime_spec_persession(async_docker_client))
+    mounted_runtime = await compositor.mount_inproc(
+        MCPMountPrefix("runtime"), _runtime_spec_persession(async_docker_client)
+    )
 
     # Cause a host-side timeout: sleep longer than timeout_ms
     # Namespaced exec via Compositor

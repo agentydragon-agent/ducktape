@@ -94,7 +94,7 @@ async def docker_exec_server_py312slim(async_docker_client):
 @pytest.fixture
 async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
     """MCP client with box Docker exec server (no policy gateway)."""
-    await compositor.mount_inproc("box", docker_exec_server_py312slim)
+    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
     return compositor_client
 
 
@@ -134,7 +134,7 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     for name, srv in servers.items():
         if not isinstance(srv, FastMCP):
             raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-        await comp.mount_inproc(name, srv)
+        await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
 @pytest.fixture
@@ -392,7 +392,7 @@ def create_live_agent():
                 if comp is None:
                     raise AssertionError("compositor not initialized on container")
                 for name, server in inproc.items():
-                    await comp.mount_inproc(name, server)
+                    await comp.mount_inproc(MCPMountPrefix(name), server)
                 await c._push_snapshot_and_status()
 
             client.portal.call(_attach_async)
@@ -661,7 +661,7 @@ async def _mount_servers(comp: AgentContainerCompositor, servers: McpServerSpecs
     for name, srv in servers.items():
         if not isinstance(srv, FastMCP):
             raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-        await comp.mount_inproc(name, srv)
+        await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
 async def _create_test_policy_engine(sqlite_persistence, async_docker_client) -> PolicyEngine:

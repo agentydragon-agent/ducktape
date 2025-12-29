@@ -124,7 +124,7 @@ def dev(
         vite_proc = subprocess.Popen(vite_cmd, env=vite_env)
     except FileNotFoundError:
         typer.echo("npm not found. Please install Node/npm for frontend dev mode.")
-        raise typer.Exit(code=2)
+        raise typer.Exit(code=2) from None
 
     try:
         url = urlunparse(("http", f"{host}:{frontend_dev_port}", "", "", "", ""))

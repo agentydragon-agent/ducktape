@@ -30,6 +30,7 @@ from pydantic import ValidationError
 from mcp_infra.compositor.meta_server import CompositorMetaServer
 from mcp_infra.compositor.mount import Mount, MountEvent
 from mcp_infra.compositor.rendering import render_compositor_instructions
+from mcp_infra.constants import COMPOSITOR_META_MOUNT_PREFIX, RESOURCES_MOUNT_PREFIX
 from mcp_infra.mounted import Mounted
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesServer
@@ -406,13 +407,13 @@ class Compositor(FastMCP):
         # Register and notify
         await self._mount_common(validated_prefix, mount)
 
-    async def mount_inproc(self, name: str, server: T, *, pinned: bool = False) -> Mounted[T]:
+    async def mount_inproc(self, prefix: MCPMountPrefix, server: T, *, pinned: bool = False) -> Mounted[T]:
         """Mount in-process FastMCP server and return Mounted wrapper.
 
         Exception-safe: if mount fails, no server is registered and no resources leak.
 
         Args:
-            name: Server name (used in tool prefixes: {name}_{tool})
+            prefix: Mount prefix for tool namespacing ({prefix}_{tool})
             server: FastMCP server instance
             pinned: If True, server won't be unmounted on close()
 
@@ -421,37 +422,30 @@ class Compositor(FastMCP):
 
         Raises:
             RuntimeError: If state is CLOSED
-            ValueError: If name is invalid or already mounted
+            ValueError: If prefix is already mounted
 
         Example:
-            self.runtime = await self.mount_inproc("runtime", ContainerExecServer(...), pinned=True)
+            self.runtime = await self.mount_inproc(RUNTIME_MOUNT_PREFIX, ContainerExecServer(...), pinned=True)
         """
         # Check state
         async with self._state_lock:
             if self._state == CompositorState.CLOSED:
                 raise RuntimeError(f"Cannot mount server - compositor '{self.name}' is closed")
 
-        # Validate mount prefix (MCPMountPrefix constructor validates automatically)
-        try:
-            validated_prefix = MCPMountPrefix(name)
-        except ValidationError as e:
-            error_msg = e.errors()[0]["msg"] if e.errors() else str(e)
-            raise ValueError(f"Invalid mount prefix {name!r}: {error_msg}") from e
-
         # Check for duplicate under lock
         async with self._mount_lock:
-            if validated_prefix in self._mounts:
-                raise ValueError(f"Server '{validated_prefix}' is already mounted")
+            if prefix in self._mounts:
+                raise ValueError(f"Server '{prefix}' is already mounted")
 
         # Create mount and setup (exception-safe internally)
-        mount = Mount(prefix=validated_prefix, pinned=pinned, spec=None)
+        mount = Mount(prefix=prefix, pinned=pinned, spec=None)
         await mount.setup_inproc(server, lambda n: ChildNotificationHandler(self, n))
 
         # Register and notify
-        await self._mount_common(validated_prefix, mount)
+        await self._mount_common(prefix, mount)
 
         # Return Mounted wrapper
-        return Mounted(prefix=validated_prefix, server=server)
+        return Mounted(prefix=prefix, server=server)
 
     async def unmount_server(self, prefix: MCPMountPrefix, *, _allow_pinned: bool = False) -> None:
         """Unmount a specific server.
@@ -585,10 +579,9 @@ class Compositor(FastMCP):
             self._state = CompositorState.ACTIVE
 
         # Mount infrastructure servers (always pinned)
-        self.resources = await self.mount_inproc("resources", ResourcesServer(compositor=self), pinned=True)
-
+        self.resources = await self.mount_inproc(RESOURCES_MOUNT_PREFIX, ResourcesServer(compositor=self), pinned=True)
         self.compositor_meta = await self.mount_inproc(
-            "compositor_meta", CompositorMetaServer(compositor=self), pinned=True
+            COMPOSITOR_META_MOUNT_PREFIX, CompositorMetaServer(compositor=self), pinned=True
         )
 
         return self

@@ -24,8 +24,8 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto
 
-# Server name for agent control (send_prompt, abort)
-AGENT_CONTROL_SERVER_NAME = "agent_control"
+# Mount prefix for agent control (send_prompt, abort)
+AGENT_CONTROL_MOUNT_PREFIX = MCPMountPrefix("agent_control")
 
 logger = logging.getLogger(__name__)
 
@@ -123,7 +123,7 @@ class InfrastructureRegistry:
             raise RuntimeError(f"Agent container {container.agent_id} has no compositor for agent_control mount")
 
         control_server = container.make_control_server()
-        await container._compositor.mount_inproc(AGENT_CONTROL_SERVER_NAME, control_server)
+        await container._compositor.mount_inproc(AGENT_CONTROL_MOUNT_PREFIX, control_server)
         logger.debug(f"Mounted agent_control for internal agent: {container.agent_id}")
 
     async def _create_container(

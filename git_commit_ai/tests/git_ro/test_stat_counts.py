@@ -25,7 +25,7 @@ async def test_git_ro_stat_counts(tmp_path: Path, make_typed_mcp) -> None:
     repo.index.add("file.txt")
     repo.index.write()
 
-    server = GitRoServer(repo_dir)
+    server = GitRoServer(repo)
 
     async with make_typed_mcp(server) as (client, _):
         # Call the git_diff tool with format=stat and staged=True

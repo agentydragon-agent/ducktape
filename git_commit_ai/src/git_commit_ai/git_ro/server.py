@@ -26,7 +26,6 @@ from pydantic import BaseModel, Field
 import pygit2
 from pygit2.enums import BranchType
 
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
@@ -49,8 +48,8 @@ from .formatting import (
     diff_to_file_stats,
 )
 
-# Shared server name constant for clients/tests
-GIT_RO_SERVER_NAME = MCPMountPrefix("git_ro")
+# Shared mount prefix constant for clients/tests
+GIT_RO_MOUNT_PREFIX = MCPMountPrefix("git_ro")
 
 # -------------------------- shared slicing -----------------------------------
 
@@ -199,25 +198,12 @@ class GitRoServer(EnhancedFastMCP):
     ls_files_tool: FunctionTool
     branch_list_tool: FunctionTool
 
-    def __init__(self, git_repo: Path):
-        """Create a read-only Git FastMCP server scoped to a single allowed root.
-
-        Guidance:
-        - Pass a specific repository/worktree root (the directory containing your working tree).
-        - For worktrees, use the worktree directory (the one containing the .git file pointing to
-          .../.git/worktrees/<name>). The server runs libgit2 operations relative to worktree_root.
-
-        Only non-mutating tools are registered. Any attempt to pass a worktree_root outside the
-        configured root results in an error.
-        """
-        root = git_repo.resolve()
-        # Open repository once during initialization (inline _open_repo logic)
-        gitdir = pygit2.discover_repository(str(root))
-        if not gitdir:
-            raise ValueError(f"Not a git repository: {root}")
-        state = pygit2.Repository(gitdir)
-        display = f"Git Read-Only MCP Server: {git_repo.name}"
-        super().__init__(display, instructions=f"Read-only Git tools scoped to repo: {git_repo}")
+    def __init__(self, repo: pygit2.Repository):
+        """Create a read-only Git FastMCP server for an already-opened repository."""
+        state = repo
+        repo_name = Path(repo.workdir or repo.path).name
+        display = f"Git Read-Only MCP Server: {repo_name}"
+        super().__init__(display, instructions=f"Read-only Git tools scoped to repo: {repo_name}")
 
         # Register tools using clean pattern: tool name derived from function name
         def status(input: StatusInput) -> StatusPage:
@@ -407,10 +393,3 @@ class GitRoServer(EnhancedFastMCP):
             return StringListPage(items=items, truncated=truncated, next_offset=next_offset, total_items=total)
 
         self.branch_list_tool = self.flat_model()(branch_list)
-
-
-async def attach_git_ro(comp: Compositor, git_repo: Path, *, name: str = GIT_RO_SERVER_NAME) -> GitRoServer:
-    """Mount read-only Git MCP server in-proc on a Compositor (preferred path)."""
-    server = GitRoServer(git_repo)
-    await comp.mount_inproc(name, server)
-    return server

@@ -22,7 +22,7 @@
       sync.enable = true;
       # Don't use allExtras - it pulls in adgn[gnome] which requires dbus-python
       # and complex system dependencies. Specify needed extras explicitly.
-      sync.extras = ["dev" "orchestration" "gepa"];
+      sync.extras = ["dev"];
     };
   };
 

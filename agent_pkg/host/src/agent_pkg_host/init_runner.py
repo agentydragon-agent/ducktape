@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from fastmcp.client import Client
 
-from agent_pkg.builder import IMAGE_INIT_PATH
+from agent_pkg_host.builder import IMAGE_INIT_PATH
 from mcp_infra.exec.models import BaseExecResult, ExecInput, Exited, TruncatedStream
 from mcp_infra.naming import build_mcp_function
 

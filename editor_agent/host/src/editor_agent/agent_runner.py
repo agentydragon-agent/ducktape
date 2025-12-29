@@ -9,7 +9,7 @@ from agent_core.agent import Agent
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.turn_limit import MaxTurnsHandler
-from agent_pkg import run_init_script
+from agent_pkg_host import run_init_script
 from editor_agent.runner import EditorDockerSession, editor_docker_session, writeback_success
 from editor_agent.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
 from mcp_infra.display import CompactDisplayHandler

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 import sys
 
 from fastmcp.client import Client
@@ -12,7 +11,7 @@ from agent_core.agent import Agent
 from agent_core.handler import BaseHandler, SequenceHandler
 from agent_core.loop_control import Abort, InjectItems, NoAction, RequireAnyTool
 from git_commit_ai.git_ro.server import (
-    GIT_RO_SERVER_NAME,
+    GIT_RO_MOUNT_PREFIX,
     DiffFormat,
     DiffInput,
     GitRoServer,
@@ -149,6 +148,9 @@ class CommitMessage(BaseModel):
     )
 
 
+SUBMIT_MOUNT_PREFIX = MCPMountPrefix("submit_commit_message")
+
+
 @dataclass
 class SubmitState:
     result: CommitMessage | None = None
@@ -171,25 +173,15 @@ class CommitCompositor(Compositor):
     git_ro: Mounted[GitRoServer]
     submit: Mounted[EnhancedFastMCP]
 
-    def __init__(self, repo_root: Path, submit_state: SubmitState):
+    def __init__(self, repo: pygit2.Repository, submit_state: SubmitState):
         super().__init__()
-        self._repo_root = repo_root
+        self._repo = repo
         self._submit_state = submit_state
 
     async def __aenter__(self):
         await super().__aenter__()
-
-        # Mount git_ro server
-        git_server = GitRoServer(self._repo_root)
-        await self.mount_inproc(GIT_RO_SERVER_NAME, git_server)
-        self.git_ro = Mounted(prefix=GIT_RO_SERVER_NAME, server=git_server)
-
-        # Mount submit server
-        submit_server = make_submit_server(self._submit_state)
-        submit_prefix = MCPMountPrefix("submit_commit_message")
-        await self.mount_inproc(submit_prefix, submit_server)
-        self.submit = Mounted(prefix=submit_prefix, server=submit_server)
-
+        self.git_ro = await self.mount_inproc(GIT_RO_MOUNT_PREFIX, GitRoServer(self._repo))
+        self.submit = await self.mount_inproc(SUBMIT_MOUNT_PREFIX, make_submit_server(self._submit_state))
         return self
 
 
@@ -220,8 +212,6 @@ async def generate_commit_message_agent(
     repo: pygit2.Repository, model: str, *, debug: bool = False, amend: bool = False
 ) -> str:
     """Run Agent with git_ro + submit_commit_message MCP servers and return the commit message text."""
-    repo_root = Path(repo.workdir or repo.path).parent
-
     submit_state = SubmitState()
 
     def _build_commit_prompt(is_amend: bool) -> str:
@@ -245,7 +235,7 @@ async def generate_commit_message_agent(
     prompt = _build_commit_prompt(amend)
 
     # Use CommitCompositor to mount servers
-    async with CommitCompositor(repo_root, submit_state) as comp:
+    async with CommitCompositor(repo, submit_state) as comp:
         # Build bootstrap calls - access git_server from Mounted wrapper
         builder = TypedBootstrapBuilder.for_server(comp.git_ro.server)
         bootstrap_calls = make_commit_bootstrap_calls(builder, comp.git_ro.prefix, comp.git_ro.server, amend=amend)

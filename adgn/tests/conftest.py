@@ -13,6 +13,7 @@ import docker  # Only used for pytest_runtest_setup health check (sync hook)
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.types import McpServerSpecs
 
@@ -77,7 +78,7 @@ async def _mount_servers(comp: Compositor, servers: McpServerSpecs) -> None:
     for name, srv in servers.items():
         if not isinstance(srv, FastMCP):
             raise TypeError(f"invalid server for {name!r}: {type(srv).__name__}")
-        await comp.mount_inproc(name, srv)
+        await comp.mount_inproc(MCPMountPrefix(name), srv)
 
 
 @pytest.fixture
@@ -90,7 +91,7 @@ async def mcp_client_echo(make_compositor, echo_spec):
 @pytest.fixture
 async def mcp_client_box(docker_exec_server_py312slim, compositor, compositor_client):
     """MCP client with box Docker exec server (no policy gateway)."""
-    await compositor.mount_inproc("box", docker_exec_server_py312slim)
+    await compositor.mount_inproc(MCPMountPrefix("box"), docker_exec_server_py312slim)
     return compositor_client
 
 

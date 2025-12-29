@@ -9,6 +9,7 @@ from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.testing import NoopOpenAIClient
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage
 
 
@@ -39,7 +40,7 @@ async def test_parallel_tool_calls_reduce_wall_time(
 ):
     # Two tool calls with ~0.30s latency each; if run in parallel, wall time ~0.30-0.45s
     # Mount slow server and capture Mounted object
-    mounted_slow = await compositor.mount_inproc("dummy", slow_server)
+    mounted_slow = await compositor.mount_inproc(MCPMountPrefix("dummy"), slow_server)
 
     tc1 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow", SlowInput())
     tc2 = responses_factory.mcp_tool_call(mounted_slow.prefix, "slow2", Slow2Input())

@@ -87,7 +87,7 @@ def autoclean_inbox(dry_run: DryRunDefaultTrueOption = True, token_file: TokenFi
         console.print(msg)
     console.print()
 
-    display_plan(combined, inbox, console, dry_run=dry_run)
+    display_plan(combined, inbox, console, dry_run=dry_run, group_by_category=True)
 
     # Use batched execution like cli/filters.py does
     if not dry_run and combined.count_operations() > 0:

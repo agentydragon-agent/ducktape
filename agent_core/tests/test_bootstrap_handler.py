@@ -8,7 +8,7 @@ import pytest
 from agent_core.bootstrap_handler import BootstrapHandler
 from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
-from agent_pkg import InitFailedError
+from agent_pkg_host import InitFailedError
 from mcp_infra.exec.models import BaseExecResult, Exited
 from openai_utils.model import FunctionCallItem
 

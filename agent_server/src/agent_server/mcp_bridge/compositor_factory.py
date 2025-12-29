@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from agent_server.mcp_bridge.agents import AgentsManagementServer
 from mcp_infra.compositor.server import Compositor
+from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
     from agent_server.mcp_bridge.registry import InfrastructureRegistry
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Server name for agents management
-AGENTS_SERVER_NAME = "agents"
+AGENTS_SERVER_NAME = MCPMountPrefix("agents")
 
 
 async def create_global_compositor(registry: InfrastructureRegistry) -> Compositor:

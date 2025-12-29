@@ -54,7 +54,7 @@ async def test_direct_inprocess_server(compositor, compositor_client) -> None:
     """Direct (unsandboxed) in-process FastMCP exec tool mounted in a Compositor."""
 
     srv = DirectExecServer()
-    await compositor.mount_inproc("local", srv)
+    await compositor.mount_inproc(MCPMountPrefix("local"), srv)
 
     tools = await compositor_client.list_tools()
     # Tools are composed under the compositor with namespaced tool names

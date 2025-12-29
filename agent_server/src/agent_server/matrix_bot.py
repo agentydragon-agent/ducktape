@@ -25,6 +25,7 @@ from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import BaseExecResult, make_exec_input
 from mcp_infra.mounted import Mounted
 from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.types import NetworkMode
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
@@ -56,7 +57,7 @@ class MatrixBotCompositor(Compositor):
 
         # Mount runtime server (docker exec)
         self.runtime = await self.mount_inproc(
-            "runtime",
+            MCPMountPrefix("runtime"),
             ContainerExecServer(
                 self._docker_client,
                 ContainerOptions(
@@ -80,7 +81,7 @@ class MatrixBotCompositor(Compositor):
             self._bus.push_end_turn()
             return UiEndTurn()
 
-        self.matrix_control = await self.mount_inproc("matrix_control", matrix_control, pinned=True)
+        self.matrix_control = await self.mount_inproc(MCPMountPrefix("matrix_control"), matrix_control, pinned=True)
 
         return self
 
