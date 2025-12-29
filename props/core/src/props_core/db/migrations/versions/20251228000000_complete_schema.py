@@ -2014,6 +2014,71 @@ Used by check_edge_credit_sum trigger function.'
         FOR EACH ROW EXECUTE FUNCTION check_edge_credit_sum()
     """)
 
+    # =========================================================================
+    # 11. Match filter scope enforcement for grading_edges
+    # =========================================================================
+    # Ensures that if a TP/FP occurrence has match_filter_hash set,
+    # edges to it can only come from critique issues reported on files in that set.
+    op.execute("""
+        CREATE FUNCTION check_edge_matches_filter_scope() RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        DECLARE
+            filter_hash TEXT;
+        BEGIN
+            -- Get the match_filter_hash for the target occurrence
+            IF NEW.tp_id IS NOT NULL THEN
+                SELECT match_filter_hash INTO filter_hash
+                FROM true_positive_occurrences
+                WHERE snapshot_slug = NEW.snapshot_slug
+                  AND tp_id = NEW.tp_id
+                  AND occurrence_id = NEW.tp_occurrence_id;
+            ELSE
+                SELECT match_filter_hash INTO filter_hash
+                FROM false_positive_occurrences
+                WHERE snapshot_slug = NEW.snapshot_slug
+                  AND fp_id = NEW.fp_id
+                  AND occurrence_id = NEW.fp_occurrence_id;
+            END IF;
+
+            -- If no filter, allow
+            IF filter_hash IS NULL THEN
+                RETURN NEW;
+            END IF;
+
+            -- Check all files from the critique issue are in the filter's file set
+            IF EXISTS (
+                SELECT 1 FROM reported_issue_occurrences rio
+                WHERE rio.agent_run_id = NEW.critique_run_id
+                  AND rio.issue_id = NEW.critique_issue_id
+                  AND rio.file_path NOT IN (
+                      SELECT file_path FROM file_set_members
+                      WHERE snapshot_slug = NEW.snapshot_slug
+                        AND files_hash = filter_hash
+                  )
+            ) THEN
+                RAISE EXCEPTION 'Critique issue % reports files outside target occurrence match_filter_hash scope (filter: %)',
+                    NEW.critique_issue_id, filter_hash;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$
+    """)
+
+    op.execute("""
+        COMMENT ON FUNCTION check_edge_matches_filter_scope() IS
+        'Validates that grading edges only target occurrences whose match_filter_hash
+includes the files where the critique issue was reported. Prevents matching
+a critique to an occurrence that could not have been found from those files.'
+    """)
+
+    op.execute("""
+        CREATE TRIGGER enforce_edge_filter_scope
+        BEFORE INSERT OR UPDATE ON grading_edges
+        FOR EACH ROW EXECUTE FUNCTION check_edge_matches_filter_scope()
+    """)
+
     # ============================================================================
     # 12. Recreate recall views using grading_edges
     # ============================================================================
