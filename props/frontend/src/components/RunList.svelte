@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { base } from '$app/paths';
   import { runs } from '$lib/stores/runsFeed';
   import { getStatusColor, formatStatus } from '$lib/status';
   import DefinitionIdLink from '$lib/DefinitionIdLink.svelte';
+  import RunIdLink from '$lib/RunIdLink.svelte';
 
   // Filter to show only in-progress runs
   const activeRuns = $derived($runs.filter((r) => r.status === 'in_progress'));
@@ -16,13 +16,10 @@
   {:else}
     <div class="space-y-2">
       {#each activeRuns as run}
-        <a
-          href="{base}/runs/{run.agent_run_id}"
-          class="block w-full text-left p-3 rounded border hover:bg-gray-50 transition-colors"
-        >
+        <div class="block w-full text-left p-3 rounded border hover:bg-gray-50 transition-colors">
           <div class="flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <span class="font-mono text-blue-600 truncate" title={run.agent_run_id}>{run.agent_run_id}</span>
+              <RunIdLink id={run.agent_run_id} />
               <DefinitionIdLink id={run.definition_id} />
             </div>
             <div class="flex items-center gap-2">
@@ -32,7 +29,7 @@
               </span>
             </div>
           </div>
-        </a>
+        </div>
       {/each}
     </div>
   {/if}

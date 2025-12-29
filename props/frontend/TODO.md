@@ -26,52 +26,58 @@
 
 ### Missing Link Helper Components (High Priority)
 
-- [ ] **Create SnapshotLink component** - Links to `/snapshots/{snapshot_slug}`
-  - Usage: ExampleDetail, anywhere snapshot slugs appear
-  - Styling: Follow existing link pattern (`text-blue-600 underline hover:text-blue-800`)
+- [x] **Create SnapshotLink component** - ~~Links to `/snapshots/{snapshot_slug}`~~
+  - COMPLETED: Created SnapshotLink.svelte with formatSnapshotSlug support
+  - Applied in: ExampleDetail
+  - Styling: Follows existing link pattern (`text-blue-600 underline hover:text-blue-800`)
 
-- [ ] **Create OccurrenceLink component** - Links to `/snapshots/{snapshot_slug}/{issue_id}/{occurrence_id}?file={path}`
-  - Props: `snapshotSlug, issueId, occurrenceId, filePath?`
-  - Display: `{issueId}/{occurrenceId}`
-  - Usage: GradingEdges, anywhere TP/FP occurrences are referenced
+- [x] **Create OccurrenceLink component** - ~~Links to `/snapshots/{snapshot_slug}/{issue_id}/{occurrence_id}?file={path}`~~
+  - COMPLETED: Created OccurrenceLink.svelte
+  - Props: `snapshotSlug, issueId, occurrenceId, filePath?, displayText?`
+  - Display: `{issueId}/{occurrenceId}` (or custom displayText)
+  - Applied in: GradingEdges, IssueComment, snapshot detail page
 
-- [ ] **Create IssueIdLink component** - Links to `/snapshots/{snapshot_slug}#{issue_id}`
-  - Props: `snapshotSlug, issueId, kind: 'tp' | 'fp'`
-  - Display: `{issueId}`
-  - May need to create anchor targets in snapshot detail page
+- [x] **Create IssueIdLink component** - ~~Links to `/snapshots/{snapshot_slug}#{issue_id}`~~
+  - COMPLETED: Created IssueIdLink.svelte
+  - Props: `snapshotSlug, issueId, kind: 'tp' | 'fp', displayText?`
+  - Display: `{issueId}` with anchor navigation
 
-- [ ] **Create CritiqueIssueLink component** - Links to `/runs/{agent_run_id}#critique-{issue_id}`
-  - Props: `runId, issueId`
-  - Display: `{issueId}`
-  - Usage: GradingEdges, anywhere critique issue IDs appear
+- [x] **Create CritiqueIssueLink component** - ~~Links to `/runs/{agent_run_id}#critique-{issue_id}`~~
+  - COMPLETED: Created CritiqueIssueLink.svelte
+  - Props: `runId, issueId, displayText?`
+  - Applied in: GradingEdges
 
 ### Missing Link Helper Components (Medium Priority)
 
-- [ ] **Create FileLink component** - Links to `/snapshots/{snapshot_slug}?file={path}`
-  - Props: `snapshotSlug, filePath`
-  - Usage: ExampleDetail file lists, anywhere file paths appear
+- [x] **Create FileLink component** - ~~Links to `/snapshots/{snapshot_slug}?file={path}`~~
+  - COMPLETED: Created FileLink.svelte
+  - Props: `snapshotSlug, filePath, displayText?`
+  - Applied in: ExampleDetail
 
 ### Link Standardization
 
-- [ ] **Refactor GradingEdges to use link components** - Once OccurrenceLink exists, replace all plain text IDs:
-  - src/components/GradingEdges.svelte:62,94,118 (critique_issue_id)
-  - src/components/GradingEdges.svelte:65,68,97,99 (tp_id/fp_id + occurrence_id)
-  - src/components/GradingEdges.svelte:133 (missed occurrences)
+- [x] **Refactor GradingEdges to use link components** - ~~Replace all plain text IDs~~
+  - COMPLETED: Applied CritiqueIssueLink and OccurrenceLink throughout
+  - Added props: `runId?: string`, `snapshotSlug?: string` for contextual linking
+  - All critique issue IDs and occurrence IDs now clickable
 
-- [ ] **Make snapshot occurrence IDs clickable** - Currently just has copy button, make the ID itself a link:
-  - src/routes/snapshots/[...slug]/+page.svelte:211,277
+- [x] **Make snapshot occurrence IDs clickable** - ~~Make the ID itself a link~~
+  - COMPLETED: Applied OccurrenceLink to snapshot detail page (TP/FP tabs)
+  - src/routes/snapshots/[...slug]/+page.svelte: Both occurrence displays now use OccurrenceLink
 
-- [ ] **Fix RunList inconsistency** - Use RunIdLink component instead of plain text:
-  - src/components/RunList.svelte:25
+- [x] **Fix RunList inconsistency** - ~~Use RunIdLink component~~
+  - COMPLETED: Replaced plain text with RunIdLink component
+  - src/components/RunList.svelte: Now uses RunIdLink
 
-- [ ] **Add SnapshotLinks to ExampleDetail** - Link snapshot slugs:
-  - src/components/ExampleDetail.svelte:35,45
+- [x] **Add SnapshotLinks to ExampleDetail** - ~~Link snapshot slugs~~
+  - COMPLETED: Applied SnapshotLink component for snapshot slug display
 
-- [ ] **Add FileLinks to ExampleDetail** - Link file paths in file_set examples:
-  - src/components/ExampleDetail.svelte:72-73
+- [x] **Add FileLinks to ExampleDetail** - ~~Link file paths~~
+  - COMPLETED: Applied FileLink for all files in file_set examples
 
-- [ ] **Make IssueComment grading edges linkable**:
-  - src/components/IssueComment.svelte:81-82
+- [x] **Make IssueComment grading edges linkable** - ~~Make grading edge targets clickable~~
+  - COMPLETED: Applied OccurrenceLink for TP/FP grading edge targets
+  - Added snapshotSlug prop to IssueComment for contextual linking
 
 ## Active Work
 

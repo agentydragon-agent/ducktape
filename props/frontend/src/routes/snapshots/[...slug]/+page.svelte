@@ -11,6 +11,7 @@
   import Breadcrumb from '../../../components/Breadcrumb.svelte';
   import CopyButton from '../../../components/CopyButton.svelte';
   import BackButton from '../../../components/BackButton.svelte';
+  import OccurrenceLink from '$lib/OccurrenceLink.svelte';
   import { createExpansionState } from '$lib/expansionState.svelte';
 
   let { data } = $props();
@@ -208,7 +209,14 @@
                             : ''}"
                         >
                           <div class="flex items-center justify-between">
-                            <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                            <div class="text-xs">
+                              <OccurrenceLink
+                                snapshotSlug={snapshot.slug}
+                                issueId={tp.tp_id}
+                                occurrenceId={occ.occurrence_id}
+                                filePath={occ.files[0]?.path}
+                              />
+                            </div>
                             <CopyButton
                               text={getOccurrenceUrl(tp.tp_id, occ.occurrence_id, occ.files[0]?.path)}
                               label="Copy URL"
@@ -274,7 +282,14 @@
                             : ''}"
                         >
                           <div class="flex items-center justify-between">
-                            <div class="text-xs font-mono text-gray-600">{occ.occurrence_id}</div>
+                            <div class="text-xs">
+                              <OccurrenceLink
+                                snapshotSlug={snapshot.slug}
+                                issueId={fp.fp_id}
+                                occurrenceId={occ.occurrence_id}
+                                filePath={occ.files[0]?.path}
+                              />
+                            </div>
                             <CopyButton
                               text={getOccurrenceUrl(fp.fp_id, occ.occurrence_id, occ.files[0]?.path)}
                               label="Copy URL"
