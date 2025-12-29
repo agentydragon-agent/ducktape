@@ -74,6 +74,40 @@ killed before nix can finish downloading.
 2. Pre-warm nix store with commonly needed packages
 3. Use smaller/faster tool alternatives
 
+### Package Size Analysis
+
+**Individual package sizes (download / unpacked):**
+
+| Package | Download | Unpacked | Closure |
+|---------|----------|----------|---------|
+| direnv | 2.6 MB | 8.6 MB | 53.8 MB |
+| uv | 14.6 MB | 59.5 MB | 105.9 MB |
+| devenv | 6.0 MB | 21.9 MB | **277.0 MB** |
+
+**Why is devenv so large?**
+
+devenv bundles its own nix and cachix:
+```
+devenv-1.11.2 dependencies:
+├── devenv-nix-2.30.4 (wrapper)
+│   └── nix-2.30.4 (3.3 MB) ← duplicate of our nix 2.33.0!
+├── cachix-1.9.1-bin (25 MB)
+├── glibc, openssl, dbus, gcc-lib...
+```
+
+devenv needs a specific nix version for API compatibility. This means we download nix twice:
+- Once via the installer (nix 2.33.0)
+- Again as a devenv dependency (nix 2.30.4)
+
+**Alternatives investigated:**
+- `apt-cache search devenv`: Not available in apt
+- Minimal install (direnv + uv only): ~160 MB, might fit in timeout
+- Skip devenv entirely: Loses reproducible environment, but Python work still possible
+
+**Pre-installed in container:**
+- `psql` 16.11 ✓ (no install needed)
+- `docker` / `podman` ✗ (not available, and daemon likely not running anyway)
+
 #### 2. Profile Self-Destruction (FIXED 2025-12-29)
 
 **Previously:** `nix profile install` would replace the profile, removing nix from PATH.
