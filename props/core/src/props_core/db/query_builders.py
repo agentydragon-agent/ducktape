@@ -19,7 +19,18 @@ from sqlalchemy.orm import Session
 
 from props_core.agent_types import AgentType
 from props_core.db.examples import Example
-from props_core.db.models import AgentRun, Event, FalsePositive, OccurrenceCredit, RunCost, Snapshot, TruePositive
+from props_core.db.models import (
+    AgentRun,
+    Event,
+    FalsePositive,
+    FalsePositiveOccurrenceORM,
+    OccurrenceCredit,
+    OccurrenceRangeORM,
+    RunCost,
+    Snapshot,
+    TruePositive,
+    TruePositiveOccurrenceORM,
+)
 from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.splits import Split
@@ -205,16 +216,16 @@ def count_issues_by_snapshot(split: str | None = None) -> Select:
 def snapshot_files_with_issues_select() -> Select:
     """Define the SELECT query for the snapshot_files_with_issues view.
 
-    Computes the set of files with issues for each snapshot by extracting all file paths
-    (dict keys) from true_positives and false_positives occurrences.
+    Computes the set of files with issues for each snapshot by joining with
+    occurrence_ranges table to get all file paths.
 
-    Replicates the logic of Snapshot.files_with_issues() method (models.py:196-204):
+    Replicates the logic of Snapshot.files_with_issues() method:
         tp_files = {file_path for tp in self.true_positives
                     for occurrence in tp.occurrences
-                    for file_path in occurrence.files}
+                    for range in occurrence.ranges}
         fp_files = {file_path for fp in self.false_positives
                     for occurrence in fp.occurrences
-                    for file_path in occurrence.files}
+                    for range in occurrence.ranges}
         return tp_files | fp_files
 
     RLS Note: This view inherits RLS from true_positives and false_positives tables,
@@ -224,24 +235,31 @@ def snapshot_files_with_issues_select() -> Select:
     Returns:
         Query selecting snapshot_slug and files_with_issues (text array) for each snapshot
     """
-    # Extract all file paths (dict keys) from TP occurrences
-    # true_positives.occurrences is JSONB array of {files: {...}, ...}
+    # Extract all file paths from TP occurrence ranges
     # RLS on true_positives applies task-specific filtering for temporary agent users
-    tp_files = select(
-        TruePositive.snapshot_slug,
-        func.jsonb_object_keys(func.jsonb_array_elements(TruePositive.occurrences).op("->")(literal("files"))).label(
-            "file_path"
-        ),
-    ).select_from(TruePositive)
+    tp_files = (
+        select(TruePositive.snapshot_slug, OccurrenceRangeORM.file_path.label("file_path"))
+        .select_from(TruePositive)
+        .join(TruePositiveOccurrenceORM, TruePositive.snapshot_slug == TruePositiveOccurrenceORM.snapshot_slug)
+        .join(
+            OccurrenceRangeORM,
+            (TruePositive.snapshot_slug == OccurrenceRangeORM.snapshot_slug)
+            & (TruePositive.tp_id == OccurrenceRangeORM.tp_id),
+        )
+    )
 
-    # Extract all file paths from FP occurrences
+    # Extract all file paths from FP occurrence ranges
     # RLS on false_positives applies task-specific filtering for temporary agent users
-    fp_files = select(
-        FalsePositive.snapshot_slug,
-        func.jsonb_object_keys(func.jsonb_array_elements(FalsePositive.occurrences).op("->")(literal("files"))).label(
-            "file_path"
-        ),
-    ).select_from(FalsePositive)
+    fp_files = (
+        select(FalsePositive.snapshot_slug, OccurrenceRangeORM.file_path.label("file_path"))
+        .select_from(FalsePositive)
+        .join(FalsePositiveOccurrenceORM, FalsePositive.snapshot_slug == FalsePositiveOccurrenceORM.snapshot_slug)
+        .join(
+            OccurrenceRangeORM,
+            (FalsePositive.snapshot_slug == OccurrenceRangeORM.snapshot_slug)
+            & (FalsePositive.fp_id == OccurrenceRangeORM.fp_id),
+        )
+    )
 
     # Union and aggregate per snapshot
     all_files_union = union_all(tp_files, fp_files).subquery()

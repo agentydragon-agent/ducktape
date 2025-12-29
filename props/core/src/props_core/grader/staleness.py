@@ -14,6 +14,7 @@ from props_core.db.models import (
     CanonicalIssuesSnapshot,
     FalsePositive,
     FileSet,
+    OccurrenceRangeORM,
     Snapshot as DBSnapshot,
     TruePositive,
 )
@@ -29,15 +30,17 @@ from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 
-def _convert_orm_files_to_db(files: dict[str, list[dict] | None]) -> dict[str, list[DBLineRange] | None]:
-    """Convert ORM JSONB files dict to DB persistence model format.
+def _convert_orm_ranges_to_db_files(ranges: list[OccurrenceRangeORM]) -> dict[str, list[DBLineRange]]:
+    """Convert ORM ranges to DB persistence model files dict.
 
-    ORM stores files as raw JSONB: {path_str: [{start_line: N, end_line: M}, ...] | null}
-    DB model expects: {path_str: [DBLineRange, ...] | null}
+    Groups ranges by file path (as strings) and converts to DBLineRange objects.
     """
-    return {
-        path: [DBLineRange.model_validate(lr) for lr in ranges] if ranges else None for path, ranges in files.items()
-    }
+    by_file: dict[str, list[DBLineRange]] = defaultdict(list)
+    for range_orm in ranges:
+        by_file[str(range_orm.file_path)].append(
+            DBLineRange(start_line=range_orm.start_line, end_line=range_orm.end_line, note=range_orm.note)
+        )
+    return dict(by_file) if by_file else {}
 
 
 def resolve_scope_files(
@@ -78,7 +81,7 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
         occurrences=[
             DBTruePositiveOccurrence(
                 occurrence_id=occ.occurrence_id,
-                files=_convert_orm_files_to_db(occ.files),
+                files=_convert_orm_ranges_to_db_files(occ.ranges),
                 note=occ.note,
                 # Derive from M:N relationship (expected_recall_scopes -> file_sets)
                 critic_scopes_expected_to_recall=[
@@ -98,9 +101,9 @@ def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
         occurrences=[
             DBFalsePositiveOccurrence(
                 occurrence_id=occ.occurrence_id,
-                files=_convert_orm_files_to_db(occ.files),
+                files=_convert_orm_ranges_to_db_files(occ.ranges),
                 note=occ.note,
-                relevant_files=[str(p) for p in occ.relevant_files],
+                relevant_files=[str(rf.file_path) for rf in occ.relevant_file_orms],
             )
             for occ in orm_fp.occurrences
         ],

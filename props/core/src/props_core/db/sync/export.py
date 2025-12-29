@@ -18,6 +18,7 @@ from props_core.db.models import (
     FalsePositiveOccurrenceORM,
     FileSet,
     FileSetMember,
+    OccurrenceRangeORM,
     TruePositive,
     TruePositiveOccurrenceORM,
 )
@@ -52,26 +53,30 @@ def _get_file_set_paths(session: Session, snapshot_slug: SnapshotSlug, files_has
     return list(members)
 
 
-def _format_line_ranges(ranges: list[dict[str, Any]] | None) -> list[dict[str, Any]] | list[list[int]] | int | None:
-    """Convert DB line range format to YAML-friendly format.
+def _format_line_ranges(ranges: list[OccurrenceRangeORM]) -> list[dict[str, Any]] | list[list[int]] | int | None:
+    """Convert ORM line ranges to YAML-friendly format.
 
-    DB format: [{"start_line": 10, "end_line": 20, "note": "..."}, ...]
     YAML format:
       - If any range has a note: [{"start_line": 10, "end_line": 20, "note": "..."}, ...]
       - Single line where start == end: int (e.g., 42)
       - Single range: [start, end] (e.g., [10, 20])
       - Multiple ranges: [[start, end], ...] (e.g., [[10, 20], [30, 40]])
     """
-    if ranges is None:
+    if not ranges:
         return None
 
     # If any range has a note, use dict format for all ranges
-    if any(r.get("note") for r in ranges):
+    if any(r.note for r in ranges):
         return [
-            {k: v for k, v in r.items() if k in ("start_line", "end_line", "note") and v is not None} for r in ranges
+            {
+                k: v
+                for k, v in {"start_line": r.start_line, "end_line": r.end_line, "note": r.note}.items()
+                if v is not None
+            }
+            for r in ranges
         ]
 
-    formatted = [[r["start_line"], r["end_line"]] for r in ranges]
+    formatted = [[r.start_line, r.end_line] for r in ranges]
 
     # Simplify single ranges
     if len(formatted) == 1:
@@ -83,14 +88,23 @@ def _format_line_ranges(ranges: list[dict[str, Any]] | None) -> list[dict[str, A
     return formatted  # Multiple ranges as [[start, end], ...]
 
 
-def _format_files(files_json: dict[str, Any]) -> dict[str, Any]:
-    """Convert DB files format to YAML-friendly format.
+def _format_files(ranges: list[OccurrenceRangeORM]) -> dict[str, Any]:
+    """Convert ORM ranges to YAML-friendly files dict.
 
-    Sorts by path for deterministic output.
+    Groups ranges by file path and sorts for deterministic output.
     """
+    # Group ranges by file path
+    by_file: dict[str, list[OccurrenceRangeORM]] = {}
+    for range_orm in ranges:
+        path_str = str(range_orm.file_path)
+        if path_str not in by_file:
+            by_file[path_str] = []
+        by_file[path_str].append(range_orm)
+
+    # Format each file's ranges
     result: dict[str, Any] = {}
-    for path in sorted(files_json.keys()):
-        result[path] = _format_line_ranges(files_json[path])
+    for path in sorted(by_file.keys()):
+        result[path] = _format_line_ranges(by_file[path])
     return result
 
 
@@ -103,7 +117,7 @@ def _maybe_literal(text: str) -> str | LiteralStr:
 
 def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> dict[str, Any]:
     """Export a single TP occurrence to YAML dict."""
-    result: dict[str, Any] = {"occurrence_id": occ.occurrence_id, "files": _format_files(occ.files)}
+    result: dict[str, Any] = {"occurrence_id": occ.occurrence_id, "files": _format_files(occ.ranges)}
 
     if occ.note:
         result["note"] = _maybe_literal(occ.note)
@@ -132,14 +146,14 @@ def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> d
 
 def _export_fp_occurrence(session: Session, occ: FalsePositiveOccurrenceORM) -> dict[str, Any]:
     """Export a single FP occurrence to YAML dict."""
-    result: dict[str, Any] = {"occurrence_id": occ.occurrence_id, "files": _format_files(occ.files)}
+    result: dict[str, Any] = {"occurrence_id": occ.occurrence_id, "files": _format_files(occ.ranges)}
 
     if occ.note:
         result["note"] = _maybe_literal(occ.note)
 
-    # relevant_files is stored directly as JSON array
-    if occ.relevant_files:
-        result["relevant_files"] = sorted(occ.relevant_files)
+    # relevant_files from relevant_file_orms relationship
+    if occ.relevant_file_orms:
+        result["relevant_files"] = sorted(str(rf.file_path) for rf in occ.relevant_file_orms)
 
     # Get graders_match_only_if_reported_on if set
     if occ.match_filter_hash:

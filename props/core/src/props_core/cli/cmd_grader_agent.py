@@ -236,7 +236,8 @@ def show_gt_cmd(gt_ref: Annotated[str, typer.Argument(help="GT reference: tp/<id
             typer.echo(
                 f"Rationale: {tp.rationale[:300]}..." if len(tp.rationale) > 300 else f"Rationale: {tp.rationale}"
             )
-            typer.echo(f"Files: {occ.files}")
+            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            typer.echo(f"Files: {files_dict}")
             if occ.note:
                 typer.echo(f"Note: {occ.note}")
         else:
@@ -254,7 +255,8 @@ def show_gt_cmd(gt_ref: Annotated[str, typer.Argument(help="GT reference: tp/<id
             typer.echo(
                 f"Rationale: {fp.rationale[:300]}..." if len(fp.rationale) > 300 else f"Rationale: {fp.rationale}"
             )
-            typer.echo(f"Files: {occ.files}")
+            files_dict = {str(r.file_path): (r.start_line, r.end_line) for r in occ.ranges}
+            typer.echo(f"Files: {files_dict}")
             if occ.note:
                 typer.echo(f"Note: {occ.note}")
 

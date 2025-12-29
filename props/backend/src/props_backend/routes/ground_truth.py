@@ -12,6 +12,7 @@ from props_core.db.models import (
     FalsePositive,
     FileSet,
     FileSetMember,
+    OccurrenceRangeORM,
     Snapshot,
     SnapshotFile,
     TruePositive,
@@ -21,7 +22,7 @@ from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from props_core.models.true_positive import LineRange
 from props_core.splits import Split
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
@@ -105,16 +106,22 @@ class SnapshotDetailResponse(BaseModel):
 # --- Helper Functions ---
 
 
-def _parse_files_json(files_json: dict) -> list[FileLocationInfo]:
-    """Convert JSONB files dict to FileLocationInfo list."""
-    line_range_adapter = TypeAdapter(list[LineRange])
-    result = []
-    for path, ranges in sorted(files_json.items()):
-        if ranges is None:
-            result.append(FileLocationInfo(path=path, ranges=None))
-        else:
-            result.append(FileLocationInfo(path=path, ranges=line_range_adapter.validate_python(ranges)))
-    return result
+def _build_file_locations_from_ranges(ranges: list[OccurrenceRangeORM]) -> list[FileLocationInfo]:
+    """Convert ORM ranges to FileLocationInfo list."""
+    from collections import defaultdict
+
+    by_file: dict[str, list[LineRange]] = defaultdict(list)
+    for range_orm in ranges:
+        path_str = str(range_orm.file_path)
+        by_file[path_str].append(
+            LineRange(
+                start_line=range_orm.start_line,
+                end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
+                note=range_orm.note,
+            )
+        )
+
+    return [FileLocationInfo(path=path, ranges=ranges_list) for path, ranges_list in sorted(by_file.items())]
 
 
 def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
@@ -246,7 +253,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
                 occ_infos.append(
                     TpOccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
-                        files=_parse_files_json(occ.files),
+                        files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
                         critic_scopes_expected_to_recall=_get_trigger_paths(occ),
                         graders_match_only_if_reported_on=matchable_files,
@@ -265,9 +272,9 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
                 occ_infos.append(
                     FpOccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
-                        files=_parse_files_json(occ.files),
+                        files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
-                        relevant_files=sorted(occ.relevant_files),
+                        relevant_files=sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
                         graders_match_only_if_reported_on=matchable_files,
                     )
                 )
@@ -345,12 +352,14 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
 
         for tp in tps:
             for occ in tp.occurrences:
-                for file_path in occ.files:
+                for range_orm in occ.ranges:
+                    file_path = str(range_orm.file_path)
                     tp_counts_by_file[file_path] = tp_counts_by_file.get(file_path, 0) + 1
 
         for fp in fps:
             for occ in fp.occurrences:
-                for file_path in occ.files:
+                for range_orm in occ.ranges:
+                    file_path = str(range_orm.file_path)
                     fp_counts_by_file[file_path] = fp_counts_by_file.get(file_path, 0) + 1
 
         # Build tree structure
