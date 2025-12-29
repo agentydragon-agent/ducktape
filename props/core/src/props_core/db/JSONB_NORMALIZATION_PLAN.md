@@ -233,27 +233,84 @@ Minimal - API responses can be constructed from either source:
    - Keep on occurrence table - it's a hash of the file set, not per-range data
 
 4. Should we add line number validation against `snapshot_files.line_count`?
-   - **Option A**: CHECK constraint joining to snapshot_files (complex, not all DBs support)
-   - **Option B**: Application-level validation during YAML load
-   - **Option C**: Trigger to validate on INSERT/UPDATE
-   - **Recommendation**: Option B for now - validate during sync from YAML
-   - **Future enhancement**: Could add trigger if we see invalid data in production
+   - **Requirement**: YES - must validate end_line <= file's line_count
+   - **Option A**: Trigger to validate on INSERT/UPDATE (database-enforced)
+   - **Option B**: Application-level validation during YAML load (app-enforced)
+   - **Recommendation**: Both - trigger for defense in depth, app validation for early error messages
 
-## Additional Validations
+## Required Validations
 
-Once normalized, we can add these constraints:
+### Line Number Bounds Checking
 
-```python
-# Optional future constraint (via trigger)
-CREATE TRIGGER validate_range_line_numbers
+**Requirement**: Ensure `end_line` doesn't exceed the file's actual line count.
+
+**Implementation via PostgreSQL trigger:**
+
+```sql
+-- Create function to validate range bounds
+CREATE OR REPLACE FUNCTION validate_range_line_numbers()
+RETURNS TRIGGER AS $$
+DECLARE
+    file_line_count INT;
+BEGIN
+    -- Get line count for the referenced file
+    SELECT line_count INTO file_line_count
+    FROM snapshot_files
+    WHERE snapshot_slug = NEW.snapshot_slug
+      AND relative_path = NEW.file_path;
+
+    -- Validate end_line is within bounds
+    IF NEW.end_line > file_line_count THEN
+        RAISE EXCEPTION 'Line range [%, %] exceeds file line count % for file % in snapshot %',
+            NEW.start_line, NEW.end_line, file_line_count, NEW.file_path, NEW.snapshot_slug;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Apply trigger to TP ranges
+CREATE TRIGGER validate_tp_range_bounds
 BEFORE INSERT OR UPDATE ON tp_occurrence_ranges
 FOR EACH ROW
-EXECUTE FUNCTION check_range_within_file_bounds();
+EXECUTE FUNCTION validate_range_line_numbers();
 
--- Function would verify:
--- NEW.end_line <= (SELECT line_count FROM snapshot_files
---                   WHERE snapshot_slug = NEW.snapshot_slug
---                   AND relative_path = NEW.file_path)
+-- Apply trigger to FP ranges
+CREATE TRIGGER validate_fp_range_bounds
+BEFORE INSERT OR UPDATE ON fp_occurrence_ranges
+FOR EACH ROW
+EXECUTE FUNCTION validate_range_line_numbers();
 ```
 
-This would catch authoring errors where ground truth references line numbers beyond EOF.
+**Benefits:**
+- Database-enforced integrity (can't insert invalid ranges)
+- Catches authoring errors at sync time
+- Prevents stale data if file shrinks between syncs
+- Clear error messages pointing to the specific issue
+
+**Application-level validation** (during YAML sync):
+```python
+def validate_range_against_file(
+    snapshot_slug: str,
+    file_path: str,
+    line_range: LineRange,
+    session: Session
+) -> None:
+    """Validate range doesn't exceed file bounds."""
+    snapshot_file = session.query(SnapshotFile).filter_by(
+        snapshot_slug=snapshot_slug,
+        relative_path=file_path
+    ).one_or_none()
+
+    if snapshot_file is None:
+        raise ValueError(f"File {file_path} not found in snapshot {snapshot_slug}")
+
+    if line_range.end_line and line_range.end_line > snapshot_file.line_count:
+        raise ValueError(
+            f"Range [{line_range.start_line}, {line_range.end_line}] "
+            f"exceeds file line count {snapshot_file.line_count} "
+            f"for {file_path} in {snapshot_slug}"
+        )
+```
+
+This provides early validation with clear error messages during ground truth authoring.
