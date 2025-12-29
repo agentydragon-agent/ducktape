@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 from typing import Annotated
 
+from agent_core.events import ToolCall
 from props_core.db.models import Event
 from props_core.db.session import get_session
 from rich import box
@@ -15,8 +16,6 @@ from rich.console import Console
 from rich.table import Table
 from sqlalchemy import select
 import typer
-
-from agent_core.events import ToolCall
 
 logger = logging.getLogger(__name__)
 

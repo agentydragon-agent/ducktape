@@ -4,10 +4,10 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Protocol
 
+from agent_core.events import EventType as Event
 from fastmcp.mcp_config import MCPConfig
 from pydantic import BaseModel, ConfigDict, JsonValue
 
-from agent_core.events import EventType as Event
 from agent_server.models.proposal_status import ProposalStatus
 from agent_server.types import AgentID
 

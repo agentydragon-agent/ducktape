@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from agent_server.server.reducer import fold_events_to_ui_state
 from mcp_infra.prefix import MCPMountPrefix
+
+from agent_server.server.reducer import fold_events_to_ui_state
 from tests.ui.typed_asserts import assert_typed_items_have, is_assistant_markdown, is_user_message
 
 

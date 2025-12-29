@@ -4,9 +4,6 @@ from datetime import datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 import uuid
 
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from gatelet.server.auth.handlers import (
     AuthHandlerError,
     KeyPathAuthContext,
@@ -15,6 +12,8 @@ from gatelet.server.auth.handlers import (
     session_auth,
 )
 from gatelet.server.models import AuthCRSession, AuthKey
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def test_key_path_auth_context():

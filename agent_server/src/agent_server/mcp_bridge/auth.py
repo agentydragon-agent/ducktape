@@ -12,10 +12,10 @@ import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import yaml
 from pydantic import BaseModel
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
-import yaml
 
 if TYPE_CHECKING:
     from agent_server.types import AgentID

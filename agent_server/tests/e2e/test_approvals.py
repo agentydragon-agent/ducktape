@@ -3,8 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
-
 from agent_core.testing import EchoCall
+
 from agent_server.testing.steps import UiEndTurnCall
 
 # Skip if Playwright is not installed

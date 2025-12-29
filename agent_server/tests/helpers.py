@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import threading
 import time
+from dataclasses import dataclass
 from typing import Any
-
-from uvicorn import Config, Server
 
 from net_util import pick_free_port
 from openai_utils.model import OpenAIModelProto, ResponsesRequest, ResponsesResult
+from uvicorn import Config, Server
 
 # System notification tag constants
 SYSTEM_NOTIFICATION_START_TAG = "<system notification>"

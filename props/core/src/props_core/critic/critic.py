@@ -12,6 +12,7 @@ from uuid import UUID
 
 import aiodocker
 from fastmcp.server.auth import AuthProvider
+from mcp_infra.enhanced import EnhancedFastMCP
 from props_core.agent_setup import AgentEnvironment
 from props_core.agent_workspace import WorkspaceManager
 from props_core.critic.submit_server import CriticSubmitServer
@@ -20,8 +21,6 @@ from props_core.db.config import DatabaseConfig
 from props_core.display import short_uuid
 from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleSpec
-
-from mcp_infra.enhanced import EnhancedFastMCP
 
 
 class CriticAgentEnvironment(AgentEnvironment):

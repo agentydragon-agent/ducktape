@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from hamcrest import all_of, assert_that, contains_string
-
 from agent_core.agent import Agent
 from agent_core.events import ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing import ResponsesFactory, make_mock, tool_call_with_error_text
+from hamcrest import all_of, assert_that, contains_string
+
 from openai_utils.model import FunctionCallItem, ResponsesRequest, ResponsesResult, UserMessage
 
 

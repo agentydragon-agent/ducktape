@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing import (
@@ -12,6 +10,8 @@ from agent_core.testing import (
     assert_items_exclude_instance,
     assert_items_include_instances,
 )
+import pytest
+
 from openai_utils.model import AssistantMessage, FunctionCallItem, FunctionCallOutputItem, ReasoningItem, UserMessage
 
 

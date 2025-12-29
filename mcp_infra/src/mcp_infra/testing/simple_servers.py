@@ -12,11 +12,11 @@ from __future__ import annotations
 
 from typing import Literal
 
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import BaseModel
 
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.prefix import MCPMountPrefix
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 # Test server constants (SSOT for test fixtures)
 ECHO_MOUNT_PREFIX = MCPMountPrefix("echo")

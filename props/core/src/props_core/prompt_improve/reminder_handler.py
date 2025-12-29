@@ -6,14 +6,14 @@ import logging
 from typing import Annotated, Literal
 from uuid import UUID
 
+from agent_core.handler import BaseHandler
+from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from pydantic import BaseModel, Field
 from sqlalchemy import bindparam, text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Session
 from sqlalchemy.types import String
 
-from agent_core.handler import BaseHandler
-from agent_core.loop_control import Abort, InjectItems, LoopDecision, NoAction
 from openai_utils.model import UserMessage
 from props_core.agent_types import ImprovementTypeConfig
 from props_core.db.config import DatabaseConfig

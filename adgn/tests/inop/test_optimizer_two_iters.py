@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 
 import aiodocker
+from mcp_infra.naming import build_mcp_function
+from mcp_infra.prefix import MCPMountPrefix
 import pytest
 
 from adgn.inop.config import (
@@ -31,8 +33,6 @@ import adgn.inop.engine.optimizer
 import adgn.inop.engine.runner_factory
 from adgn.inop.io.jsonl_logger import JSONLLogger
 from adgn.inop.runners.base import AgentRunner
-from mcp_infra.naming import build_mcp_function
-from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import FunctionToolParam, OpenAIModelProto, ResponsesRequest
 from openai_utils.types import ReasoningEffort
 

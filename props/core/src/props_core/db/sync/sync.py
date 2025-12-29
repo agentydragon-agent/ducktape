@@ -20,12 +20,12 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlunparse
 from urllib.request import urlopen
 
+from agent_pkg_host import ensure_image_from_archive
 import pygit2
 from sqlalchemy import select, tuple_
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from agent_pkg_host import ensure_image_from_archive
 from openai_utils.model_metadata import MODEL_METADATA
 from props_core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
 from props_core.agent_types import AgentType

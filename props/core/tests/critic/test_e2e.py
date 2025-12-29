@@ -14,13 +14,12 @@ Covers:
 
 from __future__ import annotations
 
+from agent_core.events import ApiRequest, SystemText, ToolCall
+from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.models import AgentRun, AgentRunStatus, Event
 from props_core.db.session import get_session
 import pytest
-
-from agent_core.events import ApiRequest, SystemText, ToolCall
-from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 
 
 def _make_critic_steps_zero_issues_minimal() -> list[Step]:

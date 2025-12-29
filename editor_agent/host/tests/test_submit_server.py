@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+from editor_agent.submit_server import EditorSubmitServer, SubmitFailureInput, SubmitStateSuccess, SubmitSuccessInput
 from fastmcp.exceptions import ToolError
 import pytest
-
-from editor_agent.submit_server import EditorSubmitServer, SubmitFailureInput, SubmitStateSuccess, SubmitSuccessInput
 
 
 async def test_resource_returns_original_content():

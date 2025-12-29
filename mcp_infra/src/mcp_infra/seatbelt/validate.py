@@ -9,10 +9,10 @@ Layering contract:
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from dataclasses import dataclass
 import platform
 import shutil
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from .model import Action, DefaultBehavior, FileOp, SBPLPolicy, Subpath
 
