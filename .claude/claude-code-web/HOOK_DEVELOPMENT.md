@@ -61,22 +61,20 @@ $ /nix/store/yg8v8aap26967f28xmqgvl29ksp6mgn1-nix-2.33.0/bin/nix --version
 nix (Nix) 2.33.0
 ```
 
-### The Fix
+### The Fix (IMPLEMENTED 2025-12-29)
 
-The hook should use the nix store path directly, NOT the profile path:
+The hook now uses the nix store path directly, NOT the profile path:
 
-```python
-# WRONG: relies on profile which gets replaced
-nix_bin = Path.home() / ".nix-profile" / "bin" / "nix"
+1. `install_nix()` returns the store bin path
+2. `install_tools()` uses that path to run nix commands
+3. `persist_environment()` adds BOTH paths to PATH:
+   - Nix store bin (for running nix commands)
+   - Profile bin (for user-installed tools)
 
-# RIGHT: use the store path directly
-nix_bin = find_nix_bin() / "nix"  # e.g., /nix/store/...-nix-2.33.0/bin/nix
-```
-
-And persist the store path in PATH:
-```bash
-export PATH="/nix/store/...-nix-2.33.0/bin:$HOME/.nix-profile/bin:$PATH"
-```
+Key changes:
+- Removed manual profile symlinking (no longer needed)
+- Install all tools in one `nix profile install` command
+- Use `nix_store_bin / "nix"` instead of `which("nix")`
 
 ## Requirements for a Working Solution
 

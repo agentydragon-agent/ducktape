@@ -52,24 +52,28 @@ def find_nix_bin() -> Path | None:
     return None
 
 
-def setup_nix_path() -> None:
-    """Add nix to PATH."""
-    paths = [p for p in [find_nix_bin(), Path.home() / ".nix-profile" / "bin"] if p and p.exists()]
+def setup_nix_path(nix_store_bin: Path) -> None:
+    """Add nix store bin and profile bin to PATH."""
+    paths = [nix_store_bin, Path.home() / ".nix-profile" / "bin"]
+    paths = [p for p in paths if p.exists()]
     if paths:
         os.environ["PATH"] = ":".join(map(str, paths)) + ":" + os.environ.get("PATH", "")
         log.info("Added to PATH: %s", ", ".join(map(str, paths)))
 
 
-def install_nix(project_dir: Path) -> None:
-    """Install nix if not present."""
-    if which("nix"):
-        log.info("nix already available")
-        return
-
+def install_nix(project_dir: Path) -> Path:
+    """Install nix if not present. Returns the nix store bin path."""
     nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
     if nix_conf.exists():
         os.environ["NIX_USER_CONF_FILES"] = str(nix_conf)
         log.info("Using nix.conf: %s", nix_conf)
+
+    # Check if nix is already in the store
+    nix_store_bin = find_nix_bin()
+    if nix_store_bin:
+        log.info("nix already in store: %s", nix_store_bin)
+        setup_nix_path(nix_store_bin)
+        return nix_store_bin
 
     log.info("Installing nix...")
     subprocess.run(
@@ -89,81 +93,72 @@ def install_nix(project_dir: Path) -> None:
     #   3. Parent immediately calls read() on the PTY master
     #   4. gVisor returns EIO instead of blocking until data arrives
     #
-    # GVISOR BUG LOCATION (github.com/google/gvisor):
-    # pkg/sentry/fsimpl/devpts/queue.go lines 112-116:
-    #   if !q.readable {
-    #       if l.numReplicas == 0 {
-    #           return 0, false, false, linuxerr.EIO  // ← THE BUG
-    #       }
-    #       return 0, false, false, linuxerr.ErrWouldBlock
-    #   }
-    # gVisor returns EIO when numReplicas==0 (no slave opened yet), but the child
-    # process is still in the middle of opening the slave. Real Linux blocks until
-    # data arrives regardless of whether the slave has been opened. gVisor conflates
-    # "not yet opened" with "closed" - both result in numReplicas==0.
-    #
-    # WHY NIX USES PTYs (not pipes):
-    # Per C99 7.19.3, stdout is fully buffered when connected to a pipe, but line
-    # buffered when connected to a terminal. Nix needs real-time build output, so it
-    # uses PTYs to trick programs into line-buffered mode. This is fundamental to
-    # Nix's architecture - there's no --use-pipes flag.
-    # See: src/libstore/unix/build/derivation-builder.cc line 808 (posix_openpt)
-    #
-    # WHY NO INSTALLER FLAGS HELP:
-    # - The PTY is created internally by nix-env, not inherited from the shell
-    # - --no-daemon, --no-channel-add, </dev/null all affect different things
-    # - sandbox=false in nix.conf disables namespace isolation, not PTY usage
-    # - The gVisor bug is in read() returning EIO, not in any Nix configuration
-    #
     # WORKAROUND:
     # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
-    # We just symlink the profile manually, bypassing any derivation builds.
+    # We use the store path directly instead of relying on profiles.
     subprocess.run(
         ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
     )
 
-    # Manual profile setup when installer's nix-env fails due to gVisor PTY bug.
-    nix_profile = Path.home() / ".nix-profile"
-    if not (nix_profile / "bin" / "nix").exists():
-        nix_bin = find_nix_bin()
-        if nix_bin:
-            nix_pkg = nix_bin.parent
-            profiles_dir = Path("/nix/var/nix/profiles/per-user/root")
-            profiles_dir.mkdir(parents=True, exist_ok=True)
-            (profiles_dir / "profile").unlink(missing_ok=True)
-            (profiles_dir / "profile").symlink_to(nix_pkg)
-            nix_profile.unlink(missing_ok=True)
-            nix_profile.symlink_to(profiles_dir / "profile")
-            log.info("Created manual profile link: %s", nix_pkg)
+    nix_store_bin = find_nix_bin()
+    if not nix_store_bin:
+        raise RuntimeError("Failed to install nix - no nix binary found in store")
 
-    setup_nix_path()
-    if not which("nix"):
-        raise RuntimeError("Failed to install nix")
+    log.info("nix installed: %s", nix_store_bin)
+    setup_nix_path(nix_store_bin)
+    return nix_store_bin
 
 
-def install_tool(tool: str) -> None:
-    """Install a tool via nix profile."""
-    if which(tool):
-        log.info("%s already available", tool)
+def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
+    """Install tools via nix profile using the store path directly.
+
+    Uses the nix binary from the store path, NOT from PATH or profile.
+    This avoids the issue where `nix profile install` replaces the profile
+    and removes nix from PATH.
+    """
+    nix_cmd = nix_store_bin / "nix"
+    nix_conf = os.environ.get("NIX_USER_CONF_FILES", "")
+
+    # Filter out tools that are already available
+    missing_tools = [t for t in tools if not which(t)]
+    if not missing_tools:
+        log.info("All tools already available: %s", ", ".join(tools))
         return
-    log.info("Installing %s...", tool)
-    run(["nix", "profile", "install", f"nixpkgs#{tool}"])
-    log.info("%s installed", tool)
+
+    log.info("Installing tools: %s", ", ".join(missing_tools))
+
+    # Install all missing tools in one command
+    cmd = [str(nix_cmd), "profile", "install"] + [f"nixpkgs#{t}" for t in missing_tools]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+
+    for line in (result.stdout + result.stderr).strip().split("\n"):
+        if line:
+            log.info("  %s", line)
+
+    if result.returncode != 0:
+        raise RuntimeError(f"Failed to install tools: {result.stderr}")
+
+    log.info("Tools installed successfully")
 
 
-def persist_environment(env_file: str | None, project_dir: Path) -> None:
-    """Write environment to CLAUDE_ENV_FILE for persistence."""
+def persist_environment(env_file: str | None, nix_store_bin: Path, project_dir: Path) -> None:
+    """Write environment to CLAUDE_ENV_FILE for persistence.
+
+    Persists BOTH the nix store bin (for running nix commands) AND the
+    profile bin (for user-installed tools like direnv, devenv).
+    """
     if not env_file:
         log.warning("CLAUDE_ENV_FILE is empty, PATH changes will not persist")
         return
 
     nix_conf = project_dir / ".claude" / "claude-code-web" / "nix.conf"
-    nix_bin = find_nix_bin()
     content = f'''# Nix environment (added by session-start-direnv.py)
 export NIX_USER_CONF_FILES="{nix_conf}"
-[ -d "{nix_bin}" ] && export PATH="{nix_bin}:$PATH"
+# Nix store bin for running nix commands (immutable, always available)
+[ -d "{nix_store_bin}" ] && export PATH="{nix_store_bin}:$PATH"
+# Profile bin for user-installed tools (direnv, devenv, etc.)
 [ -d ~/.nix-profile/bin ] && export PATH="$HOME/.nix-profile/bin:$PATH"
 '''
     Path(env_file).write_text(content)
@@ -184,17 +179,20 @@ def main() -> int:
     project_dir = Path(project_dir)
 
     log.info("Setting up dev environment...")
-    install_nix(project_dir)
 
-    for tool in TOOLS:
-        install_tool(tool)
+    # Install nix and get the store bin path (used for all subsequent nix commands)
+    nix_store_bin = install_nix(project_dir)
+
+    # Install tools using the store path directly
+    install_tools(nix_store_bin, TOOLS)
 
     # Allow .envrc files
     if which("direnv"):
         for envrc in project_dir.rglob(".envrc"):
             subprocess.run(["direnv", "allow", str(envrc.parent)], capture_output=True)
 
-    persist_environment(os.environ.get("CLAUDE_ENV_FILE"), project_dir)
+    # Persist environment with both store bin and profile bin
+    persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
 
     log.info("Session environment initialized:")
     for tool in ["nix"] + TOOLS:
