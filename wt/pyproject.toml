@@ -32,6 +32,7 @@ dev = [
   "pytest-timeout>=2.3",
   "pytest-xdist>=3.0",
   "pyhamcrest>=2.1",
+  "tenacity>=8.0",
   "ruff>=0.5",
   "mypy>=1.14",
   "types-colorama",
