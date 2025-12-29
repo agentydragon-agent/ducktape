@@ -2,7 +2,7 @@
 
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
-from props_core.db.models import AgentRunStatus, RecallByDefinitionSplitKind, RecallByExample
+from props_core.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
 from props_core.models.examples import ExampleKind, SingleFileSetExample
 from props_core.splits import Split
 from sqlalchemy import text
@@ -10,12 +10,10 @@ from sqlalchemy.orm import Session
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    TestGradingEdge,
     make_critic_run,
     make_grader_run,
     make_grader_run_with_credit,
     make_reported_issues,
-    populate_grading_edges,
 )
 
 
@@ -125,21 +123,19 @@ def test_successful_run_not_affected_by_failure_logic(
     synced_test_session.add(grader_run)
     synced_test_session.flush()
 
-    populate_grading_edges(
-        critic_run=critic_run,
-        grader_run=grader_run,
+    edge = GradingEdge(
+        critique_run_id=critic_run.agent_run_id,
+        critique_issue_id="input-1",
         snapshot_slug=example_subtract_orm.snapshot_slug,
-        grading_edges=[
-            TestGradingEdge(
-                critique_issue_id="input-1",
-                tp_id=tp_id,
-                tp_occurrence_id=occ_id,
-                credit=0.8,
-                rationale="Partially found",
-            )
-        ],
-        session=synced_test_session,
+        tp_id=tp_id,
+        tp_occurrence_id=occ_id,
+        fp_id=None,
+        fp_occurrence_id=None,
+        credit=0.8,
+        rationale="Partially found",
+        grader_run_id=grader_run.agent_run_id,
     )
+    synced_test_session.add(edge)
     synced_test_session.commit()
 
     result = synced_test_session.execute(

@@ -4,19 +4,12 @@ from uuid import uuid4
 
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
-from props_core.db.models import AgentRunStatus, TruePositive
+from props_core.db.models import AgentRunStatus, GradingEdge, TruePositive
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 from sqlalchemy import text
 
-from tests.conftest import (
-    EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    TestGradingEdge,
-    make_critic_run,
-    make_grader_run,
-    make_reported_issues,
-    populate_grading_edges,
-)
+from tests.conftest import EMPTY_CANONICAL_ISSUES_SNAPSHOT, make_critic_run, make_grader_run, make_reported_issues
 
 
 def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
@@ -55,24 +48,13 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert matching_tp is not None, "Should find a TP with subtract.py"
         assert matching_occ_id is not None
 
-        # Create grading edges matching the git fixture TP
-        grading_edges = [
-            TestGradingEdge(
-                critique_issue_id="input-test-001",
-                tp_id=matching_tp.tp_id,
-                tp_occurrence_id=matching_occ_id,
-                credit=1.0,
-                rationale="Fully found this occurrence",
-            )
-        ]
-
         # Insert critic run (required for view join) using fixture factory
         critic_run = make_critic_run(example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
         # Create reported issues first (required for grading decisions FK)
-        issue_ids = ["input-test-001"]  # From the grading edge
+        issue_ids = ["input-test-001"]
         make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
         # Insert grader run with output using fixture factory
@@ -83,16 +65,22 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
             agent_run_id=grader_agent_run_id,
         )
         session.add(grader_run)
-        session.flush()  # Ensure grader_run.agent_run_id is available
+        session.flush()
 
-        # Populate grading_edges table
-        populate_grading_edges(
-            critic_run=critic_run,
-            grader_run=grader_run,
+        # Create grading edge matching the git fixture TP
+        edge = GradingEdge(
+            critique_run_id=critic_run.agent_run_id,
+            critique_issue_id="input-test-001",
             snapshot_slug=snapshot_slug,
-            grading_edges=grading_edges,
-            session=session,
+            tp_id=matching_tp.tp_id,
+            tp_occurrence_id=matching_occ_id,
+            fp_id=None,
+            fp_occurrence_id=None,
+            credit=1.0,
+            rationale="Fully found this occurrence",
+            grader_run_id=grader_run.agent_run_id,
         )
+        session.add(edge)
 
         session.commit()
 
