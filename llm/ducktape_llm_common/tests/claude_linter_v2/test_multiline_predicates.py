@@ -194,9 +194,9 @@ def check_broker_limits(ctx):
         """Test using result variable instead of expression."""
         predicate = """
 def check_test_file(ctx):
+    import pathlib
     # Check if editing Python test files only
     if ctx.tool == "Edit" and ctx.path:
-        import pathlib
         path = pathlib.Path(ctx.path)
         result = path.suffix == ".py" and "test" in path.name
     else:
