@@ -699,13 +699,14 @@ def get_run(run_id: UUID) -> AgentRunDetail:
 
             # Fetch all edges for all graders in one query (avoid N+1)
             grader_run_ids = [g.agent_run_id for g in grader_rows]
-            if grader_run_ids:
-                all_edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id.in_(grader_run_ids)).all()
-                edges_by_grader: dict[UUID, list[GradingEdge]] = {}
-                for edge in all_edges:
-                    edges_by_grader.setdefault(edge.grader_run_id, []).append(edge)
-            else:
-                edges_by_grader = {}
+            all_edges = (
+                session.query(GradingEdge).filter(GradingEdge.grader_run_id.in_(grader_run_ids)).all()
+                if grader_run_ids
+                else []
+            )
+            edges_by_grader: dict[UUID, list[GradingEdge]] = {}
+            for edge in all_edges:
+                edges_by_grader.setdefault(edge.grader_run_id, []).append(edge)
 
             # Build GraderRunInfo with pre-grouped edges
             for grader in grader_rows:
@@ -926,7 +927,11 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
 
 
 def _get_recent_runs(session, limit: int = 20) -> list[RunInfo]:
-    """Get recent runs with split info."""
+    """Get recent runs with split info.
+
+    TODO: N+1 query - queries snapshots in a loop for each critic run.
+    Fix: Collect unique snapshot_slugs, fetch in one query with .in_(), build lookup dict.
+    """
     runs = session.query(AgentRun).order_by(AgentRun.updated_at.desc()).limit(limit).all()
     result = []
     for run in runs:

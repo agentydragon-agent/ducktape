@@ -136,7 +136,11 @@ def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
 
 
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
-    """Get graders_match_only_if_reported_on paths from hash."""
+    """Get graders_match_only_if_reported_on paths from hash.
+
+    TODO: N+1 query - called in nested loops (lines 217-228, 235-246).
+    Fix: Pre-fetch all file set members for unique files_hash values in one query.
+    """
     if not files_hash:
         return None
     members = (
@@ -195,6 +199,8 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
 
         # Get TPs with eager loading
+        # TODO: N+1 query - missing eager loading for trigger.file_set.members
+        # Add: .selectinload(ExpectedRecallScope.file_set).selectinload(FileSet.members)
         tps = (
             session.query(TruePositive)
             .filter_by(snapshot_slug=slug)
@@ -337,12 +343,7 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
             parts = path.split("/")
             if len(parts) == 1:
                 # Root level file/dir
-                node = FileTreeNode(
-                    path=path,
-                    name=path,
-                    is_dir=False,
-                    children=None,
-                )
+                node = FileTreeNode(path=path, name=path, is_dir=False, children=None)
                 root_nodes[path] = node
                 return node
 
@@ -356,12 +357,7 @@ def get_snapshot_tree(snapshot_slug: SnapshotSlug) -> FileTreeResponse:
                 parent.children = []
 
             # Create this node
-            node = FileTreeNode(
-                path=path,
-                name=parts[-1],
-                is_dir=False,
-                children=None,
-            )
+            node = FileTreeNode(path=path, name=parts[-1], is_dir=False, children=None)
             parent.children.append(node)
             root_nodes[path] = node
             return node
@@ -424,9 +420,7 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileConten
             raise HTTPException(status_code=404, detail=f"Snapshot has no content: {slug}")
 
         # Check if file exists in snapshot
-        snapshot_file = (
-            session.query(SnapshotFile).filter_by(snapshot_slug=slug, relative_path=file_path).first()
-        )
+        snapshot_file = session.query(SnapshotFile).filter_by(snapshot_slug=slug, relative_path=file_path).first()
         if not snapshot_file:
             raise HTTPException(status_code=404, detail=f"File not found in snapshot: {file_path}")
 
@@ -444,9 +438,7 @@ def get_snapshot_file(snapshot_slug: SnapshotSlug, file_path: str) -> FileConten
                     # Decode as UTF-8, replace invalid chars
                     content = content_bytes.decode("utf-8", errors="replace")
 
-                    return FileContentResponse(
-                        path=file_path, content=content, line_count=snapshot_file.line_count
-                    )
+                    return FileContentResponse(path=file_path, content=content, line_count=snapshot_file.line_count)
                 except KeyError:
                     raise HTTPException(status_code=404, detail=f"File not in tar archive: {file_path}")
         except tarfile.TarError as e:

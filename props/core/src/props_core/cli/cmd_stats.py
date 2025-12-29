@@ -768,6 +768,8 @@ def cmd_stats(ctx: typer.Context) -> None:
         # Count run statuses using SQL aggregation
         # Filter to same scope as per-prompt stats: TRAIN + VALID (all examples)
         # Two-phase for unified AgentRun model
+        # TODO: N+1 query - queries snapshots in a loop for each critic run.
+        # Fix: Pre-fetch all snapshots or use JOIN to filter by split in initial query.
         critic_status_counts: Counter[AgentRunStatus] = Counter()
         for cr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC).all():
             if not isinstance(cr.type_config, CriticTypeConfig):
@@ -780,6 +782,8 @@ def cmd_stats(ctx: typer.Context) -> None:
         for status, count in critic_status_counts.items():
             status_counts["Critic"][status] = count
 
+        # TODO: N+1 query - two levels: session.get() for each grader, then snapshot query for each.
+        # Fix: Pre-fetch all graded runs and snapshots in bulk queries, build lookup dicts.
         grader_status_counts: Counter[AgentRunStatus] = Counter()
         for gr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER).all():
             grader_config = gr.grader_config()

@@ -193,6 +193,8 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             .all()
         )
 
+        # TODO: N+1 query - session.get() for each grader run in a loop.
+        # Fix: Collect all graded_critic_run_ids, fetch with .filter().in_(), build lookup dict.
         for grader_run in grader_runs:
             grader_config = grader_run.grader_config()
             stored_snapshot = grader_config.canonical_issues_snapshot
