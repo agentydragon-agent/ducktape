@@ -262,6 +262,23 @@ Options:
 2. May not support all Dockerfile features
 3. Consider keeping Dockerfiles for now
 
+### Python Packages with System Library Dependencies
+
+Some Python packages (dbus-python, PyGObject) are bindings to C libraries and require system dependencies. These don't work well with pure `rules_python`:
+
+**Affected packages:**
+- `gnome-terminal-profile-switcher` - requires dbus-python, PyGObject
+
+**Options:**
+1. **rules_nixpkgs integration** - Use Nix to provide hermetic C dependencies to Bazel. Already use Nix for dev environments, could extend to Bazel builds.
+2. **rules_foreign_cc** - Build C dependencies from source within Bazel. More complex but fully hermetic.
+3. **Accept system deps** - Mark these targets as requiring system libraries, document the requirement. Less hermetic but pragmatic.
+4. **Keep in Nix only** - For small utilities like gnome-terminal-profile-switcher, just manage via Nix rather than forcing into Bazel.
+
+**Current approach:** Option 4 for gnome-terminal-profile-switcher. The BUILD.bazel exists but notes the system library requirement.
+
+**Future consideration:** PyGObject is improving wheel support. May eventually work with pure rules_python.
+
 ## File Structure After Migration
 
 ```
@@ -432,14 +449,137 @@ The tar-based approach preserves the authoring workflow while getting Bazel's be
 
 #### Alternative: Image-Based Workflow (Future)
 
-Could change the contract to "produce a container image":
-- Give meta-agents access to buildx builder via MCP tool
-- Agent output = image ID (not tar)
-- Agents can pull other agents' images by ID/tag
-- More elegant, but requires:
-  - MCP server wrapping buildx
-  - Image registry integration
-  - Agents learning new authoring model
+Could change the contract to "produce a container image" instead of "produce a tar with Dockerfile".
+
+##### OCI Image Format Background
+
+OCI images are layered tarballs, content-addressed by SHA256:
+
+```
+image
+├── manifest.json          # Lists layers by digest
+├── config.json            # Metadata (env, cmd, labels)
+├── blobs/
+│   ├── sha256:abc123...   # Layer 1 (tar.gz)
+│   ├── sha256:def456...   # Layer 2 (tar.gz)
+│   └── sha256:789...      # Config blob
+```
+
+Each layer is a tar of filesystem changes. The manifest references layers by `sha256:digest`. An image reference like `myregistry/myimage@sha256:abc123` is immutable - the hash IS the identity.
+
+##### Docker/OCI APIs
+
+**Docker Engine API** (local daemon):
+```bash
+# Export image as tar stream
+GET /images/{name}/get  →  tar stream
+
+# Import image from tar
+POST /images/load  ←  tar stream
+
+# Build from tar context
+POST /build  ←  tar stream (Dockerfile + context)
+```
+
+**OCI Distribution API** (registry protocol - what `docker push/pull` uses):
+```bash
+# Check if blob exists
+HEAD /v2/{name}/blobs/{digest}
+
+# Get blob (layer or config)
+GET /v2/{name}/blobs/{digest}  →  raw blob
+
+# Upload blob
+POST /v2/{name}/blobs/uploads/  →  upload URL
+PUT {upload-url}?digest={digest}  ←  blob data
+
+# Get/put manifest
+GET /v2/{name}/manifests/{reference}
+PUT /v2/{name}/manifests/{reference}
+```
+
+##### Limited Agent Access Design
+
+Full Docker socket access = root access. A safer architecture:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Agent (sandboxed)                                          │
+│                                                             │
+│  MCP Server: "oci-registry"                                 │
+│  ├── push_image(tag, dockerfile, context_tar) → digest      │
+│  ├── pull_image(digest) → manifest                          │
+│  ├── get_layer(digest) → tar stream                         │
+│  └── list_tags(prefix) → [tags]                             │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Host: OCI Registry Proxy (controlled code)                 │
+│  - Validates requests                                       │
+│  - Rate limits                                              │
+│  - Only allows specific repos/tags                          │
+│  - Calls buildx or registry API                             │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+        ┌───────────────────┴───────────────────┐
+        ▼                                       ▼
+   Container Registry                      Postgres
+   (actual blob storage)                   (metadata + digests)
+```
+
+Agents use familiar OCI concepts (digests, manifests, layers) through a restricted MCP interface. They can read/write images by content-addressed digest without having root-equivalent Docker socket access.
+
+##### Storage Strategy Options
+
+**Option A: Registry as SSOT, Postgres stores digests only**
+```python
+class AgentDefinition(BaseModel):
+    name: str
+    version: str
+    image_digest: str  # sha256:abc123...
+    created_at: datetime
+```
+- Postgres is lightweight, just metadata
+- Actual images live in registry (local registry:2, Harbor, or Docker Hub)
+- Risk: Registry pruned → orphaned references
+- Mitigation: Registry with immutable tags or retention policy
+
+**Option B: Registry + Postgres replication**
+```python
+class AgentDefinition(BaseModel):
+    name: str
+    version: str
+    image_digest: str
+    manifest_json: bytes      # Full manifest
+    config_json: bytes        # Full config
+    # Layers stored in separate table or blob storage
+```
+- Postgres as durable backup
+- Can reconstruct image from Postgres if registry loses it
+- More storage, more complexity
+
+**Option C: Skip registry, use blob storage directly**
+- Store tar blobs in Postgres large objects or S3
+- Reference by content hash
+- Simpler, but loses registry ecosystem compatibility
+
+**Recommendation**: Option A with a durable registry (garbage collection disabled or retention policy). The digest becomes the stable identifier that survives across systems. Since OCI images are content-addressed, we can always verify integrity.
+
+##### Benefits Over Current Tar Approach
+
+- **Familiar ecosystem**: Agents understand Docker/OCI natively from training data
+- **Content-addressed**: Image digest = immutable identity, no ambiguity
+- **Layered caching**: Shared base layers across agent definitions
+- **Standard tooling**: Works with any OCI-compatible registry, buildx, etc.
+
+##### Migration Path
+
+1. Keep current tar-based workflow as fallback
+2. Add MCP server wrapping OCI registry operations
+3. Update meta-agents to use digest-based references
+4. Gradually deprecate tar storage in Postgres
 
 ### TODO: Linting and Type Checking with Bazel
 
