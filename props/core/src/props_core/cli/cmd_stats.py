@@ -768,31 +768,56 @@ def cmd_stats(ctx: typer.Context) -> None:
         # Count run statuses using SQL aggregation
         # Filter to same scope as per-prompt stats: TRAIN + VALID (all examples)
         # Two-phase for unified AgentRun model
-        # TODO: N+1 query - queries snapshots in a loop for each critic run.
-        # Fix: Pre-fetch all snapshots or use JOIN to filter by split in initial query.
+
+        # Critic status counts - pre-fetch snapshots to avoid N+1
+        critic_runs = (
+            session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC).all()
+        )
+        snapshot_slugs = {
+            cr.type_config.example.snapshot_slug for cr in critic_runs if isinstance(cr.type_config, CriticTypeConfig)
+        }
+        snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(snapshot_slugs)).all() if snapshot_slugs else []
+        snapshot_by_slug = {s.slug: s for s in snapshots}
+
         critic_status_counts: Counter[AgentRunStatus] = Counter()
-        for cr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.CRITIC).all():
+        for cr in critic_runs:
             if not isinstance(cr.type_config, CriticTypeConfig):
                 continue
             snapshot_slug = cr.type_config.example.snapshot_slug
-            snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+            snapshot = snapshot_by_slug.get(snapshot_slug)
             if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
                 critic_status_counts[cr.status] += 1
 
         for status, count in critic_status_counts.items():
             status_counts["Critic"][status] = count
 
-        # TODO: N+1 query - two levels: session.get() for each grader, then snapshot query for each.
-        # Fix: Pre-fetch all graded runs and snapshots in bulk queries, build lookup dicts.
+        # Grader status counts - pre-fetch graded runs and snapshots to avoid N+1
+        grader_runs = (
+            session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER).all()
+        )
+        graded_run_ids = {gr.grader_config().graded_agent_run_id for gr in grader_runs}
+        graded_runs = (
+            session.query(AgentRun).filter(AgentRun.agent_run_id.in_(graded_run_ids)).all() if graded_run_ids else []
+        )
+        graded_run_by_id = {r.agent_run_id: r for r in graded_runs}
+
+        # Already have snapshots from critic query above, but need to expand for graded runs
+        additional_snapshot_slugs = {
+            graded_run.critic_config().example.snapshot_slug
+            for graded_run in graded_runs
+            if isinstance(graded_run.type_config, CriticTypeConfig)
+        } - snapshot_slugs
+        if additional_snapshot_slugs:
+            additional_snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(additional_snapshot_slugs)).all()
+            snapshot_by_slug.update({s.slug: s for s in additional_snapshots})
+
         grader_status_counts: Counter[AgentRunStatus] = Counter()
-        for gr in session.query(AgentRun).filter(AgentRun.type_config["agent_type"].astext == AgentType.GRADER).all():
+        for gr in grader_runs:
             grader_config = gr.grader_config()
-            graded_run_id = grader_config.graded_agent_run_id
-            # Check if graded run is in TRAIN or VALID split
-            graded_run = session.get(AgentRun, graded_run_id)
-            if graded_run:
+            graded_run = graded_run_by_id.get(grader_config.graded_agent_run_id)
+            if graded_run and isinstance(graded_run.type_config, CriticTypeConfig):
                 snapshot_slug = graded_run.critic_config().example.snapshot_slug
-                snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
+                snapshot = snapshot_by_slug.get(snapshot_slug)
                 if snapshot and snapshot.split in (Split.TRAIN, Split.VALID):
                     grader_status_counts[gr.status] += 1
 

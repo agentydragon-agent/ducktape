@@ -8,7 +8,9 @@ import tarfile
 
 from fastapi import APIRouter, HTTPException
 from props_core.db.models import (
+    ExpectedRecallScope,
     FalsePositive,
+    FileSet,
     FileSetMember,
     Snapshot,
     SnapshotFile,
@@ -138,8 +140,8 @@ def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
     """Get graders_match_only_if_reported_on paths from hash.
 
-    TODO: N+1 query - called in nested loops (lines 217-228, 235-246).
-    Fix: Pre-fetch all file set members for unique files_hash values in one query.
+    NOTE: This function is retained for potential future use but is no longer called in hot paths.
+    The main endpoint pre-fetches all matchable files in bulk to avoid N+1 queries.
     """
     if not files_hash:
         return None
@@ -199,12 +201,15 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             raise HTTPException(status_code=404, detail=f"Snapshot not found: {slug}")
 
         # Get TPs with eager loading
-        # TODO: N+1 query - missing eager loading for trigger.file_set.members
-        # Add: .selectinload(ExpectedRecallScope.file_set).selectinload(FileSet.members)
         tps = (
             session.query(TruePositive)
             .filter_by(snapshot_slug=slug)
-            .options(selectinload(TruePositive.occurrences).selectinload(TruePositiveOccurrenceORM.triggers))
+            .options(
+                selectinload(TruePositive.occurrences)
+                .selectinload(TruePositiveOccurrenceORM.triggers)
+                .selectinload(ExpectedRecallScope.file_set)
+                .selectinload(FileSet.members)
+            )
             .order_by(TruePositive.tp_id)
             .all()
         )
@@ -218,18 +223,43 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             .all()
         )
 
+        # Pre-fetch all matchable files to avoid N+1 queries
+        # Collect all unique match_filter_hash values from both TPs and FPs
+        match_filter_hashes = set()
+        for tp in tps:
+            for occ in tp.occurrences:
+                if occ.match_filter_hash:
+                    match_filter_hashes.add(occ.match_filter_hash)
+        for fp in fps:
+            for occ in fp.occurrences:
+                if occ.match_filter_hash:
+                    match_filter_hashes.add(occ.match_filter_hash)
+
+        # Bulk fetch all file set members for these hashes
+        matchable_files_by_hash: dict[str, list[str]] = {}
+        if match_filter_hashes:
+            members = (
+                session.query(FileSetMember.files_hash, FileSetMember.file_path)
+                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(match_filter_hashes))
+                .order_by(FileSetMember.files_hash, FileSetMember.file_path)
+                .all()
+            )
+            for files_hash, file_path in members:
+                matchable_files_by_hash.setdefault(files_hash, []).append(file_path)
+
         # Convert TPs
         tp_infos = []
         for tp in tps:
             occ_infos = []
             for occ in tp.occurrences:
+                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
                 occ_infos.append(
                     TpOccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_parse_files_json(occ.files),
                         note=occ.note,
                         critic_scopes_expected_to_recall=_get_trigger_paths(occ),
-                        graders_match_only_if_reported_on=_get_matchable_files(session, slug, occ.match_filter_hash),
+                        graders_match_only_if_reported_on=matchable_files,
                     )
                 )
             tp_infos.append(
@@ -241,13 +271,14 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for fp in fps:
             occ_infos = []
             for occ in fp.occurrences:
+                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
                 occ_infos.append(
                     FpOccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_parse_files_json(occ.files),
                         note=occ.note,
                         relevant_files=sorted(occ.relevant_files),
-                        graders_match_only_if_reported_on=_get_matchable_files(session, slug, occ.match_filter_hash),
+                        graders_match_only_if_reported_on=matchable_files,
                     )
                 )
             fp_infos.append(

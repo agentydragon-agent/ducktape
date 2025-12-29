@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from mcp.types import EmbeddedResource, ImageContent, TextContent
 from props_core.agent_registry import AgentRegistry
-from props_core.agent_types import AgentType, TypeConfig
+from props_core.agent_types import AgentType, CriticTypeConfig, TypeConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, GradingTarget, Snapshot
 from props_core.db.session import get_session
@@ -927,21 +927,24 @@ def _build_run_info(run: AgentRun, split: Split | None) -> RunInfo:
 
 
 def _get_recent_runs(session, limit: int = 20) -> list[RunInfo]:
-    """Get recent runs with split info.
-
-    TODO: N+1 query - queries snapshots in a loop for each critic run.
-    Fix: Collect unique snapshot_slugs, fetch in one query with .in_(), build lookup dict.
-    """
+    """Get recent runs with split info."""
     runs = session.query(AgentRun).order_by(AgentRun.updated_at.desc()).limit(limit).all()
+
+    # Pre-fetch all snapshots to avoid N+1 queries
+    snapshot_slugs = {
+        run.type_config.example.snapshot_slug for run in runs if isinstance(run.type_config, CriticTypeConfig)
+    }
+    snapshots = session.query(Snapshot).filter(Snapshot.slug.in_(snapshot_slugs)).all() if snapshot_slugs else []
+    snapshot_by_slug = {s.slug: s for s in snapshots}
+
+    # Build result with looked-up splits
     result = []
     for run in runs:
         split = None
-        if run.type_config.get("agent_type") == "critic":
-            snapshot_slug = run.type_config.get("snapshot_slug")
-            if snapshot_slug:
-                snapshot = session.query(Snapshot).filter_by(slug=snapshot_slug).first()
-                if snapshot:
-                    split = snapshot.split
+        if isinstance(run.type_config, CriticTypeConfig):
+            snapshot_slug = run.type_config.example.snapshot_slug
+            if snapshot_slug in snapshot_by_slug:
+                split = snapshot_by_slug[snapshot_slug].split
         result.append(_build_run_info(run, split))
     return result
 
