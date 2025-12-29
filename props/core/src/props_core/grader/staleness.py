@@ -17,13 +17,10 @@ from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 
-def resolve_scope_files(
-    snapshot_slug: SnapshotSlug, example_spec: ExampleSpec, session: Session | None = None
-) -> set[Path]:
+def resolve_scope_files(example_spec: ExampleSpec, session: Session | None = None) -> set[Path]:
     """Resolve an ExampleSpec to concrete file set.
 
     Args:
-        snapshot_slug: Snapshot identifier (for validation, already in example_spec)
         example_spec: The example specification (discriminated union)
         session: Optional existing session (avoids nested session issues)
 
@@ -32,10 +29,10 @@ def resolve_scope_files(
     """
     if session is None:
         with get_session() as new_session:
-            return resolve_scope_files(snapshot_slug, example_spec, new_session)
+            return resolve_scope_files(example_spec, new_session)
 
     if isinstance(example_spec, WholeSnapshotExample):
-        snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
+        snapshot = session.query(DBSnapshot).filter_by(slug=example_spec.snapshot_slug).one()
         return snapshot.files_with_issues()
     if isinstance(example_spec, SingleFileSetExample):
         file_set = (
@@ -172,7 +169,7 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             stored_snapshot_model = CanonicalIssuesSnapshot.model_validate(stored_snapshot)
 
             # Resolve scope specification to file set (pass session to avoid nested session issues)
-            targeted_files = resolve_scope_files(snapshot_slug, example_spec, session)
+            targeted_files = resolve_scope_files(example_spec, session)
 
             # Filter stored snapshot to TPs in expected recall scope and relevant FPs (same filtering applied at grading time)
             stored_tps_in_scope = filter_tps_in_expected_recall_scope(stored_snapshot_model.true_positives, targeted_files)

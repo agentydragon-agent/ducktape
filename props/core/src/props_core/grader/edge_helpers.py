@@ -55,7 +55,7 @@ def get_pending_edges(
                 else:
                     query = query.where(GradingPending.fp_id == gt_id, GradingPending.fp_occurrence_id == occ_id)
 
-        return list(session.scalars(query).all())
+        return list(session.scalars(query))
 
 
 def insert_edge(
