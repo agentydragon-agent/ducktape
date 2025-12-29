@@ -17,20 +17,16 @@ from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 
-def resolve_scope_files(example_spec: ExampleSpec, session: Session | None = None) -> set[Path]:
+def resolve_scope_files(example_spec: ExampleSpec, session: Session) -> set[Path]:
     """Resolve an ExampleSpec to concrete file set.
 
     Args:
         example_spec: The example specification (discriminated union)
-        session: Optional existing session (avoids nested session issues)
+        session: Database session (required to avoid accidental nested sessions)
 
     Returns:
         Set of file paths in the scope
     """
-    if session is None:
-        with get_session() as new_session:
-            return resolve_scope_files(example_spec, new_session)
-
     if isinstance(example_spec, WholeSnapshotExample):
         snapshot = session.query(DBSnapshot).filter_by(slug=example_spec.snapshot_slug).one()
         return snapshot.files_with_issues()
@@ -82,19 +78,15 @@ def filter_relevant_db_fps(fps: list[DBKnownFalsePositive], targeted_files: set[
 
 
 def load_current_canonical_issues_from_db(
-    snapshot_slug: SnapshotSlug, targeted_files: set[Path], session: Session | None = None
+    snapshot_slug: SnapshotSlug, targeted_files: set[Path], session: Session
 ) -> dict[str, Any]:
     """Load current canonical TPs+FPs from database, filtered to targeted_files.
 
     Args:
         snapshot_slug: Snapshot to load issues from
         targeted_files: Files to filter issues by
-        session: Optional existing session (avoids nested session issues)
+        session: Database session (required to avoid accidental nested sessions)
     """
-    if session is None:
-        with get_session() as new_session:
-            return load_current_canonical_issues_from_db(snapshot_slug, targeted_files, new_session)
-
     snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
 
     # Convert ORM models to DB persistence models first
