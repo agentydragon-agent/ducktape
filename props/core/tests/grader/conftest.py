@@ -11,13 +11,13 @@ from uuid import UUID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props_core.db.session import get_session
-from props_core.db.snapshots import DBGraderOutput, DBReportedIssue
+from props_core.db.snapshots import DBOccurrenceResult, DBReportedIssue
 from props_core.grader.edge_helpers import insert_edge
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
-from tests.conftest import make_critic_run, make_grader_output, make_grader_run
+from tests.conftest import make_critic_run, make_grader_run, make_occurrence_results
 
 __all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 
@@ -66,7 +66,7 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
 def make_test_grader_run(
     snapshot_slug: str | SnapshotSlug,
     critic_run_id: UUID,
-    output: DBGraderOutput | None = None,
+    occurrence_results: list[DBOccurrenceResult] | None = None,
     status: AgentRunStatus | None = None,
 ) -> UUID:
     """Create a test grader run.
@@ -74,14 +74,14 @@ def make_test_grader_run(
     Args:
         snapshot_slug: Snapshot slug (kept for backward compatibility, but derived from critic_run)
         critic_run_id: Critic run ID
-        output: Grader output dict (default: success with 0 TPs)
-        status: Run status (default: COMPLETED for compatibility)
+        occurrence_results: Per-occurrence grading results (default: empty list)
+        status: Run status (default: COMPLETED)
 
     Returns:
         grader_run_id (UUID)
     """
-    if output is None:
-        output = make_grader_output(tp_occurrences=[], summary="Test grader")
+    if occurrence_results is None:
+        occurrence_results = make_occurrence_results(tp_occurrences=[])
 
     if status is None:
         status = AgentRunStatus.COMPLETED

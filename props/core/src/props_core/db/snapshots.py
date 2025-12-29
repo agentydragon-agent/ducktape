@@ -13,8 +13,6 @@ Key differences from MCP models:
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
-
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -142,54 +140,8 @@ class DBCriticSubmitPayload(BaseModel):
 
 
 # =============================================================================
-# Critic Output Models (Discriminated Union)
+# Grading Result Models (for test fixtures)
 # =============================================================================
-
-
-class DBCriticSuccess(BaseModel):
-    """Database representation of successful critic output."""
-
-    tag: Literal["success"] = "success"
-    result: DBCriticSubmitPayload = Field(description="Successful critique with issues and optional notes")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCriticMaxTurnsExceeded(BaseModel):
-    """Database representation of critic running out of turns."""
-
-    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
-    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCriticContextLengthExceeded(BaseModel):
-    """Database representation of critic input exceeding context window."""
-
-    tag: Literal["context_length_exceeded"] = "context_length_exceeded"
-    error_message: str = Field(description="Error message from the API")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBCriticReportedFailure(BaseModel):
-    """Database representation of critic explicitly reporting it cannot complete."""
-
-    tag: Literal["reported_failure"] = "reported_failure"
-    reason: str = Field(description="Reason provided by the critic for inability to complete")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-DBCriticOutput = Annotated[
-    DBCriticSuccess | DBCriticMaxTurnsExceeded | DBCriticContextLengthExceeded | DBCriticReportedFailure,
-    Field(
-        discriminator="tag",
-        description="Critic output: success, max turns exceeded, context length exceeded, or reported failure",
-    ),
-]
-"""Discriminated union of critic outcomes for database persistence."""
 
 
 class DBOccurrenceMatch(BaseModel):
@@ -214,57 +166,9 @@ class DBOccurrenceResult(BaseModel):
 
 
 class DBUnknownIssue(BaseModel):
-    """Database representation of an input issue with novel aspects not matched to any canonical issue.
-
-    This is the persisted form for unknowns from grader output.
-    """
+    """Database representation of an input issue with novel aspects not matched to any canonical issue."""
 
     id: str = Field(description="Unknown issue ID (stored as string)")
     rationale: str = Field(description="Why this issue is novel/unknown (stored as string)")
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBGraderSuccess(BaseModel):
-    """Database representation of successful grader output with per-occurrence results.
-
-    This is the persisted form, decoupled from MCP I/O types.
-    All NewType IDs are stored as strings.
-    """
-
-    tag: Literal["success"] = "success"
-
-    occurrence_results: list[DBOccurrenceResult] = Field(description="Per-occurrence grading results")
-
-    unknowns: list[DBUnknownIssue] = Field(
-        default_factory=list, description="Input issues with novel aspects not matched to canonical issues"
-    )
-
-    summary: str = Field(description="Summary rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBGraderMaxTurnsExceeded(BaseModel):
-    """Database representation of grader running out of turns."""
-
-    tag: Literal["max_turns_exceeded"] = "max_turns_exceeded"
-    max_turns: int = Field(description="Maximum turns that were allowed", gt=0)
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBGraderReportedFailure(BaseModel):
-    """Database representation of grader explicitly reporting it cannot complete."""
-
-    tag: Literal["reported_failure"] = "reported_failure"
-    reason: str = Field(description="Reason provided by the grader for inability to complete")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-DBGraderOutput = Annotated[
-    DBGraderSuccess | DBGraderMaxTurnsExceeded | DBGraderReportedFailure,
-    Field(discriminator="tag", description="Grader output: success, max turns exceeded, or reported failure"),
-]
-"""Discriminated union of grader outcomes for database persistence."""

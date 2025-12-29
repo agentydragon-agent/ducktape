@@ -30,19 +30,7 @@ from props_core.db.models import (
 )
 from props_core.db.session import dispose_db, get_session, init_db, recreate_database
 from props_core.db.setup import ensure_database_exists
-from props_core.db.snapshots import (
-    DBCriticContextLengthExceeded,
-    DBCriticMaxTurnsExceeded,
-    DBCriticOutput,
-    DBCriticSubmitPayload,
-    DBCriticSuccess,
-    DBGraderOutput,
-    DBGraderSuccess,
-    DBLocationAnchor,
-    DBOccurrenceMatch,
-    DBOccurrenceResult,
-    DBUnknownIssue,
-)
+from props_core.db.snapshots import DBLocationAnchor, DBOccurrenceMatch, DBOccurrenceResult
 from props_core.db.sync.sync import sync_all
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -138,38 +126,25 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
     return original
 
 
-def make_grader_output(
+def make_occurrence_results(
     *,
     tp_occurrences: list[tuple[str, str]],
-    summary: str = "Test grader output",
     found_credit: float = 0.0,
-    unknowns: list[str] | None = None,
-) -> DBGraderOutput:
-    """Build test grader output with per-occurrence results using REAL TP IDs.
+) -> list[DBOccurrenceResult]:
+    """Build per-occurrence grading results for test fixtures.
 
     Args:
         tp_occurrences: List of (tp_id, occurrence_id) tuples from database.
-            Query from true_positive_occurrences table for the snapshot.
-        summary: Summary text (default: "Test grader output")
-        found_credit: Credit for each occurrence (0.0 = not found, 1.0 = fully found). Default: 0.0
-        unknowns: Optional list of unknown issue IDs (unlabeled issues found by critic)
+        found_credit: Credit for each occurrence (0.0 = not found, 1.0 = fully found).
 
     Returns:
-        DBGraderSuccess with specified parameters (or DBGraderOutput for unknowns)
+        List of DBOccurrenceResult ready for populate_grading_edges().
 
     Example:
-        # Query real TPs from database
-        tp_occs = session.query(TruePositiveOccurrenceORM.tp_id, TruePositiveOccurrenceORM.occurrence_id).filter_by(
-            snapshot_slug="test-fixtures/train1"
-        ).all()
-
-        # Create output with 80% recall across all occurrences
-        output = make_grader_output(tp_occurrences=tp_occs, found_credit=0.8)
-
-        # Create output with unknowns (unlabeled issues)
-        output = make_grader_output(tp_occurrences=tp_occs[:2], unknowns=["unknown-001"])
+        tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/train1", session)
+        results = make_occurrence_results(tp_occurrences=tp_occs, found_credit=0.8)
     """
-    occurrence_results = [
+    return [
         DBOccurrenceResult(
             tp_id=tp_id,
             occurrence_id=occ_id,
@@ -181,12 +156,6 @@ def make_grader_output(
         )
         for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1)
     ]
-
-    return DBGraderSuccess(
-        occurrence_results=occurrence_results,
-        summary=summary,
-        unknowns=[DBUnknownIssue(id=u, rationale=f"Unknown issue: {u}") for u in unknowns] if unknowns else [],
-    )
 
 
 def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> list[tuple[str, str]]:
@@ -211,62 +180,6 @@ def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> lis
         .all()
     )
     return [(row.tp_id, row.occurrence_id) for row in rows]
-
-
-def make_critic_success(notes_md: str = "") -> DBCriticOutput:
-    """Build successful critic output for test storage.
-
-    Uses actual Pydantic DB models to ensure test data matches the schema.
-
-    Note: Issues are now stored in the reported_issues table and accessed via
-    critic_run.reported_issues ORM relationship, not in the payload.
-
-    Args:
-        notes_md: Notes in markdown (default: empty string, not None)
-
-    Returns:
-        DBCriticSuccess with the provided payload
-    """
-    return DBCriticSuccess(result=DBCriticSubmitPayload(notes_md=notes_md))
-
-
-def make_critic_max_turns_exceeded(max_turns: int = 10) -> DBCriticOutput:
-    """Build max_turns_exceeded critic output for test storage.
-
-    Args:
-        max_turns: Maximum turns that were allowed
-
-    Returns:
-        DBCriticMaxTurnsExceeded with the provided max_turns
-    """
-    return DBCriticMaxTurnsExceeded(max_turns=max_turns)
-
-
-def make_critic_context_length_exceeded(error_message: str = "Context length exceeded") -> DBCriticOutput:
-    """Build context_length_exceeded critic output for test storage.
-
-    Args:
-        error_message: Error message from the API
-
-    Returns:
-        DBCriticContextLengthExceeded with the provided error message
-    """
-    return DBCriticContextLengthExceeded(error_message=error_message)
-
-
-def make_critique_payload(notes_md: str = "") -> DBCriticSubmitPayload:
-    """Build critique payload for test storage.
-
-    Note: Issues are now stored in the reported_issues table and accessed via
-    critic_run.reported_issues ORM relationship, not in the payload.
-
-    Args:
-        notes_md: Notes in markdown (empty string by default)
-
-    Returns:
-        DBCriticSubmitPayload with the provided data
-    """
-    return DBCriticSubmitPayload(notes_md=notes_md)
 
 
 # ============================================================================
@@ -508,19 +421,17 @@ def make_grader_run(
     )
 
 
-def extract_input_issue_ids(grader_output: DBGraderSuccess) -> list[str]:
-    """Extract unique input issue IDs from grader output.
-
-    Pure function for functional composition.
+def extract_input_issue_ids(occurrence_results: list[DBOccurrenceResult]) -> list[str]:
+    """Extract unique input issue IDs from occurrence results.
 
     Args:
-        grader_output: Successful grader output with occurrence results
+        occurrence_results: List of grading results with matches.
 
     Returns:
-        Sorted list of unique input issue IDs
+        Sorted list of unique input issue IDs.
     """
     issue_ids = set()
-    for occ_result in grader_output.occurrence_results:
+    for occ_result in occurrence_results:
         for match in occ_result.matched_by:
             issue_ids.add(str(match.input_id))
     return sorted(issue_ids)
@@ -608,23 +519,20 @@ def populate_grading_edges(
 
 
 def make_critic_and_grader_run(
-    *, example: Example, grader_output: DBGraderOutput, session: Session
+    *, example: Example, occurrence_results: list[DBOccurrenceResult], session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables.
 
-    Convenience factory for tests that need both critic and grader data.
-    Functional composition: extracts issue IDs from output, creates all data deterministically.
-
     Creates:
     - Critic AgentRun with COMPLETED status
-    - ReportedIssue rows (derived from grader_output)
+    - ReportedIssue rows (derived from occurrence_results)
     - ReportedIssueOccurrence rows (placeholder locations)
-    - Grader AgentRun with provided output
-    - GradingEdge rows from grader output
+    - Grader AgentRun with COMPLETED status
+    - GradingEdge rows from occurrence_results
 
     Args:
         example: Example being evaluated
-        grader_output: Grader output (must be DBGraderSuccess for issue extraction)
+        occurrence_results: Per-occurrence grading results from make_occurrence_results()
         session: Database session
 
     Returns:
@@ -635,18 +543,11 @@ def make_critic_and_grader_run(
     session.add(critic_run)
     session.flush()
 
-    # Extract issue IDs from grader output (functional)
-    if isinstance(grader_output, DBGraderSuccess):
-        issue_ids = extract_input_issue_ids(grader_output)
-        # For whole_snapshot examples, skip occurrence creation (no specific file to reference)
-        location_file = None if example.example_kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
-        make_reported_issues(
-            agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session, location_file=location_file
-        )
-
-    # Derive grader status from output type
-    grader_status = (
-        AgentRunStatus.COMPLETED if isinstance(grader_output, DBGraderSuccess) else AgentRunStatus.MAX_TURNS_EXCEEDED
+    # Extract issue IDs from occurrence results and create ReportedIssue rows
+    issue_ids = extract_input_issue_ids(occurrence_results)
+    location_file = None if example.example_kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
+    make_reported_issues(
+        agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session, location_file=location_file
     )
 
     # Create grader run
@@ -654,21 +555,19 @@ def make_critic_and_grader_run(
         critic_run=critic_run,
         canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
         model="test-grader",
-        status=grader_status,
+        status=AgentRunStatus.COMPLETED,
     )
     session.add(grader_run)
     session.flush()
 
-    # Populate grading edges (deterministic)
-    if isinstance(grader_output, DBGraderSuccess):
-        occurrence_results = grader_output.occurrence_results
-        populate_grading_edges(
-            critic_run=critic_run,
-            grader_run=grader_run,
-            snapshot_slug=example.snapshot_slug,
-            occurrence_results=occurrence_results,
-            session=session,
-        )
+    # Populate grading edges
+    populate_grading_edges(
+        critic_run=critic_run,
+        grader_run=grader_run,
+        snapshot_slug=example.snapshot_slug,
+        occurrence_results=occurrence_results,
+        session=session,
+    )
 
     return critic_run, grader_run
 
@@ -1185,18 +1084,18 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
             f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} expected"
         )
 
-        # Create grader output with real TP IDs
-        grader_output = make_grader_output(tp_occurrences=tp_occs, found_credit=found_credit)
+        # Create occurrence results with real TP IDs
+        occurrence_results = make_occurrence_results(tp_occurrences=tp_occs, found_credit=found_credit)
 
         # Create first pair of runs
         critic_run, grader_run = make_critic_and_grader_run(
-            example=example, grader_output=grader_output, session=session
+            example=example, occurrence_results=occurrence_results, session=session
         )
 
         # Create second pair of runs with slightly different credit
         # This is needed for UCB/LCB computation which requires COUNT(*) > 1
-        grader_output_2 = make_grader_output(tp_occurrences=tp_occs, found_credit=found_credit * 0.9)
-        make_critic_and_grader_run(example=example, grader_output=grader_output_2, session=session)
+        occurrence_results_2 = make_occurrence_results(tp_occurrences=tp_occs, found_credit=found_credit * 0.9)
+        make_critic_and_grader_run(example=example, occurrence_results=occurrence_results_2, session=session)
 
         session.commit()
 
