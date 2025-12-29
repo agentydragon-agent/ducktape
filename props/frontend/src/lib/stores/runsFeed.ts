@@ -10,9 +10,7 @@ export const jobs = writable<JobInfo[]>([]);
 export const connected = writable(false);
 
 // Derived stores
-export const activeJobs = derived(jobs, $jobs =>
-  $jobs.filter(j => j.status === 'running')
-);
+export const activeJobs = derived(jobs, ($jobs) => $jobs.filter((j) => j.status === 'running'));
 
 // WebSocket connection (singleton)
 let ws: WebSocket | null = null;

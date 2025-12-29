@@ -47,7 +47,6 @@ from props_core.db.session import get_session, init_db
 from props_core.display import fmt_pct, short_sha
 from props_core.eval_harness import run_all_evals
 from props_core.ids import DefinitionId, SnapshotSlug
-from props_core.lint.lint_issue import run_specimen_lint_issue_async
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.prompt_improve.improve_agent import (
     OutcomeExhausted,
@@ -607,31 +606,6 @@ async def cmd_grade_missing(
         typer.echo(f"Completed: {successes} succeeded, {failures} failed")
     finally:
         await registry.close()
-
-
-@app.command("lint-issue")
-@async_run
-async def cmd_lint_issue(
-    snapshot: SnapshotSlug = opt.ARG_SNAPSHOT,
-    tp_id: str = typer.Argument(..., help="Issue id to lint (must have should_flag=true)"),
-    occurrence: int = typer.Argument(..., help="0-based occurrence index"),
-    model: str = opt.OPT_MODEL,
-    dry_run: bool = opt.OPT_DRY_RUN,
-) -> None:
-    docker_client = aiodocker.Docker()
-    try:
-        rc = await run_specimen_lint_issue_async(
-            snapshot,
-            tp_id,
-            model=model,
-            dry_run=dry_run,
-            occurrence_index=occurrence,
-            client=build_client(model),
-            docker_client=docker_client,
-        )
-        raise typer.Exit(code=rc)
-    finally:
-        await docker_client.close()
 
 
 @app.command("eval-all")

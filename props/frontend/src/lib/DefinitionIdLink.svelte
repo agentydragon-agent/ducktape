@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { base } from '$app/paths';
+
   // Link component for agent definition IDs
   // Uses native <a> with SvelteKit client-side navigation
 
@@ -9,6 +11,6 @@
   let { id }: Props = $props();
 </script>
 
-<a href="/definitions/{id}" class="text-blue-600 underline hover:text-blue-800">
+<a href="{base}/definitions/{id}" class="text-blue-600 underline hover:text-blue-800">
   {id}
 </a>

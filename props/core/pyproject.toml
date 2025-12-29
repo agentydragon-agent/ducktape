@@ -44,10 +44,8 @@ dependencies = [
 # Orchestration-side only: these packages are used for building/running agents
 # from the host, not inside containers. Container CLI commands (props critic-agent,
 # etc.) work without these.
-# - adgn: agent framework, image building (definition_builder)
 # - net-util: Docker network gateway detection, port discovery (agent_setup)
 orchestration = [
-  "adgn",
   "net-util",
 ]
 dev = [
@@ -121,7 +119,6 @@ testpaths = ["tests"]
 props = "props_core.cli.main:app"
 
 [tool.uv.sources]
-adgn = { workspace = true }
 agent-core = { workspace = true }
 agent-pkg = { workspace = true }
 agent-pkg-runtime = { workspace = true }

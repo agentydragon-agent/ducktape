@@ -1,7 +1,13 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
@@ -36,7 +42,8 @@ table {
   font-size: 0.85rem;
 }
 
-th, td {
+th,
+td {
   padding: 0.3rem 0.5rem;
   text-align: left;
   border-bottom: 1px solid #eee;
@@ -60,9 +67,15 @@ tr:hover {
 }
 
 /* Status colors */
-.recall-high { color: #22863a; }
-.recall-mid { color: #b08800; }
-.recall-low { color: #cb2431; }
+.recall-high {
+  color: #22863a;
+}
+.recall-mid {
+  color: #b08800;
+}
+.recall-low {
+  color: #cb2431;
+}
 
 /* Column group headers */
 .col-group {
@@ -71,9 +84,15 @@ tr:hover {
   border-bottom: 2px solid #ddd;
 }
 
-.col-group-valid { background: #e6f7ff; }
-.col-group-train-w { background: #fffbe6; }
-.col-group-train-p { background: #fff0f6; }
+.col-group-valid {
+  background: #e6f7ff;
+}
+.col-group-train-w {
+  background: #fffbe6;
+}
+.col-group-train-p {
+  background: #fff0f6;
+}
 
 /* Dim for missing data */
 .dim {

@@ -3,6 +3,10 @@
   import { formatStatsWithCI } from '../lib/formatters';
   import { recallColorClass } from '../lib/colors';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import SnapshotLink from '../lib/SnapshotLink.svelte';
+  import FileLink from '../lib/FileLink.svelte';
+  import BackButton from './BackButton.svelte';
+  import Breadcrumb from './Breadcrumb.svelte';
 
   interface Props {
     data: ExampleDetailResponse;
@@ -22,16 +26,27 @@
   <!-- Header -->
   <div class="bg-white rounded-lg shadow p-4">
     <div class="flex items-center gap-3 mb-3">
-      <a href="/" class="text-sm text-gray-500 hover:text-gray-700 hover:underline">← Back</a>
+      <BackButton />
       <h2 class="text-lg font-semibold">Example Detail</h2>
     </div>
+    <Breadcrumb
+      items={[
+        { label: 'Home', href: '/' },
+        { label: 'Examples', href: '/examples' },
+        {
+          label: `${data.snapshot_slug}/${data.example_kind}${data.files_hash ? `/${data.files_hash.substring(0, 8)}` : ''}`,
+        },
+      ]}
+    />
 
     <div class="space-y-3">
       <!-- Example metadata -->
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span class="text-gray-500">Snapshot:</span>
-          <span class="ml-1 font-mono">{data.snapshot_slug}</span>
+          <span class="ml-1">
+            <SnapshotLink slug={data.snapshot_slug} />
+          </span>
         </div>
         <div>
           <span class="text-gray-500">Split:</span>
@@ -43,7 +58,7 @@
         </div>
         <div>
           <span class="text-gray-500">Catchable Occurrences:</span>
-          <span class="ml-1">{data.n_catchable_occurrences}</span>
+          <span class="ml-1">{data.recall_denominator}</span>
         </div>
         {#if data.files_hash}
           <div class="col-span-2">
@@ -57,9 +72,11 @@
       {#if data.example_kind === 'file_set' && data.files}
         <div>
           <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
-          <ul class="text-xs font-mono text-gray-600 space-y-1">
+          <ul class="text-xs text-gray-600 space-y-1">
             {#each data.files as file}
-              <li>{file}</li>
+              <li>
+                <FileLink snapshotSlug={data.snapshot_slug} filePath={file} />
+              </li>
             {/each}
           </ul>
         </div>

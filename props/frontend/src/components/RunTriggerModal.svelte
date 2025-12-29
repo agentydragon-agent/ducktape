@@ -132,9 +132,7 @@
 
           <!-- Split selector -->
           <div>
-            <label for="modal-split" class="block text-sm font-medium text-gray-700 mb-1">
-              Split
-            </label>
+            <label for="modal-split" class="block text-sm font-medium text-gray-700 mb-1"> Split </label>
             <select
               id="modal-split"
               bind:value={selectedSplit}
@@ -148,9 +146,7 @@
 
           <!-- Example kind -->
           <div>
-            <label for="modal-kind" class="block text-sm font-medium text-gray-700 mb-1">
-              Example Kind
-            </label>
+            <label for="modal-kind" class="block text-sm font-medium text-gray-700 mb-1"> Example Kind </label>
             <select
               id="modal-kind"
               bind:value={selectedKind}

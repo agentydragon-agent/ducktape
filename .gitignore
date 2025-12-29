@@ -69,5 +69,6 @@ nix/**/result
 
 # Project-specific
 **/.claude/settings.local.json
+**/.claude/session-start.log
 adgn/openai_openapi.yaml
 worktrees

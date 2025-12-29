@@ -2,9 +2,13 @@
   import { onMount, onDestroy } from 'svelte';
   import { toast } from 'svelte-sonner';
   import { marked } from 'marked';
+  import BackButton from './BackButton.svelte';
+  import Breadcrumb from './Breadcrumb.svelte';
   import {
     fetchRun,
     fetchRunEvents,
+    fetchSnapshotDetail,
+    fetchSnapshotFile,
     type AgentRunDetail,
     type EventInfo,
     type CriticTypeConfig,
@@ -16,13 +20,21 @@
     type TruncatedStream,
     type DockerExecCallPayload,
     type DockerExecOutputPayload,
+    type SnapshotDetailResponse,
+    type FileContentResponse,
+    type GradingEdgeInfo,
+    type ReportedIssueInfo,
+    isCriticRun,
+    isGraderRun,
   } from '../lib/api/client';
   import { getStatusColor, formatStatus } from '../lib/status';
   import { truncateText } from '../lib/formatters';
   import RunIdLink from '../lib/RunIdLink.svelte';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
-  import GradingDecisions from './GradingDecisions.svelte';
+  import GradingEdges from './GradingEdges.svelte';
+  import CritiqueFileViewer from './CritiqueFileViewer.svelte';
+  import TruncatedStreamComponent from './TruncatedStream.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
   marked.use({ breaks: true, async: false });
@@ -40,6 +52,11 @@
   let pollInterval: ReturnType<typeof setInterval> | null = null;
   let expandedOutputs: Set<string> = $state(new Set());
 
+  // Critique viewer state
+  let snapshotDetail: SnapshotDetailResponse | null = $state(null);
+  let fileContents: Map<string, FileContentResponse> = $state(new Map());
+  let loadingSnapshot = $state(false);
+
   function toggleOutputExpanded(callId: string) {
     if (expandedOutputs.has(callId)) {
       expandedOutputs.delete(callId);
@@ -56,25 +73,146 @@
     return marked.parse(text, { async: false });
   }
 
-  // Get agent type from type_config
+  // Get agent type from discriminator field
   function getAgentType(run: AgentRunDetail): string {
-    return run.type_config.agent_type;
+    return 'agent_type' in run.details ? run.details.agent_type : 'unknown';
+  }
+
+  // Get reported issues from critic run details
+  function getReportedIssues(run: AgentRunDetail): ReportedIssueInfo[] {
+    if (!isCriticRun(run)) return [];
+    return run.details.reported_issues;
+  }
+
+  // Get grading edges from grader run details
+  function getGradingEdges(run: AgentRunDetail): GradingEdgeInfo[] {
+    if (!isGraderRun(run)) return [];
+    return run.details.grading_edges;
+  }
+
+  // Get resolved files from critic run details
+  function getResolvedFiles(run: AgentRunDetail): string[] | null {
+    if (!isCriticRun(run)) return null;
+    return run.details.resolved_files;
+  }
+
+  // Get snapshot slug from run's example (for critics and graders)
+  function getSnapshotSlug(run: AgentRunDetail): string | undefined {
+    const config = run.type_config;
+    if ('example' in config && config.example) {
+      return config.example.snapshot_slug;
+    }
+    return undefined;
+  }
+
+  // Compute aggregated grading edges from all grader runs
+  function getAggregatedEdges(run: AgentRunDetail): GradingEdgeInfo[] {
+    if (!isCriticRun(run)) return [];
+    return run.details.grader_runs.flatMap((g) => g.grading_edges);
+  }
+
+  // Compute grading summary from aggregated edges
+  function computeGradingSummary(run: AgentRunDetail) {
+    if (!isCriticRun(run)) return null;
+
+    const edges = getAggregatedEdges(run);
+    if (edges.length === 0) return null;
+
+    const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
+    const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
+    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
+    const total_credit = edges
+      .filter((e) => e.target.kind === 'tp')
+      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+
+    // Recall denominator needs to come from example - we'll pass it separately
+    return { tp_count, fp_count, unknown_count, total_credit };
   }
 
   // Load run data
   async function loadData() {
     try {
-      const [runResult, eventsResult] = await Promise.all([
-        fetchRun(runId),
-        fetchRunEvents(runId, 0, 500),
-      ]);
+      const [runResult, eventsResult] = await Promise.all([fetchRun(runId), fetchRunEvents(runId, 0, 500)]);
       run = runResult;
       events = eventsResult.events;
+
+      // Load snapshot data for critic runs with reported issues
+      const reportedIssues = getReportedIssues(run);
+      if (getAgentType(run) === 'critic' && reportedIssues.length > 0) {
+        await loadSnapshotData(run);
+      }
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Failed to load run';
       toast.error(message);
     } finally {
       loading = false;
+    }
+  }
+
+  // Load snapshot and file data for critique viewer
+  async function loadSnapshotData(criticRun: AgentRunDetail) {
+    if (getAgentType(criticRun) !== 'critic') return;
+
+    const config = criticRun.type_config as CriticTypeConfig;
+    let snapshotSlug: string;
+
+    // Extract snapshot slug from example
+    if (config.example.kind === 'whole_snapshot') {
+      snapshotSlug = config.example.snapshot_slug;
+    } else {
+      snapshotSlug = config.example.snapshot_slug;
+    }
+
+    loadingSnapshot = true;
+    try {
+      // Fetch snapshot detail to get ground truth
+      snapshotDetail = await fetchSnapshotDetail(snapshotSlug);
+
+      // Collect all files mentioned in critique issues or ground truth
+      const allFilePaths = new Set<string>();
+
+      // Files from critique issues
+      const reportedIssues = getReportedIssues(criticRun);
+      for (const issue of reportedIssues) {
+        for (const fileLocation of issue.occurrences.flatMap((o) => o.files)) {
+          allFilePaths.add(fileLocation.path);
+        }
+      }
+
+      // Files from ground truth
+      for (const tp of snapshotDetail.true_positives) {
+        for (const occ of tp.occurrences) {
+          for (const fileInfo of occ.files) {
+            allFilePaths.add(fileInfo.path);
+          }
+        }
+      }
+      for (const fp of snapshotDetail.false_positives) {
+        for (const occ of fp.occurrences) {
+          for (const fileInfo of occ.files) {
+            allFilePaths.add(fileInfo.path);
+          }
+        }
+      }
+
+      // Fetch file contents
+      const newContents = new Map<string, FileContentResponse>();
+      await Promise.all(
+        Array.from(allFilePaths).map(async (path) => {
+          try {
+            const content = await fetchSnapshotFile(snapshotSlug, path);
+            newContents.set(path, content);
+          } catch (e) {
+            console.error(`Failed to fetch file ${path}:`, e);
+          }
+        })
+      );
+      fileContents = newContents;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to load snapshot data';
+      toast.error(message);
+    } finally {
+      loadingSnapshot = false;
     }
   }
 
@@ -131,9 +269,7 @@
         const callId = event.payload.call_id;
         const input = event.payload.input;
         const outputEvent = outputsByCallId.get(callId) || null;
-        const result = outputEvent && isDockerExecOutput(outputEvent.payload)
-          ? outputEvent.payload.result
-          : null;
+        const result = outputEvent && isDockerExecOutput(outputEvent.payload) ? outputEvent.payload.result : null;
 
         dockerExecPairs.push({ callEvent: event, outputEvent, input, result, callId });
         pairedCallIds.add(callId);
@@ -141,7 +277,7 @@
     }
 
     // Filter out paired events from main list
-    const remainingEvents = events.filter(event => {
+    const remainingEvents = events.filter((event) => {
       const payload = event.payload;
       if (isDockerExecCall(payload) && pairedCallIds.has(payload.call_id)) return false;
       if (isDockerExecOutput(payload) && pairedCallIds.has(payload.call_id)) return false;
@@ -169,7 +305,7 @@
       return unwrapped[0];
     }
     // Quote args with spaces
-    return unwrapped.map(arg => arg.includes(' ') ? `"${arg}"` : arg).join(' ');
+    return unwrapped.map((arg) => (arg.includes(' ') ? `"${arg}"` : arg)).join(' ');
   }
 
   // Format duration - show in seconds if >= 1s and whole second
@@ -186,14 +322,13 @@
     return stream.truncated_text;
   }
 
-  // Check if stream is truncated
-  function isStreamTruncated(stream: ExecStream): { truncated: boolean; totalBytes?: number } {
-    if (typeof stream === 'string') return { truncated: false };
-    return { truncated: true, totalBytes: stream.total_bytes };
-  }
-
   // Format API usage stats
-  function formatUsage(usage: { input_tokens?: number | null; output_tokens?: number | null; input_tokens_details?: { cached_tokens?: number | null } | null; output_tokens_details?: { reasoning_tokens?: number | null } | null }): string {
+  function formatUsage(usage: {
+    input_tokens?: number | null;
+    output_tokens?: number | null;
+    input_tokens_details?: { cached_tokens?: number | null } | null;
+    output_tokens_details?: { reasoning_tokens?: number | null } | null;
+  }): string {
     const cached = usage.input_tokens_details?.cached_tokens ?? 0;
     const reasoning = usage.output_tokens_details?.reasoning_tokens ?? 0;
     const parts = [`in: ${usage.input_tokens ?? 0}`, `out: ${usage.output_tokens ?? 0}`];
@@ -205,12 +340,13 @@
   // Format exit status
   function formatExitStatus(exit: BaseExecResult['exit']): { text: string; color: string } {
     switch (exit.kind) {
-      case 'exited':
+      case 'exited': {
         const code = exit.exit_code ?? 0;
         return {
           text: `exit ${code}`,
-          color: code === 0 ? 'text-green-600' : 'text-red-600'
+          color: code === 0 ? 'text-green-600' : 'text-red-600',
         };
+      }
       case 'timed_out':
         return { text: 'TIMEOUT', color: 'text-yellow-600' };
       case 'killed':
@@ -219,7 +355,12 @@
   }
 
   // Render event content based on type (for non-docker_exec events)
-  function renderEventContent(event: EventInfo): { label: string; content: string; style: string; isMarkdown?: boolean } {
+  function renderEventContent(event: EventInfo): {
+    label: string;
+    content: string;
+    style: string;
+    isMarkdown?: boolean;
+  } {
     const payload = event.payload;
 
     switch (payload.type) {
@@ -227,23 +368,31 @@
         return { label: 'User', content: payload.text, style: 'bg-blue-50 border-blue-200' };
       case 'assistant_text':
         return { label: 'Assistant', content: payload.text, style: 'bg-green-50 border-green-200' };
-      case 'tool_call':
+      case 'tool_call': {
         const argsPreview = payload.args_json ? truncateText(payload.args_json) : '';
         return { label: `Tool: ${payload.name}`, content: argsPreview, style: 'bg-purple-50 border-purple-200' };
-      case 'tool_output':
+      }
+      case 'tool_output': {
         const resultText = payload.content.map((c: any) => c.text || '[non-text]').join('\n');
         const preview = truncateText(resultText, 200);
         return { label: 'Tool Output', content: preview, style: 'bg-gray-50 border-gray-200' };
-      case 'reasoning':
+      }
+      case 'reasoning': {
         const summaryText = payload.summary?.map((s: any) => s.text).join('\n');
-        if (!summaryText) return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
+        if (!summaryText)
+          return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
         return { label: 'Reasoning', content: summaryText, style: 'bg-yellow-50 border-yellow-200', isMarkdown: true };
+      }
       case 'api_request':
         return { label: 'API Request', content: `model: ${payload.model}`, style: 'bg-indigo-50 border-indigo-200' };
       case 'response':
         return { label: 'Response', content: formatUsage(payload.usage), style: 'bg-indigo-50 border-indigo-200' };
       default:
-        return { label: payload.type, content: truncateText(JSON.stringify(payload)), style: 'bg-gray-50 border-gray-200' };
+        return {
+          label: payload.type,
+          content: truncateText(JSON.stringify(payload)),
+          style: 'bg-gray-50 border-gray-200',
+        };
     }
   }
 
@@ -261,7 +410,7 @@
       items.push({
         kind: 'docker_exec',
         pair,
-        seqNum: pair.callEvent.sequence_num
+        seqNum: pair.callEvent.sequence_num,
       });
     }
 
@@ -284,7 +433,7 @@
             kind: 'api_pair',
             request: event,
             response: nextEvent,
-            seqNum: event.sequence_num
+            seqNum: event.sequence_num,
           });
           usedIndices.add(i);
           usedIndices.add(i + 1);
@@ -295,7 +444,7 @@
       items.push({
         kind: 'regular',
         event,
-        seqNum: event.sequence_num
+        seqNum: event.sequence_num,
       });
     }
 
@@ -308,24 +457,22 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header -->
-  <div class="p-4 border-b flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <a
-        href="/"
-        class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50"
-      >
-        ← Back
-      </a>
-      <h2 class="text-lg font-semibold">Run Details</h2>
+  <div class="p-4 border-b">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-4">
+        <BackButton class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50" />
+        <h2 class="text-lg font-semibold">Run Details</h2>
+        {#if run}
+          <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
+        {/if}
+      </div>
       {#if run}
-        <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
+        <span class="px-2 py-1 rounded text-sm font-medium capitalize {getStatusColor(run.status)}">
+          {formatStatus(run.status)}
+        </span>
       {/if}
     </div>
-    {#if run}
-      <span class="px-2 py-1 rounded text-sm font-medium capitalize {getStatusColor(run.status)}">
-        {formatStatus(run.status)}
-      </span>
-    {/if}
+    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Runs', href: '/runs' }, { label: runId }]} />
   </div>
 
   {#if loading}
@@ -369,40 +516,49 @@
 
     <!-- Type-specific inputs -->
     <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-      {#if run.type_config.agent_type === 'critic'}
+      {#if getAgentType(run) === 'critic'}}
         {@const config = run.type_config as CriticTypeConfig}
+        {@const resolvedFiles = getResolvedFiles(run)}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span>
             <span class="text-gray-500">Example:</span>
             <ExampleLink example={config.example} />
           </span>
-          {#if config.example.kind === 'file_set' && run.resolved_files}
-            <span><span class="text-gray-500">Files:</span> {run.resolved_files.join(', ')}</span>
+          {#if config.example.kind === 'file_set' && resolvedFiles}
+            <span><span class="text-gray-500">Files:</span> {resolvedFiles.join(', ')}</span>
           {/if}
         </div>
-      {:else if run.type_config.agent_type === 'grader'}
+      {:else if getAgentType(run) === 'grader'}
         {@const config = run.type_config as GraderTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span class="text-gray-500">Grading critic:</span>
           <RunIdLink id={config.graded_agent_run_id} />
         </div>
-      {:else if run.type_config.agent_type === 'improvement'}
+      {:else if getAgentType(run) === 'improvement'}
         {@const config = run.type_config as ImprovementTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
-          <span><span class="text-gray-500">Baselines:</span>
+          <span
+            ><span class="text-gray-500">Baselines:</span>
             {#each config.baseline_definition_ids as defId, i}
-              {#if i > 0}, {/if}<DefinitionIdLink id={defId} />
+              {#if i > 0},
+              {/if}<DefinitionIdLink id={defId} />
             {/each}
           </span>
           <span><span class="text-gray-500">Examples:</span> {config.allowed_examples.length}</span>
-          <span><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model}, grader={config.grader_model}</span>
+          <span
+            ><span class="text-gray-500">Models:</span> improvement={config.improvement_model}, critic={config.critic_model},
+            grader={config.grader_model}</span
+          >
         </div>
-      {:else if run.type_config.agent_type === 'prompt_optimizer'}
+      {:else if getAgentType(run) === 'prompt_optimizer'}
         {@const config = run.type_config as PromptOptimizerTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
           <span><span class="text-gray-500">Budget:</span> ${config.budget_limit}</span>
-          <span><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model}, grader={config.grader_model}</span>
+          <span
+            ><span class="text-gray-500">Models:</span> optimizer={config.optimizer_model}, critic={config.critic_model},
+            grader={config.grader_model}</span
+          >
         </div>
       {:else}
         <span class="text-gray-400 italic">No type-specific inputs</span>
@@ -425,37 +581,104 @@
     {/if}
 
     <!-- Grading summary (for critic runs with completed grader) -->
-    {#if run.grading_summary}
-      {@const gs = run.grading_summary}
-      {@const recall = gs.n_catchable_occurrences > 0 ? gs.total_credit / gs.n_catchable_occurrences : null}
-      {@const recallColor = recall == null ? 'text-gray-400' : recall >= 0.7 ? 'text-green-600' : recall >= 0.4 ? 'text-yellow-600' : 'text-red-600'}
-      <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
-        <div class="flex flex-wrap gap-x-6 gap-y-1">
-          <span>
-            <span class="text-gray-500">Credit:</span>
-            <span class="ml-1 font-medium {recallColor}">
-              {gs.total_credit.toFixed(1)} / {gs.n_catchable_occurrences} catchable
+    {#if getAgentType(run) === 'critic'}
+      {@const gs = computeGradingSummary(run)}
+      {#if gs}
+        {@const recall_denominator = 0}
+        {@const recall = recall_denominator > 0 ? gs.total_credit / recall_denominator : null}
+        {@const recallColor =
+          recall == null
+            ? 'text-gray-400'
+            : recall >= 0.7
+              ? 'text-green-600'
+              : recall >= 0.4
+                ? 'text-yellow-600'
+                : 'text-red-600'}
+        <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
+          <div class="flex flex-wrap gap-x-6 gap-y-1">
+            <span>
+              <span class="text-gray-500">Credit:</span>
+              <span class="ml-1 font-medium {recallColor}">
+                {gs.total_credit.toFixed(1)}{#if recall_denominator > 0}
+                  / {recall_denominator} catchable{/if}
+              </span>
+              {#if recall != null}
+                <span class="text-gray-400 text-xs">({(recall * 100).toFixed(0)}%)</span>
+              {/if}
             </span>
-            <span class="text-gray-400 text-xs">({recall != null ? `${(recall * 100).toFixed(0)}%` : '—'})</span>
-          </span>
-          <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
-          <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
-          <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
+            <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
+            <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
+            <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
+          </div>
         </div>
-      </div>
+      {/if}
     {/if}
 
-    <!-- Grading decisions (for both critic and grader runs) -->
-    {#if run.grading_decisions.length > 0 || run.missed_occurrences.length > 0}
-      {@const totalItems = run.grading_decisions.length + run.missed_occurrences.length}
-      <div class="px-4 py-2 border-b flex-shrink-0">
-        <GradingDecisions
-          decisions={run.grading_decisions}
-          missedOccurrences={run.missed_occurrences}
-          totalCredit={run.grading_summary?.total_credit}
-          nCatchable={run.grading_summary?.n_catchable_occurrences}
-          defaultOpen={totalItems < 10}
-        />
+    <!-- Grading edges (for both critic and grader runs) -->
+    {#if getAgentType(run) === 'critic'}
+      {@const edges = getAggregatedEdges(run)}
+      {#if edges.length > 0}
+        {@const visibleEdges = edges.filter(
+          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+        )}
+        {@const gs = computeGradingSummary(run)}
+        <div class="px-4 py-2 border-b flex-shrink-0">
+          <GradingEdges
+            {edges}
+            missedOccurrences={[]}
+            totalCredit={gs?.total_credit}
+            recallDenominator={undefined}
+            defaultOpen={visibleEdges.length < 10}
+            runId={run.agent_run_id}
+            snapshotSlug={getSnapshotSlug(run)}
+          />
+        </div>
+      {/if}
+    {:else if getAgentType(run) === 'grader'}
+      {@const gradingEdges = getGradingEdges(run)}
+      {#if gradingEdges.length > 0}
+        {@const visibleEdges = gradingEdges.filter(
+          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+        )}
+        <div class="px-4 py-2 border-b flex-shrink-0">
+          <GradingEdges
+            edges={gradingEdges}
+            missedOccurrences={[]}
+            defaultOpen={visibleEdges.length < 10}
+            runId={run.agent_run_id}
+            snapshotSlug={getSnapshotSlug(run)}
+          />
+        </div>
+      {/if}
+    {/if}
+
+    <!-- Critique file viewer (for critic runs with reported issues) -->
+    {@const reportedIssues = getReportedIssues(run)}
+    {#if getAgentType(run) === 'critic' && reportedIssues.length > 0 && snapshotDetail}
+      {@const edges = getAggregatedEdges(run)}
+      <div class="border-b">
+        <div class="px-4 py-3 bg-gray-100 border-b">
+          <h3 class="text-md font-medium">Critique vs Ground Truth</h3>
+          <p class="text-sm text-gray-600 mt-1">Showing files with critique issues or ground truth annotations</p>
+        </div>
+        {#if loadingSnapshot}
+          <div class="p-4">
+            <p class="text-gray-500 text-sm">Loading snapshot data...</p>
+          </div>
+        {:else}
+          <div class="p-4 space-y-6">
+            {#each Array.from(fileContents.entries()) as [_, fileContent]}
+              <CritiqueFileViewer
+                file={fileContent}
+                tps={snapshotDetail.true_positives}
+                fps={snapshotDetail.false_positives}
+                critiqueIssues={reportedIssues}
+                gradingEdges={edges}
+                snapshotSlug={getSnapshotSlug(run)}
+              />
+            {/each}
+          </div>
+        {/if}
       </div>
     {/if}
 
@@ -475,7 +698,9 @@
               <!-- Docker Exec CLI-style display -->
               {@const pair = item.pair}
               {@const exitStatus = pair.result ? formatExitStatus(pair.result.exit) : null}
-              <div class="{roundingClass} {borderClass} border-gray-700 bg-gray-900 text-gray-100 font-mono text-xs overflow-hidden">
+              <div
+                class="{roundingClass} {borderClass} border-gray-700 bg-gray-900 text-gray-100 font-mono text-xs overflow-hidden"
+              >
                 <!-- Command header with cwd, command, and right-side info -->
                 <div class="px-3 py-2 bg-gray-800 border-b border-gray-700 flex items-center justify-between">
                   <div class="flex items-center gap-2 min-w-0 flex-1">
@@ -490,7 +715,12 @@
                       <span class={exitStatus.color}>{exitStatus.text}</span>
                     {/if}
                     <span class="text-gray-500 flex items-center gap-1">
-                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="2"/><path stroke-width="2" d="M12 6v6l4 2"/></svg>
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        ><circle cx="12" cy="12" r="10" stroke-width="2" /><path
+                          stroke-width="2"
+                          d="M12 6v6l4 2"
+                        /></svg
+                      >
                       {#if pair.result}
                         {formatDuration(pair.result.duration_ms)}/{formatDuration(pair.input.timeout_ms)}
                       {:else}
@@ -503,7 +733,9 @@
 
                 <!-- Extra parameters (if any non-default, excluding cwd which is now in header) -->
                 {#if pair.input.env?.length || pair.input.user}
-                  <div class="px-3 py-1 bg-gray-850 border-b border-gray-700 text-gray-400 text-[10px] flex flex-wrap gap-3">
+                  <div
+                    class="px-3 py-1 bg-gray-850 border-b border-gray-700 text-gray-400 text-[10px] flex flex-wrap gap-3"
+                  >
                     {#if pair.input.user}
                       <span>user: {pair.input.user}</span>
                     {/if}
@@ -517,8 +749,6 @@
                 {#if pair.result}
                   {@const callId = pair.callId}
                   {@const isExpanded = expandedOutputs.has(callId)}
-                  {@const stdoutTrunc = isStreamTruncated(pair.result.stdout)}
-                  {@const stderrTrunc = isStreamTruncated(pair.result.stderr)}
                   {@const stdoutText = getStreamText(pair.result.stdout)}
                   {@const stderrText = getStreamText(pair.result.stderr)}
                   {@const outputLines = (stdoutText + stderrText).split('\n').length}
@@ -526,18 +756,8 @@
 
                   <div class="relative">
                     <div class="px-3 py-2 {needsExpand && !isExpanded ? 'max-h-48 overflow-y-auto' : ''}">
-                      {#if stdoutText}
-                        <pre class="whitespace-pre-wrap break-words text-gray-200">{stdoutText}</pre>
-                        {#if stdoutTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">... stdout truncated ({stdoutTrunc.totalBytes?.toLocaleString()} bytes total)</div>
-                        {/if}
-                      {/if}
-                      {#if stderrText}
-                        <pre class="whitespace-pre-wrap break-words text-red-400">{stderrText}</pre>
-                        {#if stderrTrunc.truncated}
-                          <div class="text-yellow-500 mt-1">... stderr truncated ({stderrTrunc.totalBytes?.toLocaleString()} bytes total)</div>
-                        {/if}
-                      {/if}
+                      <TruncatedStreamComponent stream={pair.result.stdout} kind="stdout" />
+                      <TruncatedStreamComponent stream={pair.result.stderr} kind="stderr" />
                       {#if !stdoutText && !stderrText}
                         <span class="text-gray-500 italic">(no output)</span>
                       {/if}
@@ -554,9 +774,7 @@
                     {/if}
                   </div>
                 {:else}
-                  <div class="px-3 py-2 text-gray-500 italic">
-                    (awaiting result...)
-                  </div>
+                  <div class="px-3 py-2 text-gray-500 italic">(awaiting result...)</div>
                 {/if}
               </div>
             {:else if item.kind === 'api_pair'}

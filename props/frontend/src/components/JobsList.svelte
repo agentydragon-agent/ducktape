@@ -30,7 +30,13 @@
             <JobIdLink id={job.job_id} />
             <span class="font-medium"><DefinitionIdLink id={job.definition_id} /></span>
             <span class="text-gray-500">{job.example_kind}</span>
-            <span class="{job.status === 'running' ? 'text-blue-600' : job.status === 'completed' ? 'text-green-600' : 'text-red-600'}">
+            <span
+              class={job.status === 'running'
+                ? 'text-blue-600'
+                : job.status === 'completed'
+                  ? 'text-green-600'
+                  : 'text-red-600'}
+            >
               {job.status}
             </span>
             <span class="text-gray-600">

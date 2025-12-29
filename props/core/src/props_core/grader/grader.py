@@ -4,6 +4,7 @@ Provides GraderAgentEnvironment for running grader agents. The actual execution
 logic is in AgentRegistry.run_grader().
 """
 
+from collections import defaultdict
 from pathlib import Path
 from uuid import UUID
 
@@ -13,6 +14,7 @@ from props_core.agent_setup import AgentEnvironment
 from props_core.agent_workspace import WorkspaceManager
 from props_core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig
+from props_core.db.models import OccurrenceRangeORM
 from props_core.display import short_uuid
 from props_core.grader.models import FalsePositiveID, KnownFalsePositive, TruePositiveID, TruePositiveIssue
 from props_core.grader.submit_server import GraderSubmitServer
@@ -23,21 +25,27 @@ from props_core.rationale import Rationale
 from mcp_infra.enhanced import EnhancedFastMCP
 
 
-def _convert_files_jsonb(files_jsonb: dict) -> dict[Path, list[LineRange] | None]:
-    result: dict[Path, list[LineRange] | None] = {}
-    for path_str, ranges in files_jsonb.items():
-        if ranges is None:
-            result[Path(path_str)] = None
-        else:
-            # Each element is a dict with start_line/end_line
-            result[Path(path_str)] = [LineRange(**r) for r in ranges]
-    return result
+def _convert_orm_ranges_to_files_dict(ranges: list[OccurrenceRangeORM]) -> dict[Path, list[LineRange]]:
+    """Convert ORM ranges to files dict for MCP models.
+
+    Groups ranges by file path (Path objects) and converts to LineRange objects.
+    """
+    by_file: dict[Path, list[LineRange]] = defaultdict(list)
+    for range_orm in ranges:
+        by_file[range_orm.file_path].append(
+            LineRange(
+                start_line=range_orm.start_line,
+                end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
+                note=range_orm.note,
+            )
+        )
+    return dict(by_file) if by_file else {}
 
 
 def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
     return TruePositiveOccurrence(
         occurrence_id=orm_occ.occurrence_id,
-        files=_convert_files_jsonb(orm_occ.files),
+        files=_convert_orm_ranges_to_files_dict(orm_occ.ranges),
         note=orm_occ.note,
         critic_scopes_expected_to_recall=orm_occ.critic_scopes_expected_to_recall_set,  # Already converts to set[frozenset[Path]]
     )
@@ -46,9 +54,9 @@ def _tp_occ_from_orm(orm_occ) -> TruePositiveOccurrence:
 def _fp_occ_from_orm(orm_occ) -> FalsePositiveOccurrence:
     return FalsePositiveOccurrence(
         occurrence_id=orm_occ.occurrence_id,
-        files=_convert_files_jsonb(orm_occ.files),
+        files=_convert_orm_ranges_to_files_dict(orm_occ.ranges),
         note=orm_occ.note,
-        relevant_files=orm_occ.relevant_files_set,  # Already converts to set[Path]
+        relevant_files={rf.file_path for rf in orm_occ.relevant_file_orms},
     )
 
 

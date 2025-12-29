@@ -243,7 +243,7 @@ class TestQueryBuilders:
             # Check occurrence stats are present (StatsWithCI type)
             if row.credit_stats is not None:
                 assert row.credit_stats.mean >= 0.0
-            assert row.n_recall_denominator >= 0
+            assert row.recall_denominator >= 0
             # Check status counts are present (dict from JSONB) with non-negative values
             assert row.status_counts is not None
             assert all(count >= 0 for count in row.status_counts.values())

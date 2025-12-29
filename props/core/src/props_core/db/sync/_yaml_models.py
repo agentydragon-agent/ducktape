@@ -22,18 +22,19 @@ class YAMLOccurrence(BaseModel):
     """Permissive input model for YAML occurrences - accepts multiple location shapes.
 
     Supports flexible line specifications:
-    - Single line: 42 → normalized to [[42, 42]]
-    - Line range: [10, 20] → normalized to [[10, 20]]
-    - Multiple ranges: [[10, 15], [20, 25]] → kept as-is
+    - Single line: 42 → normalized to [LineRange(42, 42)]
+    - Line range: [10, 20] → normalized to [LineRange(10, 20)]
+    - Multiple ranges: [[10, 15], [20, 25]] → normalized to [LineRange(10, 15), LineRange(20, 25)]
+    - Dict with note: {start_line: 42, end_line: 42, note: "..."} → [LineRange(42, 42, "...")]
     - No specific lines: null → kept as None
 
-    After field validation, files dict contains list[list[int]] or None values.
+    After field validation, files dict contains list[LineRange] or None values.
     """
 
     occurrence_id: str = Field(description="Unique ID within issue (e.g., 'occ-0', 'occ-1')")
     # Type annotation is post-validation (normalize_files converts flexible input to canonical form)
-    files: dict[str, list[list[int]] | None] = Field(
-        description="File paths to line specifications (normalized to list of [start, end] ranges)"
+    files: dict[str, list[LineRange] | None] = Field(
+        description="File paths to line specifications (normalized to list of LineRange objects with optional notes)"
     )
     note: str | None = Field(default=None, description="Occurrence-specific explanation")
     critic_scopes_expected_to_recall: list[list[str]] | None = Field(
@@ -63,63 +64,79 @@ class YAMLOccurrence(BaseModel):
 
     @field_validator("files", mode="before")
     @classmethod
-    def normalize_files(cls, v: dict) -> dict[str, list[list[int]] | None]:
-        """Convert flexible line specs to canonical list[list[int]] form.
+    def normalize_files(cls, v: dict) -> dict[str, list[LineRange] | None]:
+        """Convert flexible line specs to canonical list[LineRange] form.
 
-        Input shapes:
-          42 → [[42, 42]]
-          [10, 20] → [[10, 20]]
-          [[10, 15], [20, 25]] → [[10, 15], [20, 25]]
+        Input shapes (backward compatible):
+          42 → [LineRange(42, 42)]
+          [10, 20] → [LineRange(10, 20)]
+          [[10, 15], [20, 25]] → [LineRange(10, 15), LineRange(20, 25)]
           null → null
 
-        Returns dict with normalized values (list[list[int]] or None).
+        New dict format with optional notes:
+          {start_line: 42, end_line: 42, note: "why this matters"} → [LineRange(42, 42, "why this matters")]
+          [{start_line: 10, end_line: 15, note: "..."}, ...] → [LineRange(10, 15, "..."), ...]
+
+        Returns dict with normalized values (list[LineRange] or None).
         """
-        normalized: dict[str, list[list[int]] | None] = {}
+        normalized: dict[str, list[LineRange] | None] = {}
         for file_path, spec in v.items():
             if spec is None:
                 # No specific lines: keep as None
                 normalized[file_path] = None
             elif isinstance(spec, int):
-                # Single line: 42 → [[42, 42]]
-                normalized[file_path] = [[spec, spec]]
+                # Single line: 42 → [LineRange(42, 42)]
+                normalized[file_path] = [LineRange(start_line=spec, end_line=spec)]
+            elif isinstance(spec, dict):
+                # Dict format: {start_line: 42, end_line: 42, note: "..."}
+                if "start_line" not in spec:
+                    raise ValueError(f"Dict format for {file_path} requires 'start_line' field")
+                if "end_line" not in spec:
+                    raise ValueError(f"Dict format for {file_path} requires 'end_line' field")
+                normalized[file_path] = [
+                    LineRange(start_line=spec["start_line"], end_line=spec["end_line"], note=spec.get("note"))
+                ]
             elif isinstance(spec, list):
                 if not spec:
                     raise ValueError(f"Empty list not allowed for {file_path} (use null for no lines)")
-                if all(isinstance(x, int) for x in spec):
-                    # Range: [10, 20] → [[10, 20]]
+
+                # Check first element to determine format
+                first = spec[0]
+                if isinstance(first, int):
+                    # Range: [10, 20] → [LineRange(10, 20)]
                     if len(spec) != 2:
                         raise ValueError(f"Line range for {file_path} must have exactly 2 elements, got {len(spec)}")
-                    normalized[file_path] = [spec]
-                elif all(isinstance(x, list) for x in spec):
-                    # Already multiple ranges: [[10, 15], [20, 25]]
-                    # Validate each range
+                    normalized[file_path] = [LineRange(start_line=spec[0], end_line=spec[1])]
+                elif isinstance(first, list):
+                    # Multiple ranges: [[10, 15], [20, 25]] → [LineRange(10, 15), LineRange(20, 25)]
+                    ranges = []
                     for r in spec:
-                        if not all(isinstance(x, int) for x in r):
-                            raise ValueError(f"Invalid range in {file_path}: {r} (must be list of ints)")
-                        if len(r) != 2:
-                            raise ValueError(f"Range in {file_path} must have 2 elements, got {len(r)}: {r}")
-                    normalized[file_path] = spec
+                        if not isinstance(r, list) or len(r) != 2 or not all(isinstance(x, int) for x in r):
+                            raise ValueError(f"Invalid range in {file_path}: {r} (must be [start, end])")
+                        ranges.append(LineRange(start_line=r[0], end_line=r[1]))
+                    normalized[file_path] = ranges
+                elif isinstance(first, dict):
+                    # List of dicts: [{start_line: 10, end_line: 15, note: "..."}, ...]
+                    ranges = []
+                    for r in spec:
+                        if not isinstance(r, dict):
+                            raise ValueError(f"Mixed types in {file_path} (expected all dicts)")
+                        if "start_line" not in r or "end_line" not in r:
+                            raise ValueError(f"Dict in {file_path} requires start_line and end_line: {r}")
+                        ranges.append(LineRange(start_line=r["start_line"], end_line=r["end_line"], note=r.get("note")))
+                    normalized[file_path] = ranges
                 else:
-                    raise ValueError(
-                        f"Mixed types in line spec for {file_path}: {spec} "
-                        "(must be all ints for range or all lists for multiple ranges)"
-                    )
+                    raise ValueError(f"Invalid list element type in {file_path}: {type(first).__name__}")
             else:
                 raise ValueError(
                     f"Invalid line spec for {file_path}: {spec} (type: {type(spec).__name__}). "
-                    "Expected int, [start, end], [[r1_start, r1_end], ...], or null"
+                    "Expected int, [start, end], [[r1_start, r1_end], ...], dict, or null"
                 )
         return normalized
 
     def _build_files_dict(self) -> dict[Path, list[LineRange] | None]:
-        """Convert normalized files to Path keys and LineRange values."""
-        files_dict: dict[Path, list[LineRange] | None] = {}
-        for file_str, ranges_val in self.files.items():
-            if ranges_val is None:
-                files_dict[Path(file_str)] = None
-            else:
-                files_dict[Path(file_str)] = [LineRange(start_line=r[0], end_line=r[1]) for r in ranges_val]
-        return files_dict
+        """Convert normalized files to Path keys (values are already LineRange objects)."""
+        return {Path(file_str): ranges_val for file_str, ranges_val in self.files.items()}
 
     def to_tp_occurrence(self) -> TruePositiveOccurrence:
         """Expand to canonical TruePositiveOccurrence."""

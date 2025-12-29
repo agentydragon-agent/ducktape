@@ -11,10 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 if TYPE_CHECKING:
     from props_core.db.examples import Example
@@ -229,6 +229,26 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
         # Validate and wrap in NewType
         validated = self._adapter.validate_python(value)
         return SnapshotSlug(validated)
+
+
+class PathColumn(TypeDecorator[Path]):
+    """SQLAlchemy column type for Path.
+
+    Stores as String in DB, converts to/from Path on load/store.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: Path | str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> Path | None:
+        if value is None:
+            return None
+        return Path(value)
 
 
 E = TypeVar("E", bound=StrEnum)
@@ -467,6 +487,7 @@ class TruePositiveOccurrenceORM(Base):
 
     Each occurrence represents a specific location where the issue manifests.
     critic_scopes_expected_to_recall is stored in the expected_recall_scopes M:N table (linking to file_sets).
+    File ranges are stored in tp_occurrence_ranges table (normalized from JSONB).
     """
 
     __tablename__ = "true_positive_occurrences"
@@ -474,7 +495,6 @@ class TruePositiveOccurrenceORM(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -498,6 +518,11 @@ class TruePositiveOccurrenceORM(Base):
         "TruePositiveOccurrenceORM.tp_id == foreign(ExpectedRecallScope.tp_id), "
         "TruePositiveOccurrenceORM.occurrence_id == foreign(ExpectedRecallScope.occurrence_id))",
     )
+    ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
+        back_populates="tp_occurrence",
+        cascade="all, delete-orphan",
+        foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.tp_id, OccurrenceRangeORM.occurrence_id]",
+    )
 
     @property
     def critic_scopes_expected_to_recall_set(self) -> set[frozenset[Path]]:
@@ -516,7 +541,8 @@ class FalsePositiveOccurrenceORM(Base):
     """Occurrence within a false positive issue.
 
     Each occurrence represents a specific location where the false positive manifests.
-    Has relevant_files defining which files make this FP relevant.
+    File ranges are stored in fp_occurrence_ranges table (normalized from JSONB).
+    Relevant files are stored in fp_occurrence_relevant_files table (normalized from JSONB).
     """
 
     __tablename__ = "false_positive_occurrences"
@@ -524,9 +550,7 @@ class FalsePositiveOccurrenceORM(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    relevant_files: Mapped[list] = mapped_column(JSONB, nullable=False)  # [path, ...]
     match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -543,10 +567,95 @@ class FalsePositiveOccurrenceORM(Base):
 
     # Relationships
     false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
+    ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
+        back_populates="fp_occurrence",
+        cascade="all, delete-orphan",
+        foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.fp_id, OccurrenceRangeORM.occurrence_id]",
+    )
+    relevant_file_orms: Mapped[list[FalsePositiveRelevantFileORM]] = relationship(
+        back_populates="occurrence", cascade="all, delete-orphan"
+    )
 
-    @property
-    def relevant_files_set(self) -> set[Path]:
-        return {Path(p) for p in self.relevant_files}
+
+class OccurrenceRangeORM(Base):
+    """Line range within a TP or FP occurrence (exclusive arc pattern)."""
+
+    __tablename__ = "occurrence_ranges"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
+    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "tp_id", "occurrence_id"],
+            [
+                "true_positive_occurrences.snapshot_slug",
+                "true_positive_occurrences.tp_id",
+                "true_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships - use foreign() to specify which columns to join on
+    tp_occurrence: Mapped[TruePositiveOccurrenceORM | None] = relationship(
+        back_populates="ranges", foreign_keys=[snapshot_slug, tp_id, occurrence_id]
+    )
+    fp_occurrence: Mapped[FalsePositiveOccurrenceORM | None] = relationship(
+        back_populates="ranges", foreign_keys=[snapshot_slug, fp_id, occurrence_id]
+    )
+
+
+class FalsePositiveRelevantFileORM(Base):
+    """File that makes a false positive occurrence relevant."""
+
+    __tablename__ = "fp_occurrence_relevant_files"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    occurrence: Mapped[FalsePositiveOccurrenceORM] = relationship(back_populates="relevant_file_orms")
 
 
 class SnapshotFile(Base):
@@ -748,6 +857,36 @@ class GradingPending(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn())
 
 
+# --- Grading Target Types (Discriminated Union) ---
+
+
+class TpTarget(BaseModel):
+    """TP match target."""
+
+    kind: Literal["tp"] = "tp"
+    tp_id: str
+    occurrence_id: str
+    credit: float
+
+
+class FpTarget(BaseModel):
+    """FP match target."""
+
+    kind: Literal["fp"] = "fp"
+    fp_id: str
+    occurrence_id: str
+    credit: float
+
+
+class NoMatchTarget(BaseModel):
+    """No match (unknown)."""
+
+    kind: Literal["none"] = "none"
+
+
+GradingTarget = Annotated[TpTarget | FpTarget | NoMatchTarget, Field(discriminator="kind")]
+
+
 class GradingEdge(Base):
     """Explicit bipartite graph edge from critique issue to GT occurrence.
 
@@ -799,6 +938,20 @@ class GradingEdge(Base):
 
     # Relationships
     grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
+
+    def to_target(self) -> GradingTarget:
+        """Convert to grading target for API responses."""
+        if self.tp_id is not None:
+            assert self.tp_occurrence_id is not None, (
+                f"TP grading edge {self.critique_issue_id} missing tp_occurrence_id"
+            )
+            return TpTarget(tp_id=self.tp_id, occurrence_id=self.tp_occurrence_id, credit=self.credit)
+        if self.fp_id is not None:
+            assert self.fp_occurrence_id is not None, (
+                f"FP grading edge {self.critique_issue_id} missing fp_occurrence_id"
+            )
+            return FpTarget(fp_id=self.fp_id, occurrence_id=self.fp_occurrence_id, credit=self.credit)
+        return NoMatchTarget()
 
 
 class ModelMetadata(Base):
@@ -923,9 +1076,9 @@ class RecallByRun(Base):
     Base view that aggregates occurrence metrics per critic run, across all graders.
     Feeds into recall_by_definition_example which groups by (definition, model, example).
 
-    - n_recall_denominator: Ground truth count (denominator for recall)
+    - recall_denominator: Ground truth count (denominator for recall)
     - credit_stats: Stats over grader total credits (numerator; not normalized)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
 
     Failed critic runs (max_turns/context_length) contribute 0 credit via COALESCE.
     """
@@ -942,7 +1095,7 @@ class RecallByRun(Base):
     example_kind: Mapped[ExampleKind] = mapped_column(EXAMPLE_KIND_ENUM_TYPE, nullable=False)
     files_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     split: Mapped[Split] = mapped_column(nullable=False)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Critic-specific columns
     critic_definition_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -952,7 +1105,7 @@ class RecallByRun(Base):
     # Credit stats (numerator for recall)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -962,9 +1115,9 @@ class RecallByDefinitionExample(Base):
     Intermediate view between recall_by_run and higher-level aggregations.
     Groups recall_by_run by (definition, model, example) - used by GEPA.
 
-    - n_recall_denominator: Ground truth count (denominator)
+    - recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_definition_example"
@@ -980,7 +1133,7 @@ class RecallByDefinitionExample(Base):
     split: Mapped[Split] = mapped_column(nullable=False)
 
     # Ground truth count (denominator)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Number of critic runs for this (definition, model, example)
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -991,7 +1144,7 @@ class RecallByDefinitionExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1000,9 +1153,9 @@ class RecallByDefinitionSplitKind(Base):
 
     Aggregates recall_by_definition_example across examples within each (split, example_kind) group.
 
-    - n_recall_denominator: Sum across distinct examples (denominator)
+    - recall_denominator: Sum across distinct examples (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_definition_split_kind"
@@ -1020,7 +1173,7 @@ class RecallByDefinitionSplitKind(Base):
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Catchable occurrences (denominator - sum across distinct examples)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Status breakdown (JSONB: {AgentRunStatus.COMPLETED: 5, ...})
     status_counts: Mapped[dict[AgentRunStatus, int]] = mapped_column(JSONB, nullable=False)
@@ -1028,7 +1181,7 @@ class RecallByDefinitionSplitKind(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
     # Count of runs where caught credit was exactly 0 (complete failure to find anything)
@@ -1040,9 +1193,9 @@ class RecallByExample(Base):
 
     Aggregates recall_by_definition_example across definitions.
 
-    - n_recall_denominator: Ground truth count (denominator)
+    - recall_denominator: Ground truth count (denominator)
     - credit_stats: Stats of raw credit counts across runs (numerator)
-    - recall_stats: credit_stats / n_recall_denominator
+    - recall_stats: credit_stats / recall_denominator
     """
 
     __tablename__ = "recall_by_example"
@@ -1057,7 +1210,7 @@ class RecallByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Catchable occurrences (denominator)
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # Run count
     n_runs: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -1068,7 +1221,7 @@ class RecallByExample(Base):
     # Credit stats (numerator; failed runs count as 0 credit)
     credit_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
-    # Recall statistics (credit_stats / n_recall_denominator)
+    # Recall statistics (credit_stats / recall_denominator)
     recall_stats: Mapped[StatsWithCI | None] = mapped_column(StatsWithCIType(), nullable=True)
 
 
@@ -1089,11 +1242,11 @@ class ParetoFrontierByExample(Base):
     For each example, shows definitions that achieved the best mean credit.
 
     For each (snapshot_slug, split, example_kind, files_hash, critic_model), shows:
-    - n_recall_denominator: ground truth count (denominator for recall)
+    - recall_denominator: ground truth count (denominator for recall)
     - winning_definitions: list of {definition_id, credit_stats, n_runs} for all definitions at best score
 
     All entries in winning_definitions have the same credit_stats.mean (the best score).
-    Consumer can compute recall as best_mean_credit / n_recall_denominator.
+    Consumer can compute recall as best_mean_credit / recall_denominator.
 
     Useful for prompt optimization to identify:
     - Which definitions excel on specific examples (definition specialization)
@@ -1116,7 +1269,7 @@ class ParetoFrontierByExample(Base):
     critic_model: Mapped[str] = mapped_column(String, primary_key=True)
 
     # Ground truth count for this example
-    n_recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
+    recall_denominator: Mapped[int] = mapped_column(Integer, nullable=False)
 
     # JSONB array of {definition_id, credit_stats, n_runs} objects
     _winning_definitions_raw: Mapped[list[dict[str, Any]]] = mapped_column("winning_definitions", JSONB, nullable=False)

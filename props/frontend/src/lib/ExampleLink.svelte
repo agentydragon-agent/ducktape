@@ -31,6 +31,10 @@
   });
 </script>
 
-<a {href} class="font-mono text-xs text-blue-600 underline hover:text-blue-800" title="{example.snapshot_slug} ({example.kind})">
+<a
+  {href}
+  class="font-mono text-xs text-blue-600 underline hover:text-blue-800"
+  title="{example.snapshot_slug} ({example.kind})"
+>
   {displayText}
 </a>

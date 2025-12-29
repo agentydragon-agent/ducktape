@@ -15,6 +15,7 @@ from typing import Annotated
 from props_core.cli import common_options as opt
 from props_core.db.models import Snapshot
 from props_core.db.session import get_session
+from props_core.db.sync.export import _format_files
 from props_core.db.sync.sync import get_specimens_base_path
 from props_core.ids import SnapshotSlug
 import pygit2
@@ -168,9 +169,13 @@ async def snapshot_dump(
                         "instances": [
                             {
                                 "occurrence_id": occ.occurrence_id,
-                                "files": occ.files,
+                                "files": _format_files(occ.ranges),
                                 "note": occ.note,
-                                "critic_scopes_expected_to_recall": occ.critic_scopes_expected_to_recall,
+                                "critic_scopes_expected_to_recall": [
+                                    sorted(str(m.file_path) for m in trigger.file_set.members)
+                                    for trigger in occ.triggers
+                                    if trigger.file_set
+                                ],
                             }
                             for occ in tp.occurrences
                         ],
@@ -183,9 +188,9 @@ async def snapshot_dump(
                         "instances": [
                             {
                                 "occurrence_id": occ.occurrence_id,
-                                "files": occ.files,
+                                "files": _format_files(occ.ranges),
                                 "note": occ.note,
-                                "relevant_files": occ.relevant_files,
+                                "relevant_files": sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
                             }
                             for occ in fp.occurrences
                         ],

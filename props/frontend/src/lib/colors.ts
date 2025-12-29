@@ -1,4 +1,4 @@
-// Shared color utilities for recall and split badges
+// Shared color utilities for recall, split badges, and issue types
 
 /** Returns Tailwind classes for recall value styling */
 export function recallColorClass(value: number | null | undefined): string {
@@ -21,3 +21,24 @@ export function splitBadgeClass(split: string): string {
       return 'bg-gray-100 text-gray-800';
   }
 }
+
+/** Generate color scheme for an issue type based on base color */
+function colorScheme(color: string) {
+  return {
+    bg: `bg-${color}-50`,
+    border: `border-${color}-200`,
+    borderLeft: `border-l-4 border-${color}-500`,
+    headerBg: `bg-${color}-100`,
+    text: `text-${color}-600`,
+    textDark: `text-${color}-700`,
+  } as const;
+}
+
+/** Color scheme for issue types (TP, FP, critique, novel) */
+export const issueColors = {
+  tp: colorScheme('green'),
+  fp: colorScheme('red'),
+  critique: colorScheme('blue'),
+  critiqueFp: colorScheme('orange'),
+  novel: colorScheme('gray'),
+} as const;

@@ -14,7 +14,7 @@
   interface Props {
     definitions: DefinitionRow[];
     exampleCounts?: { [key: string]: { [key: string]: number } };
-    onCellClick?: (info: CellClickInfo) => void;
+    onCellClick?: (_: CellClickInfo) => void;
   }
 
   let { definitions, exampleCounts, onCellClick }: Props = $props();
@@ -36,25 +36,27 @@
   const metricsPerKind = 5; // Recall, Runs, Zero, Done, Stalled
 
   // Create DataTable with sortable columns
-  const table = $derived(new DataTable({
-    data: definitions,
-    columns: [
-      { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
-      { id: 'created_at', key: 'created_at', name: 'Age', sortable: true },
-      // Generate columns for each split/kind combo
-      ...splits.flatMap((split) =>
-        kinds.map((kind) => ({
-          id: `${split}_${kind}_recall`,
-          key: 'stats' as keyof DefinitionRow,
-          name: `${split} ${kind} Recall`,
-          sortable: true,
-          getValue: (row: DefinitionRow) => getStats(row, split, kind)?.recall_stats?.mean ?? -1,
-        }))
-      ),
-    ],
-    initialSort: 'valid_whole_snapshot_recall',
-    initialSortDirection: 'desc',
-  }));
+  const table = $derived(
+    new DataTable({
+      data: definitions,
+      columns: [
+        { id: 'definition_id', key: 'definition_id', name: 'Definition', sortable: true },
+        { id: 'created_at', key: 'created_at', name: 'Age', sortable: true },
+        // Generate columns for each split/kind combo
+        ...splits.flatMap((split) =>
+          kinds.map((kind) => ({
+            id: `${split}_${kind}_recall`,
+            key: 'stats' as keyof DefinitionRow,
+            name: `${split} ${kind} Recall`,
+            sortable: true,
+            getValue: (row: DefinitionRow) => getStats(row, split, kind)?.recall_stats?.mean ?? -1,
+          }))
+        ),
+      ],
+      initialSort: 'valid_whole_snapshot_recall',
+      initialSortDirection: 'desc',
+    })
+  );
 
   function getSortIndicator(columnId: string): string {
     const state = table.getSortState(columnId);
@@ -69,17 +71,25 @@
     <thead>
       <!-- Level 1: Split (Valid / Train) -->
       <tr class="border-b border-gray-200">
-        <th rowspan="3" class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
-            onclick={() => table.toggleSort('definition_id')}>
+        <th
+          rowspan="3"
+          class="px-3 py-2 text-left cursor-pointer hover:bg-gray-100 align-bottom"
+          onclick={() => table.toggleSort('definition_id')}
+        >
           Definition{getSortIndicator('definition_id')}
         </th>
-        <th rowspan="3" class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
-            onclick={() => table.toggleSort('created_at')}>
+        <th
+          rowspan="3"
+          class="px-3 py-2 text-right cursor-pointer hover:bg-gray-100 align-bottom"
+          onclick={() => table.toggleSort('created_at')}
+        >
           Age{getSortIndicator('created_at')}
         </th>
         {#each splits as split}
-          <th colspan={kinds.length * metricsPerKind}
-              class="px-3 py-1 text-center border-l border-gray-300 font-semibold capitalize">
+          <th
+            colspan={kinds.length * metricsPerKind}
+            class="px-3 py-1 text-center border-l border-gray-300 font-semibold capitalize"
+          >
             {split}
           </th>
         {/each}
@@ -90,9 +100,11 @@
           {#each kinds as kind}
             {@const colId = `${split}_${kind}_recall`}
             {@const count = getExampleCount(split, kind)}
-            <th colspan={metricsPerKind}
-                class="px-2 py-1 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
-                onclick={() => table.toggleSort(colId)}>
+            <th
+              colspan={metricsPerKind}
+              class="px-2 py-1 text-center border-l border-gray-200 cursor-pointer hover:bg-gray-100"
+              onclick={() => table.toggleSort(colId)}
+            >
               {kind} <span class="text-gray-400 font-normal">(n={count})</span>{getSortIndicator(colId)}
             </th>
           {/each}
@@ -124,12 +136,16 @@
             {#each kinds as kind}
               {@const stats = getStats(def, split, kind)}
               {@const clickable = onCellClick != null}
-              {@const cellClick = clickable ? () => onCellClick({ definitionId: def.definition_id, split, kind }) : undefined}
+              {@const cellClick = clickable
+                ? () => onCellClick({ definitionId: def.definition_id, split, kind })
+                : undefined}
               {@const clickClass = clickable ? 'cursor-pointer hover:bg-blue-100' : ''}
               {@const clickTitle = clickable ? `View ${split} ${kind} runs` : undefined}
               {#if stats}
                 <td
-                  class="px-2 py-2 text-right border-l border-gray-100 {recallColorClass(stats.recall_stats?.mean)} {clickClass}"
+                  class="px-2 py-2 text-right border-l border-gray-100 {recallColorClass(
+                    stats.recall_stats?.mean
+                  )} {clickClass}"
                   onclick={cellClick}
                   title={clickTitle}
                 >
@@ -143,8 +159,8 @@
                 <td
                   class="px-2 py-2 text-right border-l border-gray-100 text-gray-300 {clickClass}"
                   onclick={cellClick}
-                  title={clickTitle}
-                >—</td>
+                  title={clickTitle}>—</td
+                >
                 <td class="px-2 py-2 text-right text-gray-300">—</td>
                 <td class="px-2 py-2 text-right text-gray-300">—</td>
                 <td class="px-2 py-2 text-right text-gray-300">—</td>

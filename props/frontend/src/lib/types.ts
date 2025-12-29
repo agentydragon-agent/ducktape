@@ -9,3 +9,16 @@ export type StatsWithCI = components['schemas']['StatsWithCI'];
 export type Split = components['schemas']['Split'];
 export type ExampleKind = components['schemas']['ExampleKind'];
 export type AgentRunStatus = components['schemas']['AgentRunStatus'];
+
+// UI-specific types
+export interface RunModalPrefill {
+  definitionId?: string;
+  split?: Split;
+  kind?: ExampleKind;
+}
+
+export interface RunTrigger {
+  definitionId: string;
+  split: Split;
+  kind: ExampleKind;
+}
