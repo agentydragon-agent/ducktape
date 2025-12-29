@@ -3291,13 +3291,11 @@ gepa = [
     { name = "nest-asyncio" },
 ]
 orchestration = [
-    { name = "adgn" },
     { name = "net-util" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "adgn", marker = "extra == 'orchestration'", editable = "adgn" },
     { name = "agent-core", editable = "agent_core" },
     { name = "agent-pkg", editable = "agent_pkg" },
     { name = "agent-pkg-runtime", editable = "agent_pkg_runtime" },

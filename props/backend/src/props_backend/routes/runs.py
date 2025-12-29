@@ -29,6 +29,7 @@ from agent_core.events import ApiRequest, AssistantText, EventType, Response, To
 from mcp_infra.exec.models import BaseExecResult, ExecInput
 from openai_utils.client_factory import build_client
 from openai_utils.model import ReasoningItem
+from props_backend.routes.ground_truth import FileLocationInfo
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -116,13 +117,6 @@ class GradingEdgeInfo(BaseModel):
     critique_issue_id: str
     target: GradingTarget
     rationale: str
-
-
-class FileLocationInfo(BaseModel):
-    """File with optional line ranges (matches ground truth structure)."""
-
-    path: str
-    ranges: list[LineRange] | None
 
 
 class ReportedIssueOccurrenceInfo(BaseModel):

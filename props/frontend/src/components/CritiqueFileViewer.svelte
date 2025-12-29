@@ -7,7 +7,7 @@
     GradingEdgeInfo,
     ReportedIssueInfo,
     FileLocationInfo,
-    LineRangeInfo,
+    LineRange,
   } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
@@ -34,7 +34,7 @@
     occurrenceId?: string;
     rationale: string;
     note?: string;
-    ranges: LineRangeInfo[] | null;
+    ranges: LineRange[] | null;
     allFiles: FileLocationInfo[];
     gradingEdges?: GradingEdgeInfo[];
   }
@@ -132,8 +132,8 @@
   });
 
   // Map line numbers to range notes (for ranges that end on that line)
-  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRangeInfo }>>>(() => {
-    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRangeInfo }>>();
+  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
+    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRange }>>();
 
     for (const issue of allIssues) {
       if (issue.ranges) {
