@@ -34,12 +34,12 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-import aiodocker
-from fastmcp.client import Client
-
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+import aiodocker
+from fastmcp.client import Client
 from mcp_infra.display import CompactDisplayHandler
+
 from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.types import ReasoningSummary
@@ -57,8 +57,8 @@ from props_core.display import short_uuid
 from props_core.grader.daemon import GraderDaemonScaffold
 from props_core.grader.drift_handler import format_notifications
 from props_core.grader.exceptions import GraderDidNotSubmitError
-from props_core.grader.grader import GraderAgentEnvironment, _fp_from_orm, _tp_from_orm
-from props_core.grader.persistence import fp_to_db, tp_to_db
+from props_core.grader.grader import GraderAgentEnvironment
+from props_core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props_core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
 from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -397,13 +397,10 @@ class AgentRegistry:
                     f"{sorted(str(f) for f in reviewed_files)}"
                 )
 
-            canonical_tps = [_tp_from_orm(tp) for tp in filtered_orm_tps]
-            canonical_fps = [_fp_from_orm(fp) for fp in filtered_orm_fps]
-
-            # Build canonical issues snapshot
+            # Build canonical issues snapshot (direct ORM → DB conversion)
             canonical_snapshot = CanonicalIssuesSnapshot(
-                true_positives=[tp_to_db(tp) for tp in canonical_tps],
-                false_positives=[fp_to_db(fp) for fp in canonical_fps],
+                true_positives=[orm_tp_to_db(tp) for tp in filtered_orm_tps],
+                false_positives=[orm_fp_to_db(fp) for fp in filtered_orm_fps],
             )
 
             type_config = GraderTypeConfig(

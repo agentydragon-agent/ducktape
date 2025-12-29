@@ -10,6 +10,7 @@ from uuid import UUID
 
 import aiodocker
 from fastmcp.server.auth import AuthProvider
+from mcp_infra.enhanced import EnhancedFastMCP
 from props_core.agent_setup import AgentEnvironment
 from props_core.agent_workspace import WorkspaceManager
 from props_core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
@@ -17,8 +18,6 @@ from props_core.db.config import DatabaseConfig
 from props_core.display import short_uuid
 from props_core.grader.submit_server import GraderSubmitServer
 from props_core.ids import SnapshotSlug
-
-from mcp_infra.enhanced import EnhancedFastMCP
 
 
 class SnapshotGraderAgentEnvironment(AgentEnvironment):

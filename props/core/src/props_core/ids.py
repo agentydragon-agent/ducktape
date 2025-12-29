@@ -2,7 +2,7 @@
 
 Provides strongly-typed IDs with namespace separation:
 - BaseIssueID: Un-namespaced IDs (used in specimens, critique)
-- TruePositiveID, FalsePositiveID, InputIssueID: NewType wrappers for type safety
+- InputIssueID: NewType wrapper for type safety
 
 All IDs are Pydantic-validated. NewTypes provide compile-time type safety
 (mypy distinguishes them) while remaining strings at runtime (work as JSON dict keys).
@@ -57,9 +57,6 @@ SnapshotSlug = NewType("SnapshotSlug", _SnapshotSlugBase)  # type: ignore[valid-
 # NewType creates nominal types for mypy (compile-time type safety)
 # At runtime, these are just BaseIssueID strings (work as JSON dict keys)
 # Type is implied by position in data structure
-
-# Note: TruePositiveID and FalsePositiveID have been moved to grader/models.py
-# as they are internal to the grader subsystem
 
 InputIssueID = NewType("InputIssueID", BaseIssueID)  # type: ignore[valid-newtype]
 """Input critique ID. Compile-time distinct from other ID types, runtime is BaseIssueID string."""

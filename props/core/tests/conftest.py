@@ -45,7 +45,6 @@ from props_core.db.snapshots import (
     DBUnknownIssue,
 )
 from props_core.db.sync.sync import sync_all
-from props_core.grader.models import GraderInput
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
@@ -723,12 +722,6 @@ def mock_prompt_sha256() -> str:
 def sample_critic_success() -> CriticSuccess:
     """Sample CriticSuccess with empty issues list."""
     return CriticSuccess(result=CriticSubmitPayload(issues=[], notes_md=None))
-
-
-@pytest.fixture
-def sample_grader_input() -> GraderInput:
-    """Sample GraderInput with critic run ID (snapshot derived from critic run in database)."""
-    return GraderInput(critic_run_id=uuid4())
 
 
 @pytest.fixture
