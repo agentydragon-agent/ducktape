@@ -155,6 +155,8 @@ env = [
 ]
 # Use modern asyncio auto mode for compatibility across plugins
 asyncio_mode = "auto"
+# For pytest-asyncio 0.25+ ensure async fixtures get per-test event loops
+# instead of session-level loops, and keep behavior compatible with anyio.
 asyncio_default_fixture_loop_scope = "function"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
