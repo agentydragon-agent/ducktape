@@ -76,14 +76,55 @@ def install_nix(project_dir: Path) -> None:
         ["curl", "-sL", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
         check=True,
     )
-    # Installer may partially fail due to gVisor PTY bug - that's expected
+
+    # The nix-env step fails in gVisor containers due to a PTY bug.
+    # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
+    # gVisor returns EIO on this read (race condition in PTY emulation).
+    #
+    # ROOT CAUSE (discovered via strace):
+    # Claude Code web runs on gVisor (runsc), not a real Linux kernel. gVisor's PTY
+    # emulation has a race condition. When nix-env builds a derivation, it:
+    #   1. Opens /dev/ptmx to create a PTY pair (master fd)
+    #   2. Forks a child process for the build sandbox
+    #   3. Parent immediately calls read() on the PTY master
+    #   4. gVisor returns EIO instead of blocking until data arrives
+    #
+    # GVISOR BUG LOCATION (github.com/google/gvisor):
+    # pkg/sentry/fsimpl/devpts/queue.go lines 112-116:
+    #   if !q.readable {
+    #       if l.numReplicas == 0 {
+    #           return 0, false, false, linuxerr.EIO  // ← THE BUG
+    #       }
+    #       return 0, false, false, linuxerr.ErrWouldBlock
+    #   }
+    # gVisor returns EIO when numReplicas==0 (no slave opened yet), but the child
+    # process is still in the middle of opening the slave. Real Linux blocks until
+    # data arrives regardless of whether the slave has been opened. gVisor conflates
+    # "not yet opened" with "closed" - both result in numReplicas==0.
+    #
+    # WHY NIX USES PTYs (not pipes):
+    # Per C99 7.19.3, stdout is fully buffered when connected to a pipe, but line
+    # buffered when connected to a terminal. Nix needs real-time build output, so it
+    # uses PTYs to trick programs into line-buffered mode. This is fundamental to
+    # Nix's architecture - there's no --use-pipes flag.
+    # See: src/libstore/unix/build/derivation-builder.cc line 808 (posix_openpt)
+    #
+    # WHY NO INSTALLER FLAGS HELP:
+    # - The PTY is created internally by nix-env, not inherited from the shell
+    # - --no-daemon, --no-channel-add, </dev/null all affect different things
+    # - sandbox=false in nix.conf disables namespace isolation, not PTY usage
+    # - The gVisor bug is in read() returning EIO, not in any Nix configuration
+    #
+    # WORKAROUND:
+    # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
+    # We just symlink the profile manually, bypassing any derivation builds.
     subprocess.run(
         ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
     )
 
-    # Manual profile setup (workaround for gVisor PTY bug breaking nix-env)
+    # Manual profile setup when installer's nix-env fails due to gVisor PTY bug.
     nix_profile = Path.home() / ".nix-profile"
     if not (nix_profile / "bin" / "nix").exists():
         nix_bin = find_nix_bin()
