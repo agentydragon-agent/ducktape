@@ -4,9 +4,13 @@ version = "0.1.0"
 description = "Container-side utilities for agent init scripts"
 requires-python = ">=3.12"
 dependencies = [
+    "mcp-utils",
     "fastmcp>=2.0",  # TODO: make optional (slow import)
     "jinja2>=3.0",
 ]
+
+[tool.uv.sources]
+mcp-utils = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
@@ -25,3 +29,5 @@ typing = ["types-Jinja2"]
 python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
+# Paths relative to repo root (where pre-commit runs mypy from)
+mypy_path = "mcp_utils/src:agent_pkg_runtime/src"

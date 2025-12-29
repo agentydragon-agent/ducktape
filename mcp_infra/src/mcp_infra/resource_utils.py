@@ -5,9 +5,10 @@ from typing import Any
 
 from fastmcp.client.client import Client
 from fastmcp.server.server import add_resource_prefix as _fastmcp_add_resource_prefix, has_resource_prefix
-from mcp import types as mcp_types
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
+
+from mcp_utils import extract_single_text_content
 
 
 def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
@@ -15,34 +16,9 @@ def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:
 
     Wrapper around FastMCP's add_resource_prefix that accepts both str and AnyUrl.
     FastMCP resources expose .uri as AnyUrl, but add_resource_prefix expects str.
-
-    Args:
-        uri: Resource URI (str or Pydantic AnyUrl)
-        prefix: Prefix to add
-
-    Returns:
-        Prefixed URI string
     """
     uri_str = str(uri) if isinstance(uri, AnyUrl) else uri
     return _fastmcp_add_resource_prefix(uri_str, prefix)
-
-
-def extract_single_text_content(res: list[mcp_types.TextResourceContents | mcp_types.BlobResourceContents]) -> str:
-    """Return the single text part from a read_resource result or raise.
-
-    - Requires exactly one TextResourceContents part.
-    - Raises RuntimeError if zero or multiple text parts are present, or if any
-      non-text part is present.
-    """
-    text_parts = [p for p in res if isinstance(p, mcp_types.TextResourceContents)]
-    if any(isinstance(p, mcp_types.BlobResourceContents) for p in res):
-        raise RuntimeError("expected a single text part, found blob content")
-    if len(text_parts) != 1:
-        raise RuntimeError(f"expected exactly one text part, found {len(text_parts)}")
-    text: str | None = text_parts[0].text
-    if text is None:
-        raise RuntimeError("text content part missing text payload")
-    return text
 
 
 async def read_text(client: Client[Any], uri: AnyUrl | str) -> str:

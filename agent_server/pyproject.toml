@@ -50,7 +50,7 @@ python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src"
+mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
 
 [tool.ruff]
 target-version = "py312"

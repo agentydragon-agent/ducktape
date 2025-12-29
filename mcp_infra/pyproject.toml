@@ -8,6 +8,7 @@ dependencies = [
     "openai-utils",
     "agent-core",
     "cli-util",
+    "mcp-utils",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -38,7 +39,7 @@ python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "openai_utils/src:agent_core/src:mcp_infra/src:cli_util/src"
+mypy_path = "openai_utils/src:agent_core/src:mcp_infra/src:cli_util/src:mcp_utils/src"
 
 [tool.ruff]
 target-version = "py312"
@@ -61,3 +62,4 @@ markers = [
 openai-utils = { workspace = true }
 agent-core = { workspace = true }
 cli-util = { workspace = true }
+mcp-utils = { workspace = true }
