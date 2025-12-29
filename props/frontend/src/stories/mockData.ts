@@ -180,6 +180,149 @@ export const mockSnapshotsList: SnapshotSummary[] = [
 ];
 
 type ExampleDetailResponse = components['schemas']['ExampleDetailResponse'];
+type FileContentResponse = components['schemas']['FileContentResponse'];
+type TpInfo = components['schemas']['TpInfo'];
+type FpInfo = components['schemas']['FpInfo'];
+type GradingEdgeInfo = components['schemas']['GradingEdgeInfo'];
+type ReportedIssueInfo = components['schemas']['ReportedIssueInfo'];
+
+// Component-level mock data for FileViewer and CritiqueFileViewer
+
+export const mockSnapshotSlug = 'example/snapshot-v1';
+
+export const mockFileContent: FileContentResponse = {
+  path: 'src/db/queries.py',
+  content: `import sqlite3
+from typing import Optional
+
+def get_user(user_id: str) -> Optional[dict]:
+    """Fetch a user by ID."""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+
+    # WARNING: SQL injection vulnerability - user_id not sanitized
+    query = f"SELECT * FROM users WHERE id = '{user_id}'"
+    cursor.execute(query)
+
+    result = cursor.fetchone()
+    conn.close()
+    return dict(result) if result else None
+
+def get_user_safe(user_id: str) -> Optional[dict]:
+    """Fetch a user by ID using parameterized query."""
+    conn = sqlite3.connect('users.db')
+    cursor = conn.cursor()
+
+    # Safe: uses parameterized query
+    cursor.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+
+    result = cursor.fetchone()
+    conn.close()
+    return dict(result) if result else None
+`,
+  line_count: 32,
+};
+
+export const mockFileTps: TpInfo[] = [
+  {
+    tp_id: 'tp-sql-injection-001',
+    rationale: 'SQL injection vulnerability: user input is directly interpolated into SQL query',
+    occurrences: [
+      {
+        occurrence_id: 'occ-tp-001',
+        files: [
+          {
+            path: 'src/db/queries.py',
+            ranges: [{ start_line: 10, end_line: 11, note: 'String interpolation in SQL' }],
+          },
+        ],
+        note: 'The user_id parameter is directly inserted into the query string',
+        critic_scopes_expected_to_recall: [['security', 'sql-injection']],
+        graders_match_only_if_reported_on: null,
+      },
+    ],
+    created_at: '2025-01-10T14:00:00Z',
+  },
+];
+
+export const mockFileFps: FpInfo[] = [
+  {
+    fp_id: 'fp-safe-query-001',
+    rationale: 'False positive: uses parameterized statements, safe from SQL injection',
+    occurrences: [
+      {
+        occurrence_id: 'occ-fp-001',
+        files: [
+          {
+            path: 'src/db/queries.py',
+            ranges: [{ start_line: 23, end_line: 23, note: null }],
+          },
+        ],
+        note: 'Uses cursor.execute with parameter tuple',
+        relevant_files: null,
+        graders_match_only_if_reported_on: null,
+      },
+    ],
+    created_at: '2025-01-10T14:00:00Z',
+  },
+];
+
+export const mockCritiqueIssues: ReportedIssueInfo[] = [
+  {
+    issue_id: 'critique-001',
+    rationale: 'Potential SQL injection: string formatting used to build query',
+    occurrences: [
+      {
+        files: [
+          {
+            path: 'src/db/queries.py',
+            ranges: [{ start_line: 10, end_line: 11, note: null }],
+          },
+        ],
+      },
+    ],
+  },
+  {
+    issue_id: 'critique-002',
+    rationale: 'Database connection not properly managed - consider using context manager',
+    occurrences: [
+      {
+        files: [
+          {
+            path: 'src/db/queries.py',
+            ranges: [{ start_line: 6, end_line: 6, note: null }],
+          },
+        ],
+      },
+    ],
+  },
+];
+
+export const mockGradingEdges: GradingEdgeInfo[] = [
+  {
+    source: {
+      issue_id: 'critique-001',
+      rationale: 'Potential SQL injection: string formatting used to build query',
+    },
+    target: {
+      kind: 'tp',
+      tp_id: 'tp-sql-injection-001',
+      occurrence_id: 'occ-tp-001',
+      credit: 1.0,
+    },
+    grader_rationale: 'Critique correctly identified the SQL injection vulnerability',
+  },
+  {
+    source: {
+      issue_id: 'critique-002',
+      rationale: 'Database connection not properly managed',
+    },
+    target: {
+      kind: 'none',
+    },
+    grader_rationale: 'Valid concern but not in ground truth',
+  },
+];
 
 export const mockExampleDetail: ExampleDetailResponse = {
   snapshot_slug: 'project/snapshot-v1',
