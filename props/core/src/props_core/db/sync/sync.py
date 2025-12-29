@@ -31,7 +31,7 @@ from props_core.agent_pkg_utils import MANIFEST_FILE, validate_packed_agent_pkg
 from props_core.agent_types import AgentType
 from props_core.db.models import (
     AgentDefinition,
-    ExpectedRecallScope,
+    CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     FalsePositiveRelevantFileORM,
@@ -516,7 +516,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 )
                 session.add(orm_issue)
                 # Add occurrences to normalized table
-                # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
+                # Note: critic_scopes_expected_to_recall is stored in critic_scopes_expected_to_recall M:N table, not as column
                 # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                 for occ in issue.occurrences:
                     orm_occ = TruePositiveOccurrenceORM(
@@ -769,7 +769,7 @@ def ensure_file_set(session: Session, snapshot_slug: SnapshotSlug, file_paths: s
 
 
 def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir: Path) -> SyncStats:
-    """Sync file_sets, file_set_members, and expected_recall_scopes from YAML sources.
+    """Sync file_sets, file_set_members, and critic_scopes_expected_to_recall from YAML sources.
 
     Reads critic_scopes_expected_to_recall from YAML files (the source of truth), not from ORM.
     """
@@ -799,10 +799,10 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     existing_triggers: set[tuple[SnapshotSlug, str, str, str]] = {
         (slug, tp_id, occ_id, h)
         for slug, tp_id, occ_id, h in session.query(
-            ExpectedRecallScope.snapshot_slug,
-            ExpectedRecallScope.tp_id,
-            ExpectedRecallScope.occurrence_id,
-            ExpectedRecallScope.files_hash,
+            CriticScopeExpectedToRecall.snapshot_slug,
+            CriticScopeExpectedToRecall.tp_id,
+            CriticScopeExpectedToRecall.occurrence_id,
+            CriticScopeExpectedToRecall.files_hash,
         ).all()
     }
 
@@ -837,33 +837,33 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
     triggers_to_add = desired_triggers - existing_triggers
     triggers_to_delete = existing_triggers - desired_triggers
 
-    expected_recall_scopes_added = 0
-    expected_recall_scopes_deleted = 0
+    critic_scopes_expected_to_recall_added = 0
+    critic_scopes_expected_to_recall_deleted = 0
 
     for slug, tp_id, occurrence_id, files_hash in triggers_to_add:
         session.add(
-            ExpectedRecallScope(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
+            CriticScopeExpectedToRecall(snapshot_slug=slug, tp_id=tp_id, occurrence_id=occurrence_id, files_hash=files_hash)
         )
-        expected_recall_scopes_added += 1
+        critic_scopes_expected_to_recall_added += 1
 
     if triggers_to_delete:
-        session.query(ExpectedRecallScope).filter(
+        session.query(CriticScopeExpectedToRecall).filter(
             tuple_(
-                ExpectedRecallScope.snapshot_slug,
-                ExpectedRecallScope.tp_id,
-                ExpectedRecallScope.occurrence_id,
-                ExpectedRecallScope.files_hash,
+                CriticScopeExpectedToRecall.snapshot_slug,
+                CriticScopeExpectedToRecall.tp_id,
+                CriticScopeExpectedToRecall.occurrence_id,
+                CriticScopeExpectedToRecall.files_hash,
             ).in_(list(triggers_to_delete))
         ).delete(synchronize_session=False)
-        expected_recall_scopes_deleted = len(triggers_to_delete)
+        critic_scopes_expected_to_recall_deleted = len(triggers_to_delete)
 
     session.commit()
     logger.info(
-        "File sets synced: +%d added, -%d deleted; expected_recall_scopes +%d, -%d",
+        "File sets synced: +%d added, -%d deleted; critic_scopes_expected_to_recall +%d, -%d",
         file_sets_added,
         file_sets_deleted,
-        expected_recall_scopes_added,
-        expected_recall_scopes_deleted,
+        critic_scopes_expected_to_recall_added,
+        critic_scopes_expected_to_recall_deleted,
     )
     total = len(desired_file_sets)
     return SyncStats(total=total, added=file_sets_added, updated=0, deleted=file_sets_deleted)

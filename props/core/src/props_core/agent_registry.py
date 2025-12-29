@@ -393,7 +393,7 @@ class AgentRegistry:
 
             if original_tp_count > 0 and len(filtered_orm_tps) == 0:
                 raise ValueError(
-                    f"Cannot grade: 0/{original_tp_count} TPs catchable from reviewed files "
+                    f"Cannot grade: 0/{original_tp_count} TPs in expected recall scope from reviewed files "
                     f"{sorted(str(f) for f in reviewed_files)}"
                 )
 

@@ -83,7 +83,7 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | true_positive_occurrences | Graded snapshot | - | - |
 | false_positives | Graded snapshot | - | - |
 | false_positive_occurrences | Graded snapshot | - | - |
-| expected_recall_scopes | Graded snapshot | - | - |
+| critic_scopes_expected_to_recall | Graded snapshot | - | - |
 
 **Note:** Graders see ground truth for the snapshot being graded only.
 
@@ -96,7 +96,7 @@ Run `\d+ table_name` before writing queries to understand the schema.
 | true_positive_occurrences | TRAIN split | - | - |
 | false_positives | TRAIN split | - | - |
 | false_positive_occurrences | TRAIN split | - | - |
-| expected_recall_scopes | TRAIN split | - | - |
+| critic_scopes_expected_to_recall | TRAIN split | - | - |
 | critic_runs | TRAIN split | - | - |
 | grader_runs | TRAIN split | - | - |
 | recall_by_definition_split_kind | All splits (view) | - | - |

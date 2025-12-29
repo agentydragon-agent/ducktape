@@ -9,7 +9,7 @@ import tarfile
 
 from fastapi import APIRouter, HTTPException
 from props_core.db.models import (
-    ExpectedRecallScope,
+    CriticScopeExpectedToRecall,
     FalsePositive,
     FileSet,
     FileSetMember,
@@ -114,9 +114,13 @@ def _build_file_locations_from_ranges(ranges: list[OccurrenceRangeORM]) -> list[
     return [FileLocationInfo(path=path, ranges=ranges_list) for path, ranges_list in sorted(by_file.items())]
 
 
-def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
-    """Get critic_scopes_expected_to_recall paths from occurrence triggers."""
-    return [sorted(m.file_path for m in trigger.file_set.members) for trigger in occ.triggers if trigger.file_set]
+def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
+    """Get critic_scopes_expected_to_recall paths from occurrence relationship."""
+    return [
+        sorted(m.file_path for m in scope.file_set.members)
+        for scope in occ.critic_scopes_expected_to_recall
+        if scope.file_set
+    ]
 
 
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
@@ -188,8 +192,8 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             .filter_by(snapshot_slug=slug)
             .options(
                 selectinload(TruePositive.occurrences)
-                .selectinload(TruePositiveOccurrenceORM.triggers)
-                .selectinload(ExpectedRecallScope.file_set)
+                .selectinload(TruePositiveOccurrenceORM.critic_scopes_expected_to_recall)
+                .selectinload(CriticScopeExpectedToRecall.file_set)
                 .selectinload(FileSet.members)
             )
             .order_by(TruePositive.tp_id)
@@ -240,7 +244,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
                         files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
                         graders_match_only_if_reported_on=matchable_files,
-                        critic_scopes_expected_to_recall=_get_trigger_paths(occ),
+                        critic_scopes_expected_to_recall=_get_critic_scopes_expected_to_recall_paths(occ),
                     )
                 )
             tp_infos.append(

@@ -563,9 +563,22 @@ Used by true_positives, false_positives, and their occurrence tables.'
 Used for critic/grader write policies.'
     """)
 
-    # Catchability functions - check if TP/FP is catchable/relevant given a scope
+    # Expected recall scope functions - check if TP/FP contributes to recall denominator for a scope.
+    #
+    # IMPORTANT DISTINCTION:
+    # - critic_scopes_expected_to_recall: Determines recall DENOMINATOR only. This is a soft expectation -
+    #   critics CAN find issues outside these scopes (recall > 100% is possible!). It answers:
+    #   "From which file scopes do we EXPECT a diligent critic to find this issue?"
+    #
+    # - graders_match_only_if_reported_on: HARD CONSTRAINT on graders. If set, graders may only
+    #   give credit if the critique flagged files overlapping this set. It answers:
+    #   "Where is the issue actually located / where must it be validly reported?"
+    #
+    # Example: file.py uses bar.py which has obvious dangerous code.
+    # - critic_scopes_expected_to_recall: [[file.py], [bar.py]] - expect to find from either
+    # - graders_match_only_if_reported_on: [bar.py] - issue is IN bar.py, must flag bar.py for credit
     op.execute("""
-        CREATE FUNCTION is_tp_catchable_from_scope(
+        CREATE FUNCTION is_tp_in_expected_recall_scope(
             p_snapshot_slug text,
             p_tp_id text,
             p_example_kind example_kind_enum,
@@ -573,20 +586,20 @@ Used for critic/grader write policies.'
         ) RETURNS boolean
         LANGUAGE sql STABLE
         AS $$
-            -- Whole-snapshot scope catches everything
+            -- Whole-snapshot scope includes all TPs in recall denominator
             SELECT CASE
                 WHEN p_example_kind = 'whole_snapshot' THEN TRUE
                 ELSE EXISTS (
-                    -- Check if any file set for this TP is a subset of the reviewed scope
+                    -- Check if any critic_scopes_expected_to_recall entry is a subset of the reviewed scope
                     SELECT 1
-                    FROM expected_recall_scopes ot
-                    WHERE ot.snapshot_slug = p_snapshot_slug
-                      AND ot.tp_id = p_tp_id
-                      -- All files in this file set must be in the reviewed scope
+                    FROM critic_scopes_expected_to_recall csetr
+                    WHERE csetr.snapshot_slug = p_snapshot_slug
+                      AND csetr.tp_id = p_tp_id
+                      -- All files in this expected recall scope must be in the reviewed scope
                       AND NOT EXISTS (
                           SELECT 1 FROM file_set_members fsm
                           WHERE fsm.snapshot_slug = p_snapshot_slug
-                            AND fsm.files_hash = ot.files_hash
+                            AND fsm.files_hash = csetr.files_hash
                             AND fsm.file_path NOT IN (
                                 SELECT fsm2.file_path
                                 FROM file_set_members fsm2
@@ -600,9 +613,12 @@ Used for critic/grader write policies.'
     """)
 
     op.execute("""
-        COMMENT ON FUNCTION is_tp_catchable_from_scope(text, text, example_kind_enum, text) IS
-        'Returns TRUE if any file set for the given TP is a subset of the reviewed scope files.
-For whole-snapshot scope, always returns TRUE.'
+        COMMENT ON FUNCTION is_tp_in_expected_recall_scope(text, text, example_kind_enum, text) IS
+        'Returns TRUE if this TP occurrence should count toward recall denominator for the given scope.
+For whole-snapshot scope, always returns TRUE.
+NOTE: This determines the recall DENOMINATOR only. Critics CAN find issues outside expected scopes
+(achieving >100%% recall). The graders_match_only_if_reported_on field separately constrains
+where graders can give credit.'
     """)
 
     op.execute("""
@@ -1151,7 +1167,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
     """)
 
     # True positive occurrences table
-    # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as JSONB column
+    # Note: critic_scopes_expected_to_recall is stored in critic_scopes_expected_to_recall M:N table, not as JSONB column
     # Note: files/line ranges are stored in tp_occurrence_ranges table, not as JSONB column
     op.create_table(
         "true_positive_occurrences",
@@ -1349,7 +1365,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
 
     # Occurrence triggers - M:N linking occurrences to file sets
     op.create_table(
-        "expected_recall_scopes",
+        "critic_scopes_expected_to_recall",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
         sa.Column("tp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
@@ -1371,9 +1387,17 @@ Deduplicated by PK constraint - same files always produce same hash.'
     )
 
     op.execute("""
-        COMMENT ON TABLE expected_recall_scopes IS
-        'M:N relationship linking true_positive_occurrences to file_sets.
-Each occurrence can be triggered by multiple file sets (critic_scopes_expected_to_recall alternatives).'
+        COMMENT ON TABLE critic_scopes_expected_to_recall IS
+        'M:N linking TP occurrences to file_sets defining EXPECTED recall scopes.
+
+DETERMINES: Recall DENOMINATOR only. "From which scopes do we expect critics to find this issue?"
+Each occurrence may have multiple alternative scopes (OR logic: any one suffices).
+
+DOES NOT CONSTRAIN: Critics CAN find issues outside expected scopes (recall >100%% possible).
+A diligent critic reviewing file.py might discover issues in bar.py it depends on.
+
+DISTINCT FROM graders_match_only_if_reported_on: That field is a HARD constraint on where
+graders can give credit. This field only affects metric denominators.'
     """)
 
     # Reported issues table
@@ -1578,8 +1602,6 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
     # =========================================================================
     # 6. Examples VIEW (auto-generated from snapshots + file_sets)
     # =========================================================================
-    # Examples define training/evaluation scopes (whole-snapshot or file-set).
-    # recall_denominator is computed from catchable TP occurrences.
     op.execute("""
         CREATE VIEW examples AS
         -- Whole-snapshot examples (one per snapshot)
@@ -1607,16 +1629,21 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
                 FROM true_positive_occurrences tpo
                 JOIN true_positives t ON tpo.snapshot_slug = t.snapshot_slug AND tpo.tp_id = t.tp_id
                 WHERE t.snapshot_slug = fs.snapshot_slug
-                  AND is_tp_catchable_from_scope(fs.snapshot_slug, t.tp_id, 'file_set'::example_kind_enum, fs.files_hash)
+                  AND is_tp_in_expected_recall_scope(fs.snapshot_slug, t.tp_id, 'file_set'::example_kind_enum, fs.files_hash)
             ), 0)::integer AS recall_denominator
         FROM file_sets fs
     """)
 
     op.execute("""
         COMMENT ON VIEW examples IS
-        'Training/evaluation examples - VIEW backed by file_sets + whole-snapshot entries.
-Each example defines a scope (whole-snapshot or file-set) with recall_denominator
-computed from catchable TP occurrences using is_tp_catchable_from_scope().'
+        'Training/evaluation examples. Each defines a scope (whole-snapshot or file-set).
+
+recall_denominator = count of TP occurrences in expected recall scope for this example.
+Computed via is_tp_in_expected_recall_scope() which checks critic_scopes_expected_to_recall.
+
+IMPORTANT: recall_denominator is the EXPECTED count, not a hard limit.
+Critics CAN find issues outside expected scopes, achieving >100%% recall.
+A diligent critic reviewing file.py might discover issues in bar.py it depends on.'
     """)
 
     # ============================================================================
@@ -2419,7 +2446,7 @@ Groups by model so queries can see per-model breakdown.'
 
         UNION ALL
 
-        -- Failed critics: generate zero-credit rows for all catchable occurrences
+        -- Failed critics: generate zero-credit rows for all occurrences in expected recall scope
         SELECT
             (cr.type_config->'example'->>'snapshot_slug') AS snapshot_slug,
             s.split,
@@ -2449,7 +2476,7 @@ Groups by model so queries can see per-model breakdown.'
         WHERE (cr.type_config->>'agent_type') = 'critic'
           AND cr.status = ANY (ARRAY['max_turns_exceeded'::agent_run_status_enum, 'context_length_exceeded'::agent_run_status_enum])
           AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
-          AND is_tp_catchable_from_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
+          AND is_tp_in_expected_recall_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
     """)
 
     op.execute("""
@@ -2459,7 +2486,8 @@ Each row = one TP occurrence with its found_credit (0-1).
 Sum(found_credit)/count(*) = occurrence-weighted recall.
 
 Uses grading_edges model: credits go directly to (tp_id, occurrence_id) pairs.
-Failed critics produce zero-credit rows for all catchable occurrences.
+Failed critics produce zero-credit rows for all occurrences in expected recall scope.
+NOTE: Recall can exceed 100%% if critics find issues outside expected scopes.
 
 USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
     """)
@@ -2539,7 +2567,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("GRANT SELECT ON TABLE examples TO agent_base")
     op.execute("GRANT SELECT ON TABLE file_sets TO agent_base")
     op.execute("GRANT SELECT ON TABLE file_set_members TO agent_base")
-    op.execute("GRANT SELECT ON TABLE expected_recall_scopes TO agent_base")
+    op.execute("GRANT SELECT ON TABLE critic_scopes_expected_to_recall TO agent_base")
     op.execute("GRANT SELECT ON TABLE snapshot_files TO agent_base")
     op.execute("GRANT SELECT ON TABLE true_positive_occurrences TO agent_base")
     op.execute("GRANT SELECT ON TABLE false_positive_occurrences TO agent_base")
@@ -2586,7 +2614,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
     op.execute("ALTER TABLE false_positives ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE true_positive_occurrences ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE false_positive_occurrences ENABLE ROW LEVEL SECURITY")
-    op.execute("ALTER TABLE expected_recall_scopes ENABLE ROW LEVEL SECURITY")
+    op.execute("ALTER TABLE critic_scopes_expected_to_recall ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE events ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE grading_edges ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE reported_issues ENABLE ROW LEVEL SECURITY")
@@ -2610,7 +2638,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
         "CREATE POLICY admin_full_access_fp_occurrences ON false_positive_occurrences TO postgres USING (true) WITH CHECK (true)"
     )
     op.execute(
-        "CREATE POLICY admin_full_access_occ_triggers ON expected_recall_scopes TO postgres USING (true) WITH CHECK (true)"
+        "CREATE POLICY admin_full_access_occ_triggers ON critic_scopes_expected_to_recall TO postgres USING (true) WITH CHECK (true)"
     )
     op.execute("CREATE POLICY admin_full_access_file_sets ON file_sets TO postgres USING (true) WITH CHECK (true)")
     op.execute(
@@ -2719,7 +2747,7 @@ USEFUL FOR: Prompt optimizer, improvement agent.
 
     # Occurrence triggers - uses can_access_snapshot() helper
     op.execute(
-        "CREATE POLICY occ_triggers_agent_select ON expected_recall_scopes FOR SELECT USING (can_access_snapshot(snapshot_slug))"
+        "CREATE POLICY occ_triggers_agent_select ON critic_scopes_expected_to_recall FOR SELECT USING (can_access_snapshot(snapshot_slug))"
     )
 
     # Events policies (clustering branch removed)

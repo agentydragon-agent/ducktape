@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session, selectinload
 import yaml
 
 from props_core.db.models import (
-    ExpectedRecallScope,
+    CriticScopeExpectedToRecall,
     FalsePositive,
     FalsePositiveOccurrenceORM,
     FileSet,
@@ -122,16 +122,16 @@ def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> d
     if occ.note:
         result["note"] = _maybe_literal(occ.note)
 
-    # Get critic_scopes_expected_to_recall from triggers
-    # Each trigger set's paths are sorted, then trigger sets are sorted by first path
+    # Get critic_scopes_expected_to_recall from relationship
+    # Each scope's paths are sorted, then scopes are sorted by first path
     critic_scopes_expected_to_recall: list[list[str]] = []
-    for trigger in occ.triggers:
-        if trigger.file_set:
-            paths = sorted(m.file_path for m in trigger.file_set.members)
+    for scope in occ.critic_scopes_expected_to_recall:
+        if scope.file_set:
+            paths = sorted(m.file_path for m in scope.file_set.members)
             critic_scopes_expected_to_recall.append(paths)
 
     if critic_scopes_expected_to_recall:
-        # Sort trigger sets for deterministic output
+        # Sort scopes for deterministic output
         critic_scopes_expected_to_recall.sort(key=lambda x: x[0] if x else "")
         result["critic_scopes_expected_to_recall"] = critic_scopes_expected_to_recall
 
@@ -220,8 +220,8 @@ def export_snapshot_issues(session: Session, snapshot_slug: SnapshotSlug, output
             .where(TruePositive.snapshot_slug == snapshot_slug)
             .options(
                 selectinload(TruePositive.occurrences)
-                .selectinload(TruePositiveOccurrenceORM.triggers)
-                .selectinload(ExpectedRecallScope.file_set)
+                .selectinload(TruePositiveOccurrenceORM.critic_scopes_expected_to_recall)
+                .selectinload(CriticScopeExpectedToRecall.file_set)
                 .selectinload(FileSet.members)
             )
             .order_by(TruePositive.tp_id)

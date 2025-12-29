@@ -110,21 +110,28 @@ def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
     )
 
 
-def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[Path]) -> list[DBTruePositiveIssue]:
-    """Filter DB persistence TPs to only those catchable from targeted_files.
+def filter_tps_in_expected_recall_scope(
+    tps: list[DBTruePositiveIssue], targeted_files: set[Path]
+) -> list[DBTruePositiveIssue]:
+    """Filter TPs to those in expected recall scope for targeted_files.
 
-    Works on DB persistence models (for filtering stored snapshots in staleness check).
+    Returns TPs where at least one critic_scopes_expected_to_recall entry is a subset
+    of targeted_files. These TPs count toward the recall denominator for this scope.
+
+    NOTE: This determines recall DENOMINATOR only. Critics CAN find TPs outside expected
+    scopes (achieving >100% recall). This is separate from graders_match_only_if_reported_on
+    which is a hard constraint on where graders can give credit.
     """
     targeted_files_str = {str(p) for p in targeted_files}
 
-    def is_catchable(tp: DBTruePositiveIssue) -> bool:
+    def is_in_expected_recall_scope(tp: DBTruePositiveIssue) -> bool:
         return any(
-            set(trigger_set) <= targeted_files_str
+            set(scope) <= targeted_files_str
             for occurrence in tp.occurrences
-            for trigger_set in occurrence.critic_scopes_expected_to_recall
+            for scope in occurrence.critic_scopes_expected_to_recall
         )
 
-    return [tp for tp in tps if is_catchable(tp)]
+    return [tp for tp in tps if is_in_expected_recall_scope(tp)]
 
 
 def filter_relevant_db_fps(fps: list[DBKnownFalsePositive], targeted_files: set[Path]) -> list[DBKnownFalsePositive]:
@@ -161,11 +168,11 @@ def load_current_canonical_issues_from_db(
     all_db_fps = [_orm_fp_to_db(fp) for fp in snapshot.false_positives]
 
     # Filter DB persistence models (single implementation shared with staleness check)
-    catchable_db_tps = filter_catchable_db_tps(all_db_tps, targeted_files)
+    tps_in_scope = filter_tps_in_expected_recall_scope(all_db_tps, targeted_files)
     relevant_db_fps = filter_relevant_db_fps(all_db_fps, targeted_files)
 
     # Create snapshot from filtered DB persistence models
-    current_snapshot = CanonicalIssuesSnapshot(true_positives=catchable_db_tps, false_positives=relevant_db_fps)
+    current_snapshot = CanonicalIssuesSnapshot(true_positives=tps_in_scope, false_positives=relevant_db_fps)
     return current_snapshot.model_dump(mode="json")
 
 
@@ -230,13 +237,13 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             # Resolve scope specification to file set (pass session to avoid nested session issues)
             targeted_files = resolve_scope_files(snapshot_slug, example_spec, session)
 
-            # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
-            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot_model.true_positives, targeted_files)
+            # Filter stored snapshot to TPs in expected recall scope and relevant FPs (same filtering applied at grading time)
+            stored_tps_in_scope = filter_tps_in_expected_recall_scope(stored_snapshot_model.true_positives, targeted_files)
             relevant_stored_fps = filter_relevant_db_fps(stored_snapshot_model.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize
             filtered_stored = CanonicalIssuesSnapshot(
-                true_positives=catchable_stored_tps, false_positives=relevant_stored_fps
+                true_positives=stored_tps_in_scope, false_positives=relevant_stored_fps
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 

@@ -172,9 +172,9 @@ async def snapshot_dump(
                                 "files": _format_files(occ.ranges),
                                 "note": occ.note,
                                 "critic_scopes_expected_to_recall": [
-                                    sorted(str(m.file_path) for m in trigger.file_set.members)
-                                    for trigger in occ.triggers
-                                    if trigger.file_set
+                                    sorted(str(m.file_path) for m in scope.file_set.members)
+                                    for scope in occ.critic_scopes_expected_to_recall
+                                    if scope.file_set
                                 ],
                             }
                             for occ in tp.occurrences
