@@ -1,10 +1,23 @@
 #!/bin/bash
 set -e
 
-[ "$CLAUDE_CODE_REMOTE" != "true" ] && exit 0
-[ -z "$CLAUDE_PROJECT_DIR" ] && { echo "CLAUDE_PROJECT_DIR not set" >&2; exit 1; }
+# Debug: log environment state for diagnosing hook issues
+echo "[session-start-direnv] Starting hook" >&2
+echo "[session-start-direnv] CLAUDE_CODE_REMOTE=${CLAUDE_CODE_REMOTE:-<unset>}" >&2
+echo "[session-start-direnv] CLAUDE_PROJECT_DIR=${CLAUDE_PROJECT_DIR:-<unset>}" >&2
+echo "[session-start-direnv] CLAUDE_ENV_FILE=${CLAUDE_ENV_FILE:-<unset>}" >&2
 
-echo "Setting up dev environment..." >&2
+if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
+    echo "[session-start-direnv] Not remote environment, skipping" >&2
+    exit 0
+fi
+
+if [ -z "$CLAUDE_PROJECT_DIR" ]; then
+    echo "[session-start-direnv] ERROR: CLAUDE_PROJECT_DIR not set, cannot proceed" >&2
+    exit 1
+fi
+
+echo "[session-start-direnv] Setting up dev environment..." >&2
 
 # Install Nix with sandbox disabled (required for container)
 NIX_CONF="$CLAUDE_PROJECT_DIR/.claude/claude-code-web/nix.conf"
@@ -74,13 +87,34 @@ NIX_BIN=$(ls -d /nix/store/*-nix-[0-9]*/bin 2>/dev/null | head -1)
 
 # Install direnv, devenv, and uv via nix (using nixpkgs for better cache coverage)
 if ! command -v direnv &> /dev/null; then
-    nix profile install nixpkgs#direnv 2>&1 | tail -3 >&2 || true
+    echo "[session-start-direnv] Installing direnv..." >&2
+    if nix profile install nixpkgs#direnv 2>&1 | tail -5 >&2; then
+        echo "[session-start-direnv] direnv installed successfully" >&2
+    else
+        echo "[session-start-direnv] WARNING: direnv installation failed (exit $?)" >&2
+    fi
+else
+    echo "[session-start-direnv] direnv already available" >&2
 fi
 if ! command -v devenv &> /dev/null; then
-    nix profile install nixpkgs#devenv 2>&1 | tail -3 >&2 || true
+    echo "[session-start-direnv] Installing devenv..." >&2
+    if nix profile install nixpkgs#devenv 2>&1 | tail -5 >&2; then
+        echo "[session-start-direnv] devenv installed successfully" >&2
+    else
+        echo "[session-start-direnv] WARNING: devenv installation failed (exit $?)" >&2
+    fi
+else
+    echo "[session-start-direnv] devenv already available" >&2
 fi
 if ! command -v uv &> /dev/null; then
-    nix profile install nixpkgs#uv 2>&1 | tail -3 >&2 || true
+    echo "[session-start-direnv] Installing uv..." >&2
+    if nix profile install nixpkgs#uv 2>&1 | tail -5 >&2; then
+        echo "[session-start-direnv] uv installed successfully" >&2
+    else
+        echo "[session-start-direnv] WARNING: uv installation failed (exit $?)" >&2
+    fi
+else
+    echo "[session-start-direnv] uv already available" >&2
 fi
 
 # Allow .envrc files
@@ -98,15 +132,17 @@ export NIX_USER_CONF_FILES="$NIX_CONF"
 [ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:\$PATH"
 [ -d ~/.nix-profile/bin ] && export PATH="\$HOME/.nix-profile/bin:\$PATH"
 EOF
-    echo "Wrote environment to CLAUDE_ENV_FILE" >&2
+    echo "[session-start-direnv] Wrote environment to CLAUDE_ENV_FILE=$CLAUDE_ENV_FILE" >&2
+else
+    echo "[session-start-direnv] WARNING: CLAUDE_ENV_FILE is empty, PATH changes will not persist across bash calls" >&2
 fi
 
 # Output context for Claude (informational - not executed)
-echo "Session environment initialized:"
-echo "  nix: $(nix --version 2>/dev/null || echo 'N/A')"
-echo "  direnv: $(direnv version 2>/dev/null || echo 'N/A')"
-echo "  devenv: $(devenv version 2>/dev/null || echo 'N/A')"
-echo "  uv: $(uv --version 2>/dev/null || echo 'N/A')"
-echo "PATH includes: ~/.nix-profile/bin, $NIX_BIN"
+echo "[session-start-direnv] Session environment initialized:"
+echo "[session-start-direnv]   nix: $(nix --version 2>/dev/null || echo 'N/A')"
+echo "[session-start-direnv]   direnv: $(direnv version 2>/dev/null || echo 'N/A')"
+echo "[session-start-direnv]   devenv: $(devenv version 2>/dev/null || echo 'N/A')"
+echo "[session-start-direnv]   uv: $(uv --version 2>/dev/null || echo 'N/A')"
+echo "[session-start-direnv]   PATH includes: ~/.nix-profile/bin, $NIX_BIN"
 
-echo "Setup complete" >&2
+echo "[session-start-direnv] Setup complete" >&2
