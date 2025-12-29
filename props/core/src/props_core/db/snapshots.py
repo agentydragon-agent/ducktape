@@ -91,42 +91,6 @@ class DBKnownFalsePositive(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-# =============================================================================
-# Critic Submit Payload Models (DB persistence for critique payloads)
-# =============================================================================
-
-
-class DBFileOccurrence(BaseModel):
-    """Database representation of one file in an occurrence."""
-
-    path: str = Field(description="File path (stored as string)")
-    ranges: list[DBLineRange] | None = Field(default=None, description="Line ranges or None for unspecified")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBOccurrence(BaseModel):
-    """Database representation of an occurrence (critic-reported issue).
-
-    Simpler than TruePositiveOccurrence - no critic_scopes_expected_to_recall tracking.
-    """
-
-    files: list[DBFileOccurrence] = Field(description="Files with line ranges")
-    note: str | None = Field(default=None, description="Occurrence-specific note")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBReportedIssue(BaseModel):
-    """Database representation of a reported issue from critic."""
-
-    id: str = Field(description="Issue ID (stored as string)")
-    rationale: str = Field(description="Issue rationale (stored as string)")
-    occurrences: list[DBOccurrence] = Field(description="Issue occurrences")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 class DBCriticSubmitPayload(BaseModel):
     """Database representation of critic submit payload.
 
@@ -135,40 +99,5 @@ class DBCriticSubmitPayload(BaseModel):
     """
 
     notes_md: str | None = Field(default=None, description="Optional Markdown notes")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-# =============================================================================
-# Grading Result Models (for test fixtures)
-# =============================================================================
-
-
-class DBOccurrenceMatch(BaseModel):
-    """Database representation of match between input issue and canonical occurrence."""
-
-    input_id: str = Field(description="Input issue ID (stored as string)")
-    credit: float = Field(ge=0.0, le=1.0, description="Credit for this match")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBOccurrenceResult(BaseModel):
-    """Database representation of grading result for a single occurrence."""
-
-    tp_id: str = Field(description="True positive ID (stored as string)")
-    occurrence_id: str = Field(description="Occurrence identifier")
-    found_credit: float = Field(ge=0.0, le=1.0, description="Overall credit for finding this occurrence")
-    matched_by: list[DBOccurrenceMatch] = Field(description="Which input issues matched and their credits")
-    rationale: str = Field(description="Rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBUnknownIssue(BaseModel):
-    """Database representation of an input issue with novel aspects not matched to any canonical issue."""
-
-    id: str = Field(description="Unknown issue ID (stored as string)")
-    rationale: str = Field(description="Why this issue is novel/unknown (stored as string)")
 
     model_config = ConfigDict(extra="forbid", frozen=True)

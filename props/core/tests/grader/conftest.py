@@ -11,13 +11,18 @@ from uuid import UUID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props_core.db.session import get_session
-from props_core.db.snapshots import DBOccurrenceResult, DBReportedIssue
 from props_core.grader.edge_helpers import insert_edge
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
-from tests.conftest import make_critic_run, make_grader_run, make_occurrence_results
+from tests.conftest import (
+    DBOccurrenceResult,
+    DBReportedIssue,
+    make_critic_run,
+    make_grader_run,
+    make_occurrence_results,
+)
 
 __all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 

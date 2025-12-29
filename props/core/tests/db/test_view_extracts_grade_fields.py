@@ -6,12 +6,13 @@ from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentRunStatus, TruePositive
 from props_core.db.session import get_session
-from props_core.db.snapshots import DBOccurrenceMatch, DBOccurrenceResult
 from props_core.ids import SnapshotSlug
 from sqlalchemy import text
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+    DBOccurrenceMatch,
+    DBOccurrenceResult,
     make_critic_run,
     make_grader_run,
     make_reported_issues,

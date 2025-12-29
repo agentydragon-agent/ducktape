@@ -30,7 +30,7 @@ from props_core.db.models import (
 )
 from props_core.db.session import dispose_db, get_session, init_db, recreate_database
 from props_core.db.setup import ensure_database_exists
-from props_core.db.snapshots import DBLocationAnchor, DBOccurrenceMatch, DBOccurrenceResult
+from props_core.db.snapshots import DBLineRange, DBLocationAnchor
 from props_core.db.sync.sync import sync_all
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -40,13 +40,67 @@ from props_core.prompt_improve.reminder_handler import TerminationSuccess
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 from props_core.rationale import Rationale
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
 from openai_utils.model import ResponsesResult
+
+# =============================================================================
+# Test-only Pydantic models (moved from db/snapshots.py)
+# =============================================================================
+
+
+class DBFileOccurrence(BaseModel):
+    """Test fixture: one file in an occurrence."""
+
+    path: str = Field(description="File path (stored as string)")
+    ranges: list[DBLineRange] | None = Field(default=None, description="Line ranges or None for unspecified")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBOccurrence(BaseModel):
+    """Test fixture: an occurrence (critic-reported issue)."""
+
+    files: list[DBFileOccurrence] = Field(description="Files with line ranges")
+    note: str | None = Field(default=None, description="Occurrence-specific note")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBReportedIssue(BaseModel):
+    """Test fixture: a reported issue from critic."""
+
+    id: str = Field(description="Issue ID (stored as string)")
+    rationale: str = Field(description="Issue rationale (stored as string)")
+    occurrences: list[DBOccurrence] = Field(description="Issue occurrences")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBOccurrenceMatch(BaseModel):
+    """Test fixture: match between input issue and canonical occurrence."""
+
+    input_id: str = Field(description="Input issue ID (stored as string)")
+    credit: float = Field(ge=0.0, le=1.0, description="Credit for this match")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class DBOccurrenceResult(BaseModel):
+    """Test fixture: grading result for a single occurrence."""
+
+    tp_id: str = Field(description="True positive ID (stored as string)")
+    occurrence_id: str = Field(description="Occurrence identifier")
+    found_credit: float = Field(ge=0.0, le=1.0, description="Overall credit for finding this occurrence")
+    matched_by: list[DBOccurrenceMatch] = Field(description="Which input issues matched and their credits")
+    rationale: str = Field(description="Rationale (stored as string)")
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
 
 # Register shared fixtures from other packages
 pytest_plugins = [

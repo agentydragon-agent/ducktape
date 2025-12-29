@@ -3,7 +3,6 @@
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRunStatus, RecallByDefinitionSplitKind, RecallByExample
-from props_core.db.snapshots import DBOccurrenceMatch, DBOccurrenceResult
 from props_core.models.examples import ExampleKind, SingleFileSetExample
 from props_core.splits import Split
 from sqlalchemy import text
@@ -11,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
+    DBOccurrenceMatch,
+    DBOccurrenceResult,
     make_critic_run,
     make_grader_run,
     make_grader_run_with_credit,
