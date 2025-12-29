@@ -23,58 +23,46 @@ The hook (`session-start-direnv.py`) attempts to:
 4. Persist PATH to `CLAUDE_ENV_FILE`
 
 ### What Works
-- Nix installation succeeds (manual profile linking bypasses gVisor PTY bug)
-- Network access works fine - `nix profile install` CAN download packages successfully
+- Nix installation succeeds
+- Network access works - `nix profile install` downloads packages successfully
 - `CLAUDE_ENV_FILE` mechanism for persisting environment
+- Using nix store path directly (avoids profile self-destruction bug)
+- Resumed sessions work perfectly (nix store persists)
 
-### What Fails
-- The hook hangs after installing direnv, appearing to fail at devenv installation
-- Log shows: "Installing direnv..." then "Installing devenv..." with no completion
+### Known Issues
 
-### Root Cause: Profile Self-Destruction (CONFIRMED 2025-12-29)
+#### 1. Hook Timeout on Fresh Sessions
 
-**The bug is NOT network-related.** The actual issue is in the hook's profile setup:
+**Symptom:** Hook log shows "Installing tools: direnv, devenv, uv" then stops abruptly.
 
-1. The hook's gVisor workaround creates a manual symlink:
-   ```
-   ~/.nix-profile -> /nix/var/nix/profiles/per-user/root/profile -> /nix/store/...-nix-2.33.0
-   ```
+**Root Cause:** `nix profile install` takes 2-3 minutes on a fresh session (downloading ~70 MiB
+for devenv + dependencies), but Claude Code hooks have a short timeout (~30-60s).
 
-2. When `nix profile install nixpkgs#direnv` runs, nix creates a NEW profile:
-   ```
-   profile -> profile-1-link -> /nix/store/...-new-profile (contains direnv, NOT nix)
-   ```
+**Evidence from testing:**
+- First `nix profile install nixpkgs#hello` with 30s timeout: times out
+- Same command with 180s timeout: completes in ~13s (cached)
+- devenv installation: ~2-3 minutes on cold cache
 
-3. The nix binary is no longer in `~/.nix-profile/bin/` - the profile now only contains direnv
+**Workarounds under investigation:**
+1. Increase hook timeout (if configurable)
+2. Pre-warm nix store with commonly needed packages
+3. Use smaller/faster tool alternatives
 
-4. The next `nix profile install nixpkgs#devenv` fails because `nix` command is not found
+#### 2. Profile Self-Destruction (FIXED 2025-12-29)
 
-**Proof:** After manually running `nix profile install nixpkgs#hello`:
-```
-$ ls ~/.nix-profile/bin/
-hello    # nix is GONE
-```
+**Previously:** `nix profile install` would replace the profile, removing nix from PATH.
 
-But nix is still in the store:
-```
-$ /nix/store/yg8v8aap26967f28xmqgvl29ksp6mgn1-nix-2.33.0/bin/nix --version
-nix (Nix) 2.33.0
-```
+**Fix:** Hook now uses nix store path directly (`/nix/store/...-nix-X.Y.Z/bin/nix`)
+instead of relying on `~/.nix-profile/bin/nix`.
 
-### The Fix (IMPLEMENTED 2025-12-29)
+### Diagnostics
 
-The hook now uses the nix store path directly, NOT the profile path:
-
-1. `install_nix()` returns the store bin path
-2. `install_tools()` uses that path to run nix commands
-3. `persist_environment()` adds BOTH paths to PATH:
-   - Nix store bin (for running nix commands)
-   - Profile bin (for user-installed tools)
-
-Key changes:
-- Removed manual profile symlinking (no longer needed)
-- Install all tools in one `nix profile install` command
-- Use `nix_store_bin / "nix"` instead of `which("nix")`
+The hook now logs:
+- Network connectivity check (curl to cache.nixos.org with timing)
+- Proxy settings (truncated)
+- /nix/store entry count (helps identify fresh vs resumed sessions)
+- Timing for each step (nix install, tool install)
+- Total elapsed time
 
 ## Requirements for a Working Solution
 

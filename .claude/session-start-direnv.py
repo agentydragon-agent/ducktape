@@ -6,6 +6,7 @@ import logging
 import os
 import subprocess
 import sys
+import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,41 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+
+def log_diagnostics() -> None:
+    """Log network and environment diagnostics."""
+    log.info("=== Diagnostics ===")
+
+    # Check network connectivity
+    start = time.time()
+    result = subprocess.run(
+        ["curl", "-sI", "--connect-timeout", "5", "https://cache.nixos.org"],
+        capture_output=True,
+        text=True,
+    )
+    elapsed = time.time() - start
+    status = result.stdout.split("\n")[0] if result.returncode == 0 else f"failed: {result.returncode}"
+    log.info("  cache.nixos.org: %s (%.2fs)", status.strip(), elapsed)
+
+    # Check proxy settings
+    for var in ["HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy"]:
+        val = os.environ.get(var, "")
+        if val:
+            # Truncate long JWT tokens
+            if "jwt_" in val:
+                val = val[:60] + "...[truncated]"
+            log.info("  %s: %s", var, val)
+
+    # Check if we're in a resumed session (nix store already populated)
+    nix_store = Path("/nix/store")
+    if nix_store.exists():
+        entries = list(nix_store.iterdir())
+        log.info("  /nix/store entries: %d", len(entries))
+    else:
+        log.info("  /nix/store: does not exist")
+
+    log.info("=== End Diagnostics ===")
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -76,10 +112,12 @@ def install_nix(project_dir: Path) -> Path:
         return nix_store_bin
 
     log.info("Installing nix...")
+    start = time.time()
     subprocess.run(
         ["curl", "-sL", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
         check=True,
     )
+    log.info("  Downloaded nix installer in %.1fs", time.time() - start)
 
     # The nix-env step fails in gVisor containers due to a PTY bug.
     # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
@@ -96,11 +134,13 @@ def install_nix(project_dir: Path) -> Path:
     # WORKAROUND:
     # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
     # We use the store path directly instead of relying on profiles.
+    start = time.time()
     subprocess.run(
         ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
         stdin=subprocess.DEVNULL,
         capture_output=True,
     )
+    log.info("  Ran nix installer in %.1fs", time.time() - start)
 
     nix_store_bin = find_nix_bin()
     if not nix_store_bin:
@@ -131,7 +171,11 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
 
     # Install all missing tools in one command
     cmd = [str(nix_cmd), "profile", "install"] + [f"nixpkgs#{t}" for t in missing_tools]
+    log.info("Running: %s", " ".join(cmd))
+    start = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True)
+    elapsed = time.time() - start
+    log.info("nix profile install completed in %.1fs (exit code: %d)", elapsed, result.returncode)
 
     for line in (result.stdout + result.stderr).strip().split("\n"):
         if line:
@@ -166,12 +210,15 @@ export NIX_USER_CONF_FILES="{nix_conf}"
 
 
 def main() -> int:
+    start_time = time.time()
     log.info("Starting hook at %s", datetime.now().isoformat())
-    log.info("Environment: %s", json.dumps(dict(os.environ), sort_keys=True))
 
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
         log.info("Not remote environment, skipping")
         return 0
+
+    # Log diagnostics early (before any installs)
+    log_diagnostics()
 
     project_dir = os.environ.get("CLAUDE_PROJECT_DIR")
     if not project_dir:
@@ -202,7 +249,8 @@ def main() -> int:
         else:
             log.info("  %s: N/A", tool)
 
-    log.info("Setup complete")
+    total_elapsed = time.time() - start_time
+    log.info("Setup complete (total: %.1fs)", total_elapsed)
     return 0
 
 
