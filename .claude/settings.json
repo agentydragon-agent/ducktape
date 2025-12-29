@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": ".claude/session-start-direnv.sh"
+            "command": "python3 .claude/session-start-direnv.py"
           }
         ]
       }
