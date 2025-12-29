@@ -29,8 +29,11 @@
     occurrenceId: string;
     rationale: string;
     note?: string;
-    ranges: Array<{ start_line: number; end_line: number }> | null;
-    allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+    ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
+    allFiles: Array<{
+      path: string;
+      ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
+    }>;
   }
 
   const occurrences = $derived.by<OccurrenceMarker[]>(() => {
@@ -89,7 +92,7 @@
         for (const range of occ.ranges) {
           // Convert from 1-based display to 0-based index
           const startIdx = range.start_line;
-          const endIdx = range.end_line;
+          const endIdx = range.end_line ?? range.start_line;
           for (let i = startIdx; i <= endIdx; i++) {
             const existing = map.get(i) || [];
             map.set(i, [...existing, occ]);

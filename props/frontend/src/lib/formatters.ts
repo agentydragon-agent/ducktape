@@ -95,7 +95,7 @@ export function formatExample(run: RunInfo): string {
 /** Format a file location with optional line ranges. */
 export function formatFileLocation(file: {
   path: string;
-  ranges: Array<{ start_line: number; end_line?: number | null }> | null;
+  ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
 }): string {
   if (!file.ranges || file.ranges.length === 0) {
     return file.path;

@@ -39,14 +39,15 @@
 
   function formatFileLocation(file: {
     path: string;
-    ranges: Array<{ start_line: number; end_line: number }> | null;
+    ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
   }): string {
     if (!file.ranges || file.ranges.length === 0) {
       return file.path;
     }
-    const rangeStrs = file.ranges.map((r) =>
-      r.start_line === r.end_line ? `${r.start_line}` : `${r.start_line}-${r.end_line}`
-    );
+    const rangeStrs = file.ranges.map((r) => {
+      const endLine = r.end_line ?? r.start_line;
+      return r.start_line === endLine ? `${r.start_line}` : `${r.start_line}-${endLine}`;
+    });
     return `${file.path}:${rangeStrs.join(',')}`;
   }
 
@@ -221,7 +222,7 @@
                           {#if occ.note}
                             <div class="mt-1 text-sm text-gray-600 italic">{occ.note}</div>
                           {/if}
-                          {#if occ.critic_scopes_expected_to_recall.length > 0}
+                          {#if occ.critic_scopes_expected_to_recall && occ.critic_scopes_expected_to_recall.length > 0}
                             <div class="mt-1 text-xs text-gray-500">
                               Expected recall scopes: {occ.critic_scopes_expected_to_recall
                                 .map((f: string[]) => f.join(', '))
@@ -287,7 +288,7 @@
                           {#if occ.note}
                             <div class="mt-1 text-sm text-gray-600 italic">{occ.note}</div>
                           {/if}
-                          {#if occ.relevant_files.length > 0}
+                          {#if occ.relevant_files && occ.relevant_files.length > 0}
                             <div class="mt-1 text-xs text-gray-500">
                               Relevant: {occ.relevant_files.join(', ')}
                             </div>

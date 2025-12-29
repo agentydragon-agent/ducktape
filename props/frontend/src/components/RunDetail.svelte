@@ -22,6 +22,10 @@
     type DockerExecOutputPayload,
     type SnapshotDetailResponse,
     type FileContentResponse,
+    type GradingEdgeInfo,
+    type ReportedIssueInfo,
+    isCriticRun,
+    isGraderRun,
   } from '../lib/api/client';
   import { getStatusColor, formatStatus } from '../lib/status';
   import { truncateText } from '../lib/formatters';
@@ -71,31 +75,46 @@
 
   // Get agent type from discriminator field
   function getAgentType(run: AgentRunDetail): string {
-    // TypeScript doesn't know about the new structure until schema is regenerated
-    return (run as any).details?.agent_type || 'unknown';
+    return 'agent_type' in run.details ? run.details.agent_type : 'unknown';
+  }
+
+  // Get reported issues from critic run details
+  function getReportedIssues(run: AgentRunDetail): ReportedIssueInfo[] {
+    if (!isCriticRun(run)) return [];
+    return run.details.reported_issues;
+  }
+
+  // Get grading edges from grader run details
+  function getGradingEdges(run: AgentRunDetail): GradingEdgeInfo[] {
+    if (!isGraderRun(run)) return [];
+    return run.details.grading_edges;
+  }
+
+  // Get resolved files from critic run details
+  function getResolvedFiles(run: AgentRunDetail): string[] | null {
+    if (!isCriticRun(run)) return null;
+    return run.details.resolved_files;
   }
 
   // Compute aggregated grading edges from all grader runs
-  function getAggregatedEdges(run: AgentRunDetail) {
-    // TypeScript doesn't know about the new nested structure until schema is regenerated
-    const details = (run as any).details;
-    if (!details || details.agent_type !== 'critic') return [];
-    return details.grader_runs?.flatMap((g: any) => g.grading_edges || []) || [];
+  function getAggregatedEdges(run: AgentRunDetail): GradingEdgeInfo[] {
+    if (!isCriticRun(run)) return [];
+    return run.details.grader_runs.flatMap((g) => g.grading_edges);
   }
 
   // Compute grading summary from aggregated edges
   function computeGradingSummary(run: AgentRunDetail) {
-    if (run.agent_type !== 'critic') return null;
+    if (!isCriticRun(run)) return null;
 
     const edges = getAggregatedEdges(run);
     if (edges.length === 0) return null;
 
-    const tp_count = edges.filter((e: any) => e.target.kind === 'tp').length;
-    const fp_count = edges.filter((e: any) => e.target.kind === 'fp').length;
-    const unknown_count = edges.filter((e: any) => e.target.kind === 'none').length;
+    const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
+    const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
+    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
     const total_credit = edges
-      .filter((e: any) => e.target.kind === 'tp')
-      .reduce((sum: number, e: any) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+      .filter((e) => e.target.kind === 'tp')
+      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
 
     // Recall denominator needs to come from example - we'll pass it separately
     return { tp_count, fp_count, unknown_count, total_credit };
@@ -109,7 +128,8 @@
       events = eventsResult.events;
 
       // Load snapshot data for critic runs with reported issues
-      if (run.agent_type === 'critic' && run.reported_issues.length > 0) {
+      const reportedIssues = getReportedIssues(run);
+      if (getAgentType(run) === 'critic' && reportedIssues.length > 0) {
         await loadSnapshotData(run);
       }
     } catch (e) {
@@ -122,7 +142,7 @@
 
   // Load snapshot and file data for critique viewer
   async function loadSnapshotData(criticRun: AgentRunDetail) {
-    if (criticRun.agent_type !== 'critic') return;
+    if (getAgentType(criticRun) !== 'critic') return;
 
     const config = criticRun.type_config as CriticTypeConfig;
     let snapshotSlug: string;
@@ -143,8 +163,9 @@
       const allFilePaths = new Set<string>();
 
       // Files from critique issues
-      for (const issue of criticRun.reported_issues) {
-        for (const fileLocation of issue.occurrences.flatMap((o: any) => o.files)) {
+      const reportedIssues = getReportedIssues(criticRun);
+      for (const issue of reportedIssues) {
+        for (const fileLocation of issue.occurrences.flatMap((o) => o.files)) {
           allFilePaths.add(fileLocation.path);
         }
       }
@@ -486,24 +507,25 @@
 
     <!-- Type-specific inputs -->
     <div class="px-4 py-2 border-b bg-gray-50 flex-shrink-0 text-sm">
-      {#if run.agent_type === 'critic'}
+      {#if getAgentType(run) === 'critic'}}
         {@const config = run.type_config as CriticTypeConfig}
+        {@const resolvedFiles = getResolvedFiles(run)}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span>
             <span class="text-gray-500">Example:</span>
             <ExampleLink example={config.example} />
           </span>
-          {#if config.example.kind === 'file_set' && run.resolved_files}
-            <span><span class="text-gray-500">Files:</span> {run.resolved_files.join(', ')}</span>
+          {#if config.example.kind === 'file_set' && resolvedFiles}
+            <span><span class="text-gray-500">Files:</span> {resolvedFiles.join(', ')}</span>
           {/if}
         </div>
-      {:else if run.agent_type === 'grader'}
+      {:else if getAgentType(run) === 'grader'}
         {@const config = run.type_config as GraderTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span class="text-gray-500">Grading critic:</span>
           <RunIdLink id={config.graded_agent_run_id} />
         </div>
-      {:else if run.agent_type === 'improvement'}
+      {:else if getAgentType(run) === 'improvement'}
         {@const config = run.type_config as ImprovementTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span
@@ -519,7 +541,7 @@
             grader={config.grader_model}</span
           >
         </div>
-      {:else if run.agent_type === 'prompt_optimizer'}
+      {:else if getAgentType(run) === 'prompt_optimizer'}
         {@const config = run.type_config as PromptOptimizerTypeConfig}
         <div class="flex flex-wrap gap-x-4 gap-y-1">
           <span><span class="text-gray-500">Target:</span> {config.target_metric}</span>
@@ -550,7 +572,7 @@
     {/if}
 
     <!-- Grading summary (for critic runs with completed grader) -->
-    {#if run.agent_type === 'critic'}
+    {#if getAgentType(run) === 'critic'}
       {@const gs = computeGradingSummary(run)}
       {#if gs}
         {@const recall_denominator = 0}
@@ -584,12 +606,11 @@
     {/if}
 
     <!-- Grading edges (for both critic and grader runs) -->
-    {#if run.agent_type === 'critic'}
+    {#if getAgentType(run) === 'critic'}
       {@const edges = getAggregatedEdges(run)}
       {#if edges.length > 0}
         {@const visibleEdges = edges.filter(
-          (e: any) =>
-            e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
         )}
         {@const gs = computeGradingSummary(run)}
         <div class="px-4 py-2 border-b flex-shrink-0">
@@ -602,18 +623,21 @@
           />
         </div>
       {/if}
-    {:else if run.agent_type === 'grader' && run.grading_edges.length > 0}
-      {@const visibleEdges = run.grading_edges.filter(
-        (e: any) =>
-          e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-      )}
-      <div class="px-4 py-2 border-b flex-shrink-0">
-        <GradingEdges edges={run.grading_edges} missedOccurrences={[]} defaultOpen={visibleEdges.length < 10} />
-      </div>
+    {:else if getAgentType(run) === 'grader'}
+      {@const gradingEdges = getGradingEdges(run)}
+      {#if gradingEdges.length > 0}
+        {@const visibleEdges = gradingEdges.filter(
+          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+        )}
+        <div class="px-4 py-2 border-b flex-shrink-0">
+          <GradingEdges edges={gradingEdges} missedOccurrences={[]} defaultOpen={visibleEdges.length < 10} />
+        </div>
+      {/if}
     {/if}
 
     <!-- Critique file viewer (for critic runs with reported issues) -->
-    {#if run.agent_type === 'critic' && run.reported_issues.length > 0 && snapshotDetail}
+    {@const reportedIssues = getReportedIssues(run)}
+    {#if getAgentType(run) === 'critic' && reportedIssues.length > 0 && snapshotDetail}
       {@const edges = getAggregatedEdges(run)}
       <div class="border-b">
         <div class="px-4 py-3 bg-gray-100 border-b">
@@ -631,7 +655,7 @@
                 file={fileContent}
                 tps={snapshotDetail.true_positives}
                 fps={snapshotDetail.false_positives}
-                critiqueIssues={run.reported_issues}
+                critiqueIssues={reportedIssues}
                 gradingEdges={edges}
               />
             {/each}

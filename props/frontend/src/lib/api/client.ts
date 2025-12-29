@@ -14,6 +14,16 @@ export type CriticRunSpecifics = components['schemas']['CriticRunSpecifics'];
 export type GraderRunSpecifics = components['schemas']['GraderRunSpecifics'];
 export type OtherRunSpecifics = components['schemas']['OtherRunSpecifics'];
 export type AgentRunDetail = components['schemas']['AgentRunDetail'];
+
+// Type guards for AgentRunDetail discriminated union
+export function isCriticRun(run: AgentRunDetail): run is AgentRunDetail & { details: CriticRunSpecifics } {
+  return 'agent_type' in run.details && run.details.agent_type === 'critic';
+}
+
+export function isGraderRun(run: AgentRunDetail): run is AgentRunDetail & { details: GraderRunSpecifics } {
+  return 'agent_type' in run.details && run.details.agent_type === 'grader';
+}
+
 export type EventInfo = components['schemas']['ParsedEventInfo'];
 export type EventsResponse = components['schemas']['EventsResponse'];
 export type AgentRunStatus = components['schemas']['AgentRunStatus'];
