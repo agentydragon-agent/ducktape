@@ -54,11 +54,31 @@ from .loader import discover_snapshots
 
 if TYPE_CHECKING:
     import aiodocker
+    from props_core.models.true_positive import LineRange
 
 # Agent definitions are stored in the props package under agent_defs/
 AGENT_DEFS_PATH = Path(__file__).parent.parent.parent / "agent_defs"
 
 logger = logging.getLogger(__name__)
+
+
+def _add_ranges_to_occurrence(
+    orm_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
+    files: dict[Path, list[LineRange] | None],
+) -> None:
+    """Add OccurrenceRangeORM objects to an ORM occurrence from a files dict."""
+    for file_path, ranges in files.items():
+        if ranges is not None:
+            for range_id, line_range in enumerate(ranges):
+                orm_occ.ranges.append(
+                    OccurrenceRangeORM(
+                        file_path=file_path,
+                        range_id=range_id,
+                        start_line=line_range.start_line,
+                        end_line=line_range.end_line if line_range.end_line is not None else line_range.start_line,
+                        note=line_range.note,
+                    )
+                )
 
 
 class DirtyRepoError(Exception):
@@ -509,23 +529,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         ),
                     )
                     session.add(orm_occ)
-                    # Add ranges via relationship
-                    for file_path, ranges in occ.files.items():
-                        if ranges is not None:
-                            for range_id, line_range in enumerate(ranges):
-                                orm_occ.ranges.append(
-                                    OccurrenceRangeORM(
-                                        snapshot_slug=issue.snapshot_slug,
-                                        occurrence_id=occ.occurrence_id,
-                                        file_path=file_path,
-                                        range_id=range_id,
-                                        start_line=line_range.start_line,
-                                        end_line=line_range.end_line
-                                        if line_range.end_line is not None
-                                        else line_range.start_line,
-                                        note=line_range.note,
-                                    )
-                                )
+                    _add_ranges_to_occurrence(orm_occ, occ.files)
                 added += 1
                 total += 1
             else:
@@ -544,8 +548,6 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     # Delete existing occurrences and re-add (cascade handles this)
                     for occ_orm in list(existing.occurrences):
                         session.delete(occ_orm)
-                    # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
-                    # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                     for occ in issue.occurrences:
                         orm_occ = TruePositiveOccurrenceORM(
                             snapshot_slug=issue.snapshot_slug,
@@ -557,23 +559,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             ),
                         )
                         session.add(orm_occ)
-                        # Add ranges via relationship
-                        for file_path, ranges in occ.files.items():
-                            if ranges is not None:
-                                for range_id, line_range in enumerate(ranges):
-                                    orm_occ.ranges.append(
-                                        OccurrenceRangeORM(
-                                            snapshot_slug=issue.snapshot_slug,
-                                            occurrence_id=occ.occurrence_id,
-                                            file_path=file_path,
-                                            range_id=range_id,
-                                            start_line=line_range.start_line,
-                                            end_line=line_range.end_line
-                                            if line_range.end_line is not None
-                                            else line_range.start_line,
-                                            note=line_range.note,
-                                        )
-                                    )
+                        _add_ranges_to_occurrence(orm_occ, occ.files)
                     updated += 1
                     total += 1
                 else:
@@ -589,9 +575,6 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 logger.debug(f"Adding false positive: {fp.snapshot_slug}/{fp.fp_id}")
                 orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
                 session.add(orm_fp)
-                # Add occurrences to normalized table
-                # Note: files/line ranges are stored in fp_occurrence_ranges table, not as column
-                # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as column
                 for fp_occ in fp.occurrences:
                     fp_orm_occ = FalsePositiveOccurrenceORM(
                         snapshot_slug=fp.snapshot_slug,
@@ -603,24 +586,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         ),
                     )
                     session.add(fp_orm_occ)
-                    # Add ranges via relationship
-                    for file_path, ranges in fp_occ.files.items():
-                        if ranges is not None:
-                            for range_id, line_range in enumerate(ranges):
-                                fp_orm_occ.ranges.append(
-                                    OccurrenceRangeORM(
-                                        snapshot_slug=fp.snapshot_slug,
-                                        occurrence_id=fp_occ.occurrence_id,
-                                        file_path=file_path,
-                                        range_id=range_id,
-                                        start_line=line_range.start_line,
-                                        end_line=line_range.end_line
-                                        if line_range.end_line is not None
-                                        else line_range.start_line,
-                                        note=line_range.note,
-                                    )
-                                )
-                    # Add relevant files via relationship
+                    _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
                     for relevant_file in fp_occ.relevant_files:
                         fp_orm_occ.relevant_file_orms.append(
                             FalsePositiveRelevantFileORM(
@@ -647,8 +613,6 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     # Delete existing occurrences and re-add (cascade handles this)
                     for fp_occ_orm in list(existing_fp.occurrences):
                         session.delete(fp_occ_orm)
-                    # Note: files/line ranges are stored in fp_occurrence_ranges table, not as column
-                    # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as column
                     for fp_occ in fp.occurrences:
                         fp_orm_occ = FalsePositiveOccurrenceORM(
                             snapshot_slug=fp.snapshot_slug,
@@ -660,24 +624,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             ),
                         )
                         session.add(fp_orm_occ)
-                        # Add ranges via relationship
-                        for file_path, ranges in fp_occ.files.items():
-                            if ranges is not None:
-                                for range_id, line_range in enumerate(ranges):
-                                    fp_orm_occ.ranges.append(
-                                        OccurrenceRangeORM(
-                                            snapshot_slug=fp.snapshot_slug,
-                                            occurrence_id=fp_occ.occurrence_id,
-                                            file_path=file_path,
-                                            range_id=range_id,
-                                            start_line=line_range.start_line,
-                                            end_line=line_range.end_line
-                                            if line_range.end_line is not None
-                                            else line_range.start_line,
-                                            note=line_range.note,
-                                        )
-                                    )
-                        # Add relevant files via relationship
+                        _add_ranges_to_occurrence(fp_orm_occ, fp_occ.files)
                         for relevant_file in fp_occ.relevant_files:
                             fp_orm_occ.relevant_file_orms.append(
                                 FalsePositiveRelevantFileORM(

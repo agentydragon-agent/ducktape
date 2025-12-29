@@ -13,7 +13,7 @@ from props_core.db.session import get_session
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from tests.conftest import make_critic_run, make_grader_run
+from tests.conftest import make_critic_run, make_grader_run, make_reported_issues
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -45,9 +45,19 @@ def test_grader_run(session, test_critic_run):
 
 @pytest.fixture
 def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
-    """Fixture factory for creating grading edges."""
+    """Fixture factory for creating grading edges.
+
+    Always creates a fresh ReportedIssue then the edge. Caller must ensure issue_id uniqueness.
+    """
 
     def _add(critique_issue_id: str, rationale: str = "Test edge", **kwargs):
+        # Always create the ReportedIssue - caller must ensure unique issue_ids
+        make_reported_issues(
+            agent_run_id=test_critic_run.agent_run_id,
+            issue_ids=[critique_issue_id],
+            session=session,
+        )
+
         edge = GradingEdge(
             grader_run_id=test_grader_run.agent_run_id,
             critique_run_id=test_critic_run.agent_run_id,
@@ -96,16 +106,23 @@ def test_edge_partial_fp_target_invalid(session, add_edge, fp_occurrence):
     session.rollback()
 
 
-def test_edge_credit_range_valid(session, add_edge, tp_occurrences_multi, tp_occurrence_single):
-    """Valid: credit can be any value between 0.0 and 1.0."""
-    occs = tp_occurrences_multi[:3]
-    if len(occs) < 3:
-        occs = occs + [tp_occurrence_single] * (3 - len(occs))
+def test_edge_credit_range_valid(session, add_edge, tp_occurrences_multi):
+    """Valid: credit can be any value between 0.0 and 1.0.
 
+    Uses cross-cutting TPs (tp-003, tp-004, tp-005 which have NULL match_filter_hash)
+    to avoid file scope conflicts. Each edge goes to a different occurrence to
+    avoid the credit sum ≤ 1.0 constraint.
+    """
+    # Get cross-cutting occurrences (tp-003+, which don't have match_filter_hash)
+    # tp-001 and tp-002 have match_filter_hash set, so skip them
+    cross_cutting = [(tp, occ) for tp, occ in tp_occurrences_multi if tp >= "tp-003"]
+    assert len(cross_cutting) >= 3, f"Need at least 3 cross-cutting TPs, got {len(cross_cutting)}"
+
+    # Create edges with different credit values, each to different occurrences
     test_cases = [
-        (0.0, "issue-001", occs[0][0], occs[0][1]),
-        (0.5, "issue-002", occs[1][0], occs[1][1]),
-        (1.0, "issue-003", occs[2][0], occs[2][1]),
+        (0.0, "issue-001", cross_cutting[0][0], cross_cutting[0][1]),
+        (0.5, "issue-002", cross_cutting[1][0], cross_cutting[1][1]),
+        (1.0, "issue-003", cross_cutting[2][0], cross_cutting[2][1]),
     ]
     for credit, issue_id, tp_id, occ_id in test_cases:
         add_edge(issue_id, tp_id=tp_id, tp_occurrence_id=occ_id, credit=credit, rationale=f"Valid credit: {credit}")
@@ -123,11 +140,15 @@ def test_edge_credit_negative_invalid(session, add_edge, tp_occurrence_single):
 
 
 def test_edge_credit_above_one_invalid(session, add_edge, tp_occurrence_single):
-    """Invalid: credit cannot exceed 1.0."""
+    """Invalid: credit cannot exceed 1.0.
+
+    Note: The credit_sum trigger catches this before the CHECK constraint,
+    so we get a RaiseException (via psycopg2.errors) rather than IntegrityError.
+    """
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=1.5, rationale="Invalid: credit > 1.0")
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
 
@@ -140,7 +161,7 @@ def test_credit_sum_trigger_enforces_limit_tp(session, add_edge, tp_occurrence_s
 
     add_edge("issue-002", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.5, rationale="Second match")
 
-    with pytest.raises(Exception, match=r"Credit sum would exceed 1\.0"):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
 
@@ -163,6 +184,6 @@ def test_credit_sum_trigger_enforces_limit_fp(session, add_edge, fp_occurrence):
 
     add_edge("issue-002", fp_id=fp_id, fp_occurrence_id=fp_occ, credit=0.3, rationale="Second FP match")
 
-    with pytest.raises(Exception, match=r"Credit sum would exceed 1\.0"):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()

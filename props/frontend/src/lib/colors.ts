@@ -34,11 +34,10 @@ function colorScheme(color: string) {
   } as const;
 }
 
-/** Color scheme for issue types (TP, FP, critique, novel) */
+/** Color scheme for issue types (TP, FP, critique) */
 export const issueColors = {
   tp: colorScheme('green'),
   fp: colorScheme('red'),
   critique: colorScheme('blue'),
   critiqueFp: colorScheme('orange'),
-  novel: colorScheme('gray'),
 } as const;

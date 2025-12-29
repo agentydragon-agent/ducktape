@@ -46,8 +46,7 @@ export type GraderRunInfo = components['schemas']['GraderRunInfo'];
 export type GradingEdgeInfo = components['schemas']['GradingEdgeInfo'];
 export type TpTarget = components['schemas']['TpTarget'];
 export type FpTarget = components['schemas']['FpTarget'];
-export type NoMatchTarget = components['schemas']['NoMatchTarget'];
-export type GradingTarget = TpTarget | FpTarget | NoMatchTarget;
+export type GradingTarget = TpTarget | FpTarget;
 
 // Event payload types (discriminated union)
 export type DockerExecCallPayload = components['schemas']['DockerExecCallPayload'];

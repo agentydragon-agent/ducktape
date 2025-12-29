@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "pnpm": {
+    "overrides": {
+      "esbuild": ">=0.21.0"
+    }
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",

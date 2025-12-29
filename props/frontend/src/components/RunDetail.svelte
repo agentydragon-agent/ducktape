@@ -33,7 +33,7 @@
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingEdges from './GradingEdges.svelte';
-  import CritiqueFileViewer from './CritiqueFileViewer.svelte';
+  import FileViewer from './FileViewer.svelte';
   import TruncatedStreamComponent from './TruncatedStream.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
@@ -120,13 +120,12 @@
 
     const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
     const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
-    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
     const total_credit = edges
       .filter((e) => e.target.kind === 'tp')
-      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+      .reduce((sum, e) => sum + e.target.credit, 0);
 
     // Recall denominator needs to come from example - we'll pass it separately
-    return { tp_count, fp_count, unknown_count, total_credit };
+    return { tp_count, fp_count, total_credit };
   }
 
   // Load run data
@@ -373,12 +372,19 @@
         return { label: `Tool: ${payload.name}`, content: argsPreview, style: 'bg-purple-50 border-purple-200' };
       }
       case 'tool_output': {
-        const resultText = payload.content.map((c: any) => c.text || '[non-text]').join('\n');
+        const resultText = payload.content
+          .map((c) => {
+            if (typeof c === 'object' && c !== null && 'text' in c && typeof c.text === 'string') {
+              return c.text;
+            }
+            return '[non-text]';
+          })
+          .join('\n');
         const preview = truncateText(resultText, 200);
         return { label: 'Tool Output', content: preview, style: 'bg-gray-50 border-gray-200' };
       }
       case 'reasoning': {
-        const summaryText = payload.summary?.map((s: any) => s.text).join('\n');
+        const summaryText = payload.summary?.map((s) => s.text).join('\n');
         if (!summaryText)
           return { label: 'Reasoning', content: '(thinking...)', style: 'bg-yellow-50 border-yellow-200' };
         return { label: 'Reasoning', content: summaryText, style: 'bg-yellow-50 border-yellow-200', isMarkdown: true };
@@ -608,7 +614,6 @@
             </span>
             <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
             <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
-            <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
           </div>
         </div>
       {/if}
@@ -618,9 +623,7 @@
     {#if getAgentType(run) === 'critic'}
       {@const edges = getAggregatedEdges(run)}
       {#if edges.length > 0}
-        {@const visibleEdges = edges.filter(
-          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-        )}
+        {@const visibleEdges = edges.filter((e) => e.target.credit > 0)}
         {@const gs = computeGradingSummary(run)}
         <div class="px-4 py-2 border-b flex-shrink-0">
           <GradingEdges
@@ -637,9 +640,7 @@
     {:else if getAgentType(run) === 'grader'}
       {@const gradingEdges = getGradingEdges(run)}
       {#if gradingEdges.length > 0}
-        {@const visibleEdges = gradingEdges.filter(
-          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-        )}
+        {@const visibleEdges = gradingEdges.filter((e) => e.target.credit > 0)}
         <div class="px-4 py-2 border-b flex-shrink-0">
           <GradingEdges
             edges={gradingEdges}
@@ -668,7 +669,7 @@
         {:else}
           <div class="p-4 space-y-6">
             {#each Array.from(fileContents.entries()) as [_, fileContent]}
-              <CritiqueFileViewer
+              <FileViewer
                 file={fileContent}
                 tps={snapshotDetail.true_positives}
                 fps={snapshotDetail.false_positives}

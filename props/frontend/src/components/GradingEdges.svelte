@@ -36,23 +36,11 @@
 
   // Filter and sort edges - in complete bipartite graph, most edges have zero credit
   // Show ALL non-zero credit edges (TP and FP) prominently, collapse zeros
-  const getCredit = (edge: GradingEdgeInfo) => {
-    if (edge.target.kind === 'tp') return edge.target.credit;
-    if (edge.target.kind === 'fp') return edge.target.credit;
-    return 0;
-  };
+  const getCredit = (edge: GradingEdgeInfo) => edge.target.credit;
 
-  const nonZeroEdges = $derived(
-    edges
-      .filter((e) => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) > 0)
-      .sort((a, b) => getCredit(b) - getCredit(a))
-  );
+  const nonZeroEdges = $derived(edges.filter((e) => e.target.credit > 0).sort((a, b) => getCredit(b) - getCredit(a)));
 
-  const zeroEdges = $derived(
-    edges.filter((e) => (e.target.kind === 'tp' || e.target.kind === 'fp') && getCredit(e) === 0)
-  );
-
-  const unmatchedEdges = $derived(edges.filter((e) => e.target.kind === 'none'));
+  const zeroEdges = $derived(edges.filter((e) => e.target.credit === 0));
 
   let showZeroEdges = $state(false);
 </script>
@@ -157,25 +145,6 @@
               {/each}
             </div>
           {/if}
-        </div>
-      {/if}
-
-      <!-- Novel Findings -->
-      {#if unmatchedEdges.length > 0}
-        <div class="mt-3 pt-2 border-t border-gray-200">
-          <div class="text-xs font-medium text-gray-500 mb-1">Novel Findings ({unmatchedEdges.length}):</div>
-          {#each unmatchedEdges as edge}
-            <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
-              <div class="flex items-center gap-2 mb-1">
-                {#if runId}
-                  <CritiqueIssueLink {runId} issueId={edge.critique_issue_id} />
-                {:else}
-                  <span class="font-mono font-medium">{edge.critique_issue_id}</span>
-                {/if}
-              </div>
-              <div class="text-gray-600">{edge.rationale}</div>
-            </div>
-          {/each}
         </div>
       {/if}
 

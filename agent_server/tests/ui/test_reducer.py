@@ -6,6 +6,7 @@ from agent_server.server.bus import MimeType
 from agent_server.server.protocol import UiMessageEvt, UiMessagePayload, UserText
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import ExecContent, JsonContent, ToolItem
+from mcp_infra.exec.models import BaseExecResult, Exited
 from tests.ui.typed_asserts import (
     assert_typed_items_have_one,
     is_assistant_markdown,
@@ -58,7 +59,8 @@ def test_function_output_updates_exec_stream(fresh_ui_state, make_tool_call, mak
     tool_call = make_tool_call("seatbelt", "sandbox_exec", args={"argv": ["ls"]})
     s1 = reducer.reduce(fresh_ui_state, tool_call)
 
-    output = make_function_output(tool_call.call_id, {"stdout": "ok", "stderr": "", "exit_code": 0})
+    exec_result = BaseExecResult(stdout="ok", stderr="", exit=Exited(exit_code=0), duration_ms=100)
+    output = make_function_output(tool_call.call_id, exec_result.model_dump(mode="json"))
     result = reducer.reduce(s1, output)
 
     item = result.items[0]

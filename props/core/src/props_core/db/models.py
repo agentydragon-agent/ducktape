@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from props_core.db.examples import Example
 
 from sqlalchemy import (
+    CheckConstraint,
     Enum,
     FetchedValue,
     ForeignKey,
@@ -582,12 +583,15 @@ class OccurrenceRangeORM(Base):
 
     __tablename__ = "occurrence_ranges"
 
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    # Auto-increment PK; uniqueness enforced by uq_occurrence_ranges constraint
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
+    # Exactly one of tp_id/fp_id is set (exclusive arc); the other is NULL
     tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
-    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), nullable=False)
+    range_id: Mapped[int] = mapped_column(Integer, nullable=False)
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -616,6 +620,11 @@ class OccurrenceRangeORM(Base):
             ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
             ondelete="CASCADE",
         ),
+        UniqueConstraint(
+            "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id",
+            name="uq_occurrence_ranges",
+        ),
+        CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
     )
 
     # Relationships - use foreign() to specify which columns to join on
@@ -878,23 +887,17 @@ class FpTarget(BaseModel):
     credit: float
 
 
-class NoMatchTarget(BaseModel):
-    """No match (unknown)."""
-
-    kind: Literal["none"] = "none"
-
-
-GradingTarget = Annotated[TpTarget | FpTarget | NoMatchTarget, Field(discriminator="kind")]
+GradingTarget = Annotated[TpTarget | FpTarget, Field(discriminator="kind")]
 
 
 class GradingEdge(Base):
     """Explicit bipartite graph edge from critique issue to GT occurrence.
 
     Each edge represents a grader's judgment about whether a critique issue matches
-    a ground truth occurrence. Every (critique_issue, matchable_occurrence) pair
-    must have an edge (complete coverage).
+    a ground truth occurrence. Every (critique_issue, gt_occurrence) pair must have
+    an edge (complete bipartite coverage enforced by grading_pending view).
 
-    Discriminated by NULL pattern:
+    Exactly one of TP or FP target must be set (enforced by DB CHECK constraint):
     - TP edge: tp_id + tp_occurrence_id NOT NULL, fp_id + fp_occurrence_id NULL
     - FP edge: fp_id + fp_occurrence_id NOT NULL, tp_id + tp_occurrence_id NULL
 
@@ -902,8 +905,8 @@ class GradingEdge(Base):
     - For TPs: 0.0-1.0 (how well critique matches; 0.0 = reviewed, no match)
     - For FPs: 0.0 for non-match, >0 for penalty (incorrectly triggered FP)
 
-    No "no-match" type: pairs with no semantic match still get an edge with credit=0.0.
-    Query grading_pending view to see missing edges (drift).
+    Most edges have credit=0.0 (sparse matches). Query grading_pending view to see
+    missing edges that still need grading.
     """
 
     __tablename__ = "grading_edges"
@@ -940,7 +943,10 @@ class GradingEdge(Base):
     grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
 
     def to_target(self) -> GradingTarget:
-        """Convert to grading target for API responses."""
+        """Convert to grading target for API responses.
+
+        Every edge must target exactly one of TP or FP (enforced by DB constraint).
+        """
         if self.tp_id is not None:
             assert self.tp_occurrence_id is not None, (
                 f"TP grading edge {self.critique_issue_id} missing tp_occurrence_id"
@@ -951,7 +957,7 @@ class GradingEdge(Base):
                 f"FP grading edge {self.critique_issue_id} missing fp_occurrence_id"
             )
             return FpTarget(fp_id=self.fp_id, occurrence_id=self.fp_occurrence_id, credit=self.credit)
-        return NoMatchTarget()
+        raise ValueError(f"Grading edge {self.critique_issue_id} has no target (DB constraint violation)")
 
 
 class ModelMetadata(Base):

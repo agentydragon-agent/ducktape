@@ -6,6 +6,10 @@ on:
       - 'props/frontend/**'
   workflow_dispatch:
 
+# Least-privilege permissions
+permissions:
+  contents: read
+
 defaults:
   run:
     working-directory: props/frontend
@@ -58,15 +62,3 @@ jobs:
           name: visual-diffs
           path: props/frontend/test-results/
           retention-days: 30
-
-      - name: Comment PR with results
-        if: failure() && github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: '## ⚠️ Visual Regression Tests Failed\n\nVisual differences detected. Check the [test report](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) for details.\n\n**Next steps:**\n1. Download the `playwright-report` artifact to view diffs\n2. If changes are intentional, run `pnpm test:visual:update` locally and commit updated baselines\n3. If changes are unintentional, fix the code and push again'
-            })

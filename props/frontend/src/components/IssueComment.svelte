@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { CheckCircle, XCircle, Link, HelpCircle } from 'lucide-svelte';
+  import { CheckCircle, XCircle, Link } from 'lucide-svelte';
   import type { GradingEdgeInfo, FileLocationInfo } from '../lib/api/client';
   import { issueColors } from '../lib/colors';
   import { formatFileLocation } from '../lib/formatters';
@@ -49,16 +49,13 @@
   const ICONS = {
     tp: CheckCircle,
     fp: XCircle,
-    novel: HelpCircle,
     critique: Link,
-    none: HelpCircle, // For grading edge targets
   } as const;
 
   // Target kind to color mapping
   const TARGET_COLORS = {
     tp: 'green',
     fp: 'red',
-    none: 'gray',
   } as const;
 
   // Helper to create color classes for a given base color
@@ -77,10 +74,9 @@
   });
 
   // Get label for grading edge target
-  const getTargetLabel = (target: { kind: string; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
+  const getTargetLabel = (target: { kind: 'tp' | 'fp'; tp_id?: string; fp_id?: string; occurrence_id?: string }) => {
     if (target.kind === 'tp') return `${target.tp_id}/${target.occurrence_id}`;
-    if (target.kind === 'fp') return `${target.fp_id}/${target.occurrence_id}`;
-    return 'Novel finding (no match)';
+    return `${target.fp_id}/${target.occurrence_id}`;
   };
 
   // Compute critique classification once
@@ -88,17 +84,14 @@
     if (kind !== 'critique') return null;
     const hasTPMatch = gradingEdges.some((e) => e.target.kind === 'tp' && e.target.credit > 0);
     const hasFPMatch = gradingEdges.some((e) => e.target.kind === 'fp' && e.target.credit > 0);
-    const isNovel = gradingEdges.some((e) => e.target.kind === 'none');
     if (hasTPMatch) return 'tp';
     if (hasFPMatch) return 'fp';
-    if (isNovel) return 'novel';
     return 'default';
   });
 
   const Icon = $derived.by(() => {
     if (kind === 'tp') return ICONS.tp;
     if (kind === 'fp') return ICONS.fp;
-    if (kind === 'critique') return critiqueType === 'novel' ? ICONS.novel : ICONS.critique;
     return ICONS.critique;
   });
 
@@ -109,7 +102,6 @@
     // Critique styling based on grading
     if (critiqueType === 'tp') return createStyling(issueColors.critique, 'Critique (TP)');
     if (critiqueType === 'fp') return createStyling(issueColors.critiqueFp, 'Critique (FP)');
-    if (critiqueType === 'novel') return createStyling(issueColors.novel, 'Critique (Novel)');
     return createStyling(issueColors.critique, 'Critique');
   });
 </script>
@@ -167,14 +159,9 @@
           <div class="space-y-1">
             {#each gradingEdges as edge}
               {@const target = edge.target}
-              {@const edgeCredit = target.kind === 'tp' || target.kind === 'fp' ? target.credit : 0}
-              {#if edgeCredit > 0 || target.kind === 'none'}
+              {#if target.credit > 0}
                 {@const TargetIcon = ICONS[target.kind]}
-                {@const targetStyling = createTargetStyling(
-                  TARGET_COLORS[target.kind],
-                  getTargetLabel(target),
-                  target.kind === 'none' ? '' : undefined
-                )}
+                {@const targetStyling = createTargetStyling(TARGET_COLORS[target.kind], getTargetLabel(target))}
                 <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
                   <div class="flex items-center gap-2">
                     <TargetIcon size={12} class={targetStyling.iconColor} />
@@ -187,9 +174,7 @@
                         <span class={targetStyling.textColor}>{targetStyling.label}</span>
                       {/if}
                     </span>
-                    {#if edgeCredit > 0}
-                      <span class="{targetStyling.creditColor} font-medium">(+{edgeCredit.toFixed(2)})</span>
-                    {/if}
+                    <span class="{targetStyling.creditColor} font-medium">(+{target.credit.toFixed(2)})</span>
                   </div>
                   {#if edge.rationale}
                     <div class="text-gray-600 mt-1">{edge.rationale}</div>
