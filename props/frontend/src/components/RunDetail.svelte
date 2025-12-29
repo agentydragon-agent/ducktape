@@ -96,6 +96,15 @@
     return run.details.resolved_files;
   }
 
+  // Get snapshot slug from run's example (for critics and graders)
+  function getSnapshotSlug(run: AgentRunDetail): string | undefined {
+    const config = run.type_config;
+    if ('example' in config && config.example) {
+      return config.example.snapshot_slug;
+    }
+    return undefined;
+  }
+
   // Compute aggregated grading edges from all grader runs
   function getAggregatedEdges(run: AgentRunDetail): GradingEdgeInfo[] {
     if (!isCriticRun(run)) return [];
@@ -620,6 +629,8 @@
             totalCredit={gs?.total_credit}
             recallDenominator={undefined}
             defaultOpen={visibleEdges.length < 10}
+            runId={run.agent_run_id}
+            snapshotSlug={getSnapshotSlug(run)}
           />
         </div>
       {/if}
@@ -630,7 +641,13 @@
           (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
         )}
         <div class="px-4 py-2 border-b flex-shrink-0">
-          <GradingEdges edges={gradingEdges} missedOccurrences={[]} defaultOpen={visibleEdges.length < 10} />
+          <GradingEdges
+            edges={gradingEdges}
+            missedOccurrences={[]}
+            defaultOpen={visibleEdges.length < 10}
+            runId={run.agent_run_id}
+            snapshotSlug={getSnapshotSlug(run)}
+          />
         </div>
       {/if}
     {/if}
@@ -657,6 +674,7 @@
                 fps={snapshotDetail.false_positives}
                 critiqueIssues={reportedIssues}
                 gradingEdges={edges}
+                snapshotSlug={getSnapshotSlug(run)}
               />
             {/each}
           </div>

@@ -184,6 +184,7 @@
                       expanded={isExpanded}
                       onToggle={() => toggleOccurrence(occId)}
                       copyUrl={getOccurrenceUrl(occ.issueId, occ.occurrenceId)}
+                      {snapshotSlug}
                     />
                   </div>
                 </td>

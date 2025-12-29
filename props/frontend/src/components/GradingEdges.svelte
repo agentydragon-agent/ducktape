@@ -1,5 +1,7 @@
 <script lang="ts">
   import type { GradingEdgeInfo } from '../lib/api/client';
+  import CritiqueIssueLink from '../lib/CritiqueIssueLink.svelte';
+  import OccurrenceLink from '../lib/OccurrenceLink.svelte';
 
   interface MissedOccurrence {
     tp_id: string;
@@ -14,9 +16,19 @@
     totalCredit?: number;
     recallDenominator?: number;
     defaultOpen?: boolean;
+    runId?: string; // For linking critique issue IDs
+    snapshotSlug?: string; // For linking TP/FP occurrence IDs
   }
 
-  let { edges, missedOccurrences = [], totalCredit, recallDenominator, defaultOpen = false }: Props = $props();
+  let {
+    edges,
+    missedOccurrences = [],
+    totalCredit,
+    recallDenominator,
+    defaultOpen = false,
+    runId,
+    snapshotSlug,
+  }: Props = $props();
 
   const creditSummary = $derived(
     totalCredit != null && recallDenominator != null ? `${totalCredit.toFixed(1)}/${recallDenominator} recall` : null
@@ -66,13 +78,29 @@
           {@const textColor = isTP ? 'text-green-600' : 'text-red-600'}
           <div class="p-2 rounded border text-xs {bgColor} {borderColor}">
             <div class="flex items-center gap-2 mb-1">
-              <span class="font-mono font-medium">{edge.critique_issue_id}</span>
+              {#if runId}
+                <CritiqueIssueLink {runId} issueId={edge.critique_issue_id} />
+              {:else}
+                <span class="font-mono font-medium">{edge.critique_issue_id}</span>
+              {/if}
               <span class="text-gray-400">→</span>
               {#if target.kind === 'tp'}
-                <span class={textColor}>{target.tp_id}/{target.occurrence_id}</span>
+                {#if snapshotSlug}
+                  <span class={textColor}>
+                    <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
+                  </span>
+                {:else}
+                  <span class={textColor}>{target.tp_id}/{target.occurrence_id}</span>
+                {/if}
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)})</span>
               {:else if target.kind === 'fp'}
-                <span class={textColor}>{target.fp_id}/{target.occurrence_id}</span>
+                {#if snapshotSlug}
+                  <span class={textColor}>
+                    <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
+                  </span>
+                {:else}
+                  <span class={textColor}>{target.fp_id}/{target.occurrence_id}</span>
+                {/if}
                 <span class="{textColor} font-medium">(+{credit.toFixed(2)} FP)</span>
               {/if}
             </div>
@@ -98,12 +126,29 @@
                 {@const target = edge.target}
                 <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
                   <div class="flex items-center gap-2 mb-1">
-                    <span class="font-mono text-gray-500">{edge.critique_issue_id}</span>
+                    {#if runId}
+                      <span class="text-gray-500"><CritiqueIssueLink {runId} issueId={edge.critique_issue_id} /></span>
+                    {:else}
+                      <span class="font-mono text-gray-500">{edge.critique_issue_id}</span>
+                    {/if}
                     <span class="text-gray-400">→</span>
                     {#if target.kind === 'tp'}
-                      <span class="text-gray-500">{target.tp_id}/{target.occurrence_id}</span>
+                      {#if snapshotSlug}
+                        <span class="text-gray-500">
+                          <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
+                        </span>
+                      {:else}
+                        <span class="text-gray-500">{target.tp_id}/{target.occurrence_id}</span>
+                      {/if}
                     {:else if target.kind === 'fp'}
-                      <span class="text-gray-500">{target.fp_id}/{target.occurrence_id} FP</span>
+                      {#if snapshotSlug}
+                        <span class="text-gray-500">
+                          <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
+                          <span> FP</span>
+                        </span>
+                      {:else}
+                        <span class="text-gray-500">{target.fp_id}/{target.occurrence_id} FP</span>
+                      {/if}
                     {/if}
                     <span class="text-gray-400">(0.00)</span>
                   </div>
@@ -122,7 +167,11 @@
           {#each unmatchedEdges as edge}
             <div class="p-2 rounded border text-xs bg-gray-50 border-gray-200">
               <div class="flex items-center gap-2 mb-1">
-                <span class="font-mono font-medium">{edge.critique_issue_id}</span>
+                {#if runId}
+                  <CritiqueIssueLink {runId} issueId={edge.critique_issue_id} />
+                {:else}
+                  <span class="font-mono font-medium">{edge.critique_issue_id}</span>
+                {/if}
               </div>
               <div class="text-gray-600">{edge.rationale}</div>
             </div>
@@ -137,7 +186,13 @@
           {#each missedOccurrences as missed}
             <div class="p-2 rounded border text-xs bg-red-50 border-red-200">
               <div class="flex items-center gap-2">
-                <span class="font-mono font-medium text-red-700">{missed.tp_id}/{missed.occurrence_id}</span>
+                {#if snapshotSlug}
+                  <span class="font-mono font-medium text-red-700">
+                    <OccurrenceLink {snapshotSlug} issueId={missed.tp_id} occurrenceId={missed.occurrence_id} />
+                  </span>
+                {:else}
+                  <span class="font-mono font-medium text-red-700">{missed.tp_id}/{missed.occurrence_id}</span>
+                {/if}
               </div>
               <div class="text-gray-600 mt-1">{missed.tp_rationale}</div>
               {#if missed.occ_note}

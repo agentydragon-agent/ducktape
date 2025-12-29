@@ -3,6 +3,8 @@
   import { formatStatsWithCI } from '../lib/formatters';
   import { recallColorClass } from '../lib/colors';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
+  import SnapshotLink from '../lib/SnapshotLink.svelte';
+  import FileLink from '../lib/FileLink.svelte';
   import BackButton from './BackButton.svelte';
   import Breadcrumb from './Breadcrumb.svelte';
 
@@ -42,7 +44,9 @@
       <div class="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span class="text-gray-500">Snapshot:</span>
-          <span class="ml-1 font-mono">{data.snapshot_slug}</span>
+          <span class="ml-1">
+            <SnapshotLink slug={data.snapshot_slug} />
+          </span>
         </div>
         <div>
           <span class="text-gray-500">Split:</span>
@@ -68,9 +72,11 @@
       {#if data.example_kind === 'file_set' && data.files}
         <div>
           <h3 class="text-sm font-medium text-gray-700 mb-2">Files ({data.files.length})</h3>
-          <ul class="text-xs font-mono text-gray-600 space-y-1">
+          <ul class="text-xs text-gray-600 space-y-1">
             {#each data.files as file}
-              <li>{file}</li>
+              <li>
+                <FileLink snapshotSlug={data.snapshot_slug} filePath={file} />
+              </li>
             {/each}
           </ul>
         </div>

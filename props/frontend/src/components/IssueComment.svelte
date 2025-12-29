@@ -3,6 +3,7 @@
   import type { GradingEdgeInfo, FileLocationInfo } from '../lib/api/client';
   import { issueColors } from '../lib/colors';
   import { formatFileLocation } from '../lib/formatters';
+  import OccurrenceLink from '../lib/OccurrenceLink.svelte';
   import CopyButton from './CopyButton.svelte';
 
   interface Props {
@@ -16,6 +17,7 @@
     gradingEdges?: GradingEdgeInfo[]; // For critique issues - show what they matched
     credit?: number; // For grading edge targets
     copyUrl?: string; // Optional URL to copy for this occurrence
+    snapshotSlug?: string; // For linking grading edge targets (TP/FP occurrences)
   }
 
   let {
@@ -29,6 +31,7 @@
     gradingEdges = [],
     credit,
     copyUrl,
+    snapshotSlug,
   }: Props = $props();
 
   // Helper to create styling from colors and label
@@ -175,7 +178,15 @@
                 <div class="text-xs p-1.5 rounded border {targetStyling.bg} {targetStyling.border}">
                   <div class="flex items-center gap-2">
                     <TargetIcon size={12} class={targetStyling.iconColor} />
-                    <span class="font-mono {targetStyling.textColor}">{targetStyling.label}</span>
+                    <span class="font-mono">
+                      {#if snapshotSlug && target.kind === 'tp' && target.tp_id && target.occurrence_id}
+                        <OccurrenceLink {snapshotSlug} issueId={target.tp_id} occurrenceId={target.occurrence_id} />
+                      {:else if snapshotSlug && target.kind === 'fp' && target.fp_id && target.occurrence_id}
+                        <OccurrenceLink {snapshotSlug} issueId={target.fp_id} occurrenceId={target.occurrence_id} />
+                      {:else}
+                        <span class={targetStyling.textColor}>{targetStyling.label}</span>
+                      {/if}
+                    </span>
                     {#if edgeCredit > 0}
                       <span class="{targetStyling.creditColor} font-medium">(+{edgeCredit.toFixed(2)})</span>
                     {/if}

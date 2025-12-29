@@ -20,9 +20,10 @@
     fps: FpInfo[];
     critiqueIssues: ReportedIssueInfo[];
     gradingEdges: GradingEdgeInfo[];
+    snapshotSlug?: string;
   }
 
-  let { file, tps, fps, critiqueIssues, gradingEdges }: Props = $props();
+  let { file, tps, fps, critiqueIssues, gradingEdges, snapshotSlug }: Props = $props();
 
   const lines = $derived(file.content.split('\n'));
   const language = $derived(detectLanguage(file.path));
@@ -229,6 +230,7 @@
                     expanded={isExpanded}
                     onToggle={() => toggleIssue(issueKey)}
                     gradingEdges={issue.gradingEdges}
+                    {snapshotSlug}
                   />
                 </td>
               </tr>
