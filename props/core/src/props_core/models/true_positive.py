@@ -13,13 +13,16 @@ from props_core.rationale import Rationale
 class LineRange(BaseModel):
     start_line: int = Field(ge=1, description="1-based start line number")
     end_line: int | None = Field(description="1-based end line number (inclusive); None for single-line anchor")
+    note: str | None = Field(
+        default=None,
+        description=(
+            "Optional per-range note explaining why this specific range matters "
+            "(e.g., 'definition site' vs 'call site' within the same occurrence)"
+        ),
+    )
     # NOTE: No default on end_line for OpenAI strict mode compatibility (used in MCP inputs)
     # TODO: Decouple DB state and MCP I/O shapes so database models can have sensible defaults
     # while MCP inputs maintain strict mode compliance
-    # TODO: Add optional per-range note/context field
-    # Currently notes are only at occurrence level; per-range notes would help explain
-    # why specific line ranges matter within a single occurrence (e.g., "definition site"
-    # vs "call site" in the same occurrence)
 
     @model_validator(mode="after")
     def _validate_range(self) -> LineRange:

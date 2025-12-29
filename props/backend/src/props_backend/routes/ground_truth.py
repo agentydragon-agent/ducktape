@@ -19,8 +19,9 @@ from props_core.db.models import (
 )
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
+from props_core.models.true_positive import LineRange
 from props_core.splits import Split
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 from sqlalchemy import func
 from sqlalchemy.orm import selectinload
 
@@ -46,18 +47,11 @@ class SnapshotsListResponse(BaseModel):
     snapshots: list[SnapshotSummary]
 
 
-class LineRangeInfo(BaseModel):
-    """Line range within a file."""
-
-    start_line: int
-    end_line: int
-
-
 class FileLocationInfo(BaseModel):
     """File with optional line ranges."""
 
     path: str
-    ranges: list[LineRangeInfo] | None
+    ranges: list[LineRange] | None
 
 
 class TpOccurrenceInfo(BaseModel):
@@ -113,17 +107,13 @@ class SnapshotDetailResponse(BaseModel):
 
 def _parse_files_json(files_json: dict) -> list[FileLocationInfo]:
     """Convert JSONB files dict to FileLocationInfo list."""
+    line_range_adapter = TypeAdapter(list[LineRange])
     result = []
     for path, ranges in sorted(files_json.items()):
         if ranges is None:
             result.append(FileLocationInfo(path=path, ranges=None))
         else:
-            result.append(
-                FileLocationInfo(
-                    path=path,
-                    ranges=[LineRangeInfo(start_line=r["start_line"], end_line=r["end_line"]) for r in ranges],
-                )
-            )
+            result.append(FileLocationInfo(path=path, ranges=line_range_adapter.validate_python(ranges)))
     return result
 
 
