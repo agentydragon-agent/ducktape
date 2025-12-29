@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "gatelet"
@@ -81,33 +81,12 @@ gatelet-reporter = "gatelet.reporter:main"
 
 
 
-[tool.setuptools]
-package-dir = {"" = "."}
+[tool.hatch.build.targets.wheel]
+packages = ["gatelet"]
 
-# Automatically include every Python package that is part of the ``gatelet``
-# namespace (``gatelet`` itself, ``gatelet.server`` and any future
-# sub-packages).
-# Discover all sub-packages called ``gatelet`` or starting with that prefix.
-#
-# ``namespaces = true`` tells setuptools that some of those packages may be
-# namespace packages – i.e. they might not contain an ``__init__.py``.  This is
-# handy when the root package only acts as a namespace and the real, importable
-# modules live further down the tree (``gatelet.server`` & friends).  It also
-# prevents the *“package directory './gatelet' does not exist”* installation
-# error when the namespace folder is present but empty (the situation inside
-# the autonomous-agent container).
-packages = { find = { where = ["."], include = ["gatelet*"], namespaces = true } }
-
-# Include non-Python assets for the server component (HTML templates, CSS,
-# …).  They live under ``gatelet/server`` so we reference the fully-qualified
-# package name.
-include-package-data = true
-
-[tool.setuptools.package-data]
-"gatelet.server" = [
-    "templates/*",
-    "static/**/*",
-]
+[tool.hatch.build.targets.wheel.force-include]
+"gatelet/server/templates" = "gatelet/server/templates"
+"gatelet/server/static" = "gatelet/server/static"
 
 [tool.pytest.ini_options]
 minversion = "8.0"
