@@ -2049,11 +2049,13 @@ Used by check_edge_credit_sum trigger function.'
             END IF;
 
             -- Check all files from the critique issue are in the filter's file set
+            -- reported_issue_occurrences.locations is JSONB array: [{file, start_line?, end_line?}, ...]
             IF EXISTS (
                 SELECT 1 FROM reported_issue_occurrences rio
+                CROSS JOIN LATERAL jsonb_array_elements(rio.locations) AS loc
                 WHERE rio.agent_run_id = NEW.critique_run_id
-                  AND rio.issue_id = NEW.critique_issue_id
-                  AND rio.file_path NOT IN (
+                  AND rio.reported_issue_id = NEW.critique_issue_id
+                  AND loc->>'file' NOT IN (
                       SELECT file_path FROM file_set_members
                       WHERE snapshot_slug = NEW.snapshot_slug
                         AND files_hash = filter_hash
