@@ -1,18 +1,5 @@
 # Grader TODOs
 
-## RLS-Secured Database Access (DONE)
-
-**Completed:** Grader now uses unified `TempUserManager` with `agent_{uuid}` pattern.
-
-- Username pattern: `agent_{agent_run_id}` (unified for all agent types)
-- Grants `agent_base` role to temporary users
-- RLS policies use `current_agent_run_id()` and `current_agent_type()` for scoping
-
-**Related files:**
-- `src/adgn/props/db/temp_user_manager.py` - Unified user manager
-
----
-
 ## N-to-M Matching with Credit Assignment
 
 **Current state:** Grading stores per-occurrence results with matched_by (list of input issue IDs + credits).
