@@ -1,1 +1,0 @@
-"""Lint issue agent package."""
