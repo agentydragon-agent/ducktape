@@ -1,0 +1,527 @@
+# Bazel Migration Master Plan
+
+This document tracks the complete migration of the ducktape repository from UV/Cargo/Hakyll to Bazel-managed builds.
+
+## Executive Summary
+
+**Current state**: Mixed build systems:
+- Python: UV workspace with 18 member packages + 8 non-workspace packages
+- Rust: Cargo-based finance tools (already has BUILD files)
+- Haskell: Website (already has minimal BUILD file)
+- Node.js: 3 frontend packages (rspcache admin, agent_server web, props frontend)
+- Infrastructure: Ansible, Docker, Terraform
+
+**Target state**: Unified Bazel build system with:
+- `rules_python` for all Python packages
+- `rules_rust` for Rust (already configured)
+- `rules_haskell` for website (already configured, but slow)
+- `rules_js` for Node.js frontends
+- Optional: Docker image builds via `rules_oci`
+
+## Dependency Graph - Python UV Workspace
+
+### Tier 0 - No workspace dependencies (Leaf packages)
+| Package | External deps only | Notes |
+|---------|-------------------|-------|
+| `openai-utils` | openai, pydantic, httpx, tenacity | Pure OpenAI utilities |
+| `cli-util` | typer, structlog | CLI utilities |
+| `mcp-utils` | mcp | Minimal MCP utilities |
+| `net-util` | tenacity, aiodocker | Network utilities |
+| `py-detectors` | pydantic | AST-based Python detectors |
+| `tana-export` | pydantic, playwright | Tana export tools |
+| `wt` | click, pygit2, pydantic, etc. | Worktree management |
+| `gmail-archiver` | google-api, pydantic, openai | Gmail archiver |
+
+### Tier 1 - Depends only on Tier 0
+| Package | Workspace deps | Notes |
+|---------|---------------|-------|
+| `agent-pkg-runtime` | mcp-utils | Container-side agent utilities |
+| `rspcache` | openai-utils | OpenAI response cache |
+
+### Tier 2 - Depends on Tier 0-1
+| Package | Workspace deps | Notes |
+|---------|---------------|-------|
+| `editor-agent-runtime` | agent-pkg-runtime, cli-util | Container-side editor agent |
+| `agent-core` | openai-utils, agent-pkg-host†, mcp-infra† | Core agent loop (circular!) |
+
+### Tier 3 - Core infrastructure (mutual dependencies)
+**CIRCULAR DEPENDENCY GROUP** - These packages have mutual dependencies:
+- `agent-core` ↔ `mcp-infra` ↔ `agent-pkg-host`
+
+| Package | Workspace deps | Notes |
+|---------|---------------|-------|
+| `mcp-infra` | openai-utils, agent-core, cli-util, mcp-utils | MCP infrastructure |
+| `agent-pkg-host` | mcp-infra | Host-side agent package infrastructure |
+
+### Tier 4 - Application packages
+| Package | Workspace deps | Notes |
+|---------|---------------|-------|
+| `git-commit-ai` | agent-core, mcp-infra, openai-utils | Git commit AI |
+| `ember` | agent-core, openai-utils, mcp-infra | Matrix + OpenAI agent |
+| `sandboxed-jupyter` | net-util, mcp-infra | Sandboxed Jupyter execution |
+| `editor-agent` | editor-agent-runtime, agent-pkg-host, agent-core, mcp-infra, net-util, openai-utils, cli-util | Editor agent host |
+| `agent-server` | cli-util, net-util, mcp-infra, agent-core, openai-utils | Agent server |
+| `props-core` | agent-core, agent-pkg-host, agent-pkg-runtime, cli-util, mcp-infra, net-util, openai-utils | Props core |
+
+### Tier 5 - Top-level applications
+| Package | Workspace deps | Notes |
+|---------|---------------|-------|
+| `adgn` | agent-core, agent-pkg-host, agent-pkg-runtime, cli-util, mcp-infra, net-util, openai-utils | Main LLM/agent package |
+| `props-backend` | props-core | Props dashboard backend |
+
+## Non-Workspace Python Packages
+
+These are NOT in the UV workspace but need Bazel targets:
+
+| Package | Location | Notes |
+|---------|----------|-------|
+| `gatelet` | `/gatelet` | Home Assistant API - complex deps |
+| `ducktape-llm-common` | `/llm/ducktape_llm_common` | Claude linter utilities |
+| `experimental/cotrl` | `/experimental/cotrl` | Experimental |
+| `experimental/claude-history` | `/experimental/claude-history` | Experimental |
+| `experimental/dbus_fast_example` | `/experimental/dbus_fast_example` | Experimental |
+| `homeassistant/iaqi` | `/homeassistant/iaqi` | Home Assistant integration |
+| `difftree` | `/difftree` | Diff tree utility |
+| `gnome-terminal-profile-switcher` | `/gnome-terminal-profile-switcher` | GNOME utility |
+
+## Other Components to Migrate
+
+### Rust (finance/worthy)
+**Status**: Already has BUILD files, needs verification/update
+- Location: `/finance/worthy/`
+- Uses: `rules_rust` with crate_universe
+
+### Haskell (website)
+**Status**: Has basic BUILD file, VERY SLOW fresh builds
+- Location: `/website/`
+- Uses: `rules_haskell` with Stackage
+- **WARNING**: Haskell toolchain setup is notoriously slow (compiles GHC deps from scratch)
+- Consider: Pre-built binary cache or keeping Hakyll separate
+
+### Node.js Frontends
+| Package | Location | Notes |
+|---------|----------|-------|
+| rspcache admin UI | `/rspcache/admin_ui` | Admin dashboard |
+| agent_server web | `/agent_server/src/agent_server/web` | Agent server frontend |
+| props frontend | `/props/frontend` | Props dashboard frontend |
+
+### Docker Images
+| Image | Location | Notes |
+|-------|----------|-------|
+| properties-critic | `/docker/llm/properties-critic` | LLM critic container |
+| runtime | `/docker/runtime` | Agent runtime container |
+
+### Infrastructure (Non-Bazel)
+- **Ansible** (`/ansible/`) - Keep as-is, not Bazel-manageable
+- **Terraform** (`/terraform/`) - Keep as-is, not Bazel-manageable
+- **Nix** (`/nix/`, `devenv.nix`, `flake.nix`) - Keep as-is, complements Bazel
+
+## Activity-Based Prioritization
+
+Based on git history since 2024-06-01, prioritize migration by recent activity:
+
+### High Activity (Priority 1)
+1. `adgn` - Main LLM/agent package, most active
+2. `agent_server` - Heavy development
+3. `mcp_infra` - Core infrastructure, frequently modified
+4. `agent_core` - Core agent loop
+5. `props/core` - Active development
+6. `git_commit_ai` - Active tool
+
+### Medium Activity (Priority 2)
+1. `editor_agent` - Active development
+2. `agent_pkg` (host/runtime) - Supporting infrastructure
+3. `ember` - Agent development
+4. `openai_utils` - Shared utilities
+5. `cli_util` - Shared utilities
+6. `llm/ducktape_llm_common` - Claude linter
+
+### Low Activity (Priority 3)
+1. `tana` - Export utilities
+2. `wt` - Worktree management
+3. `gatelet` - Home Assistant integration
+4. `gmail-archiver` - Email archiver
+5. `props/backend` - Dashboard backend
+6. `rspcache` - Response cache
+7. `sandboxed_jupyter` - Jupyter sandbox
+8. `py_detectors` - Code detectors
+
+### Minimal Activity (Priority 4)
+1. `finance/worthy` - Rust, existing BUILD files
+2. `website` - Haskell, slow builds
+3. Experimental packages
+
+## Migration Checklist
+
+### Phase 1: Infrastructure Setup
+- [ ] Clean existing Bazel configuration (delete old BUILD/WORKSPACE)
+- [ ] Set up MODULE.bazel with rules_python for Python 3.12+
+- [ ] Configure pip.parse with uv.lock or requirements generation
+- [ ] Set up gazelle for Python BUILD file generation
+- [ ] Create common macros for py_library, py_binary, py_test
+
+### Phase 2: Tier 0 Packages (No dependencies)
+- [ ] `openai-utils` - py_library with external deps only
+- [ ] `cli-util` - py_library with external deps only
+- [ ] `mcp-utils` - py_library with external deps only
+- [ ] `net-util` - py_library with external deps only
+- [ ] `py-detectors` - py_library with external deps only
+- [ ] `tana-export` - py_library with external deps only
+- [ ] `wt` - py_library with external deps only
+- [ ] `gmail-archiver` - py_library with external deps only
+
+### Phase 3: Tier 1-2 Packages
+- [ ] `agent-pkg-runtime` - depends on mcp-utils
+- [ ] `rspcache` - depends on openai-utils
+- [ ] `editor-agent-runtime` - depends on agent-pkg-runtime, cli-util
+
+### Phase 4: Core Infrastructure (Circular dependencies)
+Handle the circular dependency between agent-core ↔ mcp-infra ↔ agent-pkg-host:
+- [ ] Option A: Create a combined `core-infra` mega-package
+- [ ] Option B: Break cycles with interface packages
+- [ ] Option C: Use Bazel's strict_deps=False carefully
+- [ ] `agent-core`
+- [ ] `mcp-infra`
+- [ ] `agent-pkg-host`
+
+### Phase 5: Application Packages
+- [ ] `git-commit-ai`
+- [ ] `ember`
+- [ ] `sandboxed-jupyter`
+- [ ] `editor-agent`
+- [ ] `agent-server`
+- [ ] `props-core`
+
+### Phase 6: Top-level Applications
+- [ ] `adgn`
+- [ ] `props-backend`
+
+### Phase 7: Non-Workspace Packages
+- [ ] `ducktape-llm-common`
+- [ ] `gatelet`
+- [ ] `difftree`
+- [ ] Experimental packages (optional)
+
+### Phase 8: Non-Python Components
+- [ ] Verify Rust BUILD files work with current rules_rust
+- [ ] Decide on website strategy (keep slow Haskell or alternative)
+- [ ] Add rules_js for Node.js frontends (optional)
+- [ ] Add rules_oci for Docker images (optional)
+
+### Phase 9: Cleanup
+- [ ] Remove UV workspace configuration from root pyproject.toml
+- [ ] Update CI/CD to use Bazel
+- [ ] Update developer documentation
+- [ ] Remove individual package pyproject.toml files (or keep for IDE support)
+
+## Technical Decisions
+
+### Circular Dependency Strategy
+The circular dependency between `agent-core`, `mcp-infra`, and `agent-pkg-host` requires resolution:
+
+**Recommended approach**: Break the cycle by introducing interface packages:
+1. Extract pure interfaces/protocols from each package
+2. Create `agent-core-interfaces`, `mcp-infra-interfaces` packages
+3. Depend on interfaces instead of implementations
+
+### Python Version
+- Current: Python 3.12+ (some packages 3.12-3.14)
+- Bazel toolchain: Use Python 3.12 for broadest compatibility
+
+### External Dependencies Management
+Options:
+1. **pip.parse from requirements.txt** - Simple, current MODULE.bazel approach
+2. **pip.parse from uv.lock** - Would need conversion tool
+3. **pip.parse from pyproject.toml** - Most convenient
+4. **Gazelle + rules_python_gazelle** - Auto-generate deps
+
+Recommended: Use `pip.parse` with generated `requirements_lock.txt` from `uv export`
+
+### Test Strategy
+- Use `py_test` for individual test files
+- Group tests by package using test suites
+- Mirror pytest markers with Bazel tags
+
+## Known Issues
+
+### Website Build Time
+The Haskell website build is extremely slow from scratch because:
+1. `rules_haskell` compiles Stackage packages from source
+2. Hakyll has deep dependency tree
+3. No pre-built binary cache configured
+
+Options:
+1. Keep website as standalone `stack build` outside Bazel
+2. Set up remote cache specifically for Haskell artifacts
+3. Use Nix-based Haskell toolchain with pre-built binaries
+
+### Docker in Bazel
+`rules_oci` can build container images, but:
+1. More complex than simple Dockerfiles
+2. May not support all Dockerfile features
+3. Consider keeping Dockerfiles for now
+
+## File Structure After Migration
+
+```
+ducktape/
+├── MODULE.bazel           # Main module definition
+├── BUILD.bazel            # Root build file (buildifier, etc.)
+├── WORKSPACE.bazel        # Empty (bzlmod mode)
+├── requirements_lock.txt  # Generated from uv.lock
+├── python/
+│   └── BUILD.bazel        # Python toolchain config
+├── adgn/
+│   ├── BUILD.bazel        # py_library, py_binary, py_test
+│   └── src/adgn/...
+├── agent_core/
+│   ├── BUILD.bazel
+│   └── src/agent_core/...
+... (similar for other packages)
+```
+
+## Commands Reference
+
+```bash
+# Build everything
+bazel build //...
+
+# Test everything
+bazel test //...
+
+# Build specific package
+bazel build //adgn:adgn
+
+# Run specific test
+bazel test //adgn:test_cli
+
+# Generate BUILD files (with gazelle)
+bazel run //:gazelle
+
+# Update pip dependencies
+bazel run //:requirements.update
+
+# Format BUILD files
+bazel run //:buildifier
+```
+
+---
+
+## Future Work / TODOs
+
+### TODO: Flatten Package Layout (Post-Migration)
+
+Currently packages use the `src/` layout:
+```
+openai_utils/
+├── BUILD.bazel
+├── src/
+│   └── openai_utils/
+│       ├── __init__.py
+│       └── model.py
+└── tests/
+```
+
+With Bazel, we can use a flatter, more idiomatic layout:
+```
+openai_utils/
+├── BUILD.bazel
+├── __init__.py
+├── model.py
+└── tests/
+    └── test_model.py
+```
+
+**Recommendation**: Complete the Bazel migration first, then flatten layouts in a separate PR to avoid excessive file moves in the initial migration diff.
+
+### TODO: Docker Image Builds with rules_oci
+
+#### Props Core Agent Definitions
+
+The `props/core/src/props_core/agent_defs/` directory contains **9 agent definitions**:
+- `critic/`, `grader/`, `improvement/`, `prompt_optimizer/`
+- Specialist critics: `dead_code/`, `high_recall_critic/`, `flag_propagation/`, `contract_truthfulness/`, `verbose_docs/`
+
+Each has:
+- **Dockerfile** - Python 3.12 slim base with multi-stage build
+- **MANIFEST** - Declares which repo packages to bundle
+- **agent.md** (optional) - Customizable system prompt
+
+#### Current Manual Orchestration
+1. `pack_repo_definition()` reads MANIFEST, extracts files from git HEAD
+2. `sync_agent_definitions_to_db()` stores tar archives in database
+3. `build_definition_images()` fetches archives, runs `docker buildx build`
+4. Run via: `props db sync --build-images`
+
+#### Bazel Integration Opportunities
+
+1. **`rules_oci` for Docker builds**:
+   - Declare base image once (`python:3.12-slim`)
+   - Define external dependencies via `pip_parse`
+   - Share multi-stage cache across all agents
+
+2. **`agent_pkg_tar` rule**:
+   - Takes definition directory + MANIFEST
+   - Bundles dependencies from Bazel targets
+   - Produces deterministic tar archive
+   - Content-hash based caching
+
+3. **Validation at build time**:
+   - Catch missing dependencies early
+   - Validate Dockerfile structure (has `/init`)
+   - Validate MANIFEST references exist
+
+Example target structure:
+```python
+agent_pkg_tar(
+    name = "critic_archive",
+    definition = "agent_defs/critic",
+    manifest = "agent_defs/critic/MANIFEST",
+    internal_deps = [
+        "//openai_utils",
+        "//agent_core",
+        "//mcp_infra",
+    ],
+)
+
+oci_image(
+    name = "critic_image",
+    base = "@python_312_slim//image",
+    tars = [":critic_archive"],
+    cmd = ["/init"],
+)
+```
+
+### TODO: Linting and Type Checking with Bazel
+
+#### Current Setup
+- **Ruff** (v0.11.10): Single `ruff.toml` at repo root
+- **Mypy** (v1.18.2): 13 separate pre-commit hooks with manually maintained `additional_dependencies`
+- Both run via `.pre-commit-config.yaml`
+
+#### Recommended: aspect_rules_lint
+
+Use `aspect-build/rules_lint` for Bazel-native linting:
+
+```python
+# MODULE.bazel
+bazel_dep(name = "aspect_rules_lint", version = "0.3.0")
+```
+
+Per-package BUILD.bazel:
+```python
+ruff_check(
+    name = "lint",
+    srcs = glob(["src/**/*.py", "tests/**/*.py"]),
+    config = "//:ruff.toml",
+)
+
+mypy_check(
+    name = "typecheck",
+    srcs = glob(["src/**/*.py"]),
+    config = "//:mypy.ini",
+    deps = [":package_name"],  # Bazel computes transitive deps!
+)
+```
+
+Root BUILD.bazel aggregation:
+```python
+test_suite(
+    name = "lint",
+    tests = ["//openai_utils:lint", "//agent_core:lint", ...],
+)
+
+test_suite(
+    name = "typecheck",
+    tests = ["//openai_utils:typecheck", "//agent_core:typecheck", ...],
+)
+
+test_suite(
+    name = "check",
+    tests = [":lint", ":typecheck"],
+)
+```
+
+#### Benefits Over Pre-Commit
+- **Automatic dependency management**: Mypy deps computed from Bazel graph (vs manual lists)
+- **Caching**: 1-2 second feedback vs 6-8 seconds for full pre-commit
+- **Comprehensiveness**: Full codebase vs changed files only
+- **CI native**: `bazel test //:check` runs everything
+
+#### Hybrid Approach
+Keep pre-commit for fast local feedback on changed files, use Bazel for CI enforcement:
+```bash
+# Local development (fast, changed files only)
+pre-commit run
+
+# CI (comprehensive, cached)
+bazel test //:check
+bazel test //...
+```
+
+### TODO: Further Bazel Adoption Gains
+
+#### High-Priority Quick Wins
+
+1. **Enable Remote Cache Write in CI** (1 day)
+   - Currently read-only: `--remote_upload_local_results=false`
+   - Enable for main branch → 50-70% cache hit rate
+   - Already configured at `bazel-cache.agentydragon.com:9090`
+
+2. **Complete Python BUILD Files** (1 week)
+   - Generate missing BUILD files for all packages
+   - Use gazelle for auto-generation
+   - Single `bazel test //...` for all Python
+
+3. **Test Consolidation** (1-2 weeks)
+   - Wrap pytest in `py_test` targets
+   - Replace GitHub Actions pytest matrix with `bazel test`
+   - Unified test reporting
+
+#### Medium-Priority Improvements
+
+4. **Node.js Builds via rules_js** (2 weeks)
+   - Migrate `props/frontend` pnpm → `js_library` + esbuild
+   - Integrate Playwright tests as `js_test`
+   - Share cache with Python builds
+
+5. **Docker Images via rules_oci** (2 weeks)
+   - Start with 2-3 critical images
+   - Hermetic, content-addressed builds
+   - Automatic rebuild on dependency changes
+
+#### Lower Priority
+
+6. **Bazel-Based CI** (2-6 weeks)
+   - Option A: Keep GitHub Actions, call `bazel build/test`
+   - Option B: Migrate to Bazel CI (Google's hosted)
+   - Same commands locally and in CI
+
+7. **Gazelle for Auto-Generation** (3 days)
+   - Keep BUILD files in sync automatically
+   - Run in pre-commit hook
+   - Reduces maintenance burden
+
+#### Out of Scope (Don't Bazel-ify)
+- **Ansible**: Idempotent state management ≠ deterministic builds
+- **Database migrations (Alembic)**: Schema evolution, not build artifact
+- **Dotfiles (rcm)**: Home directory state, not build artifact
+
+### TODO: Circular Dependency Resolution (Completed)
+
+**Problem**: `agent-core` → `mcp-infra` → `agent-core` cycle
+
+**Solution Applied**: Moved `bootstrap_handler.py` from `agent_core` to `mcp_infra`
+
+The `bootstrap_handler.py` file imported `BaseExecResult`, `Exited`, `TruncatedStream` from `mcp_infra.exec.models`. These are exec infrastructure types that conceptually belong in `mcp_infra`.
+
+After the fix:
+```
+agent_core (events, handlers, loop) ← NO deps on mcp_infra
+    ↑
+mcp_infra (MCP, exec, bootstrap, display) → depends on agent_core
+    ↑
+agent_pkg_host → depends on mcp_infra
+```
+
+Clean unidirectional flow - Bazel can build this in order.
