@@ -692,67 +692,6 @@ def make_critic_and_grader_run(
     return critic_run, grader_run
 
 
-def make_grader_run_with_edges(
-    *,  # Force keyword arguments
-    critic_run: AgentRun,
-    session: Session,
-    canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    model: str = "test-model",
-    status: AgentRunStatus = AgentRunStatus.COMPLETED,
-    occurrence_results: list[DBOccurrenceResult] | None = None,
-    agent_run_id: UUID | None = None,
-) -> AgentRun:
-    """Build grader AgentRun and populate grading_edges table (one-step helper).
-
-    Combines make_grader_run() + session.add/flush + populate_grading_edges()
-    to reduce boilerplate in tests that need normalized table data.
-
-    DEPRECATED: This helper is rarely used. Prefer explicit test setup with
-    make_reported_issues() + make_grader_run() + populate_grading_edges().
-
-    Args:
-        critic_run: Critic AgentRun being evaluated (derives snapshot_slug and graded_agent_run_id)
-        session: Database session (required for edges and flush)
-        canonical_issues_snapshot: Snapshot of TPs+FPs used (default: EMPTY_CANONICAL_ISSUES_SNAPSHOT)
-        model: Model name (default: "test-model")
-        status: Run status (default: COMPLETED)
-        occurrence_results: Occurrence results for populating edges (optional)
-        agent_run_id: Optional agent run ID (defaults to uuid4())
-
-    Returns:
-        Grader AgentRun ORM model (added to session, flushed, with grading_edges populated)
-    """
-    grader_run = make_grader_run(
-        critic_run=critic_run,
-        canonical_issues_snapshot=canonical_issues_snapshot,
-        model=model,
-        status=status,
-        agent_run_id=agent_run_id,
-    )
-    session.add(grader_run)
-    session.flush()
-
-    # Populate grading edges if occurrence_results provided
-    if occurrence_results:
-        # Extract issue IDs and create reported issues first
-        issue_ids = [match.input_id for occ in occurrence_results for match in occ.matched_by]
-        make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
-
-        # Get snapshot_slug from critic's type_config
-        snapshot_slug = critic_run.critic_config().example.snapshot_slug
-
-        # Populate grading edges from occurrence_results
-        populate_grading_edges(
-            critic_run=critic_run,
-            grader_run=grader_run,
-            snapshot_slug=snapshot_slug,
-            occurrence_results=occurrence_results,
-            session=session,
-        )
-
-    return grader_run
-
-
 @pytest.fixture
 def rationale_model() -> type[BaseModel]:
     """Fixture providing a Pydantic model with Rationale field."""
