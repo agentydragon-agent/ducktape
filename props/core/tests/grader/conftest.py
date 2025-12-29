@@ -7,7 +7,6 @@ from uuid import UUID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props_core.db.session import get_session
-from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
@@ -54,14 +53,12 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
 
 
 def make_test_grader_run(
-    snapshot_slug: str | SnapshotSlug,
     critic_run_id: UUID,
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
 ) -> UUID:
     """Create a test grader run.
 
     Args:
-        snapshot_slug: Snapshot slug (kept for backward compatibility, but derived from critic_run)
         critic_run_id: Critic run ID
         status: Run status (default: COMPLETED)
 
@@ -104,4 +101,4 @@ def test_grader_run(test_db, test_snapshot, test_grader_critic_run):
     Returns:
         grader_run_id (UUID)
     """
-    return make_test_grader_run(test_snapshot, test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)
+    return make_test_grader_run(test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)
