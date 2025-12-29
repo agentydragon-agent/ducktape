@@ -127,16 +127,14 @@ def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[
     return [tp for tp in tps if is_catchable(tp)]
 
 
-def filter_relevant_db_fps(
-    fps: list[Any], targeted_files: set[Path]
-) -> list[Any]:  # Any because DBKnownFalsePositive not in snapshots.py imports
+def filter_relevant_db_fps(fps: list[DBKnownFalsePositive], targeted_files: set[Path]) -> list[DBKnownFalsePositive]:
     """Filter DB persistence FPs to only those relevant to targeted_files.
 
     Works on DB persistence models (for filtering stored snapshots in staleness check).
     """
     targeted_files_str = {str(p) for p in targeted_files}
 
-    def is_relevant(fp: Any) -> bool:
+    def is_relevant(fp: DBKnownFalsePositive) -> bool:
         return any(bool(set(occ.relevant_files) & targeted_files_str) for occ in fp.occurrences)
 
     return [fp for fp in fps if is_relevant(fp)]

@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { base } from '$app/paths';
   import { CheckCircle, XCircle } from 'lucide-svelte';
-  import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
+  import type { FileContentResponse, TpInfo, FpInfo, FileLocationInfo, LineRange } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
@@ -29,11 +29,8 @@
     occurrenceId: string;
     rationale: string;
     note?: string;
-    ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
-    allFiles: Array<{
-      path: string;
-      ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
-    }>;
+    ranges: LineRange[] | null;
+    allFiles: FileLocationInfo[];
   }
 
   const occurrences = $derived.by<OccurrenceMarker[]>(() => {
@@ -41,7 +38,7 @@
 
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
+        const fileLocation = occ.files.find((f) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'tp',
@@ -58,7 +55,7 @@
 
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
+        const fileLocation = occ.files.find((f) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'fp',

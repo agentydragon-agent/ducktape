@@ -6,6 +6,7 @@
     FpInfo,
     GradingEdgeInfo,
     ReportedIssueInfo,
+    ReportedIssueOccurrenceInfo,
     FileLocationInfo,
     LineRange,
   } from '../lib/api/client';
@@ -46,7 +47,7 @@
     // Add TPs
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
+        const fileLocation = occ.files.find((f) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'tp',
@@ -64,7 +65,7 @@
     // Add FPs
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f: { path: string }) => f.path === file.path);
+        const fileLocation = occ.files.find((f) => f.path === file.path);
         if (fileLocation) {
           result.push({
             kind: 'fp',
@@ -82,8 +83,8 @@
     // Add critique issues
     for (const issue of critiqueIssues) {
       // Flatten all files from all occurrences
-      const allFiles = issue.occurrences.flatMap((occ: any) => occ.files);
-      const fileLocation = allFiles.find((f: any) => f.path === file.path);
+      const allFiles = issue.occurrences.flatMap((occ: ReportedIssueOccurrenceInfo) => occ.files);
+      const fileLocation = allFiles.find((f) => f.path === file.path);
       if (fileLocation) {
         // Find grading edges for this critique issue
         const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.issue_id);

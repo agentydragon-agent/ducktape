@@ -1,9 +1,16 @@
 <script lang="ts">
   import type { GradingEdgeInfo } from '../lib/api/client';
 
+  interface MissedOccurrence {
+    tp_id: string;
+    occurrence_id: string;
+    tp_rationale: string;
+    occ_note?: string;
+  }
+
   interface Props {
     edges: GradingEdgeInfo[];
-    missedOccurrences?: any[];
+    missedOccurrences?: MissedOccurrence[];
     totalCredit?: number;
     recallDenominator?: number;
     defaultOpen?: boolean;

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { CheckCircle, XCircle, Link, HelpCircle } from 'lucide-svelte';
-  import type { GradingEdgeInfo } from '../lib/api/client';
+  import type { GradingEdgeInfo, FileLocationInfo } from '../lib/api/client';
   import { issueColors } from '../lib/colors';
   import { formatFileLocation } from '../lib/formatters';
   import CopyButton from './CopyButton.svelte';
@@ -10,10 +10,7 @@
     issueId: string;
     rationale: string;
     note?: string;
-    allFiles?: Array<{
-      path: string;
-      ranges: Array<{ start_line: number; end_line?: number | null; note?: string | null }> | null;
-    }>;
+    allFiles?: FileLocationInfo[];
     expanded?: boolean;
     onToggle?: () => void;
     gradingEdges?: GradingEdgeInfo[]; // For critique issues - show what they matched

@@ -98,31 +98,6 @@ class DatabaseConfig:
         """Construct connection URL (host-side access)."""
         return self.admin.url()
 
-    @property
-    def admin_for_container(self) -> DbConnectionConfig:
-        """Connection config for container-to-container access with admin privileges.
-
-        Uses container_name as host and container_port for Docker network communication.
-
-        NOTE: This provides full admin access. Most agents should use for_container_user()
-        with RLS-scoped temporary users instead. Grader and critic agents use RLS scoping.
-
-        Raises:
-            ValueError: If container_name or container_port is None
-        """
-        if self.container_name is None or self.container_port is None:
-            raise ValueError(
-                "container_name and container_port required for container routing. "
-                "This config is for agent contexts (already in container)."
-            )
-        return DbConnectionConfig(
-            host=self.container_name,
-            port=self.container_port,
-            user=self.user,
-            password=self.password,
-            database=self.database,
-        )
-
     def for_container_user(self, creds: TempUserCredentials) -> DbConnectionConfig:
         """Create container-accessible config with temporary user credentials.
 

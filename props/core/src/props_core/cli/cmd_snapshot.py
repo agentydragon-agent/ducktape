@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import defaultdict
 from collections.abc import Sequence
 from datetime import datetime
 import fnmatch
@@ -11,11 +10,12 @@ import json
 from pathlib import Path
 import shutil
 import tarfile
-from typing import Annotated, Any
+from typing import Annotated
 
 from props_core.cli import common_options as opt
 from props_core.db.models import Snapshot
 from props_core.db.session import get_session
+from props_core.db.sync.export import _format_files
 from props_core.db.sync.sync import get_specimens_base_path
 from props_core.ids import SnapshotSlug
 import pygit2
@@ -27,16 +27,6 @@ from cli_util import async_run
 
 # Snapshot subcommand group
 snapshot_app = TyperDI(help="Snapshot commands")
-
-
-def _build_files_dict_for_json(ranges: list) -> dict[str, Any]:
-    """Build files dict from ORM ranges for JSON serialization."""
-    by_file: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for range_orm in ranges:
-        by_file[str(range_orm.file_path)].append(
-            {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
-        )
-    return dict(by_file)
 
 
 def _apply_gitignore_patterns(
@@ -179,7 +169,7 @@ async def snapshot_dump(
                         "instances": [
                             {
                                 "occurrence_id": occ.occurrence_id,
-                                "files": _build_files_dict_for_json(occ.ranges),
+                                "files": _format_files(occ.ranges),
                                 "note": occ.note,
                                 "critic_scopes_expected_to_recall": [
                                     sorted(str(m.file_path) for m in trigger.file_set.members)
@@ -198,7 +188,7 @@ async def snapshot_dump(
                         "instances": [
                             {
                                 "occurrence_id": occ.occurrence_id,
-                                "files": _build_files_dict_for_json(occ.ranges),
+                                "files": _format_files(occ.ranges),
                                 "note": occ.note,
                                 "relevant_files": sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
                             }
