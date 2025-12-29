@@ -1,0 +1,25 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "dbus_fast_example",
+    srcs = [
+        "__init__.py",
+        "client.py",
+        "dbus_service.py",
+        "service_manager.py",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//dbus_fast",
+    ],
+)
+
+py_test(
+    name = "test_example",
+    srcs = ["test_example.py"],
+    deps = [
+        ":dbus_fast_example",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

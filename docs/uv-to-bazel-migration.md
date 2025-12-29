@@ -153,57 +153,58 @@ Based on git history since 2024-06-01, prioritize migration by recent activity:
 
 ## Migration Checklist
 
-### Phase 1: Infrastructure Setup
-- [ ] Clean existing Bazel configuration (delete old BUILD/WORKSPACE)
-- [ ] Set up MODULE.bazel with rules_python for Python 3.12+
-- [ ] Configure pip.parse with uv.lock or requirements generation
-- [ ] Set up gazelle for Python BUILD file generation
-- [ ] Create common macros for py_library, py_binary, py_test
+### Phase 1: Infrastructure Setup ✅
+- [x] Clean existing Bazel configuration (delete old BUILD/WORKSPACE)
+- [x] Set up MODULE.bazel with rules_python for Python 3.12+
+- [x] Configure pip.parse with requirements_bazel.txt from uv export
+- [x] Create export_uv_requirements.sh script for regenerating requirements
+- [ ] Set up gazelle for Python BUILD file generation (optional - manual BUILD files work)
 
-### Phase 2: Tier 0 Packages (No dependencies)
-- [ ] `openai-utils` - py_library with external deps only
-- [ ] `cli-util` - py_library with external deps only
-- [ ] `mcp-utils` - py_library with external deps only
-- [ ] `net-util` - py_library with external deps only
-- [ ] `py-detectors` - py_library with external deps only
-- [ ] `tana-export` - py_library with external deps only
-- [ ] `wt` - py_library with external deps only
-- [ ] `gmail-archiver` - py_library with external deps only
+### Phase 2: Tier 0 Packages (No dependencies) ✅
+- [x] `openai-utils` - py_library with external deps only
+- [x] `cli-util` - py_library with external deps only
+- [x] `mcp-utils` - py_library with external deps only
+- [x] `net-util` - py_library with external deps only
+- [x] `py-detectors` - py_library with external deps only
+- [x] `tana-export` - py_library with external deps only
+- [x] `wt` - py_library with external deps only
+- [x] `gmail-archiver` - py_library with external deps only
 
-### Phase 3: Tier 1-2 Packages
-- [ ] `agent-pkg-runtime` - depends on mcp-utils
-- [ ] `rspcache` - depends on openai-utils
-- [ ] `editor-agent-runtime` - depends on agent-pkg-runtime, cli-util
+### Phase 3: Tier 1-2 Packages ✅
+- [x] `agent-pkg-runtime` - depends on mcp-utils
+- [x] `rspcache` - depends on openai-utils
+- [x] `editor-agent-runtime` - depends on agent-pkg-runtime, cli-util
 
-### Phase 4: Core Infrastructure (Circular dependencies)
-Handle the circular dependency between agent-core ↔ mcp-infra ↔ agent-pkg-host:
-- [ ] Option A: Create a combined `core-infra` mega-package
-- [ ] Option B: Break cycles with interface packages
-- [ ] Option C: Use Bazel's strict_deps=False carefully
-- [ ] `agent-core`
-- [ ] `mcp-infra`
-- [ ] `agent-pkg-host`
+### Phase 4: Core Infrastructure ✅
+Resolved circular dependency by moving bootstrap_handler.py from agent-core to mcp-infra:
+- [x] `agent-core` - core agent loop, no mcp-infra deps
+- [x] `mcp-infra` - MCP infrastructure, includes bootstrap handler
+- [x] `agent-pkg-host` - host-side agent package infrastructure
 
-### Phase 5: Application Packages
-- [ ] `git-commit-ai`
-- [ ] `ember`
-- [ ] `sandboxed-jupyter`
-- [ ] `editor-agent`
-- [ ] `agent-server`
-- [ ] `props-core`
+### Phase 5: Application Packages ✅
+- [x] `git-commit-ai`
+- [x] `ember`
+- [x] `sandboxed-jupyter`
+- [x] `editor-agent`
+- [x] `agent-server`
+- [x] `props-core`
 
-### Phase 6: Top-level Applications
-- [ ] `adgn`
-- [ ] `props-backend`
+### Phase 6: Top-level Applications ✅
+- [x] `adgn`
+- [x] `props-backend`
 
-### Phase 7: Non-Workspace Packages
-- [ ] `ducktape-llm-common`
-- [ ] `gatelet`
-- [ ] `difftree`
-- [ ] Experimental packages (optional)
+### Phase 7: Non-Workspace Packages ✅
+- [x] `ducktape-llm-common`
+- [x] `gatelet`
+- [x] `difftree`
+- [x] `homeassistant/iaqi`
+- [x] `gnome-terminal-profile-switcher`
+- [x] `experimental/cotrl`
+- [x] `experimental/claude-history`
+- [x] `experimental/dbus_fast_example`
 
 ### Phase 8: Non-Python Components
-- [ ] Verify Rust BUILD files work with current rules_rust
+- [x] Verify Rust BUILD files work with current rules_rust (existing, well-structured)
 - [ ] Decide on website strategy (keep slow Haskell or alternative)
 - [ ] Add rules_js for Node.js frontends (optional)
 - [ ] Add rules_oci for Docker images (optional)

@@ -1,0 +1,23 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+# Home Assistant custom component for Indoor Air Quality
+py_library(
+    name = "indoor_aqi",
+    srcs = glob(["custom_components/indoor_aqi/**/*.py"]),
+    data = glob(["custom_components/indoor_aqi/**/*.json"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//homeassistant",
+    ],
+)
+
+py_test(
+    name = "test_all",
+    srcs = glob(["tests/**/*.py"]),
+    deps = [
+        ":indoor_aqi",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_homeassistant_custom_component",
+    ],
+)

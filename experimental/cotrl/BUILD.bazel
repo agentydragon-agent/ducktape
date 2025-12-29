@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+# Experimental LLM RL scripts - not a proper package, just standalone scripts
+py_library(
+    name = "cotrl",
+    srcs = glob(["*.py"], exclude = ["test_*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_binary(
+    name = "llm_rl_experiment",
+    srcs = ["llm_rl_experiment.py"],
+    deps = [":cotrl"],
+)
+
+py_binary(
+    name = "analyze_trajectories",
+    srcs = ["analyze_trajectories.py"],
+    deps = [":cotrl"],
+)
+
+py_test(
+    name = "test_llm_rl_minimal",
+    srcs = ["test_llm_rl_minimal.py"],
+    deps = [
+        ":cotrl",
+        "@pypi//pytest",
+    ],
+)

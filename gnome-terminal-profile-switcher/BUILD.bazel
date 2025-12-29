@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "gnome_terminal_profile_switcher",
+    srcs = glob(["src/gnome_terminal_profile_switcher/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//absl_py",
+        # Note: dbus-python and PyGObject require system libraries
+        # and may not work well with rules_python
+    ],
+)

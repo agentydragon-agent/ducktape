@@ -1,0 +1,44 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "ducktape_llm_common",
+    srcs = glob(["ducktape_llm_common/**/*.py"]),
+    data = glob(["ducktape_llm_common/**/*.md"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//click",
+        "@pypi//humanize",
+        "@pypi//platformdirs",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pytimeparse",
+        "@pypi//pyyaml",
+        "@pypi//ruff",
+        "@pypi//tomli",
+        "@pypi//tomli_w",
+    ],
+)
+
+py_binary(
+    name = "claude-linter",
+    srcs = ["ducktape_llm_common/claude_linter/cli.py"],
+    main = "ducktape_llm_common/claude_linter/cli.py",
+    deps = [":ducktape_llm_common"],
+)
+
+py_binary(
+    name = "claude-linter-v2",
+    srcs = ["ducktape_llm_common/claude_linter_v2/cli.py"],
+    main = "ducktape_llm_common/claude_linter_v2/cli.py",
+    deps = [":ducktape_llm_common"],
+)
+
+py_test(
+    name = "test_all",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/__init__.py",
+    deps = [
+        ":ducktape_llm_common",
+        "@pypi//pytest",
+    ],
+)
