@@ -9,7 +9,7 @@ Incorporates:
 - SECURITY DEFINER functions for RLS bypasses
 - Optimized examples view with array containment
 - in_progress filter in recall views
-- match_filter_hash for sparse grading
+- graders_match_only_if_reported_on for sparse grading
 - No clustering tables (deprecated feature removed)
 - Normalized occurrence ranges (replaces JSONB files/relevant_files columns)
 
@@ -1159,14 +1159,14 @@ Deduplicated by PK constraint - same files always produce same hash.'
         sa.Column("tp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
+        sa.Column("graders_match_only_if_reported_on", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="RESTRICT",
             name="fk_tp_occ_matchable_files",
@@ -1182,14 +1182,14 @@ Deduplicated by PK constraint - same files always produce same hash.'
         sa.Column("fp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
+        sa.Column("graders_match_only_if_reported_on", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         sa.ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="RESTRICT",
             name="fk_fp_occ_matchable_files",
@@ -1674,11 +1674,11 @@ Used by RLS to allow daemon access to all critiques for its snapshot.'
             FROM true_positive_occurrences tpo
             WHERE tpo.snapshot_slug = p_snapshot_slug
               AND (
-                  tpo.match_filter_hash IS NULL
+                  tpo.graders_match_only_if_reported_on IS NULL
                   OR EXISTS (
                       SELECT 1 FROM file_set_members fsm
                       WHERE fsm.snapshot_slug = tpo.snapshot_slug
-                        AND fsm.files_hash = tpo.match_filter_hash
+                        AND fsm.files_hash = tpo.graders_match_only_if_reported_on
                         AND fsm.file_path = ANY(p_files)
                   )
               )
@@ -1688,11 +1688,11 @@ Used by RLS to allow daemon access to all critiques for its snapshot.'
             FROM false_positive_occurrences fpo
             WHERE fpo.snapshot_slug = p_snapshot_slug
               AND (
-                  fpo.match_filter_hash IS NULL
+                  fpo.graders_match_only_if_reported_on IS NULL
                   OR EXISTS (
                       SELECT 1 FROM file_set_members fsm
                       WHERE fsm.snapshot_slug = fpo.snapshot_slug
-                        AND fsm.files_hash = fpo.match_filter_hash
+                        AND fsm.files_hash = fpo.graders_match_only_if_reported_on
                         AND fsm.file_path = ANY(p_files)
                   )
               )
@@ -1707,7 +1707,7 @@ Used by:
 - Edge validation trigger
 - Workload estimation
 
-NULL match_filter_hash = cross-cutting (any critique can match)
+NULL graders_match_only_if_reported_on = cross-cutting (any critique can match)
 Non-NULL = file-local (only critiques touching those files can match)'
     """)
 
@@ -2019,7 +2019,7 @@ Used by check_edge_credit_sum trigger function.'
     # =========================================================================
     # 11. Match filter scope enforcement for grading_edges
     # =========================================================================
-    # Ensures that if a TP/FP occurrence has match_filter_hash set,
+    # Ensures that if a TP/FP occurrence has graders_match_only_if_reported_on set,
     # edges to it can only come from critique issues reported on files in that set.
     op.execute("""
         CREATE FUNCTION check_edge_matches_filter_scope() RETURNS trigger
@@ -2028,15 +2028,15 @@ Used by check_edge_credit_sum trigger function.'
         DECLARE
             filter_hash TEXT;
         BEGIN
-            -- Get the match_filter_hash for the target occurrence
+            -- Get the graders_match_only_if_reported_on for the target occurrence
             IF NEW.tp_id IS NOT NULL THEN
-                SELECT match_filter_hash INTO filter_hash
+                SELECT graders_match_only_if_reported_on INTO filter_hash
                 FROM true_positive_occurrences
                 WHERE snapshot_slug = NEW.snapshot_slug
                   AND tp_id = NEW.tp_id
                   AND occurrence_id = NEW.tp_occurrence_id;
             ELSE
-                SELECT match_filter_hash INTO filter_hash
+                SELECT graders_match_only_if_reported_on INTO filter_hash
                 FROM false_positive_occurrences
                 WHERE snapshot_slug = NEW.snapshot_slug
                   AND fp_id = NEW.fp_id
@@ -2061,7 +2061,7 @@ Used by check_edge_credit_sum trigger function.'
                         AND files_hash = filter_hash
                   )
             ) THEN
-                RAISE EXCEPTION 'Critique issue % reports files outside target occurrence match_filter_hash scope (filter: %)',
+                RAISE EXCEPTION 'Critique issue % reports files outside target occurrence graders_match_only_if_reported_on scope (filter: %)',
                     NEW.critique_issue_id, filter_hash;
             END IF;
 
@@ -2072,7 +2072,7 @@ Used by check_edge_credit_sum trigger function.'
 
     op.execute("""
         COMMENT ON FUNCTION check_edge_matches_filter_scope() IS
-        'Validates that grading edges only target occurrences whose match_filter_hash
+        'Validates that grading edges only target occurrences whose graders_match_only_if_reported_on
 includes the files where the critique issue was reported. Prevents matching
 a critique to an occurrence that could not have been found from those files.'
     """)

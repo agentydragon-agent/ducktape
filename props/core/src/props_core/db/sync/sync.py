@@ -524,7 +524,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         tp_id=issue.tp_id,
                         occurrence_id=occ.occurrence_id,
                         note=occ.note,
-                        match_filter_hash=ensure_file_set(
+                        graders_match_only_if_reported_on=ensure_file_set(
                             session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                         ),
                     )
@@ -554,7 +554,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             tp_id=issue.tp_id,
                             occurrence_id=occ.occurrence_id,
                             note=occ.note,
-                            match_filter_hash=ensure_file_set(
+                            graders_match_only_if_reported_on=ensure_file_set(
                                 session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                             ),
                         )
@@ -581,7 +581,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         fp_id=fp.fp_id,
                         occurrence_id=fp_occ.occurrence_id,
                         note=fp_occ.note,
-                        match_filter_hash=ensure_file_set(
+                        graders_match_only_if_reported_on=ensure_file_set(
                             session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                         ),
                     )
@@ -619,7 +619,7 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             fp_id=fp.fp_id,
                             occurrence_id=fp_occ.occurrence_id,
                             note=fp_occ.note,
-                            match_filter_hash=ensure_file_set(
+                            graders_match_only_if_reported_on=ensure_file_set(
                                 session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                             ),
                         )
@@ -823,12 +823,12 @@ def sync_file_sets_to_db(session: Session, slugs: list[SnapshotSlug], specimens_
         file_sets_added += 1
 
     for slug, files_hash in to_delete:
-        # Clear match_filter_hash on occurrences before deleting file_set (FK RESTRICT)
-        session.query(TruePositiveOccurrenceORM).filter_by(snapshot_slug=slug, match_filter_hash=files_hash).update(
-            {TruePositiveOccurrenceORM.match_filter_hash: None}
+        # Clear graders_match_only_if_reported_on on occurrences before deleting file_set (FK RESTRICT)
+        session.query(TruePositiveOccurrenceORM).filter_by(snapshot_slug=slug, graders_match_only_if_reported_on=files_hash).update(
+            {TruePositiveOccurrenceORM.graders_match_only_if_reported_on: None}
         )
-        session.query(FalsePositiveOccurrenceORM).filter_by(snapshot_slug=slug, match_filter_hash=files_hash).update(
-            {FalsePositiveOccurrenceORM.match_filter_hash: None}
+        session.query(FalsePositiveOccurrenceORM).filter_by(snapshot_slug=slug, graders_match_only_if_reported_on=files_hash).update(
+            {FalsePositiveOccurrenceORM.graders_match_only_if_reported_on: None}
         )
         session.query(FileSet).filter_by(snapshot_slug=slug, files_hash=files_hash).delete()
         file_sets_deleted += 1

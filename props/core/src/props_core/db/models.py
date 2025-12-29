@@ -497,7 +497,7 @@ class TruePositiveOccurrenceORM(Base):
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -505,7 +505,7 @@ class TruePositiveOccurrenceORM(Base):
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -552,7 +552,7 @@ class FalsePositiveOccurrenceORM(Base):
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -560,7 +560,7 @@ class FalsePositiveOccurrenceORM(Base):
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),

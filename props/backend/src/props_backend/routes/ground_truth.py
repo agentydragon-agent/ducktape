@@ -206,22 +206,22 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         )
 
         # Pre-fetch all matchable files to avoid N+1 queries
-        # Collect all unique match_filter_hash values from both TPs and FPs
-        # Note: whole-snapshot occurrences have match_filter_hash=None (no file filter)
-        match_filter_hashes = {
-            occ.match_filter_hash
+        # Collect all unique graders_match_only_if_reported_on hashes from both TPs and FPs
+        # Note: whole-snapshot occurrences have graders_match_only_if_reported_on=None (no file filter)
+        file_set_hashes = {
+            occ.graders_match_only_if_reported_on
             for issues in (tps, fps)
             for issue in issues
             for occ in issue.occurrences
-            if occ.match_filter_hash
+            if occ.graders_match_only_if_reported_on
         }
 
         # Bulk fetch all file set members for these hashes
         matchable_files_by_hash: dict[str, list[str]] = defaultdict(list)
-        if match_filter_hashes:
+        if file_set_hashes:
             members = (
                 session.query(FileSetMember.files_hash, FileSetMember.file_path)
-                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(match_filter_hashes))
+                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(file_set_hashes))
                 .order_by(FileSetMember.files_hash, FileSetMember.file_path)
                 .all()
             )
@@ -233,7 +233,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for tp in tps:
             occ_infos = []
             for occ in tp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
+                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
@@ -252,7 +252,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for fp in fps:
             occ_infos = []
             for occ in fp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
+                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,

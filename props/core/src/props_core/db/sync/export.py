@@ -136,8 +136,8 @@ def _export_tp_occurrence(session: Session, occ: TruePositiveOccurrenceORM) -> d
         result["critic_scopes_expected_to_recall"] = critic_scopes_expected_to_recall
 
     # Get graders_match_only_if_reported_on if set
-    if occ.match_filter_hash:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_filter_hash)
+    if occ.graders_match_only_if_reported_on:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.graders_match_only_if_reported_on)
         if paths:
             result["graders_match_only_if_reported_on"] = paths
 
@@ -156,8 +156,8 @@ def _export_fp_occurrence(session: Session, occ: FalsePositiveOccurrenceORM) -> 
         result["relevant_files"] = sorted(str(rf.file_path) for rf in occ.relevant_file_orms)
 
     # Get graders_match_only_if_reported_on if set
-    if occ.match_filter_hash:
-        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.match_filter_hash)
+    if occ.graders_match_only_if_reported_on:
+        paths = _get_file_set_paths(session, occ.snapshot_slug, occ.graders_match_only_if_reported_on)
         if paths:
             result["graders_match_only_if_reported_on"] = paths
 
