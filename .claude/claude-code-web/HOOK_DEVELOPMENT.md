@@ -59,6 +59,12 @@ Resumed session (nix store persisted, 2611 entries):
 [session-start-direnv] Setup complete (total: 7.5s)
 ```
 
+**Bandwidth testing:**
+- cache.nixos.org: ~3 MB/s sustained
+- Flake metadata lookup: ~1s
+- 84 MB total (devenv + direnv + uv + deps) = ~28s download time
+- BUT: first `nix profile install` on cold flake registry takes much longer (flake evaluation)
+
 **Key insight:** Hook and agent share the same network environment (same proxy settings,
 same connectivity to cache.nixos.org). The difference is purely timeout - the hook gets
 killed before nix can finish downloading.
