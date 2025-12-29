@@ -13,6 +13,11 @@
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
 
+  // Helper to get ranges for the current file from an IssueMarker
+  function getRangesForFile(marker: IssueMarker, filePath: string): LineRange[] | null {
+    return marker.allFiles.find((f) => f.path === filePath)?.ranges ?? null;
+  }
+
   interface Props {
     file: FileContentResponse;
     tps: TpInfo[];
@@ -35,15 +40,13 @@
     // Add TPs
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
-        if (fileLocation) {
+        if (occ.files.some((f) => f.path === file.path)) {
           result.push({
             kind: 'tp',
             issueId: tp.tp_id,
             occurrenceId: occ.occurrence_id,
             rationale: tp.rationale,
             note: occ.note ?? undefined,
-            ranges: fileLocation.ranges,
             allFiles: occ.files,
           });
         }
@@ -53,15 +56,13 @@
     // Add FPs
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
-        if (fileLocation) {
+        if (occ.files.some((f) => f.path === file.path)) {
           result.push({
             kind: 'fp',
             issueId: fp.fp_id,
             occurrenceId: occ.occurrence_id,
             rationale: fp.rationale,
             note: occ.note ?? undefined,
-            ranges: fileLocation.ranges,
             allFiles: occ.files,
           });
         }
@@ -71,9 +72,8 @@
     // Add critique issues
     for (const issue of critiqueIssues) {
       // Flatten all files from all occurrences
-      const allFiles = issue.occurrences.flatMap((occ: ReportedIssueOccurrenceInfo) => occ.files);
-      const fileLocation = allFiles.find((f) => f.path === file.path);
-      if (fileLocation) {
+      const issueAllFiles = issue.occurrences.flatMap((occ: ReportedIssueOccurrenceInfo) => occ.files);
+      if (issueAllFiles.some((f) => f.path === file.path)) {
         // Find grading edges for this critique issue
         const edges = gradingEdges.filter((e) => e.critique_issue_id === issue.issue_id);
         // Use first occurrence note (occurrence notes take precedence), convert null to undefined
@@ -83,8 +83,7 @@
           issueId: issue.issue_id,
           rationale: issue.rationale,
           note,
-          ranges: fileLocation.ranges,
-          allFiles,
+          allFiles: issueAllFiles,
           gradingEdges: edges,
         });
       }
@@ -98,7 +97,8 @@
     const map = new Map<number, IssueMarker[]>();
 
     for (const issue of allIssues) {
-      if (!issue.ranges) {
+      const ranges = getRangesForFile(issue, file.path);
+      if (!ranges) {
         // Whole file - mark all lines
         for (let i = 0; i < lines.length; i++) {
           const existing = map.get(i) || [];
@@ -106,7 +106,7 @@
         }
       } else {
         // Specific ranges
-        for (const range of issue.ranges) {
+        for (const range of ranges) {
           const startIdx = range.start_line;
           const endIdx = range.end_line ?? range.start_line;
           for (let i = startIdx; i <= endIdx; i++) {
@@ -125,8 +125,9 @@
     const map = new Map<number, Array<{ issue: IssueMarker; range: LineRange }>>();
 
     for (const issue of allIssues) {
-      if (issue.ranges) {
-        for (const range of issue.ranges) {
+      const ranges = getRangesForFile(issue, file.path);
+      if (ranges) {
+        for (const range of ranges) {
           if (range.note) {
             const endIdx = range.end_line ?? range.start_line;
             const existing = map.get(endIdx) || [];
@@ -201,8 +202,9 @@
 
           <!-- Issue comment cards (show after the first line of each issue's range) -->
           {#each lineIssues as issue}
+            {@const issueRanges = getRangesForFile(issue, file.path)}
             {@const isFirstLine =
-              !issue.ranges || issue.ranges.length === 0 ? idx === 0 : issue.ranges.some((r) => r.start_line === idx)}
+              !issueRanges || issueRanges.length === 0 ? idx === 0 : issueRanges.some((r) => r.start_line === idx)}
             {#if isFirstLine}
               {@const issueKey = getIssueKey(issue)}
               {@const isExpanded = expandedIssues.has(issueKey)}

@@ -273,6 +273,8 @@ export const mockCritiqueIssues: ReportedIssueInfo[] = [
     rationale: 'Potential SQL injection: string formatting used to build query',
     occurrences: [
       {
+        occurrence_id: 'occ-critique-001',
+        note: null,
         files: [
           {
             path: 'src/db/queries.py',
@@ -287,6 +289,8 @@ export const mockCritiqueIssues: ReportedIssueInfo[] = [
     rationale: 'Database connection not properly managed - consider using context manager',
     occurrences: [
       {
+        occurrence_id: 'occ-critique-002',
+        note: null,
         files: [
           {
             path: 'src/db/queries.py',
@@ -300,27 +304,21 @@ export const mockCritiqueIssues: ReportedIssueInfo[] = [
 
 export const mockGradingEdges: GradingEdgeInfo[] = [
   {
-    source: {
-      issue_id: 'critique-001',
-      rationale: 'Potential SQL injection: string formatting used to build query',
-    },
+    critique_issue_id: 'critique-001',
     target: {
       kind: 'tp',
       tp_id: 'tp-sql-injection-001',
       occurrence_id: 'occ-tp-001',
       credit: 1.0,
     },
-    grader_rationale: 'Critique correctly identified the SQL injection vulnerability',
+    rationale: 'Critique correctly identified the SQL injection vulnerability',
   },
   {
-    source: {
-      issue_id: 'critique-002',
-      rationale: 'Database connection not properly managed',
-    },
+    critique_issue_id: 'critique-002',
     target: {
       kind: 'none',
     },
-    grader_rationale: 'Valid concern but not in ground truth',
+    rationale: 'Valid concern but not in ground truth',
   },
 ];
 

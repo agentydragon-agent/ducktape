@@ -19,6 +19,8 @@ export type GradingEdgeInfo = components['schemas']['GradingEdgeInfo'];
  * Unified marker for issues displayed in file viewers.
  * Combines parent issue info (id, rationale) with occurrence info (files, note).
  * Used by both FileViewer (ground truth only) and CritiqueFileViewer (ground truth + critiques).
+ *
+ * To get ranges for a specific file, use: allFiles.find(f => f.path === filePath)?.ranges
  */
 export interface IssueMarker {
   kind: 'tp' | 'fp' | 'critique';
@@ -26,7 +28,6 @@ export interface IssueMarker {
   occurrenceId?: string;
   rationale: string;
   note?: string;
-  ranges: LineRange[] | null;
   allFiles: FileLocationInfo[];
   gradingEdges?: GradingEdgeInfo[];
 }

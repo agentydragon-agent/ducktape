@@ -16,9 +16,6 @@ const meta = {
   parameters: {
     layout: 'padded',
   },
-  argTypes: {
-    snapshotSlug: { control: 'text' },
-  },
 } satisfies Meta<CritiqueFileViewer>;
 
 export default meta;

@@ -4,10 +4,15 @@
   import { base } from '$app/paths';
   import { CheckCircle, XCircle } from 'lucide-svelte';
   import type { FileContentResponse, TpInfo, FpInfo } from '../lib/api/client';
-  import type { IssueMarker } from '../lib/types';
+  import type { IssueMarker, LineRange } from '../lib/types';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
+
+  // Helper to get ranges for the current file from an IssueMarker
+  function getRangesForFile(marker: IssueMarker, filePath: string): LineRange[] | null {
+    return marker.allFiles.find((f) => f.path === filePath)?.ranges ?? null;
+  }
 
   interface Props {
     file: FileContentResponse;
@@ -29,15 +34,14 @@
 
     for (const tp of tps) {
       for (const occ of tp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
-        if (fileLocation) {
+        // Only include if this occurrence references the current file
+        if (occ.files.some((f) => f.path === file.path)) {
           result.push({
             kind: 'tp',
             issueId: tp.tp_id,
             occurrenceId: occ.occurrence_id,
             rationale: tp.rationale,
             note: occ.note ?? undefined,
-            ranges: fileLocation.ranges,
             allFiles: occ.files,
           });
         }
@@ -46,15 +50,14 @@
 
     for (const fp of fps) {
       for (const occ of fp.occurrences) {
-        const fileLocation = occ.files.find((f) => f.path === file.path);
-        if (fileLocation) {
+        // Only include if this occurrence references the current file
+        if (occ.files.some((f) => f.path === file.path)) {
           result.push({
             kind: 'fp',
             issueId: fp.fp_id,
             occurrenceId: occ.occurrence_id,
             rationale: fp.rationale,
             note: occ.note ?? undefined,
-            ranges: fileLocation.ranges,
             allFiles: occ.files,
           });
         }
@@ -69,7 +72,8 @@
     const map = new Map<number, IssueMarker[]>();
 
     for (const occ of occurrences) {
-      if (!occ.ranges) {
+      const ranges = getRangesForFile(occ, file.path);
+      if (!ranges) {
         // Whole file - mark all lines
         for (let i = 0; i < lines.length; i++) {
           const existing = map.get(i) || [];
@@ -77,7 +81,7 @@
         }
       } else {
         // Specific ranges
-        for (const range of occ.ranges) {
+        for (const range of ranges) {
           // Convert from 1-based display to 0-based index
           const startIdx = range.start_line;
           const endIdx = range.end_line ?? range.start_line;
@@ -157,8 +161,9 @@
 
           <!-- Issue comment cards (show after the first line of each occurrence's range) -->
           {#each lineOccs as occ}
+            {@const occRanges = getRangesForFile(occ, file.path)}
             {@const isFirstLine =
-              !occ.ranges || occ.ranges.length === 0 ? idx === 0 : occ.ranges.some((r) => r.start_line === idx)}
+              !occRanges || occRanges.length === 0 ? idx === 0 : occRanges.some((r) => r.start_line === idx)}
             {#if isFirstLine && occ.occurrenceId}
               {@const occId = `${occ.kind}-${occ.issueId}-${occ.occurrenceId}`}
               {@const isExpanded = expandedOccurrences.has(occId)}

@@ -9,10 +9,6 @@ const meta = {
   parameters: {
     layout: 'padded',
   },
-  argTypes: {
-    snapshotSlug: { control: 'text' },
-    targetOccurrenceId: { control: 'text' },
-  },
 } satisfies Meta<FileViewer>;
 
 export default meta;
