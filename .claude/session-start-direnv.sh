@@ -1,22 +1,30 @@
 #!/bin/bash
 set -e
 
+# Log file for debugging (persists across sessions)
+LOG_FILE="/tmp/session-start-direnv.log"
+
+# Helper: log to both stdout (for agent) and log file
+log() {
+    echo "[session-start-direnv] $1" | tee -a "$LOG_FILE"
+}
+
 # Debug: log environment state for diagnosing hook issues
-echo "[session-start-direnv] Starting hook" >&2
-echo "[session-start-direnv] Environment variables:" >&2
-env | sort | sed 's/^/[session-start-direnv]   /' >&2
+log "Starting hook at $(date -Iseconds)"
+log "Environment variables:"
+env | sort | sed 's/^/[session-start-direnv]   /' | tee -a "$LOG_FILE"
 
 if [ "$CLAUDE_CODE_REMOTE" != "true" ]; then
-    echo "[session-start-direnv] Not remote environment, skipping" >&2
+    log "Not remote environment, skipping"
     exit 0
 fi
 
 if [ -z "$CLAUDE_PROJECT_DIR" ]; then
-    echo "[session-start-direnv] ERROR: CLAUDE_PROJECT_DIR not set, cannot proceed" >&2
+    log "ERROR: CLAUDE_PROJECT_DIR not set, cannot proceed"
     exit 1
 fi
 
-echo "[session-start-direnv] Setting up dev environment..." >&2
+log "Setting up dev environment..."
 
 # Install Nix with sandbox disabled (required for container)
 NIX_CONF="$CLAUDE_PROJECT_DIR/.claude/claude-code-web/nix.conf"
@@ -86,34 +94,34 @@ NIX_BIN=$(ls -d /nix/store/*-nix-[0-9]*/bin 2>/dev/null | head -1)
 
 # Install direnv, devenv, and uv via nix (using nixpkgs for better cache coverage)
 if ! command -v direnv &> /dev/null; then
-    echo "[session-start-direnv] Installing direnv..." >&2
-    if nix profile install nixpkgs#direnv 2>&1 | tail -5 >&2; then
-        echo "[session-start-direnv] direnv installed successfully" >&2
+    log "Installing direnv..."
+    if nix profile install nixpkgs#direnv 2>&1 | tail -5 | tee -a "$LOG_FILE"; then
+        log "direnv installed successfully"
     else
-        echo "[session-start-direnv] WARNING: direnv installation failed (exit $?)" >&2
+        log "WARNING: direnv installation failed (exit $?)"
     fi
 else
-    echo "[session-start-direnv] direnv already available" >&2
+    log "direnv already available"
 fi
 if ! command -v devenv &> /dev/null; then
-    echo "[session-start-direnv] Installing devenv..." >&2
-    if nix profile install nixpkgs#devenv 2>&1 | tail -5 >&2; then
-        echo "[session-start-direnv] devenv installed successfully" >&2
+    log "Installing devenv..."
+    if nix profile install nixpkgs#devenv 2>&1 | tail -5 | tee -a "$LOG_FILE"; then
+        log "devenv installed successfully"
     else
-        echo "[session-start-direnv] WARNING: devenv installation failed (exit $?)" >&2
+        log "WARNING: devenv installation failed (exit $?)"
     fi
 else
-    echo "[session-start-direnv] devenv already available" >&2
+    log "devenv already available"
 fi
 if ! command -v uv &> /dev/null; then
-    echo "[session-start-direnv] Installing uv..." >&2
-    if nix profile install nixpkgs#uv 2>&1 | tail -5 >&2; then
-        echo "[session-start-direnv] uv installed successfully" >&2
+    log "Installing uv..."
+    if nix profile install nixpkgs#uv 2>&1 | tail -5 | tee -a "$LOG_FILE"; then
+        log "uv installed successfully"
     else
-        echo "[session-start-direnv] WARNING: uv installation failed (exit $?)" >&2
+        log "WARNING: uv installation failed (exit $?)"
     fi
 else
-    echo "[session-start-direnv] uv already available" >&2
+    log "uv already available"
 fi
 
 # Allow .envrc files
@@ -131,17 +139,17 @@ export NIX_USER_CONF_FILES="$NIX_CONF"
 [ -d "$NIX_BIN" ] && export PATH="$NIX_BIN:\$PATH"
 [ -d ~/.nix-profile/bin ] && export PATH="\$HOME/.nix-profile/bin:\$PATH"
 EOF
-    echo "[session-start-direnv] Wrote environment to CLAUDE_ENV_FILE=$CLAUDE_ENV_FILE" >&2
+    log "Wrote environment to CLAUDE_ENV_FILE=$CLAUDE_ENV_FILE"
 else
-    echo "[session-start-direnv] WARNING: CLAUDE_ENV_FILE is empty, PATH changes will not persist across bash calls" >&2
+    log "WARNING: CLAUDE_ENV_FILE is empty, PATH changes will not persist across bash calls"
 fi
 
 # Output context for Claude (informational - not executed)
-echo "[session-start-direnv] Session environment initialized:"
-echo "[session-start-direnv]   nix: $(nix --version 2>/dev/null || echo 'N/A')"
-echo "[session-start-direnv]   direnv: $(direnv version 2>/dev/null || echo 'N/A')"
-echo "[session-start-direnv]   devenv: $(devenv version 2>/dev/null || echo 'N/A')"
-echo "[session-start-direnv]   uv: $(uv --version 2>/dev/null || echo 'N/A')"
-echo "[session-start-direnv]   PATH includes: ~/.nix-profile/bin, $NIX_BIN"
+log "Session environment initialized:"
+log "  nix: $(nix --version 2>/dev/null || echo 'N/A')"
+log "  direnv: $(direnv version 2>/dev/null || echo 'N/A')"
+log "  devenv: $(devenv version 2>/dev/null || echo 'N/A')"
+log "  uv: $(uv --version 2>/dev/null || echo 'N/A')"
+log "  PATH includes: ~/.nix-profile/bin, $NIX_BIN"
 
-echo "[session-start-direnv] Setup complete" >&2
+log "Setup complete"
