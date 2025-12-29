@@ -62,7 +62,7 @@ dev = [
   'playwright>=1.45.0',
   "ruff>=0.5",
   # Agent runtimes packages (for testing container utilities)
-  "editor-util",
+  "editor-agent-runtime",
   # Pin to match .pre-commit-config.yaml (v1.18.2)
   # TODO: Ensure mypy versions stay consistent across all tool configs in the repo
   "mypy==1.18.2",
@@ -177,7 +177,7 @@ adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
 adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
 adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
 adgn-generate-frontend-code = "adgn.scripts.generate_frontend_code:main"
-adgn-editor-docker = "adgn.mcp.editor_docker.cli:main"
+# Editor moved to editor_agent package - adgn-editor-docker is now in editor-agent
 
 # Mypy configuration moved to central /mypy.ini at repo root
 
@@ -186,7 +186,7 @@ agent-core = { workspace = true }
 agent-pkg = { workspace = true }
 agent-pkg-runtime = { workspace = true }
 cli-util = { workspace = true }
-editor-util = { workspace = true }
+editor-agent-runtime = { workspace = true }
 mcp-infra = { workspace = true }
 net-util = { workspace = true }
 openai-utils = { workspace = true }

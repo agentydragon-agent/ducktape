@@ -12,7 +12,7 @@ from fastmcp.mcp_config import MCPConfig
 import pytest
 
 from agent_server.presets import create_agent_from_preset, discover_presets
-from mcp_infra.resource_utils import extract_single_text_content
+from mcp_utils import extract_single_text_content
 from tests.testdata.approval_policy import fetch_policy
 
 

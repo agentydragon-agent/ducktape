@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from adgn.mcp.editor_docker.runner import editor_docker_session, writeback_success
-from adgn.mcp.editor_docker.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
+from editor_agent.runner import editor_docker_session, writeback_success
+from editor_agent.submit_server import EditorSubmitServer, SubmitStateSuccess, SubmitSuccessInput
 
 
 @pytest.mark.requires_docker
@@ -14,7 +14,7 @@ async def test_editor_session_starts_and_cleans(tmp_path: Path, async_docker_cli
     target.write_text("hello", encoding="utf-8")
 
     async with editor_docker_session(
-        file_path=target, docker_client=async_docker_client, image_id=editor_image_id
+        file_path=target, prompt="test prompt", docker_client=async_docker_client, image_id=editor_image_id
     ) as sess:
         assert sess.container_server is not None
         assert sess.gateway.url_for_container
@@ -26,7 +26,7 @@ async def test_submit_success_writes_back(tmp_path: Path):
     original = "hello world"
     target.write_text(original, encoding="utf-8")
 
-    server = EditorSubmitServer(original_content=original, filename="file.txt")
+    server = EditorSubmitServer(original_content=original, filename="file.txt", prompt="test prompt")
     await server.submit_success_tool.run(SubmitSuccessInput(message="done", content="updated").model_dump())
 
     assert isinstance(server.state, SubmitStateSuccess)

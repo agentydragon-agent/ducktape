@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Session start hook for Claude Code web: sets up nix, direnv, devenv, uv."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 import json
 import logging
 import os
+from pathlib import Path
 import subprocess
 import sys
 import threading
 import traceback
-from contextlib import contextmanager
-from datetime import datetime
-from pathlib import Path
-from typing import IO, Iterator
+from typing import IO
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")
 TOOLS = ["direnv", "devenv", "uv"]
@@ -19,10 +20,7 @@ TOOLS = ["direnv", "devenv", "uv"]
 logging.basicConfig(
     level=logging.INFO,
     format="[session-start-direnv] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(LOG_FILE, mode="a"),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout), logging.FileHandler(LOG_FILE, mode="a")],
 )
 log = logging.getLogger(__name__)
 
@@ -40,12 +38,7 @@ def heartbeat(operation: str) -> Iterator[None]:
         while not stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
             beat_count += 1
             elapsed = (datetime.now() - start_time).total_seconds()
-            log.info(
-                "heartbeat: %s still running (%.1fs elapsed, beat #%d)",
-                operation,
-                elapsed,
-                beat_count,
-            )
+            log.info("heartbeat: %s still running (%.1fs elapsed, beat #%d)", operation, elapsed, beat_count)
 
     thread = threading.Thread(target=heartbeat_thread, daemon=True)
     thread.start()
@@ -60,18 +53,13 @@ def heartbeat(operation: str) -> Iterator[None]:
 
 def stream_output(stream: IO[str], prefix: str) -> None:
     """Stream output line by line, logging each line as it arrives."""
-    for line in stream:
-        line = line.rstrip("\n\r")
+    for raw_line in stream:
+        line = raw_line.rstrip("\n\r")
         if line:
             log.info("%s %s", prefix, line)
 
 
-def run_streaming(
-    cmd: list[str],
-    operation: str,
-    check: bool = True,
-    env: dict[str, str] | None = None,
-) -> int:
+def run_streaming(cmd: list[str], operation: str, check: bool = True, env: dict[str, str] | None = None) -> int:
     """Run command with real-time streaming output.
 
     Streams stdout and stderr to the log as lines arrive.
@@ -140,7 +128,7 @@ def run_streaming(
 
 def which(cmd: str) -> str | None:
     """Find command in PATH."""
-    result = subprocess.run(["which", cmd], capture_output=True, text=True)
+    result = subprocess.run(["which", cmd], capture_output=True, text=True, check=False)
     return result.stdout.strip() if result.returncode == 0 else None
 
 
@@ -237,13 +225,7 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
 
     # Install all missing tools in one command with verbose output
     # -v: verbose, --print-build-logs: show build output
-    cmd = [
-        str(nix_cmd),
-        "profile",
-        "install",
-        "-v",
-        "--print-build-logs",
-    ] + [f"nixpkgs#{t}" for t in missing_tools]
+    cmd = [str(nix_cmd), "profile", "install", "-v", "--print-build-logs"] + [f"nixpkgs#{t}" for t in missing_tools]
 
     run_streaming(cmd, f"installing {', '.join(missing_tools)}")
 
@@ -299,20 +281,16 @@ def main() -> int:
     if which("direnv"):
         for envrc in project_dir.rglob(".envrc"):
             log.info("Allowing direnv for: %s", envrc.parent)
-            run_streaming(
-                ["direnv", "allow", str(envrc.parent)],
-                f"direnv allow {envrc.parent.name}",
-                check=False,
-            )
+            run_streaming(["direnv", "allow", str(envrc.parent)], f"direnv allow {envrc.parent.name}", check=False)
 
     # Persist environment with both store bin and profile bin
     persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
 
     log.info("=" * 60)
     log.info("Session environment initialized:")
-    for tool in ["nix"] + TOOLS:
+    for tool in ["nix", *TOOLS]:
         if path := which(tool):
-            result = subprocess.run([tool, "--version"], capture_output=True, text=True)
+            result = subprocess.run([tool, "--version"], capture_output=True, text=True, check=False)
             version = result.stdout.strip().split("\n")[0] if result.returncode == 0 else "?"
             log.info("  %-10s %s (%s)", tool + ":", version, path)
         else:

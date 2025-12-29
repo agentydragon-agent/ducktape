@@ -2,17 +2,19 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from editor_agent_runtime import EDIT_RESOURCE_URI, PROMPT_RESOURCE_URI
 from fastmcp.exceptions import ToolError
 from fastmcp.tools import FunctionTool
 
 from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from fastmcp.server.auth import AuthProvider
 
-EDIT_RESOURCE_URI = "resource://edit/target"
+logger = logging.getLogger(__name__)
 
 
 class SubmitSuccessInput(OpenAIStrictModeBaseModel):
@@ -37,6 +39,7 @@ class SubmitStateSuccess:
 
     kind: Literal["success"] = "success"
     content: str = ""
+    message: str = ""
 
 
 @dataclass(frozen=True)
@@ -60,10 +63,11 @@ class EditorSubmitServer(EnhancedFastMCP):
     submit_success_tool: FunctionTool
     submit_failure_tool: FunctionTool
 
-    def __init__(self, *, original_content: str, filename: str):
-        super().__init__("Editor Submit Server", instructions="Submit edited file or failure message")
+    def __init__(self, *, original_content: str, filename: str, prompt: str, auth: AuthProvider | None = None):
+        super().__init__("Editor Submit Server", instructions="Submit edited file or failure message", auth=auth)
         self._original_content = original_content
         self._filename = filename
+        self._prompt = prompt
         self._state: SubmitState = SubmitStatePending()
 
         @self.resource(EDIT_RESOURCE_URI, name=filename, title="Original file", mime_type="text/plain")
@@ -72,10 +76,16 @@ class EditorSubmitServer(EnhancedFastMCP):
 
         self.edit_resource = edit_resource
 
+        @self.resource(PROMPT_RESOURCE_URI, name="prompt", title="Edit instructions", mime_type="text/plain")
+        def prompt_resource() -> str:
+            return self._prompt
+
+        self.prompt_resource = prompt_resource
+
         def submit_success(input: SubmitSuccessInput) -> None:
             if not isinstance(self._state, SubmitStatePending):
                 raise ToolError("submit already called")
-            self._state = SubmitStateSuccess(content=input.content)
+            self._state = SubmitStateSuccess(content=input.content, message=input.message)
 
         def submit_failure(input: SubmitFailureInput) -> None:
             if not isinstance(self._state, SubmitStatePending):

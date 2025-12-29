@@ -1,36 +1,52 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
 
 import aiodocker
 from fastmcp.client import Client
 
-from adgn.mcp.editor_docker.handlers import TerminateOnEditorSubmit
-from adgn.mcp.editor_docker.runner import EditorDockerSession, editor_docker_session, writeback_success
-from adgn.mcp.editor_docker.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
 from agent_core.agent import Agent
-from agent_core.handler import AbortIf, BaseHandler
+from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.turn_limit import MaxTurnsHandler
 from agent_pkg import run_init_script
+from editor_agent.runner import EditorDockerSession, editor_docker_session, writeback_success
+from editor_agent.submit_server import SubmitState, SubmitStatePending, SubmitStateSuccess
+from mcp_infra.display import CompactDisplayHandler
 from openai_utils.model import OpenAIModelProto, SystemMessage
 
 
-async def _run_agent_in_session(sess: EditorDockerSession, model_client: OpenAIModelProto, max_turns: int) -> None:
+async def _run_agent_in_session(
+    sess: EditorDockerSession, model_client: OpenAIModelProto, max_turns: int, *, verbose: bool = False
+) -> None:
     """Run the agent loop within an established editor session."""
     async with Client(sess.compositor) as mcp_client:
         # Run init script and use output as system prompt
         system_prompt = await run_init_script(mcp_client, sess.runtime)
 
-        # Give a small buffer for submit turns on top of caller-specified limit
-        effective_max_turns = max_turns + 2
+        reminder = """You sent a text message instead of taking action.
 
-        handlers: Iterable[BaseHandler] = (
-            TerminateOnEditorSubmit(),
+To complete your task, you must submit your edits using the CLI tool:
+
+    editor-submit submit-success -m "Description of changes" -f /path/to/edited/file
+
+If you cannot complete the edit, declare failure:
+
+    editor-submit submit-failure -m "Reason for failure"
+
+Do NOT send text messages - execute your plan with docker_exec."""
+
+        handlers: list[BaseHandler] = [
             AbortIf(lambda: not isinstance(sess.submit_server.state, SubmitStatePending)),
-            MaxTurnsHandler(max_turns=effective_max_turns),
-        )
+            MaxTurnsHandler(max_turns=max_turns),
+            RedirectOnTextMessageHandler(reminder),
+        ]
+
+        if verbose:
+            display_handler = await CompactDisplayHandler.from_compositor(
+                sess.compositor, max_lines=50, prefix="[EDITOR] "
+            )
+            handlers.append(display_handler)
 
         agent = Agent(
             mcp_client=mcp_client,
@@ -51,16 +67,18 @@ async def _run_agent_in_session(sess: EditorDockerSession, model_client: OpenAIM
 async def run_editor_docker_agent(
     *,
     file_path: Path,
+    prompt: str,
     docker_client: aiodocker.Docker,
     model_client: OpenAIModelProto,
     max_turns: int = 40,
     image_id: str,
     network: str = "bridge",
+    verbose: bool = False,
 ) -> SubmitState:
     """Run the docker-editor agent with step-runner or real model.
 
     - Starts a docker exec runtime + submit server via editor_docker_session
-    - Runs /init to get system prompt (includes file content)
+    - Runs /init to get system prompt (includes file content and prompt from MCP resource)
     - Runs Agent with AllowAnyToolOrTextMessage and termination on submit-success/failure
     - Writes submitted content back to host file on success
 
@@ -68,9 +86,9 @@ async def run_editor_docker_agent(
         SubmitState: the final submission state (pending/success/failure).
     """
     async with editor_docker_session(
-        file_path=file_path, docker_client=docker_client, image_id=image_id, network_name=network
+        file_path=file_path, prompt=prompt, docker_client=docker_client, image_id=image_id, network_name=network
     ) as sess:
-        await _run_agent_in_session(sess, model_client, max_turns)
+        await _run_agent_in_session(sess, model_client, max_turns, verbose=verbose)
 
         state: SubmitState = sess.submit_server.state
         if isinstance(state, SubmitStateSuccess):

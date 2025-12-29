@@ -8,7 +8,7 @@ from agent_pkg import ensure_image
 
 REPO_ROOT = Path(__file__).parents[
     4
-]  # adgn/tests/mcp/editor_docker -> [0]editor_docker/[1]mcp/[2]tests/[3]adgn/[4]ducktape
+]  # editor_agent/host/tests/conftest.py -> [0]tests/[1]host/[2]editor_agent/[3]ducktape
 
 EDITOR_DOCKERFILE = "docker/editor/Dockerfile"
 EDITOR_IMAGE_TAG = "adgn-editor:test"

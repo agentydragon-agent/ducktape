@@ -6,9 +6,12 @@ Provides helpers for connecting to the MCP server from within containers.
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 import os
+from typing import Any
 
 from fastmcp.client import Client
 from mcp.types import InitializeResult
+
+from mcp_utils import extract_single_text_content
 
 
 def print_mcp_env() -> None:
@@ -57,3 +60,9 @@ async def mcp_client_from_env() -> AsyncIterator[tuple[Client, InitializeResult]
         if init_result is None:
             raise RuntimeError("Client did not initialize properly")
         yield client, init_result
+
+
+async def read_text_resource(client: Client[Any], uri: str) -> str:
+    """Read a text resource and return its content."""
+    contents = await client.read_resource(uri)
+    return extract_single_text_content(contents)

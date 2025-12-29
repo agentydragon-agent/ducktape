@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from adgn.mcp.editor_docker.agent_runner import run_editor_docker_agent
-from adgn.mcp.editor_docker.submit_server import SubmitStateSuccess
 from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
+from editor_agent.agent_runner import run_editor_docker_agent
+from editor_agent.submit_server import SubmitStateSuccess
 
 
 def _make_editor_steps(filename: str) -> list[Step]:
@@ -33,6 +33,7 @@ async def test_editor_step_sequence(make_step_runner, tmp_path, async_docker_cli
 
     result = await run_editor_docker_agent(
         file_path=target,
+        prompt="test prompt",
         docker_client=async_docker_client,
         model_client=runner,
         max_turns=len(steps),

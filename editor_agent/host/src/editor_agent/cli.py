@@ -15,11 +15,11 @@ from typing import Annotated
 import aiodocker
 import typer
 
-from adgn.mcp.editor_docker.agent_runner import run_editor_docker_agent
-from adgn.mcp.editor_docker.runner import DEFAULT_NETWORK
-from adgn.mcp.editor_docker.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
 from agent_pkg import ensure_image
 from cli_util import async_run, make_logging_callback
+from editor_agent.agent_runner import run_editor_docker_agent
+from editor_agent.runner import DEFAULT_NETWORK
+from editor_agent.submit_server import SubmitStateFailure, SubmitStatePending, SubmitStateSuccess
 from openai_utils.client_factory import build_client
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
@@ -29,7 +29,7 @@ EDITOR_IMAGE_TAG = "adgn-editor:latest"
 # Environment variable override for network
 _ENV_NETWORK = os.getenv("ADGN_EDITOR_DOCKER_NETWORK", DEFAULT_NETWORK)
 
-app = typer.Typer(help="Docker-based file editor with LLM agent.")
+app = typer.Typer(help="Docker-based file editor with LLM agent.", invoke_without_command=True, no_args_is_help=True)
 
 # Configure logging via shared callback (default: INFO level)
 app.callback()(make_logging_callback(default_level="INFO"))
@@ -37,22 +37,34 @@ app.callback()(make_logging_callback(default_level="INFO"))
 MODEL_OPT = typer.Option(DEFAULT_MODEL, "--model", help="Model name (OPENAI_MODEL)")
 NETWORK_OPT = typer.Option(_ENV_NETWORK, "--network", help="Docker network (ADGN_EDITOR_DOCKER_NETWORK)")
 MAX_TURNS_OPT = typer.Option(40, "--max-turns", help="Maximum agent turns before abort")
+VERBOSE_OPT = typer.Option(False, "--verbose", "-v", help="Show agent actions in real-time")
 
 
-@app.command()
+@app.callback(invoke_without_command=True)
 @async_run
 async def edit(
-    file: Annotated[Path, typer.Argument(help="Path to the file to edit")],
+    ctx: typer.Context,
+    file: Annotated[Path | None, typer.Argument(help="Path to the file to edit")] = None,
+    prompt: Annotated[str | None, typer.Argument(help="Edit instructions for the agent")] = None,
     model: str = MODEL_OPT,
     network: str = NETWORK_OPT,
     max_turns: int = MAX_TURNS_OPT,
+    verbose: bool = VERBOSE_OPT,
 ) -> None:
     """Edit a file using an LLM agent in an isolated Docker container.
+
+    Usage: adgn-editor-docker FILE "PROMPT"
 
     The agent reads the file content via MCP resource, makes edits using
     docker exec, and submits the final content. On success, the file is
     updated; on failure or abort, the file is left unchanged.
     """
+    if ctx.invoked_subcommand is not None:
+        return
+    if file is None:
+        raise typer.BadParameter("FILE argument is required")
+    if prompt is None:
+        raise typer.BadParameter("PROMPT argument is required")
     file = file.resolve()
     if not file.is_file():
         raise typer.BadParameter(f"Not a file: {file}")
@@ -66,16 +78,18 @@ async def edit(
 
         result = await run_editor_docker_agent(
             file_path=file,
+            prompt=prompt,
             docker_client=docker_client,
             model_client=model_client,
             max_turns=max_turns,
             image_id=image_id,
             network=network,
+            verbose=verbose,
         )
 
     match result:
-        case SubmitStateSuccess():
-            typer.echo("Success: file updated.")
+        case SubmitStateSuccess(message=msg):
+            typer.echo(f"Success: {msg}")
         case SubmitStateFailure(message=msg):
             typer.echo(f"Failure: {msg}", err=True)
             raise typer.Exit(code=1)
