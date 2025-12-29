@@ -196,14 +196,14 @@ jobs:
       fail-fast: false
       matrix:
         project: ${{ fromJson(needs.discover.outputs.projects) }}
-    # PostgreSQL service for gatelet tests
+    # PostgreSQL service for gatelet and props/core tests
     services:
       postgres:
         image: postgres:15
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_USER: postgres
-          POSTGRES_DB: gatelet
+          POSTGRES_DB: postgres
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -211,6 +211,13 @@ jobs:
           --health-retries 5
         ports:
           - 5432:5432
+    # PostgreSQL connection settings for props/core tests
+    env:
+      PGHOST: localhost
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
     steps:
       - name: Check out code
         uses: actions/checkout@v4
