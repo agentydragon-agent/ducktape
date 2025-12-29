@@ -28,8 +28,17 @@ The hook (`session-start-direnv.py`) attempts to:
 
 ### What Fails
 - `nix profile install nixpkgs#<tool>` fails with "Truncated tar archive" errors
-- This is a network/proxy issue when fetching nixpkgs from GitHub
 - The hook hangs indefinitely waiting for package installation
+
+### Root Cause: Network Proxy During Hooks
+
+Claude Code web routes all network traffic through a proxy with strict domain allowlisting:
+- During session-start hooks, only allowlisted domains are accessible
+- GitHub/nixos.org fetches may be blocked, throttled, or have aggressive timeouts
+- User cannot approve new domains interactively during hook execution
+- The proxy may drop connections mid-download (causing "truncated tar archive")
+
+This is documented behavior for Claude Code web's sandboxed environment.
 
 ## Requirements for a Working Solution
 
