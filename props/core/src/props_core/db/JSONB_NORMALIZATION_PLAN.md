@@ -95,10 +95,13 @@ class FalsePositiveOccurrenceRange(Base):
 
 **Migration Strategy:**
 1. Create new tables with migration
-2. Populate from existing JSONB data
-3. Update application code to use new tables
-4. Add database constraint to ensure JSONB and table stay in sync during transition
-5. Remove JSONB column after full migration
+2. Create validation trigger function and triggers
+3. Populate from existing JSONB data (trigger will validate on insert)
+4. Update application code to use new tables
+5. Add database constraint to ensure JSONB and table stay in sync during transition
+6. Remove JSONB column after full migration
+
+**Note**: The trigger will immediately catch any invalid ranges during migration step 3. Any ground truth with line numbers exceeding file bounds will cause migration to fail with a clear error message identifying the problematic file and range.
 
 **Benefits:**
 - SQL queries: `WHERE file_path = 'foo.py' AND start_line <= 50 AND end_line >= 40`
@@ -166,26 +169,81 @@ During migration:
 
 ### Data Migration
 
+**Alembic migration structure:**
+
 ```python
-# Migration pseudo-code for TP ranges
-for occ in session.query(TruePositiveOccurrenceORM).all():
-    files_dict = occ.files  # Current JSONB
-    for file_path, ranges_json in files_dict.items():
-        if ranges_json is None:
-            # Null ranges = whole file anchor (no specific lines)
-            continue
-        for idx, range_data in enumerate(ranges_json):
-            new_range = TruePositiveOccurrenceRange(
-                snapshot_slug=occ.snapshot_slug,
-                tp_id=occ.tp_id,
-                occurrence_id=occ.occurrence_id,
-                file_path=file_path,
-                range_id=idx,
-                start_line=range_data["start_line"],
-                end_line=range_data["end_line"],
-                note=range_data.get("note"),
-            )
-            session.add(new_range)
+def upgrade():
+    # 1. Create tables
+    op.create_table('tp_occurrence_ranges', ...)
+    op.create_table('fp_occurrence_ranges', ...)
+    op.create_table('fp_occurrence_relevant_files', ...)
+
+    # 2. Create validation trigger
+    op.execute("""
+        CREATE OR REPLACE FUNCTION validate_range_line_numbers()
+        RETURNS TRIGGER AS $$
+        DECLARE
+            file_line_count INT;
+        BEGIN
+            SELECT line_count INTO file_line_count
+            FROM snapshot_files
+            WHERE snapshot_slug = NEW.snapshot_slug
+              AND relative_path = NEW.file_path;
+
+            IF NEW.end_line > file_line_count THEN
+                RAISE EXCEPTION 'Line range [%, %] exceeds file line count % for file % in snapshot %',
+                    NEW.start_line, NEW.end_line, file_line_count, NEW.file_path, NEW.snapshot_slug;
+            END IF;
+
+            RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+    """)
+
+    op.execute("""
+        CREATE TRIGGER validate_tp_range_bounds
+        BEFORE INSERT OR UPDATE ON tp_occurrence_ranges
+        FOR EACH ROW
+        EXECUTE FUNCTION validate_range_line_numbers();
+    """)
+
+    op.execute("""
+        CREATE TRIGGER validate_fp_range_bounds
+        BEFORE INSERT OR UPDATE ON fp_occurrence_ranges
+        FOR EACH ROW
+        EXECUTE FUNCTION validate_range_line_numbers();
+    """)
+
+    # 3. Populate from JSONB (trigger validates automatically)
+    _migrate_tp_ranges()
+    _migrate_fp_ranges()
+    _migrate_fp_relevant_files()
+
+def _migrate_tp_ranges():
+    """Populate tp_occurrence_ranges from JSONB."""
+    bind = op.get_bind()
+    session = Session(bind=bind)
+
+    for occ in session.query(TruePositiveOccurrenceORM).all():
+        files_dict = occ.files  # Current JSONB
+        for file_path, ranges_json in files_dict.items():
+            if ranges_json is None:
+                # Null ranges = whole file anchor (no specific lines)
+                continue
+            for idx, range_data in enumerate(ranges_json):
+                # Trigger will validate end_line <= file line_count
+                new_range = TruePositiveOccurrenceRange(
+                    snapshot_slug=occ.snapshot_slug,
+                    tp_id=occ.tp_id,
+                    occurrence_id=occ.occurrence_id,
+                    file_path=file_path,
+                    range_id=idx,
+                    start_line=range_data["start_line"],
+                    end_line=range_data["end_line"],
+                    note=range_data.get("note"),
+                )
+                session.add(new_range)
+    session.commit()
 ```
 
 ### API Impact
