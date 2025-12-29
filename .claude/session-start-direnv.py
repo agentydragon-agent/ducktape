@@ -11,7 +11,7 @@ import traceback
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Iterator
+from typing import IO, Iterator
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")
 TOOLS = ["direnv", "devenv", "uv"]
@@ -26,21 +26,26 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-HEARTBEAT_INTERVAL_MS = 500
+HEARTBEAT_INTERVAL_SECONDS = 5.0
 
 
 @contextmanager
 def heartbeat(operation: str) -> Iterator[None]:
-    """Log heartbeat messages every 500ms during long-running operations."""
+    """Log heartbeat messages during long-running operations with no output."""
     stop_event = threading.Event()
     start_time = datetime.now()
 
     def heartbeat_thread() -> None:
         beat_count = 0
-        while not stop_event.wait(HEARTBEAT_INTERVAL_MS / 1000):
+        while not stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
             beat_count += 1
             elapsed = (datetime.now() - start_time).total_seconds()
-            log.info("heartbeat: %s still running (%.1fs elapsed, beat #%d)", operation, elapsed, beat_count)
+            log.info(
+                "heartbeat: %s still running (%.1fs elapsed, beat #%d)",
+                operation,
+                elapsed,
+                beat_count,
+            )
 
     thread = threading.Thread(target=heartbeat_thread, daemon=True)
     thread.start()
@@ -53,13 +58,84 @@ def heartbeat(operation: str) -> Iterator[None]:
         log.info("heartbeat: %s completed (%.1fs total)", operation, elapsed)
 
 
-def run(cmd: list[str]) -> subprocess.CompletedProcess:
-    """Run command with check=True, logging output."""
-    result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-    for line in (result.stdout + result.stderr).strip().split("\n"):
+def stream_output(stream: IO[str], prefix: str) -> None:
+    """Stream output line by line, logging each line as it arrives."""
+    for line in stream:
+        line = line.rstrip("\n\r")
         if line:
-            log.info("  %s", line)
-    return result
+            log.info("%s %s", prefix, line)
+
+
+def run_streaming(
+    cmd: list[str],
+    operation: str,
+    check: bool = True,
+    env: dict[str, str] | None = None,
+) -> int:
+    """Run command with real-time streaming output.
+
+    Streams stdout and stderr to the log as lines arrive.
+    Uses heartbeat as fallback for periods with no output.
+    """
+    log.info(">>> %s", " ".join(cmd))
+    start_time = datetime.now()
+
+    merged_env = {**os.environ, **(env or {})}
+
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,  # Line buffered
+        env=merged_env,
+    )
+
+    assert proc.stdout is not None
+
+    # Stream output with heartbeat fallback
+    last_output_time = datetime.now()
+    heartbeat_count = 0
+
+    while True:
+        # Use a timeout so we can emit heartbeats during long silences
+        import select
+
+        ready, _, _ = select.select([proc.stdout], [], [], HEARTBEAT_INTERVAL_SECONDS)
+
+        if ready:
+            line = proc.stdout.readline()
+            if not line:
+                # EOF - process finished
+                break
+            line = line.rstrip("\n\r")
+            if line:
+                log.info("  | %s", line)
+                last_output_time = datetime.now()
+        else:
+            # No output - emit heartbeat
+            heartbeat_count += 1
+            elapsed = (datetime.now() - start_time).total_seconds()
+            silence = (datetime.now() - last_output_time).total_seconds()
+            log.info(
+                "  ~ %s: waiting (%.1fs elapsed, %.1fs since last output, beat #%d)",
+                operation,
+                elapsed,
+                silence,
+                heartbeat_count,
+            )
+
+    proc.wait()
+    elapsed = (datetime.now() - start_time).total_seconds()
+
+    if proc.returncode == 0:
+        log.info("<<< %s completed successfully (%.1fs)", operation, elapsed)
+    else:
+        log.error("<<< %s failed with code %d (%.1fs)", operation, proc.returncode, elapsed)
+        if check:
+            raise RuntimeError(f"{operation} failed with exit code {proc.returncode}")
+
+    return proc.returncode
 
 
 def which(cmd: str) -> str | None:
@@ -105,11 +181,12 @@ def install_nix(project_dir: Path) -> Path:
         return nix_store_bin
 
     log.info("Installing nix...")
-    with heartbeat("downloading nix installer"):
-        subprocess.run(
-            ["curl", "-sL", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
-            check=True,
-        )
+
+    # Download with progress bar
+    run_streaming(
+        ["curl", "--progress-bar", "-L", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
+        "downloading nix installer",
+    )
 
     # The nix-env step fails in gVisor containers due to a PTY bug.
     # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
@@ -126,12 +203,11 @@ def install_nix(project_dir: Path) -> Path:
     # WORKAROUND:
     # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
     # We use the store path directly instead of relying on profiles.
-    with heartbeat("running nix installer"):
-        subprocess.run(
-            ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-        )
+    run_streaming(
+        ["sh", "-x", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
+        "running nix installer",
+        check=False,  # Installer may fail on nix-env step, that's OK
+    )
 
     nix_store_bin = find_nix_bin()
     if not nix_store_bin:
@@ -150,7 +226,6 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
     and removes nix from PATH.
     """
     nix_cmd = nix_store_bin / "nix"
-    nix_conf = os.environ.get("NIX_USER_CONF_FILES", "")
 
     # Filter out tools that are already available
     missing_tools = [t for t in tools if not which(t)]
@@ -160,17 +235,17 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
 
     log.info("Installing tools: %s", ", ".join(missing_tools))
 
-    # Install all missing tools in one command
-    cmd = [str(nix_cmd), "profile", "install"] + [f"nixpkgs#{t}" for t in missing_tools]
-    with heartbeat(f"installing {', '.join(missing_tools)}"):
-        result = subprocess.run(cmd, capture_output=True, text=True)
+    # Install all missing tools in one command with verbose output
+    # -v: verbose, --print-build-logs: show build output
+    cmd = [
+        str(nix_cmd),
+        "profile",
+        "install",
+        "-v",
+        "--print-build-logs",
+    ] + [f"nixpkgs#{t}" for t in missing_tools]
 
-    for line in (result.stdout + result.stderr).strip().split("\n"):
-        if line:
-            log.info("  %s", line)
-
-    if result.returncode != 0:
-        raise RuntimeError(f"Failed to install tools: {result.stderr}")
+    run_streaming(cmd, f"installing {', '.join(missing_tools)}")
 
     log.info("Tools installed successfully")
 
@@ -198,8 +273,10 @@ export NIX_USER_CONF_FILES="{nix_conf}"
 
 
 def main() -> int:
+    log.info("=" * 60)
     log.info("Starting hook at %s", datetime.now().isoformat())
-    log.info("Environment: %s", json.dumps(dict(os.environ), sort_keys=True))
+    log.info("=" * 60)
+    log.info("Environment: %s", json.dumps(dict(os.environ), sort_keys=True, indent=2))
 
     if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
         log.info("Not remote environment, skipping")
@@ -221,19 +298,26 @@ def main() -> int:
     # Allow .envrc files
     if which("direnv"):
         for envrc in project_dir.rglob(".envrc"):
-            subprocess.run(["direnv", "allow", str(envrc.parent)], capture_output=True)
+            log.info("Allowing direnv for: %s", envrc.parent)
+            run_streaming(
+                ["direnv", "allow", str(envrc.parent)],
+                f"direnv allow {envrc.parent.name}",
+                check=False,
+            )
 
     # Persist environment with both store bin and profile bin
     persist_environment(os.environ.get("CLAUDE_ENV_FILE"), nix_store_bin, project_dir)
 
+    log.info("=" * 60)
     log.info("Session environment initialized:")
     for tool in ["nix"] + TOOLS:
         if path := which(tool):
             result = subprocess.run([tool, "--version"], capture_output=True, text=True)
-            log.info("  %s: %s", tool, result.stdout.strip().split("\n")[0] if result.returncode == 0 else "?")
+            version = result.stdout.strip().split("\n")[0] if result.returncode == 0 else "?"
+            log.info("  %-10s %s (%s)", tool + ":", version, path)
         else:
-            log.info("  %s: N/A", tool)
-
+            log.info("  %-10s N/A", tool + ":")
+    log.info("=" * 60)
     log.info("Setup complete")
     return 0
 
@@ -242,6 +326,8 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:
+        log.error("=" * 60)
         log.error("Hook failed: %s", e)
+        log.error("=" * 60)
         log.error(traceback.format_exc())
         sys.exit(1)
