@@ -419,19 +419,26 @@ agent_pkg_tar(
 - `docker build` is still used to produce final image
 - Database storage of tar archives continues to work
 
-#### Future: Full rules_oci Integration
+#### Why Not Full rules_oci?
 
-Could eventually replace Dockerfile with pure Bazel:
-```python
-oci_image(
-    name = "critic_image",
-    base = "@python_312_slim//image",
-    tars = [":critic_archive"],
-    entrypoint = ["/init"],
-)
-```
+Moving image builds entirely to Bazel isn't just a technical challenge - it conflicts with the meta-agent workflow:
 
-But this requires replicating all Dockerfile logic in Bazel rules (apt-get, pip install, etc.). The tar approach is a pragmatic first step that keeps Dockerfiles.
+1. **Meta-agents author definitions**: prompt-optimize and prompt-improve agents read existing TARs and write new TARs
+2. **Current contract**: "Write a Dockerfile that produces `/init`" - agents understand this
+3. **Bazel-only builds**: Would require agents to author Starlark, not Dockerfiles
+
+The tar-based approach preserves the authoring workflow while getting Bazel's benefits for bundling.
+
+#### Alternative: Image-Based Workflow (Future)
+
+Could change the contract to "produce a container image":
+- Give meta-agents access to buildx builder via MCP tool
+- Agent output = image ID (not tar)
+- Agents can pull other agents' images by ID/tag
+- More elegant, but requires:
+  - MCP server wrapping buildx
+  - Image registry integration
+  - Agents learning new authoring model
 
 ### TODO: Linting and Type Checking with Bazel
 
