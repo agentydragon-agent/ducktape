@@ -1,0 +1,11 @@
+# Shared Python build configuration and utilities
+
+# Export defs.bzl for use in other packages
+exports_files(["defs.bzl"])
+
+# Filegroup for all Python sources in this package (if needed)
+filegroup(
+    name = "all_sources",
+    srcs = glob(["**/*.py"]),
+    visibility = ["//visibility:public"],
+)

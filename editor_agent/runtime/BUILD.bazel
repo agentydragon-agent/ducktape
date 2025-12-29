@@ -1,0 +1,21 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_binary")
+
+py_library(
+    name = "editor_agent_runtime",
+    srcs = glob(["src/editor_agent_runtime/**/*.py"]),
+    imports = ["src"],
+    data = glob(["src/editor_agent_runtime/**/*.md"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_pkg/runtime:agent_pkg_runtime",
+        "//cli_util:cli_util",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "editor_submit",
+    srcs = ["src/editor_agent_runtime/cli.py"],
+    main = "src/editor_agent_runtime/cli.py",
+    deps = [":editor_agent_runtime"],
+)

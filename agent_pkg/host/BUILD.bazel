@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "agent_pkg_host",
+    srcs = glob(["src/agent_pkg_host/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//mcp_infra:mcp_infra",
+        "@pypi//aiodocker",
+        "@pypi//fastmcp",
+    ],
+)

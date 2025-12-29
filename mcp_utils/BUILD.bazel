@@ -1,0 +1,13 @@
+"""MCP utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "mcp_utils",
+    srcs = glob(["src/mcp_utils/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//mcp",
+    ],
+)

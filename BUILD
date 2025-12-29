@@ -1,13 +1,9 @@
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
-load("@rules_python//python/pip_install:requirements.bzl", "compile_pip_requirements")
 
-# Convenient way to update.
-compile_pip_requirements(
-    name = "requirements",
-    extra_args = ["--allow-unsafe"],
-    requirements_in = "requirements.in",
-    requirements_txt = "requirements_lock.txt",
-)
+# Exports for use in other BUILD files
+exports_files([
+    "requirements_bazel.txt",
+])
 
 platform(
     name = "linux_x64",

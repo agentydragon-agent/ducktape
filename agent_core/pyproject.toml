@@ -6,7 +6,6 @@ requires-python = ">=3.12"
 dependencies = [
     "openai-utils",
     "agent-pkg-host",
-    "mcp-infra",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",

@@ -1,0 +1,14 @@
+"""CLI utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library")
+
+py_library(
+    name = "cli_util",
+    srcs = glob(["src/cli_util/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//structlog",
+        "@pypi//typer",
+    ],
+)

@@ -1,0 +1,23 @@
+"""Python detectors package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "py_detectors",
+    srcs = glob(["src/py_detectors/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_py_detectors",
+    srcs = glob(["tests/**/*.py"]),
+    data = glob(["tests/**/*.md"]),
+    deps = [
+        ":py_detectors",
+        "@pypi//pytest",
+    ],
+)

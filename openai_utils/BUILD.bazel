@@ -1,0 +1,26 @@
+"""OpenAI utilities package."""
+
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "openai_utils",
+    srcs = glob(["src/openai_utils/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_openai_utils",
+    srcs = glob(["tests/**/*.py"]),
+    deps = [
+        ":openai_utils",
+        "@pypi//pytest",
+        "@pypi//pytest-asyncio",
+    ],
+)

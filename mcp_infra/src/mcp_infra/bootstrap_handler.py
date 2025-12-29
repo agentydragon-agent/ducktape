@@ -6,14 +6,14 @@ that monitors init script execution and aborts on failure.
 
 from __future__ import annotations
 
-from agent_pkg_host import InitFailedError
-from mcp.types import CallToolResult, TextContent
-from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
-
 from agent_core.events import ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import InjectItems, LoopDecision, NoAction
+from agent_pkg_host import InitFailedError
+from mcp.types import CallToolResult, TextContent
 from openai_utils.model import FunctionCallItem
+
+from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
 
 __all__ = ["BootstrapHandler"]
 

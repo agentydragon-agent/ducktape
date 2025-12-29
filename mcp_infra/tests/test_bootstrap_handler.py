@@ -2,15 +2,15 @@
 
 from __future__ import annotations
 
-from agent_core.bootstrap_handler import BootstrapHandler
+import pytest
 from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
 from agent_pkg_host import InitFailedError
 from mcp.types import CallToolResult, TextContent
-from mcp_infra.exec.models import BaseExecResult, Exited
-import pytest
-
 from openai_utils.model import FunctionCallItem
+
+from mcp_infra.bootstrap_handler import BootstrapHandler
+from mcp_infra.exec.models import BaseExecResult, Exited
 
 
 @pytest.fixture

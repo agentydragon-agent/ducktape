@@ -1,0 +1,28 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_binary")
+
+py_library(
+    name = "rspcache",
+    srcs = glob(["src/rspcache/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//openai_utils:openai_utils",
+        "@pypi//fastapi",
+        "@pypi//uvicorn",
+        "@pypi//httpx",
+        "@pypi//asyncpg",
+        "@pypi//sqlalchemy",
+        "@pypi//pydantic",
+        "@pypi//typer",
+        "@pypi//canonicaljson",
+        "@pypi//openai",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_binary(
+    name = "rspcache_cli",
+    srcs = ["src/rspcache/cli.py"],
+    main = "src/rspcache/cli.py",
+    deps = [":rspcache"],
+)
