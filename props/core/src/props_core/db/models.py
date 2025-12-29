@@ -52,6 +52,7 @@ from props_core.db.snapshots import DBKnownFalsePositive, DBLocationAnchor, DBTr
 from props_core.ids import DefinitionId, SnapshotSlug, _SnapshotSlugBase
 from props_core.models.examples import ExampleKind
 from props_core.models.snapshot import BundleFilter, Source
+from props_core.models.true_positive import LineRange
 from props_core.splits import Split
 
 T = TypeVar("T", bound=BaseModel)
@@ -537,19 +538,18 @@ class TruePositiveOccurrenceORM(Base):
         return result
 
     @property
-    def files(self) -> dict[str, list[dict] | None]:
-        """Reconstruct files dict from ranges for backward compatibility.
-
-        Returns: {file_path: [{"start_line": int, "end_line": int, "note": str | None}, ...] | None}
-        """
-        result: dict[str, list[dict] | None] = {}
+    def files(self) -> dict[Path, list[LineRange] | None]:
+        """Reconstruct files dict from ranges for backward compatibility."""
+        result: dict[Path, list[LineRange]] = {}
         for range_orm in self.ranges:
-            path_str = str(range_orm.file_path)
-            if path_str not in result:
-                result[path_str] = []
-            assert result[path_str] is not None
-            result[path_str].append(
-                {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
+            if range_orm.file_path not in result:
+                result[range_orm.file_path] = []
+            result[range_orm.file_path].append(
+                LineRange(
+                    start_line=range_orm.start_line,
+                    end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
+                    note=range_orm.note,
+                )
             )
         return result
 
@@ -594,28 +594,28 @@ class FalsePositiveOccurrenceORM(Base):
     )
 
     @property
+    def relevant_files(self) -> set[Path]:
+        """Reconstruct relevant_files set for backward compatibility."""
+        return {rf.file_path for rf in self.relevant_file_orms}
+
+    @property
     def relevant_files_set(self) -> set[Path]:
-        return {Path(rf.file_path) for rf in self.relevant_file_orms}
+        """Alias for relevant_files (deprecated, use relevant_files)."""
+        return self.relevant_files
 
     @property
-    def relevant_files(self) -> list[str]:
-        """Reconstruct relevant_files list for backward compatibility."""
-        return [str(rf.file_path) for rf in self.relevant_file_orms]
-
-    @property
-    def files(self) -> dict[str, list[dict] | None]:
-        """Reconstruct files dict from ranges for backward compatibility.
-
-        Returns: {file_path: [{"start_line": int, "end_line": int, "note": str | None}, ...] | None}
-        """
-        result: dict[str, list[dict] | None] = {}
+    def files(self) -> dict[Path, list[LineRange] | None]:
+        """Reconstruct files dict from ranges for backward compatibility."""
+        result: dict[Path, list[LineRange]] = {}
         for range_orm in self.ranges:
-            path_str = str(range_orm.file_path)
-            if path_str not in result:
-                result[path_str] = []
-            assert result[path_str] is not None
-            result[path_str].append(
-                {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
+            if range_orm.file_path not in result:
+                result[range_orm.file_path] = []
+            result[range_orm.file_path].append(
+                LineRange(
+                    start_line=range_orm.start_line,
+                    end_line=range_orm.end_line if range_orm.end_line != range_orm.start_line else None,
+                    note=range_orm.note,
+                )
             )
         return result
 
