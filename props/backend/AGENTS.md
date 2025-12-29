@@ -44,14 +44,11 @@ Frontend lives in `../frontend/`.
 ## Development
 
 ```bash
-# Start backend (from props_backend/)
-direnv exec . uvicorn props_backend.app:app --reload --port 8000
+# Start all services (from props/)
+cd props && devenv up
 
-# Start frontend (from props_frontend/)
-pnpm dev
-
-# Regenerate API types after schema changes
-cd props_frontend && pnpm generate
+# Regenerate API types after schema changes (requires backend running)
+cd frontend && pnpm generate
 ```
 
 ## Key Dependencies

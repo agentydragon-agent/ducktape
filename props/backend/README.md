@@ -5,14 +5,11 @@ FastAPI backend for the props training/evaluation dashboard.
 ## Quick Start
 
 ```bash
-# Start development server
-props-backend serve --reload
-
-# Or with uvicorn directly
-uvicorn props_backend.app:app --reload
+# Start all services via devenv (from props/)
+cd props && devenv up
 ```
 
-The API will be available at `http://127.0.0.1:8000`.
+The API will be available at `http://localhost:8000`.
 
 ## API Endpoints
 

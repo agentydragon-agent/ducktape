@@ -5,21 +5,18 @@ SvelteKit-based web interface for viewing Props evaluation results.
 ## Development
 
 ```bash
-# Install dependencies
-pnpm install
+# Start all services via devenv (from props/)
+cd props && devenv up
+```
 
-# Start dev server
-pnpm dev
+For standalone commands (rarely needed):
 
-# Build for production
-pnpm build
-
-# Type check
-pnpm check
-
-# Lint & format
-pnpm lint
-pnpm format
+```bash
+pnpm install   # Install dependencies
+pnpm build     # Build for production
+pnpm check     # Type check
+pnpm lint      # Lint
+pnpm format    # Format
 ```
 
 ## OpenAPI Types
@@ -27,7 +24,7 @@ pnpm format
 Regenerate TypeScript types from backend API schema:
 
 ```bash
-pnpm generate  # Requires backend running at http://127.0.0.1:8000
+pnpm generate  # Requires backend running at http://localhost:8000
 ```
 
 ## Storybook & Visual Testing

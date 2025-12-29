@@ -198,9 +198,11 @@ name = "agent-core"
 version = "0.1.0"
 source = { editable = "agent_core" }
 dependencies = [
+    { name = "agent-pkg" },
     { name = "anyio" },
     { name = "fastmcp" },
     { name = "mcp" },
+    { name = "mcp-infra" },
     { name = "openai-utils" },
     { name = "pydantic" },
     { name = "pyhamcrest" },
@@ -223,9 +225,11 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", extras = ["testing"], marker = "extra == 'dev'" },
+    { name = "agent-pkg", editable = "agent_pkg" },
     { name = "anyio", specifier = ">=4.0" },
     { name = "fastmcp", specifier = ">=2.0" },
     { name = "mcp", specifier = ">=1.0" },
+    { name = "mcp-infra", editable = "mcp_infra" },
     { name = "mcp-infra", marker = "extra == 'testing'", editable = "mcp_infra" },
     { name = "openai-utils", editable = "openai_utils" },
     { name = "pydantic", specifier = ">=2.0" },

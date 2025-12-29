@@ -33,11 +33,23 @@
   <div
     class="flex items-center gap-1 px-2 py-1 hover:bg-gray-100 cursor-pointer text-sm {isSelected ? 'bg-blue-100' : ''}"
     style="padding-left: {indent + 8}px"
+    role="button"
+    tabindex="0"
     onclick={() => {
       if (node.is_dir) {
         toggleExpand(node.path);
       } else {
         onFileClick(node.path);
+      }
+    }}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (node.is_dir) {
+          toggleExpand(node.path);
+        } else {
+          onFileClick(node.path);
+        }
       }
     }}
   >

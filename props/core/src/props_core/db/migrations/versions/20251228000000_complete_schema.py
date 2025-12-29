@@ -1217,7 +1217,9 @@ Deduplicated by PK constraint - same files always produce same hash.'
         sa.Column("end_line", sa.Integer(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"),
+        sa.UniqueConstraint(
+            "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"
+        ),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id", "occurrence_id"],
             [

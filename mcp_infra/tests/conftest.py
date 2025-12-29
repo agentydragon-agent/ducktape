@@ -10,6 +10,7 @@ from mcp_infra.testing.fixtures import make_container_opts
 # Register mcp_infra and agent_core fixtures
 pytest_plugins = ["mcp_infra.testing.fixtures", "agent_core.testing.fixtures"]
 
+
 def pytest_runtest_setup(item: pytest.Item) -> None:
     """Skip Docker tests when Docker is not available or images are missing."""
     if item.get_closest_marker("requires_docker") is None:
@@ -24,15 +25,15 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
 
     client = None
     try:
-        client = docker.from_env()
+        client = docker.from_env()  # type: ignore[attr-defined]
         client.ping()
 
         # Check if required images are available
         try:
             client.images.get("python:3.12-slim")
-        except docker.errors.ImageNotFound:
+        except docker.errors.ImageNotFound:  # type: ignore[attr-defined]
             pytest.skip("Docker image python:3.12-slim not available (run: docker pull python:3.12-slim)")
-    except docker.errors.DockerException as exc:
+    except docker.errors.DockerException as exc:  # type: ignore[attr-defined]
         pytest.skip(f"Docker not available: {exc}")
     finally:
         if client is not None:

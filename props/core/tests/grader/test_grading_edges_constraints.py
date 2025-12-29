@@ -52,11 +52,7 @@ def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
 
     def _add(critique_issue_id: str, rationale: str = "Test edge", **kwargs):
         # Always create the ReportedIssue - caller must ensure unique issue_ids
-        make_reported_issues(
-            agent_run_id=test_critic_run.agent_run_id,
-            issue_ids=[critique_issue_id],
-            session=session,
-        )
+        make_reported_issues(agent_run_id=test_critic_run.agent_run_id, issue_ids=[critique_issue_id], session=session)
 
         edge = GradingEdge(
             grader_run_id=test_grader_run.agent_run_id,

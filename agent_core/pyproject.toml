@@ -5,6 +5,8 @@ description = "Core agent loop machinery for LLM agents with MCP tool wiring"
 requires-python = ">=3.12"
 dependencies = [
     "openai-utils",
+    "agent-pkg",
+    "mcp-infra",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -36,6 +38,7 @@ packages = ["src/agent_core"]
 
 [tool.uv.sources]
 openai-utils = { workspace = true }
+agent-pkg = { workspace = true }
 mcp-infra = { workspace = true }
 
 [tool.pytest.ini_options]

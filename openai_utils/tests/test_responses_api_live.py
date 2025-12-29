@@ -1,3 +1,5 @@
+"""Live tests for OpenAI Responses API (streaming and non-streaming)."""
+
 import os
 from typing import Any, cast
 

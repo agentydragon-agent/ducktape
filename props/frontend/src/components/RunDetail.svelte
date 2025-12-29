@@ -120,9 +120,7 @@
 
     const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
     const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
-    const total_credit = edges
-      .filter((e) => e.target.kind === 'tp')
-      .reduce((sum, e) => sum + e.target.credit, 0);
+    const total_credit = edges.filter((e) => e.target.kind === 'tp').reduce((sum, e) => sum + e.target.credit, 0);
 
     // Recall denominator needs to come from example - we'll pass it separately
     return { tp_count, fp_count, total_credit };
