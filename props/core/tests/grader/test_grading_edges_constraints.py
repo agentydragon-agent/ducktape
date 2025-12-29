@@ -13,7 +13,7 @@ from props_core.db.session import get_session
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from tests.conftest import make_critic_run, make_grader_run
+from tests.conftest import make_critic_run, make_grader_run, make_reported_issues
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -45,9 +45,19 @@ def test_grader_run(session, test_critic_run):
 
 @pytest.fixture
 def add_edge(session, test_grader_run, test_critic_run, example_subtract_orm):
-    """Fixture factory for creating grading edges."""
+    """Fixture factory for creating grading edges.
+
+    Always creates a fresh ReportedIssue then the edge. Caller must ensure issue_id uniqueness.
+    """
 
     def _add(critique_issue_id: str, rationale: str = "Test edge", **kwargs):
+        # Always create the ReportedIssue - caller must ensure unique issue_ids
+        make_reported_issues(
+            agent_run_id=test_critic_run.agent_run_id,
+            issue_ids=[critique_issue_id],
+            session=session,
+        )
+
         edge = GradingEdge(
             grader_run_id=test_grader_run.agent_run_id,
             critique_run_id=test_critic_run.agent_run_id,
@@ -123,11 +133,15 @@ def test_edge_credit_negative_invalid(session, add_edge, tp_occurrence_single):
 
 
 def test_edge_credit_above_one_invalid(session, add_edge, tp_occurrence_single):
-    """Invalid: credit cannot exceed 1.0."""
+    """Invalid: credit cannot exceed 1.0.
+
+    Note: The credit_sum trigger catches this before the CHECK constraint,
+    so we get a RaiseException (via psycopg2.errors) rather than IntegrityError.
+    """
     tp_id, occ_id = tp_occurrence_single
     add_edge("issue-001", tp_id=tp_id, tp_occurrence_id=occ_id, credit=1.5, rationale="Invalid: credit > 1.0")
 
-    with pytest.raises(IntegrityError):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
 
@@ -140,7 +154,7 @@ def test_credit_sum_trigger_enforces_limit_tp(session, add_edge, tp_occurrence_s
 
     add_edge("issue-002", tp_id=tp_id, tp_occurrence_id=occ_id, credit=0.5, rationale="Second match")
 
-    with pytest.raises(Exception, match=r"Credit sum would exceed 1\.0"):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()
 
@@ -163,6 +177,6 @@ def test_credit_sum_trigger_enforces_limit_fp(session, add_edge, fp_occurrence):
 
     add_edge("issue-002", fp_id=fp_id, fp_occurrence_id=fp_occ, credit=0.3, rationale="Second FP match")
 
-    with pytest.raises(Exception, match=r"Credit sum would exceed 1\.0"):
+    with pytest.raises(Exception, match=r"Credit sum .* would exceed 1\.0"):
         session.commit()
     session.rollback()

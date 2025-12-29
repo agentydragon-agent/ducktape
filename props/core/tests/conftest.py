@@ -1,5 +1,11 @@
 """Shared test fixtures for props tests."""
 
+# Register shared fixtures from other packages
+pytest_plugins = [
+    "agent_core.testing.fixtures",  # make_step_runner, responses_factory, etc.
+    "mcp_infra.testing.fixtures",   # async_docker_client, make_compositor, etc.
+]
+
 from collections.abc import AsyncGenerator, Callable, Generator
 import hashlib
 import inspect
@@ -1339,7 +1345,9 @@ def test_trivial_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
     Use this instead of creating synthetic snapshots.
     """
     with get_session() as session:
-        return session.query(Snapshot).filter_by(slug="test-fixtures/train1").one()
+        snapshot = session.query(Snapshot).filter_by(slug="test-fixtures/train1").one()
+        session.expunge(snapshot)
+        return snapshot
 
 
 @pytest.fixture
@@ -1350,7 +1358,9 @@ def test_validation_snapshot(synced_test_db: DatabaseConfig) -> Snapshot:
     Use this instead of creating synthetic snapshots.
     """
     with get_session() as session:
-        return session.query(Snapshot).filter_by(slug="test-fixtures/valid1").one()
+        snapshot = session.query(Snapshot).filter_by(slug="test-fixtures/valid1").one()
+        session.expunge(snapshot)
+        return snapshot
 
 
 @pytest.fixture

@@ -1206,6 +1206,7 @@ Deduplicated by PK constraint - same files always produce same hash.'
     # Occurrence ranges table (shared by TPs and FPs)
     op.create_table(
         "occurrence_ranges",
+        sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("snapshot_slug", sa.String(), nullable=False),
         sa.Column("tp_id", sa.String(), nullable=True),
         sa.Column("fp_id", sa.String(), nullable=True),
@@ -1215,7 +1216,8 @@ Deduplicated by PK constraint - same files always produce same hash.'
         sa.Column("start_line", sa.Integer(), nullable=False),
         sa.Column("end_line", sa.Integer(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.PrimaryKeyConstraint("snapshot_slug", "occurrence_id", "file_path", "range_id"),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id", "occurrence_id"],
             [

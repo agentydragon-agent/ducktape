@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from props_core.db.examples import Example
 
 from sqlalchemy import (
+    CheckConstraint,
     Enum,
     FetchedValue,
     ForeignKey,
@@ -582,12 +583,15 @@ class OccurrenceRangeORM(Base):
 
     __tablename__ = "occurrence_ranges"
 
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    # Auto-increment PK; uniqueness enforced by uq_occurrence_ranges constraint
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), nullable=False)
+    # Exactly one of tp_id/fp_id is set (exclusive arc); the other is NULL
     tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
-    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
-    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, nullable=False)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), nullable=False)
+    range_id: Mapped[int] = mapped_column(Integer, nullable=False)
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -616,6 +620,11 @@ class OccurrenceRangeORM(Base):
             ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
             ondelete="CASCADE",
         ),
+        UniqueConstraint(
+            "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id",
+            name="uq_occurrence_ranges",
+        ),
+        CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
     )
 
     # Relationships - use foreign() to specify which columns to join on

@@ -44,7 +44,7 @@ class TestMatchableOccurrences:
                 FROM matchable_occurrences(:snapshot, ARRAY['subtract.py'])
                 WHERE tp_id IS NOT NULL
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         tp_ids = {row.tp_id for row in result}
@@ -60,7 +60,7 @@ class TestMatchableOccurrences:
                 FROM matchable_occurrences(:snapshot, ARRAY['add.py'])
                 WHERE tp_id IS NOT NULL
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         tp_ids = {row.tp_id for row in result}
@@ -78,7 +78,7 @@ class TestMatchableOccurrences:
                 FROM matchable_occurrences(:snapshot, ARRAY['subtract.py', 'add.py'])
                 WHERE tp_id IS NOT NULL
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         tp_ids = {row.tp_id for row in result}
@@ -95,7 +95,7 @@ class TestMatchableOccurrences:
                 SELECT tp_id FROM true_positive_occurrences
                 WHERE snapshot_slug = :snapshot AND match_filter_hash IS NULL
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         if not cross_cutting:
@@ -109,7 +109,7 @@ class TestMatchableOccurrences:
                 SELECT tp_id FROM matchable_occurrences(:snapshot, ARRAY['nonexistent.py'])
                 WHERE tp_id IS NOT NULL
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         matched_ids = {row.tp_id for row in result}
@@ -127,7 +127,7 @@ class TestMatchableOccurrences:
             text("""
                 SELECT COUNT(*) FROM matchable_occurrences(:snapshot, ARRAY['subtract.py'])
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).scalar()
 
         # Count matchable from all files
@@ -138,7 +138,7 @@ class TestMatchableOccurrences:
                     ARRAY['subtract.py', 'add.py', 'multiply.py', 'divide.py']
                 )
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).scalar()
 
         # Count total occurrences (what we'd get without filtering)
@@ -148,7 +148,7 @@ class TestMatchableOccurrences:
                     (SELECT COUNT(*) FROM true_positive_occurrences WHERE snapshot_slug = :snapshot) +
                     (SELECT COUNT(*) FROM false_positive_occurrences WHERE snapshot_slug = :snapshot)
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).scalar()
 
         print(f"Single file (subtract.py): {single_file} matchable")
@@ -165,7 +165,7 @@ class TestMatchableOccurrences:
                 SELECT tp_id, tp_occurrence_id, fp_id, fp_occurrence_id
                 FROM matchable_occurrences(:snapshot, ARRAY[]::VARCHAR[])
             """),
-            {"snapshot": test_trivial_snapshot},
+            {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
 
         # Check that all returned occurrences are cross-cutting
@@ -177,7 +177,7 @@ class TestMatchableOccurrences:
                         FROM true_positive_occurrences
                         WHERE snapshot_slug = :snapshot AND tp_id = :tp_id AND occurrence_id = :occ_id
                     """),
-                    {"snapshot": test_trivial_snapshot, "tp_id": row.tp_id, "occ_id": row.tp_occurrence_id},
+                    {"snapshot": test_trivial_snapshot.slug, "tp_id": row.tp_id, "occ_id": row.tp_occurrence_id},
                 ).scalar()
                 assert is_cross_cutting, (
                     f"TP {row.tp_id}/{row.tp_occurrence_id} matched from empty array but isn't cross-cutting"

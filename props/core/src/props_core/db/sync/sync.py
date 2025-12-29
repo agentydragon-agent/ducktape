@@ -513,10 +513,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     for file_path, ranges in occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
+                                # FK columns (snapshot_slug, tp_id, occurrence_id) populated by relationship
                                 orm_occ.ranges.append(
                                     OccurrenceRangeORM(
-                                        snapshot_slug=issue.snapshot_slug,
-                                        occurrence_id=occ.occurrence_id,
                                         file_path=file_path,
                                         range_id=range_id,
                                         start_line=line_range.start_line,
@@ -561,10 +560,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         for file_path, ranges in occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
+                                    # FK columns (snapshot_slug, tp_id, occurrence_id) populated by relationship
                                     orm_occ.ranges.append(
                                         OccurrenceRangeORM(
-                                            snapshot_slug=issue.snapshot_slug,
-                                            occurrence_id=occ.occurrence_id,
                                             file_path=file_path,
                                             range_id=range_id,
                                             start_line=line_range.start_line,
@@ -603,14 +601,12 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         ),
                     )
                     session.add(fp_orm_occ)
-                    # Add ranges via relationship
+                    # Add ranges via relationship (FK columns populated by relationship)
                     for file_path, ranges in fp_occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
                                 fp_orm_occ.ranges.append(
                                     OccurrenceRangeORM(
-                                        snapshot_slug=fp.snapshot_slug,
-                                        occurrence_id=fp_occ.occurrence_id,
                                         file_path=file_path,
                                         range_id=range_id,
                                         start_line=line_range.start_line,
@@ -660,14 +656,12 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             ),
                         )
                         session.add(fp_orm_occ)
-                        # Add ranges via relationship
+                        # Add ranges via relationship (FK columns populated by relationship)
                         for file_path, ranges in fp_occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
                                     fp_orm_occ.ranges.append(
                                         OccurrenceRangeORM(
-                                            snapshot_slug=fp.snapshot_slug,
-                                            occurrence_id=fp_occ.occurrence_id,
                                             file_path=file_path,
                                             range_id=range_id,
                                             start_line=line_range.start_line,
