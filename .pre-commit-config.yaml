@@ -121,7 +121,6 @@ repos:
           - "jinja2>=3.1"
           - alembic
           - aiodocker
-          # Type stubs
           - types-psycopg2
           - types-PyYAML
 
@@ -304,6 +303,7 @@ repos:
           - types-jsonschema
           - pandas-stubs
 
+      # homeassistant: Home Assistant custom component
       - id: mypy
         alias: mypy-homeassistant
         name: mypy (homeassistant iaqi)

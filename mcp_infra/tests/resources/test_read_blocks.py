@@ -1,6 +1,7 @@
 """Tests for block-level resource reading with truncation markers."""
 
 from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ReadBlocksArgs
 
 
@@ -13,7 +14,7 @@ async def test_read_blocks_single_text_block_full(compositor, typed_resources_cl
     async def test_txt() -> str:
         return "Hello, World!"
 
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Act: read with default max_bytes (100KB, way more than needed)
     result = await typed_resources_client.read_blocks(
@@ -36,7 +37,7 @@ async def test_read_blocks_truncate_at_end(compositor, typed_resources_client):
     async def long_txt() -> str:
         return long_text
 
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Act: read with max_bytes=50
     result = await typed_resources_client.read_blocks(
@@ -65,7 +66,7 @@ async def test_read_blocks_truncate_within_single_large_block(compositor, typed_
         # Create a 100-byte block
         return "x" * 100
 
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Act: read with max_bytes=40 (partial block)
     result = await typed_resources_client.read_blocks(

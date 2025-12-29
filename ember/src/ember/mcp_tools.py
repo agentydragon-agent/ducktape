@@ -17,6 +17,7 @@ from pydantic import ConfigDict
 from mcp_infra.compositor.server import Compositor, Mounted
 from mcp_infra.enhanced.flat_mixin import FlatModelMixin
 from mcp_infra.exec.direct import DirectExecServer
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 from .config import EnforcedSleepUntilUserMessagePolicy, LegacySleepUntilUserMessagePolicy, SleepUntilUserMessagePolicy
@@ -100,8 +101,8 @@ class EmberCompositor(Compositor):
         ember_server = _create_ember_sleep_server(
             sleep_callback=self._sleep_callback, status_provider=self._status_provider, sleep_policy=self._sleep_policy
         )
-        self.ember = await self.mount_inproc("ember", ember_server)
-        self.exec = await self.mount_inproc("exec", DirectExecServer(default_cwd=self._workspace_path))
+        self.ember = await self.mount_inproc(MCPMountPrefix("ember"), ember_server)
+        self.exec = await self.mount_inproc(MCPMountPrefix("exec"), DirectExecServer(default_cwd=self._workspace_path))
         return self
 
 

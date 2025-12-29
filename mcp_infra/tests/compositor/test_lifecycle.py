@@ -60,7 +60,7 @@ async def test_mount_after_close_raises():
     # Try to mount after close
     server = FastMCP("backend")
     with pytest.raises(RuntimeError, match=r"compositor .* is closed"):
-        await comp.mount_inproc("backend", server)
+        await comp.mount_inproc(MCPMountPrefix("backend"), server)
 
 
 async def test_cleanup_removes_non_pinned_servers():
@@ -75,9 +75,9 @@ async def test_cleanup_removes_non_pinned_servers():
     # Note: Using manual Compositor() instead of fixture because this test needs to
     # verify state AFTER __aexit__(), which happens during fixture teardown
     async with Compositor() as comp:
-        await comp.mount_inproc("backend1", backend1)
-        await comp.mount_inproc("backend2", backend2)
-        await comp.mount_inproc("pinned", pinned, pinned=True)
+        await comp.mount_inproc(MCPMountPrefix("backend1"), backend1)
+        await comp.mount_inproc(MCPMountPrefix("backend2"), backend2)
+        await comp.mount_inproc(MCPMountPrefix("pinned"), pinned, pinned=True)
 
         # Before close: all mounted
         entries = await comp.server_entries()
@@ -117,7 +117,7 @@ async def test_mount_state_transitions(compositor, make_simple_mcp):
     # Mount prefix for dict access
     backend_prefix = MCPMountPrefix("backend")
 
-    await compositor.mount_inproc("backend", backend)
+    await compositor.mount_inproc(MCPMountPrefix("backend"), backend)
 
     mount = compositor._mounts[backend_prefix]
     # After successful mount: ACTIVE
@@ -139,7 +139,7 @@ async def test_mount_cleanup_is_idempotent(compositor, make_simple_mcp):
     """Test that mount cleanup can be called multiple times safely."""
     backend = make_simple_mcp
 
-    await compositor.mount_inproc("backend", backend)
+    await compositor.mount_inproc(MCPMountPrefix("backend"), backend)
     mount = compositor._mounts["backend"]
 
     # First cleanup
@@ -159,7 +159,7 @@ async def test_accessing_inactive_mount_raises(compositor, make_simple_mcp):
     """Test that accessing proxy/client on inactive mount raises."""
     backend = make_simple_mcp
 
-    await compositor.mount_inproc("backend", backend)
+    await compositor.mount_inproc(MCPMountPrefix("backend"), backend)
     mount = compositor._mounts["backend"]
 
     # Before cleanup: accessible
@@ -186,7 +186,7 @@ async def test_exception_in_body_still_cleans_up(make_simple_mcp):
     comp = Compositor()
     try:
         async with comp:
-            await comp.mount_inproc("backend", backend)
+            await comp.mount_inproc(MCPMountPrefix("backend"), backend)
 
             # Before exception: mounted
             entries = await comp.server_entries()
@@ -218,7 +218,7 @@ async def test_mount_failure_does_not_leak(compositor):
         pytest.raises(RuntimeError, match="Simulated mount failure"),
     ):
         # Mount should fail
-        await compositor.mount_inproc("failing", failing_server)
+        await compositor.mount_inproc(MCPMountPrefix("failing"), failing_server)
 
     # Server should NOT be registered
     entries = await compositor.server_entries()
@@ -232,8 +232,8 @@ async def test_close_continues_on_per_server_failure(make_simple_mcp):
     backend2 = make_simple_mcp
 
     async with Compositor() as comp:
-        await comp.mount_inproc("backend1", backend1)
-        await comp.mount_inproc("backend2", backend2)
+        await comp.mount_inproc(MCPMountPrefix("backend1"), backend1)
+        await comp.mount_inproc(MCPMountPrefix("backend2"), backend2)
 
         # Break one mount's cleanup
         mount1 = comp._mounts["backend1"]
@@ -264,7 +264,7 @@ async def test_concurrent_mount_operations_safe(compositor, make_simple_mcp):
         """Mount multiple servers concurrently."""
         tasks = []
         for i in range(count):
-            name = f"{prefix}_{i}"
+            name = MCPMountPrefix(f"{prefix}_{i}")
             server = make_simple_mcp
             tasks.append(comp.mount_inproc(name, server))
         await asyncio.gather(*tasks)
@@ -283,7 +283,7 @@ async def test_get_child_client_validates_state(compositor, make_simple_mcp):
     """Test that get_child_client validates mount state."""
     backend = make_simple_mcp
 
-    await compositor.mount_inproc("backend", backend)
+    await compositor.mount_inproc(MCPMountPrefix("backend"), backend)
 
     # Active mount: returns client
     client = compositor.get_child_client("backend")
@@ -307,7 +307,7 @@ async def test_pinned_server_survives_close(make_simple_mcp):
     # Note: Using manual Compositor() instead of fixture because this test needs to
     # verify state AFTER __aexit__(), which happens during fixture teardown
     async with Compositor() as comp:
-        await comp.mount_inproc("pinned", pinned, pinned=True)
+        await comp.mount_inproc(MCPMountPrefix("pinned"), pinned, pinned=True)
 
         # Verify mounted
         entries = await comp.server_entries()
@@ -343,7 +343,7 @@ async def test_compositor_warns_on_leak(make_simple_mcp):
 
     # Create compositor without context manager
     comp = Compositor()
-    await comp.mount_inproc("backend", backend)
+    await comp.mount_inproc(MCPMountPrefix("backend"), backend)
 
     # Verify the compositor is in a state that would trigger a warning
     assert comp._state == CompositorState.CREATED  # Never entered context

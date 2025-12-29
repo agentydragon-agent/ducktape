@@ -11,7 +11,7 @@ from mcp_infra.prefix import MCPMountPrefix
 async def test_admin_server_detach(compositor, compositor_admin_tool, make_simple_mcp):
     """Test CompositorAdminServer.detach_server() removes a mounted server."""
     # Mount backend server
-    await compositor.mount_inproc("backend", make_simple_mcp)
+    await compositor.mount_inproc(MCPMountPrefix("backend"), make_simple_mcp)
 
     # Verify backend is mounted
     states = await compositor.server_entries()

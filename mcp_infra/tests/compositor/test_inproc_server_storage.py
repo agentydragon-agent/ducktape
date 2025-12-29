@@ -18,7 +18,7 @@ async def test_mount_stores_inproc_server(compositor):
     """Test that Mount stores the server instance when setup_inproc() is called."""
     server = FastMCP("test-server")
 
-    await compositor.mount_inproc("runtime", server)
+    await compositor.mount_inproc(MCPMountPrefix("runtime"), server)
 
     # Access the mount directly
     mount = compositor._mounts.get("runtime")
@@ -30,7 +30,7 @@ async def test_mount_inproc_server_returns_server(compositor):
     """Test that Mount.inproc_server property returns the stored server."""
     server = FastMCP("test-server")
 
-    await compositor.mount_inproc("runtime", server)
+    await compositor.mount_inproc(MCPMountPrefix("runtime"), server)
 
     mount = compositor._mounts["runtime"]
     result = mount.inproc_server
@@ -54,8 +54,8 @@ async def test_compositor_get_inproc_server_returns_server(compositor):
     server1 = FastMCP("server1")
     server2 = FastMCP("server2")
 
-    await compositor.mount_inproc("runtime", server1)
-    await compositor.mount_inproc("docker", server2)
+    await compositor.mount_inproc(MCPMountPrefix("runtime"), server1)
+    await compositor.mount_inproc(MCPMountPrefix("docker"), server2)
 
     # Get server by prefix
     result1 = compositor.get_inproc_server("runtime")
@@ -84,7 +84,7 @@ async def test_compositor_get_inproc_server_none_for_external(compositor):
     server = FastMCP("test-server")
 
     # Mount an in-process server
-    await compositor.mount_inproc("inproc", server)
+    await compositor.mount_inproc(MCPMountPrefix("inproc"), server)
 
     # Verify in-process mount has inproc_server
     mount = compositor._mounts["inproc"]
@@ -97,7 +97,7 @@ async def test_compositor_get_inproc_server_multiple_servers(compositor):
     """Test get_inproc_server with multiple mounted servers of mixed types."""
     inproc_server = FastMCP("inproc")
 
-    await compositor.mount_inproc("inproc1", inproc_server)
+    await compositor.mount_inproc(MCPMountPrefix("inproc1"), inproc_server)
 
     # Get the in-process server
     result = compositor.get_inproc_server("inproc1")
@@ -112,7 +112,7 @@ async def test_mount_inproc_server_persists_through_lifecycle(compositor):
     """Test that inproc_server reference persists through mount lifecycle."""
     server = FastMCP("persistent")
 
-    await compositor.mount_inproc("persistent", server)
+    await compositor.mount_inproc(MCPMountPrefix("persistent"), server)
 
     # Check at various stages
     mount = compositor._mounts["persistent"]
@@ -129,7 +129,7 @@ async def test_inproc_server_accessor_is_synchronous(compositor):
     """Test that inproc_server and get_inproc_server are synchronous (not async)."""
     server = FastMCP("sync-test")
 
-    await compositor.mount_inproc("sync", server)
+    await compositor.mount_inproc(MCPMountPrefix("sync"), server)
 
     # These should be synchronous property/method calls
     mount = compositor._mounts["sync"]
@@ -149,7 +149,7 @@ async def test_inproc_server_available_before_proxy_use(compositor):
         """Test tool."""
         return "test"
 
-    await compositor.mount_inproc("immediate", server)
+    await compositor.mount_inproc(MCPMountPrefix("immediate"), server)
 
     # Server instance should be available immediately
     retrieved = compositor.get_inproc_server("immediate")
@@ -178,7 +178,7 @@ async def test_pinned_inproc_server_persists_after_close(compositor):
     """Test that pinned in-process servers remain accessible after close."""
     server = FastMCP("pinned")
 
-    await compositor.mount_inproc("pinned", server, pinned=True)
+    await compositor.mount_inproc(MCPMountPrefix("pinned"), server, pinned=True)
 
     # Available during context
     assert compositor.get_inproc_server("pinned") is server
@@ -194,9 +194,9 @@ async def test_multiple_inproc_servers_independent(compositor):
     server2 = FastMCP("server2")
     server3 = FastMCP("server3")
 
-    await compositor.mount_inproc("s1", server1)
-    await compositor.mount_inproc("s2", server2)
-    await compositor.mount_inproc("s3", server3)
+    await compositor.mount_inproc(MCPMountPrefix("s1"), server1)
+    await compositor.mount_inproc(MCPMountPrefix("s2"), server2)
+    await compositor.mount_inproc(MCPMountPrefix("s3"), server3)
 
     # Each prefix returns its own server
     assert compositor.get_inproc_server("s1") is server1
@@ -215,9 +215,9 @@ async def test_compositor_get_inproc_servers_returns_all(compositor):
     server2 = FastMCP("server2")
     server3 = FastMCP("server3")
 
-    await compositor.mount_inproc("s1", server1)
-    await compositor.mount_inproc("s2", server2)
-    await compositor.mount_inproc("s3", server3)
+    await compositor.mount_inproc(MCPMountPrefix("s1"), server1)
+    await compositor.mount_inproc(MCPMountPrefix("s2"), server2)
+    await compositor.mount_inproc(MCPMountPrefix("s3"), server3)
 
     servers = await compositor.get_inproc_servers()
 
@@ -246,7 +246,7 @@ async def test_compositor_get_inproc_servers_excludes_external():
     async with Compositor() as comp:
         # Mount one in-process server
         inproc_server = FastMCP("inproc")
-        await comp.mount_inproc("inproc", inproc_server)
+        await comp.mount_inproc(MCPMountPrefix("inproc"), inproc_server)
 
         # Simulate an external mount by creating a mount with spec
         # (Real external mounts would go through mount_server, but that requires actual servers)

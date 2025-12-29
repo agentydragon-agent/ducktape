@@ -69,6 +69,7 @@ from agent_core.agent import Agent
 from agent_core.loop_control import RequireAnyTool
 from agent_core.transcript_handler import TranscriptHandler
 from mcp_infra.compositor.server import Compositor
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import OpenAIModelProto, UserMessage
 
 # TODO: consider showing grader text Assistant messages, not just code
@@ -83,7 +84,7 @@ from openai_utils.model import OpenAIModelProto, UserMessage
 logger = logging.getLogger(__name__)
 
 # MCP mount prefix for prompt feedback server
-PROMPT_FEEDBACK_MOUNT_PREFIX = "prompt_feedback"
+PROMPT_FEEDBACK_MOUNT_PREFIX = MCPMountPrefix("prompt_feedback")
 
 # Global trackers
 score_tracker = ScoreEvolutionTracker()

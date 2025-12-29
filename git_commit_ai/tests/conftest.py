@@ -7,6 +7,8 @@ import pytest
 
 from . import git_repo_utils
 
+pytest_plugins = ["mcp_infra.testing.fixtures"]
+
 
 @pytest.fixture
 def author_name() -> str:

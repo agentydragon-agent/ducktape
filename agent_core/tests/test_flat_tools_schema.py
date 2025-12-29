@@ -27,6 +27,7 @@ from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing import AssistantMessage, CapturingOpenAIModel, MakeCall
 from mcp_infra.enhanced import EnhancedFastMCP
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import SystemMessage
 
 # Test tool name constant
@@ -164,7 +165,7 @@ async def test_agent_compositor_flat_tools_request_schema(
     print("PHASE 1: SERVER_A ONLY")
 
     # Mount only server_a for phase 1 and capture Mounted object
-    mounted_a = await compositor.mount_inproc("server_a", server_a)
+    mounted_a = await compositor.mount_inproc(MCPMountPrefix("server_a"), server_a)
 
     runner_phase1 = make_step_runner(
         steps=[
@@ -200,7 +201,7 @@ async def test_agent_compositor_flat_tools_request_schema(
     print("PHASE 2: SERVER_A + SERVER_B")
 
     # Mount server_b for phase 2 (server_a already mounted)
-    await compositor.mount_inproc("server_b", server_b)
+    await compositor.mount_inproc(MCPMountPrefix("server_b"), server_b)
 
     runner_phase2 = make_step_runner(
         steps=[

@@ -38,6 +38,7 @@ from mcp_infra.display import DisplayEventsHandler
 from mcp_infra.exec.bwrap import BwrapExecServer
 from mcp_infra.exec.direct import DirectExecServer
 from mcp_infra.exec.docker.server import ContainerExecServer
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.types import NetworkMode
 from openai_utils.model import OpenAIModelProto, SystemMessage, UserMessage
 
@@ -83,7 +84,7 @@ class OpenAIRunner(AgentRunner):
         # Enter Compositor into exit stack for proper cleanup
         comp = await self._exit_stack.enter_async_context(Compositor())
         for name, factory in server_factories.items():
-            await comp.mount_inproc(name, factory(None))
+            await comp.mount_inproc(MCPMountPrefix(name), factory(None))
         # Per-run transcript directory
         run_dir = Path.cwd() / "logs" / "agent" / "openai_runner"
         run_dir = run_dir / f"run_{int(time.time())}_{os.getpid()}"

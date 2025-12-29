@@ -422,9 +422,11 @@ class ParallelTaskRunner:
     async def _update_loop(self):
         """Update the display periodically."""
         while not (self.ai_state.done and self.precommit_state.done):
-            # Cancel AI if pre-commit failed
+            # Cancel the other task if one fails - no point continuing
             if self.precommit_state.status == TaskStatus.FAILED:
                 self.ai_state.cancel()
+            if self.ai_state.status == TaskStatus.FAILED:
+                self.precommit_state.cancel()
             self._print_status_line()  # Update status line
             await asyncio.sleep(0.1)
         self._print_status_line()  # Final update with newline

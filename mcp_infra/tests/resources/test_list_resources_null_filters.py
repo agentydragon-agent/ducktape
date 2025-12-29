@@ -17,7 +17,7 @@ from mcp_infra.testing.notifications import enable_resources_caps
 async def test_list_resources_with_null_server_filter(compositor, origin_with_recorder, typed_resources_client):
     """Test that server=None lists resources from all servers."""
     origin, _ = origin_with_recorder
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # List resources with explicit server=None (should list all)
     result = await typed_resources_client.list_resources(ResourcesListArgs(server=None, uri_prefix=None))
@@ -36,7 +36,7 @@ async def test_list_resources_with_null_server_filter(compositor, origin_with_re
 async def test_list_resources_with_no_args_uses_defaults(compositor, origin_with_recorder, typed_resources_client):
     """Test that passing explicit None values works (fields are required but accept None)."""
     origin, _ = origin_with_recorder
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # List resources with explicit None for both filters
     result = await typed_resources_client.list_resources(ResourcesListArgs(server=None, uri_prefix=None))
@@ -50,12 +50,12 @@ async def test_list_resources_with_no_args_uses_defaults(compositor, origin_with
 async def test_list_resources_filters_by_server_when_provided(compositor, origin_with_recorder, typed_resources_client):
     """Test that server filter works when a specific server name is provided."""
     origin, _ = origin_with_recorder
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Create a second server without resources
 
     other = EnhancedFastMCP("other")
-    await compositor.mount_inproc("other", other)
+    await compositor.mount_inproc(MCPMountPrefix("other"), other)
 
     # Filter by specific server
     result_origin = await typed_resources_client.list_resources(
@@ -89,7 +89,7 @@ async def test_list_resources_with_uri_prefix_filter(compositor, typed_resources
         return "baz"
 
     enable_resources_caps(server, subscribe=False)
-    await compositor.mount_inproc("test", server)
+    await compositor.mount_inproc(MCPMountPrefix("test"), server)
 
     # List all resources (no filter)
     all_resources = await typed_resources_client.list_resources(

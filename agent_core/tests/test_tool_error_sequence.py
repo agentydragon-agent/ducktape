@@ -4,6 +4,7 @@ from hamcrest import has_entries
 import pytest
 
 from agent_core.testing import FAIL_TOOL_NAME, assert_function_call_output_structured
+from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
@@ -28,7 +29,7 @@ async def test_app_level_error_payload_surfaced_in_structured_content(
     Note: This tests the {"ok": False, "error": "..."} pattern in structuredContent,
     NOT the MCP-level isError flag. For MCP-level error testing, see test_tool_error_continuation.
     """
-    mounted = await compositor.mount_inproc("editor", error_payload_server)
+    mounted = await compositor.mount_inproc(MCPMountPrefix("editor"), error_payload_server)
 
     agent, _client = await make_test_agent(
         compositor_client,

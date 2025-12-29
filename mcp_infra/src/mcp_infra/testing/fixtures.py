@@ -23,6 +23,7 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerOptions
 from mcp_infra.notifications.buffer import NotificationsBuffer
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.resources.server import ResourcesServer
 from mcp_infra.stubs.resources_stub import ResourcesServerStub
 from mcp_infra.stubs.typed_stubs import TypedClient
@@ -160,7 +161,7 @@ def make_compositor():
     async def _open(servers: dict[str, FastMCP]):
         async with Compositor() as comp:
             for name, srv in servers.items():
-                await comp.mount_inproc(name, srv)
+                await comp.mount_inproc(MCPMountPrefix(name), srv)
             async with Client(comp) as sess:
                 yield sess, comp
 
@@ -180,7 +181,7 @@ def make_buffered_client():
     async def _open(servers: dict[str, FastMCP]):
         async with Compositor(version="1.0.0-test") as comp:
             for name, srv in servers.items():
-                await comp.mount_inproc(name, srv)
+                await comp.mount_inproc(MCPMountPrefix(name), srv)
             buf = NotificationsBuffer(compositor=comp)
             async with Client(comp, message_handler=buf.handler) as sess:
                 yield sess, comp, buf

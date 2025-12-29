@@ -10,6 +10,7 @@ from hamcrest import assert_that, contains_string, has_entries
 
 from agent_core.loop_control import RequireAnyTool
 from agent_core.testing import assert_function_call_output_structured
+from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.simple_servers import SendMessageInput
 
 
@@ -32,7 +33,7 @@ async def test_tool_error_continues_turn(
     5. Successfully complete
     """
     # Mount validation server and capture Mounted object
-    mounted_validator = await compositor.mount_inproc("validator", validation_server)
+    mounted_validator = await compositor.mount_inproc(MCPMountPrefix("validator"), validation_server)
 
     # Simulate the agent trying with wrong mime, then correcting itself
     seq = [

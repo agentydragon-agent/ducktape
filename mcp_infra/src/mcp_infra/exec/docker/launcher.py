@@ -55,7 +55,7 @@ async def main(
         try:
             parsed_binds = BindMount.parse_binds(binds)
         except ValueError as e:
-            raise typer.BadParameter(str(e))
+            raise typer.BadParameter(str(e)) from e
         labels_dict = _parse_labels(label)
 
         opts = ContainerOptions(

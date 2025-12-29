@@ -303,7 +303,7 @@ class _PolicyGatewayMiddleware(Middleware):
                     message=POLICY_EVALUATOR_ERROR_MSG,
                     data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "reason": f"{type(e).__name__}: {e}"},
                 )
-            )
+            ) from e
 
         logger.debug("Policy decision: %s → %s (%s)", name, decision, rationale or "")
 
@@ -331,7 +331,7 @@ class _PolicyGatewayMiddleware(Middleware):
                             message=POLICY_BACKEND_RESERVED_MISUSE_MSG,
                             data={POLICY_GATEWAY_STAMP_KEY: True, "name": name, "backend_code": "unknown"},
                         )
-                    )
+                    ) from e
                 raise
             finally:
                 self._inflight.pop(call_id, None)

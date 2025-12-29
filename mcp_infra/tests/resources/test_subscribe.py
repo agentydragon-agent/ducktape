@@ -18,7 +18,7 @@ async def test_client_resource_subscribe_and_unsubscribe(compositor, typed_resou
     async def _foo_bar() -> str:
         return "ok"
 
-    await compositor.mount_inproc("origin", origin)
+    await compositor.mount_inproc(MCPMountPrefix("origin"), origin)
 
     # Subscribe to the resource and then unsubscribe
     await typed_resources_client.subscribe(

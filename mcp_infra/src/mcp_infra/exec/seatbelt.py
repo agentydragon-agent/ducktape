@@ -12,7 +12,6 @@ from fastmcp.tools import FunctionTool
 import mcp.types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field
 
-from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.exec.models import (
     BaseExecResult,
@@ -242,21 +241,6 @@ class SeatbeltExecServer(EnhancedFastMCP):
             return [validate_and_encode_image(p.read_bytes(), input.path)]
 
         self.read_image_tool = self.flat_model()(read_image)
-
-
-async def attach_seatbelt_exec(comp: Compositor, *, name: str = SERVER_NAME):
-    """Attach seatbelt exec server to compositor.
-
-    Args:
-        comp: Compositor to mount server on
-        name: Server name
-
-    Returns:
-        The created server instance
-    """
-    server = SeatbeltExecServer()
-    await comp.mount_inproc(name, server)
-    return server
 
 
 def main() -> None:
