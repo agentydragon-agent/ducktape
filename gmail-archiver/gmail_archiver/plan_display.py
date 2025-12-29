@@ -31,6 +31,20 @@ class Displayable(Protocol):
         """Format the value for a given column key."""
         ...
 
+    @classmethod
+    def hide_subject(cls) -> bool:
+        """Return True to hide Subject column.
+
+        Only return True when display_columns() fully captures all information
+        from the email subject. The Subject column should be hidden ONLY when
+        the custom columns provide complete structured representation of what
+        the subject contained - hiding it must not lose information.
+
+        Example: AliExpress subject "Order 12345: delivered" is fully captured
+        by Order ID + Status columns, so hide_subject() returns True.
+        """
+        return False
+
 
 def gmail_link(message_id: str) -> str:
     """Generate Rich markup hyperlink to Gmail web UI."""
@@ -38,10 +52,15 @@ def gmail_link(message_id: str) -> str:
     return f"[link={url}]{message_id}[/link]"
 
 
-def _collect_display_columns(actions: Iterable[PlannedAction]) -> list[tuple[str, str]]:
-    """Collect display columns from all Displayable custom_data in the given actions."""
+def _collect_display_columns(actions: Iterable[PlannedAction]) -> tuple[list[tuple[str, str]], bool]:
+    """Collect display columns and determine if Subject should be hidden.
+
+    Returns (columns, hide_subject). Subject is hidden only if ALL Displayable items request it.
+    """
     seen_keys: set[str] = set()
     columns: list[tuple[str, str]] = []
+    hide_subject_votes: list[bool] = []
+
     for planned_action in actions:
         data = planned_action.action.custom_data
         if isinstance(data, Displayable):
@@ -49,16 +68,21 @@ def _collect_display_columns(actions: Iterable[PlannedAction]) -> list[tuple[str
                 if key not in seen_keys:
                     seen_keys.add(key)
                     columns.append((key, label))
-    return columns
+            hide_subject_votes.append(data.hide_subject())
+
+    # Hide subject only if all Displayable items want it hidden (and there's at least one)
+    hide_subject = bool(hide_subject_votes) and all(hide_subject_votes)
+    return columns, hide_subject
 
 
-def _create_table(title: str | None, custom_columns: list[tuple[str, str]]) -> Table:
+def _create_table(title: str | None, custom_columns: list[tuple[str, str]], show_subject: bool = True) -> Table:
     """Build a Rich table with base and custom columns."""
     table = Table(title=title)
     table.add_column("Action", style="cyan")
     table.add_column("Gmail Link", style="blue", no_wrap=True)
     table.add_column("Date", style="magenta")
-    table.add_column("Subject", style="green")
+    if show_subject:
+        table.add_column("Subject", style="green")
 
     for _key, label in custom_columns:
         table.add_column(label, style="yellow")
@@ -71,11 +95,11 @@ def _format_date(metadata: "GmailMessageWithHeaders") -> str:
     dt: datetime | None = None
 
     if metadata.date_header:
-        with contextlib.suppress((TypeError, ValueError, OverflowError)):  # malformed or unsupported dates
+        with contextlib.suppress(TypeError, ValueError, OverflowError):  # malformed or unsupported dates
             dt = parsedate_to_datetime(metadata.date_header)
 
     if dt is None:
-        with contextlib.suppress((TypeError, ValueError, OverflowError)):  # missing/invalid internal_date
+        with contextlib.suppress(TypeError, ValueError, OverflowError):  # missing/invalid internal_date
             millis = int(metadata.internal_date)
             dt = datetime.fromtimestamp(millis / 1000, tz=UTC)
 
@@ -108,21 +132,23 @@ def display_plan(plan: Plan, inbox: "GmailInbox", console: Console, dry_run: boo
 
         for planner_name in sorted(by_planner):
             items = by_planner[planner_name]
-            custom_columns = _collect_display_columns(pa for _, pa in items)
-            table = _create_table(planner_name, custom_columns)
+            custom_columns, hide_subject = _collect_display_columns(pa for _, pa in items)
+            show_subject = not hide_subject
+            table = _create_table(planner_name, custom_columns, show_subject=show_subject)
 
             for message_id, planned_action in items:
-                _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
+                _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject)
 
             console.print(table)
             console.print()
     else:
         # Single planner or explicit flat display
-        custom_columns = _collect_display_columns(plan.actions.values())
-        table = _create_table("Inbox Cleanup - Action Plan", custom_columns)
+        custom_columns, hide_subject = _collect_display_columns(plan.actions.values())
+        show_subject = not hide_subject
+        table = _create_table("Inbox Cleanup - Action Plan", custom_columns, show_subject=show_subject)
 
         for message_id, planned_action in plan.actions.items():
-            _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns)
+            _add_table_row(table, inbox, message_id, planned_action, dry_run, custom_columns, show_subject)
 
         console.print(table)
 
@@ -134,6 +160,7 @@ def _add_table_row(
     planned_action: PlannedAction,
     dry_run: bool,
     custom_columns: list[tuple[str, str]],
+    show_subject: bool = True,
 ):
     # Look up message metadata from inbox cache (fetches on demand if not cached)
     metadata = inbox.get_metadata(message_id)
@@ -153,9 +180,8 @@ def _add_table_row(
     # Format Gmail link (keep short label but clickable)
     link = gmail_link(message_id)
 
-    # Format date and subject from metadata
+    # Format date from metadata
     date_str = _format_date(metadata)
-    subject = (metadata.subject or "")[:40]
 
     # Format custom data values using protocol
     custom_values = []
@@ -166,7 +192,11 @@ def _add_table_row(
         else:
             custom_values.append("")
 
-    table.add_row(action_icon, link, date_str, subject, *custom_values)
+    if show_subject:
+        subject = (metadata.subject or "")[:40]
+        table.add_row(action_icon, link, date_str, subject, *custom_values)
+    else:
+        table.add_row(action_icon, link, date_str, *custom_values)
 
 
 def summarize_plan(plan: Plan) -> str:

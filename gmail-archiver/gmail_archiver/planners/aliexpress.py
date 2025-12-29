@@ -48,6 +48,11 @@ class AliExpressEmail(BaseModel):
     def display_columns(cls) -> list[tuple[str, str]]:
         return [("order_id", "Order ID"), ("status", "Status")]
 
+    @classmethod
+    def hide_subject(cls) -> bool:
+        # Order ID + Status fully capture AliExpress subject content
+        return True
+
     def format_column(self, key: str) -> str:
         if key == "order_id":
             return self.order_id or ""
