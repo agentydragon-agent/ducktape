@@ -52,18 +52,8 @@ Determines the **recall denominator** for metrics. "From which file scopes do we
 
 **Example:** `file.py` contains wrapper functions that call APIs in `bar.py`. `bar.py` has obvious dangerous code.
 
-```yaml
-# Ground truth for "dangerous API in bar.py"
-occurrences:
-  - occurrence_id: occ-0
-    files: [{path: bar.py, ranges: [...]}]
-    # EXPECT critics to find this from EITHER file.py OR bar.py
-    # (a diligent critic reviewing file.py should investigate bar.py)
-    critic_scopes_expected_to_recall: [[file.py], [bar.py]]
-    # BUT graders can only give credit if critic flagged bar.py specifically
-    # (the issue IS in bar.py - flagging file.py alone doesn't count)
-    graders_match_only_if_reported_on: [bar.py]
-```
+- The TP occurrence has `graders_match_only_if_reported_on` = `[bar.py]` (the issue IS in bar.py)
+- The occurrence has `critic_scopes_expected_to_recall` entries for BOTH `[file.py]` and `[bar.py]` (we expect a diligent critic reviewing file.py to investigate bar.py)
 
 **Result:**
 - A critic reviewing `file.py` that flags `bar.py` → gets credit (good diligence!)
