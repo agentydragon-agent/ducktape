@@ -1,8 +1,4 @@
-"""Fixtures and helpers for grader tests.
-
-Note: Edge insertion helpers have been moved to production code.
-Import from props_core.grader.edge_helpers instead.
-"""
+"""Fixtures and helpers for grader tests."""
 
 from __future__ import annotations
 
@@ -11,15 +7,12 @@ from uuid import UUID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue
 from props_core.db.session import get_session
-from props_core.db.snapshots import DBGraderOutput, DBReportedIssue
-from props_core.grader.edge_helpers import insert_edge
-from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
-from tests.conftest import make_critic_run, make_grader_output, make_grader_run
+from tests.conftest import make_critic_run, make_grader_run
 
-__all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
+__all__ = ["make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 
 
 def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type: ignore[return]
@@ -37,22 +30,18 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
         # Merge example into this session if it's detached from another session
         example = session.merge(example)
 
-        # Build list of issues to populate normalized tables
-        issues = [
-            DBReportedIssue(id=f"input-{i:03d}", rationale=f"Test input issue {i}", occurrences=[])
-            for i in range(1, num_issues + 1)
-        ]
-        # Payload only contains notes_md (issues are in normalized table)
-
-        # Create critic run with full output
+        # Create critic run
         critic_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
-        # Populate normalized reported_issues table
-        for issue in issues:
+        # Populate normalized reported_issues table directly
+        for i in range(1, num_issues + 1):
+            issue_id = f"input-{i:03d}"
             reported_issue = ReportedIssue(
-                agent_run_id=critic_run.agent_run_id, issue_id=issue.id, rationale=issue.rationale
+                agent_run_id=critic_run.agent_run_id,
+                issue_id=issue_id,
+                rationale=f"Test input issue {i}",
             )
             session.add(reported_issue)
 
@@ -64,28 +53,18 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
 
 
 def make_test_grader_run(
-    snapshot_slug: str | SnapshotSlug,
     critic_run_id: UUID,
-    output: DBGraderOutput | None = None,
-    status: AgentRunStatus | None = None,
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
 ) -> UUID:
     """Create a test grader run.
 
     Args:
-        snapshot_slug: Snapshot slug (kept for backward compatibility, but derived from critic_run)
         critic_run_id: Critic run ID
-        output: Grader output dict (default: success with 0 TPs)
-        status: Run status (default: COMPLETED for compatibility)
+        status: Run status (default: COMPLETED)
 
     Returns:
         grader_run_id (UUID)
     """
-    if output is None:
-        output = make_grader_output(tp_occurrences=[], summary="Test grader")
-
-    if status is None:
-        status = AgentRunStatus.COMPLETED
-
     with get_session() as session:
         # Fetch the critic_run to pass to factory
         critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()
@@ -122,4 +101,4 @@ def test_grader_run(test_db, test_snapshot, test_grader_critic_run):
     Returns:
         grader_run_id (UUID)
     """
-    return make_test_grader_run(test_snapshot, test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)
+    return make_test_grader_run(test_grader_critic_run, status=AgentRunStatus.IN_PROGRESS)

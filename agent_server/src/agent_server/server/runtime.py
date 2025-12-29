@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Coroutine
 import contextlib
 import logging
-from typing import Any
 import uuid
+from collections.abc import Coroutine
+from typing import Any
 
 from agent_core.agent import Agent
 from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler
+from mcp_infra.mounted import Mounted
+from openai_utils.model import UserMessage as OAIUserMessage
+
 from agent_server.mcp.approval_policy.engine import PolicyEngine
 from agent_server.mcp.ui.server import UiServer
 from agent_server.persist import Persistence
@@ -18,17 +21,19 @@ from agent_server.server.bus import ServerBus, UiEndTurn, UiMessage
 from agent_server.server.protocol import (
     FunctionCallOutput,
     ServerMessage,
-    ToolCall as UiToolCall,
     UiEndTurnEvt,
     UiMessageEvt,
     UiMessagePayload,
+)
+from agent_server.server.protocol import (
+    ToolCall as UiToolCall,
+)
+from agent_server.server.protocol import (
     UserText as UiUserText,
 )
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import UiState, new_state
 from agent_server.types import AgentID
-from mcp_infra.mounted import Mounted
-from openai_utils.model import UserMessage as OAIUserMessage
 
 logger = logging.getLogger(__name__)
 

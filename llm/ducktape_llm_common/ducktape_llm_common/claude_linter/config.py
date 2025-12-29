@@ -1,9 +1,9 @@
 import json
 import os
 from pathlib import Path
+import tomllib
 
 import platformdirs
-import toml
 import yaml
 
 DEFAULT_CONFIG_PATH = Path(platformdirs.user_config_dir("claude-linter")) / "config.toml"
@@ -16,7 +16,8 @@ def load_user_config():
 
     if DEFAULT_CONFIG_PATH.exists():
         # Convert toml data to plain dict to avoid yaml serialization issues
-        data = toml.load(DEFAULT_CONFIG_PATH)
+        with DEFAULT_CONFIG_PATH.open("rb") as f:
+            data = tomllib.load(f)
         return json.loads(json.dumps(data))
     return {}
 

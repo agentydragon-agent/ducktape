@@ -2,10 +2,8 @@
 
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
-from props_core.db.models import AgentRunStatus, RecallByDefinitionSplitKind, RecallByExample
-from props_core.grader.models import InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
+from props_core.db.models import AgentRunStatus, GradingEdge, RecallByDefinitionSplitKind, RecallByExample
 from props_core.models.examples import ExampleKind, SingleFileSetExample
-from props_core.rationale import Rationale
 from props_core.splits import Split
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -16,7 +14,6 @@ from tests.conftest import (
     make_grader_run,
     make_grader_run_with_credit,
     make_reported_issues,
-    populate_grading_edges,
 )
 
 
@@ -61,8 +58,8 @@ def test_context_length_exceeded_also_counted_as_zero(synced_test_session: Sessi
     assert "context_length_exceeded" in result.grader_rationale
 
 
-def test_only_catchable_occurrences_included_for_failures(synced_test_session: Session, example_subtract_orm: Example):
-    """Test that failed runs only generate zero-credit rows for catchable occurrences."""
+def test_only_expected_occurrences_included_for_failures(synced_test_session: Session, example_subtract_orm: Example):
+    """Test that failed runs only generate zero-credit rows for occurrences in expected recall scope."""
     critic_run = make_critic_run(
         example=example_subtract_orm, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED
     )
@@ -74,8 +71,8 @@ def test_only_catchable_occurrences_included_for_failures(synced_test_session: S
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # subtract.py example has 1 catchable TP
-    assert len(results) == 1, "Should only include catchable occurrence"
+    # subtract.py example has 1 TP in expected recall scope
+    assert len(results) == 1, "Should only include occurrence in expected recall scope"
     assert results[0].tp_id == "tp-001"
 
 
@@ -126,21 +123,19 @@ def test_successful_run_not_affected_by_failure_logic(
     synced_test_session.add(grader_run)
     synced_test_session.flush()
 
-    populate_grading_edges(
-        critic_run=critic_run,
-        grader_run=grader_run,
+    edge = GradingEdge(
+        critique_run_id=critic_run.agent_run_id,
+        critique_issue_id="input-1",
         snapshot_slug=example_subtract_orm.snapshot_slug,
-        occurrence_results=[
-            OccurrenceResult(
-                tp_id=TruePositiveID(tp_id),
-                occurrence_id=occ_id,
-                found_credit=0.8,
-                matched_by=[OccurrenceMatch(input_id=InputIssueID("input-1"), credit=0.8)],
-                rationale=Rationale("Partially found"),
-            )
-        ],
-        session=synced_test_session,
+        tp_id=tp_id,
+        tp_occurrence_id=occ_id,
+        fp_id=None,
+        fp_occurrence_id=None,
+        credit=0.8,
+        rationale="Partially found",
+        grader_run_id=grader_run.agent_run_id,
     )
+    synced_test_session.add(edge)
     synced_test_session.commit()
 
     result = synced_test_session.execute(
@@ -169,8 +164,8 @@ def test_multiple_occurrences_with_or_logic(synced_test_session: Session, exampl
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # multi-TP example has 2 catchable occurrences
-    assert len(results) == 2, f"Expected 2 catchable occurrences, got {len(results)}"
+    # multi-TP example has 2 occurrences in expected recall scope
+    assert len(results) == 2, f"Expected 2 occurrences in recall scope, got {len(results)}"
 
 
 def test_multiple_grader_runs_do_not_overweight_critic_run(

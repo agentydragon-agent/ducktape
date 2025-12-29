@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from datetime import datetime
 import io
 import tarfile
+from collections import Counter, defaultdict
+from datetime import datetime
 
 from fastapi import APIRouter, HTTPException
 from props_core.db.models import (
-    ExpectedRecallScope,
+    CriticScopeExpectedToRecall,
     FalsePositive,
     FileSet,
     FileSetMember,
@@ -114,9 +114,13 @@ def _build_file_locations_from_ranges(ranges: list[OccurrenceRangeORM]) -> list[
     return [FileLocationInfo(path=path, ranges=ranges_list) for path, ranges_list in sorted(by_file.items())]
 
 
-def _get_trigger_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
-    """Get critic_scopes_expected_to_recall paths from occurrence triggers."""
-    return [sorted(m.file_path for m in trigger.file_set.members) for trigger in occ.triggers if trigger.file_set]
+def _get_critic_scopes_expected_to_recall_paths(occ: TruePositiveOccurrenceORM) -> list[list[str]]:
+    """Get critic_scopes_expected_to_recall paths from occurrence relationship."""
+    return [
+        sorted(m.file_path for m in scope.file_set.members)
+        for scope in occ.critic_scopes_expected_to_recall
+        if scope.file_set
+    ]
 
 
 def _get_matchable_files(session, snapshot_slug: SnapshotSlug, files_hash: str | None) -> list[str] | None:
@@ -188,8 +192,8 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             .filter_by(snapshot_slug=slug)
             .options(
                 selectinload(TruePositive.occurrences)
-                .selectinload(TruePositiveOccurrenceORM.triggers)
-                .selectinload(ExpectedRecallScope.file_set)
+                .selectinload(TruePositiveOccurrenceORM.critic_scopes_expected_to_recall)
+                .selectinload(CriticScopeExpectedToRecall.file_set)
                 .selectinload(FileSet.members)
             )
             .order_by(TruePositive.tp_id)
@@ -206,22 +210,22 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         )
 
         # Pre-fetch all matchable files to avoid N+1 queries
-        # Collect all unique match_filter_hash values from both TPs and FPs
-        # Note: whole-snapshot occurrences have match_filter_hash=None (no file filter)
-        match_filter_hashes = {
-            occ.match_filter_hash
+        # Collect all unique graders_match_only_if_reported_on hashes from both TPs and FPs
+        # Note: whole-snapshot occurrences have graders_match_only_if_reported_on=None (no file filter)
+        file_set_hashes = {
+            occ.graders_match_only_if_reported_on
             for issues in (tps, fps)
             for issue in issues
             for occ in issue.occurrences
-            if occ.match_filter_hash
+            if occ.graders_match_only_if_reported_on
         }
 
         # Bulk fetch all file set members for these hashes
         matchable_files_by_hash: dict[str, list[str]] = defaultdict(list)
-        if match_filter_hashes:
+        if file_set_hashes:
             members = (
                 session.query(FileSetMember.files_hash, FileSetMember.file_path)
-                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(match_filter_hashes))
+                .filter(FileSetMember.snapshot_slug == slug, FileSetMember.files_hash.in_(file_set_hashes))
                 .order_by(FileSetMember.files_hash, FileSetMember.file_path)
                 .all()
             )
@@ -233,14 +237,14 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for tp in tps:
             occ_infos = []
             for occ in tp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
+                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
                         graders_match_only_if_reported_on=matchable_files,
-                        critic_scopes_expected_to_recall=_get_trigger_paths(occ),
+                        critic_scopes_expected_to_recall=_get_critic_scopes_expected_to_recall_paths(occ),
                     )
                 )
             tp_infos.append(
@@ -252,7 +256,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
         for fp in fps:
             occ_infos = []
             for occ in fp.occurrences:
-                matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
+                matchable_files = matchable_files_by_hash.get(occ.graders_match_only_if_reported_on) if occ.graders_match_only_if_reported_on else None
                 occ_infos.append(
                     OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,

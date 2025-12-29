@@ -4,8 +4,7 @@ import logging
 from typing import Any
 
 from ...claude_code_api import HookEventName
-from .exceptions import HookBugError
-from .outcomes import (
+from ...claude_outcomes import (
     HookError,
     HookOutcome,
     NotificationAcknowledge,
@@ -19,6 +18,7 @@ from .outcomes import (
     StopPrevent,
     SubagentStopAllow,
 )
+from .exceptions import HookBugError
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def validate_hook_outcome(hook_type: HookEventName, outcome: HookOutcome) -> Non
     # Semantic checks
     _validate_outcome_semantics(hook_type, outcome)
 
-    logger.debug(f"✓ Valid {hook_type.value} outcome: {type(outcome).__name__}")
+    logger.debug(f"✓ Valid {hook_type} outcome: {type(outcome).__name__}")
 
 
 def _validate_outcome_semantics(hook_type: HookEventName, outcome: HookOutcome) -> None:

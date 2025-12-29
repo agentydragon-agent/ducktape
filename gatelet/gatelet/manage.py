@@ -8,13 +8,12 @@ from collections.abc import Iterable
 import getpass
 import tomllib
 
+from gatelet.server.config import CONFIG_PATH, get_settings
+from gatelet.server.models import Base, WebhookIntegration, WebhookPayload
+from gatelet.server.security import hash_password
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from tomlkit import dumps
-
-from gatelet.server.config import CONFIG_PATH, settings
-from gatelet.server.models import Base, WebhookIntegration, WebhookPayload
-from gatelet.server.security import hash_password
 
 
 def _confirm(prompt: str) -> bool:
@@ -35,7 +34,7 @@ async def _entity_counts(session: AsyncSession) -> Iterable[tuple[str, int]]:
 
 async def reset_db() -> None:
     """Drop and recreate tables and populate with sample data."""
-    engine = create_async_engine(str(settings.database.dsn), future=True)
+    engine = create_async_engine(str(get_settings().database.dsn), future=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False, autoflush=False)
 
     async with session_factory() as session:

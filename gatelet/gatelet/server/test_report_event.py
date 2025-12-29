@@ -1,10 +1,9 @@
-from httpx import AsyncClient
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from gatelet.reporter import send_event
 from gatelet.server.models import WebhookIntegration, WebhookPayload
 from gatelet.server.tests.utils import persist
+from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def test_send_event_works(client: AsyncClient, db_session: AsyncSession):

@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from typing import Literal
 
+import pytest
 from fastmcp.client import Client
 from fastmcp.server import FastMCP
+from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from pydantic import Field
-import pytest
 
 from mcp_infra.enhanced import EnhancedFastMCP
-from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 
 class EchoInput(OpenAIStrictModeBaseModel):

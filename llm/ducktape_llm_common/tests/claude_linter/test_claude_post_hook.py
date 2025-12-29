@@ -14,8 +14,11 @@ import yaml
 def run_post_hook(test_input: dict[str, Any]):
     """Invoke post-hook CLI in-process and return the result."""
     runner = CliRunner()
+    # Unified hook command - add hook_event_name to payload
+    test_input["hook_event_name"] = "PostToolUse"
+    test_input.setdefault("session_id", "test-session-id")
     payload = json.dumps(test_input)
-    return runner.invoke(cli, ["hook", "post"], input=payload)
+    return runner.invoke(cli, ["hook"], input=payload)
 
 
 def create_write_response(file_path: str | Path, content: str) -> dict[str, Any]:
@@ -114,8 +117,8 @@ def foo(x):
         result = run_post_hook(create_write_response(test_file, content))
 
         assert result.exit_code == 0
-        # When no fixes needed, should return approve decision
-        assert '"decision":"approve"' in result.output
+        # When no fixes needed, response should indicate continuation is allowed
+        assert '"continue":true' in result.output
 
     def test_ignores_non_python(self, tmp_path):
         """Test that post-hook ignores non-Python files."""

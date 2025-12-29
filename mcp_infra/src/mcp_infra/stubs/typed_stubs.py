@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import types
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-import types
 from typing import Any, TypeVar, cast, get_origin
 
 from fastmcp.client import Client

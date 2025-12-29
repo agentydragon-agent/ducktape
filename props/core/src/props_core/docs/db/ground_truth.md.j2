@@ -28,6 +28,38 @@ The ground truth issues (true positives and false positives) were hand-labeled b
 {{ describe_relation("false_positives") }}
 {{ describe_relation("false_positive_occurrences") }}
 
+## Expected Recall vs Grader Matching
+
+**Two distinct fields control different aspects of grading:**
+
+### critic_scopes_expected_to_recall (Recall Denominator)
+
+Determines the **recall denominator** for metrics. "From which file scopes do we EXPECT a diligent critic to find this issue?"
+
+- Stored in `critic_scopes_expected_to_recall` M:N table (multiple alternative scopes per occurrence)
+- Used by `is_tp_in_expected_recall_scope()` to compute `recall_denominator` in the `examples` VIEW
+- **SOFT EXPECTATION:** Critics CAN find issues outside expected scopes - recall >100% is possible!
+
+### graders_match_only_if_reported_on (Hard Constraint)
+
+**HARD CONSTRAINT** on graders. "Where is the issue actually located? Where must it be validly reported?"
+
+- Stored as `graders_match_only_if_reported_on` column on occurrence tables (FK to file_sets)
+- Enforced by `grading_pending` view - only shows (issue, occurrence) pairs with file overlap
+- If set, graders **cannot** give credit unless the critique flagged overlapping files
+
+### Why Two Fields?
+
+**Example:** `file.py` contains wrapper functions that call APIs in `bar.py`. `bar.py` has obvious dangerous code.
+
+- The TP occurrence has `graders_match_only_if_reported_on` = `[bar.py]` (the issue IS in bar.py)
+- The occurrence has `critic_scopes_expected_to_recall` entries for BOTH `[file.py]` and `[bar.py]` (we expect a diligent critic reviewing file.py to investigate bar.py)
+
+**Result:**
+- A critic reviewing `file.py` that flags `bar.py` → gets credit (good diligence!)
+- A critic reviewing `file.py` that only complains about `file.py` → zero credit (didn't find the real issue)
+- This occurrence counts toward recall denominator when reviewing either `file.py` or `bar.py`
+
 ## Query Examples
 
 ```sql

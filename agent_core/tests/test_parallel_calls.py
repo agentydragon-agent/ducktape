@@ -1,15 +1,15 @@
 import time
 from typing import Any
 
-from hamcrest import assert_that, greater_than_or_equal_to, has_length
-from pydantic import BaseModel
-
 from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Abort, InjectItems, RequireAnyTool
 from agent_core.testing import NoopOpenAIClient
+from hamcrest import assert_that, greater_than_or_equal_to, has_length
 from mcp_infra.prefix import MCPMountPrefix
+from pydantic import BaseModel
+
 from openai_utils.model import UserMessage
 
 

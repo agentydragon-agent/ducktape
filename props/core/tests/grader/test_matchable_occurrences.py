@@ -1,7 +1,7 @@
 """Test matchable_occurrences() SQL function.
 
 This function determines which TP/FP occurrences are matchable from a given set of files.
-The filtering is based on match_filter_hash:
+The filtering is based on graders_match_only_if_reported_on:
 - NULL = cross-cutting, matchable from any file
 - non-NULL = file-local, only matchable if files overlap with the file set
 """
@@ -31,7 +31,7 @@ class TestMatchableOccurrences:
     - tp-003 through tp-005: Additional TPs (may be cross-cutting)
     - fp-001: FP
 
-    The critic_scopes_expected_to_recall becomes match_filter_hash in the DB.
+    The critic_scopes_expected_to_recall becomes graders_match_only_if_reported_on in the DB.
     """
 
     def test_file_local_tp_matched_from_same_file(self, session, test_trivial_snapshot):
@@ -86,12 +86,12 @@ class TestMatchableOccurrences:
         assert "tp-002" in tp_ids, "tp-002 should be matchable from {subtract.py, add.py}"
 
     def test_cross_cutting_tp_matchable_from_any_file(self, session, test_trivial_snapshot):
-        """Cross-cutting TPs (NULL match_filter_hash) are matchable from any file."""
+        """Cross-cutting TPs (NULL graders_match_only_if_reported_on) are matchable from any file."""
         # First check if we have any cross-cutting TPs
         cross_cutting = session.execute(
             text("""
                 SELECT tp_id FROM true_positive_occurrences
-                WHERE snapshot_slug = :snapshot AND match_filter_hash IS NULL
+                WHERE snapshot_slug = :snapshot AND graders_match_only_if_reported_on IS NULL
             """),
             {"snapshot": test_trivial_snapshot.slug},
         ).fetchall()
@@ -171,7 +171,7 @@ class TestMatchableOccurrences:
             if row.tp_id:
                 is_cross_cutting = session.execute(
                     text("""
-                        SELECT match_filter_hash IS NULL
+                        SELECT graders_match_only_if_reported_on IS NULL
                         FROM true_positive_occurrences
                         WHERE snapshot_slug = :snapshot AND tp_id = :tp_id AND occurrence_id = :occ_id
                     """),

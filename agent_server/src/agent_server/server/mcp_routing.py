@@ -18,9 +18,9 @@ from agent_server.mcp_bridge.auth import TokensConfig
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+    from mcp_infra.compositor.server import Compositor
 
     from agent_server.runtime.registry import AgentRegistry
-    from mcp_infra.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)
 

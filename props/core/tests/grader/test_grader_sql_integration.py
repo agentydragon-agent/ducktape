@@ -281,7 +281,7 @@ async def test_grader_sql_rls_isolation(
 ):
     """Test RLS isolation - agents can only see their own run's decisions."""
     # Create another grader run (different agent)
-    other_run_id = make_test_grader_run(test_snapshot, test_grader_critic_run)
+    other_run_id = make_test_grader_run(test_grader_critic_run)
 
     # Insert decision from other run (using admin credentials)
     # First, add the input issues to reported_issues (required by check constraint)

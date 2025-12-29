@@ -14,7 +14,7 @@ from props_core.critic.submit_server import CriticSubmitInput
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, ReportedIssue, ReportedIssueOccurrence
 from props_core.db.session import get_session
-from props_core.db.snapshots import DBLocationAnchor, DBReportedIssue
+from props_core.db.snapshots import DBLocationAnchor
 from props_core.ids import SnapshotSlug
 import pytest
 from sqlalchemy import text
@@ -255,51 +255,13 @@ async def test_critic_sql_multiple_issues_and_occurrences(test_critic_run, temp_
         assert len(type_occs) == 1
 
 
-async def test_insert_issue_string_format(test_critic_run, temp_engine):
-    """Test insert_issue with old string style (backwards compatible)."""
+async def test_insert_issue(test_critic_run, temp_engine):
+    """Test insert_issue helper."""
 
     with temp_engine.connect() as conn:
-        insert_issue(conn, "issue-string", "String style rationale")
+        insert_issue(conn, "test-issue", "Test rationale")
         conn.commit()
 
-    # Verify issue was inserted correctly using ORM
     with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-string").one()
-        assert issue.rationale == "String style rationale"
-
-
-async def test_insert_issue_dict_format(test_critic_run, temp_engine):
-    """Test insert_issue with dict format."""
-
-    with temp_engine.connect() as conn:
-        insert_issue(conn, {"id": "issue-dict", "rationale": "Dict style rationale"})
-        conn.commit()
-
-    # Verify issue was inserted correctly using ORM
-    with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-dict").one()
-        assert issue.rationale == "Dict style rationale"
-
-
-async def test_insert_issue_pydantic_format(test_critic_run, temp_engine):
-    """Test insert_issue with Pydantic model format."""
-
-    with temp_engine.connect() as conn:
-        # Note: DBReportedIssue requires occurrences field, but insert_issue only uses id and rationale
-        insert_issue(conn, DBReportedIssue(id="issue-pydantic", rationale="Pydantic style rationale", occurrences=[]))
-        conn.commit()
-
-    # Verify issue was inserted correctly using ORM
-    with get_session() as session:
-        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="issue-pydantic").one()
-        assert issue.rationale == "Pydantic style rationale"
-
-
-async def test_insert_issue_error_handling(temp_engine):
-    """Test insert_issue error handling when rationale is missing."""
-
-    with (
-        temp_engine.connect() as conn,
-        pytest.raises(ValueError, match="When passing issue_id as string, rationale is required"),
-    ):
-        insert_issue(conn, "issue-missing-rationale")
+        issue = session.query(ReportedIssue).filter_by(agent_run_id=test_critic_run, issue_id="test-issue").one()
+        assert issue.rationale == "Test rationale"

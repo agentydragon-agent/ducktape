@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from agent_core.agent import Agent
 from agent_core.events import ToolCall, ToolCallOutput
 from agent_core.handler import FinishOnTextMessageHandler

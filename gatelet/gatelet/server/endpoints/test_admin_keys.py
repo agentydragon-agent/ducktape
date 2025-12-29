@@ -1,11 +1,10 @@
 from http import HTTPStatus
 import re
 
+from gatelet.server.models import AuthKey
 from httpx import AsyncClient
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from gatelet.server.models import AuthKey
 
 
 def _extract_csrf(page_text: str) -> str:

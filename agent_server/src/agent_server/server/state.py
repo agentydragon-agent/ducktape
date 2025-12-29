@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
-import uuid
 
 from mcp import types as mcp_types
 from pydantic import BaseModel, ConfigDict, Field

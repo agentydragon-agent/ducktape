@@ -604,7 +604,7 @@
               <span class="text-gray-500">Credit:</span>
               <span class="ml-1 font-medium {recallColor}">
                 {gs.total_credit.toFixed(1)}{#if recall_denominator > 0}
-                  / {recall_denominator} catchable{/if}
+                  / {recall_denominator} expected{/if}
               </span>
               {#if recall != null}
                 <span class="text-gray-400 text-xs">({(recall * 100).toFixed(0)}%)</span>

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field, TypeAdapter
 if TYPE_CHECKING:
     from props_core.db.examples import Example
 
+from agent_core.events import EventType
 from sqlalchemy import (
     CheckConstraint,
     Enum,
@@ -39,7 +40,6 @@ from sqlalchemy.dialects.postgresql import JSONB, TIMESTAMP, UUID as PG_UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, relationship
 from sqlalchemy.types import TypeDecorator
 
-from agent_core.events import EventType
 from props_core.agent_types import (
     CriticTypeConfig,
     FreeformTypeConfig,
@@ -401,7 +401,7 @@ class TruePositive(Base):
 
     Composite primary key: (snapshot_slug, tp_id).
     Each true positive has one or more occurrences stored in true_positive_occurrences.
-    Trigger file sets (critic_scopes_expected_to_recall) are stored in expected_recall_scopes M:N table.
+    Trigger file sets (critic_scopes_expected_to_recall) are stored in critic_scopes_expected_to_recall M:N table.
     """
 
     __tablename__ = "true_positives"
@@ -487,7 +487,7 @@ class TruePositiveOccurrenceORM(Base):
     """Occurrence within a true positive issue.
 
     Each occurrence represents a specific location where the issue manifests.
-    critic_scopes_expected_to_recall is stored in the expected_recall_scopes M:N table (linking to file_sets).
+    critic_scopes_expected_to_recall is stored in the critic_scopes_expected_to_recall M:N table (linking to file_sets).
     File ranges are stored in tp_occurrence_ranges table (normalized from JSONB).
     """
 
@@ -497,7 +497,7 @@ class TruePositiveOccurrenceORM(Base):
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -505,7 +505,7 @@ class TruePositiveOccurrenceORM(Base):
             ["snapshot_slug", "tp_id"], ["true_positives.snapshot_slug", "true_positives.tp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -513,11 +513,11 @@ class TruePositiveOccurrenceORM(Base):
 
     # Relationships
     true_positive: Mapped[TruePositive] = relationship(back_populates="occurrences")
-    triggers: Mapped[list[ExpectedRecallScope]] = relationship(
+    critic_scopes_expected_to_recall: Mapped[list[CriticScopeExpectedToRecall]] = relationship(
         back_populates="occurrence",
-        primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(ExpectedRecallScope.snapshot_slug), "
-        "TruePositiveOccurrenceORM.tp_id == foreign(ExpectedRecallScope.tp_id), "
-        "TruePositiveOccurrenceORM.occurrence_id == foreign(ExpectedRecallScope.occurrence_id))",
+        primaryjoin="and_(TruePositiveOccurrenceORM.snapshot_slug == foreign(CriticScopeExpectedToRecall.snapshot_slug), "
+        "TruePositiveOccurrenceORM.tp_id == foreign(CriticScopeExpectedToRecall.tp_id), "
+        "TruePositiveOccurrenceORM.occurrence_id == foreign(CriticScopeExpectedToRecall.occurrence_id))",
     )
     # overlaps: occurrence_ranges table has exclusive arc (tp_id XOR fp_id), so both
     # TruePositiveOccurrenceORM.ranges and FalsePositiveOccurrenceORM.ranges write to same columns
@@ -530,13 +530,13 @@ class TruePositiveOccurrenceORM(Base):
 
     @property
     def critic_scopes_expected_to_recall_set(self) -> set[frozenset[Path]]:
-        """Derive critic_scopes_expected_to_recall from expected_recall_scopes relationship."""
+        """Derive set of file scopes from critic_scopes_expected_to_recall relationship."""
         result: set[frozenset[Path]] = set()
-        for trigger in self.triggers:
-            # Each trigger links to a file_set via files_hash
+        for scope in self.critic_scopes_expected_to_recall:
+            # Each scope links to a file_set via files_hash
             # Get file paths from file_set_members
-            if trigger.file_set:
-                file_paths = frozenset(Path(m.file_path) for m in trigger.file_set.members)
+            if scope.file_set:
+                file_paths = frozenset(Path(m.file_path) for m in scope.file_set.members)
                 result.add(file_paths)
         return result
 
@@ -555,7 +555,7 @@ class FalsePositiveOccurrenceORM(Base):
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    graders_match_only_if_reported_on: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
     __table_args__ = (
@@ -563,7 +563,7 @@ class FalsePositiveOccurrenceORM(Base):
             ["snapshot_slug", "fp_id"], ["false_positives.snapshot_slug", "false_positives.fp_id"], ondelete="CASCADE"
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "match_filter_hash"],
+            ["snapshot_slug", "graders_match_only_if_reported_on"],
             ["file_sets.snapshot_slug", "file_sets.files_hash"],
             ondelete="SET NULL",
         ),
@@ -743,13 +743,20 @@ class FileSetMember(Base):
     file_set: Mapped[FileSet] = relationship(back_populates="members")
 
 
-class ExpectedRecallScope(Base):
-    """M:N relationship linking true_positive_occurrences to file_sets.
+class CriticScopeExpectedToRecall(Base):
+    """M:N linking TP occurrences to file_sets defining EXPECTED recall scopes.
 
-    Each occurrence can be triggered by multiple file sets (critic_scopes_expected_to_recall alternatives).
+    DETERMINES: Recall DENOMINATOR only. "From which scopes do we expect critics to find this issue?"
+    Each occurrence may have multiple alternative scopes (OR logic: any one suffices).
+
+    DOES NOT CONSTRAIN: Critics CAN find issues outside expected scopes (recall >100% possible).
+    A diligent critic reviewing file.py might discover issues in bar.py it depends on.
+
+    DISTINCT FROM graders_match_only_if_reported_on: That field is a HARD constraint on where
+    graders can give credit. This field only affects metric denominators.
     """
 
-    __tablename__ = "expected_recall_scopes"
+    __tablename__ = "critic_scopes_expected_to_recall"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -775,8 +782,10 @@ class ExpectedRecallScope(Base):
 
     # Relationships
     # overlaps needed because snapshot_slug is in both FKs (to occurrence and file_set)
-    file_set: Mapped[FileSet] = relationship(overlaps="triggers,occurrence")
-    occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(back_populates="triggers", overlaps="file_set")
+    file_set: Mapped[FileSet] = relationship(overlaps="critic_scopes_expected_to_recall,occurrence")
+    occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(
+        back_populates="critic_scopes_expected_to_recall", overlaps="file_set"
+    )
 
 
 class ReportedIssue(Base):

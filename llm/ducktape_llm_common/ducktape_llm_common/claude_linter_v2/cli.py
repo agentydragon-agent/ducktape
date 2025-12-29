@@ -295,12 +295,13 @@ def session_list(all: bool) -> None:
     current_dir = Path.cwd()
 
     # Group by directory
-    by_dir: dict[Path, list] = {}
+    by_dir: dict[Path, list[SessionInfo]] = {}
     for session_info in sessions:
-        dir_path = session_info["directory"]
-        if dir_path not in by_dir:
+        dir_path = session_info.directory
+        if dir_path and dir_path not in by_dir:
             by_dir[dir_path] = []
-        by_dir[dir_path].append(session_info)
+        if dir_path:
+            by_dir[dir_path].append(session_info)
 
     # Display current directory first
     if current_dir in by_dir:

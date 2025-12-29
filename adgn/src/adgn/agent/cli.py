@@ -4,21 +4,21 @@ from datetime import datetime
 import os
 from pathlib import Path
 
-from fastmcp.client import Client
-from rich.console import Console
-from rich.prompt import Prompt
-import typer
-from typer.main import get_command
-
 from agent_core.agent import Agent
 from agent_core.compaction import CompactionHandler
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.transcript_handler import TranscriptHandler
-from cli_util import async_run, make_logging_callback
+from fastmcp.client import Client
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.config_loader import build_mcp_config
 from mcp_infra.display import CompactDisplayHandler
+from rich.console import Console
+from rich.prompt import Prompt
+import typer
+from typer.main import get_command
+
+from cli_util import async_run, make_logging_callback
 from openai_utils.client_factory import build_client
 from openai_utils.model import SystemMessage, UserMessage
 

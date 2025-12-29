@@ -9,59 +9,26 @@ from uuid import UUID
 
 import canonicaljson
 from props_core.agent_types import AgentType
-from props_core.db.models import (
-    AgentRun,
-    CanonicalIssuesSnapshot,
-    FalsePositive,
-    FileSet,
-    OccurrenceRangeORM,
-    Snapshot as DBSnapshot,
-    TruePositive,
-)
+from props_core.db.models import AgentRun, CanonicalIssuesSnapshot, FileSet, Snapshot as DBSnapshot
 from props_core.db.session import Session, get_session
-from props_core.db.snapshots import (
-    DBFalsePositiveOccurrence,
-    DBKnownFalsePositive,
-    DBLineRange,
-    DBTruePositiveIssue,
-    DBTruePositiveOccurrence,
-)
+from props_core.db.snapshots import DBKnownFalsePositive, DBTruePositiveIssue
+from props_core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 
 
-def _convert_orm_ranges_to_db_files(ranges: list[OccurrenceRangeORM]) -> dict[str, list[DBLineRange]]:
-    """Convert ORM ranges to DB persistence model files dict.
-
-    Groups ranges by file path (as strings) and converts to DBLineRange objects.
-    """
-    by_file: dict[str, list[DBLineRange]] = defaultdict(list)
-    for range_orm in ranges:
-        by_file[str(range_orm.file_path)].append(
-            DBLineRange(start_line=range_orm.start_line, end_line=range_orm.end_line, note=range_orm.note)
-        )
-    return dict(by_file) if by_file else {}
-
-
-def resolve_scope_files(
-    snapshot_slug: SnapshotSlug, example_spec: ExampleSpec, session: Session | None = None
-) -> set[Path]:
+def resolve_scope_files(example_spec: ExampleSpec, session: Session) -> set[Path]:
     """Resolve an ExampleSpec to concrete file set.
 
     Args:
-        snapshot_slug: Snapshot identifier (for validation, already in example_spec)
         example_spec: The example specification (discriminated union)
-        session: Optional existing session (avoids nested session issues)
+        session: Database session (required to avoid accidental nested sessions)
 
     Returns:
         Set of file paths in the scope
     """
-    if session is None:
-        with get_session() as new_session:
-            return resolve_scope_files(snapshot_slug, example_spec, new_session)
-
     if isinstance(example_spec, WholeSnapshotExample):
-        snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
+        snapshot = session.query(DBSnapshot).filter_by(slug=example_spec.snapshot_slug).one()
         return snapshot.files_with_issues()
     if isinstance(example_spec, SingleFileSetExample):
         file_set = (
@@ -73,58 +40,28 @@ def resolve_scope_files(
     raise ValueError(f"Unknown scope type: {type(example_spec)}")
 
 
-def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
-    """Convert ORM TruePositive to DB persistence model."""
-    return DBTruePositiveIssue(
-        id=orm_tp.tp_id,
-        rationale=orm_tp.rationale,
-        occurrences=[
-            DBTruePositiveOccurrence(
-                occurrence_id=occ.occurrence_id,
-                files=_convert_orm_ranges_to_db_files(occ.ranges),
-                note=occ.note,
-                # Derive from M:N relationship (expected_recall_scopes -> file_sets)
-                critic_scopes_expected_to_recall=[
-                    [str(p) for p in trigger_set] for trigger_set in occ.critic_scopes_expected_to_recall_set
-                ],
-            )
-            for occ in orm_tp.occurrences
-        ],
-    )
+def filter_tps_in_expected_recall_scope(
+    tps: list[DBTruePositiveIssue], targeted_files: set[Path]
+) -> list[DBTruePositiveIssue]:
+    """Filter TPs to those in expected recall scope for targeted_files.
 
+    Returns TPs where at least one critic_scopes_expected_to_recall entry is a subset
+    of targeted_files. These TPs count toward the recall denominator for this scope.
 
-def _orm_fp_to_db(orm_fp: FalsePositive) -> DBKnownFalsePositive:
-    """Convert ORM FalsePositive to DB persistence model."""
-    return DBKnownFalsePositive(
-        id=orm_fp.fp_id,
-        rationale=orm_fp.rationale,
-        occurrences=[
-            DBFalsePositiveOccurrence(
-                occurrence_id=occ.occurrence_id,
-                files=_convert_orm_ranges_to_db_files(occ.ranges),
-                note=occ.note,
-                relevant_files=[str(rf.file_path) for rf in occ.relevant_file_orms],
-            )
-            for occ in orm_fp.occurrences
-        ],
-    )
-
-
-def filter_catchable_db_tps(tps: list[DBTruePositiveIssue], targeted_files: set[Path]) -> list[DBTruePositiveIssue]:
-    """Filter DB persistence TPs to only those catchable from targeted_files.
-
-    Works on DB persistence models (for filtering stored snapshots in staleness check).
+    NOTE: This determines recall DENOMINATOR only. Critics CAN find TPs outside expected
+    scopes (achieving >100% recall). This is separate from graders_match_only_if_reported_on
+    which is a hard constraint on where graders can give credit.
     """
     targeted_files_str = {str(p) for p in targeted_files}
 
-    def is_catchable(tp: DBTruePositiveIssue) -> bool:
+    def is_in_expected_recall_scope(tp: DBTruePositiveIssue) -> bool:
         return any(
-            set(trigger_set) <= targeted_files_str
+            set(scope) <= targeted_files_str
             for occurrence in tp.occurrences
-            for trigger_set in occurrence.critic_scopes_expected_to_recall
+            for scope in occurrence.critic_scopes_expected_to_recall
         )
 
-    return [tp for tp in tps if is_catchable(tp)]
+    return [tp for tp in tps if is_in_expected_recall_scope(tp)]
 
 
 def filter_relevant_db_fps(fps: list[DBKnownFalsePositive], targeted_files: set[Path]) -> list[DBKnownFalsePositive]:
@@ -141,31 +78,27 @@ def filter_relevant_db_fps(fps: list[DBKnownFalsePositive], targeted_files: set[
 
 
 def load_current_canonical_issues_from_db(
-    snapshot_slug: SnapshotSlug, targeted_files: set[Path], session: Session | None = None
+    snapshot_slug: SnapshotSlug, targeted_files: set[Path], session: Session
 ) -> dict[str, Any]:
     """Load current canonical TPs+FPs from database, filtered to targeted_files.
 
     Args:
         snapshot_slug: Snapshot to load issues from
         targeted_files: Files to filter issues by
-        session: Optional existing session (avoids nested session issues)
+        session: Database session (required to avoid accidental nested sessions)
     """
-    if session is None:
-        with get_session() as new_session:
-            return load_current_canonical_issues_from_db(snapshot_slug, targeted_files, new_session)
-
     snapshot = session.query(DBSnapshot).filter_by(slug=snapshot_slug).one()
 
     # Convert ORM models to DB persistence models first
-    all_db_tps = [_orm_tp_to_db(tp) for tp in snapshot.true_positives]
-    all_db_fps = [_orm_fp_to_db(fp) for fp in snapshot.false_positives]
+    all_db_tps = [orm_tp_to_db(tp) for tp in snapshot.true_positives]
+    all_db_fps = [orm_fp_to_db(fp) for fp in snapshot.false_positives]
 
     # Filter DB persistence models (single implementation shared with staleness check)
-    catchable_db_tps = filter_catchable_db_tps(all_db_tps, targeted_files)
+    tps_in_scope = filter_tps_in_expected_recall_scope(all_db_tps, targeted_files)
     relevant_db_fps = filter_relevant_db_fps(all_db_fps, targeted_files)
 
     # Create snapshot from filtered DB persistence models
-    current_snapshot = CanonicalIssuesSnapshot(true_positives=catchable_db_tps, false_positives=relevant_db_fps)
+    current_snapshot = CanonicalIssuesSnapshot(true_positives=tps_in_scope, false_positives=relevant_db_fps)
     return current_snapshot.model_dump(mode="json")
 
 
@@ -228,15 +161,15 @@ def identify_stale_runs() -> tuple[list[UUID], dict[SnapshotSlug, dict[str, int]
             stored_snapshot_model = CanonicalIssuesSnapshot.model_validate(stored_snapshot)
 
             # Resolve scope specification to file set (pass session to avoid nested session issues)
-            targeted_files = resolve_scope_files(snapshot_slug, example_spec, session)
+            targeted_files = resolve_scope_files(example_spec, session)
 
-            # Filter stored snapshot to only catchable TPs and relevant FPs (same filtering applied at grading time)
-            catchable_stored_tps = filter_catchable_db_tps(stored_snapshot_model.true_positives, targeted_files)
+            # Filter stored snapshot to TPs in expected recall scope and relevant FPs (same filtering applied at grading time)
+            stored_tps_in_scope = filter_tps_in_expected_recall_scope(stored_snapshot_model.true_positives, targeted_files)
             relevant_stored_fps = filter_relevant_db_fps(stored_snapshot_model.false_positives, targeted_files)
 
             # Create filtered snapshot model and serialize
             filtered_stored = CanonicalIssuesSnapshot(
-                true_positives=catchable_stored_tps, false_positives=relevant_stored_fps
+                true_positives=stored_tps_in_scope, false_positives=relevant_stored_fps
             )
             stored_canonical = filtered_stored.model_dump(mode="json")
 

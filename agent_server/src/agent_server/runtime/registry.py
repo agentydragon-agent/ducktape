@@ -5,9 +5,9 @@ from dataclasses import dataclass, field
 
 import aiodocker
 from fastmcp.mcp_config import MCPConfig
+from openai_utils.model import OpenAIModelProto
 
 from agent_server.persist.sqlite import SQLitePersistence
-from openai_utils.model import OpenAIModelProto
 
 from .container import AgentContainer, build_container
 

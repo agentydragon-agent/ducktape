@@ -15,47 +15,38 @@ def run_claude_linter(args: list[str], input_text: str | None = None):
 class TestUnifiedLinter:
     """Test cases for the unified linter entry point."""
 
-    def test_pre_mode(self):
-        """Test that 'claude-linter pre' runs the pre-hook."""
-        result = run_claude_linter(["pre"], "invalid json")
+    def test_hook_with_invalid_json(self):
+        """Test that 'claude-linter hook' fails with invalid JSON."""
+        result = run_claude_linter(["hook"], "invalid json")
 
-        # Pre-hook should fail with JSON decode error
+        # Hook should fail with JSON decode error
         assert result.exit_code == 1
-        assert "Error parsing JSON input" in result.output
+        assert "Invalid JSON input" in result.output
 
-    def test_post_mode(self):
-        """Test that 'claude-linter post' runs the post-hook."""
-        result = run_claude_linter(["post"], "invalid json")
-
-        # Post-hook should fail with JSON decode error
-        assert result.exit_code == 1
-        assert "Error parsing JSON input" in result.output
-
-    def test_invalid_mode(self):
-        """Test that invalid mode is rejected."""
+    def test_invalid_command(self):
+        """Test that invalid command is rejected."""
         result = run_claude_linter(["invalid"])
 
         # Should fail with argument error
         assert result.exit_code == 2
         assert "No such command 'invalid'" in result.output
 
-    def test_no_mode(self):
-        """Test that missing mode is rejected."""
+    def test_no_command(self):
+        """Test that missing command requires a command."""
         result = run_claude_linter([])
 
-        # No command -> show help
-        assert result.exit_code == 0
-        assert "Usage:" in result.output
+        # No command -> error (CLI requires a subcommand)
+        assert result.exit_code == 2
+        assert "Usage:" in result.output or "Missing command" in result.output
 
     def test_help(self):
-        """Test that help text shows both modes."""
+        """Test that help text shows available commands."""
         result = run_claude_linter(["--help"])
 
         assert result.exit_code == 0
-        assert "pre" in result.output
-        assert "post" in result.output
-        assert "pre-write hook" in result.output
-        assert "post-write hook" in result.output
+        assert "hook" in result.output
+        assert "check" in result.output
+        assert "clean" in result.output
 
     def test_debug_logs_not_created_by_default(self, tmp_path, monkeypatch):
         """Test that debug logs are not created by default."""

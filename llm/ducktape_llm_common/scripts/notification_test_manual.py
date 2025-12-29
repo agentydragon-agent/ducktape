@@ -7,8 +7,8 @@ import sys
 # Add the package to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+from ducktape_llm_common.claude_code_api import NotificationRequest
 from ducktape_llm_common.claude_linter_v2.hooks.handler import handle
-from ducktape_llm_common.claude_linter_v2.hooks.requests import NotificationRequest
 
 # First, enable D-Bus notifications in config
 config_content = """

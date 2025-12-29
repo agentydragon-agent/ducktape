@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, ConfigDict, Field
 import pytest
+from pydantic import BaseModel, ConfigDict, Field
 
 from mcp_infra.enhanced import EnhancedFastMCP
 

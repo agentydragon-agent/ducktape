@@ -8,10 +8,9 @@ from typing import Any, TypeVar, cast
 from urllib.parse import urlparse
 
 from fastmcp.tools import FunctionTool
+from mcp_infra.enhanced import EnhancedFastMCP
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 import requests
-
-from mcp_infra.enhanced import EnhancedFastMCP
 
 
 @dataclass

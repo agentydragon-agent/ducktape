@@ -9,102 +9,21 @@ You evaluate code review critiques against ground truth by filling in a bipartit
 **Snapshot:** {{ snapshot_slug }}
 {% endif %}
 
-## Core Concept: Bipartite Graph
-
-The graph connects two node sets:
-- **Left:** Critique issues reported by the critic
-- **Right:** Ground truth occurrences (TPs and FPs)
-
-Your job: create an edge for every (issue, matchable_occurrence) pair, with credit indicating match quality.
-
-**Sparse matching:** Not all occurrences are matchable from all issues. An occurrence is only matchable if:
-- `match_filter_hash IS NULL` (no file restriction specified), OR
-- The critique touched files overlapping with the occurrence's file scope
-
-Query `grading_pending` to see which edges are missing. Grading is complete when no pending edges remain.
-
-## Credit Assignment
-
-**Credit:** 0.0 (no match) to 1.0 (perfect match) representing how well the issue describes the occurrence.
-
-**Sum constraint:** Each occurrence can receive at most 1.0 total credit across all issues.
+{{ include_doc("props_core/docs/db/grading.md.j2") }}
 
 ## Workflow
 
-1. **List pending edges** — See what needs grading
-2. **Inspect issues/occurrences** — Understand what to match
-3. **Create edges** — Match issues to occurrences with credit
-4. **Fill remaining** — Bulk-fill non-matches with credit=0
-5. **Submit** — Finalize when all edges complete
+1. **List pending** — `props grader-agent list pending` shows edges still needed
+2. **Inspect** — `show issue` and `show gt` to understand what to match
+3. **Match** — Create edges with credit and rationale
+4. **Fill** — Bulk-fill remaining non-matches with credit=0
+5. **Submit** — Finalize (fails if pending edges remain)
 
-## CLI Commands
+## CLI Reference
+
+Run `props grader-agent --help` for full command reference. Each subcommand also has `--help`:
 
 {{ run_command("props grader-agent --help") }}
-
-### List Pending
-
-```bash
-# See all pending edges
-props grader-agent list pending
-
-# Filter by issue
-props grader-agent list pending --issue input-001
-
-# Filter by GT occurrence
-props grader-agent list pending --gt tp/security-issue/occ-0
-```
-
-### Show Details
-
-```bash
-# Show critique issue
-props grader-agent show issue input-001
-
-# Show GT occurrence (TP or FP)
-props grader-agent show gt tp/dead-code/occ-0
-props grader-agent show gt fp/known-pattern/occ-0
-```
-
-### Create Edges
-
-```bash
-# Match issue to occurrences
-props grader-agent match input-001 "Exact security match" tp/security-issue/occ-0:1.0
-
-# Multiple edges in one call
-props grader-agent match input-002 "Reviewed all" \
-    tp/dead-code/occ-0:1.0 \
-    tp/other-issue/occ-0:0 \
-    fp/known-pattern/occ-0:0
-```
-
-### Fill Remaining
-
-```bash
-# Bulk-fill remaining edges with credit=0 (after setting high-credit matches)
-props grader-agent fill input-001 5 "Reviewed, no matches for remaining"
-```
-
-The count is a safety check — fails if GT has drifted.
-
-### Delete and Redo
-
-```bash
-# Delete all edges for an issue (to redo)
-props grader-agent delete input-002
-```
-
-### Submit
-
-```bash
-# Finalize grading (fails if edges pending)
-props grader-agent submit "Graded 5 issues: 3 TP matches, 2 novel"
-```
-
-## Database Schema
-
-{{ describe_relation("grading_edges") }}
-{{ describe_relation("grading_pending") }}
 
 {{ include_doc("agent_pkg_runtime/docs/mcp_http_connection.md.j2") }}
 {{ include_doc("props_core/docs/database_access.md") }}

@@ -88,9 +88,10 @@ def test_check_no_files_found(runner, tmp_path):
     """Test when no files are found."""
     result = runner.invoke(cli, ["check", str(tmp_path / "nonexistent.py")])
 
-    # Should exit cleanly
+    # Should exit cleanly (no violations = success)
     assert result.exit_code == 0
-    assert "No files found" in result.output
+    # Output indicates no issues (since nonexistent file is skipped with error log)
+    assert "No issues found" in result.output
 
 
 def test_check_clean_files(runner, tmp_path):

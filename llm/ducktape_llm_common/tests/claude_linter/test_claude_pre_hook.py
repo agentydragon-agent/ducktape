@@ -12,12 +12,18 @@ from ducktape_llm_common.claude_linter.precommit_runner import PreCommitRunner
 def run_pre_hook(test_input: str):
     """Invoke pre-hook CLI in-process and return the result."""
     runner = CliRunner()
-    return runner.invoke(cli, ["hook", "pre"], input=test_input)
+    # Unified hook command - hook_event_name is in JSON payload
+    return runner.invoke(cli, ["hook"], input=test_input)
 
 
 def create_write_input(file_path: str | Path, content: str) -> str:
-    """Create a standard Write tool input structure."""
-    return json.dumps({"tool_name": "Write", "tool_input": {"file_path": str(file_path), "content": content}})
+    """Create a standard Write tool input structure for PreToolUse."""
+    return json.dumps({
+        "hook_event_name": "PreToolUse",
+        "session_id": "test-session-id",
+        "tool_name": "Write",
+        "tool_input": {"file_path": str(file_path), "content": content}
+    })
 
 
 PYTHON_MYPY_NONFIXABLE = """import requests
@@ -82,8 +88,8 @@ class TestPreHook:
 
         assert result.exit_code == 0
         output = json.loads(result.output)
-        assert "decision" not in output  # No decision means normal permission flow
-        assert output["reason"] == "Pre-commit checks passed"
+        # New API format - continue:true means allowed
+        assert output.get("continue") is True
 
     def test_allows_auto_fixable_only(self, tmp_path, monkeypatch):
         """Test that pre-hook allows files with only auto-fixable violations."""
@@ -101,11 +107,9 @@ class TestPreHook:
 
             if call_count == 1:
                 # First call: simulate fixing the file
-                # First call: simulate fixing the file
                 Path(paths[0]).write_text(fixed_content)
                 return (0, "Fixed violations", "")
             # Second call: no more changes needed (content stable)
-            # First call: simulate fixing the file
             # Don't change the file - it's already fixed
             return (0, "", "")
 
@@ -115,8 +119,8 @@ class TestPreHook:
         assert result.exit_code == 0
         assert call_count == 2  # Verify both passes ran
         output = json.loads(result.output)
-        assert "decision" not in output  # No decision means normal permission flow
-        assert "auto-fixable violations will be fixed" in output["reason"]
+        # New API format - continue:true means allowed
+        assert output.get("continue") is True
 
     def test_ignores_non_python_files(self, tmp_path, monkeypatch):
         """Test that pre-hook ignores non-Python files."""
@@ -132,6 +136,8 @@ class TestPreHook:
         result = run_pre_hook(
             json.dumps(
                 {
+                    "hook_event_name": "PreToolUse",
+                    "session_id": "test-session-id",
                     "tool_name": "Edit",
                     "tool_input": {"file_path": str(tmp_path / "test.py"), "old_string": "foo", "new_string": "bar"},
                 }
@@ -143,4 +149,4 @@ class TestPreHook:
         """Test that pre-hook handles invalid JSON gracefully."""
         result = run_pre_hook("not valid json")
         assert result.exit_code == 1
-        assert "Error parsing JSON input" in result.output
+        assert "Invalid JSON input" in result.output

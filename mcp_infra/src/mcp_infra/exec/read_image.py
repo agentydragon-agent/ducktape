@@ -7,7 +7,6 @@ import mimetypes
 import os
 
 import mcp.types as mcp_types
-
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 
 MAX_IMAGE_BYTES = 10 * 1024 * 1024  # 10MB

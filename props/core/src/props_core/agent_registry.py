@@ -34,31 +34,31 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-import aiodocker
-from fastmcp.client import Client
-
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+import aiodocker
+from fastmcp.client import Client
 from mcp_infra.display import CompactDisplayHandler
+
 from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.types import ReasoningSummary
 from props_core.agent_handle import AgentHandle
-from props_core.agent_types import CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
+from props_core.agent_types import AgentType, CriticTypeConfig, GraderTypeConfig, SnapshotGraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.common_options import DEFAULT_MAX_LINES
 from props_core.critic.critic import CriticAgentEnvironment
-from props_core.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
+from props_core.critic.exceptions import CriticExecutionError
 from props_core.db.agent_definition_ids import GRADER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig
 from props_core.db.models import AgentRun, AgentRunStatus, CanonicalIssuesSnapshot, FileSet, Snapshot
 from props_core.db.session import get_session
 from props_core.display import short_uuid
+from props_core.exceptions import AgentDidNotSubmitError
 from props_core.grader.daemon import GraderDaemonScaffold
 from props_core.grader.drift_handler import format_notifications
-from props_core.grader.exceptions import GraderDidNotSubmitError
-from props_core.grader.grader import GraderAgentEnvironment, _fp_from_orm, _tp_from_orm
-from props_core.grader.persistence import fp_to_db, tp_to_db
+from props_core.grader.grader import GraderAgentEnvironment
+from props_core.grader.persistence import orm_fp_to_db, orm_tp_to_db
 from props_core.grader.snapshot_grader_env import SnapshotGraderAgentEnvironment
 from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -278,7 +278,7 @@ class AgentRegistry:
                         raise CriticExecutionError(f"Critic reported failure: {run.completion_summary or 'No message'}")
 
                     if run.status != AgentRunStatus.COMPLETED:
-                        raise CriticDidNotSubmitError("Critic did not submit")
+                        raise AgentDidNotSubmitError(AgentType.CRITIC, agent_run_id)
 
                     agent_status = AgentRunStatus.COMPLETED
             finally:
@@ -393,17 +393,14 @@ class AgentRegistry:
 
             if original_tp_count > 0 and len(filtered_orm_tps) == 0:
                 raise ValueError(
-                    f"Cannot grade: 0/{original_tp_count} TPs catchable from reviewed files "
+                    f"Cannot grade: 0/{original_tp_count} TPs in expected recall scope from reviewed files "
                     f"{sorted(str(f) for f in reviewed_files)}"
                 )
 
-            canonical_tps = [_tp_from_orm(tp) for tp in filtered_orm_tps]
-            canonical_fps = [_fp_from_orm(fp) for fp in filtered_orm_fps]
-
-            # Build canonical issues snapshot
+            # Build canonical issues snapshot (direct ORM → DB conversion)
             canonical_snapshot = CanonicalIssuesSnapshot(
-                true_positives=[tp_to_db(tp) for tp in canonical_tps],
-                false_positives=[fp_to_db(fp) for fp in canonical_fps],
+                true_positives=[orm_tp_to_db(tp) for tp in filtered_orm_tps],
+                false_positives=[orm_fp_to_db(fp) for fp in filtered_orm_fps],
             )
 
             type_config = GraderTypeConfig(
@@ -492,12 +489,8 @@ class AgentRegistry:
                 # Validate database status
                 with get_session() as session:
                     found_run = session.get(AgentRun, grader_run_id)
-                    if found_run is None:
-                        raise GraderDidNotSubmitError(f"Grader run {grader_run_id} not found in database")
-                    if found_run.status != AgentRunStatus.COMPLETED:
-                        raise GraderDidNotSubmitError(
-                            f"Grader run {grader_run_id} completed but status is {found_run.status}"
-                        )
+                    if found_run is None or found_run.status != AgentRunStatus.COMPLETED:
+                        raise AgentDidNotSubmitError(AgentType.GRADER, grader_run_id)
                     agent_status = AgentRunStatus.COMPLETED
 
             except MaxTurnsExceededError:

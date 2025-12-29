@@ -43,6 +43,9 @@ class SessionData(BaseModel):
     notification_id: int | None = None
 
 
+# Type alias for backwards compatibility
+SessionInfo = SessionData
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,7 +76,7 @@ class SessionManager:
                 logger.error(f"Failed to load session {session_id}: {e}")
 
         # Return default session data
-        return SessionData(id=session_id, created=datetime.now())
+        return SessionData(id=str(session_id), created=datetime.now())
 
     def _save_session(self, session_id: SessionID, session_data: SessionData) -> None:
         """Save a single session to disk."""

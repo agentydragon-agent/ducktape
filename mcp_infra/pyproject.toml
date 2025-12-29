@@ -56,6 +56,9 @@ asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "requires_docker: Tests that require Docker to be installed and running",
+    "requires_sandbox_exec: Tests that require macOS sandbox-exec",
+    "macos: Tests that only run on macOS",
+    "shell: Tests that use shell execution",
 ]
 
 [tool.uv.sources]

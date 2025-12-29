@@ -1,5 +1,5 @@
-from mcp import McpError, types
 import pytest
+from mcp import McpError, types
 
 from agent_server.mcp.approval_policy.engine import (
     POLICY_BACKEND_RESERVED_MISUSE_CODE,

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from enum import Enum, StrEnum, auto
-import logging
 from typing import Literal
 
 from fastmcp.client import Client

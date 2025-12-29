@@ -18,6 +18,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
+from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentRun, AgentRunStatus, GradingEdge
@@ -26,8 +27,6 @@ from props_core.models.examples import ExampleKind
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 import pytest
-
-from agent_core.testing import AssertDockerExecThenCall, CapturingOpenAIModel, DockerExecCall, Step
 
 pytestmark = [pytest.mark.integration, pytest.mark.requires_postgres]
 
@@ -350,7 +349,7 @@ async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, tes
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     # Steps: run leaderboard and check output contains the expected 76% recall
     steps = [
@@ -386,7 +385,7 @@ async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, 
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     steps = [
         DockerExecCall(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),

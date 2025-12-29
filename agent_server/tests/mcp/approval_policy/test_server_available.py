@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-from fastmcp.client import Client
 import pytest
-
 from agent_core.agent import Agent
 from agent_core.handler import FinishOnTextMessageHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing import AssistantMessage
+from fastmcp.client import Client
 from mcp_infra.naming import build_mcp_function
 from mcp_infra.prefix import MCPMountPrefix
 from openai_utils.model import UserMessage

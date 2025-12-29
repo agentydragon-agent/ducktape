@@ -9,10 +9,10 @@ import subprocess
 import sys
 from types import SimpleNamespace
 
+from ember.system_prompt import load_system_prompt
 import pytest
 
 import ember
-from ember.system_prompt import load_system_prompt
 
 
 def _embedded_text(relative: str) -> str:

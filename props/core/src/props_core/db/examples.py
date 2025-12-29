@@ -40,8 +40,11 @@ class Example(Base):
     See docs/training_strategy.md for details on example generation.
 
     recall_denominator: Computed directly from ground truth (true_positives) using
-    is_tp_catchable_from_scope() in the VIEW definition. This allows correct recall computation
+    is_tp_in_expected_recall_scope() in the VIEW definition. This allows correct recall computation
     even when all critic runs fail (0/N) vs when no runs exist (NULL).
+
+    NOTE: recall_denominator is the EXPECTED count - critics CAN find issues outside expected
+    scopes (achieving >100% recall). See critic_scopes_expected_to_recall for details.
     """
 
     __tablename__ = "examples"
@@ -64,9 +67,11 @@ class Example(Base):
         String, primary_key=True, comment="File set hash for file_set examples, NULL for whole_snapshot"
     )
 
-    # Catchable occurrences computed from ground truth
+    # Expected recall occurrences computed from ground truth
     recall_denominator: Mapped[int] = mapped_column(
-        Integer, nullable=False, comment="Number of catchable TP occurrences for this example (from ground truth)"
+        Integer,
+        nullable=False,
+        comment="Number of TP occurrences in expected recall scope for this example (from ground truth)",
     )
 
     # No timestamps - VIEWs don't support created_at/updated_at

@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from ember.matrix_client import MatrixClient
+import pytest
 
 
 @pytest.mark.asyncio

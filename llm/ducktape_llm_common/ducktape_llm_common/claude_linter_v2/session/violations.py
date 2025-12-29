@@ -1,5 +1,7 @@
 """Violation tracking for quality gate in stop hook."""
 
+from __future__ import annotations
+
 from datetime import datetime
 import logging
 from typing import TYPE_CHECKING, Any
@@ -14,7 +16,11 @@ logger = logging.getLogger(__name__)
 
 
 class ViolationTracker:
-    """Tracks violations found during a session for quality gate."""
+    """Tracks violations found during a session for quality gate.
+
+    Violations are kept in-memory during the session. They are not persisted
+    to disk as part of session data.
+    """
 
     def __init__(self, session_manager: SessionManager) -> None:
         self.session_manager = session_manager
@@ -50,22 +56,18 @@ class ViolationTracker:
         key = (file_path, line, message)
         self._violations[session_id][key] = violation_dict
 
-        # Also persist to session data
-        self._save_violations(session_id)
-
     def add_violations(
         self,
         session_id: SessionID,
-        violations: list[Violation],  # Proper Violation objects from config.models
+        violations: list[Violation],
         file_path: str,
         severity: str = "error",
     ) -> None:
         """Add multiple violations from a linter."""
         for v in violations:
-            # Now we have proper Violation objects with typed attributes
             self.add_violation(
                 session_id=session_id,
-                file_path=v.file_path or file_path,  # Use violation's file_path if available
+                file_path=v.file_path or file_path,
                 line=v.line,
                 message=v.message,
                 severity=severity,
@@ -73,40 +75,36 @@ class ViolationTracker:
             )
 
     def mark_file_fixed(self, session_id: SessionID, file_path: str) -> None:
-        """Mark all violations in a file as fixed (e.g., after successful edit with no errors)."""
+        """Mark all violations in a file as fixed."""
         if session_id not in self._violations:
             return
 
         for violation in self._violations[session_id].values():
-            if violation.file_path == file_path:
-                violation.fixed = True
+            if violation["file_path"] == file_path:
+                violation["fixed"] = True
 
-        self._save_violations(session_id)
-
-    def get_unfixed_violations(self, session_id: SessionID) -> list[Violation]:
+    def get_unfixed_violations(self, session_id: SessionID) -> list[dict[str, Any]]:
         """Get all unfixed violations for a session."""
-        if session_id not in self._violations:
-            # Try to load from session data
-            self._load_violations(session_id)
-
         violations = self._violations.get(session_id, {})
-        return [v for v in violations.values() if not v.fixed]
+        return [v for v in violations.values() if not v["fixed"]]
 
     def get_violation_summary(self, session_id: SessionID) -> dict[str, Any]:
         """Get a summary of violations for the session."""
         unfixed = self.get_unfixed_violations(session_id)
 
         # Group by file
-        by_file: dict[str, list[Violation]] = {}
+        by_file: dict[str, list[dict[str, Any]]] = {}
         for v in unfixed:
-            if v.file_path not in by_file:
-                by_file[v.file_path] = []
-            by_file[v.file_path].append(v)
+            fp = v["file_path"]
+            if fp not in by_file:
+                by_file[fp] = []
+            by_file[fp].append(v)
 
         # Count by severity
         by_severity = {"error": 0, "warning": 0, "info": 0}
         for v in unfixed:
-            by_severity[v.severity] = by_severity.get(v.severity, 0) + 1
+            sev = v.get("severity", "error")
+            by_severity[sev] = by_severity.get(sev, 0) + 1
 
         return {
             "total": len(unfixed),
@@ -119,31 +117,3 @@ class ViolationTracker:
         """Clear all violations for a session."""
         if session_id in self._violations:
             del self._violations[session_id]
-
-        # Also clear from session data
-        session_data = self.session_manager._load_session(session_id)
-        if "violations" in session_data:
-            del session_data["violations"]
-            self.session_manager._save_session(session_id, session_data)
-
-    def _save_violations(self, session_id: SessionID) -> None:
-        """Save violations to session data."""
-        if session_id not in self._violations:
-            return
-
-        session_data = self.session_manager._load_session(session_id)
-        # We're already storing dicts, so just convert to list
-        session_data["violations"] = list(self._violations[session_id].values())
-        self.session_manager._save_session(session_id, session_data)
-
-    def _load_violations(self, session_id: SessionID) -> None:
-        """Load violations from session data."""
-        session_data = self.session_manager._load_session(session_id)
-        violations_data = session_data.get("violations", [])
-
-        violations_dict = {}
-        for v_data in violations_data:
-            # Reconstruct key from violation data
-            key = (v_data["file_path"], v_data["line"], v_data["message"])
-            violations_dict[key] = v_data
-        self._violations[session_id] = violations_dict

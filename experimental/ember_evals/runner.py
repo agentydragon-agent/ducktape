@@ -13,9 +13,8 @@ import shutil
 import sys
 import tempfile
 
-import yaml
-
 from ember.integrations.gitea import GiteaRepository
+import yaml
 
 from .common import CommandError, dump_yaml, merge_dict, run_command
 from .definitions import ScenarioSuite
