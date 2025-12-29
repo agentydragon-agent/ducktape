@@ -136,16 +136,8 @@ class ModularConfig(BaseModel):
 
     def save_to_file(self, path: Path) -> None:
         """Save configuration to TOML file."""
-        # Convert model to dict
-        data = self.model_dump(exclude_none=True)
-        
-        # Convert log_level enum to string if present
-        if "log_level" in data:
-            data["log_level"] = str(data["log_level"])
-        
-        # Convert Path to string if present
-        if "log_file" in data and data["log_file"] is not None:
-            data["log_file"] = str(data["log_file"])
+        # Use Pydantic's serialization mode to handle enums and Paths automatically
+        data = self.model_dump(exclude_none=True, mode="python")
 
         with path.open("wb") as f:
             tomli_w.dump(data, f)
