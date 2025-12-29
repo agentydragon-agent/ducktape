@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agent_core.bootstrap import TypedBootstrapBuilder
+from mcp_infra.bootstrap import TypedBootstrapBuilder
 from agent_core.handler import SequenceHandler
 from agent_core.loop_control import InjectItems, NoAction
 from agent_core.testing import is_all_function_calls

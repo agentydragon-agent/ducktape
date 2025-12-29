@@ -4,7 +4,7 @@ import pytest
 from agent_core.loop_control import Abort, NoAction
 
 from agent_server.mcp.ui.server import EndTurnInput, SendMessageInput, UiServer
-from agent_server.notifications.types import NotificationsBatch
+from mcp_infra.notifications.types import NotificationsBatch
 from agent_server.server.bus import MimeType, ServerBus, UiEndTurn, UiMessage
 from agent_server.server.mode_handler import ServerModeHandler
 

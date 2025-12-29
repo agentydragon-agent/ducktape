@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 # Import just the NotificationsBatch type - it's a lightweight Pydantic model
 from agent_server.notifications.handler import format_notifications_message
-from agent_server.notifications.types import NotificationsBatch
+from mcp_infra.notifications.types import NotificationsBatch
 from agent_server.server.bus import ServerBus
 
 

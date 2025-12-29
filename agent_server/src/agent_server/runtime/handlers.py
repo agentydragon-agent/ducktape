@@ -7,7 +7,7 @@ from mcp_infra.compositor.server import Compositor
 from mcp_infra.display import DisplayEventsHandler
 
 from agent_server.notifications.handler import NotificationsHandler
-from agent_server.notifications.types import NotificationsBatch
+from mcp_infra.notifications.types import NotificationsBatch
 from agent_server.persist import Persistence
 from agent_server.persist.handler import RunPersistenceHandler
 from agent_server.server.bus import ServerBus
