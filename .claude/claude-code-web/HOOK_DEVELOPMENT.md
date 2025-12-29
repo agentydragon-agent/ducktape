@@ -24,21 +24,59 @@ The hook (`session-start-direnv.py`) attempts to:
 
 ### What Works
 - Nix installation succeeds (manual profile linking bypasses gVisor PTY bug)
+- Network access works fine - `nix profile install` CAN download packages successfully
 - `CLAUDE_ENV_FILE` mechanism for persisting environment
 
 ### What Fails
-- `nix profile install nixpkgs#<tool>` fails with "Truncated tar archive" errors
-- The hook hangs indefinitely waiting for package installation
+- The hook hangs after installing direnv, appearing to fail at devenv installation
+- Log shows: "Installing direnv..." then "Installing devenv..." with no completion
 
-### Root Cause: Network Proxy During Hooks
+### Root Cause: Profile Self-Destruction (CONFIRMED 2025-12-29)
 
-Claude Code web routes all network traffic through a proxy with strict domain allowlisting:
-- During session-start hooks, only allowlisted domains are accessible
-- GitHub/nixos.org fetches may be blocked, throttled, or have aggressive timeouts
-- User cannot approve new domains interactively during hook execution
-- The proxy may drop connections mid-download (causing "truncated tar archive")
+**The bug is NOT network-related.** The actual issue is in the hook's profile setup:
 
-This is documented behavior for Claude Code web's sandboxed environment.
+1. The hook's gVisor workaround creates a manual symlink:
+   ```
+   ~/.nix-profile -> /nix/var/nix/profiles/per-user/root/profile -> /nix/store/...-nix-2.33.0
+   ```
+
+2. When `nix profile install nixpkgs#direnv` runs, nix creates a NEW profile:
+   ```
+   profile -> profile-1-link -> /nix/store/...-new-profile (contains direnv, NOT nix)
+   ```
+
+3. The nix binary is no longer in `~/.nix-profile/bin/` - the profile now only contains direnv
+
+4. The next `nix profile install nixpkgs#devenv` fails because `nix` command is not found
+
+**Proof:** After manually running `nix profile install nixpkgs#hello`:
+```
+$ ls ~/.nix-profile/bin/
+hello    # nix is GONE
+```
+
+But nix is still in the store:
+```
+$ /nix/store/yg8v8aap26967f28xmqgvl29ksp6mgn1-nix-2.33.0/bin/nix --version
+nix (Nix) 2.33.0
+```
+
+### The Fix
+
+The hook should use the nix store path directly, NOT the profile path:
+
+```python
+# WRONG: relies on profile which gets replaced
+nix_bin = Path.home() / ".nix-profile" / "bin" / "nix"
+
+# RIGHT: use the store path directly
+nix_bin = find_nix_bin() / "nix"  # e.g., /nix/store/...-nix-2.33.0/bin/nix
+```
+
+And persist the store path in PATH:
+```bash
+export PATH="/nix/store/...-nix-2.33.0/bin:$HOME/.nix-profile/bin:$PATH"
+```
 
 ## Requirements for a Working Solution
 
@@ -46,22 +84,6 @@ This is documented behavior for Claude Code web's sandboxed environment.
 2. **Idempotent** - Safe to run multiple times
 3. **Fast** - Session startup should not take minutes
 4. **Resilient** - Must handle network issues gracefully (timeout, fallback)
-
-## Potential Approaches
-
-### Option A: apt fallback for tools
-Install direnv/uv via apt when nix fails. devenv is nix-only, so this requires either:
-- A simplified `.envrc` that doesn't use devenv
-- A separate Claude Code web `.envrc` that just runs `uv sync`
-
-### Option B: Pre-built closure
-Ship a nix closure with required tools already built. Avoids network fetches during session startup.
-
-### Option C: Direct binary downloads
-Download pre-built binaries for direnv, devenv, uv from GitHub releases. Bypasses nix entirely for tool installation.
-
-### Option D: Timeout + degraded mode
-Add timeouts to nix commands. If they fail, log a warning and continue with whatever tools are available (the container has Python, uv may be pre-installed).
 
 ## Testing the Hook
 
