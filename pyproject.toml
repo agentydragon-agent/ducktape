@@ -10,6 +10,7 @@ members = [
     "editor_agent/runtime",
     "ember",
     "git_commit_ai",
+    "gmail-archiver",
     "mcp_infra",
     "mcp_utils",
     "net_util",
