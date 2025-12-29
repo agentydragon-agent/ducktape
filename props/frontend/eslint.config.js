@@ -8,7 +8,15 @@ import globals from 'globals';
 export default [
   js.configs.recommended,
   {
-    ignores: ['.svelte-kit/**', 'build/**', 'dist/**', 'node_modules/**'],
+    ignores: [
+      '.svelte-kit/**',
+      'build/**',
+      'dist/**',
+      'node_modules/**',
+      'storybook-static/**',
+      'playwright-report/**',
+      'test-results/**',
+    ],
   },
   {
     files: ['**/*.{js,ts,svelte}'],

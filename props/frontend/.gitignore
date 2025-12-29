@@ -1,6 +1,7 @@
 # Build output
 dist/
 .svelte-kit/
+storybook-static/
 
 # Dependencies
 node_modules/
@@ -8,3 +9,8 @@ node_modules/
 # Generated types (regenerate with pnpm generate)
 /src/lib/api/schema.d.ts
 /src/lib/api/schema.json
+
+# Playwright
+/test-results/
+/playwright-report/
+/playwright/.cache/
