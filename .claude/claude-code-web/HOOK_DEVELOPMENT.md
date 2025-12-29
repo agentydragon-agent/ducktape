@@ -38,10 +38,30 @@ The hook (`session-start-direnv.py`) attempts to:
 **Root Cause:** `nix profile install` takes 2-3 minutes on a fresh session (downloading ~70 MiB
 for devenv + dependencies), but Claude Code hooks have a short timeout (~30-60s).
 
-**Evidence from testing:**
-- First `nix profile install nixpkgs#hello` with 30s timeout: times out
-- Same command with 180s timeout: completes in ~13s (cached)
-- devenv installation: ~2-3 minutes on cold cache
+**Evidence from testing (2025-12-29):**
+
+Fresh session (hook killed by timeout):
+```
+[session-start-direnv] Installing tools: direnv, devenv
+# ... log ends abruptly, no completion message
+```
+
+Agent running same command after hook timeout:
+- `nix profile install nixpkgs#hello` with 30s timeout: killed by timeout
+- Same command with 180s timeout: completes in ~13s (from cached store)
+- `nix profile install nixpkgs#devenv nixpkgs#uv`: ~2-3 minutes cold
+
+Resumed session (nix store persisted, 2611 entries):
+```
+[session-start-direnv] cache.nixos.org: HTTP/1.1 200 OK (0.24s)
+[session-start-direnv] /nix/store entries: 2611
+[session-start-direnv] All tools already available: direnv, devenv, uv
+[session-start-direnv] Setup complete (total: 7.5s)
+```
+
+**Key insight:** Hook and agent share the same network environment (same proxy settings,
+same connectivity to cache.nixos.org). The difference is purely timeout - the hook gets
+killed before nix can finish downloading.
 
 **Workarounds under investigation:**
 1. Increase hook timeout (if configurable)
