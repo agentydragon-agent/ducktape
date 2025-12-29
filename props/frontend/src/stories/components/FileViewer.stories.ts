@@ -1,6 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/svelte';
 import FileViewer from '../../components/FileViewer.svelte';
-import { mockFileContent, mockFileTps, mockFileFps, mockSnapshotSlug } from '../mockData';
+import {
+  mockFileContent,
+  mockFileTps,
+  mockFileFps,
+  mockCritiqueIssues,
+  mockGradingEdges,
+  mockSnapshotSlug,
+} from '../mockData';
 
 const meta = {
   title: 'Components/FileViewer',
@@ -56,5 +63,38 @@ export const WithTargetedOccurrence: Story = {
     fps: [],
     snapshotSlug: mockSnapshotSlug,
     targetOccurrenceId: 'occ-tp-001',
+  },
+};
+
+export const WithCritiquesOnly: Story = {
+  args: {
+    file: mockFileContent,
+    tps: [],
+    fps: [],
+    critiqueIssues: mockCritiqueIssues,
+    gradingEdges: [],
+    snapshotSlug: mockSnapshotSlug,
+  },
+};
+
+export const WithCritiquesAndGroundTruth: Story = {
+  args: {
+    file: mockFileContent,
+    tps: mockFileTps,
+    fps: mockFileFps,
+    critiqueIssues: mockCritiqueIssues,
+    gradingEdges: [],
+    snapshotSlug: mockSnapshotSlug,
+  },
+};
+
+export const WithGradingEdges: Story = {
+  args: {
+    file: mockFileContent,
+    tps: mockFileTps,
+    fps: mockFileFps,
+    critiqueIssues: mockCritiqueIssues,
+    gradingEdges: mockGradingEdges,
+    snapshotSlug: mockSnapshotSlug,
   },
 };

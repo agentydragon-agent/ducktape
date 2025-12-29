@@ -16,9 +16,9 @@ export type FileLocationInfo = components['schemas']['FileLocationInfo'];
 export type GradingEdgeInfo = components['schemas']['GradingEdgeInfo'];
 
 /**
- * Unified marker for issues displayed in file viewers.
+ * Unified marker for issues displayed in FileViewer.
  * Combines parent issue info (id, rationale) with occurrence info (files, note).
- * Used by both FileViewer (ground truth only) and CritiqueFileViewer (ground truth + critiques).
+ * Supports TPs, FPs, and optionally critique issues with grading edges.
  *
  * To get ranges for a specific file, use: allFiles.find(f => f.path === filePath)?.ranges
  */

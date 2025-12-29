@@ -184,11 +184,11 @@ SnapshotDetailPage
 
 CritiqueDetailPage
 ├── CritiqueHeader
-├── CritiqueFileViewer
+├── FileViewer (with critiqueIssues + gradingEdges props)
 │   ├── CodeDisplay
-│   ├── CritiqueIssueMarker
-│   └── CritiqueIssueDetail
-│       ├── MatchedOccurrenceLink
+│   ├── IssueMarker (TP/FP/Critique)
+│   └── IssueDetail
+│       ├── MatchedOccurrenceLink (for critiques with grading edges)
 │       └── CopyUrlButton
 └── IssueNavigator
 ```

@@ -33,7 +33,7 @@
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import ExampleLink from '../lib/ExampleLink.svelte';
   import GradingEdges from './GradingEdges.svelte';
-  import CritiqueFileViewer from './CritiqueFileViewer.svelte';
+  import FileViewer from './FileViewer.svelte';
   import TruncatedStreamComponent from './TruncatedStream.svelte';
 
   // Configure marked for inline rendering (no <p> wrapper)
@@ -669,7 +669,7 @@
         {:else}
           <div class="p-4 space-y-6">
             {#each Array.from(fileContents.entries()) as [_, fileContent]}
-              <CritiqueFileViewer
+              <FileViewer
                 file={fileContent}
                 tps={snapshotDetail.true_positives}
                 fps={snapshotDetail.false_positives}
