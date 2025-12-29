@@ -6,9 +6,12 @@ import logging
 import os
 import subprocess
 import sys
+import threading
 import traceback
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 LOG_FILE = Path("/tmp/session-start-direnv.log")
 TOOLS = ["direnv", "devenv", "uv"]
@@ -22,6 +25,32 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger(__name__)
+
+HEARTBEAT_INTERVAL_MS = 500
+
+
+@contextmanager
+def heartbeat(operation: str) -> Iterator[None]:
+    """Log heartbeat messages every 500ms during long-running operations."""
+    stop_event = threading.Event()
+    start_time = datetime.now()
+
+    def heartbeat_thread() -> None:
+        beat_count = 0
+        while not stop_event.wait(HEARTBEAT_INTERVAL_MS / 1000):
+            beat_count += 1
+            elapsed = (datetime.now() - start_time).total_seconds()
+            log.info("heartbeat: %s still running (%.1fs elapsed, beat #%d)", operation, elapsed, beat_count)
+
+    thread = threading.Thread(target=heartbeat_thread, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop_event.set()
+        thread.join(timeout=1.0)
+        elapsed = (datetime.now() - start_time).total_seconds()
+        log.info("heartbeat: %s completed (%.1fs total)", operation, elapsed)
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess:
@@ -76,10 +105,11 @@ def install_nix(project_dir: Path) -> Path:
         return nix_store_bin
 
     log.info("Installing nix...")
-    subprocess.run(
-        ["curl", "-sL", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
-        check=True,
-    )
+    with heartbeat("downloading nix installer"):
+        subprocess.run(
+            ["curl", "-sL", "https://nixos.org/nix/install", "-o", "/tmp/nix-install.sh"],
+            check=True,
+        )
 
     # The nix-env step fails in gVisor containers due to a PTY bug.
     # nix-env opens /dev/ptmx, forks a sandbox process, then reads from the PTY master.
@@ -96,11 +126,12 @@ def install_nix(project_dir: Path) -> Path:
     # WORKAROUND:
     # Skip nix-env entirely. The installer already unpacked Nix to /nix/store.
     # We use the store path directly instead of relying on profiles.
-    subprocess.run(
-        ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
-        stdin=subprocess.DEVNULL,
-        capture_output=True,
-    )
+    with heartbeat("running nix installer"):
+        subprocess.run(
+            ["sh", "/tmp/nix-install.sh", "--no-daemon", "--no-channel-add", "--no-modify-profile"],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+        )
 
     nix_store_bin = find_nix_bin()
     if not nix_store_bin:
@@ -131,7 +162,8 @@ def install_tools(nix_store_bin: Path, tools: list[str]) -> None:
 
     # Install all missing tools in one command
     cmd = [str(nix_cmd), "profile", "install"] + [f"nixpkgs#{t}" for t in missing_tools]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    with heartbeat(f"installing {', '.join(missing_tools)}"):
+        result = subprocess.run(cmd, capture_output=True, text=True)
 
     for line in (result.stdout + result.stderr).strip().split("\n"):
         if line:
