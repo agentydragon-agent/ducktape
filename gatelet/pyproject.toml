@@ -84,10 +84,6 @@ gatelet-reporter = "gatelet.reporter:main"
 [tool.hatch.build.targets.wheel]
 packages = ["gatelet"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"gatelet/server/templates" = "gatelet/server/templates"
-"gatelet/server/static" = "gatelet/server/static"
-
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["server"]
