@@ -52,17 +52,24 @@ def _get_file_set_paths(session: Session, snapshot_slug: SnapshotSlug, files_has
     return list(members)
 
 
-def _format_line_ranges(ranges: list[dict[str, int]] | None) -> list[list[int]] | int | None:
+def _format_line_ranges(ranges: list[dict[str, Any]] | None) -> list[dict[str, Any]] | list[list[int]] | int | None:
     """Convert DB line range format to YAML-friendly format.
 
-    DB format: [{"start_line": 10, "end_line": 20}, ...]
+    DB format: [{"start_line": 10, "end_line": 20, "note": "..."}, ...]
     YAML format:
+      - If any range has a note: [{"start_line": 10, "end_line": 20, "note": "..."}, ...]
       - Single line where start == end: int (e.g., 42)
       - Single range: [start, end] (e.g., [10, 20])
       - Multiple ranges: [[start, end], ...] (e.g., [[10, 20], [30, 40]])
     """
     if ranges is None:
         return None
+
+    # If any range has a note, use dict format for all ranges
+    if any(r.get("note") for r in ranges):
+        return [
+            {k: v for k, v in r.items() if k in ("start_line", "end_line", "note") and v is not None} for r in ranges
+        ]
 
     formatted = [[r["start_line"], r["end_line"]] for r in ranges]
 

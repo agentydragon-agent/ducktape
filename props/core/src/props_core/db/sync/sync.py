@@ -34,6 +34,8 @@ from props_core.db.models import (
     ExpectedRecallScope,
     FalsePositive,
     FalsePositiveOccurrenceORM,
+    FalsePositiveOccurrenceRangeORM,
+    FalsePositiveRelevantFileORM,
     FileSet,
     FileSetMember,
     ModelMetadata,
@@ -41,6 +43,7 @@ from props_core.db.models import (
     SnapshotFile,
     TruePositive,
     TruePositiveOccurrenceORM,
+    TruePositiveOccurrenceRangeORM,
 )
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
@@ -495,21 +498,35 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 session.add(orm_issue)
                 # Add occurrences to normalized table
                 # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
+                # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                 for occ in issue.occurrences:
                     orm_occ = TruePositiveOccurrenceORM(
                         snapshot_slug=issue.snapshot_slug,
                         tp_id=issue.tp_id,
                         occurrence_id=occ.occurrence_id,
-                        files={
-                            str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
-                            for p, ranges in occ.files.items()
-                        },
                         note=occ.note,
                         match_filter_hash=ensure_file_set(
                             session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                         ),
                     )
                     session.add(orm_occ)
+                    # Add ranges
+                    for file_path, ranges in occ.files.items():
+                        if ranges is not None:
+                            for range_id, line_range in enumerate(ranges):
+                                range_orm = TruePositiveOccurrenceRangeORM(
+                                    snapshot_slug=issue.snapshot_slug,
+                                    tp_id=issue.tp_id,
+                                    occurrence_id=occ.occurrence_id,
+                                    file_path=str(file_path),
+                                    range_id=range_id,
+                                    start_line=line_range.start_line,
+                                    end_line=line_range.end_line
+                                    if line_range.end_line is not None
+                                    else line_range.start_line,
+                                    note=line_range.note,
+                                )
+                                session.add(range_orm)
                 added += 1
                 total += 1
             else:
@@ -529,21 +546,35 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     for occ_orm in list(existing.occurrences):
                         session.delete(occ_orm)
                     # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as column
+                    # Note: files/line ranges are stored in tp_occurrence_ranges table, not as column
                     for occ in issue.occurrences:
                         orm_occ = TruePositiveOccurrenceORM(
                             snapshot_slug=issue.snapshot_slug,
                             tp_id=issue.tp_id,
                             occurrence_id=occ.occurrence_id,
-                            files={
-                                str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
-                                for p, ranges in occ.files.items()
-                            },
                             note=occ.note,
                             match_filter_hash=ensure_file_set(
                                 session, issue.snapshot_slug, occ.graders_match_only_if_reported_on
                             ),
                         )
                         session.add(orm_occ)
+                        # Add ranges
+                        for file_path, ranges in occ.files.items():
+                            if ranges is not None:
+                                for range_id, line_range in enumerate(ranges):
+                                    range_orm = TruePositiveOccurrenceRangeORM(
+                                        snapshot_slug=issue.snapshot_slug,
+                                        tp_id=issue.tp_id,
+                                        occurrence_id=occ.occurrence_id,
+                                        file_path=str(file_path),
+                                        range_id=range_id,
+                                        start_line=line_range.start_line,
+                                        end_line=line_range.end_line
+                                        if line_range.end_line is not None
+                                        else line_range.start_line,
+                                        note=line_range.note,
+                                    )
+                                    session.add(range_orm)
                     updated += 1
                     total += 1
                 else:
@@ -560,22 +591,45 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                 orm_fp = FalsePositive(snapshot_slug=fp.snapshot_slug, fp_id=fp.fp_id, rationale=fp.rationale)
                 session.add(orm_fp)
                 # Add occurrences to normalized table
+                # Note: files/line ranges are stored in fp_occurrence_ranges table, not as column
+                # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as column
                 for fp_occ in fp.occurrences:
                     fp_orm_occ = FalsePositiveOccurrenceORM(
                         snapshot_slug=fp.snapshot_slug,
                         fp_id=fp.fp_id,
                         occurrence_id=fp_occ.occurrence_id,
-                        files={
-                            str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
-                            for p, ranges in fp_occ.files.items()
-                        },
                         note=fp_occ.note,
-                        relevant_files=[str(p) for p in fp_occ.relevant_files],
                         match_filter_hash=ensure_file_set(
                             session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                         ),
                     )
                     session.add(fp_orm_occ)
+                    # Add ranges
+                    for file_path, ranges in fp_occ.files.items():
+                        if ranges is not None:
+                            for range_id, line_range in enumerate(ranges):
+                                range_orm = FalsePositiveOccurrenceRangeORM(
+                                    snapshot_slug=fp.snapshot_slug,
+                                    fp_id=fp.fp_id,
+                                    occurrence_id=fp_occ.occurrence_id,
+                                    file_path=str(file_path),
+                                    range_id=range_id,
+                                    start_line=line_range.start_line,
+                                    end_line=line_range.end_line
+                                    if line_range.end_line is not None
+                                    else line_range.start_line,
+                                    note=line_range.note,
+                                )
+                                session.add(range_orm)
+                    # Add relevant files
+                    for relevant_file in fp_occ.relevant_files:
+                        relevant_file_orm = FalsePositiveRelevantFileORM(
+                            snapshot_slug=fp.snapshot_slug,
+                            fp_id=fp.fp_id,
+                            occurrence_id=fp_occ.occurrence_id,
+                            file_path=str(relevant_file),
+                        )
+                        session.add(relevant_file_orm)
                 added += 1
                 total += 1
             else:
@@ -594,22 +648,45 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     # Delete existing occurrences and re-add (cascade handles this)
                     for fp_occ_orm in list(existing_fp.occurrences):
                         session.delete(fp_occ_orm)
+                    # Note: files/line ranges are stored in fp_occurrence_ranges table, not as column
+                    # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as column
                     for fp_occ in fp.occurrences:
                         fp_orm_occ = FalsePositiveOccurrenceORM(
                             snapshot_slug=fp.snapshot_slug,
                             fp_id=fp.fp_id,
                             occurrence_id=fp_occ.occurrence_id,
-                            files={
-                                str(p): [lr.model_dump() if lr else None for lr in ranges] if ranges else None
-                                for p, ranges in fp_occ.files.items()
-                            },
                             note=fp_occ.note,
-                            relevant_files=[str(p) for p in fp_occ.relevant_files],
                             match_filter_hash=ensure_file_set(
                                 session, fp.snapshot_slug, fp_occ.graders_match_only_if_reported_on
                             ),
                         )
                         session.add(fp_orm_occ)
+                        # Add ranges
+                        for file_path, ranges in fp_occ.files.items():
+                            if ranges is not None:
+                                for range_id, line_range in enumerate(ranges):
+                                    range_orm = FalsePositiveOccurrenceRangeORM(
+                                        snapshot_slug=fp.snapshot_slug,
+                                        fp_id=fp.fp_id,
+                                        occurrence_id=fp_occ.occurrence_id,
+                                        file_path=str(file_path),
+                                        range_id=range_id,
+                                        start_line=line_range.start_line,
+                                        end_line=line_range.end_line
+                                        if line_range.end_line is not None
+                                        else line_range.start_line,
+                                        note=line_range.note,
+                                    )
+                                    session.add(range_orm)
+                        # Add relevant files
+                        for relevant_file in fp_occ.relevant_files:
+                            relevant_file_orm = FalsePositiveRelevantFileORM(
+                                snapshot_slug=fp.snapshot_slug,
+                                fp_id=fp.fp_id,
+                                occurrence_id=fp_occ.occurrence_id,
+                                file_path=str(relevant_file),
+                            )
+                            session.add(relevant_file_orm)
                     updated += 1
                     total += 1
                 else:

@@ -467,6 +467,7 @@ class TruePositiveOccurrenceORM(Base):
 
     Each occurrence represents a specific location where the issue manifests.
     critic_scopes_expected_to_recall is stored in the expected_recall_scopes M:N table (linking to file_sets).
+    File ranges are stored in tp_occurrence_ranges table (normalized from JSONB).
     """
 
     __tablename__ = "true_positive_occurrences"
@@ -474,7 +475,6 @@ class TruePositiveOccurrenceORM(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     tp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
@@ -498,6 +498,9 @@ class TruePositiveOccurrenceORM(Base):
         "TruePositiveOccurrenceORM.tp_id == foreign(ExpectedRecallScope.tp_id), "
         "TruePositiveOccurrenceORM.occurrence_id == foreign(ExpectedRecallScope.occurrence_id))",
     )
+    ranges: Mapped[list[TruePositiveOccurrenceRangeORM]] = relationship(
+        back_populates="occurrence", cascade="all, delete-orphan"
+    )
 
     @property
     def critic_scopes_expected_to_recall_set(self) -> set[frozenset[Path]]:
@@ -511,12 +514,29 @@ class TruePositiveOccurrenceORM(Base):
                 result.add(file_paths)
         return result
 
+    @property
+    def files(self) -> dict[str, list[dict] | None]:
+        """Reconstruct files dict from ranges for backward compatibility.
+
+        Returns: {file_path: [{"start_line": int, "end_line": int, "note": str | None}, ...] | None}
+        """
+        result: dict[str, list[dict] | None] = {}
+        for range_orm in self.ranges:
+            if range_orm.file_path not in result:
+                result[range_orm.file_path] = []
+            assert result[range_orm.file_path] is not None
+            result[range_orm.file_path].append(
+                {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
+            )
+        return result
+
 
 class FalsePositiveOccurrenceORM(Base):
     """Occurrence within a false positive issue.
 
     Each occurrence represents a specific location where the false positive manifests.
-    Has relevant_files defining which files make this FP relevant.
+    File ranges are stored in fp_occurrence_ranges table (normalized from JSONB).
+    Relevant files are stored in fp_occurrence_relevant_files table (normalized from JSONB).
     """
 
     __tablename__ = "false_positive_occurrences"
@@ -524,9 +544,7 @@ class FalsePositiveOccurrenceORM(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    files: Mapped[dict] = mapped_column(JSONB, nullable=False)  # {path: [line_ranges] | null}
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
-    relevant_files: Mapped[list] = mapped_column(JSONB, nullable=False)  # [path, ...]
     match_filter_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False, server_default=func.now())
 
@@ -543,10 +561,138 @@ class FalsePositiveOccurrenceORM(Base):
 
     # Relationships
     false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
+    ranges: Mapped[list[FalsePositiveOccurrenceRangeORM]] = relationship(
+        back_populates="occurrence", cascade="all, delete-orphan"
+    )
+    relevant_file_orms: Mapped[list[FalsePositiveRelevantFileORM]] = relationship(
+        back_populates="occurrence", cascade="all, delete-orphan"
+    )
 
     @property
     def relevant_files_set(self) -> set[Path]:
-        return {Path(p) for p in self.relevant_files}
+        return {Path(rf.file_path) for rf in self.relevant_file_orms}
+
+    @property
+    def relevant_files(self) -> list[str]:
+        """Reconstruct relevant_files list for backward compatibility."""
+        return [rf.file_path for rf in self.relevant_file_orms]
+
+    @property
+    def files(self) -> dict[str, list[dict] | None]:
+        """Reconstruct files dict from ranges for backward compatibility.
+
+        Returns: {file_path: [{"start_line": int, "end_line": int, "note": str | None}, ...] | None}
+        """
+        result: dict[str, list[dict] | None] = {}
+        for range_orm in self.ranges:
+            if range_orm.file_path not in result:
+                result[range_orm.file_path] = []
+            assert result[range_orm.file_path] is not None
+            result[range_orm.file_path].append(
+                {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
+            )
+        return result
+
+
+class TruePositiveOccurrenceRangeORM(Base):
+    """Line range within a true positive occurrence."""
+
+    __tablename__ = "tp_occurrence_ranges"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    tp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "tp_id", "occurrence_id"],
+            [
+                "true_positive_occurrences.snapshot_slug",
+                "true_positive_occurrences.tp_id",
+                "true_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(back_populates="ranges")
+
+
+class FalsePositiveOccurrenceRangeORM(Base):
+    """Line range within a false positive occurrence."""
+
+    __tablename__ = "fp_occurrence_ranges"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    occurrence: Mapped[FalsePositiveOccurrenceORM] = relationship(back_populates="ranges")
+
+
+class FalsePositiveRelevantFileORM(Base):
+    """File that makes a false positive occurrence relevant."""
+
+    __tablename__ = "fp_occurrence_relevant_files"
+
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
+    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    # Relationships
+    occurrence: Mapped[FalsePositiveOccurrenceORM] = relationship(back_populates="relevant_file_orms")
 
 
 class SnapshotFile(Base):
