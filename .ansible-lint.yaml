@@ -29,6 +29,12 @@ mock_modules:
   - dconf_array_edit
   - install_handler
   - autostart_entry
+  - community.general.snap
+  - community.general.dconf
+  - community.general.ufw
+  - community.docker.docker_container
+  - community.docker.docker_compose_v2
+  - ansible.posix.mount
 
 # Mock these roles if they're external/Galaxy roles
 mock_roles:

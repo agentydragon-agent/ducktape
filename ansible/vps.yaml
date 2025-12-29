@@ -23,7 +23,7 @@
     rcup_computer: vps
     # Disable heavy dev packages on VPS
     include_heavy_dev_packages: false
-    headscale_health_host: agentydragon.com
+    headscale_server_health_host: agentydragon.com
     # TLS stream routing defaults
     nginx_https_listener_port: 4443
     nginx_stream_default_backend: "127.0.0.1:{{ nginx_https_listener_port }}"

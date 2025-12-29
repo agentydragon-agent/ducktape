@@ -106,7 +106,7 @@
 
 - name: Wait for headscale health endpoint
   ansible.builtin.uri:
-    url: "https://{{ headscale_health_host }}:8080/health"
+    url: "https://{{ headscale_server_health_host }}:8080/health"
     method: GET
     status_code: 200
     validate_certs: true

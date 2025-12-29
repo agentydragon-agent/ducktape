@@ -89,12 +89,12 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: 0775
+        mode: "0775"
       become: true
       tags: [storage]
 
     - name: Mount code virtiofs share
-      ansible.builtin.mount:
+      ansible.posix.mount:
         path: /code
         src: code
         fstype: virtiofs
@@ -109,7 +109,7 @@
         state: directory
         owner: "{{ my_user }}"
         group: "{{ my_user }}"
-        mode: 0775
+        mode: "0775"
       become: true
       tags: [storage]
 
