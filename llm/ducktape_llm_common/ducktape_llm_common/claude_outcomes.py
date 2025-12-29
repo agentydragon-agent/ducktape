@@ -84,7 +84,17 @@ class PostToolNotifyLLM(HookOutcome):
         return PostToolResponse(decision="block", reason=self.llm_message)
 
 
-PostToolOutcome = PostToolSuccess | PostToolNotifyLLM
+@dataclass
+class PostToolSuccessWithInfo(HookOutcome):
+    """Tool succeeded with optional info (not blocking)."""
+
+    info_message: str = ""
+
+    def to_claude_response(self) -> PostToolResponse:
+        return PostToolResponse()
+
+
+PostToolOutcome = PostToolSuccess | PostToolSuccessWithInfo | PostToolNotifyLLM
 
 
 # Stop Hook Outcomes
@@ -117,7 +127,17 @@ class StopPrevent(HookOutcome):
         return StopResponse(decision="block", reason=self.llm_message)
 
 
-StopOutcome = StopAllow | StopPrevent
+@dataclass
+class StopAllowWithInfo(HookOutcome):
+    """Allow Claude to end its turn, with an info message (non-blocking)."""
+
+    llm_message: str
+
+    def to_claude_response(self) -> StopResponse:
+        return StopResponse()
+
+
+StopOutcome = StopAllow | StopAllowWithInfo | StopPrevent
 
 
 # SubagentStop Hook Outcomes

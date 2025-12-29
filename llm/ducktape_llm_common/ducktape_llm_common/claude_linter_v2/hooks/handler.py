@@ -7,11 +7,30 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from ...claude_code_api import (
+    BaseHookRequest,
+    BaseResponse,
+    NotificationRequest,
+    PostToolUseRequest,
+    PreToolUseRequest,
+    StopRequest,
+    SubagentStopRequest,
+)
+from ...claude_outcomes import (
+    HookOutcome,
+    NotificationAcknowledge,
+    PostToolNotifyLLM,
+    PostToolSuccess,
+    PreToolApprove,
+    PreToolDeny,
+    StopAllow,
+    StopPrevent,
+    SubagentStopAllow,
+)
 from ..access.context import PredicateContext
 from ..access.rule_engine import RuleEngine
 from ..check_python import check_python_file
 from ..checkers_v2 import filter_violations
-from ..cli import close_desktop_notification, send_desktop_notification
 from ..config import ConfigLoader
 from ..config.clean_models import ModularConfig
 from ..config.models import (
@@ -27,36 +46,26 @@ from ..diff.intelligence import DiffIntelligence
 from ..diff.parser import ToolCall
 from ..linters.python_formatter import PythonFormatter
 from ..llm_analyzer import LLMAnalyzer
+from ..notifications import close_desktop_notification, send_desktop_notification
 from ..pattern_matcher import PatternMatcher
 from ..session import SessionManager
 from ..session.violations import ViolationTracker
 from ..types import SessionID
 from ..utils.gitignore import get_git_tracked_files
-from .claude_responses import BaseResponse
 from .exceptions import HookBugError
 from .formatting import format_access_denial, format_llm_message
-from .outcomes import (
-    HookOutcome,
-    NotificationAcknowledge,
-    PostToolNotifyLLM,
-    PostToolSuccess,
-    PreToolApprove,
-    PreToolDeny,
-    StopAllow,
-    StopPrevent,
-    SubagentStopAllow,
-)
-from .requests import (
-    BaseHookRequest,
-    NotificationRequest,
-    PostToolUseRequest,
-    PreToolUseRequest,
-    StopRequest,
-    SubagentStopRequest,
-)
 from .validation import validate_hook_outcome
 
 logger = logging.getLogger(__name__)
+
+# Map hook type names to their request classes
+HOOK_REQUEST_TYPES: dict[str, type[BaseHookRequest]] = {
+    "PreToolUse": PreToolUseRequest,
+    "PostToolUse": PostToolUseRequest,
+    "Stop": StopRequest,
+    "SubagentStop": SubagentStopRequest,
+    "Notification": NotificationRequest,
+}
 
 
 class HookHandler:
@@ -139,13 +148,13 @@ class HookHandler:
         log_entry = {
             "timestamp": timestamp,
             "hook_type": hook_type,
-            "session_id": session_id,
+            "session_id": str(session_id),
             "request": {
                 "type": type(request).__name__,
-                "data": request.model_dump(),  # All requests are Pydantic models
+                "data": request.model_dump(mode="json"),  # All requests are Pydantic models
             },
             "outcome": {"type": type(outcome).__name__, "data": str(outcome)},
-            "response": response.model_dump(),  # All responses are Pydantic models
+            "response": response.model_dump(mode="json"),  # All responses are Pydantic models
             "decision_details": {},
         }
 
@@ -154,7 +163,7 @@ class HookHandler:
             log_entry["decision_details"]["tool"] = request.tool_name
             # Just dump the entire tool_input as a dict
             if request.tool_input:
-                log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump()
+                log_entry["decision_details"]["tool_input"] = request.tool_input.model_dump(mode="json")
 
         # Write to log file
         with log_file.open("a") as f:
@@ -596,12 +605,16 @@ class HookHandler:
     # Helper methods
     def _check_access_control(self, request: PreToolUseRequest, session_id: SessionID) -> tuple[RuleAction, str | None]:
         """Check access control rules."""
+        # Build args dict from tool_input
+        args = {
+            "file_path": request.tool_input.file_path,
+            "content": request.tool_input.content,
+            "old_content": request.tool_input.old_content,
+            "command": request.tool_input.command,
+        }
         context = PredicateContext(
             tool=request.tool_name,
-            path=request.tool_input.file_path,
-            content=request.tool_input.content,
-            old_content=request.tool_input.old_content,
-            command=request.tool_input.command,
+            args=args,
             session_id=session_id,
             timestamp=datetime.now(),
         )

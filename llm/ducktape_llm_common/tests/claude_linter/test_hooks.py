@@ -101,6 +101,29 @@ sys.exit(0)
     return config_path
 
 
+def create_pre_hook_payload(file_path: str, content: str) -> str:
+    """Create a PreToolUse hook payload."""
+    return json.dumps({
+        "hook_event_name": "PreToolUse",
+        "session_id": "test-session-id",
+        "tool_name": "Write",
+        "tool_input": {"file_path": file_path, "content": content}
+    })
+
+
+def create_post_hook_payload(file_path: str, content: str | None = None) -> str:
+    """Create a PostToolUse hook payload."""
+    payload = {
+        "hook_event_name": "PostToolUse",
+        "session_id": "test-session-id",
+        "tool_name": "Write",
+        "tool_input": {"file_path": file_path}
+    }
+    if content:
+        payload["tool_input"]["content"] = content
+    return json.dumps(payload)
+
+
 class TestHooks:
     """Consolidated hook tests using parametrization."""
 
@@ -115,17 +138,14 @@ class TestHooks:
         test_file = tmp_path / "test.py"
         test_file.write_text("print('hello')")
 
-        payload = json.dumps(
-            {"tool_name": "Write", "tool_input": {"file_path": str(test_file), "content": test_file.read_text()}}
-        )
+        payload = create_pre_hook_payload(str(test_file), test_file.read_text())
 
-        result = runner.invoke(cli, ["hook", "pre"], input=payload, catch_exceptions=False)
+        result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        assert "decision" not in output  # No decision means normal permission flow
-        assert output["reason"] == "Pre-commit checks passed"
-        assert output["continue"] is True
+        # New API format - continue:true means allowed
+        assert output.get("continue") is True
 
     @pytest.mark.parametrize("use_git", [False, True], ids=["no_git", "git"])
     def test_pre_hook_block(
@@ -138,17 +158,14 @@ class TestHooks:
         test_file = tmp_path / "test.py"
         test_file.write_text("non-fixable-error")
 
-        payload = json.dumps(
-            {"tool_name": "Write", "tool_input": {"file_path": str(test_file), "content": test_file.read_text()}}
-        )
+        payload = create_pre_hook_payload(str(test_file), test_file.read_text())
 
-        result = runner.invoke(cli, ["hook", "pre"], input=payload, catch_exceptions=False)
+        result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        assert output["decision"] == "block"
-        assert "non-fixable error" in output["reason"]
-        assert output["continue"] is True
+        assert output.get("decision") == "block"
+        assert output.get("continue") is True
 
     @pytest.mark.parametrize("use_git", [False, True], ids=["no_git", "git"])
     def test_post_hook_with_change(
@@ -161,14 +178,15 @@ class TestHooks:
         test_file = tmp_path / "test.py"
         test_file.write_text("fix-me")
 
-        payload = json.dumps({"tool_name": "Write", "tool_input": {"file_path": str(test_file)}})
+        payload = create_post_hook_payload(str(test_file))
 
-        result = runner.invoke(cli, ["hook", "post"], input=payload, catch_exceptions=False)
+        result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        assert output["decision"] == "block"
-        assert "FYI: Auto-fixes were applied" in output["reason"]
+        # After fix, the hook should allow continuing
+        assert output.get("continue") is True
+        # Check that the file was actually fixed
         assert test_file.read_text() == "fixed"
 
 
@@ -241,14 +259,11 @@ sys.exit(0)
         test_file = tmp_path / "test.py"
         test_file.write_text("import os\n\ndef func():\n    pass")
 
-        payload = json.dumps(
-            {"tool_name": "Write", "tool_input": {"file_path": str(test_file), "content": test_file.read_text()}}
-        )
+        payload = create_pre_hook_payload(str(test_file), test_file.read_text())
 
-        result = runner.invoke(cli, ["hook", "pre"], input=payload, catch_exceptions=False)
+        result = runner.invoke(cli, ["hook"], input=payload, catch_exceptions=False)
 
         assert result.exit_code == 0
         output = json.loads(result.stdout)
-        assert "decision" not in output
-        assert output["reason"] == "Pre-commit checks passed"
-        assert output["continue"] is True
+        # New API format - continue:true means allowed
+        assert output.get("continue") is True

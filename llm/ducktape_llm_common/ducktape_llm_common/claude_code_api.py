@@ -1,12 +1,61 @@
 """Pydantic models for Claude Code hook API requests and responses per Anthropic spec."""
 
+from __future__ import annotations
+
 from enum import StrEnum
 from typing import Any, Literal, NewType
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SessionID = NewType("SessionID", UUID)
+
+
+class EditOperation(BaseModel):
+    """Individual edit operation for MultiEdit tool."""
+
+    old_string: str
+    new_string: str
+    replace_all: bool = False
+
+
+class ToolInput(BaseModel):
+    """Input parameters for Claude Code tools.
+
+    Different tools use different subsets of these fields.
+    Extra fields are allowed for MCP and other tools.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # Common fields
+    file_path: str | None = None
+    content: str | None = None
+
+    # Edit tool fields
+    old_string: str | None = None
+    new_string: str | None = None
+    replace_all: bool = False
+    old_content: str | None = None
+
+    # MultiEdit tool fields
+    edits: list[EditOperation] | None = None
+
+    # Bash tool fields
+    command: str | None = None
+
+    # MCP tool fields (common ones)
+    url: str | None = None
+    query: str | None = None
+    path: str | None = None
+    directory: str | None = None
+
+    # Allow any additional fields for extensibility
+    allowDangerous: bool | None = None  # noqa: N815
+    wait_for: str | None = None
+    database: str | None = None
+    endpoint: str | None = None
+    method: str | None = None
 
 
 class HookEventName(StrEnum):
@@ -24,49 +73,72 @@ class HookEventName(StrEnum):
 class BaseHookRequest(BaseModel):
     """Base request for all hooks."""
 
-    session_id: SessionID
-    transcript_path: str
+    session_id: str
+    transcript_path: str | None = None
     hook_event_name: str
 
-    model_config = {"discriminator": "hook_event_name"}
+    model_config = ConfigDict(populate_by_name=True)
+
+    @property
+    def typed_session_id(self) -> SessionID:
+        """Return session_id as a typed SessionID (UUID)."""
+        return SessionID(UUID(self.session_id))
 
 
 class PreToolUseRequest(BaseHookRequest):
     """PreToolUse hook request."""
 
-    hook_event_name: Literal["PreToolUse"]
+    hook_event_name: Literal["PreToolUse"] = "PreToolUse"
     tool_name: str
-    tool_input: dict[str, Any]
+    tool_input: ToolInput
+
+    @model_validator(mode="before")
+    @classmethod
+    def convert_tool_input(cls, data: Any) -> Any:
+        """Convert dict tool_input to ToolInput model."""
+        if isinstance(data, dict) and isinstance(data.get("tool_input"), dict):
+            data["tool_input"] = ToolInput(**data["tool_input"])
+        return data
 
 
 class PostToolUseRequest(BaseHookRequest):
     """PostToolUse hook request."""
 
-    hook_event_name: Literal["PostToolUse"]
+    hook_event_name: Literal["PostToolUse"] = "PostToolUse"
     tool_name: str
-    tool_input: dict[str, Any]
-    tool_response: dict[str, Any]
+    tool_input: ToolInput
+    tool_response: dict[str, Any] | None = None
+    tool_result: dict[str, Any] | None = None  # Some versions use tool_result instead
+
+    @model_validator(mode="before")
+    @classmethod
+    def convert_tool_input(cls, data: Any) -> Any:
+        """Convert dict tool_input to ToolInput model."""
+        if isinstance(data, dict) and isinstance(data.get("tool_input"), dict):
+            data["tool_input"] = ToolInput(**data["tool_input"])
+        return data
 
 
 class NotificationRequest(BaseHookRequest):
     """Notification hook request."""
 
-    hook_event_name: Literal["Notification"]
-    message: str
+    hook_event_name: Literal["Notification"] = "Notification"
+    message: str = ""
+    title: str | None = None
 
 
 class StopRequest(BaseHookRequest):
     """Stop hook request."""
 
-    hook_event_name: Literal["Stop"]
-    stop_hook_active: bool
+    hook_event_name: Literal["Stop"] = "Stop"
+    stop_hook_active: bool = True
 
 
 class SubagentStopRequest(BaseHookRequest):
     """SubagentStop hook request."""
 
-    hook_event_name: Literal["SubagentStop"]
-    stop_hook_active: bool
+    hook_event_name: Literal["SubagentStop"] = "SubagentStop"
+    stop_hook_active: bool = True
 
 
 class PreCompactRequest(BaseHookRequest):

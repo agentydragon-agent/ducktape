@@ -14,6 +14,7 @@ class Violation(BaseModel):
     column: int = Field(0, description="Column number (optional)")
     message: str = Field(description="Human-readable violation message")
     fixable: bool = Field(False, description="Whether this can be auto-fixed")
+    file_path: str | None = Field(None, description="File path where violation occurs")
 
 
 class HookType(str, Enum):

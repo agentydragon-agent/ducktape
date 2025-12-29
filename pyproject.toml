@@ -23,6 +23,7 @@ known-first-party = [
     "agent_pkg_runtime",
     "agent_server",
     "cli_util",
+    "ducktape_llm_common",
     "editor_agent",
     "editor_agent_runtime",
     "ember",
