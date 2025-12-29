@@ -1,0 +1,35 @@
+"""Git commit AI package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "git_commit_ai",
+    srcs = glob(["src/git_commit_ai/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent_core",
+        "//mcp_infra:mcp_infra",
+        "//openai_utils:openai_utils",
+        "@pypi//fastmcp",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+    ],
+)
+
+py_binary(
+    name = "git-commit-ai",
+    srcs = ["src/git_commit_ai/cli.py"],
+    main = "src/git_commit_ai/cli.py",
+    deps = [":git_commit_ai"],
+)
+
+py_test(
+    name = "test_git_commit_ai",
+    srcs = glob(["tests/**/*.py"]),
+    deps = [
+        ":git_commit_ai",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

@@ -1,0 +1,64 @@
+"""Ember agent package."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "ember",
+    srcs = glob(["src/ember/**/*.py"]),
+    imports = ["src"],
+    data = glob([
+        "src/ember/**/*.md",
+        "src/ember/**/*.j2",
+        "src/ember/resources/**/*",
+    ]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//agent_core:agent_core",
+        "//mcp_infra:mcp_infra",
+        "//openai_utils:openai_utils",
+        "@pypi//fastapi",
+        "@pypi//fastmcp",
+        "@pypi//ipykernel",
+        "@pypi//ipython",
+        "@pypi//jinja2",
+        "@pypi//jupyter_client",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//matrix_nio",
+        "@pypi//mautrix",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//requests",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "emberd",
+    srcs = ["src/ember/__main__.py"],
+    main = "src/ember/__main__.py",
+    deps = [":ember"],
+)
+
+py_binary(
+    name = "ember-eval",
+    srcs = ["src/ember/evals/runner.py"],
+    main = "src/ember/evals/runner.py",
+    deps = [":ember"],
+)
+
+py_binary(
+    name = "ember-python",
+    srcs = ["src/ember/runtime/python_session.py"],
+    main = "src/ember/runtime/python_session.py",
+    deps = [":ember"],
+)
+
+py_test(
+    name = "test_ember",
+    srcs = glob(["tests/**/*.py"]),
+    deps = [
+        ":ember",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

@@ -1,0 +1,35 @@
+"""Props backend - FastAPI dashboard server."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "props_backend",
+    srcs = glob(["src/props_backend/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//props/core:props_core",
+        "@pypi//fastapi",
+        "@pypi//pydantic",
+        "@pypi//typer",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "props_backend_cli",
+    srcs = ["src/props_backend/cli.py"],
+    main = "src/props_backend/cli.py",
+    deps = [":props_backend"],
+)
+
+py_test(
+    name = "test_props_backend",
+    srcs = glob(["tests/**/*.py"]),
+    deps = [
+        ":props_backend",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

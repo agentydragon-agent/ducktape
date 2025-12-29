@@ -360,8 +360,8 @@ Each has:
    - Define external dependencies via `pip_parse`
    - Share multi-stage cache across all agents
 
-2. **`agent_pkg_tar` rule**:
-   - Takes definition directory + MANIFEST
+2. **`agent_pkg_tar` rule** (no MANIFEST needed):
+   - Deps go directly in BUILD rule - MANIFEST becomes redundant
    - Bundles dependencies from Bazel targets
    - Produces deterministic tar archive
    - Content-hash based caching
@@ -369,18 +369,18 @@ Each has:
 3. **Validation at build time**:
    - Catch missing dependencies early
    - Validate Dockerfile structure (has `/init`)
-   - Validate MANIFEST references exist
 
 Example target structure:
 ```python
 agent_pkg_tar(
     name = "critic_archive",
     definition = "agent_defs/critic",
-    manifest = "agent_defs/critic/MANIFEST",
+    # No MANIFEST - deps declared here directly
     internal_deps = [
         "//openai_utils",
         "//agent_core",
         "//mcp_infra",
+        "//props/core",
     ],
 )
 
@@ -444,20 +444,21 @@ test_suite(
 
 #### Benefits Over Pre-Commit
 - **Automatic dependency management**: Mypy deps computed from Bazel graph (vs manual lists)
-- **Caching**: 1-2 second feedback vs 6-8 seconds for full pre-commit
-- **Comprehensiveness**: Full codebase vs changed files only
+- **Caching**: With warm cache, Bazel linting can be fast enough for pre-commit
+- **Comprehensiveness**: Full codebase, not just changed files
 - **CI native**: `bazel test //:check` runs everything
 
-#### Hybrid Approach
-Keep pre-commit for fast local feedback on changed files, use Bazel for CI enforcement:
+#### Pre-Commit Integration
+If Bazel linting is fast enough (with remote cache), use it directly as git pre-commit hook:
 ```bash
-# Local development (fast, changed files only)
-pre-commit run
-
-# CI (comprehensive, cached)
-bazel test //:check
-bazel test //...
+# .git/hooks/pre-commit or via pre-commit framework
+bazel test //:lint //:typecheck --keep_going
 ```
+
+This replaces the current pre-commit.yaml ruff/mypy hooks entirely. Benefits:
+- Same tool locally and in CI
+- No separate pre-commit dependency management
+- Leverages Bazel's caching for speed
 
 ### TODO: Further Bazel Adoption Gains
 
@@ -490,17 +491,22 @@ bazel test //...
    - Hermetic, content-addressed builds
    - Automatic rebuild on dependency changes
 
-#### Lower Priority
+#### CI Integration
 
-6. **Bazel-Based CI** (2-6 weeks)
-   - Option A: Keep GitHub Actions, call `bazel build/test`
-   - Option B: Migrate to Bazel CI (Google's hosted)
-   - Same commands locally and in CI
+6. **Bazel-Based CI** (required if adopting Bazel)
+   - If we go Bazel, CI should be Bazel-based
+   - Replace current GitHub Actions pytest matrix with `bazel test //...`
+   - Single source of truth: same commands locally and in CI
+   - Options:
+     - GitHub Actions calling Bazel directly
+     - Bazel CI (Google's hosted)
+     - GitLab CI with Bazel
 
-7. **Gazelle for Auto-Generation** (3 days)
-   - Keep BUILD files in sync automatically
-   - Run in pre-commit hook
-   - Reduces maintenance burden
+7. **Gazelle for Auto-Generation** (evaluate carefully)
+   - Can auto-generate BUILD files from source
+   - **Caveat**: May not handle custom rules (agent_pkg_tar, oci_image, lint targets)
+   - Best for: standard py_library/py_test targets
+   - May need manual BUILD files for non-standard targets anyway
 
 #### Out of Scope (Don't Bazel-ify)
 - **Ansible**: Idempotent state management ≠ deterministic builds
