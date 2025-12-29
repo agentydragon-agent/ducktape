@@ -4,6 +4,7 @@
   import { recallColorClass } from '../lib/colors';
   import DefinitionIdLink from '../lib/DefinitionIdLink.svelte';
   import BackButton from './BackButton.svelte';
+  import Breadcrumb from './Breadcrumb.svelte';
 
   interface Props {
     data: ExampleDetailResponse;
@@ -26,6 +27,15 @@
       <BackButton />
       <h2 class="text-lg font-semibold">Example Detail</h2>
     </div>
+    <Breadcrumb
+      items={[
+        { label: 'Home', href: '/' },
+        { label: 'Examples', href: '/examples' },
+        {
+          label: `${data.snapshot_slug}/${data.example_kind}${data.files_hash ? `/${data.files_hash.substring(0, 8)}` : ''}`,
+        },
+      ]}
+    />
 
     <div class="space-y-3">
       <!-- Example metadata -->

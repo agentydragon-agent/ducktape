@@ -3,6 +3,7 @@
   import { toast } from 'svelte-sonner';
   import { marked } from 'marked';
   import BackButton from './BackButton.svelte';
+  import Breadcrumb from './Breadcrumb.svelte';
   import {
     fetchRun,
     fetchRunEvents,
@@ -424,19 +425,22 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header -->
-  <div class="p-4 border-b flex items-center justify-between">
-    <div class="flex items-center gap-4">
-      <BackButton class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50" />
-      <h2 class="text-lg font-semibold">Run Details</h2>
+  <div class="p-4 border-b">
+    <div class="flex items-center justify-between mb-3">
+      <div class="flex items-center gap-4">
+        <BackButton class="px-3 py-1 text-sm border border-gray-300 rounded bg-white text-gray-700 hover:bg-gray-50" />
+        <h2 class="text-lg font-semibold">Run Details</h2>
+        {#if run}
+          <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
+        {/if}
+      </div>
       {#if run}
-        <span class="font-mono text-sm text-gray-500"><RunIdLink id={run.agent_run_id} /></span>
+        <span class="px-2 py-1 rounded text-sm font-medium capitalize {getStatusColor(run.status)}">
+          {formatStatus(run.status)}
+        </span>
       {/if}
     </div>
-    {#if run}
-      <span class="px-2 py-1 rounded text-sm font-medium capitalize {getStatusColor(run.status)}">
-        {formatStatus(run.status)}
-      </span>
-    {/if}
+    <Breadcrumb items={[{ label: 'Home', href: '/' }, { label: 'Runs', href: '/runs' }, { label: runId }]} />
   </div>
 
   {#if loading}

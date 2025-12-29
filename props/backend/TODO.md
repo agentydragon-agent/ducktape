@@ -2,15 +2,10 @@
 
 ## High Priority
 
-- [ ] **Show incomplete runs properly**
-  - Don't count incomplete runs in stats aggregates
-  - Add "X runs in progress" indicator when applicable
-
-## Medium Priority
-
-- [ ] **Improve status display**
-  - Replace S/C letters with full words or icons
-  - Has tooltips already, just need visible labels
+- [ ] **Add "X runs in progress" indicator**
+  - Show separate count/indicator for how many runs are currently in progress
+  - Stats already exclude in_progress runs (filtered in recall_by_run view)
+  - Frontend already shows full status words (not S/C letters)
 
 ## Lower Priority
 

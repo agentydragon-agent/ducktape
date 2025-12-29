@@ -134,7 +134,6 @@
 
 ## Known Issues / Improvements
 
-- [ ] Consider adding breadcrumb navigation for nested files
 - [ ] Add file size limits / warnings for large files
 - [ ] Consider virtual scrolling for very large files
 - [ ] Add support for binary file detection and appropriate handling

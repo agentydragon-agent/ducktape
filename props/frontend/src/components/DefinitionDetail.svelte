@@ -4,6 +4,7 @@
   import { recallColorClass } from '../lib/colors';
   import RunsBrowser from './RunsBrowser.svelte';
   import BackButton from './BackButton.svelte';
+  import Breadcrumb from './Breadcrumb.svelte';
   import type { Split, ExampleKind } from '../lib/types';
 
   interface Props {
@@ -41,8 +42,11 @@
       <BackButton />
       <h2 class="text-lg font-semibold">Definition Detail</h2>
     </div>
+    <Breadcrumb
+      items={[{ label: 'Home', href: '/' }, { label: 'Definitions', href: '/' }, { label: data.definition_id }]}
+    />
 
-    <div class="space-y-3">
+    <div class="space-y-3 mt-3">
       <!-- Definition ID and metadata -->
       <div class="flex items-center gap-4 text-sm">
         <span class="font-mono text-blue-600">{data.definition_id}</span>

@@ -110,14 +110,23 @@
 
 <div class="bg-white rounded-lg shadow">
   <!-- Header -->
-  <div class="px-4 py-3 border-b flex justify-between items-center">
-    <div class="flex items-center gap-3">
-      <BackButton href="{base}/snapshots" />
-      <h2 class="text-xl font-semibold font-mono">{snapshot.slug}</h2>
-      <span class="px-2 py-1 text-xs font-medium rounded {splitBadgeClass(snapshot.split)}">
-        {snapshot.split}
-      </span>
+  <div class="px-4 py-3 border-b">
+    <div class="flex justify-between items-center mb-2">
+      <div class="flex items-center gap-3">
+        <BackButton href="{base}/snapshots" />
+        <h2 class="text-xl font-semibold font-mono">{snapshot.slug}</h2>
+        <span class="px-2 py-1 text-xs font-medium rounded {splitBadgeClass(snapshot.split)}">
+          {snapshot.split}
+        </span>
+      </div>
     </div>
+    <Breadcrumb
+      items={[
+        { label: 'Home', href: '/' },
+        { label: 'Snapshots', href: `${base}/snapshots` },
+        { label: snapshot.slug },
+      ]}
+    />
   </div>
 
   <!-- Tabs -->
