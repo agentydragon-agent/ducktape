@@ -105,6 +105,8 @@ devenv's nix bundling is **required**, not a packaging mistake.
 
 **Alternatives investigated:**
 - `apt-cache search devenv`: Not available in apt
+- Standalone binary: No - devenv GitHub releases have no assets, distributed only via nix
+- External nix support: No - devenv requires its bundled nix 2.30.4 fork (lazy-trees feature)
 - Minimal install (direnv + uv only): ~160 MB, might fit in timeout
 - Skip devenv entirely: Loses reproducible environment, but Python work still possible
 
