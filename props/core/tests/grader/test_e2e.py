@@ -192,7 +192,7 @@ def _make_grader_steps_comprehensive(critic_run_id: str, fp_id: str) -> list[Ste
         ),
         # Step 2: Read true_positives for this snapshot
         # This demonstrates grader can access ground truth TPs
-        # test-fixtures/train1 has TP "test-issue" catchable from subtract.py
+        # test-fixtures/train1 has TP "test-issue" expected to be found from subtract.py
         AssertDockerExecThenCall(
             expected_output="test-issue-01",  # Reported issue from critic
             next_cmd=["psql", "-c", "SELECT tp_id, rationale FROM true_positives LIMIT 5"],

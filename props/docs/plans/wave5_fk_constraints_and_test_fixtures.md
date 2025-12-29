@@ -8,7 +8,7 @@
 
 ### Occurrence-Weighted Recall Constraint (must keep normalization late)
 
-Recall metrics must stay occurrence-weighted. Do **not** average per-grader recall ratios early. Keep raw totals through aggregation (e.g., “total credit per grader run”, “total catchable occurrences per example/critic run”) and only divide by the catchable-occurrence count at the final step. This avoids inflating recall when multiple graders grade the same critic run.
+Recall metrics must stay occurrence-weighted. Do **not** average per-grader recall ratios early. Keep raw totals through aggregation (e.g., "total credit per grader run", "total expected occurrences per example/critic run") and only divide by the expected-occurrence count at the final step. This avoids inflating recall when multiple graders grade the same critic run.
 
 Implementation rule for views:
 - Keep lower views (`occurrence_credits`, `occurrence_run_credits`, `critic_run_occurrence_stats`) in **totals space** (store `total_credit`, carry `n_recall_denominator`).
@@ -18,7 +18,7 @@ Implementation rule for views:
   - `recall_ci_high = (occurrences_caught_stats).ci_high / NULLIF(n_recall_denominator, 0)`
 - Use these derived recall fields for ordering/filtering; never average per-grader 0..1 ratios directly.
 - When a credit ratio is needed (e.g., for ordering), compute it in SQL from the totals (`total_credit` / `n_recall_denominator`) at the view edge—do not push 0..1 ratios down into intermediate views or Python.
-- Failed critic runs must count as 0 credit (not dropped). When no grader credits exist, default the credit array to `[0.0]` so recall is 0/n_catchable rather than NULL.
+- Failed critic runs must count as 0 credit (not dropped). When no grader credits exist, default the credit array to `[0.0]` so recall is 0/n_expected rather than NULL.
 - Strong preference: tests and fixtures should reuse synced, in-git specimens instead of fabricating TP/FP IDs. Add shared fixtures (in `tests/props/conftest.py`) that return real `(tp_id, occurrence_id)` from git-synced snapshots and use them for grading_decisions / OccurrenceResult construction.
 
 ### Fixture Set Extension (synced specimens, no fabrication)
@@ -29,7 +29,7 @@ Implementation rule for views:
   - At least 1 FP occurrence (added `fp1.yaml` to test-trivial) to cover FP-side views/constraints.
   - Whole-snapshot example (implicit for the snapshot) for whole-scope paths.
 - Shared fixtures to add/use:
-  - `fixture_example_subtract` → single-file-set example with 1 catchable TP.
+  - `fixture_example_subtract` → single-file-set example with 1 TP in expected recall scope.
   - `fixture_example_multi_tp` → file-set example with multiple TP occurrences.
   - `fixture_tp_occurrence` / `fixture_multi_tp_occurrences` → real (tp_id, occurrence_id) tuples from the snapshot.
   - `fixture_fp_occurrence` → real FP occurrence (must exist; fixtures should fail fast if it goes missing).

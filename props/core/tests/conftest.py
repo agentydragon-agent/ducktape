@@ -1158,7 +1158,7 @@ def example_subtract_orm(synced_test_session: Session) -> Example:
         .filter(Example.recall_denominator == 1)
         .first()
     )
-    assert example is not None, "Expected single-file-set example with 1 catchable TP in train1"
+    assert example is not None, "Expected single-file-set example with 1 TP in expected recall scope in train1"
     return example
 
 
@@ -1316,7 +1316,7 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
         tp_occs = get_tp_occurrences_for_snapshot(slug, session)
         assert tp_occs, f"No TP occurrences found for {slug}"
         assert len(tp_occs) == example.recall_denominator, (
-            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} catchable"
+            f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} expected"
         )
 
         # Create grader output with real TP IDs

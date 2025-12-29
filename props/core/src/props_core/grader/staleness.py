@@ -83,7 +83,7 @@ def _orm_tp_to_db(orm_tp: TruePositive) -> DBTruePositiveIssue:
                 occurrence_id=occ.occurrence_id,
                 files=_convert_orm_ranges_to_db_files(occ.ranges),
                 note=occ.note,
-                # Derive from M:N relationship (expected_recall_scopes -> file_sets)
+                # Derive from M:N relationship (critic_scopes_expected_to_recall -> file_sets)
                 critic_scopes_expected_to_recall=[
                     [str(p) for p in trigger_set] for trigger_set in occ.critic_scopes_expected_to_recall_set
                 ],

@@ -131,17 +131,21 @@ occurrences:
 
 ### critic_scopes_expected_to_recall
 
-Defines which file sets make this occurrence catchable:
+Defines which file scopes contribute to **recall denominator**:
 - Outer list = alternatives (OR logic)
 - Inner list = required together (AND logic)
-- If ANY alternative is a subset of the critic's reviewed files, the occurrence counts toward recall
+- If ANY alternative is a subset of the critic's reviewed files, the occurrence counts toward recall denominator
 - Can be omitted for single-file occurrences (auto-inferred)
+
+**NOTE:** This is a soft expectation - critics CAN find issues outside expected scopes (recall >100% possible).
 
 ### graders_match_only_if_reported_on
 
-Optimization for grading:
+**HARD CONSTRAINT** on where graders can give credit:
 - `null` (default): Critique can match from any file
-- Non-empty list: Skip matching if critique's files don't overlap
+- Non-empty list: Grader may only give credit if critique flagged overlapping files
+
+This is distinct from `critic_scopes_expected_to_recall` - see ground_truth.md.j2 for the full explanation.
 - Independent of critic_scopes (detection source ≠ valid reporting targets)
 
 ## False Positives (FPs)

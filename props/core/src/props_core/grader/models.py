@@ -184,7 +184,7 @@ class GraderSuccess(BaseModel):
     tag: Literal["success"] = "success"
 
     occurrence_results: list[OccurrenceResult] = Field(
-        description="Per-occurrence grading results. One entry per catchable occurrence."
+        description="Per-occurrence grading results. One entry per occurrence in expected recall scope."
     )
 
     unknowns: list[UnknownIssue] = Field(

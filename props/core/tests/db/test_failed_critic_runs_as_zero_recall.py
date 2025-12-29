@@ -61,8 +61,8 @@ def test_context_length_exceeded_also_counted_as_zero(synced_test_session: Sessi
     assert "context_length_exceeded" in result.grader_rationale
 
 
-def test_only_catchable_occurrences_included_for_failures(synced_test_session: Session, example_subtract_orm: Example):
-    """Test that failed runs only generate zero-credit rows for catchable occurrences."""
+def test_only_expected_occurrences_included_for_failures(synced_test_session: Session, example_subtract_orm: Example):
+    """Test that failed runs only generate zero-credit rows for occurrences in expected recall scope."""
     critic_run = make_critic_run(
         example=example_subtract_orm, model="test-critic-model", status=AgentRunStatus.MAX_TURNS_EXCEEDED
     )
@@ -74,8 +74,8 @@ def test_only_catchable_occurrences_included_for_failures(synced_test_session: S
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # subtract.py example has 1 catchable TP
-    assert len(results) == 1, "Should only include catchable occurrence"
+    # subtract.py example has 1 TP in expected recall scope
+    assert len(results) == 1, "Should only include occurrence in expected recall scope"
     assert results[0].tp_id == "tp-001"
 
 
@@ -169,8 +169,8 @@ def test_multiple_occurrences_with_or_logic(synced_test_session: Session, exampl
         {"run_id": str(critic_run.agent_run_id)},
     ).fetchall()
 
-    # multi-TP example has 2 catchable occurrences
-    assert len(results) == 2, f"Expected 2 catchable occurrences, got {len(results)}"
+    # multi-TP example has 2 occurrences in expected recall scope
+    assert len(results) == 2, f"Expected 2 occurrences in recall scope, got {len(results)}"
 
 
 def test_multiple_grader_runs_do_not_overweight_critic_run(

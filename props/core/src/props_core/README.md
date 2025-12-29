@@ -113,7 +113,7 @@ Example usage:
 
 **Dataset model:**
 - **Snapshot:** Frozen code state at a specific commit with labeled issues (TPs and FPs) — specimens from separate repo
-- **Training Example:** `(snapshot, targeted_files)` pair where ground truth is computed based on which issues are "catchable" from those files
+- **Training Example:** `(snapshot, targeted_files)` pair where recall denominator is computed based on which issues are in expected recall scope for those files
 - **True Positive filtering:** Uses `critic_scopes_expected_to_recall` to determine which issues should be detectable given a file set
 
 For detailed information, see [Training Strategy](docs/training_strategy.md).

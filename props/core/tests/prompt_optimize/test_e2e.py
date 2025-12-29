@@ -350,7 +350,7 @@ async def test_cli_leaderboard_shows_recall(run_prompt_optimizer_with_steps, tes
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     # Steps: run leaderboard and check output contains the expected 76% recall
     steps = [
@@ -386,7 +386,7 @@ async def test_cli_hard_examples_shows_metrics(run_prompt_optimizer_with_steps, 
     """
     # Destructure to verify fixture provides expected data
     example, _critic_run, _grader_run = test_train_example_with_runs
-    assert example.recall_denominator == 4, "test-trivial should have 4 catchable occurrences"
+    assert example.recall_denominator == 4, "test-trivial should have 4 expected occurrences"
 
     steps = [
         DockerExecCall(cmd=["critic-dev", "hard-examples", "--limit", "5"], timeout_ms=30000),

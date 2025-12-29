@@ -84,7 +84,7 @@ Easy to debug, small scope    Harder, more occurrences    Black-box, true genera
 Start with small examples, not whole-snapshot:
 
 ```sql
--- Find easiest file-set examples (1-3 catchable occurrences)
+-- Find easiest file-set examples (1-3 occurrences in expected recall scope)
 SELECT snapshot_slug, files_hash, n_recall_denominator
 FROM examples
 WHERE example_kind = 'file_set'
