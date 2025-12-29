@@ -71,14 +71,16 @@
 
   // Get agent type from discriminator field
   function getAgentType(run: AgentRunDetail): string {
-    return run.agent_type;
+    // TypeScript doesn't know about the new structure until schema is regenerated
+    return (run as any).details?.agent_type || 'unknown';
   }
 
   // Compute aggregated grading edges from all grader runs
   function getAggregatedEdges(run: AgentRunDetail) {
-    if (run.agent_type !== 'critic') return [];
-    // TypeScript doesn't know about grading_edges until schema is regenerated
-    return run.grader_runs.flatMap((g: any) => g.grading_edges || []);
+    // TypeScript doesn't know about the new nested structure until schema is regenerated
+    const details = (run as any).details;
+    if (!details || details.agent_type !== 'critic') return [];
+    return details.grader_runs?.flatMap((g: any) => g.grading_edges || []) || [];
   }
 
   // Compute grading summary from aggregated edges
@@ -88,12 +90,12 @@
     const edges = getAggregatedEdges(run);
     if (edges.length === 0) return null;
 
-    const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
-    const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
-    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
+    const tp_count = edges.filter((e: any) => e.target.kind === 'tp').length;
+    const fp_count = edges.filter((e: any) => e.target.kind === 'fp').length;
+    const unknown_count = edges.filter((e: any) => e.target.kind === 'none').length;
     const total_credit = edges
-      .filter((e) => e.target.kind === 'tp')
-      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+      .filter((e: any) => e.target.kind === 'tp')
+      .reduce((sum: number, e: any) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
 
     // Recall denominator needs to come from example - we'll pass it separately
     return { tp_count, fp_count, unknown_count, total_credit };
@@ -586,7 +588,8 @@
       {@const edges = getAggregatedEdges(run)}
       {#if edges.length > 0}
         {@const visibleEdges = edges.filter(
-          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+          (e: any) =>
+            e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
         )}
         {@const gs = computeGradingSummary(run)}
         <div class="px-4 py-2 border-b flex-shrink-0">
@@ -601,7 +604,8 @@
       {/if}
     {:else if run.agent_type === 'grader' && run.grading_edges.length > 0}
       {@const visibleEdges = run.grading_edges.filter(
-        (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+        (e: any) =>
+          e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
       )}
       <div class="px-4 py-2 border-b flex-shrink-0">
         <GradingEdges edges={run.grading_edges} missedOccurrences={[]} defaultOpen={visibleEdges.length < 10} />

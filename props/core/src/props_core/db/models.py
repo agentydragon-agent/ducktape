@@ -11,10 +11,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, ClassVar, TypeVar
+from typing import TYPE_CHECKING, Annotated, Any, ClassVar, Literal, TypeVar
 from uuid import UUID, uuid4
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter
 
 if TYPE_CHECKING:
     from props_core.db.examples import Example
@@ -748,6 +748,36 @@ class GradingPending(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn())
 
 
+# --- Grading Target Types (Discriminated Union) ---
+
+
+class TpTarget(BaseModel):
+    """TP match target."""
+
+    kind: Literal["tp"] = "tp"
+    tp_id: str
+    occurrence_id: str
+    credit: float
+
+
+class FpTarget(BaseModel):
+    """FP match target."""
+
+    kind: Literal["fp"] = "fp"
+    fp_id: str
+    occurrence_id: str
+    credit: float
+
+
+class NoMatchTarget(BaseModel):
+    """No match (unknown)."""
+
+    kind: Literal["none"] = "none"
+
+
+GradingTarget = Annotated[TpTarget | FpTarget | NoMatchTarget, Field(discriminator="kind")]
+
+
 class GradingEdge(Base):
     """Explicit bipartite graph edge from critique issue to GT occurrence.
 
@@ -799,6 +829,20 @@ class GradingEdge(Base):
 
     # Relationships
     grader_run: Mapped[AgentRun] = relationship(foreign_keys=[grader_run_id])
+
+    def to_target(self) -> GradingTarget:
+        """Convert to grading target for API responses."""
+        if self.tp_id is not None:
+            assert self.tp_occurrence_id is not None, (
+                f"TP grading edge {self.critique_issue_id} missing tp_occurrence_id"
+            )
+            return TpTarget(tp_id=self.tp_id, occurrence_id=self.tp_occurrence_id, credit=self.credit)
+        if self.fp_id is not None:
+            assert self.fp_occurrence_id is not None, (
+                f"FP grading edge {self.critique_issue_id} missing fp_occurrence_id"
+            )
+            return FpTarget(fp_id=self.fp_id, occurrence_id=self.fp_occurrence_id, credit=self.credit)
+        return NoMatchTarget()
 
 
 class ModelMetadata(Base):

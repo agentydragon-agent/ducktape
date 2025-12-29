@@ -5,12 +5,22 @@
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
 
+  interface LineRange {
+    start_line: number;
+    end_line: number;
+  }
+
+  interface FileLocation {
+    path: string;
+    ranges: LineRange[] | null;
+  }
+
   interface CritiqueIssue {
     id: string;
     rationale: string;
     note?: string;
-    ranges: Array<{ start_line: number; end_line: number }> | null;
-    allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+    ranges: LineRange[] | null;
+    allFiles: FileLocation[];
   }
 
   interface Props {
@@ -34,8 +44,8 @@
     occurrenceId?: string;
     rationale: string;
     note?: string;
-    ranges: Array<{ start_line: number; end_line: number }> | null;
-    allFiles: Array<{ path: string; ranges: Array<{ start_line: number; end_line: number }> | null }>;
+    ranges: LineRange[] | null;
+    allFiles: FileLocation[];
     gradingEdges?: GradingEdgeInfo[];
   }
 
