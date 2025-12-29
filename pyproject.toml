@@ -7,6 +7,40 @@ override-dependencies = ["rfc3987-syntax"]
 [tool.uv.sources]
 rfc3987-syntax = { git = "https://github.com/agentydragon/rfc3987-syntax", branch = "adgn/one-parser" }
 
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = [
+    "adgn",
+    "agent_core",
+    "agent_pkg_host",
+    "agent_pkg_runtime",
+    "agent_server",
+    "cli_util",
+    "editor_agent",
+    "editor_agent_runtime",
+    "ember",
+    "git_commit_ai",
+    "gmail_archiver",
+    "mcp_infra",
+    "mcp_utils",
+    "net_util",
+    "openai_utils",
+    "props_backend",
+    "props_core",
+    "py_detectors",
+    "rspcache",
+    "sandboxed_jupyter",
+    "tana",
+    "wt",
+]
+
 [tool.uv.workspace]
 members = [
     "agent_pkg/host",
