@@ -54,6 +54,7 @@ from .loader import discover_snapshots
 
 if TYPE_CHECKING:
     import aiodocker
+
     from props_core.models.true_positive import LineRange
 
 # Agent definitions are stored in the props package under agent_defs/
@@ -63,8 +64,7 @@ logger = logging.getLogger(__name__)
 
 
 def _add_ranges_to_occurrence(
-    orm_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM,
-    files: dict[Path, list[LineRange] | None],
+    orm_occ: TruePositiveOccurrenceORM | FalsePositiveOccurrenceORM, files: dict[Path, list[LineRange] | None]
 ) -> None:
     """Add OccurrenceRangeORM objects to an ORM occurrence from a files dict."""
     for file_path, ranges in files.items():

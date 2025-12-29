@@ -6,7 +6,7 @@ from fastmcp.server import FastMCP
 from pydantic import BaseModel
 import pytest
 
-from adgn.agent.bootstrap import TypedBootstrapBuilder
+from agent_core.bootstrap import TypedBootstrapBuilder
 from agent_core.handler import SequenceHandler
 from agent_core.loop_control import InjectItems, NoAction
 from agent_core.testing import is_all_function_calls

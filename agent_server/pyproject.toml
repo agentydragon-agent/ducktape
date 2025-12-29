@@ -26,6 +26,7 @@ dependencies = [
 [project.scripts]
 adgn-agent-serve = "agent_server.cli:main"
 agent-server-matrix-bot = "agent_server.matrix_bot:main"
+agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_code:main"
 
 [project.optional-dependencies]
 dev = [

@@ -1,11 +1,5 @@
 """Shared test fixtures for props tests."""
 
-# Register shared fixtures from other packages
-pytest_plugins = [
-    "agent_core.testing.fixtures",  # make_step_runner, responses_factory, etc.
-    "mcp_infra.testing.fixtures",   # async_docker_client, make_compositor, etc.
-]
-
 from collections.abc import AsyncGenerator, Callable, Generator
 import hashlib
 import inspect
@@ -75,6 +69,12 @@ from sqlalchemy.orm import Session
 
 from agent_core.testing import FakeOpenAIModel, Step
 from openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
+
+# Register shared fixtures from other packages
+pytest_plugins = [
+    "agent_core.testing.fixtures",  # make_step_runner, responses_factory, etc.
+    "mcp_infra.testing.fixtures",  # async_docker_client, make_compositor, etc.
+]
 
 # Props-specific constants
 EMPTY_CANONICAL_ISSUES_SNAPSHOT = CanonicalIssuesSnapshot(true_positives=[], false_positives=[])

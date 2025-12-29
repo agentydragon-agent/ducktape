@@ -519,10 +519,13 @@ class TruePositiveOccurrenceORM(Base):
         "TruePositiveOccurrenceORM.tp_id == foreign(CriticScopeExpectedToRecall.tp_id), "
         "TruePositiveOccurrenceORM.occurrence_id == foreign(CriticScopeExpectedToRecall.occurrence_id))",
     )
+    # overlaps: occurrence_ranges table has exclusive arc (tp_id XOR fp_id), so both
+    # TruePositiveOccurrenceORM.ranges and FalsePositiveOccurrenceORM.ranges write to same columns
     ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
         back_populates="tp_occurrence",
         cascade="all, delete-orphan",
         foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.tp_id, OccurrenceRangeORM.occurrence_id]",
+        overlaps="ranges,fp_occurrence",
     )
 
     @property
@@ -568,10 +571,13 @@ class FalsePositiveOccurrenceORM(Base):
 
     # Relationships
     false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
+    # overlaps: occurrence_ranges table has exclusive arc (tp_id XOR fp_id), so both
+    # TruePositiveOccurrenceORM.ranges and FalsePositiveOccurrenceORM.ranges write to same columns
     ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
         back_populates="fp_occurrence",
         cascade="all, delete-orphan",
         foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.fp_id, OccurrenceRangeORM.occurrence_id]",
+        overlaps="ranges,tp_occurrence",
     )
     relevant_file_orms: Mapped[list[FalsePositiveRelevantFileORM]] = relationship(
         back_populates="occurrence", cascade="all, delete-orphan"
@@ -621,18 +627,19 @@ class OccurrenceRangeORM(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint(
-            "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id",
-            name="uq_occurrence_ranges",
+            "snapshot_slug", "tp_id", "fp_id", "occurrence_id", "file_path", "range_id", name="uq_occurrence_ranges"
         ),
         CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
     )
 
     # Relationships - use foreign() to specify which columns to join on
+    # overlaps silences SQLAlchemy warning about shared columns (snapshot_slug, occurrence_id)
+    # This is an exclusive arc pattern: exactly one of tp_occurrence/fp_occurrence is set
     tp_occurrence: Mapped[TruePositiveOccurrenceORM | None] = relationship(
-        back_populates="ranges", foreign_keys=[snapshot_slug, tp_id, occurrence_id]
+        back_populates="ranges", foreign_keys=[snapshot_slug, tp_id, occurrence_id], overlaps="fp_occurrence,ranges"
     )
     fp_occurrence: Mapped[FalsePositiveOccurrenceORM | None] = relationship(
-        back_populates="ranges", foreign_keys=[snapshot_slug, fp_id, occurrence_id]
+        back_populates="ranges", foreign_keys=[snapshot_slug, fp_id, occurrence_id], overlaps="tp_occurrence,ranges"
     )
 
 

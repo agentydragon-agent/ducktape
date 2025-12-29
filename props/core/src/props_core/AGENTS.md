@@ -12,7 +12,7 @@ Core Python library for the props evaluation system.
 @docs/db/examples.md.j2
 @docs/db/evaluation_flow.md.j2
 @docs/database_access.md
-@docs/writing_agent_definitions.md.j2
+@docs/authoring_agents.md.j2
 
 ## CLI
 

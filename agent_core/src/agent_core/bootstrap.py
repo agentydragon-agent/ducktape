@@ -1,4 +1,4 @@
-"""Bootstrap handlers - re-exported from mcp_infra.bootstrap."""
+"""Bootstrap utilities - re-exported from mcp_infra.bootstrap."""
 
 from mcp_infra.bootstrap import (
     DEFAULT_BOOTSTRAP_ITEM_TIMEOUT_MS,

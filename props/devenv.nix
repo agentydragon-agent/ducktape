@@ -84,6 +84,16 @@ in {
     done
   '';
 
+  # Enable process logs in TUI.
+  # devenv wraps process-compose commands through devenv-tasks to enable task
+  # dependencies between processes. However, devenv-tasks captures stdout/stderr
+  # into its own activity system and hides logs by default (showOutput=false).
+  # This makes the process-compose TUI log panel empty. Override to show logs.
+  # See: https://github.com/cachix/devenv/issues/2037
+  tasks."devenv:processes:backend".showOutput = true;
+  tasks."devenv:processes:frontend".showOutput = true;
+  tasks."devenv:processes:postgres".showOutput = true;
+
   # Environment variables (database connection parameters - single source of truth)
   env = {
     # Standard PostgreSQL client variables (host-side access)

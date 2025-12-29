@@ -14,7 +14,7 @@
     "lint:fix": "eslint src --ext .ts,.svelte --fix",
     "format": "prettier --write 'src/**/*.{ts,svelte,css}'",
     "format:check": "prettier --check 'src/**/*.{ts,svelte,css}'",
-    "codegen": "adgn-generate-frontend-code",
+    "codegen": "agent-server-generate-frontend-code",
     "prebuild": "npm run codegen"
   },
   "dependencies": {

@@ -3,4 +3,3 @@
 
 def test_placeholder():
     """Placeholder test - add real tests when ready."""
-    pass

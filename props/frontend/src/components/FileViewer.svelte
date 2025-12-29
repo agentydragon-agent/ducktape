@@ -242,8 +242,7 @@
               {@const issueKey = getIssueKey(issue)}
               {@const isExpanded = expandedIssues.has(issueKey)}
               {@const isTargeted = targetOccurrenceId === issue.occurrenceId}
-              {@const copyUrl =
-                issue.occurrenceId ? getOccurrenceUrl(issue.issueId, issue.occurrenceId) : undefined}
+              {@const copyUrl = issue.occurrenceId ? getOccurrenceUrl(issue.issueId, issue.occurrenceId) : undefined}
               <tr>
                 <td colspan="2" class="px-4 py-1">
                   <div

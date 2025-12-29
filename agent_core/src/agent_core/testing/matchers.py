@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+import json
 from typing import Any
 
 from hamcrest import assert_that, contains_string, has_entries, has_item, has_items, has_properties, instance_of, is_not
@@ -11,6 +12,7 @@ from hamcrest.core.description import Description
 from mcp import types as mcp_types
 
 from agent_core.events import ToolCall, ToolCallOutput
+from openai_utils.model import FunctionCallItem, FunctionCallOutputItem
 
 # ------------------------
 # Hamcrest matcher helpers
@@ -157,14 +159,108 @@ def assert_items_exclude_instance(items: Sequence[Any], typ: type[object]) -> No
     assert_that(items, is_not(has_item(instance_of(typ))))  # type: ignore[arg-type]
 
 
+# ------------------------
+# JSON argument matchers
+# ------------------------
+
+
+class HasJsonArguments(BaseMatcher[FunctionCallItem]):
+    """Matcher that checks FunctionCallItem has non-None arguments matching expected JSON."""
+
+    def __init__(self, expected: dict[str, Any]):
+        self.expected = expected
+
+    def _matches(self, item: Any) -> bool:
+        if not isinstance(item, FunctionCallItem):
+            return False
+        if item.arguments is None:
+            return False
+        try:
+            return bool(json.loads(item.arguments) == self.expected)
+        except (json.JSONDecodeError, TypeError):
+            return False
+
+    def describe_to(self, description: Description) -> None:
+        description.append_text(f"FunctionCallItem with arguments matching {self.expected}")
+
+    def describe_mismatch(self, item: Any, mismatch_description: Description) -> None:
+        if not isinstance(item, FunctionCallItem):
+            mismatch_description.append_text(f"was {type(item).__name__}")
+        elif item.arguments is None:
+            mismatch_description.append_text("had None arguments")
+        else:
+            try:
+                actual = json.loads(item.arguments)
+                mismatch_description.append_text(f"arguments were {actual}")
+            except (json.JSONDecodeError, TypeError) as e:
+                mismatch_description.append_text(f"arguments were not valid JSON: {e}")
+
+
+class HasJsonOutput(BaseMatcher[FunctionCallOutputItem]):
+    """Matcher that checks FunctionCallOutputItem has non-None output matching expected JSON.
+
+    Handles both string (JSON) and list (multimodal) output formats.
+    For string output, parses as JSON and compares.
+    For list output, compares directly (since lists aren't JSON-parseable).
+    """
+
+    def __init__(self, expected: dict[str, Any]):
+        self.expected = expected
+
+    def _matches(self, item: Any) -> bool:
+        if not isinstance(item, FunctionCallOutputItem):
+            return False
+        if item.output is None:
+            return False
+        # Handle both string (JSON) and list output
+        if isinstance(item.output, str):
+            try:
+                return bool(json.loads(item.output) == self.expected)
+            except json.JSONDecodeError:
+                return False
+        # For list output, can't JSON parse - compare directly if expected is dict representation
+        return False
+
+    def describe_to(self, description: Description) -> None:
+        description.append_text(f"FunctionCallOutputItem with output matching {self.expected}")
+
+    def describe_mismatch(self, item: Any, mismatch_description: Description) -> None:
+        if not isinstance(item, FunctionCallOutputItem):
+            mismatch_description.append_text(f"was {type(item).__name__}")
+        elif item.output is None:
+            mismatch_description.append_text("had None output")
+        elif isinstance(item.output, str):
+            try:
+                actual = json.loads(item.output)
+                mismatch_description.append_text(f"output was {actual}")
+            except json.JSONDecodeError as e:
+                mismatch_description.append_text(f"output was not valid JSON: {e}")
+        else:
+            mismatch_description.append_text(f"output was list: {item.output}")
+
+
+def has_json_arguments(expected: dict[str, Any]) -> HasJsonArguments:
+    """Create matcher for FunctionCallItem with specific JSON arguments."""
+    return HasJsonArguments(expected)
+
+
+def has_json_output(expected: dict[str, Any]) -> HasJsonOutput:
+    """Create matcher for FunctionCallOutputItem with specific JSON output."""
+    return HasJsonOutput(expected)
+
+
 __all__ = [
     "HasErrorText",
+    "HasJsonArguments",
+    "HasJsonOutput",
     "assert_function_call_output_structured",
     "assert_items_exclude_instance",
     "assert_items_include_instances",
     "assert_payloads_have",
     "contains_err",
     "has_function_call_output_structured",
+    "has_json_arguments",
+    "has_json_output",
     "is_function_call_output",
     "is_function_call_output_end_turn",
     "is_ui_message",

@@ -1,3 +1,5 @@
+"""Tests for queued notifications and broadcast resilience."""
+
 from __future__ import annotations
 
 from fastmcp.client import Client
@@ -12,6 +14,7 @@ def _u(s: str) -> str:
 
 
 async def test_queued_notifications_flush_on_first_list(make_buffered_client):
+    """Queued notifications are flushed when the first client session lists resources."""
     # Create server and queue a list_changed before any sessions exist
     srv = EnhancedFastMCP("child")
     await srv.broadcast_resource_list_changed()  # queued (no sessions yet)
@@ -25,6 +28,7 @@ async def test_queued_notifications_flush_on_first_list(make_buffered_client):
 
 
 async def test_broadcast_continues_after_session_failure(make_buffered_client):
+    """Broadcast continues to healthy sessions when one client has closed."""
     # Create server and open two client sessions
     srv = EnhancedFastMCP("notifier")
     async with make_buffered_client({"notifier": srv}) as (client1, comp, buf):

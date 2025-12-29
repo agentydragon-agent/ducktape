@@ -5,7 +5,7 @@ from __future__ import annotations
 from mcp.types import CallToolResult, TextContent
 import pytest
 
-from adgn.agent.bootstrap_handler import BootstrapHandler
+from agent_core.bootstrap_handler import BootstrapHandler
 from agent_core.events import ToolCallOutput
 from agent_core.loop_control import InjectItems, NoAction
 from agent_pkg import InitFailedError
