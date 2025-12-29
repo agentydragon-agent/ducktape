@@ -11,8 +11,7 @@ from sqlalchemy import text
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    OccurrenceMatch,
-    OccurrenceResult,
+    TestGradingEdge,
     make_critic_run,
     make_grader_run,
     make_reported_issues,
@@ -56,13 +55,13 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert matching_tp is not None, "Should find a TP with subtract.py"
         assert matching_occ_id is not None
 
-        # Create occurrence results matching the git fixture TP
-        occurrence_results = [
-            OccurrenceResult(
+        # Create grading edges matching the git fixture TP
+        grading_edges = [
+            TestGradingEdge(
+                critique_issue_id="input-test-001",
                 tp_id=matching_tp.tp_id,
-                occurrence_id=matching_occ_id,
-                found_credit=1.0,
-                matched_by=[OccurrenceMatch(input_id="input-test-001", credit=1.0)],
+                tp_occurrence_id=matching_occ_id,
+                credit=1.0,
                 rationale="Fully found this occurrence",
             )
         ]
@@ -73,7 +72,7 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         session.flush()
 
         # Create reported issues first (required for grading decisions FK)
-        issue_ids = ["input-test-001"]  # From the match in occurrence_results
+        issue_ids = ["input-test-001"]  # From the grading edge
         make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
         # Insert grader run with output using fixture factory
@@ -86,12 +85,12 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         session.add(grader_run)
         session.flush()  # Ensure grader_run.agent_run_id is available
 
-        # Populate grading_edges table from occurrence_results
+        # Populate grading_edges table
         populate_grading_edges(
             critic_run=critic_run,
             grader_run=grader_run,
             snapshot_slug=snapshot_slug,
-            occurrence_results=occurrence_results,
+            grading_edges=grading_edges,
             session=session,
         )
 
@@ -107,8 +106,8 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
             {"slug": str(snapshot_slug)},
         ).fetchone()
 
-        assert result is not None, "View should return a row for the grader run with occurrence results"
+        assert result is not None, "View should return a row for the grader run"
         assert result.grader_run_id == grader_run.agent_run_id, "Should match the grader run ID"
-        assert result.tp_id == matching_tp.tp_id, "Should extract tp_id from occurrence_results"
-        assert result.occurrence_id == matching_occ_id, "Should extract occurrence_id from occurrence_results"
-        assert result.found_credit == 1.0, "Should extract found_credit from occurrence_results"
+        assert result.tp_id == matching_tp.tp_id, "Should extract tp_id from grading_edges"
+        assert result.occurrence_id == matching_occ_id, "Should extract occurrence_id from grading_edges"
+        assert result.found_credit == 1.0, "Should extract credit from grading_edges"

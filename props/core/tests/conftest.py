@@ -55,21 +55,17 @@ from openai_utils.model import ResponsesResult
 
 
 @dataclass(frozen=True)
-class OccurrenceMatch:
-    """A match between an input issue and a canonical occurrence."""
+class TestGradingEdge:
+    """Test fixture matching the GradingEdge ORM structure.
 
-    input_id: str
-    credit: float
+    Each edge links one critique issue to one TP occurrence with credit.
+    This flat structure mirrors the grading_edges table directly.
+    """
 
-
-@dataclass(frozen=True)
-class OccurrenceResult:
-    """Grading result for a single TP occurrence."""
-
+    critique_issue_id: str
     tp_id: str
-    occurrence_id: str
-    found_credit: float
-    matched_by: list[OccurrenceMatch]
+    tp_occurrence_id: str
+    credit: float
     rationale: str
 
 
@@ -151,33 +147,36 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
     return original
 
 
-def make_occurrence_results(
+def make_test_grading_edges(
     *,
     tp_occurrences: list[tuple[str, str]],
-    found_credit: float = 0.0,
-) -> list[OccurrenceResult]:
-    """Build per-occurrence grading results for test fixtures.
+    credit: float = 0.0,
+) -> list[TestGradingEdge]:
+    """Build grading edges for test fixtures.
+
+    Creates one edge per TP occurrence (if credit > 0), matching the GradingEdge table structure.
 
     Args:
         tp_occurrences: List of (tp_id, occurrence_id) tuples from database.
-        found_credit: Credit for each occurrence (0.0 = not found, 1.0 = fully found).
+        credit: Credit for each edge (0.0 = not found, 1.0 = fully found).
 
     Returns:
-        List of OccurrenceResult ready for populate_grading_edges().
+        List of TestGradingEdge ready for populate_grading_edges().
 
     Example:
         tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/train1", session)
-        results = make_occurrence_results(tp_occurrences=tp_occs, found_credit=0.8)
+        edges = make_test_grading_edges(tp_occurrences=tp_occs, credit=0.8)
     """
+    if credit == 0.0:
+        return []  # No edges for unfound occurrences
+
     return [
-        OccurrenceResult(
+        TestGradingEdge(
+            critique_issue_id=f"issue-{i:03d}",
             tp_id=tp_id,
-            occurrence_id=occ_id,
-            found_credit=found_credit,
-            matched_by=[OccurrenceMatch(input_id=f"issue-{i:03d}", credit=found_credit)]
-            if found_credit > 0.0
-            else [],
-            rationale="Test occurrence - not found" if found_credit == 0.0 else f"Test occurrence (credit={found_credit})",
+            tp_occurrence_id=occ_id,
+            credit=credit,
+            rationale=f"Test occurrence (credit={credit})",
         )
         for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1)
     ]
@@ -446,20 +445,16 @@ def make_grader_run(
     )
 
 
-def extract_input_issue_ids(occurrence_results: list[OccurrenceResult]) -> list[str]:
-    """Extract unique input issue IDs from occurrence results.
+def extract_input_issue_ids(grading_edges: list[TestGradingEdge]) -> list[str]:
+    """Extract unique critique issue IDs from grading edges.
 
     Args:
-        occurrence_results: List of grading results with matches.
+        grading_edges: List of test grading edges.
 
     Returns:
-        Sorted list of unique input issue IDs.
+        Sorted list of unique critique issue IDs.
     """
-    issue_ids = set()
-    for occ_result in occurrence_results:
-        for match in occ_result.matched_by:
-            issue_ids.add(str(match.input_id))
-    return sorted(issue_ids)
+    return sorted({edge.critique_issue_id for edge in grading_edges})
 
 
 def make_reported_issues(
@@ -504,60 +499,57 @@ def populate_grading_edges(
     critic_run: AgentRun,
     grader_run: AgentRun,
     snapshot_slug: SnapshotSlug,
-    occurrence_results: list[OccurrenceResult],
+    grading_edges: list[TestGradingEdge],
     session: Session,
 ) -> None:
-    """Create GradingEdge rows from occurrence results.
+    """Create GradingEdge rows from test grading edges.
 
-    Deterministic factory - creates one edge per match in occurrence results.
-    No conditional logic, no side effects beyond session writes.
+    Direct mapping from TestGradingEdge to GradingEdge ORM.
 
     Precondition: ReportedIssue rows must already exist for all critique_issue_ids
-    referenced in occurrence_results.
+    referenced in grading_edges.
 
     Args:
         critic_run: Critic AgentRun the edges reference
         grader_run: Grader AgentRun that created these edges
         snapshot_slug: Snapshot being graded
-        occurrence_results: List of OccurrenceResult (DB persistence models)
-        session: Database session (uses provided session, not get_session())
+        grading_edges: List of TestGradingEdge fixtures
+        session: Database session
 
     Raises:
-        IntegrityError: If referenced critique_issue_id doesn't exist (CHECK constraint)
+        IntegrityError: If referenced critique_issue_id doesn't exist (FK constraint)
     """
-    # Create one GradingEdge per match in each occurrence result
-    for occ_result in occurrence_results:
-        for match in occ_result.matched_by:
-            edge = GradingEdge(
-                critique_run_id=critic_run.agent_run_id,
-                critique_issue_id=match.input_id,
-                snapshot_slug=snapshot_slug,
-                tp_id=occ_result.tp_id,
-                tp_occurrence_id=occ_result.occurrence_id,
-                fp_id=None,
-                fp_occurrence_id=None,
-                credit=match.credit,
-                rationale=occ_result.rationale,
-                grader_run_id=grader_run.agent_run_id,
-            )
-            session.add(edge)
+    for test_edge in grading_edges:
+        edge = GradingEdge(
+            critique_run_id=critic_run.agent_run_id,
+            critique_issue_id=test_edge.critique_issue_id,
+            snapshot_slug=snapshot_slug,
+            tp_id=test_edge.tp_id,
+            tp_occurrence_id=test_edge.tp_occurrence_id,
+            fp_id=None,
+            fp_occurrence_id=None,
+            credit=test_edge.credit,
+            rationale=test_edge.rationale,
+            grader_run_id=grader_run.agent_run_id,
+        )
+        session.add(edge)
 
 
 def make_critic_and_grader_run(
-    *, example: Example, occurrence_results: list[OccurrenceResult], session: Session
+    *, example: Example, grading_edges: list[TestGradingEdge], session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables.
 
     Creates:
     - Critic AgentRun with COMPLETED status
-    - ReportedIssue rows (derived from occurrence_results)
+    - ReportedIssue rows (derived from grading_edges)
     - ReportedIssueOccurrence rows (placeholder locations)
     - Grader AgentRun with COMPLETED status
-    - GradingEdge rows from occurrence_results
+    - GradingEdge rows from grading_edges
 
     Args:
         example: Example being evaluated
-        occurrence_results: Per-occurrence grading results from make_occurrence_results()
+        grading_edges: Test grading edges from make_test_grading_edges()
         session: Database session
 
     Returns:
@@ -568,8 +560,8 @@ def make_critic_and_grader_run(
     session.add(critic_run)
     session.flush()
 
-    # Extract issue IDs from occurrence results and create ReportedIssue rows
-    issue_ids = extract_input_issue_ids(occurrence_results)
+    # Extract issue IDs from grading edges and create ReportedIssue rows
+    issue_ids = extract_input_issue_ids(grading_edges)
     location_file = None if example.example_kind == ExampleKind.WHOLE_SNAPSHOT else "subtract.py"
     make_reported_issues(
         agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session, location_file=location_file
@@ -590,7 +582,7 @@ def make_critic_and_grader_run(
         critic_run=critic_run,
         grader_run=grader_run,
         snapshot_slug=example.snapshot_slug,
-        occurrence_results=occurrence_results,
+        grading_edges=grading_edges,
         session=session,
     )
 
@@ -1055,12 +1047,12 @@ def make_grader_run_with_credit(
     session.add(grader_run)
     session.flush()
 
-    occurrence_results = [
-        OccurrenceResult(
+    edges = [
+        TestGradingEdge(
+            critique_issue_id=f"input-{input_idx}",
             tp_id=tp_id,
-            occurrence_id=occ_id,
-            found_credit=credit,
-            matched_by=[OccurrenceMatch(input_id=f"input-{input_idx}", credit=credit)],
+            tp_occurrence_id=occ_id,
+            credit=credit,
             rationale=f"Credit {credit}",
         )
     ]
@@ -1072,13 +1064,13 @@ def make_grader_run_with_credit(
         critic_run=critic_run,
         grader_run=grader_run,
         snapshot_slug=snapshot_slug,
-        occurrence_results=occurrence_results,
+        grading_edges=edges,
         session=session,
     )
     return grader_run
 
 
-def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Example, AgentRun, AgentRun]:
+def _make_example_with_runs(slug: SnapshotSlug, credit: float) -> tuple[Example, AgentRun, AgentRun]:
     """Helper to create example with multiple critic and grader runs.
 
     Creates complete data including:
@@ -1091,7 +1083,7 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
 
     Args:
         slug: Snapshot slug to query
-        found_credit: Credit value for grader output (0.0-1.0)
+        credit: Credit value for grading edges (0.0-1.0)
 
     Returns:
         Tuple of (example, critic_run, grader_run) where runs are the first
@@ -1109,18 +1101,16 @@ def _make_example_with_runs(slug: SnapshotSlug, found_credit: float) -> tuple[Ex
             f"Mismatch: {len(tp_occs)} TP occurrences vs {example.recall_denominator} expected"
         )
 
-        # Create occurrence results with real TP IDs
-        occurrence_results = make_occurrence_results(tp_occurrences=tp_occs, found_credit=found_credit)
+        # Create grading edges with real TP IDs
+        edges = make_test_grading_edges(tp_occurrences=tp_occs, credit=credit)
 
         # Create first pair of runs
-        critic_run, grader_run = make_critic_and_grader_run(
-            example=example, occurrence_results=occurrence_results, session=session
-        )
+        critic_run, grader_run = make_critic_and_grader_run(example=example, grading_edges=edges, session=session)
 
         # Create second pair of runs with slightly different credit
         # This is needed for UCB/LCB computation which requires COUNT(*) > 1
-        occurrence_results_2 = make_occurrence_results(tp_occurrences=tp_occs, found_credit=found_credit * 0.9)
-        make_critic_and_grader_run(example=example, occurrence_results=occurrence_results_2, session=session)
+        edges_2 = make_test_grading_edges(tp_occurrences=tp_occs, credit=credit * 0.9)
+        make_critic_and_grader_run(example=example, grading_edges=edges_2, session=session)
 
         session.commit()
 

@@ -16,7 +16,7 @@ from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
-from tests.conftest import OccurrenceResult, make_critic_run, make_grader_run, make_occurrence_results
+from tests.conftest import make_critic_run, make_grader_run
 
 __all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 
@@ -61,26 +61,18 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
 def make_test_grader_run(
     snapshot_slug: str | SnapshotSlug,
     critic_run_id: UUID,
-    occurrence_results: list[OccurrenceResult] | None = None,
-    status: AgentRunStatus | None = None,
+    status: AgentRunStatus = AgentRunStatus.COMPLETED,
 ) -> UUID:
     """Create a test grader run.
 
     Args:
         snapshot_slug: Snapshot slug (kept for backward compatibility, but derived from critic_run)
         critic_run_id: Critic run ID
-        occurrence_results: Per-occurrence grading results (default: empty list)
         status: Run status (default: COMPLETED)
 
     Returns:
         grader_run_id (UUID)
     """
-    if occurrence_results is None:
-        occurrence_results = make_occurrence_results(tp_occurrences=[])
-
-    if status is None:
-        status = AgentRunStatus.COMPLETED
-
     with get_session() as session:
         # Fetch the critic_run to pass to factory
         critic_run = session.query(AgentRun).filter_by(agent_run_id=critic_run_id).one()

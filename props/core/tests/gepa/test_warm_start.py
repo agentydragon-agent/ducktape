@@ -12,7 +12,7 @@ from props_core.db.session import get_session
 from props_core.gepa.warm_start import build_historical_gepa_state
 import pytest
 
-from tests.conftest import get_tp_occurrences_for_snapshot, make_critic_and_grader_run, make_occurrence_results
+from tests.conftest import get_tp_occurrences_for_snapshot, make_critic_and_grader_run, make_test_grading_edges
 
 pytestmark = pytest.mark.skip(reason="GEPA warm-start broken: needs migration from prompts to agent_definitions")
 
@@ -81,26 +81,26 @@ def db_with_historical_runs(synced_test_db, sample_subtract_py_scope, calculator
         tp_occs1 = get_tp_occurrences_for_snapshot(example1.snapshot_slug, session)
         make_critic_and_grader_run(
             example=example1,
-            occurrence_results=make_occurrence_results(tp_occurrences=tp_occs1, found_credit=0.8),
+            grading_edges=make_test_grading_edges(tp_occurrences=tp_occs1, credit=0.8),
             session=session,
         )
         make_critic_and_grader_run(
             example=example1,
-            occurrence_results=make_occurrence_results(tp_occurrences=tp_occs1, found_credit=0.9),
+            grading_edges=make_test_grading_edges(tp_occurrences=tp_occs1, credit=0.9),
             session=session,
         )
         # example2 (test-validation-2/calculator.py) - evaluated with prompt_a only
         tp_occs2 = get_tp_occurrences_for_snapshot(example2.snapshot_slug, session)
         make_critic_and_grader_run(
             example=example2,
-            occurrence_results=make_occurrence_results(tp_occurrences=tp_occs2, found_credit=0.6),
+            grading_edges=make_test_grading_edges(tp_occurrences=tp_occs2, credit=0.6),
             session=session,
         )
         # train_example (test-trivial/add.py) - evaluated but in TRAIN split
         tp_occs_train = get_tp_occurrences_for_snapshot(train_example.snapshot_slug, session)
         make_critic_and_grader_run(
             example=train_example,
-            occurrence_results=make_occurrence_results(tp_occurrences=tp_occs_train, found_credit=0.5),
+            grading_edges=make_test_grading_edges(tp_occurrences=tp_occs_train, credit=0.5),
             session=session,
         )
 
