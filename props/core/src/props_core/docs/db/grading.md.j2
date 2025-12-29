@@ -34,9 +34,6 @@ Not all occurrences are matchable from all critique issues. The `match_filter_ha
 | NULL | Cross-cutting issue | Any critique can match, regardless of files touched |
 | Non-NULL (file set hash) | File-scoped issue | Only critiques that touched at least one file in that set |
 
-A critique that only touched `src/api.py` cannot create edges to an occurrence with `match_filter_hash` pointing to `{src/auth.py, src/login.py}`. The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap with the occurrence's `match_filter_hash`.
+The `grading_pending` view automatically enforces this - it only shows (issue, occurrence) pairs where the critique's files overlap with the occurrence's `match_filter_hash`.
 
-Query matchable occurrences for a file set:
-```sql
-SELECT * FROM matchable_occurrences('snapshot/slug', ARRAY['src/foo.py', 'src/bar.py']);
-```
+{{ describe_relation("matchable_occurrences") }}
