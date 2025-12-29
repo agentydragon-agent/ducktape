@@ -1,20 +1,17 @@
 <script lang="ts">
   import 'highlight.js/styles/github.css';
-  import type { FileContentResponse, TpInfo, FpInfo, GradingEdgeInfo, ReportedIssueInfo } from '../lib/api/client';
+  import type {
+    FileContentResponse,
+    TpInfo,
+    FpInfo,
+    GradingEdgeInfo,
+    ReportedIssueInfo,
+    FileLocationInfo,
+    LineRangeInfo,
+  } from '../lib/api/client';
   import IssueComment from './IssueComment.svelte';
   import { detectLanguage } from '../lib/fileTypes';
   import { highlightLines } from '../lib/highlighting';
-
-  interface LineRange {
-    start_line: number;
-    end_line?: number | null;
-    note?: string | null;
-  }
-
-  interface FileLocation {
-    path: string;
-    ranges: LineRange[] | null;
-  }
 
   interface Props {
     file: FileContentResponse;
@@ -37,8 +34,8 @@
     occurrenceId?: string;
     rationale: string;
     note?: string;
-    ranges: LineRange[] | null;
-    allFiles: FileLocation[];
+    ranges: LineRangeInfo[] | null;
+    allFiles: FileLocationInfo[];
     gradingEdges?: GradingEdgeInfo[];
   }
 
@@ -135,8 +132,8 @@
   });
 
   // Map line numbers to range notes (for ranges that end on that line)
-  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRange }>>>(() => {
-    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRange }>>();
+  const lineToRangeNotes = $derived.by<Map<number, Array<{ issue: IssueMarker; range: LineRangeInfo }>>>(() => {
+    const map = new Map<number, Array<{ issue: IssueMarker; range: LineRangeInfo }>>();
 
     for (const issue of allIssues) {
       if (issue.ranges) {

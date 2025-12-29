@@ -214,18 +214,17 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
 
         # Pre-fetch all matchable files to avoid N+1 queries
         # Collect all unique match_filter_hash values from both TPs and FPs
-        match_filter_hashes = set()
-        for tp in tps:
-            for occ in tp.occurrences:
-                if occ.match_filter_hash:
-                    match_filter_hashes.add(occ.match_filter_hash)
-        for fp in fps:
-            for occ in fp.occurrences:
-                if occ.match_filter_hash:
-                    match_filter_hashes.add(occ.match_filter_hash)
+        # Note: whole-snapshot occurrences have match_filter_hash=None (no file filter)
+        match_filter_hashes = {
+            occ.match_filter_hash
+            for issues in (tps, fps)
+            for issue in issues
+            for occ in issue.occurrences
+            if occ.match_filter_hash
+        }
 
         # Bulk fetch all file set members for these hashes
-        matchable_files_by_hash: dict[str, list[str]] = {}
+        matchable_files_by_hash: dict[str, list[str]] = defaultdict(list)
         if match_filter_hashes:
             members = (
                 session.query(FileSetMember.files_hash, FileSetMember.file_path)
@@ -234,7 +233,7 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
                 .all()
             )
             for files_hash, file_path in members:
-                matchable_files_by_hash.setdefault(files_hash, []).append(file_path)
+                matchable_files_by_hash[files_hash].append(file_path)
 
         # Convert TPs
         tp_infos = []

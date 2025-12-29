@@ -202,6 +202,7 @@ export type FpInfo = components['schemas']['FpInfo'];
 export type ReportedIssueInfo = components['schemas']['ReportedIssueInfo'];
 export type ReportedIssueOccurrenceInfo = components['schemas']['ReportedIssueOccurrenceInfo'];
 export type FileLocationInfo = components['schemas']['FileLocationInfo'];
+export type LineRangeInfo = components['schemas']['LineRangeInfo'];
 
 export async function fetchSnapshots() {
   const { data, error } = await api.GET('/api/gt/snapshots');
