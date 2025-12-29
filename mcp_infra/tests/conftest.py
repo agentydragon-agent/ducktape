@@ -16,6 +16,7 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     if item.get_closest_marker("requires_docker") is None:
         return
 
+    client = None
     try:
         import docker
 
@@ -32,8 +33,9 @@ def pytest_runtest_setup(item: pytest.Item) -> None:
     except ImportError:
         pytest.skip("docker package not installed")
     finally:
-        with suppress(Exception):
-            client.close()
+        if client is not None:
+            with suppress(Exception):
+                client.close()
 
 
 @pytest.fixture

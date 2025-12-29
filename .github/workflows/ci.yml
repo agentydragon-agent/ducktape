@@ -29,7 +29,7 @@ jobs:
       - name: Find projects with pyproject.toml
         id: find-projects
         run: |
-          projects=$(find . -name 'pyproject.toml' -not -path '*/\.*' | \
+          projects=$(find . -name 'pyproject.toml' -not -path '*/\.*' -not -path './pyproject.toml' | \
             sed 's|^\./||' | \
             sed 's|/pyproject.toml$||' | \
             jq -R -s -c 'split("\n") | map(select(length > 0))')
@@ -139,8 +139,8 @@ jobs:
             echo "❌ Ansible-lint found issues" >> $GITHUB_STEP_SUMMARY
           fi
 
-  frontend-build:
-    name: Frontend build
+  props-frontend-build:
+    name: Props frontend build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
