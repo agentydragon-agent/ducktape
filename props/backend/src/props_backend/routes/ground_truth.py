@@ -56,14 +56,17 @@ class FileLocationInfo(BaseModel):
     ranges: list[LineRange] | None
 
 
-class TpOccurrenceInfo(BaseModel):
-    """True positive occurrence info."""
+class OccurrenceInfo(BaseModel):
+    """Unified occurrence info for both TPs and FPs."""
 
     occurrence_id: str
     files: list[FileLocationInfo]
     note: str | None
-    critic_scopes_expected_to_recall: list[list[str]]
     graders_match_only_if_reported_on: list[str] | None
+    # TP-specific fields
+    critic_scopes_expected_to_recall: list[list[str]] | None = None
+    # FP-specific fields
+    relevant_files: list[str] | None = None
 
 
 class TpInfo(BaseModel):
@@ -71,18 +74,8 @@ class TpInfo(BaseModel):
 
     tp_id: str
     rationale: str
-    occurrences: list[TpOccurrenceInfo]
+    occurrences: list[OccurrenceInfo]
     created_at: datetime
-
-
-class FpOccurrenceInfo(BaseModel):
-    """False positive occurrence info."""
-
-    occurrence_id: str
-    files: list[FileLocationInfo]
-    note: str | None
-    relevant_files: list[str]
-    graders_match_only_if_reported_on: list[str] | None
 
 
 class FpInfo(BaseModel):
@@ -90,7 +83,7 @@ class FpInfo(BaseModel):
 
     fp_id: str
     rationale: str
-    occurrences: list[FpOccurrenceInfo]
+    occurrences: list[OccurrenceInfo]
     created_at: datetime
 
 
@@ -242,12 +235,12 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             for occ in tp.occurrences:
                 matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
                 occ_infos.append(
-                    TpOccurrenceInfo(
+                    OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
-                        critic_scopes_expected_to_recall=_get_trigger_paths(occ),
                         graders_match_only_if_reported_on=matchable_files,
+                        critic_scopes_expected_to_recall=_get_trigger_paths(occ),
                     )
                 )
             tp_infos.append(
@@ -261,12 +254,12 @@ def get_snapshot_detail(snapshot_slug: SnapshotSlug) -> SnapshotDetailResponse:
             for occ in fp.occurrences:
                 matchable_files = matchable_files_by_hash.get(occ.match_filter_hash) if occ.match_filter_hash else None
                 occ_infos.append(
-                    FpOccurrenceInfo(
+                    OccurrenceInfo(
                         occurrence_id=occ.occurrence_id,
                         files=_build_file_locations_from_ranges(occ.ranges),
                         note=occ.note,
-                        relevant_files=sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
                         graders_match_only_if_reported_on=matchable_files,
+                        relevant_files=sorted(str(rf.file_path) for rf in occ.relevant_file_orms),
                     )
                 )
             fp_infos.append(

@@ -199,6 +199,7 @@ export type SnapshotSummary = components['schemas']['SnapshotSummary'];
 export type SnapshotDetailResponse = components['schemas']['SnapshotDetailResponse'];
 export type TpInfo = components['schemas']['TpInfo'];
 export type FpInfo = components['schemas']['FpInfo'];
+// export type OccurrenceInfo = components['schemas']['OccurrenceInfo']; // TODO: Uncomment after pnpm generate
 export type ReportedIssueInfo = components['schemas']['ReportedIssueInfo'];
 export type ReportedIssueOccurrenceInfo = components['schemas']['ReportedIssueOccurrenceInfo'];
 export type FileLocationInfo = components['schemas']['FileLocationInfo'];
