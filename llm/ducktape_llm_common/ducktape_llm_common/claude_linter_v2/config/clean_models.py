@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+import tomli
+import tomli_w
 
 from ..rule_registry import RuleRegistry
 from .models import (
@@ -107,8 +109,6 @@ class ModularConfig(BaseModel):
     @classmethod
     def from_toml(cls, path: Path) -> "ModularConfig":
         """Load configuration from TOML file - let Pydantic handle parsing."""
-        import tomli
-
         with path.open("rb") as f:
             data = tomli.load(f)
 
@@ -133,6 +133,14 @@ class ModularConfig(BaseModel):
 
         # Let Pydantic validate and create the model
         return cls(**data)
+
+    def save_to_file(self, path: Path) -> None:
+        """Save configuration to TOML file."""
+        # Use Pydantic's serialization mode to handle enums and Paths automatically
+        data = self.model_dump(exclude_none=True, mode="python")
+
+        with path.open("wb") as f:
+            tomli_w.dump(data, f)
 
     def get_rule_config(self, rule_key: str) -> RuleConfig | None:
         """Get configuration for a specific rule."""
@@ -163,12 +171,7 @@ class ModularConfig(BaseModel):
                 # Check if there's an explicit config for this rule
                 if key in self.rules:
                     # Use explicit config
-                    rule_config = self.rules[key]
-                    # Handle both dict and RuleConfig objects
-                    if isinstance(rule_config, dict):
-                        if rule_config.get("enabled", True):
-                            codes.append(rule_def.code)
-                    elif rule_config.enabled:
+                    if self.rules[key].enabled:
                         codes.append(rule_def.code)
                 # Use default from registry
                 elif rule_def.default_blocks_pre or rule_def.default_blocks_stop:

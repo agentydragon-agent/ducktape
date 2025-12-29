@@ -21,9 +21,11 @@ class TestMultilinePredicates:
         """Create test context."""
         return PredicateContext(
             tool="Bash",
-            path="/home/user/test.py",
-            content="print('hello')",
-            command="grep -r pattern",
+            args={
+                "file_path": "/home/user/test.py",
+                "content": "print('hello')",
+                "command": "grep -r pattern",
+            },
             session_id=SessionID("test-session"),
             timestamp=datetime.now(),
         )
@@ -33,14 +35,17 @@ class TestMultilinePredicates:
         predicate = """
 def check_bash(ctx):
     return ctx.tool == "Bash"
-
-check_bash(ctx)
 """
         assert evaluator.evaluate(predicate, context) is True
 
         # Change tool
-        context.tool = "Edit"
-        assert evaluator.evaluate(predicate, context) is False
+        context_edit = PredicateContext(
+            tool="Edit",
+            args={"file_path": "/home/user/test.py", "content": "print('hello')", "command": "grep -r pattern"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_edit) is False
 
     def test_complex_shell_pipeline_check(self, evaluator, context):
         """Test complex shell pipeline validation."""
@@ -84,29 +89,42 @@ def is_safe_pipeline(ctx):
             return False
 
     return True
-
-is_safe_pipeline(ctx)
 """
         # Safe pipeline
-        context.command = "grep -r pattern | wc -l"
-        assert evaluator.evaluate(predicate, context) is True
+        context_safe = PredicateContext(
+            tool="Bash",
+            args={"command": "grep -r pattern | wc -l"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_safe) is True
 
         # Unsafe command
-        context.command = "rm -rf /"
-        assert evaluator.evaluate(predicate, context) is False
+        context_unsafe = PredicateContext(
+            tool="Bash",
+            args={"command": "rm -rf /"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_unsafe) is False
 
         # Unknown flag
-        context.command = "grep -X pattern"
-        assert evaluator.evaluate(predicate, context) is False
+        context_bad_flag = PredicateContext(
+            tool="Bash",
+            args={"command": "grep -X pattern"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_bad_flag) is False
 
     def test_domain_specific_mcp_check(self, evaluator):
         """Test domain-specific MCP tool validation (stock broker example)."""
         predicate = """
-# Stock broker MCP safety check
-MAX_ACCOUNT_VALUE = 500
-MAX_MARGIN = 5
-
 def check_broker_limits(ctx):
+    # Stock broker MCP safety check
+    MAX_ACCOUNT_VALUE = 500
+    MAX_MARGIN = 5
+    
     if not ctx.tool.startswith("mcp_broker_"):
         return True  # Not a broker tool
 
@@ -129,12 +147,13 @@ def check_broker_limits(ctx):
         return False
 
     return True
-
-check_broker_limits(ctx)
 """
         # Create context for broker MCP
         broker_context = PredicateContext(
-            tool="mcp_broker_place_order", session_id=SessionID("broker-session"), timestamp=datetime.now()
+            tool="mcp_broker_place_order",
+            args={},
+            session_id=SessionID("broker-session"),
+            timestamp=datetime.now(),
         )
 
         # Add tool_input to context (simulating MCP tool input)
@@ -142,33 +161,63 @@ check_broker_limits(ctx)
         assert evaluator.evaluate(predicate, broker_context) is True
 
         # Exceed amount limit
-        broker_context.tool_input = {"amount": 1000, "margin_multiplier": 2}
-        assert evaluator.evaluate(predicate, broker_context) is False
+        broker_context_high_amount = PredicateContext(
+            tool="mcp_broker_place_order",
+            args={},
+            session_id=SessionID("broker-session"),
+            timestamp=datetime.now(),
+        )
+        broker_context_high_amount.tool_input = {"amount": 1000, "margin_multiplier": 2}
+        assert evaluator.evaluate(predicate, broker_context_high_amount) is False
 
         # Exceed margin limit
-        broker_context.tool_input = {"amount": 100, "margin_multiplier": 10}
-        assert evaluator.evaluate(predicate, broker_context) is False
+        broker_context_high_margin = PredicateContext(
+            tool="mcp_broker_place_order",
+            args={},
+            session_id=SessionID("broker-session"),
+            timestamp=datetime.now(),
+        )
+        broker_context_high_margin.tool_input = {"amount": 100, "margin_multiplier": 10}
+        assert evaluator.evaluate(predicate, broker_context_high_margin) is False
 
         # Forbidden operation
-        broker_context.tool = "mcp_broker_withdraw"
-        assert evaluator.evaluate(predicate, broker_context) is False
+        broker_context_forbidden = PredicateContext(
+            tool="mcp_broker_withdraw",
+            args={},
+            session_id=SessionID("broker-session"),
+            timestamp=datetime.now(),
+        )
+        broker_context_forbidden.tool_input = {"amount": 100, "margin_multiplier": 2}
+        assert evaluator.evaluate(predicate, broker_context_forbidden) is False
 
     def test_result_variable_style(self, evaluator, context):
         """Test using result variable instead of expression."""
         predicate = """
-# Check if editing Python test files only
-if ctx.tool == "Edit" and ctx.path:
-    path = pathlib.Path(ctx.path)
-    result = path.suffix == ".py" and "test" in path.name
-else:
-    result = False
+def check_test_file(ctx):
+    import pathlib
+    # Check if editing Python test files only
+    if ctx.tool == "Edit" and ctx.path:
+        path = pathlib.Path(ctx.path)
+        result = path.suffix == ".py" and "test" in path.name
+    else:
+        result = False
+    return result
 """
-        context.tool = "Edit"
-        context.path = "/home/user/test_foo.py"
-        assert evaluator.evaluate(predicate, context) is True
+        context_edit_test = PredicateContext(
+            tool="Edit",
+            args={"file_path": "/home/user/test_foo.py"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_edit_test) is True
 
-        context.path = "/home/user/foo.py"
-        assert evaluator.evaluate(predicate, context) is False
+        context_edit_non_test = PredicateContext(
+            tool="Edit",
+            args={"file_path": "/home/user/foo.py"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_edit_non_test) is False
 
     def test_imports_and_modules(self, evaluator, context):
         """Test that imports work correctly."""
@@ -182,42 +231,71 @@ def check_recent_activity(ctx):
     now = datetime.now()
     one_hour_ago = now - timedelta(hours=1)
     return ctx.timestamp > one_hour_ago
-
-check_recent_activity(ctx)
 """
         # Recent timestamp
-        context.timestamp = datetime.now()
-        assert evaluator.evaluate(predicate, context) is True
+        context_recent = PredicateContext(
+            tool="Bash",
+            args={"command": "test"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate, context_recent) is True
 
         # Old timestamp
-        context.timestamp = datetime.now() - timedelta(hours=2)
-        assert evaluator.evaluate(predicate, context) is False
+        context_old = PredicateContext(
+            tool="Bash",
+            args={"command": "test"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now() - timedelta(hours=2),
+        )
+        assert evaluator.evaluate(predicate, context_old) is False
 
     def test_error_handling(self, evaluator, context):
         """Test error handling in multiline predicates."""
-        # Missing return/result
+        # Missing return - function returns None which is falsy but valid
         predicate = """
 def check(ctx):
     if ctx.tool == "Bash":
-        pass  # Forgot to return!
+        pass  # Returns None implicitly
 """
-        with pytest.raises(ValueError, match="must either set 'result' variable or end with an expression"):
-            evaluator.evaluate(predicate, context)
+        # This should not raise an error - None is valid and evaluates to False
+        result = evaluator.evaluate(predicate, context)
+        assert result is False  # None is falsy
 
         # Syntax error
         predicate = """
 def check(ctx:
     return True
 """
-        with pytest.raises(ValueError, match="Invalid multiline predicate"):
+        with pytest.raises(ValueError, match="Invalid Python syntax"):
             evaluator.evaluate(predicate, context)
 
     def test_mixed_single_and_multiline(self, evaluator, context):
-        """Test that single-line predicates still work."""
-        # Single line
-        assert evaluator.evaluate("ctx.tool == 'Bash'", context) is True
-        assert evaluator.evaluate("safe_git_commands(ctx)", context) is False  # Not a git command
+        """Test that both simple and complex predicates work."""
+        # Simple function
+        predicate_simple = """
+def check_tool(ctx):
+    return ctx.tool == 'Bash'
+"""
+        assert evaluator.evaluate(predicate_simple, context) is True
+        
+        # More complex function
+        predicate_git = """
+def safe_git_commands(ctx):
+    if ctx.tool != "Bash":
+        return False
+    if not ctx.command:
+        return False
+    safe_cmds = ["git status", "git log", "git diff"]
+    return any(ctx.command.startswith(cmd) for cmd in safe_cmds)
+"""
+        assert evaluator.evaluate(predicate_git, context) is False  # Not a git command
 
-        # Single line with function call
-        context.command = "git status"
-        assert evaluator.evaluate("safe_git_commands(ctx)", context) is True
+        # Test with git command
+        context_git = PredicateContext(
+            tool="Bash",
+            args={"command": "git status"},
+            session_id=SessionID("test-session"),
+            timestamp=datetime.now(),
+        )
+        assert evaluator.evaluate(predicate_git, context_git) is True
