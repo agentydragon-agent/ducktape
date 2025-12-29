@@ -51,16 +51,46 @@ class TruePositiveOccurrenceRange(Base):
             ["tp_occurrences.snapshot_slug", "tp_occurrences.tp_id", "tp_occurrences.occurrence_id"],
             ondelete="CASCADE"
         ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_tp_range_snapshot_file"
+        ),
         CheckConstraint("start_line >= 1"),
         CheckConstraint("end_line >= start_line"),
+        CheckConstraint("start_line <= end_line"),  # Redundant but explicit
     )
 
 class FalsePositiveOccurrenceRange(Base):
     """Line range within an FP occurrence."""
     __tablename__ = "fp_occurrence_ranges"
 
-    # Similar structure to TP ranges
-    ...
+    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(primary_key=True)
+    fp_id: Mapped[str] = mapped_column(primary_key=True)
+    occurrence_id: Mapped[str] = mapped_column(primary_key=True)
+    file_path: Mapped[str] = mapped_column(primary_key=True)
+    range_id: Mapped[int] = mapped_column(primary_key=True)
+
+    start_line: Mapped[int] = mapped_column(nullable=False)
+    end_line: Mapped[int] = mapped_column(nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            ["fp_occurrences.snapshot_slug", "fp_occurrences.fp_id", "fp_occurrences.occurrence_id"],
+            ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_fp_range_snapshot_file"
+        ),
+        CheckConstraint("start_line >= 1"),
+        CheckConstraint("end_line >= start_line"),
+    )
 ```
 
 **Migration Strategy:**
@@ -73,9 +103,13 @@ class FalsePositiveOccurrenceRange(Base):
 **Benefits:**
 - SQL queries: `WHERE file_path = 'foo.py' AND start_line <= 50 AND end_line >= 40`
 - Proper indexing on file paths and line ranges
-- Foreign key integrity
+- Foreign key integrity:
+  - To `tp_occurrences`/`fp_occurrences` (CASCADE deletes)
+  - To `snapshot_files` (validates file exists in snapshot)
 - Per-range notes as first-class columns
 - Better support for range-based analytics
+- **Referential integrity**: Database enforces that ground truth only references files that actually exist in the snapshot
+- **Line number validation**: Can add CHECK constraint that `end_line <= snapshot_files.line_count`
 
 ### Priority 2: FP Relevant Files
 
@@ -104,6 +138,12 @@ class FalsePositiveRelevantFile(Base):
             ["snapshot_slug", "fp_id", "occurrence_id"],
             ["fp_occurrences.snapshot_slug", "fp_occurrences.fp_id", "fp_occurrences.occurrence_id"],
             ondelete="CASCADE"
+        ),
+        ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_fp_relevant_file_snapshot_file"
         ),
     )
 ```
@@ -191,3 +231,29 @@ Minimal - API responses can be constructed from either source:
 
 3. What about match_filter_hash (used for grader optimization)?
    - Keep on occurrence table - it's a hash of the file set, not per-range data
+
+4. Should we add line number validation against `snapshot_files.line_count`?
+   - **Option A**: CHECK constraint joining to snapshot_files (complex, not all DBs support)
+   - **Option B**: Application-level validation during YAML load
+   - **Option C**: Trigger to validate on INSERT/UPDATE
+   - **Recommendation**: Option B for now - validate during sync from YAML
+   - **Future enhancement**: Could add trigger if we see invalid data in production
+
+## Additional Validations
+
+Once normalized, we can add these constraints:
+
+```python
+# Optional future constraint (via trigger)
+CREATE TRIGGER validate_range_line_numbers
+BEFORE INSERT OR UPDATE ON tp_occurrence_ranges
+FOR EACH ROW
+EXECUTE FUNCTION check_range_within_file_bounds();
+
+-- Function would verify:
+-- NEW.end_line <= (SELECT line_count FROM snapshot_files
+--                   WHERE snapshot_slug = NEW.snapshot_slug
+--                   AND relative_path = NEW.file_path)
+```
+
+This would catch authoring errors where ground truth references line numbers beyond EOF.
