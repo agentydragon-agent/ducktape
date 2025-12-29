@@ -30,4 +30,4 @@ python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
 # Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "mcp_utils/src:agent_pkg_runtime/src"
+mypy_path = "mcp_utils/src:agent_pkg/runtime/src"

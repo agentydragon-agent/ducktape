@@ -122,4 +122,4 @@ Track costs across agent sub-trees:
 
 - Agent packages: `props/core/src/props_core/agent_defs/`
 - Agent runtime utilities: `agent_runtimes/` (critic_util, grader_util, etc.)
-- Package building: `agent_pkg/src/agent_pkg/builder.py`
+- Package building: `agent_pkg/host/src/agent_pkg_host/builder.py`

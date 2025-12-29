@@ -10,7 +10,7 @@ resolution-markers = [
 members = [
     "adgn",
     "agent-core",
-    "agent-pkg",
+    "agent-pkg-host",
     "agent-pkg-runtime",
     "agent-server",
     "cli-util",
@@ -46,7 +46,7 @@ version = "0.0.0"
 source = { editable = "adgn" }
 dependencies = [
     { name = "agent-core" },
-    { name = "agent-pkg" },
+    { name = "agent-pkg-host" },
     { name = "agent-pkg-runtime" },
     { name = "aiodocker" },
     { name = "aiohttp" },
@@ -130,8 +130,8 @@ typing = [
 requires-dist = [
     { name = "absl-py", marker = "extra == 'gnome'", specifier = ">=1.0.0" },
     { name = "agent-core", editable = "agent_core" },
-    { name = "agent-pkg", editable = "agent_pkg" },
-    { name = "agent-pkg-runtime", editable = "agent_pkg_runtime" },
+    { name = "agent-pkg-host", editable = "agent_pkg/host" },
+    { name = "agent-pkg-runtime", editable = "agent_pkg/runtime" },
     { name = "aiodocker", specifier = ">=0.22.0" },
     { name = "aiohttp", specifier = ">=3.9.0" },
     { name = "aiosqlite", specifier = ">=0.18.0" },
@@ -203,7 +203,7 @@ name = "agent-core"
 version = "0.1.0"
 source = { editable = "agent_core" }
 dependencies = [
-    { name = "agent-pkg" },
+    { name = "agent-pkg-host" },
     { name = "anyio" },
     { name = "fastmcp" },
     { name = "mcp" },
@@ -230,7 +230,7 @@ testing = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", extras = ["testing"], marker = "extra == 'dev'" },
-    { name = "agent-pkg", editable = "agent_pkg" },
+    { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "anyio", specifier = ">=4.0" },
     { name = "fastmcp", specifier = ">=2.0" },
     { name = "mcp", specifier = ">=1.0" },
@@ -247,9 +247,9 @@ requires-dist = [
 provides-extras = ["testing", "dev"]
 
 [[package]]
-name = "agent-pkg"
+name = "agent-pkg-host"
 version = "0.1.0"
-source = { editable = "agent_pkg" }
+source = { editable = "agent_pkg/host" }
 dependencies = [
     { name = "aiodocker" },
     { name = "fastmcp" },
@@ -266,7 +266,7 @@ requires-dist = [
 [[package]]
 name = "agent-pkg-runtime"
 version = "0.1.0"
-source = { editable = "agent_pkg_runtime" }
+source = { editable = "agent_pkg/runtime" }
 dependencies = [
     { name = "fastmcp" },
     { name = "jinja2" },
@@ -1123,7 +1123,7 @@ version = "0.1.0"
 source = { editable = "editor_agent/host" }
 dependencies = [
     { name = "agent-core" },
-    { name = "agent-pkg" },
+    { name = "agent-pkg-host" },
     { name = "aiodocker" },
     { name = "cli-util" },
     { name = "editor-agent-runtime" },
@@ -1136,7 +1136,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
-    { name = "agent-pkg", editable = "agent_pkg" },
+    { name = "agent-pkg-host", editable = "agent_pkg/host" },
     { name = "aiodocker" },
     { name = "cli-util", editable = "cli_util" },
     { name = "editor-agent-runtime", editable = "editor_agent/runtime" },
@@ -1158,7 +1158,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-pkg-runtime", editable = "agent_pkg_runtime" },
+    { name = "agent-pkg-runtime", editable = "agent_pkg/runtime" },
     { name = "cli-util", editable = "cli_util" },
     { name = "typer", specifier = ">=0.9" },
 ]
@@ -3494,7 +3494,7 @@ version = "0.0.0"
 source = { editable = "props/core" }
 dependencies = [
     { name = "agent-core" },
-    { name = "agent-pkg" },
+    { name = "agent-pkg-host" },
     { name = "agent-pkg-runtime" },
     { name = "aiodocker" },
     { name = "alembic" },
@@ -3544,8 +3544,8 @@ gepa = [
 [package.metadata]
 requires-dist = [
     { name = "agent-core", editable = "agent_core" },
-    { name = "agent-pkg", editable = "agent_pkg" },
-    { name = "agent-pkg-runtime", editable = "agent_pkg_runtime" },
+    { name = "agent-pkg-host", editable = "agent_pkg/host" },
+    { name = "agent-pkg-runtime", editable = "agent_pkg/runtime" },
     { name = "aiodocker", specifier = ">=0.22.0" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "asyncpg", specifier = ">=0.29.0" },

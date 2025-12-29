@@ -30,4 +30,4 @@ packages = ["src/editor_agent_runtime"]
 python_version = "3.12"
 warn_return_any = true
 check_untyped_defs = true
-mypy_path = "mcp_utils/src:cli_util/src:agent_pkg_runtime/src"
+mypy_path = "mcp_utils/src:cli_util/src:agent_pkg/runtime/src"

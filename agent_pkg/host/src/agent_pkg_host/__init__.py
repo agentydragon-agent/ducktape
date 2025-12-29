@@ -1,6 +1,6 @@
 """Agent package infrastructure for building and running containerized agents."""
 
-from agent_pkg.builder import (
+from agent_pkg_host.builder import (
     IMAGE_INIT_PATH,
     IMAGE_TAG_PREFIX,
     ImageValidationError,
@@ -8,7 +8,7 @@ from agent_pkg.builder import (
     ensure_image_from_archive,
     validate_image,
 )
-from agent_pkg.init_runner import DEFAULT_INIT_TIMEOUT_MS, InitFailedError, run_init_script
+from agent_pkg_host.init_runner import DEFAULT_INIT_TIMEOUT_MS, InitFailedError, run_init_script
 
 __all__ = [
     "DEFAULT_INIT_TIMEOUT_MS",

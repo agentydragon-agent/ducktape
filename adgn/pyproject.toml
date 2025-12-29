@@ -9,7 +9,7 @@ authors = [{name = "Rai"}]
 requires-python = ">=3.12,<3.14"
 dependencies = [
   "agent-core",
-  "agent-pkg",
+  "agent-pkg-host",
   "agent-pkg-runtime",
   "cli-util",
   "mcp-infra",
@@ -181,7 +181,7 @@ adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
 
 [tool.uv.sources]
 agent-core = { workspace = true }
-agent-pkg = { workspace = true }
+agent-pkg-host = { workspace = true }
 agent-pkg-runtime = { workspace = true }
 cli-util = { workspace = true }
 editor-agent-runtime = { workspace = true }
