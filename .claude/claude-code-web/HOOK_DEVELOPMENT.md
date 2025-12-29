@@ -73,6 +73,8 @@ killed before nix can finish downloading.
 1. Increase hook timeout (if configurable)
 2. Pre-warm nix store with commonly needed packages
 3. Use smaller/faster tool alternatives
+4. **Background installation**: Fire off `nix profile install` in background, don't wait for completion.
+   LLM startup takes a few seconds anyway - install might complete by the time agent needs tools.
 
 ### Package Size Analysis
 
@@ -103,10 +105,25 @@ devenv-1.11.2 dependencies:
 
 devenv's nix bundling is **required**, not a packaging mistake.
 
+**The absurdity:** You need nix to install devenv, but devenv ignores that nix and uses its
+own bundled fork. You're downloading nix to download a different nix. The fork lives at
+[github.com/cachix/nix](https://github.com/cachix/nix) (branch `devenv-2.30.6`).
+
+**Key insight: devenv.nix already provides uv**
+
+Our `devenv.nix` has `languages.python.uv.enable = true`, so devenv provides uv directly.
+We don't need to install uv separately. If we just had devenv, running `devenv shell` gives
+us everything. direnv is only needed for auto-activation (which we can skip by running
+`devenv shell` explicitly).
+
+**Minimal bootstrap**: Get devenv → run `devenv shell` → done (uv, python, etc. provided)
+
 **Alternatives investigated:**
 - `apt-cache search devenv`: Not available in apt
 - Standalone binary: No - devenv GitHub releases have no assets, distributed only via nix
 - External nix support: No - devenv requires its bundled nix 2.30.4 fork (lazy-trees feature)
+- [nix-portable](https://github.com/DavHau/nix-portable): 65 MB single static binary, no install needed.
+  Could bootstrap devenv, but uses `~/.nix-portable/store` (won't benefit from persisted `/nix/store`)
 - Minimal install (direnv + uv only): ~160 MB, might fit in timeout
 - Skip devenv entirely: Loses reproducible environment, but Python work still possible
 
