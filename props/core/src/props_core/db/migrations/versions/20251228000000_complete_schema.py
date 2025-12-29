@@ -1573,6 +1573,50 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
         sa.PrimaryKeyConstraint("model_id"),
     )
 
+    # =========================================================================
+    # 6. Examples VIEW (auto-generated from snapshots + file_sets)
+    # =========================================================================
+    # Examples define training/evaluation scopes (whole-snapshot or file-set).
+    # recall_denominator is computed from catchable TP occurrences.
+    op.execute("""
+        CREATE VIEW examples AS
+        -- Whole-snapshot examples (one per snapshot)
+        SELECT
+            s.slug AS snapshot_slug,
+            'whole_snapshot'::example_kind_enum AS example_kind,
+            NULL::text AS files_hash,
+            COALESCE((
+                SELECT COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))
+                FROM true_positive_occurrences tpo
+                JOIN true_positives t ON tpo.snapshot_slug = t.snapshot_slug AND tpo.tp_id = t.tp_id
+                WHERE t.snapshot_slug = s.slug
+            ), 0)::integer AS recall_denominator
+        FROM snapshots s
+
+        UNION ALL
+
+        -- File-set examples (one per unique file set)
+        SELECT
+            fs.snapshot_slug,
+            'file_set'::example_kind_enum AS example_kind,
+            fs.files_hash,
+            COALESCE((
+                SELECT COUNT(DISTINCT (tpo.tp_id, tpo.occurrence_id))
+                FROM true_positive_occurrences tpo
+                JOIN true_positives t ON tpo.snapshot_slug = t.snapshot_slug AND tpo.tp_id = t.tp_id
+                WHERE t.snapshot_slug = fs.snapshot_slug
+                  AND is_tp_catchable_from_scope(fs.snapshot_slug, t.tp_id, 'file_set'::example_kind_enum, fs.files_hash)
+            ), 0)::integer AS recall_denominator
+        FROM file_sets fs
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW examples IS
+        'Training/evaluation examples - VIEW backed by file_sets + whole-snapshot entries.
+Each example defines a scope (whole-snapshot or file-set) with recall_denominator
+computed from catchable TP occurrences using is_tp_catchable_from_scope().'
+    """)
+
     # ============================================================================
     # 2. Helper functions for snapshot_grader agent type
     # ============================================================================
@@ -1834,9 +1878,6 @@ When this view returns no rows for a grader''s scope, grading is complete.'
         )
     """)
 
-    # Grant permissions
-    op.execute("GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE grading_edges TO agent_base")
-
     # ============================================================================
     # 6. RLS policies for snapshot_grader on reported_issues
     # ============================================================================
@@ -1966,47 +2007,7 @@ Fires on INSERT/DELETE of TPs/FPs (not UPDATE - minor wording fixes don''t need 
 Used by check_edge_credit_sum trigger function.'
     """)
 
-    # Trigger function to enforce credit sum <= 1.0 per occurrence
-    op.execute("""
-        CREATE FUNCTION check_edge_credit_sum() RETURNS trigger
-        LANGUAGE plpgsql
-        AS $$
-        DECLARE
-            current_total FLOAT;
-        BEGIN
-            -- Get current total (excluding this row if updating)
-            IF NEW.tp_id IS NOT NULL THEN
-                SELECT COALESCE(SUM(credit), 0.0) INTO current_total
-                FROM grading_edges
-                WHERE critique_run_id = NEW.critique_run_id
-                  AND tp_id = NEW.tp_id
-                  AND tp_occurrence_id = NEW.tp_occurrence_id
-                  AND id != COALESCE(NEW.id, -1);
-            ELSE
-                SELECT COALESCE(SUM(credit), 0.0) INTO current_total
-                FROM grading_edges
-                WHERE critique_run_id = NEW.critique_run_id
-                  AND fp_id = NEW.fp_id
-                  AND fp_occurrence_id = NEW.fp_occurrence_id
-                  AND id != COALESCE(NEW.id, -1);
-            END IF;
-
-            -- Check if adding new credit would exceed 1.0
-            IF current_total + NEW.credit > 1.0 THEN
-                RAISE EXCEPTION 'Credit sum for occurrence would exceed 1.0 (current: %, new: %)',
-                    current_total, NEW.credit;
-            END IF;
-
-            RETURN NEW;
-        END;
-        $$
-    """)
-
-    op.execute("""
-        COMMENT ON FUNCTION check_edge_credit_sum() IS
-        'Trigger function that validates credit sums per (critique_run, occurrence) do not exceed 1.0.'
-    """)
-
+    # Create trigger using the function defined earlier
     op.execute("""
         CREATE TRIGGER enforce_edge_credit_sum
         BEFORE INSERT OR UPDATE ON grading_edges
@@ -2238,13 +2239,215 @@ Used by check_edge_credit_sum trigger function.'
         'Aggregated validation recall by definition. Uses grading_edges.'
     """)
 
-    # Grant permissions on recreated views
-    op.execute("GRANT SELECT ON TABLE recall_by_run TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_definition_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_definition_split_kind TO agent_base")
-    op.execute("GRANT SELECT ON TABLE recall_by_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
-    op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")
+    # =========================================================================
+    # Event and run cost views
+    # =========================================================================
+    op.execute("""
+        CREATE VIEW event_costs AS
+        SELECT
+            (events.payload->'response_id')::text AS response_id,
+            events.agent_run_id,
+            ((events.payload->'usage'->'model')::text) AS model,
+            ((events.payload->'usage'->'input_tokens')::text)::integer AS input_tokens,
+            COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0) AS cached_tokens,
+            ((events.payload->'usage'->'output_tokens')::text)::integer AS output_tokens,
+            COALESCE(((events.payload->'usage'->'output_tokens_details'->'reasoning_tokens')::text)::integer, 0) AS reasoning_tokens,
+            (
+                (((events.payload->'usage'->'input_tokens')::text)::integer -
+                 COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0))::float
+                * model_metadata.input_usd_per_1m_tokens / 1000000.0
+                +
+                COALESCE(((events.payload->'usage'->'input_tokens_details'->'cached_tokens')::text)::integer, 0)::float
+                * model_metadata.cached_input_usd_per_1m_tokens / 1000000.0
+                +
+                ((events.payload->'usage'->'output_tokens')::text)::integer::float
+                * model_metadata.output_usd_per_1m_tokens / 1000000.0
+            ) AS cost_usd,
+            events.timestamp
+        FROM events
+        JOIN model_metadata ON ((events.payload->'usage'->'model')::text) = model_metadata.model_id
+        WHERE events.event_type = 'response' AND events.payload->'usage' IS NOT NULL
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW event_costs IS
+        'Per-event cost calculation. Joins events with model_metadata to compute cost_usd.
+Extracts token usage from response events and applies pricing from model_metadata.'
+    """)
+
+    op.execute("""
+        CREATE VIEW run_costs AS
+        WITH RECURSIVE run_tree AS (
+            -- Base case: the run itself
+            SELECT agent_run_id, agent_run_id AS root_run_id
+            FROM agent_runs
+
+            UNION ALL
+
+            -- Recursive case: children of runs already in the tree
+            SELECT ar.agent_run_id, rt.root_run_id
+            FROM agent_runs ar
+            JOIN run_tree rt ON ar.parent_agent_run_id = rt.agent_run_id
+        )
+        SELECT
+            rt.root_run_id AS agent_run_id,
+            ec.model,
+            SUM(ec.input_tokens) AS input_tokens,
+            SUM(ec.cached_tokens) AS cached_tokens,
+            SUM(ec.output_tokens) AS output_tokens,
+            SUM(ec.reasoning_tokens) AS reasoning_tokens,
+            SUM(ec.cost_usd) AS cost_usd
+        FROM run_tree rt
+        JOIN event_costs ec ON ec.agent_run_id = rt.agent_run_id
+        GROUP BY rt.root_run_id, ec.model
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW run_costs IS
+        'Aggregated costs per agent run. Includes all transitive child runs via recursive CTE.
+Groups by model so queries can see per-model breakdown.'
+    """)
+
+    # =========================================================================
+    # Occurrence credit views (adapted for grading_edges model)
+    # =========================================================================
+    op.execute("""
+        CREATE VIEW occurrence_credits AS
+        -- Graded occurrences: TP occurrences with credits from grading_edges
+        SELECT
+            -- Example identification
+            ge.snapshot_slug,
+            s.split,
+            ex.example_kind,
+            ex.files_hash,
+            -- Ground truth
+            ge.tp_id,
+            ge.tp_occurrence_id AS occurrence_id,
+            -- Critic-specific
+            ge.critique_run_id AS critic_run_id,
+            ge.critique_run_id AS critic_transcript_id,
+            cr.agent_definition_id AS critic_definition_id,
+            cr.model AS critic_model,
+            -- Grader-specific
+            ge.grader_run_id,
+            ge.grader_run_id AS grader_transcript_id,
+            gr.created_at AS graded_at,
+            gr.model AS grader_model,
+            ge.credit AS found_credit,
+            jsonb_build_array(ge.critique_issue_id) AS matched_by_json,
+            ge.rationale AS grader_rationale
+        FROM grading_edges ge
+        JOIN agent_runs cr ON cr.agent_run_id = ge.critique_run_id
+        JOIN agent_runs gr ON gr.agent_run_id = ge.grader_run_id
+        JOIN snapshots s ON ge.snapshot_slug = s.slug
+        JOIN examples ex ON (
+            ge.snapshot_slug = ex.snapshot_slug
+            AND (cr.type_config->'example'->>'kind')::example_kind_enum = ex.example_kind
+            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(ex.files_hash, '')
+        )
+        WHERE ge.tp_id IS NOT NULL
+          AND (cr.type_config->>'agent_type') = 'critic'
+
+        UNION ALL
+
+        -- Failed critics: generate zero-credit rows for all catchable occurrences
+        SELECT
+            (cr.type_config->'example'->>'snapshot_slug') AS snapshot_slug,
+            s.split,
+            ex.example_kind,
+            ex.files_hash,
+            tpo.tp_id,
+            tpo.occurrence_id,
+            cr.agent_run_id AS critic_run_id,
+            cr.agent_run_id AS critic_transcript_id,
+            cr.agent_definition_id AS critic_definition_id,
+            cr.model AS critic_model,
+            NULL::uuid AS grader_run_id,
+            NULL::uuid AS grader_transcript_id,
+            cr.created_at AS graded_at,
+            NULL::varchar AS grader_model,
+            0.0 AS found_credit,
+            NULL::jsonb AS matched_by_json,
+            ('Critic failed: ' || cr.status) AS grader_rationale
+        FROM agent_runs cr
+        JOIN snapshots s ON (cr.type_config->'example'->>'snapshot_slug') = s.slug
+        JOIN examples ex ON (
+            (cr.type_config->'example'->>'snapshot_slug') = ex.snapshot_slug
+            AND (cr.type_config->'example'->>'kind')::example_kind_enum = ex.example_kind
+            AND COALESCE((cr.type_config->'example'->>'files_hash'), '') = COALESCE(ex.files_hash, '')
+        )
+        CROSS JOIN true_positive_occurrences tpo
+        WHERE (cr.type_config->>'agent_type') = 'critic'
+          AND cr.status = ANY (ARRAY['max_turns_exceeded'::agent_run_status_enum, 'context_length_exceeded'::agent_run_status_enum])
+          AND (cr.type_config->'example'->>'snapshot_slug') = tpo.snapshot_slug
+          AND is_tp_catchable_from_scope(tpo.snapshot_slug, tpo.tp_id, ex.example_kind, ex.files_hash)
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW occurrence_credits IS
+        'Per-occurrence credit from grading_edges. Base view for computing recall.
+Each row = one TP occurrence with its found_credit (0-1).
+Sum(found_credit)/count(*) = occurrence-weighted recall.
+
+Uses grading_edges model: credits go directly to (tp_id, occurrence_id) pairs.
+Failed critics produce zero-credit rows for all catchable occurrences.
+
+USEFUL FOR: Prompt optimizer (TRAIN split via RLS), improvement agent.'
+    """)
+
+    op.execute("""
+        CREATE VIEW occurrence_run_credits AS
+        SELECT
+            snapshot_slug,
+            split,
+            example_kind,
+            files_hash,
+            tp_id,
+            occurrence_id,
+            critic_run_id,
+            critic_transcript_id,
+            critic_definition_id,
+            critic_model,
+            grader_run_id,
+            grader_transcript_id,
+            graded_at,
+            grader_model,
+            sum(found_credit) AS total_credit,
+            array_agg(DISTINCT matched_by_json) FILTER (WHERE matched_by_json IS NOT NULL) AS all_matched_by,
+            string_agg(DISTINCT grader_rationale, ' | ') AS combined_rationale
+        FROM occurrence_credits
+        GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
+            critic_run_id, critic_transcript_id, critic_definition_id, critic_model,
+            grader_run_id, grader_transcript_id, graded_at, grader_model
+    """)
+
+    op.execute("""
+        CREATE VIEW occurrence_statistics AS
+        SELECT
+            snapshot_slug,
+            split,
+            example_kind,
+            files_hash,
+            tp_id,
+            occurrence_id,
+            critic_definition_id,
+            critic_model,
+            grader_model,
+            compute_stats_with_ci(array_agg(total_credit)) AS credit_stats
+        FROM occurrence_run_credits
+        GROUP BY snapshot_slug, split, example_kind, files_hash, tp_id, occurrence_id,
+            critic_definition_id, critic_model, grader_model
+    """)
+
+    op.execute("""
+        COMMENT ON VIEW occurrence_statistics IS
+        'Aggregate statistics per occurrence across all runs.
+Uses grading_edges model for credit calculation.
+
+USEFUL FOR: Prompt optimizer, improvement agent.
+- Find consistently-missed occurrences (low credit_stats.mean across runs)
+- Identify occurrence patterns that need prompt improvements'
+    """)
 
     # =========================================================================
     # 10. Roles and Grants
@@ -2280,7 +2483,7 @@ Used by check_edge_credit_sum trigger function.'
     op.execute("GRANT SELECT ON TABLE events TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE events_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE false_positives TO agent_base")
-    op.execute("GRANT SELECT ON TABLE grading_credit_sums TO agent_base")
+    op.execute("GRANT SELECT ON TABLE grading_edge_credit_sums TO agent_base")
     op.execute("GRANT USAGE ON SEQUENCE grading_edges_id_seq TO agent_base")
     op.execute("GRANT SELECT ON TABLE true_positives TO agent_base")
     op.execute("GRANT SELECT ON TABLE occurrence_credits TO agent_base")
@@ -2460,23 +2663,23 @@ Used by check_edge_credit_sum trigger function.'
         )
     """)
 
-    # Grading decisions policies
+    # Grading edges policies (uses grader_run_id for ownership, critique_run_id for access control)
     op.execute("""
         CREATE POLICY grading_edges_agent_select ON grading_edges FOR SELECT USING (
-            (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(agent_run_id))
-            OR is_own_run_as(agent_run_id, 'grader')
+            (current_agent_type() = 'prompt_optimizer' AND is_train_agent_run(critique_run_id))
+            OR is_own_run_as(grader_run_id, 'grader')
             OR (current_agent_type() = 'improvement'
-                AND agent_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
+                AND critique_run_id IN (SELECT get_improvement_allowed_agent_run_ids()))
         )
     """)
     op.execute(
-        "CREATE POLICY grading_edges_agent_insert ON grading_edges FOR INSERT WITH CHECK (is_own_run_as(agent_run_id, 'grader'))"
+        "CREATE POLICY grading_edges_agent_insert ON grading_edges FOR INSERT WITH CHECK (is_own_run_as(grader_run_id, 'grader'))"
     )
     op.execute(
-        "CREATE POLICY grading_edges_agent_update ON grading_edges FOR UPDATE USING (is_own_run_as(agent_run_id, 'grader'))"
+        "CREATE POLICY grading_edges_agent_update ON grading_edges FOR UPDATE USING (is_own_run_as(grader_run_id, 'grader'))"
     )
     op.execute(
-        "CREATE POLICY grading_edges_agent_delete ON grading_edges FOR DELETE USING (is_own_run_as(agent_run_id, 'grader'))"
+        "CREATE POLICY grading_edges_agent_delete ON grading_edges FOR DELETE USING (is_own_run_as(grader_run_id, 'grader'))"
     )
 
     # Reported issues policies
