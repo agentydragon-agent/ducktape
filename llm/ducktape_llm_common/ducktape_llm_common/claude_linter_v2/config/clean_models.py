@@ -134,11 +134,33 @@ class ModularConfig(BaseModel):
         # Let Pydantic validate and create the model
         return cls(**data)
 
+    def save_to_file(self, path: Path) -> None:
+        """Save configuration to TOML file."""
+        import tomli_w
+
+        # Convert model to dict
+        data = self.model_dump(exclude_none=True)
+        
+        # Convert log_level enum to string if present
+        if "log_level" in data:
+            data["log_level"] = str(data["log_level"])
+        
+        # Convert Path to string if present
+        if "log_file" in data and data["log_file"] is not None:
+            data["log_file"] = str(data["log_file"])
+
+        with path.open("wb") as f:
+            tomli_w.dump(data, f)
+
     def get_rule_config(self, rule_key: str) -> RuleConfig | None:
         """Get configuration for a specific rule."""
         # First check explicit config
         if rule_key in self.rules:
-            return self.rules[rule_key]
+            rule_config = self.rules[rule_key]
+            # Handle both dict and RuleConfig objects
+            if isinstance(rule_config, dict):
+                return RuleConfig(**rule_config)
+            return rule_config
 
         rule_def = RuleRegistry.get_by_key(rule_key)
         if rule_def:

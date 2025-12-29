@@ -93,9 +93,12 @@ def test_modular_config_save_load(tmp_path):
     # Load
     loaded = ModularConfig.from_toml(config_path)
 
-    assert loaded.rules["python.bare_except"]["enabled"] is False
-    assert loaded.rules["python.bare_except"]["message"] == "Custom message"
-    assert loaded.rules["ruff.E722"]["blocks_stop_hook"] is False
+    bare_except_rule = loaded.rules["python.bare_except"]
+    assert bare_except_rule.enabled is False
+    assert bare_except_rule.message == "Custom message"
+    
+    e722_rule = loaded.rules["ruff.E722"]
+    assert e722_rule.blocks_stop_hook is False
 
 
 def test_modular_config_loading(tmp_path):

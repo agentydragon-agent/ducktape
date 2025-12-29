@@ -1,0 +1,85 @@
+2025-12-29 20:54:12,651 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,651 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_custom_tool in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,652 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,653 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_editor_open in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,661 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - ERROR - check_code:113 - ruff failed with code 2: error: invalid value '' for '--select <RULE_CODE>'
+
+For more information, try '--help'.
+
+2025-12-29 20:54:12,663 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,664 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_editor_save in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,671 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - ERROR - check_code:113 - ruff failed with code 2: error: invalid value '' for '--select <RULE_CODE>'
+
+For more information, try '--help'.
+
+2025-12-29 20:54:12,672 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,672 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp__memory__search_nodes in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,673 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_memory_search in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,673 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp-memory-search in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,673 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcpMemorySearch in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,673 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for MCP_MEMORY_SEARCH in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,674 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,675 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_knowledge_graph_query in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,676 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,676 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_api_call in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,677 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,679 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,680 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,681 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,683 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,684 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,685 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,685 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_workspace_list in session 550e8400-e29b-41d4-a716-446655440000
+2025-12-29 20:54:12,694 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,696 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,696 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_finance_get_stock_price in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,697 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,698 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_weather_forecast in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,699 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,699 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_ml_predict in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,700 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,700 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_postgres_query in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,702 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,702 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_smart_home_control in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,703 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,703 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_ethereum_send_transaction in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,704 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,705 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_calendar_create_event in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,706 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,706 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_image_resize in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,707 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,707 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_scipy_optimize in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,709 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,709 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_quantum_entangle_qubits in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,710 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,710 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_system_get_time in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,711 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,712 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_data_processor in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,713 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,713 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp-weird.tool$name in session 770e8400-e29b-41d4-a716-446655440002
+2025-12-29 20:54:12,714 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,715 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_post_hook:377 - Post-hook for mcp_analytics_track in session 660e8400-e29b-41d4-a716-446655440001
+2025-12-29 20:54:12,716 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,717 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _handle_pre_hook:238 - Pre-hook for mcp_database_query in session 660e8400-e29b-41d4-a716-446655440001
+2025-12-29 20:54:12,735 - ducktape_llm_common.claude_linter_v2.access.evaluator - ERROR - evaluate:33 - Failed to evaluate predicate function: Invalid Python syntax: '(' was never closed (<unknown>, line 1)
+2025-12-29 20:54:12,747 - ducktape_llm_common.claude_linter_v2.linters.python_formatter - WARNING - _check_available_tools:34 - Tool black not available
+2025-12-29 20:54:12,747 - ducktape_llm_common.claude_linter_v2.linters.python_formatter - WARNING - _check_available_tools:34 - Tool isort not available
+2025-12-29 20:54:12,751 - ducktape_llm_common.claude_linter_v2.linters.python_formatter - WARNING - _format_with_ruff:119 - Ruff formatting failed: Syntax error
+2025-12-29 20:54:12,753 - ducktape_llm_common.claude_linter_v2.linters.python_formatter - WARNING - _check_available_tools:34 - Tool nonexistent not available
+2025-12-29 20:54:12,753 - ducktape_llm_common.claude_linter_v2.linters.python_formatter - WARNING - format_code:53 - No formatting tools available
+2025-12-29 20:54:12,759 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - WARNING - _check_ruff_available:54 - ruff not available
+2025-12-29 20:54:12,765 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - ERROR - check_code:113 - ruff failed with code 2: Ruff configuration error
+2025-12-29 20:54:12,766 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - ERROR - check_code:111 - Failed to parse ruff output: Invalid JSON
+2025-12-29 20:54:12,773 - ducktape_llm_common.claude_linter_v2.linters.python_ruff - WARNING - check_code:70 - ruff not available, skipping checks
+2025-12-29 20:54:12,776 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,779 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,782 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,786 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,789 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,792 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,795 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,799 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,803 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,807 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,810 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
+2025-12-29 20:54:12,814 - ducktape_llm_common.claude_linter_v2.hooks.handler - INFO - _setup_logging:137 - Logging configured: level=<MagicMock name='mock.log_level' id='139648758068672'>, file=MagicMock/mock.log_file/139648758065504
