@@ -28,19 +28,4 @@ All checks must pass before the work is considered complete.
 
 ### Ansible-Specific Changes
 
-If you modify any files in `ansible/`, follow the dedicated checklist in [`ansible/AGENTS.md`](../ansible/AGENTS.md):
-
-1. Run yamllint:
-   ```bash
-   uvx yamllint -c .yamllint.yaml ansible/
-   ```
-
-2. Run syntax check for each playbook you touched:
-   ```bash
-   uvx --from ansible-core ansible-playbook --syntax-check <playbook>.yaml
-   ```
-
-3. Finish with the full repo workflow:
-   ```bash
-   pre-commit run --all-files
-   ```
+If you modify any files in `ansible/`, follow the dedicated checklist in [`ansible/AGENTS.md`](../ansible/AGENTS.md).
