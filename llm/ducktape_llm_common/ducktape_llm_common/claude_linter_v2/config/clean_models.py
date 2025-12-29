@@ -146,11 +146,7 @@ class ModularConfig(BaseModel):
         """Get configuration for a specific rule."""
         # First check explicit config
         if rule_key in self.rules:
-            rule_config = self.rules[rule_key]
-            # Handle both dict and RuleConfig objects
-            if isinstance(rule_config, dict):
-                return RuleConfig(**rule_config)
-            return rule_config
+            return self.rules[rule_key]
 
         rule_def = RuleRegistry.get_by_key(rule_key)
         if rule_def:
@@ -175,12 +171,7 @@ class ModularConfig(BaseModel):
                 # Check if there's an explicit config for this rule
                 if key in self.rules:
                     # Use explicit config
-                    rule_config = self.rules[key]
-                    # Handle both dict and RuleConfig objects
-                    if isinstance(rule_config, dict):
-                        if rule_config.get("enabled", True):
-                            codes.append(rule_def.code)
-                    elif rule_config.enabled:
+                    if self.rules[key].enabled:
                         codes.append(rule_def.code)
                 # Use default from registry
                 elif rule_def.default_blocks_pre or rule_def.default_blocks_stop:
