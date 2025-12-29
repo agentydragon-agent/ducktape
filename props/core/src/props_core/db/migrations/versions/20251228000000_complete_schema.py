@@ -1,41 +1,3 @@
-"""Complete squashed schema for props database.
-
-This is a complete schema migration combining:
-- Base schema with grading_edges table
-- snapshot_grader helper functions
-- All recall views using grading_edges
-
-Revision ID: 20251228000000
-Revises: None
-Create Date: 2025-12-28
-"""
-
-from collections.abc import Sequence
-
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
-
-revision: str = "20251228000000"
-down_revision: str | Sequence[str] | None = None
-branch_labels: str | Sequence[str] | None = None
-depends_on: str | Sequence[str] | None = None
-
-# Issue ID format constraint
-ISSUE_ID_CHECK_SQL = "~ '^[a-z0-9_-]+$' AND length({col}) >= 5 AND length({col}) <= 40"
-
-
-def issue_id_constraint(column: str, name: str) -> sa.CheckConstraint:
-    """Create a CHECK constraint enforcing BaseIssueID format on a column."""
-    return sa.CheckConstraint(f"{column} {ISSUE_ID_CHECK_SQL.format(col=column)}", name=name)
-
-
-def upgrade() -> None:
-    """Create complete schema."""
-
-    # Disable function body checking
-    op.execute("SET check_function_bodies = false")
-
 """Squashed schema for props database.
 
 This is a complete schema migration that replaces all previous migrations.
@@ -49,6 +11,7 @@ Incorporates:
 - in_progress filter in recall views
 - match_filter_hash for sparse grading
 - No clustering tables (deprecated feature removed)
+- Normalized occurrence ranges (replaces JSONB files/relevant_files columns)
 
 Revision ID: 20251228000000
 Revises: None
@@ -1187,14 +1150,14 @@ Deduplicated by PK constraint - same files always produce same hash.'
         'Files belonging to each file set. FK to snapshot_files validates file paths exist in snapshot.'
     """)
 
-    # True positive occurrences table (normalized from JSONB)
+    # True positive occurrences table
     # Note: critic_scopes_expected_to_recall is stored in expected_recall_scopes M:N table, not as JSONB column
+    # Note: files/line ranges are stored in tp_occurrence_ranges table, not as JSONB column
     op.create_table(
         "true_positive_occurrences",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
         sa.Column("tp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
-        sa.Column("files", postgresql.JSONB(), nullable=False),  # {path: [line_ranges] | null}
         sa.Column("note", sa.Text(), nullable=True),
         sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
@@ -1210,15 +1173,15 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
     )
 
-    # False positive occurrences table (normalized from JSONB)
+    # False positive occurrences table
+    # Note: files/line ranges are stored in fp_occurrence_ranges table, not as JSONB column
+    # Note: relevant_files are stored in fp_occurrence_relevant_files table, not as JSONB column
     op.create_table(
         "false_positive_occurrences",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
         sa.Column("fp_id", sa.String(), nullable=False),
         sa.Column("occurrence_id", sa.String(), nullable=False),
-        sa.Column("files", postgresql.JSONB(), nullable=False),  # {path: [line_ranges] | null}
         sa.Column("note", sa.Text(), nullable=True),
-        sa.Column("relevant_files", postgresql.JSONB(), nullable=False),  # [path, ...]
         sa.Column("match_filter_hash", sa.Text(), nullable=True),  # FK to file_sets
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id"),
@@ -1233,49 +1196,151 @@ Deduplicated by PK constraint - same files always produce same hash.'
         ),
     )
 
-    # Trigger-based validation for occurrence line numbers
-    # SEMANTICS: Line numbers are 1-based. Ranges are inclusive [start_line, end_line].
-    # Structure: files[path][j].{start_line, end_line}
+    # =========================================================================
+    # Normalized occurrence range tables
+    # =========================================================================
+    # These tables normalize the JSONB files column into proper relational tables
+    # for better queryability, foreign key validation, and line number validation.
+
+    # True positive occurrence ranges table
+    op.create_table(
+        "tp_occurrence_ranges",
+        sa.Column("snapshot_slug", sa.String(), nullable=False),
+        sa.Column("tp_id", sa.String(), nullable=False),
+        sa.Column("occurrence_id", sa.String(), nullable=False),
+        sa.Column("file_path", sa.String(), nullable=False),
+        sa.Column("range_id", sa.Integer(), nullable=False, comment="0-based index within file"),
+        sa.Column("start_line", sa.Integer(), nullable=False),
+        sa.Column("end_line", sa.Integer(), nullable=False),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id", "file_path", "range_id"),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "tp_id", "occurrence_id"],
+            [
+                "true_positive_occurrences.snapshot_slug",
+                "true_positive_occurrences.tp_id",
+                "true_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_tp_range_snapshot_file",
+        ),
+        sa.CheckConstraint("start_line >= 1", name="tp_range_start_line_positive"),
+        sa.CheckConstraint("end_line >= start_line", name="tp_range_end_gte_start"),
+    )
+
+    op.execute(
+        "COMMENT ON TABLE tp_occurrence_ranges IS 'Line ranges within true positive occurrences (normalized from files JSONB)'"
+    )
+
+    # False positive occurrence ranges table
+    op.create_table(
+        "fp_occurrence_ranges",
+        sa.Column("snapshot_slug", sa.String(), nullable=False),
+        sa.Column("fp_id", sa.String(), nullable=False),
+        sa.Column("occurrence_id", sa.String(), nullable=False),
+        sa.Column("file_path", sa.String(), nullable=False),
+        sa.Column("range_id", sa.Integer(), nullable=False, comment="0-based index within file"),
+        sa.Column("start_line", sa.Integer(), nullable=False),
+        sa.Column("end_line", sa.Integer(), nullable=False),
+        sa.Column("note", sa.Text(), nullable=True),
+        sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id", "file_path", "range_id"),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_fp_range_snapshot_file",
+        ),
+        sa.CheckConstraint("start_line >= 1", name="fp_range_start_line_positive"),
+        sa.CheckConstraint("end_line >= start_line", name="fp_range_end_gte_start"),
+    )
+
+    op.execute(
+        "COMMENT ON TABLE fp_occurrence_ranges IS 'Line ranges within false positive occurrences (normalized from files JSONB)'"
+    )
+
+    # False positive relevant files table
+    op.create_table(
+        "fp_occurrence_relevant_files",
+        sa.Column("snapshot_slug", sa.String(), nullable=False),
+        sa.Column("fp_id", sa.String(), nullable=False),
+        sa.Column("occurrence_id", sa.String(), nullable=False),
+        sa.Column("file_path", sa.String(), nullable=False),
+        sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id", "file_path"),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "fp_id", "occurrence_id"],
+            [
+                "false_positive_occurrences.snapshot_slug",
+                "false_positive_occurrences.fp_id",
+                "false_positive_occurrences.occurrence_id",
+            ],
+            ondelete="CASCADE",
+        ),
+        sa.ForeignKeyConstraint(
+            ["snapshot_slug", "file_path"],
+            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
+            ondelete="CASCADE",
+            name="fk_fp_relevant_file_snapshot_file",
+        ),
+    )
+
+    op.execute(
+        "COMMENT ON TABLE fp_occurrence_relevant_files IS 'Files that make false positive occurrences relevant (normalized from relevant_files JSONB)'"
+    )
+
+    # Trigger to validate line ranges don't exceed file line counts
     op.execute("""
-        CREATE OR REPLACE FUNCTION validate_occurrence_line_numbers()
+        CREATE OR REPLACE FUNCTION validate_range_line_numbers()
         RETURNS TRIGGER AS $$
         DECLARE
-            invalid_count INTEGER;
+            file_line_count INT;
         BEGIN
-            -- Only validate files with non-null line ranges (null = no line ranges specified)
-            SELECT COUNT(*) INTO invalid_count
-            FROM jsonb_each(NEW.files) AS file_entry
-            CROSS JOIN LATERAL jsonb_array_elements(file_entry.value) AS line_range
-            WHERE file_entry.value IS NOT NULL
-              AND jsonb_typeof(file_entry.value) = 'array'
-              AND ((line_range->>'start_line')::int < 1
-                   OR (line_range->>'end_line' IS NOT NULL AND (line_range->>'end_line')::int < 1)
-                   OR (line_range->>'end_line' IS NOT NULL
-                       AND (line_range->>'end_line')::int < (line_range->>'start_line')::int));
+            -- Get line count for the referenced file
+            SELECT line_count INTO file_line_count
+            FROM snapshot_files
+            WHERE snapshot_slug = NEW.snapshot_slug
+              AND relative_path = NEW.file_path;
 
-            IF invalid_count > 0 THEN
-                RAISE EXCEPTION 'Invalid line numbers in occurrence: line numbers must be >= 1 and end_line >= start_line';
+            -- Validate end_line is within bounds
+            IF NEW.end_line > file_line_count THEN
+                RAISE EXCEPTION 'Line range [%, %] exceeds file line count % for file % in snapshot %',
+                    NEW.start_line, NEW.end_line, file_line_count, NEW.file_path, NEW.snapshot_slug;
             END IF;
 
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
 
-        COMMENT ON FUNCTION validate_occurrence_line_numbers() IS
-        'Validates line numbers in occurrence files are positive (>= 1) and end_line >= start_line. Line numbers are 1-based.
-        Does NOT validate against file line_count - that must be validated at insertion time.';
+        COMMENT ON FUNCTION validate_range_line_numbers() IS
+        'Validates that line ranges do not exceed the actual file line count from snapshot_files. '
+        'This ensures ground truth references only valid line numbers within files.';
     """)
 
     op.execute("""
-        CREATE TRIGGER validate_tp_occ_line_numbers
-        BEFORE INSERT OR UPDATE ON true_positive_occurrences
-        FOR EACH ROW EXECUTE FUNCTION validate_occurrence_line_numbers();
+        CREATE TRIGGER validate_tp_range_bounds
+        BEFORE INSERT OR UPDATE ON tp_occurrence_ranges
+        FOR EACH ROW
+        EXECUTE FUNCTION validate_range_line_numbers();
     """)
 
     op.execute("""
-        CREATE TRIGGER validate_fp_occ_line_numbers
-        BEFORE INSERT OR UPDATE ON false_positive_occurrences
-        FOR EACH ROW EXECUTE FUNCTION validate_occurrence_line_numbers();
+        CREATE TRIGGER validate_fp_range_bounds
+        BEFORE INSERT OR UPDATE ON fp_occurrence_ranges
+        FOR EACH ROW
+        EXECUTE FUNCTION validate_range_line_numbers();
     """)
 
     # Basic line number validation for reported_issue_occurrences
@@ -1534,9 +1599,7 @@ USEFUL FOR: Grader (write), prompt optimizer (read TRAIN only).
         sa.PrimaryKeyConstraint("model_id"),
     )
 
-    
-
-# ============================================================================
+    # ============================================================================
     # 2. Helper functions for snapshot_grader agent type
     # ============================================================================
     op.execute("""
@@ -1976,9 +2039,7 @@ Used by check_edge_credit_sum trigger function.'
         FOR EACH ROW EXECUTE FUNCTION check_edge_credit_sum()
     """)
 
-    
-
-# ============================================================================
+    # ============================================================================
     # 12. Recreate recall views using grading_edges
     # ============================================================================
     # recall_by_run view - based on grading_edges
@@ -2211,9 +2272,7 @@ Used by check_edge_credit_sum trigger function.'
     op.execute("GRANT SELECT ON TABLE pareto_frontier_by_example TO agent_base")
     op.execute("GRANT SELECT ON TABLE validation_recall_by_definition TO agent_base")
 
-
-
-# =========================================================================
+    # =========================================================================
     # 10. Roles and Grants
     # =========================================================================
 
@@ -2488,8 +2547,6 @@ Used by check_edge_credit_sum trigger function.'
 
     # Initialize salt singleton
     op.execute("INSERT INTO agent_role_salt (id) VALUES (1) ON CONFLICT DO NOTHING")
-
-
 
 
 def downgrade() -> None:
