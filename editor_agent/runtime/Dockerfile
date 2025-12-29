@@ -1,5 +1,5 @@
 # Editor agent package image
-# Built from repo root context: docker build -f docker/editor/Dockerfile -t adgn-editor:latest .
+# Built from repo root context: docker build -f editor_agent/runtime/Dockerfile -t adgn-editor:latest .
 # Image contract: /init outputs system prompt (loaded from editor_agent_runtime package resources)
 
 FROM python:3.12-slim

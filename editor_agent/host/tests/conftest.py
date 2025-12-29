@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).parents[
     4
 ]  # editor_agent/host/tests/conftest.py -> [0]tests/[1]host/[2]editor_agent/[3]ducktape
 
-EDITOR_DOCKERFILE = "docker/editor/Dockerfile"
+EDITOR_DOCKERFILE = "editor_agent/runtime/Dockerfile"
 EDITOR_IMAGE_TAG = "adgn-editor:test"
 
 

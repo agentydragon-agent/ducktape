@@ -23,7 +23,9 @@ from editor_agent.submit_server import SubmitStateFailure, SubmitStatePending, S
 from openai_utils.client_factory import build_client
 
 DEFAULT_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.1-codex-mini")
-DEFINITION_DIR = Path(__file__).parent / "definition"
+# Dockerfile path relative to repo root (build context)
+_REPO_ROOT = Path(__file__).parent.parent.parent.parent.parent.parent
+_DOCKERFILE = "editor_agent/runtime/Dockerfile"
 EDITOR_IMAGE_TAG = "adgn-editor:latest"
 
 # Environment variable override for network
@@ -72,8 +74,8 @@ async def edit(
     model_client = build_client(model, enable_debug_logging=True)
 
     async with aiodocker.Docker() as docker_client:
-        # Build or reuse editor agent image
-        image_id = await ensure_image(docker_client, DEFINITION_DIR, EDITOR_IMAGE_TAG)
+        # Build or reuse editor agent image (context is repo root, Dockerfile in editor_agent/runtime)
+        image_id = await ensure_image(docker_client, _REPO_ROOT, EDITOR_IMAGE_TAG, dockerfile=_DOCKERFILE)
         typer.echo(f"Editing {file} with {model} (image {image_id[:12]})")
 
         result = await run_editor_docker_agent(
