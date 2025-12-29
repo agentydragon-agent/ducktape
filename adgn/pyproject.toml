@@ -155,8 +155,6 @@ env = [
 ]
 # Use modern asyncio auto mode for compatibility across plugins
 asyncio_mode = "auto"
-# Ensure per-test loops for fixtures to prevent session-level loops
-asyncio_default_fixture_loop_scope = "function"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
 

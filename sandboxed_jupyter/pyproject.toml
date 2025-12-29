@@ -41,7 +41,6 @@ mypy_path = "adgn/src:mcp_infra/src:sandboxed_jupyter/src:sandboxed_jupyter:net_
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.uv.sources]
