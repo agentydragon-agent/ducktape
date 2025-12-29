@@ -43,7 +43,7 @@ mcp-infra = { workspace = true }
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 timeout = 30
 addopts = "-m 'not live_llm'"

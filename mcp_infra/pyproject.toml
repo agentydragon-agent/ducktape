@@ -22,7 +22,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.24",
+    "pytest-asyncio>=0.25",
     "PyHamcrest>=2.1",
     "syrupy>=4.0",
 ]
@@ -52,7 +52,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "requires_docker: Tests that require Docker to be installed and running",

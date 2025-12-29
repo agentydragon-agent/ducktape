@@ -51,7 +51,7 @@ dependencies = [
 # Developer tools and test dependencies
 dev = [
   "pytest>=8.3",
-  "pytest-asyncio>=0.23",
+  "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",
   "pytest-xdist>=3.0",
   'pytest-mock>=3.10.0',
@@ -155,7 +155,7 @@ env = [
 ]
 # Use modern asyncio auto mode for compatibility across plugins
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
 

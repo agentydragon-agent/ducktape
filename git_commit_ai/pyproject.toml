@@ -30,7 +30,7 @@ mypy_path = "../mcp_infra/src:../openai_utils/src:../agent_core/src"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 
 [tool.uv.sources]
 agent-core = { workspace = true }

@@ -17,7 +17,7 @@ dependencies = [
 docker = ["docker>=7.0.0"]
 dev = [
     "pytest>=8.0",
-    "pytest-asyncio>=0.23",
+    "pytest-asyncio>=0.25",
     "pytest-timeout>=2.0",
 ]
 
@@ -41,7 +41,7 @@ mypy_path = "adgn/src:mcp_infra/src:sandboxed_jupyter/src:sandboxed_jupyter:net_
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [tool.uv.sources]

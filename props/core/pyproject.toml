@@ -45,7 +45,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
   "pytest>=8.3",
-  "pytest-asyncio>=0.23",
+  "pytest-asyncio>=0.25",
   "pytest-timeout>=2.3",
   "pytest-xdist>=3.0",
   "pytest-mock>=3.10.0",
@@ -107,7 +107,7 @@ env = [
     "GIT_CONFIG_GLOBAL=/dev/null",
 ]
 asyncio_mode = "auto"
-asyncio_loop_scope = "function"
+asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 
 [project.scripts]
