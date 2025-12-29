@@ -17,17 +17,7 @@ from mcp.types import EmbeddedResource, ImageContent, TextContent
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import AgentType, TypeConfig
 from props_core.db.examples import Example
-from props_core.db.models import (
-    AgentRun,
-    AgentRunStatus,
-    Event,
-    ExpectedRecallScope,
-    FileSetMember,
-    GradingEdge,
-    Snapshot,
-    TruePositive,
-    TruePositiveOccurrenceORM,
-)
+from props_core.db.models import AgentRun, AgentRunStatus, Event, FileSetMember, GradingEdge, Snapshot
 from props_core.db.session import get_session
 from props_core.ids import DefinitionId
 from props_core.models.examples import ExampleKind, ExampleSpec
@@ -112,10 +102,11 @@ class ChildRunInfo(BaseModel):
 
 
 class GraderRunInfo(BaseModel):
-    """Brief info about a grader run that graded this critic."""
+    """Info about a grader run that graded this critic."""
 
     agent_run_id: UUID
     status: AgentRunStatus
+    grading_edges: list[GradingEdgeInfo]  # This grader's output edges
 
 
 class TpTarget(BaseModel):
@@ -151,25 +142,6 @@ class GradingEdgeInfo(BaseModel):
     critique_issue_id: str
     target: GradingTarget
     rationale: str
-
-
-class GradingSummary(BaseModel):
-    """Summary of grading results for a critic run (aggregate stats only)."""
-
-    tp_count: int
-    fp_count: int
-    unknown_count: int
-    total_credit: float
-    recall_denominator: int  # Frontend computes recall: total_credit / recall_denominator
-
-
-class MissedOccurrenceInfo(BaseModel):
-    """A catchable TP occurrence that was not found by the critic."""
-
-    tp_id: str
-    occurrence_id: str
-    tp_rationale: str  # from true_positives.rationale
-    occ_note: str | None  # from true_positive_occurrences.note
 
 
 class FileLocation(BaseModel):
@@ -212,10 +184,7 @@ class CriticRunDetail(BaseModel):
     event_count: int
     child_runs: list[ChildRunInfo]
     resolved_files: list[str] | None  # For file_set examples
-    grader_runs: list[GraderRunInfo]  # Grader runs that graded this critic
-    grading_summary: GradingSummary | None  # Grading results
-    grading_edges: list[GradingEdgeInfo]  # Aggregated edges from all graders that graded this critic
-    missed_occurrences: list[MissedOccurrenceInfo]  # Catchable TPs not found
+    grader_runs: list[GraderRunInfo]  # Grader runs with their edges nested
     reported_issues: list[ReportedIssueInfo]  # Issues found by the critic
 
 
@@ -750,11 +719,9 @@ def get_run(run_id: UUID) -> AgentRunDetail:
 
         # Resolve files for critic runs with file_set examples
         resolved_files: list[str] | None = None
-        grading_summary: GradingSummary | None = None
         grader_runs: list[GraderRunInfo] = []
-        grading_edges: list[GradingEdgeInfo] = []
-        missed_occurrences: list[MissedOccurrenceInfo] = []
         reported_issues: list[ReportedIssueInfo] = []
+        grading_edges_for_grader: list[GradingEdgeInfo] = []
 
         if run.type_config.agent_type == AgentType.CRITIC:
             example = run.type_config.example
@@ -770,95 +737,22 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                 )
                 resolved_files = [m.file_path for m in members]
 
-            # Find grader runs that graded this critic (linked via type_config.graded_agent_run_id)
-            # Use JSONB query since type_config is polymorphic
+            # Find grader runs that graded this critic
             grader_rows = (
                 session.query(AgentRun)
                 .filter(AgentRun.type_config["graded_agent_run_id"].astext == str(run_id))
                 .order_by(AgentRun.created_at)
                 .all()
             )
-            grader_runs = [
-                GraderRunInfo(agent_run_id=grader.agent_run_id, status=grader.status) for grader in grader_rows
-            ]
-            grader_run_ids = [g.agent_run_id for g in grader_rows]
-            if grader_run_ids:
-                # Aggregate grading edges from all grader runs for this critic
-                edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id.in_(grader_run_ids)).all()
-                tp_count = sum(1 for d in edges if d.tp_id is not None)
-                fp_count = sum(1 for d in edges if d.fp_id is not None)
-                unknown_count = 0  # No "unknown" type in edges model - all edges are TP or FP
-                total_credit = sum(d.credit for d in edges if d.tp_id is not None)
 
-                # Get recall_denominator from example for recall calculation
-                example_row = (
-                    session.query(Example)
-                    .filter(
-                        Example.snapshot_slug == example.snapshot_slug,
-                        Example.example_kind == example.kind,
-                        Example.files_hash == (example.files_hash if example.kind == ExampleKind.FILE_SET else None),
+            # For each grader, fetch its edges and nest them
+            for grader in grader_rows:
+                edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == grader.agent_run_id).all()
+                grader_runs.append(
+                    GraderRunInfo(
+                        agent_run_id=grader.agent_run_id, status=grader.status, grading_edges=edges_to_info(edges)
                     )
-                    .first()
                 )
-                recall_denominator = example_row.recall_denominator if example_row else None
-
-                grading_summary = GradingSummary(
-                    tp_count=tp_count,
-                    fp_count=fp_count,
-                    unknown_count=unknown_count,
-                    total_credit=total_credit,
-                    recall_denominator=recall_denominator or 0,
-                )
-                grading_edges = edges_to_info(edges)
-
-                # Find missed occurrences: catchable TPs not matched in grading_edges
-                matched_occ_keys = {(d.tp_id, d.tp_occurrence_id) for d in edges if d.tp_id is not None}
-
-                # Query catchable occurrences based on example type
-                if example.kind == ExampleKind.FILE_SET:
-                    # For file_set: join through expected_recall_scopes
-                    catchable_occs = (
-                        session.query(TruePositiveOccurrenceORM, TruePositive.rationale)
-                        .join(
-                            ExpectedRecallScope,
-                            (TruePositiveOccurrenceORM.snapshot_slug == ExpectedRecallScope.snapshot_slug)
-                            & (TruePositiveOccurrenceORM.tp_id == ExpectedRecallScope.tp_id)
-                            & (TruePositiveOccurrenceORM.occurrence_id == ExpectedRecallScope.occurrence_id),
-                        )
-                        .join(
-                            TruePositive,
-                            (TruePositiveOccurrenceORM.snapshot_slug == TruePositive.snapshot_slug)
-                            & (TruePositiveOccurrenceORM.tp_id == TruePositive.tp_id),
-                        )
-                        .filter(
-                            ExpectedRecallScope.snapshot_slug == example.snapshot_slug,
-                            ExpectedRecallScope.files_hash == example.files_hash,
-                        )
-                        .all()
-                    )
-                else:
-                    # For whole_snapshot: all occurrences in snapshot are catchable
-                    catchable_occs = (
-                        session.query(TruePositiveOccurrenceORM, TruePositive.rationale)
-                        .join(
-                            TruePositive,
-                            (TruePositiveOccurrenceORM.snapshot_slug == TruePositive.snapshot_slug)
-                            & (TruePositiveOccurrenceORM.tp_id == TruePositive.tp_id),
-                        )
-                        .filter(TruePositiveOccurrenceORM.snapshot_slug == example.snapshot_slug)
-                        .all()
-                    )
-
-                for occ, tp_rationale in catchable_occs:
-                    if (occ.tp_id, occ.occurrence_id) not in matched_occ_keys:
-                        missed_occurrences.append(
-                            MissedOccurrenceInfo(
-                                tp_id=occ.tp_id,
-                                occurrence_id=occ.occurrence_id,
-                                tp_rationale=tp_rationale,
-                                occ_note=occ.note,
-                            )
-                        )
 
             # Get reported issues for critic runs
             reported_issues = [
@@ -880,7 +774,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
         elif run.type_config.agent_type == AgentType.GRADER:
             # For grader runs, get their own edges
             edges = session.query(GradingEdge).filter(GradingEdge.grader_run_id == run_id).all()
-            grading_edges = edges_to_info(edges)
+            grading_edges_for_grader = edges_to_info(edges)
 
         # Construct appropriate detail variant based on agent type
         if run.type_config.agent_type == AgentType.CRITIC:
@@ -898,9 +792,6 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                 child_runs=child_runs,
                 resolved_files=resolved_files,
                 grader_runs=grader_runs,
-                grading_summary=grading_summary,
-                grading_edges=grading_edges,
-                missed_occurrences=missed_occurrences,
                 reported_issues=reported_issues,
             )
         if run.type_config.agent_type == AgentType.GRADER:
@@ -916,7 +807,7 @@ def get_run(run_id: UUID) -> AgentRunDetail:
                 type_config=run.type_config,
                 event_count=event_count,
                 child_runs=child_runs,
-                grading_edges=grading_edges,
+                grading_edges=grading_edges_for_grader,
             )
         return OtherAgentRunDetail(
             agent_type=run.type_config.agent_type,

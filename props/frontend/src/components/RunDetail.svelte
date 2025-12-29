@@ -73,6 +73,31 @@
     return run.agent_type;
   }
 
+  // Compute aggregated grading edges from all grader runs
+  function getAggregatedEdges(run: AgentRunDetail) {
+    if (run.agent_type !== 'critic') return [];
+    // TypeScript doesn't know about grading_edges until schema is regenerated
+    return run.grader_runs.flatMap((g: any) => g.grading_edges || []);
+  }
+
+  // Compute grading summary from aggregated edges
+  function computeGradingSummary(run: AgentRunDetail) {
+    if (run.agent_type !== 'critic') return null;
+
+    const edges = getAggregatedEdges(run);
+    if (edges.length === 0) return null;
+
+    const tp_count = edges.filter((e) => e.target.kind === 'tp').length;
+    const fp_count = edges.filter((e) => e.target.kind === 'fp').length;
+    const unknown_count = edges.filter((e) => e.target.kind === 'none').length;
+    const total_credit = edges
+      .filter((e) => e.target.kind === 'tp')
+      .reduce((sum, e) => sum + (e.target.kind === 'tp' ? e.target.credit : 0), 0);
+
+    // Recall denominator needs to come from example - we'll pass it separately
+    return { tp_count, fp_count, unknown_count, total_credit };
+  }
+
   // Load run data
   async function loadData() {
     try {
@@ -519,48 +544,57 @@
     {/if}
 
     <!-- Grading summary (for critic runs with completed grader) -->
-    {#if run.agent_type === 'critic' && run.grading_summary}
-      {@const gs = run.grading_summary}
-      {@const recall = gs.recall_denominator > 0 ? gs.total_credit / gs.recall_denominator : null}
-      {@const recallColor =
-        recall == null
-          ? 'text-gray-400'
-          : recall >= 0.7
-            ? 'text-green-600'
-            : recall >= 0.4
-              ? 'text-yellow-600'
-              : 'text-red-600'}
-      <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
-        <div class="flex flex-wrap gap-x-6 gap-y-1">
-          <span>
-            <span class="text-gray-500">Credit:</span>
-            <span class="ml-1 font-medium {recallColor}">
-              {gs.total_credit.toFixed(1)} / {gs.recall_denominator} catchable
+    {#if run.agent_type === 'critic'}
+      {@const gs = computeGradingSummary(run)}
+      {#if gs}
+        {@const recall_denominator = 0}
+        {@const recall = recall_denominator > 0 ? gs.total_credit / recall_denominator : null}
+        {@const recallColor =
+          recall == null
+            ? 'text-gray-400'
+            : recall >= 0.7
+              ? 'text-green-600'
+              : recall >= 0.4
+                ? 'text-yellow-600'
+                : 'text-red-600'}
+        <div class="px-4 py-2 border-b bg-blue-50 flex-shrink-0 text-sm">
+          <div class="flex flex-wrap gap-x-6 gap-y-1">
+            <span>
+              <span class="text-gray-500">Credit:</span>
+              <span class="ml-1 font-medium {recallColor}">
+                {gs.total_credit.toFixed(1)}{#if recall_denominator > 0}
+                  / {recall_denominator} catchable{/if}
+              </span>
+              {#if recall != null}
+                <span class="text-gray-400 text-xs">({(recall * 100).toFixed(0)}%)</span>
+              {/if}
             </span>
-            <span class="text-gray-400 text-xs">({recall != null ? `${(recall * 100).toFixed(0)}%` : '—'})</span>
-          </span>
-          <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
-          <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
-          <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
+            <span class="text-green-600" title="True Positives matched">Matched: {gs.tp_count} TPs</span>
+            <span class="text-red-600" title="False Positives hit">{gs.fp_count} FPs</span>
+            <span class="text-gray-500" title="Unmatched (no ground truth match)">| {gs.unknown_count} unmatched</span>
+          </div>
         </div>
-      </div>
+      {/if}
     {/if}
 
     <!-- Grading edges (for both critic and grader runs) -->
-    {#if run.agent_type === 'critic' && (run.grading_edges.length > 0 || run.missed_occurrences.length > 0)}
-      {@const visibleEdges = run.grading_edges.filter(
-        (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
-      )}
-      {@const totalItems = visibleEdges.length + run.missed_occurrences.length}
-      <div class="px-4 py-2 border-b flex-shrink-0">
-        <GradingEdges
-          edges={run.grading_edges}
-          missedOccurrences={run.missed_occurrences}
-          totalCredit={run.grading_summary?.total_credit}
-          recallDenominator={run.grading_summary?.recall_denominator}
-          defaultOpen={totalItems < 10}
-        />
-      </div>
+    {#if run.agent_type === 'critic'}
+      {@const edges = getAggregatedEdges(run)}
+      {#if edges.length > 0}
+        {@const visibleEdges = edges.filter(
+          (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
+        )}
+        {@const gs = computeGradingSummary(run)}
+        <div class="px-4 py-2 border-b flex-shrink-0">
+          <GradingEdges
+            {edges}
+            missedOccurrences={[]}
+            totalCredit={gs?.total_credit}
+            recallDenominator={undefined}
+            defaultOpen={visibleEdges.length < 10}
+          />
+        </div>
+      {/if}
     {:else if run.agent_type === 'grader' && run.grading_edges.length > 0}
       {@const visibleEdges = run.grading_edges.filter(
         (e) => e.target.kind === 'none' || ((e.target.kind === 'tp' || e.target.kind === 'fp') && e.target.credit > 0)
@@ -572,6 +606,7 @@
 
     <!-- Critique file viewer (for critic runs with reported issues) -->
     {#if run.agent_type === 'critic' && run.reported_issues.length > 0 && snapshotDetail}
+      {@const edges = getAggregatedEdges(run)}
       <div class="border-b">
         <div class="px-4 py-3 bg-gray-100 border-b">
           <h3 class="text-md font-medium">Critique vs Ground Truth</h3>
@@ -603,7 +638,7 @@
                     }))
                   ),
                 }))}
-                gradingEdges={run.grading_edges}
+                gradingEdges={edges}
               />
             {/each}
           </div>
