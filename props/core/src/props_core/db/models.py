@@ -498,8 +498,10 @@ class TruePositiveOccurrenceORM(Base):
         "TruePositiveOccurrenceORM.tp_id == foreign(ExpectedRecallScope.tp_id), "
         "TruePositiveOccurrenceORM.occurrence_id == foreign(ExpectedRecallScope.occurrence_id))",
     )
-    ranges: Mapped[list[TruePositiveOccurrenceRangeORM]] = relationship(
-        back_populates="occurrence", cascade="all, delete-orphan"
+    ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
+        back_populates="tp_occurrence",
+        cascade="all, delete-orphan",
+        foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.tp_id, OccurrenceRangeORM.occurrence_id]",
     )
 
     @property
@@ -561,8 +563,10 @@ class FalsePositiveOccurrenceORM(Base):
 
     # Relationships
     false_positive: Mapped[FalsePositive] = relationship(back_populates="occurrences")
-    ranges: Mapped[list[FalsePositiveOccurrenceRangeORM]] = relationship(
-        back_populates="occurrence", cascade="all, delete-orphan"
+    ranges: Mapped[list[OccurrenceRangeORM]] = relationship(
+        back_populates="fp_occurrence",
+        cascade="all, delete-orphan",
+        foreign_keys="[OccurrenceRangeORM.snapshot_slug, OccurrenceRangeORM.fp_id, OccurrenceRangeORM.occurrence_id]",
     )
     relevant_file_orms: Mapped[list[FalsePositiveRelevantFileORM]] = relationship(
         back_populates="occurrence", cascade="all, delete-orphan"
@@ -594,13 +598,14 @@ class FalsePositiveOccurrenceORM(Base):
         return result
 
 
-class TruePositiveOccurrenceRangeORM(Base):
-    """Line range within a true positive occurrence."""
+class OccurrenceRangeORM(Base):
+    """Line range within a TP or FP occurrence (exclusive arc pattern)."""
 
-    __tablename__ = "tp_occurrence_ranges"
+    __tablename__ = "occurrence_ranges"
 
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    tp_id: Mapped[str] = mapped_column(String, primary_key=True)
+    tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
     file_path: Mapped[str] = mapped_column(String, primary_key=True)
     range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -619,32 +624,6 @@ class TruePositiveOccurrenceRangeORM(Base):
             ondelete="CASCADE",
         ),
         ForeignKeyConstraint(
-            ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
-            ondelete="CASCADE",
-        ),
-    )
-
-    # Relationships
-    occurrence: Mapped[TruePositiveOccurrenceORM] = relationship(back_populates="ranges")
-
-
-class FalsePositiveOccurrenceRangeORM(Base):
-    """Line range within a false positive occurrence."""
-
-    __tablename__ = "fp_occurrence_ranges"
-
-    snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
-    fp_id: Mapped[str] = mapped_column(String, primary_key=True)
-    occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    file_path: Mapped[str] = mapped_column(String, primary_key=True)
-    range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    start_line: Mapped[int] = mapped_column(Integer, nullable=False)
-    end_line: Mapped[int] = mapped_column(Integer, nullable=False)
-    note: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    __table_args__ = (
-        ForeignKeyConstraint(
             ["snapshot_slug", "fp_id", "occurrence_id"],
             [
                 "false_positive_occurrences.snapshot_slug",
@@ -660,8 +639,13 @@ class FalsePositiveOccurrenceRangeORM(Base):
         ),
     )
 
-    # Relationships
-    occurrence: Mapped[FalsePositiveOccurrenceORM] = relationship(back_populates="ranges")
+    # Relationships - use foreign() to specify which columns to join on
+    tp_occurrence: Mapped[TruePositiveOccurrenceORM | None] = relationship(
+        back_populates="ranges", foreign_keys=[snapshot_slug, tp_id, occurrence_id]
+    )
+    fp_occurrence: Mapped[FalsePositiveOccurrenceORM | None] = relationship(
+        back_populates="ranges", foreign_keys=[snapshot_slug, fp_id, occurrence_id]
+    )
 
 
 class FalsePositiveRelevantFileORM(Base):

@@ -34,16 +34,15 @@ from props_core.db.models import (
     ExpectedRecallScope,
     FalsePositive,
     FalsePositiveOccurrenceORM,
-    FalsePositiveOccurrenceRangeORM,
     FalsePositiveRelevantFileORM,
     FileSet,
     FileSetMember,
     ModelMetadata,
+    OccurrenceRangeORM,
     Snapshot,
     SnapshotFile,
     TruePositive,
     TruePositiveOccurrenceORM,
-    TruePositiveOccurrenceRangeORM,
 )
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
@@ -514,9 +513,10 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     for file_path, ranges in occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
-                                range_orm = TruePositiveOccurrenceRangeORM(
+                                range_orm = OccurrenceRangeORM(
                                     snapshot_slug=issue.snapshot_slug,
                                     tp_id=issue.tp_id,
+                                    fp_id=None,
                                     occurrence_id=occ.occurrence_id,
                                     file_path=str(file_path),
                                     range_id=range_id,
@@ -562,9 +562,10 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         for file_path, ranges in occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
-                                    range_orm = TruePositiveOccurrenceRangeORM(
+                                    range_orm = OccurrenceRangeORM(
                                         snapshot_slug=issue.snapshot_slug,
                                         tp_id=issue.tp_id,
+                                        fp_id=None,
                                         occurrence_id=occ.occurrence_id,
                                         file_path=str(file_path),
                                         range_id=range_id,
@@ -608,8 +609,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                     for file_path, ranges in fp_occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
-                                range_orm = FalsePositiveOccurrenceRangeORM(
+                                range_orm = OccurrenceRangeORM(
                                     snapshot_slug=fp.snapshot_slug,
+                                    tp_id=None,
                                     fp_id=fp.fp_id,
                                     occurrence_id=fp_occ.occurrence_id,
                                     file_path=str(file_path),
@@ -665,8 +667,9 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         for file_path, ranges in fp_occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
-                                    range_orm = FalsePositiveOccurrenceRangeORM(
+                                    range_orm = OccurrenceRangeORM(
                                         snapshot_slug=fp.snapshot_slug,
+                                        tp_id=None,
                                         fp_id=fp.fp_id,
                                         occurrence_id=fp_occ.occurrence_id,
                                         file_path=str(file_path),

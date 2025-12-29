@@ -1201,19 +1201,21 @@ Deduplicated by PK constraint - same files always produce same hash.'
     # =========================================================================
     # These tables normalize the JSONB files column into proper relational tables
     # for better queryability, foreign key validation, and line number validation.
+    # Uses exclusive arc pattern: exactly one of tp_id or fp_id must be set.
 
-    # True positive occurrence ranges table
+    # Occurrence ranges table (shared by TPs and FPs)
     op.create_table(
-        "tp_occurrence_ranges",
+        "occurrence_ranges",
         sa.Column("snapshot_slug", sa.String(), nullable=False),
-        sa.Column("tp_id", sa.String(), nullable=False),
+        sa.Column("tp_id", sa.String(), nullable=True),
+        sa.Column("fp_id", sa.String(), nullable=True),
         sa.Column("occurrence_id", sa.String(), nullable=False),
         sa.Column("file_path", sa.String(), nullable=False),
         sa.Column("range_id", sa.Integer(), nullable=False, comment="0-based index within file"),
         sa.Column("start_line", sa.Integer(), nullable=False),
         sa.Column("end_line", sa.Integer(), nullable=False),
         sa.Column("note", sa.Text(), nullable=True),
-        sa.PrimaryKeyConstraint("snapshot_slug", "tp_id", "occurrence_id", "file_path", "range_id"),
+        sa.PrimaryKeyConstraint("snapshot_slug", "occurrence_id", "file_path", "range_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "tp_id", "occurrence_id"],
             [
@@ -1222,33 +1224,8 @@ Deduplicated by PK constraint - same files always produce same hash.'
                 "true_positive_occurrences.occurrence_id",
             ],
             ondelete="CASCADE",
+            name="fk_occurrence_range_tp",
         ),
-        sa.ForeignKeyConstraint(
-            ["snapshot_slug", "file_path"],
-            ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
-            ondelete="CASCADE",
-            name="fk_tp_range_snapshot_file",
-        ),
-        sa.CheckConstraint("start_line >= 1", name="tp_range_start_line_positive"),
-        sa.CheckConstraint("end_line >= start_line", name="tp_range_end_gte_start"),
-    )
-
-    op.execute(
-        "COMMENT ON TABLE tp_occurrence_ranges IS 'Line ranges within true positive occurrences (normalized from files JSONB)'"
-    )
-
-    # False positive occurrence ranges table
-    op.create_table(
-        "fp_occurrence_ranges",
-        sa.Column("snapshot_slug", sa.String(), nullable=False),
-        sa.Column("fp_id", sa.String(), nullable=False),
-        sa.Column("occurrence_id", sa.String(), nullable=False),
-        sa.Column("file_path", sa.String(), nullable=False),
-        sa.Column("range_id", sa.Integer(), nullable=False, comment="0-based index within file"),
-        sa.Column("start_line", sa.Integer(), nullable=False),
-        sa.Column("end_line", sa.Integer(), nullable=False),
-        sa.Column("note", sa.Text(), nullable=True),
-        sa.PrimaryKeyConstraint("snapshot_slug", "fp_id", "occurrence_id", "file_path", "range_id"),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "fp_id", "occurrence_id"],
             [
@@ -1257,19 +1234,23 @@ Deduplicated by PK constraint - same files always produce same hash.'
                 "false_positive_occurrences.occurrence_id",
             ],
             ondelete="CASCADE",
+            name="fk_occurrence_range_fp",
         ),
         sa.ForeignKeyConstraint(
             ["snapshot_slug", "file_path"],
             ["snapshot_files.snapshot_slug", "snapshot_files.relative_path"],
             ondelete="CASCADE",
-            name="fk_fp_range_snapshot_file",
+            name="fk_occurrence_range_snapshot_file",
         ),
-        sa.CheckConstraint("start_line >= 1", name="fp_range_start_line_positive"),
-        sa.CheckConstraint("end_line >= start_line", name="fp_range_end_gte_start"),
+        sa.CheckConstraint("start_line >= 1", name="occurrence_range_start_line_positive"),
+        sa.CheckConstraint("end_line >= start_line", name="occurrence_range_end_gte_start"),
+        sa.CheckConstraint("(tp_id IS NULL) <> (fp_id IS NULL)", name="occurrence_range_exclusive_arc"),
     )
 
     op.execute(
-        "COMMENT ON TABLE fp_occurrence_ranges IS 'Line ranges within false positive occurrences (normalized from files JSONB)'"
+        "COMMENT ON TABLE occurrence_ranges IS "
+        "'Line ranges within TP/FP occurrences (normalized from files JSONB). "
+        "Exactly one of tp_id or fp_id must be set (exclusive arc pattern).'"
     )
 
     # False positive relevant files table
@@ -1330,15 +1311,8 @@ Deduplicated by PK constraint - same files always produce same hash.'
     """)
 
     op.execute("""
-        CREATE TRIGGER validate_tp_range_bounds
-        BEFORE INSERT OR UPDATE ON tp_occurrence_ranges
-        FOR EACH ROW
-        EXECUTE FUNCTION validate_range_line_numbers();
-    """)
-
-    op.execute("""
-        CREATE TRIGGER validate_fp_range_bounds
-        BEFORE INSERT OR UPDATE ON fp_occurrence_ranges
+        CREATE TRIGGER validate_occurrence_range_bounds
+        BEFORE INSERT OR UPDATE ON occurrence_ranges
         FOR EACH ROW
         EXECUTE FUNCTION validate_range_line_numbers();
     """)
