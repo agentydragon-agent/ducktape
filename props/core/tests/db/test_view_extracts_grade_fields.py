@@ -6,9 +6,8 @@ from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentRunStatus, TruePositive
 from props_core.db.session import get_session
-from props_core.grader.models import GraderSuccess, InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
+from props_core.db.snapshots import DBOccurrenceMatch, DBOccurrenceResult
 from props_core.ids import SnapshotSlug
-from props_core.rationale import Rationale
 from sqlalchemy import text
 
 from tests.conftest import (
@@ -56,19 +55,16 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         assert matching_tp is not None, "Should find a TP with subtract.py"
         assert matching_occ_id is not None
 
-        # Create GraderSuccess with occurrence results matching the git fixture TP
-        grader_success = GraderSuccess(
-            occurrence_results=[
-                OccurrenceResult(
-                    tp_id=TruePositiveID(matching_tp.tp_id),
-                    occurrence_id=matching_occ_id,
-                    found_credit=1.0,
-                    matched_by=[OccurrenceMatch(input_id=InputIssueID("input-test-001"), credit=1.0)],
-                    rationale=Rationale("Fully found this occurrence"),
-                )
-            ],
-            summary=Rationale("Test grading summary"),
-        )
+        # Create occurrence results matching the git fixture TP
+        occurrence_results = [
+            DBOccurrenceResult(
+                tp_id=matching_tp.tp_id,
+                occurrence_id=matching_occ_id,
+                found_credit=1.0,
+                matched_by=[DBOccurrenceMatch(input_id="input-test-001", credit=1.0)],
+                rationale="Fully found this occurrence",
+            )
+        ]
 
         # Insert critic run (required for view join) using fixture factory
         critic_run = make_critic_run(example=example, agent_run_id=critic_agent_run_id, status=AgentRunStatus.COMPLETED)
@@ -89,12 +85,12 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
         session.add(grader_run)
         session.flush()  # Ensure grader_run.agent_run_id is available
 
-        # Populate grading_edges table from MCP occurrence_results
+        # Populate grading_edges table from occurrence_results
         populate_grading_edges(
             critic_run=critic_run,
             grader_run=grader_run,
             snapshot_slug=snapshot_slug,
-            occurrence_results=grader_success.occurrence_results,
+            occurrence_results=occurrence_results,
             session=session,
         )
 

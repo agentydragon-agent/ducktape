@@ -1,7 +1,7 @@
 """Conversion functions between MCP I/O models and database persistence models.
 
 This module lives in the grader layer because it needs to know about both:
-- MCP I/O models (grader.models.TruePositiveIssue, KnownFalsePositive, GraderOutput)
+- MCP I/O models (grader.models.TruePositiveIssue, KnownFalsePositive)
 - Database persistence models (db.snapshots.DBTruePositiveIssue, DBKnownFalsePositive)
 
 The database layer should not depend on MCP I/O types to avoid coupling
@@ -14,29 +14,12 @@ from pathlib import Path
 
 from props_core.db.snapshots import (
     DBFalsePositiveOccurrence,
-    DBGraderMaxTurnsExceeded,
-    DBGraderOutput,
-    DBGraderSuccess,
     DBKnownFalsePositive,
     DBLineRange,
-    DBOccurrenceMatch,
-    DBOccurrenceResult,
     DBTruePositiveIssue,
     DBTruePositiveOccurrence,
-    DBUnknownIssue,
 )
-from props_core.grader.models import (
-    FalsePositiveID,
-    GraderMaxTurnsExceeded,
-    GraderOutput,
-    GraderSuccess,
-    KnownFalsePositive,
-    OccurrenceMatch,
-    OccurrenceResult,
-    TruePositiveID,
-    TruePositiveIssue,
-    UnknownIssue,
-)
+from props_core.grader.models import FalsePositiveID, KnownFalsePositive, TruePositiveID, TruePositiveIssue
 from props_core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
 from props_core.rationale import Rationale
 
@@ -135,43 +118,3 @@ def fp_from_db(db_fp: DBKnownFalsePositive) -> KnownFalsePositive:
             for occ in db_fp.occurrences
         ],
     )
-
-
-def _occurrence_match_to_db(match: OccurrenceMatch) -> DBOccurrenceMatch:
-    """Convert MCP OccurrenceMatch to DB representation."""
-    return DBOccurrenceMatch(input_id=str(match.input_id), credit=match.credit)
-
-
-def _occurrence_result_to_db(result: OccurrenceResult) -> DBOccurrenceResult:
-    """Convert MCP OccurrenceResult to DB representation."""
-    return DBOccurrenceResult(
-        tp_id=str(result.tp_id),
-        occurrence_id=result.occurrence_id,
-        found_credit=result.found_credit,
-        matched_by=[_occurrence_match_to_db(m) for m in result.matched_by],
-        rationale=str(result.rationale),
-    )
-
-
-def _unknown_issue_to_db(unknown: UnknownIssue) -> DBUnknownIssue:
-    """Convert MCP UnknownIssue to DB representation."""
-    return DBUnknownIssue(id=str(unknown.input_id), rationale=str(unknown.rationale))
-
-
-def grader_success_to_db(success: GraderSuccess) -> DBGraderSuccess:
-    """Convert MCP GraderSuccess to DB representation."""
-    return DBGraderSuccess(
-        tag="success",
-        occurrence_results=[_occurrence_result_to_db(r) for r in success.occurrence_results],
-        unknowns=[_unknown_issue_to_db(u) for u in success.unknowns],
-        summary=str(success.summary),
-    )
-
-
-def grader_output_to_db(output: GraderOutput) -> DBGraderOutput:
-    """Convert MCP GraderOutput (discriminated union) to DB representation."""
-    if isinstance(output, GraderSuccess):
-        return grader_success_to_db(output)
-    if isinstance(output, GraderMaxTurnsExceeded):
-        return DBGraderMaxTurnsExceeded(tag="max_turns_exceeded", max_turns=output.max_turns)
-    raise TypeError(f"Unexpected GraderOutput variant: {type(output)}")

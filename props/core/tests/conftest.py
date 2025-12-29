@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 from uuid import UUID, uuid4
 
+from agent_core.testing import FakeOpenAIModel, Step
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
@@ -39,19 +40,12 @@ from props_core.db.snapshots import (
     DBGraderOutput,
     DBGraderSuccess,
     DBLocationAnchor,
+    DBOccurrenceMatch,
     DBOccurrenceResult,
+    DBUnknownIssue,
 )
 from props_core.db.sync.sync import sync_all
-from props_core.grader.models import (
-    GraderInput,
-    GraderSuccess,
-    InputIssueID,
-    OccurrenceMatch,
-    OccurrenceResult,
-    TruePositiveID,
-    UnknownIssue,
-)
-from props_core.grader.persistence import grader_success_to_db
+from props_core.grader.models import GraderInput
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
 from props_core.models.true_positive import FalsePositiveOccurrence, LineRange, TruePositiveOccurrence
@@ -67,7 +61,6 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from agent_core.testing import FakeOpenAIModel, Step
 from openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
 
 # Register shared fixtures from other packages
@@ -196,28 +189,23 @@ def make_grader_output(
         output = make_grader_output(tp_occurrences=tp_occs[:2], unknowns=["unknown-001"])
     """
     occurrence_results = [
-        OccurrenceResult(
-            tp_id=TruePositiveID(tp_id),
+        DBOccurrenceResult(
+            tp_id=tp_id,
             occurrence_id=occ_id,
             found_credit=found_credit,
-            matched_by=[OccurrenceMatch(input_id=InputIssueID(f"issue-{i:03d}"), credit=found_credit)]
+            matched_by=[DBOccurrenceMatch(input_id=f"issue-{i:03d}", credit=found_credit)]
             if found_credit > 0.0
             else [],
-            rationale=Rationale(
-                "Test occurrence - not found" if found_credit == 0.0 else f"Test occurrence (credit={found_credit})"
-            ),
+            rationale="Test occurrence - not found" if found_credit == 0.0 else f"Test occurrence (credit={found_credit})",
         )
         for i, (tp_id, occ_id) in enumerate(tp_occurrences, start=1)
     ]
 
-    grader_success = GraderSuccess(
+    return DBGraderSuccess(
         occurrence_results=occurrence_results,
-        summary=Rationale(summary),
-        unknowns=[UnknownIssue(input_id=InputIssueID(u), rationale=Rationale(f"Unknown issue: {u}")) for u in unknowns]
-        if unknowns
-        else [],
+        summary=summary,
+        unknowns=[DBUnknownIssue(id=u, rationale=f"Unknown issue: {u}") for u in unknowns] if unknowns else [],
     )
-    return grader_success_to_db(grader_success)
 
 
 def get_tp_occurrences_for_snapshot(snapshot_slug: str, session: Session) -> list[tuple[str, str]]:
@@ -599,7 +587,7 @@ def populate_grading_edges(
     critic_run: AgentRun,
     grader_run: AgentRun,
     snapshot_slug: SnapshotSlug,
-    occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult],
+    occurrence_results: list[DBOccurrenceResult],
     session: Session,
 ) -> None:
     """Create GradingEdge rows from occurrence results.
@@ -614,7 +602,7 @@ def populate_grading_edges(
         critic_run: Critic AgentRun the edges reference
         grader_run: Grader AgentRun that created these edges
         snapshot_slug: Snapshot being graded
-        occurrence_results: List of OccurrenceResult (MCP) or DBOccurrenceResult (DB persistence)
+        occurrence_results: List of DBOccurrenceResult (DB persistence models)
         session: Database session (uses provided session, not get_session())
 
     Raises:
@@ -625,14 +613,14 @@ def populate_grading_edges(
         for match in occ_result.matched_by:
             edge = GradingEdge(
                 critique_run_id=critic_run.agent_run_id,
-                critique_issue_id=str(match.input_id),
+                critique_issue_id=match.input_id,
                 snapshot_slug=snapshot_slug,
-                tp_id=str(occ_result.tp_id),
+                tp_id=occ_result.tp_id,
                 tp_occurrence_id=occ_result.occurrence_id,
                 fp_id=None,
                 fp_occurrence_id=None,
                 credit=match.credit,
-                rationale=str(occ_result.rationale),
+                rationale=occ_result.rationale,
                 grader_run_id=grader_run.agent_run_id,
             )
             session.add(edge)
@@ -711,7 +699,7 @@ def make_grader_run_with_edges(
     canonical_issues_snapshot=EMPTY_CANONICAL_ISSUES_SNAPSHOT,
     model: str = "test-model",
     status: AgentRunStatus = AgentRunStatus.COMPLETED,
-    occurrence_results: list[OccurrenceResult] | list[DBOccurrenceResult] | None = None,
+    occurrence_results: list[DBOccurrenceResult] | None = None,
     agent_run_id: UUID | None = None,
 ) -> AgentRun:
     """Build grader AgentRun and populate grading_edges table (one-step helper).
@@ -747,7 +735,7 @@ def make_grader_run_with_edges(
     # Populate grading edges if occurrence_results provided
     if occurrence_results:
         # Extract issue IDs and create reported issues first
-        issue_ids = [str(match.input_id) for occ in occurrence_results for match in occ.matched_by]
+        issue_ids = [match.input_id for occ in occurrence_results for match in occ.matched_by]
         make_reported_issues(agent_run_id=critic_run.agent_run_id, issue_ids=issue_ids, session=session)
 
         # Get snapshot_slug from critic's type_config
@@ -1261,19 +1249,15 @@ def make_grader_run_with_credit(
     session.add(grader_run)
     session.flush()
 
-    grader_success = GraderSuccess(
-        occurrence_results=[
-            OccurrenceResult(
-                tp_id=TruePositiveID(tp_id),
-                occurrence_id=occ_id,
-                found_credit=credit,
-                matched_by=[OccurrenceMatch(input_id=InputIssueID(f"input-{input_idx}"), credit=credit)],
-                rationale=Rationale(f"Credit {credit}"),
-            )
-        ],
-        unknowns=[],
-        summary=Rationale(f"Summary {credit}"),
-    )
+    occurrence_results = [
+        DBOccurrenceResult(
+            tp_id=tp_id,
+            occurrence_id=occ_id,
+            found_credit=credit,
+            matched_by=[DBOccurrenceMatch(input_id=f"input-{input_idx}", credit=credit)],
+            rationale=f"Credit {credit}",
+        )
+    ]
 
     # Get snapshot_slug from critic's type_config
     snapshot_slug = critic_run.critic_config().example.snapshot_slug
@@ -1282,7 +1266,7 @@ def make_grader_run_with_credit(
         critic_run=critic_run,
         grader_run=grader_run,
         snapshot_slug=snapshot_slug,
-        occurrence_results=grader_success.occurrence_results,
+        occurrence_results=occurrence_results,
         session=session,
     )
     return grader_run

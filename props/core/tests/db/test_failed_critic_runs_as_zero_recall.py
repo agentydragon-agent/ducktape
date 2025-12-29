@@ -3,9 +3,8 @@
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID
 from props_core.db.examples import Example
 from props_core.db.models import AgentRunStatus, RecallByDefinitionSplitKind, RecallByExample
-from props_core.grader.models import InputIssueID, OccurrenceMatch, OccurrenceResult, TruePositiveID
+from props_core.db.snapshots import DBOccurrenceMatch, DBOccurrenceResult
 from props_core.models.examples import ExampleKind, SingleFileSetExample
-from props_core.rationale import Rationale
 from props_core.splits import Split
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -131,12 +130,12 @@ def test_successful_run_not_affected_by_failure_logic(
         grader_run=grader_run,
         snapshot_slug=example_subtract_orm.snapshot_slug,
         occurrence_results=[
-            OccurrenceResult(
-                tp_id=TruePositiveID(tp_id),
+            DBOccurrenceResult(
+                tp_id=tp_id,
                 occurrence_id=occ_id,
                 found_credit=0.8,
-                matched_by=[OccurrenceMatch(input_id=InputIssueID("input-1"), credit=0.8)],
-                rationale=Rationale("Partially found"),
+                matched_by=[DBOccurrenceMatch(input_id="input-1", credit=0.8)],
+                rationale="Partially found",
             )
         ],
         session=synced_test_session,
