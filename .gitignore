@@ -72,3 +72,6 @@ nix/**/result
 **/.claude/session-start.log
 adgn/openai_openapi.yaml
 worktrees
+
+# Python build artifacts
+**/dist/
