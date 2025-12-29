@@ -168,8 +168,6 @@ skip-globs = ["tests/detectors/fixtures/**"]
 # LLM console scripts
 adgn-sysrw = "adgn.sysrw.cli:app"
 adgn-agent = "adgn.agent.cli:main"
-git-commit-ai = "adgn.git_commit_ai.cli:main"
-adgn-llm-edit = "adgn.llm_edit:app"
 adgn-openai-probe = "openai_utils.probe:main"
 adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
 adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"

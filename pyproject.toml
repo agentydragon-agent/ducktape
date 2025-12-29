@@ -9,6 +9,7 @@ members = [
     "editor_agent/host",
     "editor_agent/runtime",
     "ember",
+    "git_commit_ai",
     "mcp_infra",
     "mcp_utils",
     "net_util",
