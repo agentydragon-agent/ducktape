@@ -4,6 +4,6 @@
   ansible.builtin.command: >-
     gnome-extensions enable pop-shell@system76.com &&
     gnome-extensions disable pop-shell@system76.com
-  register: _reload
-  failed_when: _reload.rc != 0
-  changed_when: _reload.rc == 0
+  register: gui_reload
+  failed_when: gui_reload.rc != 0
+  changed_when: gui_reload.rc == 0
