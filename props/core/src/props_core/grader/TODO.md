@@ -6,10 +6,10 @@
 - Credit assignment with database-level validation (triggers enforce sum ≤ 1.0 per occurrence)
 - Unknowns storage per grader run (`GraderSuccess.unknowns`)
 - Interactive human labeling workflow (`/verify-clusters` command)
+- Completeness validation: MCP submit validates `grading_pending` is empty (see `submit_server.py`)
 
 **TODO:**
 - Automated cross-critique clustering of unknowns
-- Completeness validation (every input issue matched OR unknown, no overlaps)
 - Ground truth provenance tracking (human-labeled vs original)
 - Automatic re-grading after ground truth updates
 
