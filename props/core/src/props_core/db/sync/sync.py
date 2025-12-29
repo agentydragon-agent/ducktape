@@ -509,24 +509,23 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         ),
                     )
                     session.add(orm_occ)
-                    # Add ranges
+                    # Add ranges via relationship
                     for file_path, ranges in occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
-                                range_orm = OccurrenceRangeORM(
-                                    snapshot_slug=issue.snapshot_slug,
-                                    tp_id=issue.tp_id,
-                                    fp_id=None,
-                                    occurrence_id=occ.occurrence_id,
-                                    file_path=str(file_path),
-                                    range_id=range_id,
-                                    start_line=line_range.start_line,
-                                    end_line=line_range.end_line
-                                    if line_range.end_line is not None
-                                    else line_range.start_line,
-                                    note=line_range.note,
+                                orm_occ.ranges.append(
+                                    OccurrenceRangeORM(
+                                        snapshot_slug=issue.snapshot_slug,
+                                        occurrence_id=occ.occurrence_id,
+                                        file_path=file_path,
+                                        range_id=range_id,
+                                        start_line=line_range.start_line,
+                                        end_line=line_range.end_line
+                                        if line_range.end_line is not None
+                                        else line_range.start_line,
+                                        note=line_range.note,
+                                    )
                                 )
-                                session.add(range_orm)
                 added += 1
                 total += 1
             else:
@@ -558,24 +557,23 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             ),
                         )
                         session.add(orm_occ)
-                        # Add ranges
+                        # Add ranges via relationship
                         for file_path, ranges in occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
-                                    range_orm = OccurrenceRangeORM(
-                                        snapshot_slug=issue.snapshot_slug,
-                                        tp_id=issue.tp_id,
-                                        fp_id=None,
-                                        occurrence_id=occ.occurrence_id,
-                                        file_path=str(file_path),
-                                        range_id=range_id,
-                                        start_line=line_range.start_line,
-                                        end_line=line_range.end_line
-                                        if line_range.end_line is not None
-                                        else line_range.start_line,
-                                        note=line_range.note,
+                                    orm_occ.ranges.append(
+                                        OccurrenceRangeORM(
+                                            snapshot_slug=issue.snapshot_slug,
+                                            occurrence_id=occ.occurrence_id,
+                                            file_path=file_path,
+                                            range_id=range_id,
+                                            start_line=line_range.start_line,
+                                            end_line=line_range.end_line
+                                            if line_range.end_line is not None
+                                            else line_range.start_line,
+                                            note=line_range.note,
+                                        )
                                     )
-                                    session.add(range_orm)
                     updated += 1
                     total += 1
                 else:
@@ -605,33 +603,32 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                         ),
                     )
                     session.add(fp_orm_occ)
-                    # Add ranges
+                    # Add ranges via relationship
                     for file_path, ranges in fp_occ.files.items():
                         if ranges is not None:
                             for range_id, line_range in enumerate(ranges):
-                                range_orm = OccurrenceRangeORM(
-                                    snapshot_slug=fp.snapshot_slug,
-                                    tp_id=None,
-                                    fp_id=fp.fp_id,
-                                    occurrence_id=fp_occ.occurrence_id,
-                                    file_path=str(file_path),
-                                    range_id=range_id,
-                                    start_line=line_range.start_line,
-                                    end_line=line_range.end_line
-                                    if line_range.end_line is not None
-                                    else line_range.start_line,
-                                    note=line_range.note,
+                                fp_orm_occ.ranges.append(
+                                    OccurrenceRangeORM(
+                                        snapshot_slug=fp.snapshot_slug,
+                                        occurrence_id=fp_occ.occurrence_id,
+                                        file_path=file_path,
+                                        range_id=range_id,
+                                        start_line=line_range.start_line,
+                                        end_line=line_range.end_line
+                                        if line_range.end_line is not None
+                                        else line_range.start_line,
+                                        note=line_range.note,
+                                    )
                                 )
-                                session.add(range_orm)
-                    # Add relevant files
+                    # Add relevant files via relationship
                     for relevant_file in fp_occ.relevant_files:
-                        relevant_file_orm = FalsePositiveRelevantFileORM(
-                            snapshot_slug=fp.snapshot_slug,
-                            fp_id=fp.fp_id,
-                            occurrence_id=fp_occ.occurrence_id,
-                            file_path=str(relevant_file),
+                        fp_orm_occ.relevant_file_orms.append(
+                            FalsePositiveRelevantFileORM(
+                                snapshot_slug=fp.snapshot_slug,
+                                occurrence_id=fp_occ.occurrence_id,
+                                file_path=relevant_file,
+                            )
                         )
-                        session.add(relevant_file_orm)
                 added += 1
                 total += 1
             else:
@@ -663,33 +660,32 @@ def sync_issues_to_db(session: Session, slugs: list[SnapshotSlug], specimens_dir
                             ),
                         )
                         session.add(fp_orm_occ)
-                        # Add ranges
+                        # Add ranges via relationship
                         for file_path, ranges in fp_occ.files.items():
                             if ranges is not None:
                                 for range_id, line_range in enumerate(ranges):
-                                    range_orm = OccurrenceRangeORM(
-                                        snapshot_slug=fp.snapshot_slug,
-                                        tp_id=None,
-                                        fp_id=fp.fp_id,
-                                        occurrence_id=fp_occ.occurrence_id,
-                                        file_path=str(file_path),
-                                        range_id=range_id,
-                                        start_line=line_range.start_line,
-                                        end_line=line_range.end_line
-                                        if line_range.end_line is not None
-                                        else line_range.start_line,
-                                        note=line_range.note,
+                                    fp_orm_occ.ranges.append(
+                                        OccurrenceRangeORM(
+                                            snapshot_slug=fp.snapshot_slug,
+                                            occurrence_id=fp_occ.occurrence_id,
+                                            file_path=file_path,
+                                            range_id=range_id,
+                                            start_line=line_range.start_line,
+                                            end_line=line_range.end_line
+                                            if line_range.end_line is not None
+                                            else line_range.start_line,
+                                            note=line_range.note,
+                                        )
                                     )
-                                    session.add(range_orm)
-                        # Add relevant files
+                        # Add relevant files via relationship
                         for relevant_file in fp_occ.relevant_files:
-                            relevant_file_orm = FalsePositiveRelevantFileORM(
-                                snapshot_slug=fp.snapshot_slug,
-                                fp_id=fp.fp_id,
-                                occurrence_id=fp_occ.occurrence_id,
-                                file_path=str(relevant_file),
+                            fp_orm_occ.relevant_file_orms.append(
+                                FalsePositiveRelevantFileORM(
+                                    snapshot_slug=fp.snapshot_slug,
+                                    occurrence_id=fp_occ.occurrence_id,
+                                    file_path=relevant_file,
+                                )
                             )
-                            session.add(relevant_file_orm)
                     updated += 1
                     total += 1
                 else:

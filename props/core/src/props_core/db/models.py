@@ -231,6 +231,26 @@ class SnapshotSlugColumn(TypeDecorator[SnapshotSlug]):
         return SnapshotSlug(validated)
 
 
+class PathColumn(TypeDecorator[Path]):
+    """SQLAlchemy column type for Path.
+
+    Stores as String in DB, converts to/from Path on load/store.
+    """
+
+    impl = String
+    cache_ok = True
+
+    def process_bind_param(self, value: Path | str | None, dialect: Any) -> str | None:
+        if value is None:
+            return None
+        return str(value)
+
+    def process_result_value(self, value: str | None, dialect: Any) -> Path | None:
+        if value is None:
+            return None
+        return Path(value)
+
+
 E = TypeVar("E", bound=StrEnum)
 
 
@@ -524,10 +544,11 @@ class TruePositiveOccurrenceORM(Base):
         """
         result: dict[str, list[dict] | None] = {}
         for range_orm in self.ranges:
-            if range_orm.file_path not in result:
-                result[range_orm.file_path] = []
-            assert result[range_orm.file_path] is not None
-            result[range_orm.file_path].append(
+            path_str = str(range_orm.file_path)
+            if path_str not in result:
+                result[path_str] = []
+            assert result[path_str] is not None
+            result[path_str].append(
                 {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
             )
         return result
@@ -579,7 +600,7 @@ class FalsePositiveOccurrenceORM(Base):
     @property
     def relevant_files(self) -> list[str]:
         """Reconstruct relevant_files list for backward compatibility."""
-        return [rf.file_path for rf in self.relevant_file_orms]
+        return [str(rf.file_path) for rf in self.relevant_file_orms]
 
     @property
     def files(self) -> dict[str, list[dict] | None]:
@@ -589,10 +610,11 @@ class FalsePositiveOccurrenceORM(Base):
         """
         result: dict[str, list[dict] | None] = {}
         for range_orm in self.ranges:
-            if range_orm.file_path not in result:
-                result[range_orm.file_path] = []
-            assert result[range_orm.file_path] is not None
-            result[range_orm.file_path].append(
+            path_str = str(range_orm.file_path)
+            if path_str not in result:
+                result[path_str] = []
+            assert result[path_str] is not None
+            result[path_str].append(
                 {"start_line": range_orm.start_line, "end_line": range_orm.end_line, "note": range_orm.note}
             )
         return result
@@ -607,7 +629,7 @@ class OccurrenceRangeORM(Base):
     tp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     fp_id: Mapped[str | None] = mapped_column(String, nullable=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
     range_id: Mapped[int] = mapped_column(Integer, primary_key=True)
     start_line: Mapped[int] = mapped_column(Integer, nullable=False)
     end_line: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -656,7 +678,7 @@ class FalsePositiveRelevantFileORM(Base):
     snapshot_slug: Mapped[SnapshotSlug] = mapped_column(SnapshotSlugColumn(), primary_key=True)
     fp_id: Mapped[str] = mapped_column(String, primary_key=True)
     occurrence_id: Mapped[str] = mapped_column(String, primary_key=True)
-    file_path: Mapped[str] = mapped_column(String, primary_key=True)
+    file_path: Mapped[Path] = mapped_column(PathColumn(), primary_key=True)
 
     __table_args__ = (
         ForeignKeyConstraint(
