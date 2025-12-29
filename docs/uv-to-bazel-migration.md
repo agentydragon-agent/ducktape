@@ -334,63 +334,104 @@ openai_utils/
 
 **Recommendation**: Complete the Bazel migration first, then flatten layouts in a separate PR to avoid excessive file moves in the initial migration diff.
 
-### TODO: Docker Image Builds with rules_oci
+### TODO: Agent Definition Tar Builds (`agent_pkg_tar` rule)
 
-#### Props Core Agent Definitions
+#### Current Protocol
 
-The `props/core/src/props_core/agent_defs/` directory contains **9 agent definitions**:
-- `critic/`, `grader/`, `improvement/`, `prompt_optimizer/`
-- Specialist critics: `dead_code/`, `high_recall_critic/`, `flag_propagation/`, `contract_truthfulness/`, `verbose_docs/`
+An agent definition produces a **tar file** containing:
+- `Dockerfile` - builds the image
+- Build context (source packages, pyproject.toml files)
 
-Each has:
-- **Dockerfile** - Python 3.12 slim base with multi-stage build
-- **MANIFEST** - Declares which repo packages to bundle
-- **agent.md** (optional) - Customizable system prompt
+The tar is **NOT** the built image - it's Dockerfile + build context for `docker build`.
 
-#### Current Manual Orchestration
-1. `pack_repo_definition()` reads MANIFEST, extracts files from git HEAD
-2. `sync_agent_definitions_to_db()` stores tar archives in database
-3. `build_definition_images()` fetches archives, runs `docker buildx build`
-4. Run via: `props db sync --build-images`
+#### How It Works Today
 
-#### Bazel Integration Opportunities
+1. **MANIFEST** lists paths relative to repo root:
+   ```
+   openai_utils/src
+   openai_utils/pyproject.toml
+   agent_core/src
+   agent_core/pyproject.toml
+   ...
+   ```
 
-1. **`rules_oci` for Docker builds**:
-   - Declare base image once (`python:3.12-slim`)
-   - Define external dependencies via `pip_parse`
-   - Share multi-stage cache across all agents
+2. **`pack_repo_definition()`** creates tar with:
+   - Dockerfile from the agent definition dir
+   - Source directories and pyproject.toml files listed in MANIFEST
+   - Paths preserved from repo root (e.g., `openai_utils/src/...`)
 
-2. **`agent_pkg_tar` rule** (no MANIFEST needed):
-   - Deps go directly in BUILD rule - MANIFEST becomes redundant
-   - Bundles dependencies from Bazel targets
-   - Produces deterministic tar archive
-   - Content-hash based caching
+3. **Dockerfile** does:
+   ```dockerfile
+   # Stage 1: install external deps (cached layer)
+   RUN pip install ruff mypy openai pydantic fastmcp ...
 
-3. **Validation at build time**:
-   - Catch missing dependencies early
-   - Validate Dockerfile structure (has `/init`)
+   # Copy build context from tar
+   COPY . /build/
 
-Example target structure:
+   # Install local packages from context
+   RUN pip install /build/openai_utils /build/agent_core ...
+
+   # Create /init entrypoint (calls our CLI)
+   RUN printf '#!/bin/sh\nexec props critic-agent init\n' > /init
+   ```
+
+4. **Image contract**: `/init` is executable, outputs system prompt to stdout
+
+#### Bazel `agent_pkg_tar` Rule Design
+
+**Inputs:**
 ```python
 agent_pkg_tar(
     name = "critic_archive",
-    definition = "agent_defs/critic",
-    # No MANIFEST - deps declared here directly
-    internal_deps = [
+    definition = "//props/core:agent_defs/critic",  # Contains Dockerfile
+    packages = [
         "//openai_utils",
         "//agent_core",
         "//mcp_infra",
+        "//cli_util",
+        "//net_util",
+        "//agent_pkg/runtime",
+        "//adgn",
         "//props/core",
     ],
 )
+```
 
+**Processing:**
+- For each package target, include in tar:
+  - `<pkg>/src/` directory (Python sources)
+  - `<pkg>/pyproject.toml` (so `pip install /build/<pkg>` works in Dockerfile)
+- Preserve paths from repo root (Dockerfile expects `/build/openai_utils/...`)
+- Include Dockerfile at tar root
+- Include any other files from definition dir (agent.md, etc.)
+
+**Output:**
+- Deterministic tar file (Dockerfile + build context)
+- Content-hash based filename for caching
+
+**What this replaces:** MANIFEST file - package list moves to BUILD file.
+
+#### What Stays the Same
+
+- Dockerfiles still do `pip install` for external deps (cached layers)
+- Dockerfiles still do `pip install /build/<pkg>` for local packages
+- The `/init` contract is unchanged
+- `docker build` is still used to produce final image
+- Database storage of tar archives continues to work
+
+#### Future: Full rules_oci Integration
+
+Could eventually replace Dockerfile with pure Bazel:
+```python
 oci_image(
     name = "critic_image",
     base = "@python_312_slim//image",
     tars = [":critic_archive"],
-    cmd = ["/init"],
+    entrypoint = ["/init"],
 )
 ```
+
+But this requires replicating all Dockerfile logic in Bazel rules (apt-get, pip install, etc.). The tar approach is a pragmatic first step that keeps Dockerfiles.
 
 ### TODO: Linting and Type Checking with Bazel
 
