@@ -5,6 +5,8 @@ from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, Field
+import tomli
+import tomli_w
 
 from ..rule_registry import RuleRegistry
 from .models import (
@@ -107,8 +109,6 @@ class ModularConfig(BaseModel):
     @classmethod
     def from_toml(cls, path: Path) -> "ModularConfig":
         """Load configuration from TOML file - let Pydantic handle parsing."""
-        import tomli
-
         with path.open("rb") as f:
             data = tomli.load(f)
 
@@ -136,8 +136,6 @@ class ModularConfig(BaseModel):
 
     def save_to_file(self, path: Path) -> None:
         """Save configuration to TOML file."""
-        import tomli_w
-
         # Convert model to dict
         data = self.model_dump(exclude_none=True)
         
