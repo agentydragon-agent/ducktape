@@ -1,6 +1,7 @@
 """Shared test fixtures for props tests."""
 
 from collections.abc import AsyncGenerator, Callable, Generator
+from dataclasses import dataclass
 import hashlib
 import inspect
 import os
@@ -30,7 +31,7 @@ from props_core.db.models import (
 )
 from props_core.db.session import dispose_db, get_session, init_db, recreate_database
 from props_core.db.setup import ensure_database_exists
-from props_core.db.snapshots import DBLineRange, DBLocationAnchor
+from props_core.db.snapshots import DBLocationAnchor
 from props_core.db.sync.sync import sync_all
 from props_core.ids import SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample, WholeSnapshotExample
@@ -40,7 +41,7 @@ from props_core.prompt_improve.reminder_handler import TerminationSuccess
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 from props_core.rationale import Rationale
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine, text
@@ -49,57 +50,27 @@ from sqlalchemy.orm import Session
 from openai_utils.model import ResponsesResult
 
 # =============================================================================
-# Test-only Pydantic models (moved from db/snapshots.py)
+# Test fixture dataclasses for grading results
 # =============================================================================
 
 
-class DBFileOccurrence(BaseModel):
-    """Test fixture: one file in an occurrence."""
+@dataclass(frozen=True)
+class OccurrenceMatch:
+    """A match between an input issue and a canonical occurrence."""
 
-    path: str = Field(description="File path (stored as string)")
-    ranges: list[DBLineRange] | None = Field(default=None, description="Line ranges or None for unspecified")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBOccurrence(BaseModel):
-    """Test fixture: an occurrence (critic-reported issue)."""
-
-    files: list[DBFileOccurrence] = Field(description="Files with line ranges")
-    note: str | None = Field(default=None, description="Occurrence-specific note")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    input_id: str
+    credit: float
 
 
-class DBReportedIssue(BaseModel):
-    """Test fixture: a reported issue from critic."""
+@dataclass(frozen=True)
+class OccurrenceResult:
+    """Grading result for a single TP occurrence."""
 
-    id: str = Field(description="Issue ID (stored as string)")
-    rationale: str = Field(description="Issue rationale (stored as string)")
-    occurrences: list[DBOccurrence] = Field(description="Issue occurrences")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBOccurrenceMatch(BaseModel):
-    """Test fixture: match between input issue and canonical occurrence."""
-
-    input_id: str = Field(description="Input issue ID (stored as string)")
-    credit: float = Field(ge=0.0, le=1.0, description="Credit for this match")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
-class DBOccurrenceResult(BaseModel):
-    """Test fixture: grading result for a single occurrence."""
-
-    tp_id: str = Field(description="True positive ID (stored as string)")
-    occurrence_id: str = Field(description="Occurrence identifier")
-    found_credit: float = Field(ge=0.0, le=1.0, description="Overall credit for finding this occurrence")
-    matched_by: list[DBOccurrenceMatch] = Field(description="Which input issues matched and their credits")
-    rationale: str = Field(description="Rationale (stored as string)")
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    tp_id: str
+    occurrence_id: str
+    found_credit: float
+    matched_by: list[OccurrenceMatch]
+    rationale: str
 
 
 # Register shared fixtures from other packages
@@ -184,7 +155,7 @@ def make_occurrence_results(
     *,
     tp_occurrences: list[tuple[str, str]],
     found_credit: float = 0.0,
-) -> list[DBOccurrenceResult]:
+) -> list[OccurrenceResult]:
     """Build per-occurrence grading results for test fixtures.
 
     Args:
@@ -192,18 +163,18 @@ def make_occurrence_results(
         found_credit: Credit for each occurrence (0.0 = not found, 1.0 = fully found).
 
     Returns:
-        List of DBOccurrenceResult ready for populate_grading_edges().
+        List of OccurrenceResult ready for populate_grading_edges().
 
     Example:
         tp_occs = get_tp_occurrences_for_snapshot("test-fixtures/train1", session)
         results = make_occurrence_results(tp_occurrences=tp_occs, found_credit=0.8)
     """
     return [
-        DBOccurrenceResult(
+        OccurrenceResult(
             tp_id=tp_id,
             occurrence_id=occ_id,
             found_credit=found_credit,
-            matched_by=[DBOccurrenceMatch(input_id=f"issue-{i:03d}", credit=found_credit)]
+            matched_by=[OccurrenceMatch(input_id=f"issue-{i:03d}", credit=found_credit)]
             if found_credit > 0.0
             else [],
             rationale="Test occurrence - not found" if found_credit == 0.0 else f"Test occurrence (credit={found_credit})",
@@ -475,7 +446,7 @@ def make_grader_run(
     )
 
 
-def extract_input_issue_ids(occurrence_results: list[DBOccurrenceResult]) -> list[str]:
+def extract_input_issue_ids(occurrence_results: list[OccurrenceResult]) -> list[str]:
     """Extract unique input issue IDs from occurrence results.
 
     Args:
@@ -533,7 +504,7 @@ def populate_grading_edges(
     critic_run: AgentRun,
     grader_run: AgentRun,
     snapshot_slug: SnapshotSlug,
-    occurrence_results: list[DBOccurrenceResult],
+    occurrence_results: list[OccurrenceResult],
     session: Session,
 ) -> None:
     """Create GradingEdge rows from occurrence results.
@@ -548,7 +519,7 @@ def populate_grading_edges(
         critic_run: Critic AgentRun the edges reference
         grader_run: Grader AgentRun that created these edges
         snapshot_slug: Snapshot being graded
-        occurrence_results: List of DBOccurrenceResult (DB persistence models)
+        occurrence_results: List of OccurrenceResult (DB persistence models)
         session: Database session (uses provided session, not get_session())
 
     Raises:
@@ -573,7 +544,7 @@ def populate_grading_edges(
 
 
 def make_critic_and_grader_run(
-    *, example: Example, occurrence_results: list[DBOccurrenceResult], session: Session
+    *, example: Example, occurrence_results: list[OccurrenceResult], session: Session
 ) -> tuple[AgentRun, AgentRun]:
     """One-stop helper: Creates complete critic+grader run with normalized tables.
 
@@ -1085,11 +1056,11 @@ def make_grader_run_with_credit(
     session.flush()
 
     occurrence_results = [
-        DBOccurrenceResult(
+        OccurrenceResult(
             tp_id=tp_id,
             occurrence_id=occ_id,
             found_credit=credit,
-            matched_by=[DBOccurrenceMatch(input_id=f"input-{input_idx}", credit=credit)],
+            matched_by=[OccurrenceMatch(input_id=f"input-{input_idx}", credit=credit)],
             rationale=f"Credit {credit}",
         )
     ]

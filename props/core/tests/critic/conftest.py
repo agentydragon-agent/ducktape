@@ -17,7 +17,7 @@ import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
-from tests.conftest import DBReportedIssue, make_critic_run
+from tests.conftest import make_critic_run
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Connection
@@ -65,46 +65,20 @@ def temp_engine(test_db, temp_creds) -> Engine:
     return create_engine(user_config.url())
 
 
-def insert_issue(
-    conn: Connection, issue_id_or_data: str | dict[str, str] | DBReportedIssue, rationale: str | None = None
-) -> None:
+def insert_issue(conn: Connection, issue_id: str, rationale: str) -> None:
     """Insert a reported issue using temp user credentials.
-
-    Accepts three formats:
-    - Old style (backwards compatible): insert_issue(conn, "my-id", "My rationale")
-    - Dict: insert_issue(conn, {"id": "my-id", "rationale": "..."})
-    - Pydantic: insert_issue(conn, DBReportedIssue(id="my-id", rationale="..."))
 
     Args:
         conn: Database connection (must be from temp user engine)
-        issue_id_or_data: Either:
-            - string issue_id (old style, requires rationale parameter)
-            - dict {"id": str, "rationale": str}
-            - DBReportedIssue object
-        rationale: Issue rationale (only used with string issue_id)
+        issue_id: Issue identifier
+        rationale: Issue rationale
     """
-    # Handle different input formats
-    if isinstance(issue_id_or_data, str):
-        # Old style: two positional args
-        if rationale is None:
-            raise ValueError("When passing issue_id as string, rationale is required")
-        issue_id_val = issue_id_or_data
-        rationale_val = rationale
-    elif isinstance(issue_id_or_data, dict):
-        # New style: dict
-        issue_id_val = issue_id_or_data["id"]
-        rationale_val = issue_id_or_data["rationale"]
-    else:
-        # New style: Pydantic DBReportedIssue
-        issue_id_val = issue_id_or_data.id
-        rationale_val = issue_id_or_data.rationale
-
     conn.execute(
         text("""
             INSERT INTO reported_issues (agent_run_id, issue_id, rationale)
             VALUES (current_agent_run_id(), :issue_id, :rationale)
         """),
-        {"issue_id": issue_id_val, "rationale": rationale_val},
+        {"issue_id": issue_id, "rationale": rationale},
     )
 
 

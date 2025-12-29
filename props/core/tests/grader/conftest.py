@@ -16,13 +16,7 @@ from props_core.ids import SnapshotSlug
 from props_core.models.examples import WholeSnapshotExample
 import pytest
 
-from tests.conftest import (
-    DBOccurrenceResult,
-    DBReportedIssue,
-    make_critic_run,
-    make_grader_run,
-    make_occurrence_results,
-)
+from tests.conftest import OccurrenceResult, make_critic_run, make_grader_run, make_occurrence_results
 
 __all__ = ["insert_edge", "make_test_critic_run", "make_test_grader_run", "test_grader_critic_run", "test_grader_run"]
 
@@ -42,22 +36,18 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
         # Merge example into this session if it's detached from another session
         example = session.merge(example)
 
-        # Build list of issues to populate normalized tables
-        issues = [
-            DBReportedIssue(id=f"input-{i:03d}", rationale=f"Test input issue {i}", occurrences=[])
-            for i in range(1, num_issues + 1)
-        ]
-        # Payload only contains notes_md (issues are in normalized table)
-
-        # Create critic run with full output
+        # Create critic run
         critic_run = make_critic_run(example=example, status=AgentRunStatus.COMPLETED)
         session.add(critic_run)
         session.flush()
 
-        # Populate normalized reported_issues table
-        for issue in issues:
+        # Populate normalized reported_issues table directly
+        for i in range(1, num_issues + 1):
+            issue_id = f"input-{i:03d}"
             reported_issue = ReportedIssue(
-                agent_run_id=critic_run.agent_run_id, issue_id=issue.id, rationale=issue.rationale
+                agent_run_id=critic_run.agent_run_id,
+                issue_id=issue_id,
+                rationale=f"Test input issue {i}",
             )
             session.add(reported_issue)
 
@@ -71,7 +61,7 @@ def make_test_critic_run(example: Example, num_issues: int = 1) -> UUID:  # type
 def make_test_grader_run(
     snapshot_slug: str | SnapshotSlug,
     critic_run_id: UUID,
-    occurrence_results: list[DBOccurrenceResult] | None = None,
+    occurrence_results: list[OccurrenceResult] | None = None,
     status: AgentRunStatus | None = None,
 ) -> UUID:
     """Create a test grader run.

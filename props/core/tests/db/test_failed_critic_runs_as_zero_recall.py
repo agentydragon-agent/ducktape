@@ -10,8 +10,8 @@ from sqlalchemy.orm import Session
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    DBOccurrenceMatch,
-    DBOccurrenceResult,
+    OccurrenceMatch,
+    OccurrenceResult,
     make_critic_run,
     make_grader_run,
     make_grader_run_with_credit,
@@ -131,11 +131,11 @@ def test_successful_run_not_affected_by_failure_logic(
         grader_run=grader_run,
         snapshot_slug=example_subtract_orm.snapshot_slug,
         occurrence_results=[
-            DBOccurrenceResult(
+            OccurrenceResult(
                 tp_id=tp_id,
                 occurrence_id=occ_id,
                 found_credit=0.8,
-                matched_by=[DBOccurrenceMatch(input_id="input-1", credit=0.8)],
+                matched_by=[OccurrenceMatch(input_id="input-1", credit=0.8)],
                 rationale="Partially found",
             )
         ],

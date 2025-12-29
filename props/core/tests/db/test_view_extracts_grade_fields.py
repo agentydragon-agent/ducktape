@@ -11,8 +11,8 @@ from sqlalchemy import text
 
 from tests.conftest import (
     EMPTY_CANONICAL_ISSUES_SNAPSHOT,
-    DBOccurrenceMatch,
-    DBOccurrenceResult,
+    OccurrenceMatch,
+    OccurrenceResult,
     make_critic_run,
     make_grader_run,
     make_reported_issues,
@@ -58,11 +58,11 @@ def test_view_extracts_grade_fields_correctly(synced_test_db: DatabaseConfig):
 
         # Create occurrence results matching the git fixture TP
         occurrence_results = [
-            DBOccurrenceResult(
+            OccurrenceResult(
                 tp_id=matching_tp.tp_id,
                 occurrence_id=matching_occ_id,
                 found_credit=1.0,
-                matched_by=[DBOccurrenceMatch(input_id="input-test-001", credit=1.0)],
+                matched_by=[OccurrenceMatch(input_id="input-test-001", credit=1.0)],
                 rationale="Fully found this occurrence",
             )
         ]
