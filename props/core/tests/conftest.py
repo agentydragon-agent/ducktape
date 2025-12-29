@@ -12,7 +12,6 @@ from agent_core.testing import FakeOpenAIModel, Step
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_types import CriticTypeConfig, GraderTypeConfig
 from props_core.agent_workspace import WorkspaceManager
-from props_core.critic.models import CriticSubmitPayload, CriticSuccess
 from props_core.db.agent_definition_ids import CRITIC_AGENT_DEFINITION_ID, GRADER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig, get_database_config
 from props_core.db.examples import Example
@@ -53,14 +52,13 @@ from props_core.prompt_improve.reminder_handler import TerminationSuccess
 from props_core.prompt_optimize.prompt_optimizer import run_prompt_optimizer
 from props_core.prompt_optimize.target_metric import TargetMetric
 from props_core.rationale import Rationale
-from props_core.runs_context import RunsContext
 from pydantic import BaseModel
 import pytest
 import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
-from openai_utils.model import AssistantMessageOut, OutputText, ResponsesResult
+from openai_utils.model import ResponsesResult
 
 # Register shared fixtures from other packages
 pytest_plugins = [
@@ -138,22 +136,6 @@ def block_production_config_in_tests(monkeypatch: pytest.MonkeyPatch) -> Callabl
 
     # Return original for test_db fixture to use
     return original
-
-
-@pytest.fixture
-def test_example(synced_test_db: DatabaseConfig) -> Example:
-    """Get a real example from synced test fixtures for testing.
-
-    Returns the first available example from the test fixtures database.
-    Uses synced_test_db to ensure examples are loaded.
-    """
-    with get_session() as session:
-        example = session.query(Example).first()
-        if not example:
-            raise RuntimeError("No examples found in synced test fixtures database")
-        # Detach from session so it can be used outside the context
-        session.expunge(example)
-        return example
 
 
 def make_grader_output(
@@ -710,38 +692,6 @@ def rationale_model() -> type[BaseModel]:
 def mock_snapshot_slug() -> SnapshotSlug:
     """Shared test snapshot slug."""
     return SnapshotSlug("ducktape/2025-11-26-00")
-
-
-@pytest.fixture
-def mock_prompt_sha256() -> str:
-    """Mock SHA-256 hash for test prompts."""
-    return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"  # SHA256 of empty string
-
-
-@pytest.fixture
-def sample_critic_success() -> CriticSuccess:
-    """Sample CriticSuccess with empty issues list."""
-    return CriticSuccess(result=CriticSubmitPayload(issues=[], notes_md=None))
-
-
-@pytest.fixture
-def runs_context(tmp_path: Path) -> RunsContext:
-    """RunsContext using pytest tmp_path fixture.
-
-    Available to props tests for creating temporary run directories.
-    """
-    return RunsContext(tmp_path)
-
-
-@pytest.fixture
-def mock_openai_client() -> FakeOpenAIModel:
-    """Mock OpenAI client that returns a single success message."""
-    result = ResponsesResult(
-        id="resp_test",
-        usage=None,
-        output=[AssistantMessageOut(parts=[OutputText(text="Task completed successfully.")])],
-    )
-    return FakeOpenAIModel([result])
 
 
 @pytest.fixture

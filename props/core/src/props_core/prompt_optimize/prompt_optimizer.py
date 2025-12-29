@@ -5,18 +5,18 @@ import logging
 from pathlib import Path
 from uuid import UUID, uuid4
 
+from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
+from agent_core.turn_limit import MaxTurnsExceededError
 import aiodocker
 from fastmcp.client import Client
 from fastmcp.exceptions import ToolError
 from fastmcp.server.auth import AuthProvider
 from fastmcp.tools import FunctionTool
+from mcp_infra.display import CompactDisplayHandler
+from mcp_infra.enhanced import EnhancedFastMCP
 from pydantic import Field
 from sqlalchemy import func
 
-from agent_core.handler import AbortIf, RedirectOnTextMessageHandler
-from agent_core.turn_limit import MaxTurnsExceededError
-from mcp_infra.display import CompactDisplayHandler
-from mcp_infra.enhanced import EnhancedFastMCP
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from openai_utils.types import ReasoningSummary
@@ -26,14 +26,14 @@ from props_core.agent_setup import AgentEnvironment
 from props_core.agent_types import PromptOptimizerTypeConfig
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.common_options import DEFAULT_MAX_LINES
-from props_core.critic.exceptions import CriticDidNotSubmitError, CriticExecutionError
+from props_core.critic.exceptions import CriticExecutionError
 from props_core.db.agent_definition_ids import PROMPT_OPTIMIZER_AGENT_DEFINITION_ID
 from props_core.db.config import DatabaseConfig
 from props_core.db.examples import Example
 from props_core.db.models import AgentDefinition, AgentRun, AgentRunStatus, GradingEdge, Snapshot
 from props_core.db.session import get_session
 from props_core.display import short_uuid
-from props_core.grader.exceptions import GraderDidNotSubmitError
+from props_core.exceptions import AgentDidNotSubmitError
 from props_core.ids import DefinitionId, SnapshotSlug
 from props_core.models.examples import ExampleKind, ExampleSpec, SingleFileSetExample
 from props_core.prompt_optimize.budget_handler import BudgetEnforcementHandler
@@ -337,11 +337,9 @@ class PromptEvalServer(EnhancedFastMCP):
                     f"Critic agent failed during execution: {e}\n\n"
                     f"{_trace_advice_for_snapshot(SnapshotSlug(snapshot_slug))}"
                 ) from e
-            except CriticDidNotSubmitError as e:
+            except AgentDidNotSubmitError as e:
                 raise ToolError(
-                    f"Critic agent did not call submit(): {e}\n\n"
-                    f"{_AGENT_STUCK_ADVICE}\n"
-                    f"{_trace_advice_for_snapshot(SnapshotSlug(snapshot_slug))}"
+                    f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id)}"
                 ) from e
 
             # Check status to provide specific error messages
@@ -388,33 +386,15 @@ class PromptEvalServer(EnhancedFastMCP):
                     verbose=self._verbose,
                     max_turns=payload.max_turns,
                 )
-            except (GraderDidNotSubmitError, MaxTurnsExceededError) as e:
-                with get_session() as session:
-                    # Try to find grader_run_id for better error messages
-                    # (grader run is created in DB even if execution fails)
-                    # Query AgentRun where type_config.graded_agent_run_id matches critic_run_id
-                    failed_grader_run = (
-                        session.query(AgentRun)
-                        .filter(AgentRun.type_config["graded_agent_run_id"].astext == str(payload.critic_run_id))
-                        .order_by(AgentRun.created_at.desc())
-                        .first()
-                    )
-                    failed_grader_run_id = failed_grader_run.agent_run_id if failed_grader_run else None
-
-                    trace_advice = (
-                        _trace_advice_for_run(failed_grader_run_id, is_grader=True)
-                        if failed_grader_run_id
-                        else f"Grader run for critic {payload.critic_run_id} not found in database."
-                    )
-                    if isinstance(e, GraderDidNotSubmitError):
-                        raise ToolError(
-                            f"Grader agent did not call submit(): {e}\n\n{_AGENT_STUCK_ADVICE}\n{trace_advice}"
-                        ) from e
-                    raise ToolError(
-                        f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
-                        f"{_AGENT_STUCK_ADVICE}\n"
-                        f"{trace_advice}"
-                    ) from e
+            except AgentDidNotSubmitError as e:
+                raise ToolError(
+                    f"{e}\n\n{_AGENT_STUCK_ADVICE}\n{_trace_advice_for_run(e.agent_run_id, is_grader=True)}"
+                ) from e
+            except MaxTurnsExceededError as e:
+                raise ToolError(
+                    f"Grader agent exceeded maximum turns ({payload.max_turns}): {e}\n\n"
+                    f"{_AGENT_STUCK_ADVICE}"
+                ) from e
 
             # Verify grader run succeeded
             # Note: grader_run_id is always UUID here - the except block always raises
