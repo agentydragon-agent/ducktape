@@ -153,3 +153,4 @@ ehthumbs.db
 *.bak
 *.swp
 *~
+MagicMock/

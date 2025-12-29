@@ -90,10 +90,10 @@ class RuleEngine:
 
         # 3. Check session-specific rules (highest precedence)
         session_rules = self.session_manager.get_session_rules(session_id)
-        for rule_dict in session_rules:
-            predicate = rule_dict["predicate"]
+        for rule in session_rules:
+            predicate = rule.predicate
             if self.evaluator.evaluate(predicate, context):
-                action = RuleAction(rule_dict["action"])
+                action = RuleAction(rule.action)
                 matches.append(
                     RuleMatch(
                         action=action,
