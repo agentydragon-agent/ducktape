@@ -4,7 +4,7 @@ from agent_core.loop_control import InjectItems, NoAction
 from openai_utils.text_extraction import extract_input_text_content
 
 from agent_server.notifications.handler import NotificationsHandler
-from agent_server.notifications.types import NotificationsBatch, ResourcesServerNotice
+from mcp_infra.notifications.types import NotificationsBatch, ResourcesServerNotice
 from tests.helpers import strip_system_notification_wrapper
 
 

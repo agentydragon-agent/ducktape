@@ -1,7 +1,7 @@
 """Test modular configuration functionality."""
 
 from ducktape_llm_common.claude_linter_v2.config import ConfigLoader
-from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig
+from ducktape_llm_common.claude_linter_v2.config.clean_models import ModularConfig, RuleConfig
 from ducktape_llm_common.claude_linter_v2.rule_registry import RuleRegistry
 
 
@@ -43,12 +43,12 @@ def test_modular_config_rule_override():
     config = ModularConfig()
 
     # Override a rule
-    config.rules["python.bare_except"] = {
-        "enabled": False,
-        "blocks_pre_hook": False,
-        "blocks_stop_hook": True,
-        "message": "Custom message",
-    }
+    config.rules["python.bare_except"] = RuleConfig(
+        enabled=False,
+        blocks_pre_hook=False,
+        blocks_stop_hook=True,
+        message="Custom message",
+    )
 
     # Check the override
     bare_except_config = config.get_rule_config("python.bare_except")
@@ -73,7 +73,7 @@ def test_modular_config_ruff_codes():
     assert "B010" in ruff_codes  # setattr with constant
 
     # Disable a rule
-    config.rules["ruff.E722"] = {"enabled": False}
+    config.rules["ruff.E722"] = RuleConfig(enabled=False)
     ruff_codes = config.get_ruff_codes_to_select()
     assert "E722" not in ruff_codes
 
@@ -84,8 +84,8 @@ def test_modular_config_save_load(tmp_path):
 
     # Create config with custom values
     config = ModularConfig()
-    config.rules["python.bare_except"] = {"enabled": False, "message": "Custom message"}
-    config.rules["ruff.E722"] = {"blocks_stop_hook": False}
+    config.rules["python.bare_except"] = RuleConfig(enabled=False, message="Custom message")
+    config.rules["ruff.E722"] = RuleConfig(blocks_stop_hook=False)
 
     # Save
     config.save_to_file(config_path)
@@ -93,9 +93,12 @@ def test_modular_config_save_load(tmp_path):
     # Load
     loaded = ModularConfig.from_toml(config_path)
 
-    assert loaded.rules["python.bare_except"]["enabled"] is False
-    assert loaded.rules["python.bare_except"]["message"] == "Custom message"
-    assert loaded.rules["ruff.E722"]["blocks_stop_hook"] is False
+    bare_except_rule = loaded.rules["python.bare_except"]
+    assert bare_except_rule.enabled is False
+    assert bare_except_rule.message == "Custom message"
+    
+    e722_rule = loaded.rules["ruff.E722"]
+    assert e722_rule.blocks_stop_hook is False
 
 
 def test_modular_config_loading(tmp_path):

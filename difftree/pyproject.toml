@@ -27,16 +27,12 @@ dev = [
 [project.scripts]
 difftree = "difftree.__main__:main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["difftree*"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/difftree"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -47,6 +47,7 @@ class TestPythonFormatter:
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
 
     @patch("subprocess.run")
@@ -67,7 +68,7 @@ class TestPythonFormatter:
 
         # Verify black was called correctly
         mock_run.assert_called_with(
-            ["black", "-", "--quiet"], input=input_code, capture_output=True, text=True, timeout=30
+            ["black", "-", "--quiet"], input=input_code, capture_output=True, text=True, timeout=30, check=False
         )
 
     @patch("subprocess.run")
@@ -214,4 +215,5 @@ def foo():
             capture_output=True,
             text=True,
             timeout=30,
+            check=False,
         )
