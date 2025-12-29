@@ -107,6 +107,7 @@ env = [
     "GIT_CONFIG_GLOBAL=/dev/null",
 ]
 asyncio_mode = "auto"
+asyncio_loop_scope = "function"
 testpaths = ["tests"]
 
 [project.scripts]

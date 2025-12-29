@@ -52,6 +52,7 @@ ignore = ["E501"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+asyncio_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "requires_docker: Tests that require Docker to be installed and running",

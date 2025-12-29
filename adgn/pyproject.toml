@@ -155,6 +155,7 @@ env = [
 ]
 # Use modern asyncio auto mode for compatibility across plugins
 asyncio_mode = "auto"
+asyncio_loop_scope = "function"
 # Discover tests under the top-level tests/ directory
 testpaths = ["tests"]
 
