@@ -12,7 +12,7 @@ bazel_dep(name = "rules_mypy", version = "0.40.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(
-    python_version = "3.12",
+    python_version = "3.13",
 )
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
@@ -23,13 +23,14 @@ pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 
 pip.parse(
     hub_name = "pypi",
-    python_version = "3.12",
+    python_version = "3.13",
     requirements_lock = "//:requirements_bazel.txt",
 )
-# Separate pip hub for homeassistant - has pydantic 1.x, incompatible with main repo
+# Separate pip hub for homeassistant - pytest-homeassistant-custom-component
+# pulls in specific HA versions with pinned transitive deps
 pip.parse(
     hub_name = "pypi_homeassistant",
-    python_version = "3.12",
+    python_version = "3.13",
     requirements_lock = "//homeassistant/iaqi:requirements_lock.txt",
 )
 use_repo(pip, "pypi", "pypi_homeassistant")

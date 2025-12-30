@@ -3,7 +3,7 @@ name = "tana-export"
 version = "0.0.0"
 description = "Tools for exporting and transforming Tana data (Markdown, TanaPaste, search materialization)."
 authors = [{ name = "Rai" }]
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
   "pydantic>=2.5",
   "playwright>=1.45",

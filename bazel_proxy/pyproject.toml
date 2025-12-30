@@ -3,7 +3,7 @@ name = "bazel-proxy"
 version = "0.0.0"
 description = "Local proxy for Bazel access through TLS-inspecting proxies."
 authors = [{ name = "Rai" }]
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 # IMPORTANT: No runtime dependencies allowed.
 # This package is used by session-start hooks which run before package installation.
 dependencies = []

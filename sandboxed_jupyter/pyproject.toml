@@ -2,7 +2,7 @@
 name = "sandboxed-jupyter"
 version = "0.1.0"
 description = "Sandboxed Jupyter execution with seatbelt and Docker modes"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "pydantic>=2.0",
     "PyYAML",
