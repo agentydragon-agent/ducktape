@@ -322,23 +322,6 @@ The UV workspace `requirements_bazel.txt` is generated from `uv export --all-pac
 2. Create a separate `requirements_nonworkspace.txt` and merge in MODULE.bazel
 3. Maintain a manual section in `requirements_bazel.txt` for non-workspace deps
 
-### Python Packages with System Library Dependencies
-
-Some Python packages (dbus-python, PyGObject) are bindings to C libraries and require system dependencies. These don't work well with pure `rules_python`:
-
-**Affected packages:**
-- `gnome-terminal-profile-switcher` - requires dbus-python, PyGObject
-
-**Options:**
-1. **rules_nixpkgs integration** - Use Nix to provide hermetic C dependencies to Bazel. Already use Nix for dev environments, could extend to Bazel builds.
-2. **rules_foreign_cc** - Build C dependencies from source within Bazel. More complex but fully hermetic.
-3. **Accept system deps** - Mark these targets as requiring system libraries, document the requirement. Less hermetic but pragmatic.
-4. **Keep in Nix only** - For small utilities like gnome-terminal-profile-switcher, just manage via Nix rather than forcing into Bazel.
-
-**Current approach:** Option 4 for gnome-terminal-profile-switcher. The BUILD.bazel exists but notes the system library requirement.
-
-**Future consideration:** PyGObject is improving wheel support. May eventually work with pure rules_python.
-
 ## File Structure After Migration
 
 ```
