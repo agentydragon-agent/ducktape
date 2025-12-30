@@ -15,6 +15,7 @@ lock(
     # Include dev dependencies for test packages
     args = [
         "--all-extras",
+        "--quiet",
     ],
 )
 
