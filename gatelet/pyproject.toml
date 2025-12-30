@@ -71,6 +71,3 @@ dev = [
     "pytest-playwright",
     "invoke",
 ]
-["server"]
-filterwarnings = ["ignore::DeprecationWarning"]
-
