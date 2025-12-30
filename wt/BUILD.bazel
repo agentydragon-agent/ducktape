@@ -40,7 +40,6 @@ py_test(
     name = "test_wt",
     srcs = glob(["tests/**/*.py"]),
     main = "tests/conftest.py",
-    tags = ["manual"],  # Requires gitstatusd and may need network
     deps = [
         ":wt",
         "@pypi//pyhamcrest",
