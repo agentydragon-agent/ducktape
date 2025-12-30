@@ -27,6 +27,7 @@ py_binary(
 py_test(
     name = "test_git_commit_ai",
     srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_amend.py",
     deps = [
         ":git_commit_ai",
         "@pypi//pytest",

@@ -83,6 +83,7 @@ py_binary(
 py_test(
     name = "test_adgn",
     srcs = glob(["tests/**/*.py"]),
+    main = "tests/util/test_unified_patch.py",
     deps = [
         ":adgn",
         "@pypi//pyhamcrest",

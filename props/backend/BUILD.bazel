@@ -26,6 +26,7 @@ py_binary(
 py_test(
     name = "test_props_backend",
     srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_placeholder.py",
     deps = [
         ":props_backend",
         "@pypi//httpx",

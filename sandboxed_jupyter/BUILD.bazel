@@ -35,6 +35,7 @@ py_binary(
 py_test(
     name = "test_sandboxed_jupyter",
     srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_sandboxer_narrow.py",
     deps = [
         ":sandboxed_jupyter",
         "@pypi//pytest",

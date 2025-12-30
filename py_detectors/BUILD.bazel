@@ -16,6 +16,7 @@ py_test(
     name = "test_py_detectors",
     srcs = glob(["tests/**/*.py"]),
     data = glob(["tests/**/*.md"]),
+    main = "tests/test_detectors.py",
     deps = [
         ":py_detectors",
         "@pypi//pytest",

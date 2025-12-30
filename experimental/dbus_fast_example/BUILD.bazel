@@ -1,5 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
+# Note: dbus-fast requires system D-Bus libraries and is not in the UV workspace
 py_library(
     name = "dbus_fast_example",
     srcs = [
@@ -8,6 +9,7 @@ py_library(
         "dbus_service.py",
         "service_manager.py",
     ],
+    tags = ["manual"],
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//dbus_fast",
@@ -17,6 +19,7 @@ py_library(
 py_test(
     name = "test_example",
     srcs = ["test_example.py"],
+    tags = ["manual"],
     deps = [
         ":dbus_fast_example",
         "@pypi//pytest",

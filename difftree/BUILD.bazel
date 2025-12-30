@@ -26,6 +26,7 @@ py_test(
         "tests/**/*.txt",
         "tests/**/*.diff",
     ]),
+    main = "tests/test_diff_tree.py",
     deps = [
         ":difftree",
         "@pypi//pyhamcrest",

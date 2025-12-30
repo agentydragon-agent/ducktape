@@ -31,6 +31,7 @@ py_binary(
 py_test(
     name = "test_editor_agent",
     srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_runner_session.py",
     deps = [
         ":editor_agent",
         "@pypi//pytest",
