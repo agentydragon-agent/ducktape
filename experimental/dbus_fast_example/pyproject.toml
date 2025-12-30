@@ -8,13 +8,6 @@ dependencies = [
     "pytest-asyncio",
 ]
 
-[build-system]
-requires = ["setuptools>=61.0"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools]
-py-modules = ["client", "dbus_service", "service_manager", "test_example"]
-
 [tool.pytest.ini_options]
 addopts = "-vv"
 asyncio_mode = "auto"

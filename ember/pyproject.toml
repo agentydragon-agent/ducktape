@@ -34,22 +34,3 @@ emberd = "ember.__main__:main"
 ember-eval = "ember.evals.runner:cli_main"
 ember-python = "ember.runtime.python_session:cli_main"
 
-[tool.setuptools]
-package-dir = {"" = "src"}
-
-[build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-include = ["ember*" ]
-
-[tool.setuptools.package-data]
-"ember" = [
-    "system_prompt.md.j2",
-    "resources/*",
-    "resources/examples/*",
-    "resources/examples/python-session/*",
-    "resources/examples/matrix-client/*",
-]

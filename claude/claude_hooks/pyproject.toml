@@ -13,6 +13,3 @@ dependencies = [
 
 [project.scripts]
 claude-autofixer = "claude_hooks.precommit_autofix:main"
-
-[tool.setuptools]
-packages = ["claude_hooks"]

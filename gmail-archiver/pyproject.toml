@@ -22,10 +22,6 @@ dependencies = [
 [project.scripts]
 gmail-archiver = "gmail_archiver.__main__:app"
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [dependency-groups]
 dev = [
     "pytest>=7.0.0",

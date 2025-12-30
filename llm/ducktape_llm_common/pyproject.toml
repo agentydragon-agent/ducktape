@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
-
 [project]
 name = "ducktape-llm-common"
 version = "0.1.0"
@@ -48,21 +44,6 @@ dev = [
 claude-linter = "ducktape_llm_common.claude_linter.cli:cli"
 claude-linter-v2 = "ducktape_llm_common.claude_linter_v2.cli:cli"
 cl2 = "ducktape_llm_common.claude_linter_v2.cli:cli"
-
-[tool.hatch.build.targets.wheel]
-packages = ["ducktape_llm_common"]
-
-[tool.hatch.build]
-include = [
-    "ducktape_llm_common/**/*.py",
-    "ducktape_llm_common/**/*.sh",
-]
-
-[tool.hatch.build.targets.sdist]
-include = [
-    "/ducktape_llm_common",
-    "/README.md",
-]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
