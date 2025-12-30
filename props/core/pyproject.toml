@@ -89,9 +89,4 @@ env = [
     "GIT_CONFIG_NOSYSTEM=1",
     "GIT_CONFIG_GLOBAL=/dev/null",
 ]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
-
-[project.scripts]
-props = "props_core.cli.main:app"

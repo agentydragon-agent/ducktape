@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
 py_library(
     name = "gnome_terminal_profile_switcher",
@@ -11,4 +11,11 @@ py_library(
         "@pypi//pycairo",
         "@pypi//pygobject",
     ],
+)
+
+py_binary(
+    name = "switch_gnome_terminal_profile",
+    srcs = ["src/gnome_terminal_profile_switcher/__init__.py"],
+    main = "src/gnome_terminal_profile_switcher/__init__.py",
+    deps = [":gnome_terminal_profile_switcher"],
 )

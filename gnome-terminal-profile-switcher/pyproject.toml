@@ -13,6 +13,3 @@ dependencies = [
 dev = [
   "pytest>=8.0",
 ]
-
-[project.scripts]
-switch_gnome_terminal_profile = "gnome_terminal_profile_switcher:main"

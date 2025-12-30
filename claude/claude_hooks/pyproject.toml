@@ -10,6 +10,3 @@ dependencies = [
     "pre-commit",
     "typing-extensions",
 ]
-
-[project.scripts]
-claude-autofixer = "claude_hooks.precommit_autofix:main"

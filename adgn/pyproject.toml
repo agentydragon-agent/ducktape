@@ -150,21 +150,6 @@ testpaths = ["tests"]
 [tool.adgn.trivial-patterns]
 skip-globs = ["tests/detectors/fixtures/**"]
 
-[project.scripts]
-# LLM console scripts
-adgn-sysrw = "adgn.sysrw.cli:app"
-adgn-agent = "adgn.agent.cli:main"
-adgn-openai-probe = "openai_utils.probe:main"
-adgn-trivial-patterns = "adgn.tools.trivial_patterns:main"
-adgn-detect-trivial-aliases = "adgn.tools.trivial_patterns:main"
-adgn-mcp-docker-exec = "adgn.mcp.exec.docker.launcher:main"
-adgn-mcp-gitea-mirror = "adgn.mcp.gitea_mirror.launcher:main"
-adgn-mcp-seatbelt-exec = "adgn.mcp.exec.seatbelt:main"
-# Editor moved to editor_agent package - adgn-editor-docker is now in editor-agent
-# Frontend code generation moved to agent_server package
-
-# Mypy configuration moved to central /mypy.ini at repo root
-
 [[tool.mypy.overrides]]
 module = ["tests.detectors.fixtures.*"]
 ignore_errors = true

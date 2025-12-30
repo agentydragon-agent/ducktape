@@ -21,10 +21,6 @@ dev = [
     "pytest-timeout>=2.0",
 ]
 
-[project.scripts]
-sandbox-jupyter = "sandboxed_jupyter.wrapper:main"
-sandboxed-jupyter = "sandboxed_jupyter.sandboxer:main"
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true
@@ -33,6 +29,4 @@ check_untyped_defs = true
 mypy_path = "adgn/src:mcp_infra/src:sandboxed_jupyter/src:sandboxed_jupyter:net_util/src"
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]

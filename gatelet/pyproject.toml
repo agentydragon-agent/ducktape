@@ -72,18 +72,8 @@ dev = [
     "invoke",
 ]
 
-[project.scripts]
-gatelet-reporter = "gatelet.reporter:main"
-
 [tool.pytest.ini_options]
 minversion = "8.0"
 testpaths = ["server"]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 filterwarnings = ["ignore::DeprecationWarning"]
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
 

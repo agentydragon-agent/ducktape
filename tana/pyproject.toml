@@ -21,12 +21,6 @@ dev = [
   "mypy>=1.14",
 ]
 
-[project.scripts]
-tana-export = "tana.export.cli:main"
-tana-export-convert = "tana.export.convert:main"
-tana-export-searches = "tana.export.materialize_searches:main"
-tana-export-issues = "tana.export.tana_issues_to_tanapaste:main"
-
 [tool.pytest.ini_options]
 addopts = [
   "-v",
@@ -35,9 +29,3 @@ addopts = [
   "--disable-warnings",
 ]
 testpaths = ["tests"]
-
-
-[tool.mypy]
-packages = ["tana"]
-python_version = "3.11"
-ignore_missing_imports = true

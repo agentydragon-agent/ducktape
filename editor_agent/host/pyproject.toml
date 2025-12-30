@@ -15,9 +15,6 @@ dependencies = [
     "cli-util",
 ]
 
-[project.scripts]
-adgn-editor-docker = "editor_agent.cli:main"
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true

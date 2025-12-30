@@ -29,8 +29,3 @@ dev = [
     "pytest-asyncio>=0.23",
 ]
 
-[project.scripts]
-emberd = "ember.__main__:main"
-ember-eval = "ember.evals.runner:cli_main"
-ember-python = "ember.runtime.python_session:cli_main"
-

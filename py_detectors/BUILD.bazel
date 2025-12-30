@@ -1,6 +1,6 @@
 """Python detectors package."""
 
-load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "py_detectors",
@@ -10,6 +10,20 @@ py_library(
     deps = [
         "@pypi//pydantic",
     ],
+)
+
+py_binary(
+    name = "py-detectors",
+    srcs = ["src/py_detectors/__main__.py"],
+    main = "src/py_detectors/__main__.py",
+    deps = [":py_detectors"],
+)
+
+py_binary(
+    name = "py-detectors-custom",
+    srcs = ["src/py_detectors/cli_custom.py"],
+    main = "src/py_detectors/cli_custom.py",
+    deps = [":py_detectors"],
 )
 
 py_test(

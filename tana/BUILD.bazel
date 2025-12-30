@@ -39,6 +39,13 @@ py_binary(
     deps = [":tana"],
 )
 
+py_binary(
+    name = "tana-export-issues",
+    srcs = ["src/tana/export/tana_issues_to_tanapaste.py"],
+    main = "src/tana/export/tana_issues_to_tanapaste.py",
+    deps = [":tana"],
+)
+
 py_test(
     name = "test_tana",
     srcs = glob(["tests/**/*.py"]),

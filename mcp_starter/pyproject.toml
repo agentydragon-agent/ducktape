@@ -9,12 +9,3 @@ dependencies = [
     "rich",
     "claude-code-sdk",
 ]
-
-[project.scripts]
-adgn-mcp-starter = "adgn_mcp_starter.__main__:main"
-
-[tool.mypy]
-strict = true
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"

@@ -1,2 +1,15 @@
 # Minimal pyproject.toml - Bazel is the build system
 # Tool configs are in dedicated files (ruff.toml, etc.)
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+check_untyped_defs = true
+warn_unused_configs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

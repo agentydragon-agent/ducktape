@@ -38,10 +38,6 @@ dev = [
   "types-pygit2>=1.15.0",
 ]
 
-[project.scripts]
-wt = "wt.cli:main"
-wt-install = "wt.shell.install:main"
-
 [project.entry-points."wt.plugins"]
 wt_demo = "wt.demo_plugin"
 

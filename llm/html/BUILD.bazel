@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "llm_html",
+    srcs = glob(["llm_html/**/*.py"]),
+    data = glob([
+        "*.css",
+        "*.html",
+        "*.md",
+    ]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//anthropic",
+        "@pypi//beautifulsoup4",
+        "@pypi//fastapi",
+        "@pypi//httpx",
+        "@pypi//jinja2",
+        "@pypi//lxml",
+        "@pypi//markdown",
+        "@pypi//markdownify",
+        "@pypi//tabulate",
+        "@pypi//tiktoken",
+        "@pypi//uvicorn",
+    ],
+)
+
+py_binary(
+    name = "llm-html-server",
+    srcs = ["llm_html/server.py"],
+    main = "llm_html/server.py",
+    deps = [":llm_html"],
+)

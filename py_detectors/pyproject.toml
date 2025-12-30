@@ -8,15 +8,6 @@ dependencies = ["pydantic>=2.0"]
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 
-[project.scripts]
-py-detectors = "py_detectors.__main__:main"
-py-detectors-custom = "py_detectors.cli_custom:main"
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

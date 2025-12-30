@@ -17,9 +17,6 @@ dependencies = [
     "PyYAML",
 ]
 
-[project.scripts]
-rspcache = "rspcache.cli:app"
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true

@@ -23,11 +23,6 @@ dependencies = [
     "typer>=0.12",
 ]
 
-[project.scripts]
-adgn-agent-serve = "agent_server.cli:main"
-agent-server-matrix-bot = "agent_server.matrix_bot:main"
-agent-server-generate-frontend-code = "agent_server.scripts.generate_frontend_code:main"
-
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
@@ -40,24 +35,9 @@ dev = [
 ]
 
 [tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-# Paths relative to repo root (where pre-commit runs mypy from)
 mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
 
-[tool.ruff]
-target-version = "py312"
-line-length = 120
-src = ["src"]
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
-ignore = ["E501"]
-
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
 testpaths = ["tests"]
 markers = [
     "requires_docker: tests that require Docker to run",

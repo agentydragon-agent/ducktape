@@ -9,9 +9,6 @@ dependencies = [
     "typer>=0.9",
 ]
 
-[project.scripts]
-editor-submit = "editor_agent_runtime.cli:main"
-
 [tool.mypy]
 python_version = "3.12"
 warn_return_any = true

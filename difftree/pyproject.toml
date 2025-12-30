@@ -24,8 +24,5 @@ dev = [
     "PyHamcrest>=2.0",
 ]
 
-[project.scripts]
-difftree = "difftree.__main__:main"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]

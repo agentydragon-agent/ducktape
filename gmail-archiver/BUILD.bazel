@@ -1,0 +1,30 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "gmail_archiver",
+    srcs = glob(["gmail_archiver/**/*.py"]),
+    imports = ["."],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//beautifulsoup4",
+        "@pypi//email_reply_parser",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth_httplib2",
+        "@pypi//google_auth_oauthlib",
+        "@pypi//openai",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+        "@pypi//python_dateutil",
+        "@pypi//pyyaml",
+        "@pypi//rich",
+        "@pypi//tenacity",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "gmail-archiver",
+    srcs = ["gmail_archiver/__main__.py"],
+    main = "gmail_archiver/__main__.py",
+    deps = [":gmail_archiver"],
+)
