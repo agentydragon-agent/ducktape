@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Iterable
+import json
 from typing import Any
 
 from fastmcp.client.messages import MessageHandler
 from mcp import types
+
 from openai_utils.model import InputTextPart, UserMessage
 
 

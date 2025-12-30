@@ -4,11 +4,11 @@ from collections.abc import Iterable
 from typing import Any
 
 from fastmcp.client.client import Client
-from fastmcp.server.server import add_resource_prefix as _fastmcp_add_resource_prefix
-from fastmcp.server.server import has_resource_prefix
-from mcp_utils import extract_single_text_content
+from fastmcp.server.server import add_resource_prefix as _fastmcp_add_resource_prefix, has_resource_prefix
 from pydantic import TypeAdapter
 from pydantic.networks import AnyUrl
+
+from mcp_utils import extract_single_text_content
 
 
 def add_resource_prefix(uri: str | AnyUrl, prefix: str) -> str:

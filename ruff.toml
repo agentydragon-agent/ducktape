@@ -120,6 +120,7 @@ split-on-trailing-comma = false
 "llm/ducktape_llm_common/**/*.py" = ["PLC0415"]  # optional dbus, traceback in error handlers, etc.
 "llm/mcp/habitify/**/*.py" = ["PLC0415"]  # test fixtures
 "mcp_infra/tests/**/*.py" = ["PLC0415"]  # docker import with skip
+"mcp_infra/src/mcp_infra/exceptions.py" = ["PLC0415"]  # late import to avoid circular dep with exec.models
 
 # Routes may use local late imports for helper functions
 "props/backend/src/props_backend/routes/*.py" = ["PLC0415"]

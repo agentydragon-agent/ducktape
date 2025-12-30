@@ -2,15 +2,15 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import logging
-import sys
-import warnings
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from enum import Enum, auto
+import logging
+import sys
 
 # Import will be circular at module load, so use TYPE_CHECKING
 from typing import TYPE_CHECKING, TypeVar
+import warnings
 
 from fastmcp.client import Client
 from fastmcp.client.messages import MessageHandler

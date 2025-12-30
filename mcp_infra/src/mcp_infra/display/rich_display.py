@@ -6,11 +6,8 @@ import logging
 import shlex
 from typing import TYPE_CHECKING, Any
 
-from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
-from agent_core.handler import BaseHandler
 from compact_json import Formatter  # type: ignore[import-untyped]
 from mcp import types as mcp_types
-from openai_utils.model import ReasoningItem
 from pydantic import TypeAdapter, ValidationError
 from pydantic_core import to_jsonable_python
 from rich import box
@@ -20,10 +17,13 @@ from rich.panel import Panel
 from rich.segment import Segment
 from rich.text import Text
 
+from agent_core.events import AssistantText, Response, ToolCall, ToolCallOutput, UserText
+from agent_core.handler import BaseHandler
 from mcp_infra.exec.models import BaseExecResult, ExecInput, ExecStream, TruncatedStream
 from mcp_infra.naming import parse_tool_name
 from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.tool_schemas import extract_tool_input_schemas, extract_tool_schemas
+from openai_utils.model import ReasoningItem
 
 from .json_utils import parse_json_or_none
 
