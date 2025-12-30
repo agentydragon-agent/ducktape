@@ -10,12 +10,14 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from agent_core.testing import EmptyArgs
+from mcp_infra.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
+
 from agent_server.mcp.approval_policy.engine import SetPolicyTextArgs
 from agent_server.mcp.ui.server import SendMessageInput
-from mcp_infra.constants import APPROVAL_ADMIN_MOUNT_PREFIX, UI_MOUNT_PREFIX
 
 if TYPE_CHECKING:
     from agent_core.testing import ResponsesFactory
+
     from openai_utils.model import ResponsesRequest, ResponsesResult
 
 

@@ -34,12 +34,12 @@ from types import TracebackType
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-import aiodocker
-from fastmcp.client import Client
-
 from agent_core.handler import AbortIf, BaseHandler, RedirectOnTextMessageHandler
 from agent_core.turn_limit import MaxTurnsExceededError, MaxTurnsHandler
+import aiodocker
+from fastmcp.client import Client
 from mcp_infra.display import CompactDisplayHandler
+
 from openai_utils.errors import ContextLengthExceededError
 from openai_utils.model import OpenAIModelProto, UserMessage
 from openai_utils.types import ReasoningSummary

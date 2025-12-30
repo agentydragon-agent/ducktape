@@ -24,11 +24,6 @@ class Workspace:
     def node(self, node_id: NodeId) -> BaseNode:
         return self.graph[node_id]
 
-    def export_tanapaste(self, node_id: NodeId) -> str:
-        from tana.export.convert import export_node_as_tanapaste
-
-        return export_node_as_tanapaste(self.graph, self.node(node_id))
-
     def materialize_search(self, node_id: NodeId) -> list[NodeId]:
         return materialize_search(self.graph, self.node(node_id))
 

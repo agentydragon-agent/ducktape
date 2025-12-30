@@ -4,11 +4,10 @@ import shutil
 import sys
 
 from fastmcp.client import Client
-import pytest
-
 from mcp_infra.exec.bwrap import BwrapExecArgs, BwrapExecServer
 from mcp_infra.exec.models import Exited
 from mcp_infra.testing.exec_stubs import BwrapExecServerStub
+import pytest
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="bubblewrap is Linux-only")

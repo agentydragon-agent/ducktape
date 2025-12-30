@@ -14,12 +14,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from mcp import types as mcp_types
-from pydantic import BaseModel, TypeAdapter
-import pytest
-
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.exec.models import ExecInput
 from mcp_infra.naming import MCPMountPrefix, build_mcp_function
+from pydantic import BaseModel, TypeAdapter
+import pytest
+
 from openai_utils.builders import ItemFactory
 from openai_utils.model import (
     AssistantMessageOut,

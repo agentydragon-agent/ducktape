@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from hamcrest import assert_that, equal_to, has_properties
-
 from agent_server.server.bus import MimeType
 from agent_server.server.protocol import UiMessageEvt, UiMessagePayload, UserText
 from agent_server.server.reducer import Reducer
 from agent_server.server.state import ExecContent, JsonContent, ToolItem
+from hamcrest import assert_that, equal_to, has_properties
 from mcp_infra.exec.models import BaseExecResult, Exited
+
 from tests.ui.typed_asserts import (
     assert_typed_items_have_one,
     is_assistant_markdown,

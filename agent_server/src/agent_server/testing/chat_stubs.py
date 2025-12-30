@@ -1,7 +1,8 @@
 """Typed stubs for chat MCP servers."""
 
-from agent_server.mcp.chat.server import PostInput, PostResult, ReadPendingInput, ReadPendingResult
 from mcp_infra.stubs.server_stubs import ServerStub
+
+from agent_server.mcp.chat.server import PostInput, PostResult, ReadPendingInput, ReadPendingResult
 
 
 class ChatServerStub(ServerStub):

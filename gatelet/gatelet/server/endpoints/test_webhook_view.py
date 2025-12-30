@@ -3,12 +3,11 @@
 from http import HTTPStatus
 import re
 
+from gatelet.server.models import WebhookIntegration, WebhookPayload
+from gatelet.server.tests.utils import persist
 from hamcrest import all_of, assert_that, contains_string, is_not
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from gatelet.server.models import WebhookIntegration, WebhookPayload
-from gatelet.server.tests.utils import persist
 
 
 def _extract_csrf(page_text: str) -> str:

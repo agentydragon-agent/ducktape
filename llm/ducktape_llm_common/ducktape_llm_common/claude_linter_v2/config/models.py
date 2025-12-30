@@ -1,6 +1,7 @@
 """Configuration models for Claude Linter v2 using Pydantic."""
 
 from enum import Enum
+import re
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
@@ -265,8 +266,6 @@ class TaskProfile(BaseModel):
             return None
 
         # Simple validation - could be expanded
-        import re
-
         if not re.match(r"^\d+[hmd]$", v):
             raise ValueError("Duration must be like '2h', '30m', or '1d'")
 

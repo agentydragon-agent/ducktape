@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Apply Claude MCP server configuration."""
 
+import argparse
 import json
 from pathlib import Path
 import subprocess
@@ -109,8 +110,6 @@ def server_configs_differ(config1: dict[str, Any], config2: dict[str, Any]) -> b
 
 def main():
     """Main function."""
-    import argparse
-
     parser = argparse.ArgumentParser(description="Apply Claude MCP server configuration")
     parser.add_argument(
         "--check", action="store_true", help="Check mode - exit 0 if no changes needed, 1 if changes needed"

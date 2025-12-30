@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import pytest
-
 from agent_core.agent import Agent
 from agent_core.events import AssistantText
 from agent_core.handler import CaptureTextHandler
 from agent_core.loop_control import AllowAnyToolOrTextMessage
 from agent_core.testing import AssistantMessage, EchoCall, Step
+import pytest
+
 from openai_utils.model import UserMessage
 
 

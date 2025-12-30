@@ -3,6 +3,7 @@ from pathlib import Path
 
 from click.testing import CliRunner
 from ducktape_llm_common.claude_linter.cli import cli
+import pygit2
 import pytest
 import yaml
 
@@ -224,8 +225,6 @@ sys.exit(0)
         hook_script.chmod(0o755)
 
         # Initialize as git repo using pygit2
-        import pygit2
-
         repo = pygit2.init_repository(str(remote_path), False)
         cfg = repo.config
         cfg["user.name"] = "test"

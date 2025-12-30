@@ -1,8 +1,7 @@
 """Tests for configuration module."""
 
-import pytest
-
 from difftree.config import Column, RenderConfig, parse_columns
+import pytest
 
 
 @pytest.mark.parametrize(

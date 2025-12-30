@@ -17,7 +17,7 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from props_core.db.models import AgentRunStatus, Snapshot
+from props_core.db.models import AgentRun, AgentRunStatus, Snapshot
 from props_core.db.session import get_session
 from props_core.ids import SnapshotSlug
 
@@ -64,8 +64,6 @@ class DaemonManager:
 
                 # Check exit status
                 with get_session() as session:
-                    from props_core.db.models import AgentRun
-
                     run = session.get(AgentRun, run_id)
                     if run and run.status == AgentRunStatus.CONTEXT_LENGTH_EXCEEDED:
                         restart_count += 1

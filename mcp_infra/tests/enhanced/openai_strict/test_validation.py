@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+from mcp_infra.enhanced import EnhancedFastMCP
 from pydantic import BaseModel, ConfigDict, Field
 import pytest
-
-from mcp_infra.enhanced import EnhancedFastMCP
 
 
 @pytest.fixture

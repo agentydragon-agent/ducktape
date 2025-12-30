@@ -4,9 +4,8 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
-import pytest
-
 from ember.matrix_client import MatrixClient
+import pytest
 
 
 class FakeAsyncClient:

@@ -18,7 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from props_core.agent_registry import AgentRegistry
 from props_core.agent_workspace import WorkspaceManager
 from props_core.cli.resources import get_database_config
+from props_core.grader.daemon_manager import DaemonManager
 
+from openai_utils.model import OpenAIChatCompletionModel
 from props_backend.routes import ground_truth, runs, stats
 
 if TYPE_CHECKING:
@@ -70,8 +72,6 @@ def _create_grader_client():
     if not model:
         return None
 
-    from openai_utils.model import OpenAIChatCompletionModel
-
     return OpenAIChatCompletionModel(model=model)
 
 
@@ -94,8 +94,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     daemon_manager = None
     grader_client = _create_grader_client()
     if grader_client:
-        from props_core.grader.daemon_manager import DaemonManager
-
         daemon_manager = DaemonManager(registry=app.state.registry, client=grader_client)
         await daemon_manager.start_all()
         app.state.daemon_manager = daemon_manager

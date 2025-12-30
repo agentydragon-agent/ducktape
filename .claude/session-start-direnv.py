@@ -8,6 +8,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
 import threading
@@ -87,8 +88,6 @@ def run_streaming(cmd: list[str], operation: str, check: bool = True, env: dict[
 
     while True:
         # Use a timeout so we can emit heartbeats during long silences
-        import select
-
         ready, _, _ = select.select([proc.stdout], [], [], HEARTBEAT_INTERVAL_SECONDS)
 
         if ready:

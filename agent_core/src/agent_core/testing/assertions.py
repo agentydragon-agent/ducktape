@@ -11,11 +11,11 @@ import json
 import logging
 from typing import TypeGuard
 
+from mcp_infra.calltool import extract_structured_content
 from pydantic import BaseModel
 import pytest
 
 from agent_core.agent import _openai_to_mcp_result
-from mcp_infra.calltool import extract_structured_content
 from openai_utils.model import FunctionCallItem, FunctionCallOutputItem, ResponsesRequest, SystemMessage, UserMessage
 
 logger = logging.getLogger(__name__)

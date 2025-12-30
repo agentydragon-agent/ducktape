@@ -21,6 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "docker>=7.0.0",
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
     "PyHamcrest>=2.1",

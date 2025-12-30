@@ -9,16 +9,6 @@ import re
 from typing import Any
 from unittest.mock import MagicMock
 
-from fastapi.testclient import TestClient
-from fastmcp.client import Client
-from fastmcp.exceptions import ToolError
-from fastmcp.mcp_config import MCPConfig, MCPServerTypes
-from fastmcp.server import FastMCP
-from fastmcp.tools import FunctionTool
-import mcp.types
-from pydantic import BaseModel
-import pytest
-
 from agent_core.agent import Agent
 from agent_core.events import EventType, ToolCall, ToolCallOutput, UserText
 from agent_core.handler import BaseHandler, FinishOnTextMessageHandler
@@ -36,7 +26,13 @@ from agent_server.runtime.container import AgentContainerCompositor
 from agent_server.server.app import create_app
 from agent_server.server.protocol import FunctionCallOutput
 from agent_server.server.state import new_state
-import docker
+from fastapi.testclient import TestClient
+from fastmcp.client import Client
+from fastmcp.exceptions import ToolError
+from fastmcp.mcp_config import MCPConfig, MCPServerTypes
+from fastmcp.server import FastMCP
+from fastmcp.tools import FunctionTool
+import mcp.types
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.enhanced import EnhancedFastMCP
 from mcp_infra.exec.docker.server import ContainerExecServer
@@ -46,6 +42,10 @@ from mcp_infra.prefix import MCPMountPrefix
 from mcp_infra.testing.fixtures import make_container_opts
 from mcp_infra.testing.simple_servers import SendMessageInput
 from mcp_infra.types import McpServerSpecs
+from pydantic import BaseModel
+import pytest
+
+import docker
 from openai_utils.model import OpenAIModelProto, ResponsesResult
 from openai_utils.pydantic_strict_mode import OpenAIStrictModeBaseModel
 from tests.testdata.approval_policy import fetch_policy, make_policy

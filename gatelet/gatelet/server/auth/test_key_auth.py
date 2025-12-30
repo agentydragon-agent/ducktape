@@ -3,12 +3,11 @@
 from datetime import datetime, timedelta
 import uuid
 
-import pytest
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from gatelet.server.auth.key_auth import KeyAuthError, validate_key
 from gatelet.server.models import AuthKey
 from gatelet.server.tests.utils import persist
+import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Explicit test value - tests should not depend on production config
 TEST_KEY_VALIDITY = timedelta(days=365)

@@ -5,10 +5,10 @@ Tests that PolicyEngine rejects policies with failing or missing tests.
 
 from __future__ import annotations
 
+from agent_server.mcp.approval_policy.engine import PolicyEngine
 from fastmcp.client import Client
 import pytest
 
-from agent_server.mcp.approval_policy.engine import PolicyEngine
 from tests.testdata.approval_policy import fetch_policy
 
 

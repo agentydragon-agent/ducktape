@@ -3,9 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import TYPE_CHECKING
 
-import pytest
-
 from agent_core.testing import make_mock
+import pytest
 
 pytestmark = pytest.mark.usefixtures()
 

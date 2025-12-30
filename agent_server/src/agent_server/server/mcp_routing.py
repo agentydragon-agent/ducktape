@@ -10,16 +10,14 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from agent_server.mcp_bridge.auth import TokensConfig
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
-from agent_server.mcp_bridge.auth import TokensConfig
-
 if TYPE_CHECKING:
-    from fastapi import FastAPI
-
     from agent_server.runtime.registry import AgentRegistry
+    from fastapi import FastAPI
     from mcp_infra.compositor.server import Compositor
 
 logger = logging.getLogger(__name__)

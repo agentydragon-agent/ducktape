@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-import pytest
-
 from agent_core.testing import AssertDockerExecThenCall, DockerExecCall, Step
 from editor_agent.agent_runner import run_editor_docker_agent
 from editor_agent.submit_server import SubmitStateSuccess
+import pytest
 
 
 def _make_editor_steps(filename: str) -> list[Step]:

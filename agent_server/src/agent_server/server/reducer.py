@@ -3,8 +3,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 import json
 
-from pydantic import BaseModel, TypeAdapter, ValidationError
-
 from agent_core.events import (
     ToolCall as RuntimeToolCall,
     ToolCallOutput as RuntimeToolCallOutput,
@@ -25,6 +23,7 @@ from agent_server.server.protocol import (
 from mcp_infra.exec.models import BaseExecResult, Exited
 from mcp_infra.mounted import Mounted
 from mcp_infra.naming import build_mcp_function
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from .state import (
     AssistantMarkdownItem,

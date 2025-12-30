@@ -19,7 +19,9 @@ from tana.domain.nodes import BaseNode, CodeBlockNode, TupleNode, VisualNode
 from tana.domain.types import NodeId
 from tana.graph.workspace import TanaGraph
 from tana.graph.wrappers import is_wrapper
+from tana.io.json import load_workspace
 from tana.query.core import get_tuple_value
+from tana.query.nodes import get_image_url
 from tana.render.html import DATE_SPAN_PATTERN, NODE_SPAN_PATTERN, find_inline_node_refs, html_to_markdown
 from tana.render.inline_refs import parse_inline_date
 
@@ -203,7 +205,7 @@ class RenderContext:
             return
 
         # Special handling for visual (image) nodes
-        if isinstance(n, VisualNode) and (url := n.get_image_url()):
+        if isinstance(n, VisualNode) and (url := get_image_url(n)):
             # Use the visual node's name as caption if it has one
             caption = self._inline_to_text(n.name) if n.name else ""
             yield f"{self.indent}-  ![{caption}]({url})"
@@ -386,13 +388,11 @@ def main():
     src = Path(args.dump)
     base = Path(args.out_base or src.with_suffix("").name + ".converted")
 
-    from tana.workspace import Workspace
-
-    workspace = Workspace.load(src)
+    graph = load_workspace(src)
 
     for suffix, sty in ((".md", "md"), (".tanapaste.txt", "tana")):
         out_path = base.with_suffix(suffix)
-        out_path.write_text(_export(workspace.graph, sty), encoding="utf-8")
+        out_path.write_text(_export(graph, sty), encoding="utf-8")
         print(f"✅ {sty} → {out_path}")
 
 

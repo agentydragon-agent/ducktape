@@ -1,5 +1,6 @@
 """Shared pytest configuration and fixtures for habitify tests."""
 
+from contextlib import contextmanager
 from importlib import resources
 import json
 import os
@@ -64,7 +65,6 @@ def mock_async_response(load_reference_data):
 @pytest.fixture
 def patch_client_method(client):
     """Fixture that patches client HTTP methods with consistent API."""
-    from contextlib import contextmanager
 
     @contextmanager
     def _patch(method_name, return_value=None, side_effect=None):

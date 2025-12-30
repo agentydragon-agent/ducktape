@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from unittest.mock import AsyncMock, Mock
 
-import pytest
-
 from agent_core.agent import Agent
 from agent_core.compaction import CompactionHandler
 from agent_core.events import GroundTruthUsage, Response
 from agent_core.handler import BaseHandler
 from agent_core.loop_control import Compact, NoAction, RequireAnyTool
+import pytest
+
 from openai_utils.model import AssistantMessage, AssistantMessageOut, OutputText, SystemMessage, UserMessage
 
 

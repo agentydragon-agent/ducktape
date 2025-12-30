@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING, Protocol
 
 from hamcrest import all_of, assert_that
 from hamcrest.core.matcher import Matcher
+from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
+from mcp_infra.prefix import MCPMountPrefix
 from pydantic import BaseModel, ConfigDict
 
 from agent_core.testing.assertions import assert_and_extract, assert_last_call
 from agent_core.testing.echo_server import ECHO_MOUNT_PREFIX, ECHO_TOOL_NAME, EchoInput
-from mcp_infra.exec.models import BaseExecResult, Exited, TruncatedStream
-from mcp_infra.prefix import MCPMountPrefix
 
 if TYPE_CHECKING:
     from agent_core.testing.responses import ResponsesFactory

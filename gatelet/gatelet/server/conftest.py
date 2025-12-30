@@ -14,6 +14,7 @@ import tempfile
 import time
 from uuid import uuid4
 
+from gatelet.server.endpoints.webhook_view import PayloadSummary
 from httpx import AsyncClient
 import pytest
 import pytest_asyncio
@@ -193,7 +194,6 @@ async def test_auth_session(db_session: AsyncSession, test_auth_key: AuthKey) ->
 @pytest.fixture(autouse=True)
 async def _stub_data(monkeypatch):
     """Stub external data fetchers for all tests."""
-    from gatelet.server.endpoints.webhook_view import PayloadSummary
 
     async def _states():
         return [{"entity_id": "sensor.test", "state": "on", "last_changed": datetime(2020, 1, 1)}]

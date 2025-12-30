@@ -1,8 +1,7 @@
 """Tests for null byte sanitization in tool results."""
 
-from mcp import types as mcp_types
-
 from agent_core.agent import _sanitize_mcp_result
+from mcp import types as mcp_types
 
 
 def test_no_nulls_unchanged(text_content):

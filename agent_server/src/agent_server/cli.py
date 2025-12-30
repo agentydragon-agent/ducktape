@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 from urllib.parse import urlencode, urlunparse
 
+from mcp_infra.config_loader import build_mcp_config
 import typer
 from typer.main import get_command
 import uvicorn
@@ -13,7 +14,6 @@ import uvicorn
 from agent_server.mcp_bridge.auth import TokensConfig
 from agent_server.server.app import create_app
 from cli_util import async_run, make_logging_callback
-from mcp_infra.config_loader import build_mcp_config
 from net_util import pick_free_port
 
 # Typer Option defaults must not be created in function signatures (ruff B008)

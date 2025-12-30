@@ -1,8 +1,7 @@
 """Tests for ProgressBar component."""
 
-import pytest
-
 from difftree.progress_bar import DEFAULT_LEFT_BLOCKS, DEFAULT_RIGHT_BLOCKS, ProgressBar
+import pytest
 
 from .conftest import LEFT_BLOCK_CHARS, RIGHT_BLOCK_CHARS, render_to_string
 

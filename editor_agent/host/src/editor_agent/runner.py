@@ -10,14 +10,14 @@ import secrets
 
 import aiodocker
 from fastmcp.server.auth import StaticTokenVerifier
-
-from editor_agent.submit_server import EditorSubmitServer
 from mcp_infra.compositor.server import Compositor
 from mcp_infra.constants import WORKING_DIR
 from mcp_infra.container_session import ContainerOptions
 from mcp_infra.exec.docker.server import ContainerExecServer
 from mcp_infra.mounted import Mounted
 from mcp_infra.resources.server import ResourcesServer
+
+from editor_agent.submit_server import EditorSubmitServer
 from net_util import get_docker_network_gateway_async, pick_free_port
 
 # TODO: The pattern of "create token + StaticTokenVerifier, start FastMCP on free port,
