@@ -12,10 +12,8 @@ IMPORTANT: This module must not import any non-stdlib packages.
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 import platform
-import shutil
 import stat
 import subprocess
 import urllib.request

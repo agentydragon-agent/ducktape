@@ -5,6 +5,7 @@ load("@aspect_rules_lint//lint:ruff.bzl", "lint_ruff_aspect")
 load("@rules_mypy//mypy:mypy.bzl", "mypy")
 
 # Ruff aspect for --config=lint builds
+# Uses ruff from the multitool lockfile bundled with aspect_rules_lint
 ruff = lint_ruff_aspect(
     binary = "@multitool//tools/ruff",
     configs = [
