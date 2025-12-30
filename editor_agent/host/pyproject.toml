@@ -4,13 +4,6 @@ version = "0.1.0"
 description = "Host-side orchestration for editor agent"
 requires-python = ">=3.12"
 dependencies = [
-    "editor-agent-runtime",
-    "agent-pkg-host",
-    "agent-core",
-    "mcp-infra",
-    "net-util",
-    "openai-utils",
     "aiodocker",
     "typer>=0.9",
-    "cli-util",
 ]

@@ -2,6 +2,7 @@
 
 load("@rules_python//python:defs.bzl", "py_library", "py_test")
 
+exports_files(["pyproject.toml"])
 py_library(
     name = "openai_utils",
     srcs = glob(["src/openai_utils/**/*.py"]),

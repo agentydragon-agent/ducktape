@@ -1,10 +1,71 @@
+load("@bazel_skylib//rules:native_binary.bzl", "native_test")
 load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@rules_python//python/uv:lock.bzl", "lock")
 
 # Exports for use in other BUILD files
 exports_files([
     "requirements_bazel.txt",
     "ruff.toml",
 ])
+
+# All pyproject.toml files that contribute to requirements_bazel.txt
+_PYPROJECT_SRCS = [
+    "//adgn:pyproject.toml",
+    "//agent_core:pyproject.toml",
+    "//agent_pkg/host:pyproject.toml",
+    "//agent_pkg/runtime:pyproject.toml",
+    "//agent_server:pyproject.toml",
+    "//claude/claude_hooks:pyproject.toml",
+    "//claude/claude_optimizer:pyproject.toml",
+    "//cli_util:pyproject.toml",
+    "//difftree:pyproject.toml",
+    "//editor_agent/host:pyproject.toml",
+    "//editor_agent/runtime:pyproject.toml",
+    "//ember:pyproject.toml",
+    "//experimental/claude-history:pyproject.toml",
+    "//experimental/cotrl:pyproject.toml",
+    "//experimental/dbus_fast_example:pyproject.toml",
+    "//gatelet:pyproject.toml",
+    "//git_commit_ai:pyproject.toml",
+    "//gmail-archiver:pyproject.toml",
+    "//gnome-terminal-profile-switcher:pyproject.toml",
+    "//homeassistant/iaqi:pyproject.toml",
+    "//llm/ducktape_llm_common:pyproject.toml",
+    "//llm/html:pyproject.toml",
+    "//llm/mcp/habitify:pyproject.toml",
+    "//mcp_infra:pyproject.toml",
+    "//mcp_starter:pyproject.toml",
+    "//mcp_utils:pyproject.toml",
+    "//net_util:pyproject.toml",
+    "//openai_utils:pyproject.toml",
+    "//props/backend:pyproject.toml",
+    "//props/core:pyproject.toml",
+    "//py_detectors:pyproject.toml",
+    "//:pyproject.toml",
+    "//rspcache:pyproject.toml",
+    "//sandboxed_jupyter:pyproject.toml",
+    "//tana:pyproject.toml",
+    "//wt:pyproject.toml",
+]
+
+# Generate requirements_bazel.txt from all pyproject.toml files
+# Run: bazel run //:requirements.update
+lock(
+    name = "requirements",
+    srcs = _PYPROJECT_SRCS,
+    out = "requirements_bazel.txt",
+)
+
+# Test that requirements_bazel.txt is up to date
+# Run: bazel test //:requirements_test
+native_test(
+    name = "requirements_test",
+    src = ":requirements.update",
+    tags = [
+        "no-cache",
+        "requires-network",
+    ],
+)
 
 platform(
     name = "linux_x64",

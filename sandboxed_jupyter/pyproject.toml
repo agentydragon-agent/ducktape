@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "Sandboxed Jupyter execution with seatbelt and Docker modes"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "net-util",          # for pick_free_port, wait_for_port
-    "mcp-infra",         # seatbelt policy compilation
     "pydantic>=2.0",
     "PyYAML",
     "ipykernel>=6",

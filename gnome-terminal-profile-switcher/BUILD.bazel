@@ -1,5 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library")
 
+exports_files(["pyproject.toml"])
 py_library(
     name = "gnome_terminal_profile_switcher",
     srcs = glob(["src/gnome_terminal_profile_switcher/**/*.py"]),

@@ -4,9 +4,6 @@ version = "0.1.0"
 description = "AI-powered git commit message generator"
 requires-python = ">=3.12"
 dependencies = [
-    "agent-core",
-    "mcp-infra",
-    "openai-utils",
     "pygit2>=1.14",
     "pydantic>=2.0",
     "fastmcp>=2.0",

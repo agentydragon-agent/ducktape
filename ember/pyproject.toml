@@ -5,9 +5,6 @@ description = "Minimal containerised agent pilot (Matrix + OpenAI)"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "agent-core",
-    "openai-utils",
-    "mcp-infra",
     "fastapi>=0.110",
     "uvicorn>=0.22",
     "matrix-nio>=0.23",

@@ -1,5 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
+exports_files(["pyproject.toml"])
 py_library(
     name = "ducktape_llm_common",
     srcs = glob(["ducktape_llm_common/**/*.py"]),

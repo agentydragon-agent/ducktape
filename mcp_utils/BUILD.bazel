@@ -2,6 +2,7 @@
 
 load("@rules_python//python:defs.bzl", "py_library")
 
+exports_files(["pyproject.toml"])
 py_library(
     name = "mcp_utils",
     srcs = glob(["src/mcp_utils/**/*.py"]),

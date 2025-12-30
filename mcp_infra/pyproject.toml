@@ -5,10 +5,6 @@ description = "MCP infrastructure - compositor, exec backends, and shared utilit
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "openai-utils",
-    "agent-core",
-    "cli-util",
-    "mcp-utils",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",

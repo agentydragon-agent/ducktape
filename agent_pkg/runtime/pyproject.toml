@@ -4,7 +4,6 @@ version = "0.1.0"
 description = "Container-side utilities for agent init scripts"
 requires-python = ">=3.12"
 dependencies = [
-    "mcp-utils",
     "fastmcp>=2.0",  # TODO: make optional (slow import)
     "jinja2>=3.0",
 ]

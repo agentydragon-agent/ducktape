@@ -5,11 +5,6 @@ description = "Agent server - FastAPI backend, runtime, and MCP infrastructure f
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
-    "cli-util",
-    "net-util",
-    "mcp-infra",
-    "agent-core",
-    "openai-utils",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "aiodocker>=0.22.0",

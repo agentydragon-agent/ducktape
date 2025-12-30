@@ -6,5 +6,4 @@ requires-python = ">=3.12"
 dependencies = [
     "aiodocker>=0.23",
     "fastmcp>=2.0",
-    "mcp-infra",
 ]

@@ -4,8 +4,6 @@ version = "0.1.0"
 description = "Core agent loop machinery for LLM agents with MCP tool wiring"
 requires-python = ">=3.12"
 dependencies = [
-    "openai-utils",
-    "agent-pkg-host",
     "fastmcp>=2.0",
     "mcp>=1.0",
     "pydantic>=2.0",
@@ -19,10 +17,10 @@ dependencies = [
 testing = [
     "pytest>=8.0",
     "pytest-asyncio>=0.25",
-    "mcp-infra",
 ]
 dev = [
-    "agent-core[testing]",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.25",
 ]
 
 [tool.pytest.ini_options]

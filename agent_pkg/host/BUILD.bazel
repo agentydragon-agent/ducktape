@@ -1,5 +1,6 @@
 load("@rules_python//python:defs.bzl", "py_library")
 
+exports_files(["pyproject.toml"])
 py_library(
     name = "agent_pkg_host",
     srcs = glob(["src/agent_pkg_host/**/*.py"]),
