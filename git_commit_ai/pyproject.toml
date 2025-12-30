@@ -11,6 +11,3 @@ dependencies = [
     "pydantic>=2.0",
     "fastmcp>=2.0",
 ]
-
-[tool.mypy]
-mypy_path = "../mcp_infra/src:../openai_utils/src:../agent_core/src"

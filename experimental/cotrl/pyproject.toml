@@ -6,7 +6,3 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.0.0",
 ]
-
-[tool.mypy]
-# Ignore missing type stubs for experimental code
-ignore_missing_imports = true

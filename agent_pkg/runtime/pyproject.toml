@@ -11,6 +11,3 @@ dependencies = [
 
 [project.optional-dependencies]
 typing = ["types-Jinja2"]
-
-[tool.mypy]
-mypy_path = "mcp_utils/src:agent_pkg/runtime/src"

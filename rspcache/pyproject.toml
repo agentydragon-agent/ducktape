@@ -16,10 +16,3 @@ dependencies = [
     "openai>=1.40.0",
     "PyYAML",
 ]
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-# Path relative to repo root (where pre-commit runs)
-mypy_path = "openai_utils/src"

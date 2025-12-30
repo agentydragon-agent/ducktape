@@ -8,6 +8,3 @@ dependencies = [
     "fastmcp>=2.0",
     "mcp-infra",
 ]
-
-[tool.mypy]
-mypy_path = "agent_pkg/host/src:mcp_infra/src:mcp_utils/src"

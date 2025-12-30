@@ -21,12 +21,5 @@ dev = [
     "pytest-timeout>=2.0",
 ]
 
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-# Paths relative to repo root (where pre-commit runs mypy from)
-mypy_path = "adgn/src:mcp_infra/src:sandboxed_jupyter/src:sandboxed_jupyter:net_util/src"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]

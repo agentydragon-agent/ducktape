@@ -27,9 +27,6 @@ dev = [
     "syrupy>=4.0",
 ]
 
-[tool.mypy]
-mypy_path = "openai_utils/src:agent_core/src:mcp_infra/src:cli_util/src:mcp_utils/src"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

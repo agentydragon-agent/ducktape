@@ -14,9 +14,3 @@ dependencies = [
     "typer>=0.9",
     "cli-util",
 ]
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-mypy_path = "editor_agent/runtime/src:mcp_utils/src:cli_util/src:agent_pkg/runtime/src:mcp_infra/src:agent_core/src:openai_utils/src:agent_pkg/host/src"

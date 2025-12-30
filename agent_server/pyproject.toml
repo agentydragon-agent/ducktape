@@ -34,9 +34,6 @@ dev = [
     "docker>=7.0",
 ]
 
-[tool.mypy]
-mypy_path = "adgn/src:openai_utils/src:agent_core/src:mcp_infra/src:agent_server/src:cli_util/src:net_util/src:mcp_utils/src"
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

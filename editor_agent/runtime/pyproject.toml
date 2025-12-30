@@ -8,9 +8,3 @@ dependencies = [
     "cli-util",
     "typer>=0.9",
 ]
-
-[tool.mypy]
-python_version = "3.12"
-warn_return_any = true
-check_untyped_defs = true
-mypy_path = "mcp_utils/src:cli_util/src:agent_pkg/runtime/src"

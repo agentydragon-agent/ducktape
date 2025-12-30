@@ -149,7 +149,3 @@ testpaths = ["tests"]
 
 [tool.adgn.trivial-patterns]
 skip-globs = ["tests/detectors/fixtures/**"]
-
-[[tool.mypy.overrides]]
-module = ["tests.detectors.fixtures.*"]
-ignore_errors = true
