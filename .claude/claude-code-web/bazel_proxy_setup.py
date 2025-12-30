@@ -167,8 +167,7 @@ def _start_proxy_server() -> bool:
 
     Returns True if proxy was started successfully.
 
-    The proxy handles killing any existing instance and daemonizing itself.
-    This ensures fresh credentials are used (proxy captures https_proxy at startup).
+    Uses -r to replace any existing instance with fresh credentials.
     """
     proxy_script = _get_proxy_script_path()
     if not proxy_script.exists():
@@ -177,9 +176,9 @@ def _start_proxy_server() -> bool:
 
     log.info("Starting Bazel proxy on port %d", BAZEL_PROXY_PORT)
 
-    # The proxy handles: killing existing, daemonizing, logging, pidfile
+    # -d: daemonize, -r: replace any existing instance
     result = subprocess.run(
-        ["python3", str(proxy_script), "-d", "--listen-port", str(BAZEL_PROXY_PORT)],
+        ["python3", str(proxy_script), "-d", "-r", "--listen-port", str(BAZEL_PROXY_PORT)],
         capture_output=True,
         text=True,
     )

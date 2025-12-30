@@ -15,10 +15,12 @@ import argparse
 import asyncio
 import atexit
 import base64
+import fcntl
 import logging
 import os
 import signal
 import sys
+import time
 from pathlib import Path
 from urllib.parse import ParseResult, urlparse
 
@@ -32,6 +34,9 @@ log = logging.getLogger(__name__)
 _cached_proxy: ParseResult | None = None
 _cached_auth_header: str = ""
 _cached_mtime: float = 0
+
+# Global lock file handle - kept open to hold the lock
+_lock_fd: int | None = None
 
 
 def setup_logging(log_file: Path | None) -> None:
@@ -51,33 +56,91 @@ def setup_logging(log_file: Path | None) -> None:
     )
 
 
-def write_pidfile(pid_file: Path) -> None:
-    """Write current PID to file and register cleanup."""
+def acquire_singleton_lock(pid_file: Path) -> bool:
+    """Acquire exclusive lock on pidfile, making this the singleton instance.
+
+    Uses flock() which is atomic and automatically released on process exit.
+    Returns True if lock acquired, False if another instance is running.
+    """
+    global _lock_fd
+
     pid_file.parent.mkdir(parents=True, exist_ok=True)
-    pid_file.write_text(str(os.getpid()))
-    atexit.register(lambda: pid_file.unlink(missing_ok=True))
+
+    # Open file for writing (create if needed)
+    _lock_fd = os.open(str(pid_file), os.O_RDWR | os.O_CREAT, 0o644)
+
+    try:
+        # Try to acquire exclusive lock (non-blocking)
+        fcntl.flock(_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        # Another instance holds the lock
+        os.close(_lock_fd)
+        _lock_fd = None
+        return False
+
+    # We have the lock - write our PID
+    os.ftruncate(_lock_fd, 0)
+    os.write(_lock_fd, f"{os.getpid()}\n".encode())
+    os.fsync(_lock_fd)
+
+    # Register cleanup (though lock releases automatically on exit)
+    def cleanup() -> None:
+        if _lock_fd is not None:
+            try:
+                os.close(_lock_fd)
+                pid_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+    atexit.register(cleanup)
+
+    return True
 
 
 def kill_existing(pid_file: Path) -> bool:
-    """Kill existing proxy if running, using pidfile.
+    """Kill existing proxy if running.
 
     Returns True if a process was killed, False otherwise.
+    Uses the pidfile to find the process, then waits for it to die.
     """
     if not pid_file.exists():
         return False
 
-    killed = False
     try:
         pid = int(pid_file.read_text().strip())
-        os.kill(pid, 0)  # Check if alive
-        log.info("Killing existing proxy (pid %d)", pid)
+    except (ValueError, OSError):
+        return False
+
+    # Check if process exists
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        # Process already dead, stale pidfile
+        return False
+    except PermissionError:
+        # Process exists but we can't signal it
+        log.warning("Cannot kill pid %d: permission denied", pid)
+        return False
+
+    log.info("Killing existing proxy (pid %d)", pid)
+    os.kill(pid, signal.SIGTERM)
+
+    # Wait for process to die (up to 5 seconds)
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+            time.sleep(0.1)
+        except ProcessLookupError:
+            return True
+
+    # Still alive, force kill
+    log.warning("Process %d did not respond to SIGTERM, sending SIGKILL", pid)
+    try:
         os.kill(pid, signal.SIGKILL)
-        killed = True
-    except (ValueError, ProcessLookupError, PermissionError):
+        time.sleep(0.1)
+    except ProcessLookupError:
         pass
-    finally:
-        pid_file.unlink(missing_ok=True)
-    return killed
+
+    return True
 
 
 def parse_proxy_url(proxy_url: str) -> ParseResult:
@@ -308,6 +371,8 @@ def main() -> int:
                         help="Fork to background")
     parser.add_argument("--kill", "-k", action="store_true",
                         help="Kill existing proxy and exit")
+    parser.add_argument("--replace", "-r", action="store_true",
+                        help="Kill existing proxy before starting (default behavior)")
     args = parser.parse_args()
 
     pid_file = args.state_dir / "proxy.pid"
@@ -319,15 +384,25 @@ def main() -> int:
         kill_existing(pid_file)
         return 0
 
-    # Kill existing before starting new
-    kill_existing(pid_file)
-
-    # Daemonize if requested (before logging setup so log file is opened in child)
+    # Daemonize if requested (before logging/lock so they happen in child)
     if args.daemonize:
         daemonize()
 
     setup_logging(log_file)
-    write_pidfile(pid_file)
+
+    # Try to acquire singleton lock
+    if not acquire_singleton_lock(pid_file):
+        # Another instance is running
+        if args.replace:
+            # Kill it and retry
+            kill_existing(pid_file)
+            time.sleep(0.2)  # Give the lock a moment to release
+            if not acquire_singleton_lock(pid_file):
+                log.error("Failed to acquire lock after killing existing proxy")
+                return 1
+        else:
+            log.info("Another proxy instance is already running (use -r to replace)")
+            return 0
 
     try:
         asyncio.run(run_server(args.listen_host, args.listen_port, args.state_dir))
