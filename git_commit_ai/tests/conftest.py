@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from . import git_repo_utils
+from tests import git_repo_utils
 
 pytest_plugins = ["mcp_infra.testing.fixtures"]
 

@@ -8,7 +8,8 @@ from agent_pkg_host.builder import (
     ensure_image_from_archive,
     validate_image,
 )
-from agent_pkg_host.init_runner import DEFAULT_INIT_TIMEOUT_MS, InitFailedError, run_init_script
+from agent_pkg_host.init_runner import DEFAULT_INIT_TIMEOUT_MS, run_init_script
+from mcp_infra.exceptions import InitFailedError
 
 __all__ = [
     "DEFAULT_INIT_TIMEOUT_MS",
