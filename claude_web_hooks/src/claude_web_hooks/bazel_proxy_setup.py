@@ -226,6 +226,10 @@ build --action_env=HTTPS_PROXY={local_proxy}
 build --action_env=HTTP_PROXY={local_proxy}
 build --action_env=https_proxy={local_proxy}
 build --action_env=http_proxy={local_proxy}
+
+# Use local execution instead of sandbox (sandbox has /dev/null issues in CC web)
+build --spawn_strategy=local
+test --spawn_strategy=local
 """
     BAZEL_PROXY_RC.write_text(proxy_rc)
     log.info("Wrote proxy config to %s", BAZEL_PROXY_RC)
