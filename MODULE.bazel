@@ -7,6 +7,7 @@ bazel_dep(name = "rules_python", version = "1.4.1")
 bazel_dep(name = "buildifier_prebuilt", version = "8.0.3")
 bazel_dep(name = "aspect_rules_lint", version = "1.0.0")
 bazel_dep(name = "rules_multitool", version = "1.0.0")
+bazel_dep(name = "rules_mypy", version = "0.40.0")
 
 python = use_extension("@rules_python//python/extensions:python.bzl", "python")
 python.toolchain(

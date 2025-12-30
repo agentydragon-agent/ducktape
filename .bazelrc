@@ -16,5 +16,17 @@ common --enable_bzlmod
 # cargo-raze-generated platform-specific dependencies in BUILD files
 build --platforms //:linux_x64
 
-# TODO: auto-clippy (once i figure out how to disable)
-#build --aspects @rules_rulst//rust:defs.bzl%rust_clippy_aspect --output_groups=clippy_checks
+# Lint configuration
+# Run with: bazel build --config=lint //...
+build:lint --aspects=//tools/lint:linters.bzl%ruff
+build:lint --output_groups=+rules_lint_report
+
+# Type checking configuration
+# Run with: bazel build --config=typecheck //...
+build:typecheck --aspects=//tools/lint:linters.bzl%mypy_aspect
+build:typecheck --output_groups=+mypy
+
+# Combined lint + typecheck
+# Run with: bazel build --config=check //...
+build:check --aspects=//tools/lint:linters.bzl%ruff,//tools/lint:linters.bzl%mypy_aspect
+build:check --output_groups=+rules_lint_report,+mypy
