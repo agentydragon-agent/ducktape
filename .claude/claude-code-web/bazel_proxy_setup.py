@@ -9,7 +9,6 @@ Handles:
 
 import logging
 import os
-import signal
 from pathlib import Path
 import re
 import shutil
@@ -23,8 +22,6 @@ log = logging.getLogger(__name__)
 # Bazel proxy configuration - files stored in ~/.cache/bazel-proxy/
 BAZEL_PROXY_PORT = 18081
 BAZEL_PROXY_DIR = Path.home() / ".cache" / "bazel-proxy"
-BAZEL_PROXY_LOG = BAZEL_PROXY_DIR / "proxy.log"
-BAZEL_PROXY_PID = BAZEL_PROXY_DIR / "proxy.pid"
 BAZEL_CA_FILE = BAZEL_PROXY_DIR / "anthropic_ca.pem"
 BAZEL_TRUSTSTORE = BAZEL_PROXY_DIR / "cacerts.jks"
 BAZEL_PROXY_RC = BAZEL_PROXY_DIR / "bazelrc"
@@ -140,29 +137,29 @@ def _create_java_truststore() -> bool:
 
 
 def _get_proxy_script_path() -> Path:
-    """Get the path to the bazel proxy script (bundled with the hook)."""
-    return Path(__file__).parent / "bazel_proxy.py"
+    """Get the path to the bazel proxy script.
+
+    The proxy lives in the bazel_proxy package at the repo root.
+    """
+    # Navigate from .claude/claude-code-web/ to bazel_proxy/
+    repo_root = Path(__file__).parent.parent.parent
+    return repo_root / "bazel_proxy" / "src" / "bazel_proxy" / "proxy.py"
 
 
-def _kill_existing_proxy() -> None:
-    """Kill existing proxy using pidfile."""
-    if not BAZEL_PROXY_PID.exists():
+def _update_proxy_credentials() -> None:
+    """Write fresh proxy credentials from environment to the credentials file.
+
+    This allows the running proxy to pick up new credentials without restart.
+    The proxy checks file mtime and reloads when the file changes.
+    """
+    https_proxy = os.environ.get("https_proxy") or os.environ.get("HTTPS_PROXY")
+    if not https_proxy:
         return
 
-    try:
-        pid = int(BAZEL_PROXY_PID.read_text().strip())
-        # Check if process exists
-        os.kill(pid, 0)
-        # Kill it
-        log.info("Killing existing proxy (pid %d)", pid)
-        os.kill(pid, signal.SIGKILL)
-        time.sleep(0.5)  # Allow port to be released
-    except (ValueError, ProcessLookupError, PermissionError):
-        # Pid invalid, process doesn't exist, or can't kill - that's fine
-        pass
-    finally:
-        # Clean up stale pidfile
-        BAZEL_PROXY_PID.unlink(missing_ok=True)
+    creds_file = BAZEL_PROXY_DIR / "upstream_proxy"
+    BAZEL_PROXY_DIR.mkdir(parents=True, exist_ok=True)
+    creds_file.write_text(https_proxy)
+    log.info("Updated proxy credentials in %s", creds_file)
 
 
 def _start_proxy_server() -> bool:
@@ -170,44 +167,40 @@ def _start_proxy_server() -> bool:
 
     Returns True if proxy was started successfully.
 
-    Always kills and restarts the proxy to ensure fresh credentials are used.
-    The proxy captures https_proxy at startup, so if the container was replaced
-    (and credentials refreshed), we need to restart to pick up new credentials.
+    The proxy handles killing any existing instance and daemonizing itself.
+    This ensures fresh credentials are used (proxy captures https_proxy at startup).
     """
     proxy_script = _get_proxy_script_path()
     if not proxy_script.exists():
         log.warning("Bazel proxy script not found at %s", proxy_script)
         return False
 
-    # Always kill existing proxy to pick up fresh credentials
-    _kill_existing_proxy()
-
-    # Start the proxy (reads https_proxy from environment)
     log.info("Starting Bazel proxy on port %d", BAZEL_PROXY_PORT)
-    proc = subprocess.Popen(
-        ["python3", str(proxy_script), "--listen-port", str(BAZEL_PROXY_PORT)],
-        stdout=open(BAZEL_PROXY_LOG, "w"),
-        stderr=subprocess.STDOUT,
-        start_new_session=True,
+
+    # The proxy handles: killing existing, daemonizing, logging, pidfile
+    result = subprocess.run(
+        ["python3", str(proxy_script), "-d", "--listen-port", str(BAZEL_PROXY_PORT)],
+        capture_output=True,
+        text=True,
     )
+    if result.returncode != 0:
+        log.warning("Failed to start proxy: %s", result.stderr)
+        return False
 
-    # Write pidfile
-    BAZEL_PROXY_PID.write_text(str(proc.pid))
-
-    # Wait for it to start
+    # Wait for it to start listening
     for _ in range(10):
         time.sleep(0.5)
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            result = sock.connect_ex(("127.0.0.1", BAZEL_PROXY_PORT))
+            conn_result = sock.connect_ex(("127.0.0.1", BAZEL_PROXY_PORT))
             sock.close()
-            if result == 0:
-                log.info("Bazel proxy started successfully (pid %d)", proc.pid)
+            if conn_result == 0:
+                log.info("Bazel proxy started successfully")
                 return True
         except Exception:
             pass
 
-    log.warning("Failed to start Bazel proxy")
+    log.warning("Bazel proxy did not start listening in time")
     return False
 
 
@@ -273,7 +266,10 @@ def setup_bazel_proxy() -> None:
         log.warning("Could not start Bazel proxy")
         return
 
-    # Step 4: Write bazelrc configuration
+    # Step 4: Update credentials file (allows refresh without proxy restart)
+    _update_proxy_credentials()
+
+    # Step 5: Write bazelrc configuration
     _write_bazel_config()
 
     log.info("Bazel proxy setup complete")

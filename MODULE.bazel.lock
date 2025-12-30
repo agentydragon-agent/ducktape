@@ -1,6 +1,6 @@
 {
   "lockFileVersion": 6,
-  "moduleFileHash": "e1b7a100606a3dd53276665b1f00426efa1991b0357e9b8aa7731c6cc03ef9b2",
+  "moduleFileHash": "d0c5acd011b198af4e31ef2795000560150c80bed8ea06a9bfd7bc68d08484f6",
   "flags": {
     "cmdRegistries": [
       "https://bcr.bazel.build/"
@@ -33,7 +33,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 12,
+            "line": 13,
             "column": 23
           },
           "imports": {},
@@ -47,7 +47,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 13,
+                "line": 14,
                 "column": 17
               }
             }
@@ -61,7 +61,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 17,
+            "line": 18,
             "column": 20
           },
           "imports": {
@@ -79,8 +79,36 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 18,
+                "line": 19,
                 "column": 10
+              }
+            }
+          ],
+          "hasDevUseExtension": false,
+          "hasNonDevUseExtension": true
+        },
+        {
+          "extensionBzlFile": "@rules_python//python/uv:uv.bzl",
+          "extensionName": "uv",
+          "usingModule": "<root>",
+          "location": {
+            "file": "@@//:MODULE.bazel",
+            "line": 27,
+            "column": 19
+          },
+          "imports": {},
+          "devImports": [],
+          "tags": [
+            {
+              "tagName": "configure",
+              "attributeValues": {
+                "version": "0.6.2"
+              },
+              "devDependency": false,
+              "location": {
+                "file": "@@//:MODULE.bazel",
+                "line": 28,
+                "column": 13
               }
             }
           ],
@@ -93,7 +121,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 30,
+            "line": 34,
             "column": 21
           },
           "imports": {
@@ -112,7 +140,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 31,
+                "line": 35,
                 "column": 15
               }
             }
@@ -126,7 +154,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 40,
+            "line": 44,
             "column": 22
           },
           "imports": {
@@ -146,7 +174,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 43,
+                "line": 47,
                 "column": 17
               }
             }
@@ -160,7 +188,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 56,
+            "line": 60,
             "column": 35
           },
           "imports": {
@@ -176,7 +204,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 60,
+                "line": 64,
                 "column": 28
               }
             }
@@ -190,7 +218,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 63,
+            "line": 67,
             "column": 22
           },
           "imports": {
@@ -206,7 +234,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 69,
+                "line": 73,
                 "column": 15
               }
             },
@@ -218,7 +246,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 74,
+                "line": 78,
                 "column": 14
               }
             },
@@ -230,7 +258,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 77,
+                "line": 81,
                 "column": 14
               }
             },
@@ -251,7 +279,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 83,
+                "line": 87,
                 "column": 14
               }
             },
@@ -263,7 +291,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 91,
+                "line": 95,
                 "column": 14
               }
             },
@@ -275,7 +303,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 94,
+                "line": 98,
                 "column": 14
               }
             },
@@ -287,7 +315,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 97,
+                "line": 101,
                 "column": 14
               }
             },
@@ -299,7 +327,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 100,
+                "line": 104,
                 "column": 14
               }
             },
@@ -311,7 +339,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 103,
+                "line": 107,
                 "column": 14
               }
             },
@@ -323,7 +351,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 106,
+                "line": 110,
                 "column": 14
               }
             },
@@ -335,7 +363,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 109,
+                "line": 113,
                 "column": 14
               }
             },
@@ -348,7 +376,7 @@
               "devDependency": false,
               "location": {
                 "file": "@@//:MODULE.bazel",
-                "line": 114,
+                "line": 118,
                 "column": 14
               }
             }
@@ -362,7 +390,7 @@
           "usingModule": "<root>",
           "location": {
             "file": "@@//:MODULE.bazel",
-            "line": 133,
+            "line": 137,
             "column": 27
           },
           "imports": {
@@ -375,6 +403,7 @@
         }
       ],
       "deps": {
+        "bazel_skylib": "bazel_skylib@1.7.1",
         "rules_python": "rules_python@1.4.1",
         "buildifier_prebuilt": "buildifier_prebuilt@8.0.3",
         "aspect_rules_lint": "aspect_rules_lint@1.0.0",
@@ -384,6 +413,37 @@
         "rules_haskell": "rules_haskell@1.0",
         "bazel_tools": "bazel_tools@_",
         "local_config_platform": "local_config_platform@_"
+      }
+    },
+    "bazel_skylib@1.7.1": {
+      "name": "bazel_skylib",
+      "version": "1.7.1",
+      "key": "bazel_skylib@1.7.1",
+      "repoName": "bazel_skylib",
+      "executionPlatformsToRegister": [],
+      "toolchainsToRegister": [
+        "//toolchains/unittest:cmd_toolchain",
+        "//toolchains/unittest:bash_toolchain"
+      ],
+      "extensionUsages": [],
+      "deps": {
+        "platforms": "platforms@0.0.11",
+        "rules_license": "rules_license@1.0.0",
+        "bazel_tools": "bazel_tools@_",
+        "local_config_platform": "local_config_platform@_"
+      },
+      "repoSpec": {
+        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": [
+            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz"
+          ],
+          "integrity": "sha256-vCg8381SalLDIBJ5zaS8KYZS76iYsQtNsIN9xRZSdW8=",
+          "strip_prefix": "",
+          "remote_patches": {},
+          "remote_patch_strip": 0
+        }
       }
     },
     "rules_python@1.4.1": {
@@ -1577,6 +1637,77 @@
         "bazel_tools": "bazel_tools@_"
       }
     },
+    "platforms@0.0.11": {
+      "name": "platforms",
+      "version": "0.0.11",
+      "key": "platforms@0.0.11",
+      "repoName": "platforms",
+      "executionPlatformsToRegister": [],
+      "toolchainsToRegister": [],
+      "extensionUsages": [
+        {
+          "extensionBzlFile": "@platforms//host:extension.bzl",
+          "extensionName": "host_platform",
+          "usingModule": "platforms@0.0.11",
+          "location": {
+            "file": "https://bcr.bazel.build/modules/platforms/0.0.11/MODULE.bazel",
+            "line": 9,
+            "column": 30
+          },
+          "imports": {
+            "host_platform": "host_platform"
+          },
+          "devImports": [],
+          "tags": [],
+          "hasDevUseExtension": false,
+          "hasNonDevUseExtension": true
+        }
+      ],
+      "deps": {
+        "rules_license": "rules_license@1.0.0",
+        "bazel_tools": "bazel_tools@_",
+        "local_config_platform": "local_config_platform@_"
+      },
+      "repoSpec": {
+        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": [
+            "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz"
+          ],
+          "integrity": "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
+          "strip_prefix": "",
+          "remote_patches": {},
+          "remote_patch_strip": 0
+        }
+      }
+    },
+    "rules_license@1.0.0": {
+      "name": "rules_license",
+      "version": "1.0.0",
+      "key": "rules_license@1.0.0",
+      "repoName": "rules_license",
+      "executionPlatformsToRegister": [],
+      "toolchainsToRegister": [],
+      "extensionUsages": [],
+      "deps": {
+        "bazel_tools": "bazel_tools@_",
+        "local_config_platform": "local_config_platform@_"
+      },
+      "repoSpec": {
+        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
+        "ruleClassName": "http_archive",
+        "attributes": {
+          "urls": [
+            "https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz"
+          ],
+          "integrity": "sha256-JtQCH2iY4juC75UweDid1JrCtWGKxWSt5O+HzO0Uezg=",
+          "strip_prefix": "",
+          "remote_patches": {},
+          "remote_patch_strip": 0
+        }
+      }
+    },
     "bazel_features@1.21.0": {
       "name": "bazel_features",
       "version": "1.21.0",
@@ -1622,37 +1753,6 @@
             "https://bcr.bazel.build/modules/bazel_features/1.21.0/patches/module_dot_bazel_version.patch": "sha256-dCsdHmWKr8bbJmBCuD7tIB8xubDrH8pHR6HFQdH1m9g="
           },
           "remote_patch_strip": 1
-        }
-      }
-    },
-    "bazel_skylib@1.7.1": {
-      "name": "bazel_skylib",
-      "version": "1.7.1",
-      "key": "bazel_skylib@1.7.1",
-      "repoName": "bazel_skylib",
-      "executionPlatformsToRegister": [],
-      "toolchainsToRegister": [
-        "//toolchains/unittest:cmd_toolchain",
-        "//toolchains/unittest:bash_toolchain"
-      ],
-      "extensionUsages": [],
-      "deps": {
-        "platforms": "platforms@0.0.11",
-        "rules_license": "rules_license@1.0.0",
-        "bazel_tools": "bazel_tools@_",
-        "local_config_platform": "local_config_platform@_"
-      },
-      "repoSpec": {
-        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-        "ruleClassName": "http_archive",
-        "attributes": {
-          "urls": [
-            "https://github.com/bazelbuild/bazel-skylib/releases/download/1.7.1/bazel-skylib-1.7.1.tar.gz"
-          ],
-          "integrity": "sha256-vCg8381SalLDIBJ5zaS8KYZS76iYsQtNsIN9xRZSdW8=",
-          "strip_prefix": "",
-          "remote_patches": {},
-          "remote_patch_strip": 0
         }
       }
     },
@@ -1706,51 +1806,6 @@
             "https://bcr.bazel.build/modules/rules_cc/0.1.1/patches/module_dot_bazel_version.patch": "sha256-2WyM/DEOM/Dj9MQU0Jl79eQ0Ju3QHGsgIuLO1OIwdt4="
           },
           "remote_patch_strip": 1
-        }
-      }
-    },
-    "platforms@0.0.11": {
-      "name": "platforms",
-      "version": "0.0.11",
-      "key": "platforms@0.0.11",
-      "repoName": "platforms",
-      "executionPlatformsToRegister": [],
-      "toolchainsToRegister": [],
-      "extensionUsages": [
-        {
-          "extensionBzlFile": "@platforms//host:extension.bzl",
-          "extensionName": "host_platform",
-          "usingModule": "platforms@0.0.11",
-          "location": {
-            "file": "https://bcr.bazel.build/modules/platforms/0.0.11/MODULE.bazel",
-            "line": 9,
-            "column": 30
-          },
-          "imports": {
-            "host_platform": "host_platform"
-          },
-          "devImports": [],
-          "tags": [],
-          "hasDevUseExtension": false,
-          "hasNonDevUseExtension": true
-        }
-      ],
-      "deps": {
-        "rules_license": "rules_license@1.0.0",
-        "bazel_tools": "bazel_tools@_",
-        "local_config_platform": "local_config_platform@_"
-      },
-      "repoSpec": {
-        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-        "ruleClassName": "http_archive",
-        "attributes": {
-          "urls": [
-            "https://github.com/bazelbuild/platforms/releases/download/0.0.11/platforms-0.0.11.tar.gz"
-          ],
-          "integrity": "sha256-KXQuhydYCbXlmNwvBNhpYMx6VbMGfZciHJq7yZJr/w8=",
-          "strip_prefix": "",
-          "remote_patches": {},
-          "remote_patch_strip": 0
         }
       }
     },
@@ -2613,32 +2668,6 @@
           ],
           "integrity": "sha256-IsV19ArvWcQdqp7CjSPm4KUcBuGhqQqh91xAMIPiLh8=",
           "strip_prefix": "rules_uv-0.21.0",
-          "remote_patches": {},
-          "remote_patch_strip": 0
-        }
-      }
-    },
-    "rules_license@1.0.0": {
-      "name": "rules_license",
-      "version": "1.0.0",
-      "key": "rules_license@1.0.0",
-      "repoName": "rules_license",
-      "executionPlatformsToRegister": [],
-      "toolchainsToRegister": [],
-      "extensionUsages": [],
-      "deps": {
-        "bazel_tools": "bazel_tools@_",
-        "local_config_platform": "local_config_platform@_"
-      },
-      "repoSpec": {
-        "bzlFile": "@@bazel_tools//tools/build_defs/repo:http.bzl",
-        "ruleClassName": "http_archive",
-        "attributes": {
-          "urls": [
-            "https://github.com/bazelbuild/rules_license/releases/download/1.0.0/rules_license-1.0.0.tar.gz"
-          ],
-          "integrity": "sha256-JtQCH2iY4juC75UweDid1JrCtWGKxWSt5O+HzO0Uezg=",
-          "strip_prefix": "",
           "remote_patches": {},
           "remote_patch_strip": 0
         }
@@ -5504,23 +5533,162 @@
         "recordedDirentsInputs": {},
         "envVariables": {},
         "generatedRepoSpecs": {
+          "uv_0_6_2_powerpc64_unknown_linux_gnu": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "powerpc64-unknown-linux-gnu",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-powerpc64-unknown-linux-gnu.tar.gz"
+              ],
+              "sha256": "de17553549280fd877452dd1f7f9d0a604e3544bfad007b8ec0b9943f103796f"
+            }
+          },
           "uv": {
             "bzlFile": "@@rules_python~//python/uv/private:uv_toolchains_repo.bzl",
             "ruleClassName": "uv_toolchains_repo",
             "attributes": {
               "toolchain_type": "'@@rules_python~//python/uv:uv_toolchain_type'",
               "toolchain_names": [
-                "none"
+                "0_6_2_aarch64_apple_darwin",
+                "0_6_2_aarch64_unknown_linux_gnu",
+                "0_6_2_powerpc64_unknown_linux_gnu",
+                "0_6_2_powerpc64le_unknown_linux_gnu",
+                "0_6_2_s390x_unknown_linux_gnu",
+                "0_6_2_x86_64_apple_darwin",
+                "0_6_2_x86_64_pc_windows_msvc",
+                "0_6_2_x86_64_unknown_linux_gnu"
               ],
               "toolchain_implementations": {
-                "none": "'@@rules_python~//python:none'"
+                "0_6_2_aarch64_apple_darwin": "@uv_0_6_2_aarch64_apple_darwin//:uv_toolchain",
+                "0_6_2_aarch64_unknown_linux_gnu": "@uv_0_6_2_aarch64_unknown_linux_gnu//:uv_toolchain",
+                "0_6_2_powerpc64_unknown_linux_gnu": "@uv_0_6_2_powerpc64_unknown_linux_gnu//:uv_toolchain",
+                "0_6_2_powerpc64le_unknown_linux_gnu": "@uv_0_6_2_powerpc64le_unknown_linux_gnu//:uv_toolchain",
+                "0_6_2_s390x_unknown_linux_gnu": "@uv_0_6_2_s390x_unknown_linux_gnu//:uv_toolchain",
+                "0_6_2_x86_64_apple_darwin": "@uv_0_6_2_x86_64_apple_darwin//:uv_toolchain",
+                "0_6_2_x86_64_pc_windows_msvc": "@uv_0_6_2_x86_64_pc_windows_msvc//:uv_toolchain",
+                "0_6_2_x86_64_unknown_linux_gnu": "@uv_0_6_2_x86_64_unknown_linux_gnu//:uv_toolchain"
               },
               "toolchain_compatible_with": {
-                "none": [
-                  "@platforms//:incompatible"
+                "0_6_2_aarch64_apple_darwin": [
+                  "'@@platforms//os:macos'",
+                  "'@@platforms//cpu:aarch64'"
+                ],
+                "0_6_2_aarch64_unknown_linux_gnu": [
+                  "'@@platforms//os:linux'",
+                  "'@@platforms//cpu:aarch64'"
+                ],
+                "0_6_2_powerpc64_unknown_linux_gnu": [
+                  "'@@platforms//os:linux'",
+                  "'@@platforms//cpu:ppc'"
+                ],
+                "0_6_2_powerpc64le_unknown_linux_gnu": [
+                  "'@@platforms//os:linux'",
+                  "'@@platforms//cpu:ppc64le'"
+                ],
+                "0_6_2_s390x_unknown_linux_gnu": [
+                  "'@@platforms//os:linux'",
+                  "'@@platforms//cpu:s390x'"
+                ],
+                "0_6_2_x86_64_apple_darwin": [
+                  "'@@platforms//os:macos'",
+                  "'@@platforms//cpu:x86_64'"
+                ],
+                "0_6_2_x86_64_pc_windows_msvc": [
+                  "'@@platforms//os:windows'",
+                  "'@@platforms//cpu:x86_64'"
+                ],
+                "0_6_2_x86_64_unknown_linux_gnu": [
+                  "'@@platforms//os:linux'",
+                  "'@@platforms//cpu:x86_64'"
                 ]
               },
               "toolchain_target_settings": {}
+            }
+          },
+          "uv_0_6_2_x86_64_unknown_linux_gnu": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "x86_64-unknown-linux-gnu",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-x86_64-unknown-linux-gnu.tar.gz"
+              ],
+              "sha256": "37ea31f099678a3bee56f8a757d73551aad43f8025d377a8dde80dd946c1b7f2"
+            }
+          },
+          "uv_0_6_2_aarch64_unknown_linux_gnu": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "aarch64-unknown-linux-gnu",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-aarch64-unknown-linux-gnu.tar.gz"
+              ],
+              "sha256": "ca4c08724764a2b6c8f2173c4e3ca9dcde0d9d328e73b4d725cfb6b17a925eed"
+            }
+          },
+          "uv_0_6_2_aarch64_apple_darwin": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "aarch64-apple-darwin",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-aarch64-apple-darwin.tar.gz"
+              ],
+              "sha256": "4af802a1216053650dd82eee85ea4241994f432937d41c8b0bc90f2639e6ae14"
+            }
+          },
+          "uv_0_6_2_powerpc64le_unknown_linux_gnu": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "powerpc64le-unknown-linux-gnu",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-powerpc64le-unknown-linux-gnu.tar.gz"
+              ],
+              "sha256": "f341fd4874d2d007135626a0657d1478f331a78991d8a1a06aaa0d52fbe16183"
+            }
+          },
+          "uv_0_6_2_x86_64_apple_darwin": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "x86_64-apple-darwin",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-x86_64-apple-darwin.tar.gz"
+              ],
+              "sha256": "2b9e78b2562aea93f13e42df1177cb07c59a4d4f1c8ff8907d0c31f3a5e5e8db"
+            }
+          },
+          "uv_0_6_2_x86_64_pc_windows_msvc": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "x86_64-pc-windows-msvc",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-x86_64-pc-windows-msvc.zip"
+              ],
+              "sha256": "5f33c3cc5c183775cc51b3e661a0d2ce31142d32a50406a67c7ad0321fc841d9"
+            }
+          },
+          "uv_0_6_2_s390x_unknown_linux_gnu": {
+            "bzlFile": "@@rules_python~//python/uv/private:uv_repository.bzl",
+            "ruleClassName": "uv_repository",
+            "attributes": {
+              "version": "0.6.2",
+              "platform": "s390x-unknown-linux-gnu",
+              "urls": [
+                "https://github.com/astral-sh/uv/releases/download/0.6.2/uv-s390x-unknown-linux-gnu.tar.gz"
+              ],
+              "sha256": "17fd89bd8de75da9c91baf918b8079c1f1f92bb6a398f0cfbc5ddefe0c7f0ee5"
             }
           }
         },

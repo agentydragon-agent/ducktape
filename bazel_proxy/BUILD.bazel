@@ -1,0 +1,31 @@
+"""Bazel proxy for TLS-inspecting proxy environments."""
+
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+exports_files(["pyproject.toml"])
+
+py_library(
+    name = "bazel_proxy",
+    srcs = glob(["src/bazel_proxy/**/*.py"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    # No deps - uses only stdlib (required for session-start hooks)
+)
+
+py_binary(
+    name = "bazel_proxy_bin",
+    srcs = ["src/bazel_proxy/proxy.py"],
+    main = "src/bazel_proxy/proxy.py",
+    deps = [":bazel_proxy"],
+)
+
+py_test(
+    name = "test_bazel_proxy",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/test_proxy.py",
+    deps = [
+        ":bazel_proxy",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)
