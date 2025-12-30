@@ -1,0 +1,32 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "claude_hooks",
+    srcs = glob(["claude_hooks/**/*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//platformdirs",
+        "@pypi//pre_commit",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pyyaml",
+        "@pypi//typing_extensions",
+    ],
+)
+
+py_binary(
+    name = "claude-autofixer",
+    srcs = ["claude_hooks/precommit_autofix.py"],
+    main = "claude_hooks/precommit_autofix.py",
+    deps = [":claude_hooks"],
+)
+
+py_test(
+    name = "test_claude_hooks",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/conftest.py",
+    deps = [
+        ":claude_hooks",
+        "@pypi//pytest",
+    ],
+)

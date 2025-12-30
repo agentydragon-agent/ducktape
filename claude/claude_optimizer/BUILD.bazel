@@ -1,0 +1,31 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+
+py_library(
+    name = "graders",
+    srcs = glob(["graders/**/*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//anthropic",
+        "@pypi//claude_code_sdk",
+        "@pypi//docker",
+        "@pypi//numpy",
+        "@pypi//openai",
+        "@pypi//pandas",
+        "@pypi//pathspec",
+        "@pypi//plotnine",
+        "@pypi//pydantic",
+        "@pypi//pyyaml",
+        "@pypi//structlog",
+        "@pypi//tiktoken",
+    ],
+)
+
+py_test(
+    name = "test_unit",
+    srcs = glob(["tests/unit/**/*.py"]),
+    main = "tests/unit/__init__.py",
+    deps = [
+        ":graders",
+        "@pypi//pytest",
+    ],
+)

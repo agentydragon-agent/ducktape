@@ -1,4 +1,4 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 
 py_library(
     name = "gatelet",
@@ -10,6 +10,7 @@ py_library(
     visibility = ["//visibility:public"],
     deps = [
         "@pypi//alembic",
+        "@pypi//aqipy",
         "@pypi//asyncpg",
         "@pypi//aw_client",
         "@pypi//aw_core",
@@ -19,12 +20,18 @@ py_library(
         "@pypi//fastapi_csrf_protect",
         "@pypi//fastapi_sessions",
         "@pypi//fastapi_users",
+        "@pypi//geopy",
+        "@pypi//google_api_python_client",
+        "@pypi//google_auth",
         "@pypi//homeassistant_api",
         "@pypi//jinja2",
+        "@pypi//meteostat",
         "@pypi//oura",
         "@pypi//passlib",
         "@pypi//psycopg2_binary",
         "@pypi//pydantic",
+        "@pypi//pyowm",
+        "@pypi//python_metar",
         "@pypi//python_multipart",
         "@pypi//sqlalchemy",
         "@pypi//tomlkit",

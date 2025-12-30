@@ -1,0 +1,52 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "wt",
+    srcs = glob(["src/wt/**/*.py"]),
+    data = glob(["src/wt/shell/*.sh"]),
+    imports = ["src"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//click",
+        "@pypi//colorama",
+        "@pypi//pluggy",
+        "@pypi//psutil",
+        "@pypi//punq",
+        "@pypi//pydantic",
+        "@pypi//pygit2",
+        "@pypi//pygithub",
+        "@pypi//pyyaml",
+        "@pypi//tabulate",
+        "@pypi//typer",
+        "@pypi//watchdog",
+    ],
+)
+
+py_binary(
+    name = "wt-cli",
+    srcs = ["src/wt/cli.py"],
+    main = "src/wt/cli.py",
+    deps = [":wt"],
+)
+
+py_binary(
+    name = "wt-install",
+    srcs = ["src/wt/shell/install.py"],
+    main = "src/wt/shell/install.py",
+    deps = [":wt"],
+)
+
+py_test(
+    name = "test_wt",
+    srcs = glob(["tests/**/*.py"]),
+    main = "tests/conftest.py",
+    tags = ["manual"],  # Requires gitstatusd and may need network
+    deps = [
+        ":wt",
+        "@pypi//pyhamcrest",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+        "@pypi//pytest_mock",
+        "@pypi//tenacity",
+    ],
+)

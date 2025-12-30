@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "habitify_mcp_server",
+    srcs = glob(["habitify_mcp_server/**/*.py"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "@pypi//httpx",
+        "@pypi//mcp",
+        "@pypi//pydantic",
+        "@pypi//python_dotenv",
+        "@pypi//rich",
+        "@pypi//typer",
+    ],
+)
+
+py_binary(
+    name = "habitify",
+    srcs = ["habitify_mcp_server/cli.py"],
+    main = "habitify_mcp_server/cli.py",
+    deps = [":habitify_mcp_server"],
+)
+
+py_test(
+    name = "test_habitify",
+    srcs = glob(["habitify_mcp_server/tests/**/*.py"]),
+    main = "habitify_mcp_server/tests/conftest.py",
+    deps = [
+        ":habitify_mcp_server",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

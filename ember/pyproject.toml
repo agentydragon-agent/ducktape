@@ -53,8 +53,3 @@ include = ["ember*" ]
     "resources/examples/python-session/*",
     "resources/examples/matrix-client/*",
 ]
-
-[tool.uv.sources]
-agent-core = { workspace = true }
-openai-utils = { workspace = true }
-mcp-infra = { workspace = true }
