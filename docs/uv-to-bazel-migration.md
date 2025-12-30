@@ -38,7 +38,7 @@ package_name/
 
 Claude Code web sessions use a session start hook to configure Bazel:
 
-1. **Hook location:** `.claude/session-start.py` (wrapper that imports from `claude_web_hooks`)
+1. **Hook config:** `.claude/settings.json` runs `python3 -m claude_web_hooks.session_start`
 2. **Package:** `claude_web_hooks/` contains:
    - `proxy.py` - Local auth proxy for TLS-inspecting proxy
    - `bazel_proxy_setup.py` - Setup logic (CA extraction, truststore, bazelrc)
